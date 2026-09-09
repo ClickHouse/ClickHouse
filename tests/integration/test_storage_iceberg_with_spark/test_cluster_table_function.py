@@ -12,8 +12,6 @@ from helpers.iceberg_utils import (
 )
 
 import logging
-import time
-import uuid
 import pyarrow.parquet as pq
 from helpers.config_cluster import minio_secret_key
 
@@ -73,7 +71,7 @@ def test_cluster_table_function(started_cluster_iceberg_with_spark, format_versi
     logging.info(f"Setup complete. files: {files}")
     assert len(files) == 5 + 4 * (len(started_cluster_iceberg_with_spark.instances) - 1)
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
@@ -176,7 +174,7 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
     logging.info(f"Setup complete. files: {files}")
     assert len(files) == 5 + 4 * (len(started_cluster_iceberg_with_spark.instances) - 1)
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
@@ -252,7 +250,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
             if file[-7:] == 'parquet':
                 pq_file = file
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
@@ -276,7 +274,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     def get_buffers_count(func):
         buffers_count_before = int(
             instance.query(
-                f"SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
+                "SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
             )
         )
 
@@ -284,7 +282,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         instance.query("SYSTEM FLUSH LOGS")
         buffers_count = int(
             instance.query(
-                f"SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
+                "SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
             )
         )
         return buffers_count - buffers_count_before
@@ -313,7 +311,6 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
     format_version = '2'
     TABLE_NAME = "test_empty_parquet_file_" + get_uuid_str()
 
@@ -346,8 +343,8 @@ def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     assert len(pq_file) > 0, files
     pq_file = '/' + pq_file
     schema = pq.read_schema(pq_file)
-    empty_table = schema.empty_table()
-    with pq.ParquetWriter(pq_file, schema) as writer:
+    schema.empty_table()
+    with pq.ParquetWriter(pq_file, schema):
         pass
     default_upload_directory(
         started_cluster_iceberg_with_spark,

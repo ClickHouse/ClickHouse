@@ -20,7 +20,6 @@ enum class RedisStorageType : uint8_t
 {
     SIMPLE,
     HASH_MAP,
-    UNKNOWN
 };
 
 

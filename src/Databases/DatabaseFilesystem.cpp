@@ -28,11 +28,11 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsString rename_files_after_processing;
 }
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int PATH_ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
@@ -68,15 +68,13 @@ std::string DatabaseFilesystem::getTablePath(const std::string & table_name) con
     return table_path.lexically_normal().string();
 }
 
-void DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
+StoragePtr DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
-    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
-    if (!inserted)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Table with name `{}` already exists in database `{}` (engine {})",
-            table_name, getDatabaseName(), getEngineName());
+    /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
+    /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
+    /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
+    return loaded_tables.emplace(table_name, table_storage).first->second;
 }
 
 bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
@@ -144,9 +142,18 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
+    /// A renaming rule belongs to the one query that set it, while a cached table is shared with the
+    /// later queries of every user. Such a table is therefore neither taken from the cache, where it
+    /// would arrive without the rule, nor put into it, where it would rename for an unrelated query.
+    const bool renames_after_processing
+        = !context_->getSettingsRef()[Setting::rename_files_after_processing].value.empty();
+
     /// Check if table exists in loaded tables map.
-    if (auto table = tryGetTableFromCache(name))
-        return table;
+    if (!renames_after_processing)
+    {
+        if (auto table = tryGetTableFromCache(name))
+            return table;
+    }
 
     auto table_path = getTablePath(name);
     if (!checkTableFilePath(table_path, context_, throw_on_error))
@@ -158,10 +165,27 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!table_function)
         return nullptr;
 
+    /// Every reader of a file in one query shares the counter that decides when the rename happens, so
+    /// such a table is memoised for that query, the way the `file` table function is.
+    if (renames_after_processing && context_->hasQueryContext())
+    {
+        auto query_context = context_->getQueryContext();
+        /// The memo builds the table with the context it is handed and keys on that context's changed
+        /// settings, so the query's context is what makes the references of one query share a table.
+        /// A rule a sub-query set locally is not among the query's settings, so resolving it there
+        /// would build a table that renames by another rule, or does not rename at all.
+        const bool rule_is_the_query_setting
+            = query_context->getSettingsRef()[Setting::rename_files_after_processing].value
+            == context_->getSettingsRef()[Setting::rename_files_after_processing].value;
+
+        return query_context->executeTableFunction(
+            ast_function_ptr, table_function, rule_is_the_query_setting ? ContextPtr(query_context) : context_);
+    }
+
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
-    if (table_storage)
-        addTable(name, table_storage);
+    if (table_storage && !renames_after_processing)
+        return addTable(name, table_storage);
 
     return table_storage;
 }
@@ -268,6 +292,9 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
-    });
+    }, Documentation{
+        .description = "A read-only database that exposes files in a directory on the local filesystem as tables, queryable by their path.",
+        .syntax = "ENGINE = Filesystem([path])",
+        .related = {"S3", "HDFS"}});
 }
 }

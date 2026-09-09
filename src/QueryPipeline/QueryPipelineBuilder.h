@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
@@ -17,8 +17,7 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 
 class QueryPlan;
 
-class PipelineExecutor;
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+class IQueryPlanStep;
 
 class SubqueryForSet;
 
@@ -138,6 +137,7 @@ public:
         size_t min_block_size_rows,
         size_t min_block_size_bytes,
         size_t max_streams,
+        IQueryPlanStep * join_step,
         bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
 
@@ -147,6 +147,7 @@ public:
         JoinPtr join,
         SharedHeader & output_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines, processing them simultaneously.
@@ -156,7 +157,16 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
+
+    /// Join two independent pipelines with a two-input joining transform created by the caller.
+    /// Each pipeline must have a single output stream (the transform may rely on its order).
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesPaired(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        ProcessorPtr joining,
+        Processors * collected_processors);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
@@ -164,6 +174,7 @@ public:
         JoinPtr table_join,
         SharedHeader & out_header,
         size_t max_block_size,
+        IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
     /// Add other pipeline and execute it before current one.
@@ -181,14 +192,15 @@ public:
         SharedHeader res_header,
         MaterializedCTEPtr materialized_cte);
 
-    PipelineExecutorPtr execute();
-
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
 
     bool hasTotals() const { return pipe.getTotalsPort() != nullptr; }
+    bool hasExtremes() const { return pipe.getExtremesPort() != nullptr; }
 
     const Block & getHeader() const { return pipe.getHeader(); }
     const SharedHeader & getSharedHeader() const { return pipe.getSharedHeader(); }
+
+    const Processors & getProcessors() const { return pipe.getProcessors(); }
 
     void setProcessListElement(QueryStatusPtr elem);
     void setProgressCallback(ProgressCallback callback);

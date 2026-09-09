@@ -3,7 +3,9 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/SipHash.h>
+#include <Core/BlockMissingValues.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -12,7 +14,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/FieldToDataType.h>
-#include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -57,7 +58,6 @@ static void extractLiteralTokensImpl(
     if (auto * literal = ast->as<ASTLiteral>())
     {
         /// Null and Bool literals are never recorded by the parser, so always push nullopt.
-        /// This also protects against stale token_map entries from address reuse.
         Field::Types::Which field_type = literal->value.getType();
         if (field_type == Field::Types::Null || field_type == Field::Types::Bool)
         {
@@ -65,9 +65,18 @@ static void extractLiteralTokensImpl(
             return;
         }
 
-        auto it = token_map.find(literal);
-        if (it != token_map.end())
-            result.push_back(it->second);
+        /// Only literals actually tokenized from the query carry valid token info. A literal
+        /// synthesized by the parser (e.g. the Tuple/Array slow path, the EXTRACT arithmetic
+        /// operands, casts) has the bit unset, so we must ignore any token_map entry it may have
+        /// inherited from a freed, previously recorded literal that reused its address.
+        if (!literal->hasTokenInfo())
+        {
+            result.push_back(std::nullopt);
+            return;
+        }
+
+        if (const auto * token_info = token_map.find(literal))
+            result.push_back(*token_info);
         else
             result.push_back(std::nullopt);
         return;
@@ -666,6 +675,9 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
                 return false;
             nested_types = map_type->getKeyValueTypes();
         }
+
+        if (nested_types.size() != type_info.nested_types.size())
+            return false;
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {

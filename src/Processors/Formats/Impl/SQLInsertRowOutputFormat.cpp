@@ -1,3 +1,4 @@
+#include <Common/isValidUTF8.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
@@ -106,6 +107,71 @@ void registerOutputFormatSQLInsert(FormatFactory & factory)
     });
 
     factory.setContentType("SQLInsert", "text/plain; charset=UTF-8");
+
+    /// `output_format_sql_insert_table_name` and the column names (when
+    /// `output_format_sql_insert_include_column_names` is enabled) are written verbatim, so a table or
+    /// column name that is not valid UTF-8 makes the output non-textual. Quoted identifiers can contain
+    /// arbitrary bytes, so a column name is not guaranteed to be valid UTF-8 either. Both are knowable
+    /// before any row is written (from the settings and the header), so they are detected here and the
+    /// text framings reject or base64-encode the output accordingly.
+    factory.registerOutputFormatMayProduceRawBytesChecker("SQLInsert", [](const FormatSettings & settings, const Block & header)
+    {
+        auto is_not_valid_utf8 = [](const std::string & s)
+        {
+            return !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(s.data()), s.size());
+        };
+
+        if (is_not_valid_utf8(settings.sql_insert.table_name))
+            return true;
+
+        if (settings.sql_insert.include_column_names)
+        {
+            for (const auto & column_name : header.getNames())
+                if (is_not_valid_utf8(column_name))
+                    return true;
+        }
+
+        return false;
+    });
+
+    factory.setDocumentation("SQLInsert", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
+## Description {#description}
+
+Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
+
+## Example usage {#example-usage}
+
+Example:
+
+```sql
+SELECT number AS x, number + 1 AS y, 'Hello' AS z FROM numbers(10) FORMAT SQLInsert SETTINGS output_format_sql_insert_max_batch_size = 2
+```
+
+```sql
+INSERT INTO table (x, y, z) VALUES (0, 1, 'Hello'), (1, 2, 'Hello');
+INSERT INTO table (x, y, z) VALUES (2, 3, 'Hello'), (3, 4, 'Hello');
+INSERT INTO table (x, y, z) VALUES (4, 5, 'Hello'), (5, 6, 'Hello');
+INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
+INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
+```
+
+To read data output by this format you can use [MySQLDump](/reference/formats/MySQLDump) input format.
+
+## Format settings {#format-settings}
+
+| Setting                                                                                                                                | Description                                         | Default   |
+|----------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|-----------|
+| [`output_format_sql_insert_max_batch_size`](/reference/settings/formats/output-format#output_format_sql_insert_max_batch_size)    | The maximum number of rows in one INSERT statement. | `65505`   |
+| [`output_format_sql_insert_table_name`](/reference/settings/formats/output-format#output_format_sql_insert_table_name)            | The name of the table in the output INSERT query.   | `'table'` |
+| [`output_format_sql_insert_include_column_names`](/reference/settings/formats/output-format#output_format_sql_insert_include_column_names) | Include column names in INSERT query.               | `true`    |
+| [`output_format_sql_insert_use_replace`](/reference/settings/formats/output-format#output_format_sql_insert_use_replace)          | Use REPLACE statement instead of INSERT.            | `false`   |
+| [`output_format_sql_insert_quote_names`](/reference/settings/formats/output-format#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters.            | `true`    |
+)DOCS_MD"});
 }
 
 

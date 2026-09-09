@@ -1,0 +1,67 @@
+---
+sidebarTitle: 'Claves de ordenación'
+description: 'Cómo definir claves de ordenación personalizadas.'
+slug: /integrations/clickpipes/postgres/ordering_keys
+title: 'Claves de ordenación'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Las claves de ordenación (también conocidas como claves de ordenamiento) definen cómo se ordenan los datos en disco y cómo se indexan en una tabla de ClickHouse. Al replicar desde Postgres, ClickPipes usa de forma predeterminada la clave primaria de Postgres de una tabla como clave de ordenación para la tabla correspondiente en ClickHouse. En la mayoría de los casos, la clave primaria de Postgres es suficiente como clave de ordenación, ya que ClickHouse ya está optimizado para escaneos rápidos y, a menudo, no se requieren claves de ordenación personalizadas.
+
+Como se describe en la [guía de migración](/es/get-started/migrate/postgres/migration-guide/migration-guide-part3), para casos de uso de mayor escala, debe incluir columnas adicionales además de la clave primaria de Postgres en la clave de ordenación de ClickHouse para optimizar las consultas.
+
+De forma predeterminada, con CDC, elegir una clave de ordenación distinta de la clave primaria de Postgres puede causar problemas de deduplicación de datos en ClickHouse. Esto sucede porque la clave de ordenación en ClickHouse cumple una doble función: controla la indexación y la ordenación de los datos, y al mismo tiempo actúa como clave de deduplicación. La forma más sencilla de resolver este problema es definir vistas materializadas actualizables.
+
+<div id="use-refreshable-materialized-views">
+  ## Utiliza vistas materializadas actualizables
+</div>
+
+Una forma sencilla de definir claves de ordenación personalizadas (ORDER BY) es usar [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) (MV). Estas permiten copiar periódicamente (por ejemplo, cada 5 o 10 minutos) toda la tabla con la clave de ordenación deseada.
+
+A continuación se muestra un ejemplo de una vista materializada actualizable con un ORDER BY personalizado y la deduplicación necesaria:
+
+```sql
+CREATE MATERIALIZED VIEW posts_final
+REFRESH EVERY 10 second ENGINE = ReplacingMergeTree(_peerdb_version)
+ORDER BY (owneruserid,id) -- clave de ordenación diferente pero con sufijo de clave primaria de Postgres
+AS
+SELECT * FROM posts FINAL 
+WHERE _peerdb_is_deleted = 0; -- esto realiza la deduplicación
+```
+
+<div id="custom-ordering-keys-without-refreshable-materialized-views">
+  ## Claves de ordenación personalizadas sin vistas materializadas actualizables
+</div>
+
+Si las vistas materializadas actualizables no funcionan debido al volumen de datos, aquí tienes algunas recomendaciones para definir claves de ordenación personalizadas en tablas más grandes y resolver problemas relacionados con la deduplicación.
+
+<div id="choose-ordering-key-columns-that-dont-change-for-a-given-row">
+  ### Elija columnas de la clave de ordenación que no cambien para una fila determinada
+</div>
+
+Al incluir columnas adicionales en la clave de ordenación de ClickHouse (además de la clave primaria de Postgres), recomendamos seleccionar columnas que no cambien en cada fila. Esto ayuda a evitar problemas de consistencia de los datos y deduplicación con ReplacingMergeTree.
+
+Por ejemplo, en una aplicación SaaS multicliente, usar (`tenant_id`, `id`) como clave de ordenación es una buena opción. Estas columnas identifican de forma única cada fila, y `tenant_id` permanece constante para un `id` aunque cambien otras columnas. Como la deduplicación por id coincide con la deduplicación por (tenant&#95;id, id), esto ayuda a evitar [problemas de deduplicación de datos](https://docs.peerdb.io/mirror/ordering-key-different) que podrían surgir si `tenant_id` cambiara.
+
+<div id="set-replica-identity-on-postgres-tables-to-custom-ordering-key">
+  ### Establecer `REPLICA IDENTITY` en tablas de Postgres con una clave de ordenación personalizada
+</div>
+
+Para que Postgres CDC funcione como se espera, es importante modificar `REPLICA IDENTITY` en las tablas para incluir las columnas de la clave de ordenación. Esto es esencial para gestionar los DELETE con precisión.
+
+Si `REPLICA IDENTITY` no incluye las columnas de la clave de ordenación, Postgres CDC no capturará los valores de las columnas distintas de la clave primaria; esta es una limitación de la decodificación lógica de Postgres. Todas las columnas de la clave de ordenación, aparte de la clave primaria en Postgres, tendrán valores NULL. Esto afecta a la deduplicación, lo que significa que es posible que la versión anterior de la fila no se deduplique con la versión eliminada más reciente (donde `_peerdb_is_deleted` se establece en 1).
+
+En el ejemplo anterior con `owneruserid` e `id`, si la clave primaria aún no incluye `owneruserid`, necesitas tener un `UNIQUE INDEX` sobre (`owneruserid`, `id`) y establecerlo como `REPLICA IDENTITY` de la tabla. Esto garantiza que Postgres CDC capture los valores de columna necesarios para una replicación y deduplicación precisas.
+
+A continuación se muestra un ejemplo de cómo hacerlo en la tabla `events`. Asegúrate de aplicar esto a todas las tablas con claves de ordenación modificadas.
+
+```sql
+-- Crear un UNIQUE INDEX en (owneruserid, id)
+CREATE UNIQUE INDEX posts_unique_owneruserid_idx ON posts(owneruserid, id);
+-- Establecer REPLICA IDENTITY para usar este índice
+ALTER TABLE posts REPLICA IDENTITY USING INDEX posts_unique_owneruserid_idx;
+```

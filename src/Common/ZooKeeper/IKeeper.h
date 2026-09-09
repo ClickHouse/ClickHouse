@@ -10,6 +10,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -424,8 +425,11 @@ struct CreateRequest : virtual Request
     String data;
     bool is_ephemeral = false;
     bool is_sequential = false;
+    bool is_container = false;
     ACLs acls;
     bool include_stats = false;
+    bool include_ttl = false;
+    int64_t ttl = 0;
 
     /// should it succeed if node already exists
     bool not_exists = false;
@@ -433,8 +437,14 @@ struct CreateRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + data.size()
-            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL); }
+    size_t bytesSize() const override
+    {
+        auto base_size = path.size() + data.size()
+            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL);
+        if (include_ttl)
+            base_size += sizeof(ttl);
+        return base_size;
+    }
 };
 
 struct CreateResponse : virtual Response
@@ -560,10 +570,17 @@ struct ListRequest : virtual Request
 {
     String path;
 
+    /// FILTERED_LIST extension.
+    std::optional<ListRequestType> list_request_type;
+
+    /// LIST_WITH_STAT_AND_DATA extension.
+    std::optional<bool> with_stat;
+    std::optional<bool> with_data;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size() + sizeof(list_request_type) + sizeof(with_stat) + sizeof(with_data); }
 };
 
 struct ListResponse : virtual Response

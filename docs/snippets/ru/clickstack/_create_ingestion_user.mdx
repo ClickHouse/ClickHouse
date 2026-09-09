@@ -1,0 +1,16 @@
+---
+title: Создание пользователя для ингестии
+---
+
+Мы рекомендуем создать отдельного пользователя для коллектора, а не использовать повторно `default`. Подключитесь к своему сервису через консоль SQL и выполните:
+
+```sql
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+```
+
+<Tip>
+  Замените пароль в приведённом выше фрагменте на сложный и надёжный.
+</Tip>
+
+При первом использовании коллектор создаёт схему для логов, трейсов и метрик в базе данных `otel`. Дополнительные рекомендации по настройке пользователя для продакшна см. в разделе [Переход в продакшн](/ru/clickstack/managing/production#create-a-database-ingestion-user-managed).

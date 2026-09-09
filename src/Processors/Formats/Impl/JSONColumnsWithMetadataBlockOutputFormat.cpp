@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/JSONColumnsWithMetadataBlockOutputFormat.h>
+#include <Core/Block.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteHelpers.h>
@@ -115,6 +116,79 @@ void registerOutputFormatJSONColumnsWithMetadata(FormatFactory & factory)
 
     factory.markFormatHasNoAppendSupport("JSONColumnsWithMetadata");
     factory.setContentType("JSONColumnsWithMetadata", "application/json; charset=UTF-8");
+
+    /// The `meta.type` strings are written from the header type names and are only UTF-8 validated
+    /// when the output adaptor installs the validating buffer, so a non-UTF-8 type name can leak.
+    /// It is knowable from the header, so text framings reject or base64-encode the output.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "JSONColumnsWithMetadata",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings);
+        });
+
+    factory.setDocumentation("JSONColumnsWithMetadata", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+Differs from the [`JSONColumns`](/reference/formats/JSON/JSONColumns) format in that it also contains some metadata and statistics (similar to the [`JSON`](/reference/formats/JSON/JSON) format).
+
+:::note
+The `JSONColumnsWithMetadata` format buffers all data in memory and then outputs it as a single block, so, it can lead to high memory consumption.
+:::
+
+## Example usage {#example-usage}
+
+Example:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        {
+                "num": [42, 43, 44],
+                "str": ["hello", "hello", "hello"],
+                "arr": [[0,1], [0,1,2], [0,1,2,3]]
+        },
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000272376,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+For the `JSONColumnsWithMetadata` input format, if setting [`input_format_json_validate_types_from_metadata`](/reference/settings/formats/input-format#input_format_json_validate_types_from_metadata) is set to `1`,
+the types from metadata in input data will be compared with the types of the corresponding columns from the table.
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 }

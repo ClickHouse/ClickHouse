@@ -3,6 +3,7 @@
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Interpreters/FileCache/IFileCachePriority.h>
 
 namespace DB
 {
@@ -57,16 +58,6 @@ namespace DB
         Ephemeral,
     };
 
-    enum class FileCacheQueueEntryType : uint8_t
-    {
-        None,
-        LRU,
-        SLRU_Protected,
-        SLRU_Probationary,
-        SplitCache_Data,
-        SplitCache_System,
-    };
-
     std::string toString(FileSegmentKind kind);
 
     struct FileSegmentInfo
@@ -84,7 +75,7 @@ namespace DB
         uint64_t cache_hits;
         uint64_t references;
         bool is_unbound;
-        FileCacheQueueEntryType queue_entry_type;
+        IFileCachePriority::QueueEntryType queue_entry_type;
         FileCacheOriginInfo origin;
     };
 }

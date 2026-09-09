@@ -1,0 +1,32 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/instrument-app
+title: 'Инструментирование приложения с помощью Управляемого ClickStack'
+sidebarTitle: 'Демо HackerNews Analyzer'
+description: 'Руководство по инструментированию приложения на Node.js с OpenTelemetry и отправке журналов, метрик и трасс в Управляемый ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'инструментирование', 'opentelemetry', 'управляемый clickstack', 'обсервабилити']
+---
+
+import InstrumentApplication from '/snippets/ru/clickstack/_instrument_application.mdx';
+
+В этом руководстве показано, как добавить OpenTelemetry-инструментацию в простое приложение Node.js и отправлять его журналы, метрики и трассировки в [Управляемый ClickStack](/ru/clickstack/getting-started/managed). Бэкенд инструментирован без изменений в исходном коде приложения.
+
+[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) — небольшое приложение на Node.js, которое выполняет запросы к набору данных HackerNews, размещённому в общедоступном демо-экземпляре ClickHouse. За каждой диаграммой, таблицей и полем поиска стоит реальный запрос к ClickHouse, поэтому каждое взаимодействие порождает трассировку, в которой основной спан — это HTTPS-вызов от бэкенда к ClickHouse.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Доступный OTel collector, к которому можно подключиться и который отправляет данные в ваш сервис Управляемый ClickStack. Вам понадобятся его конечная точка OTLP и токен для ингестии.
+* Node 18+ и npm.
+
+<InstrumentApplication />
+
+<div id="learn-more">
+  ## Подробнее
+</div>
+
+* [Воспроизведение сеанса](/ru/clickstack/features/session-replay): обзор этой возможности, варианты SDK и настройки конфиденциальности.
+* [Демо воспроизведения сеанса](/ru/clickstack/example-datasets/session-replay): автономное демо с локальным экземпляром ClickStack.
+* [Начало работы с ClickStack](/ru/clickstack/getting-started/index): разверните ClickStack и настройте приём первых данных.
+* [Все демонстрационные наборы данных](/ru/clickstack/example-datasets/index): другие демонстрационные наборы данных и руководства.

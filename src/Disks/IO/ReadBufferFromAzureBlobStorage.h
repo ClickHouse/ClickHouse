@@ -53,11 +53,14 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
 
-    std::optional<size_t> getRemoteFileSize() const override;
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
 
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     bool supportsReadAt() override { return true; }
+
+    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
 
     /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
     /// This method returns metadata from the last request. If there were no requests, it will throw exception.

@@ -51,7 +51,7 @@ static CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     return storage_configuration;
 }
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
 static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
@@ -219,7 +219,7 @@ DictionaryPtr createCacheDictionaryLayout(
         auto storage_configuration = parseCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
         storage = std::make_shared<CacheDictionaryStorage<dictionary_key_type>>(dict_struct, storage_configuration);
     }
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
     else
     {
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
@@ -266,7 +266,97 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Simple, false/* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("cache", create_simple_cache_layout, false);
+    factory.registerLayout("cache", create_simple_cache_layout, false, true, Documentation{
+        .description = R"DOCS_MD(
+# cache dictionary layout
+
+The `cached` dictionary layout type is stores the dictionary in a cache that has a fixed number of cells.
+These cells contain frequently used elements.
+
+The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
+
+When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
+
+That applies to looking a key **up** - `dictGet` and the other dictionary functions. Reading the dictionary **as a table** with `SELECT ... FROM <dictionary>` is different: it returns the cells that happen to be resident in the cache at that moment and requests nothing from the source, because a cache keeps no record of which keys exist. A `WHERE` on the key is an ordinary filter over those resident cells, not a list of keys to fetch:
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+So a cache dictionary is meant to be used through the dictionary functions. If you need `SELECT ... FROM <dictionary> WHERE key IN (...)` to fetch from the source, use the [direct](/sql-reference/statements/create/dictionary/layouts/direct) layout, which queries the source on every request and caches nothing; to read the whole dictionary as a table, use a layout that holds all of it, such as [flat](/sql-reference/statements/create/dictionary/layouts/flat) or [hashed](/sql-reference/statements/create/dictionary/layouts/hashed).
+
+If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
+
+For cache dictionaries, the expiration [lifetime](/reference/statements/create/dictionary/lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
+
+This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the [system.dictionaries](/reference/system-tables/dictionaries) table.
+
+If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary can support asynchronous updates. If a client requests keys and all of them are in cache, but some of them are expired, then dictionary will return expired keys for a client and request them asynchronously from the source.
+
+To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
+
+All types of sources are supported.
+
+Example of settings:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<layout>
+    <cache>
+        <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
+        <size_in_cells>1000000000</size_in_cells>
+        <!-- Allows to read expired keys. -->
+        <allow_read_expired_keys>0</allow_read_expired_keys>
+        <!-- Max size of update queue. -->
+        <max_update_queue_size>100000</max_update_queue_size>
+        <!-- Max timeout in milliseconds for push update task into queue. -->
+        <update_queue_push_timeout_milliseconds>10</update_queue_push_timeout_milliseconds>
+        <!-- Max wait timeout in milliseconds for update task to complete. -->
+        <query_wait_timeout_milliseconds>60000</query_wait_timeout_milliseconds>
+        <!-- Max threads for cache dictionary update. -->
+        <max_threads_for_updates>4</max_threads_for_updates>
+    </cache>
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+Set a large enough cache size. You need to experiment to select the number of cells:
+
+1.  Set some value.
+2.  Run queries until the cache is completely full.
+3.  Assess memory consumption using the `system.dictionaries` table.
+4.  Increase or decrease the number of cells until the required memory consumption is reached.
+
+<Note>
+ClickHouse is not recommended as a source for this layout. Dictionary lookups require random point reads, which are not the access pattern ClickHouse is optimized for.
+</Note>
+)DOCS_MD",
+        .syntax = "LAYOUT(CACHE(SIZE_IN_CELLS n))",
+        .related = {"ssd_cache", "direct"}});
 
     auto create_complex_key_cache_layout = [=](const std::string & full_name,
                                                const DictionaryStructure & dict_struct,
@@ -279,9 +369,13 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Complex, false /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true);
+    factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true, true, Documentation{
+        .description = "Like `cache`, but supports composite keys. Reading it as a table returns only the cells "
+                       "currently held in the cache and does not query the source; see `cache`.",
+        .syntax = "LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS n))",
+        .related = {"cache"}});
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_DARWIN)
 
     auto create_simple_ssd_cache_layout = [=](const std::string & full_name,
                                               const DictionaryStructure & dict_struct,
@@ -294,7 +388,56 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Simple, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false);
+    factory.registerLayout("ssd_cache", create_simple_ssd_cache_layout, false, true, Documentation{
+        .description = R"DOCS_MD(
+# ssd_cache dictionary layout types
+
+## ssd_cache {#ssd_cache}
+
+Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
+
+Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held and does not query the source. See [cache](/sql-reference/statements/create/dictionary/layouts/cache).
+
+The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH '/var/lib/clickhouse/user_files/test_dict'))
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<layout>
+    <ssd_cache>
+        <!-- Size of elementary read block in bytes. Recommended to be equal to SSD's page size. -->
+        <block_size>4096</block_size>
+        <!-- Max cache file size in bytes. -->
+        <file_size>16777216</file_size>
+        <!-- Size of RAM buffer in bytes for reading elements from SSD. -->
+        <read_buffer_size>131072</read_buffer_size>
+        <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
+        <write_buffer_size>1048576</write_buffer_size>
+        <!-- Path where cache file will be stored. -->
+        <path>/var/lib/clickhouse/user_files/test_dict</path>
+    </ssd_cache>
+</layout>
+```
+
+</Tab>
+</Tabs>
+<br/>
+
+## complex_key_ssd_cache {#complex_key_ssd_cache}
+
+This type of storage is for use with composite [keys](/reference/statements/create/dictionary/attributes#composite-key). Similar to `ssd_cache`.
+)DOCS_MD",
+        .syntax = "LAYOUT(SSD_CACHE(PATH '/path/to/cache'))",
+        .related = {"cache"}});
 
     auto create_complex_key_ssd_cache_layout = [=](const std::string & full_name,
                                                    const DictionaryStructure & dict_struct,
@@ -306,7 +449,10 @@ void registerDictionaryCache(DictionaryFactory & factory)
         return createCacheDictionaryLayout<DictionaryKeyType::Complex, true /* ssd */>(full_name, dict_struct, config, config_prefix, std::move(source_ptr), global_context, created_from_ddl);
     };
 
-    factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true);
+    factory.registerLayout("complex_key_ssd_cache", create_complex_key_ssd_cache_layout, true, true, Documentation{
+        .description = "Like `ssd_cache`, but supports composite keys.",
+        .syntax = "LAYOUT(COMPLEX_KEY_SSD_CACHE(PATH '/path/to/cache'))",
+        .related = {"ssd_cache"}});
 
 #endif
 

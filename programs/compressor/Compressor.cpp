@@ -22,6 +22,8 @@
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
+#include <IO/SharedThreadPools.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/Defines.h>
 
@@ -76,6 +78,14 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
     namespace po = boost::program_options;
 
     bool print_stacktrace = false;
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
+
     try
     {
         po::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());

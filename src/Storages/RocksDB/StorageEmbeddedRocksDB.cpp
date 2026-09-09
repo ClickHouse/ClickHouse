@@ -1,3 +1,4 @@
+#include <Access/Common/AccessFlags.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
@@ -270,7 +271,8 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
         fs::create_directories(rocksdb_dir);
     }
 
-    const auto sample_block = getInMemoryMetadataPtr(context_, false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
+    const auto sample_block = metadata_snapshot->getSampleBlock();
     primary_key_pos.reserve(primary_keys.size());
     primary_key_types.reserve(primary_keys.size());
     std::vector<bool> is_pk(sample_block.columns());
@@ -296,8 +298,13 @@ StorageEmbeddedRocksDB::~StorageEmbeddedRocksDB() = default;
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     std::lock_guard lock(rocksdb_ptr_mx);
-    rocksdb_ptr->Close();
-    rocksdb_ptr = nullptr;
+    /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
+    /// the following initDB() threw (e.g. a read_only table whose data was wiped).
+    if (rocksdb_ptr)
+    {
+        rocksdb_ptr->Close();
+        rocksdb_ptr = nullptr;
+    }
 
     (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
@@ -344,8 +351,8 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
         Block block;
         while (executor.pull(block))
         {
-            std::vector<ColumnPtr> columns;
-            std::vector<DataTypePtr> types;
+            Columns columns;
+            DataTypes types;
             columns.reserve(primary_key_pos.size());
             types.reserve(primary_key_pos.size());
             for (const auto pos : primary_key_pos)
@@ -415,8 +422,13 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 void StorageEmbeddedRocksDB::drop()
 {
     std::lock_guard lock(rocksdb_ptr_mx);
-    rocksdb_ptr->Close();
-    rocksdb_ptr = nullptr;
+    /// rocksdb_ptr may be null if the handle was never opened or was released by a failed
+    /// truncate(); dropping such a table must not dereference it.
+    if (rocksdb_ptr)
+    {
+        rocksdb_ptr->Close();
+        rocksdb_ptr = nullptr;
+    }
 }
 
 bool StorageEmbeddedRocksDB::optimize(
@@ -490,11 +502,11 @@ public:
             std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - written by `vsnprintf` before read
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
-                va_end(backup_ap);
+                va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
                 LOG_IMPL(log, level.first, level.second, "{}", stack.data());
                 return;
             }
-            va_end(backup_ap);
+            va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
         }
 
         /// let's try with a bigger dynamic buffer (but not too huge, since
@@ -841,6 +853,37 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (engine_args.size() > 2)
         read_only = checkAndGetLiteralArgument<bool>(engine_args[2], "read_only");
 
+    /// An explicit `rocksdb_dir` opens a directory under `user_files_path` and needs the same `FILE` grant
+    /// as `file`; the argument-less form touches only the table's own data directory, and `clickhouse-local`
+    /// has no `user_files` fence to authorize. A replayed definition was authorized when it was introduced.
+    ///
+    /// `WRITE` is required whenever this statement could create the directory, which includes a
+    /// `read_only = 1` table over a directory that is not there yet: the constructor runs
+    /// `fs::create_directories(rocksdb_dir)` on the CREATE path, before the read-only open is attempted,
+    /// so authorizing that with `READ` alone would give a read-only source grant a filesystem write side
+    /// effect. Over a directory that already exists the creation is a no-op and `READ` is enough.
+    auto local_context = args.getLocalContext();
+    const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+    if (!rocksdb_dir.empty() && !from_existing_metadata
+        && local_context->getApplicationType() != Context::ApplicationType::LOCAL)
+    {
+        bool may_create_directory = !read_only;
+        if (!may_create_directory)
+        {
+            /// Resolved exactly as the constructor resolves it. The `user_files` fence is enforced there
+            /// and throws, so a path landing outside it is treated as creating: no existence of anything
+            /// beyond the fence is probed, and the statement fails on the fence either way.
+            const fs::path user_files_path = fs::canonical(local_context->getUserFilesPath());
+            fs::path resolved = fs::path(rocksdb_dir).is_relative() ? user_files_path / rocksdb_dir : fs::path(rocksdb_dir);
+            resolved = fs::absolute(resolved).lexically_normal();
+            may_create_directory = !fileOrSymlinkPathStartsWith(resolved, user_files_path) || !fs::exists(resolved);
+        }
+
+        const AccessFlags required
+            = may_create_directory ? (AccessType::READ | AccessType::WRITE) : AccessFlags(AccessType::READ);
+        local_context->checkAccess(required, toStringSource(AccessTypeObjects::Source::FILE));
+    }
+
     StorageInMemoryMetadata metadata;
     metadata.setColumns(args.columns);
     metadata.setConstraints(args.constraints);
@@ -935,27 +978,29 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     {
         std::string & serialized_key = raw_keys.emplace_back();
         WriteBufferFromString wb(serialized_key);
-        for (const auto & key : keys)
+        for (size_t pk_idx = 0; pk_idx < keys.size(); ++pk_idx)
         {
             Field field;
-            key.column->get(i, field);
+            keys[pk_idx].column->get(i, field);
             if (field.isNull())
             {
                 null_map[i] = 0;
                 break;
             }
-            key.type->getDefaultSerialization()->serializeBinary(field, wb, {});
+            primary_key_types[pk_idx]->getDefaultSerialization()->serializeBinary(field, wb, {});
         }
         wb.finalize();
     }
 
-    auto block = getBySerializedKeys(raw_keys, &null_map, getInMemoryMetadataPtr(getContext(), false)->getSampleBlock());
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto block = getBySerializedKeys(raw_keys, &null_map, metadata_snapshot->getSampleBlock());
     return Chunk(block.getColumns(), block.rows());
 }
 
 Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
 {
-    return getInMemoryMetadataPtr(getContext(), false)->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    return metadata_snapshot->getSampleBlock();
 }
 
 Block StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const
@@ -1057,14 +1102,248 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
     };
 
-    factory.registerStorage("EmbeddedRocksDB", create, features);
+    factory.registerStorage("EmbeddedRocksDB", create, features, Documentation{
+        .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# EmbeddedRocksDB table engine
+
+<CloudNotSupportedBadge />
+
+This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
+[ SETTINGS name=value, ... ]
+```
+
+Engine parameters:
+
+- `ttl` - time to live for values. TTL is accepted in seconds. If TTL is 0, regular RocksDB instance is used (without TTL).
+- `rocksdb_dir` - path to the directory of an existed RocksDB or the destination path of the created RocksDB. Open the table with the specified `rocksdb_dir`.
+- `read_only` - when `read_only` is set to true, read-only mode is used. For storage with TTL, compaction will not be triggered (neither manual nor automatic), so no expired entries are removed.
+- `primary_key_name` – any column name in the column list.
+- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
+- columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
+- queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `rocksdb`.
+
+Engine settings:
+
+- `optimize_for_bulk_insert` – Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables); default value: `1`.
+- `bulk_insert_block_size` - Minimum size of SST files (in term of rows) created by bulk insertion; default value: `1048449`.
+
+Example:
+
+```sql
+CREATE TABLE test
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY key
+```
+
+## Metrics {#metrics}
+
+There is also `system.rocksdb` table, that expose rocksdb statistics:
+
+```sql
+SELECT
+    name,
+    value
+FROM system.rocksdb
+
+┌─name──────────────────────┬─value─┐
+│ no.file.opens             │     1 │
+│ number.block.decompressed │     1 │
+└───────────────────────────┴───────┘
+```
+
+## Configuration {#configuration}
+
+You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wiki/Option-String-and-Option-Map) using config:
+
+```xml
+<rocksdb>
+    <options>
+        <max_background_jobs>8</max_background_jobs>
+    </options>
+    <column_family_options>
+        <num_levels>2</num_levels>
+    </column_family_options>
+    <tables>
+        <table>
+            <name>TABLE</name>
+            <options>
+                <max_background_jobs>8</max_background_jobs>
+            </options>
+            <column_family_options>
+                <num_levels>2</num_levels>
+            </column_family_options>
+        </table>
+    </tables>
+</rocksdb>
+```
+
+By default trivial approximate count optimization is turned off, which might affect the performance `count()` queries. To enable this
+optimization set up `optimize_trivial_approximate_count_query = 1`. Also, this setting affects `system.tables` for EmbeddedRocksDB engine,
+turn on the settings to see approximate values for `total_rows` and `total_bytes`.
+
+## Supported operations {#supported-operations}
+
+### Inserts {#inserts}
+
+When new rows are inserted into `EmbeddedRocksDB`, if the key already exists, the value will be updated, otherwise a new key is created.
+
+Example:
+
+```sql
+INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
+```
+
+### Deletes {#deletes}
+
+Rows can be deleted using `DELETE` query or `TRUNCATE`.
+
+```sql
+DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+ALTER TABLE test DELETE WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+TRUNCATE TABLE test;
+```
+
+### Updates {#updates}
+
+Values can be updated using the `ALTER TABLE` query. The primary key cannot be updated.
+
+```sql
+ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
+```
+
+### Joins {#joins}
+
+A special `direct` join with EmbeddedRocksDB tables is supported.
+This direct join avoids forming a hash table in memory and accesses
+the data directly from the EmbeddedRocksDB.
+
+With large joins you may see much lower memory usage with direct joins
+because the hash table is not created.
+
+To enable direct joins:
+```sql
+SET join_algorithm = 'direct, hash'
+```
+
+:::tip
+When the `join_algorithm` is set to `direct, hash`, direct joins will be used
+when possible, and hash otherwise.
+:::
+
+#### Example {#example}
+
+##### Create and populate an EmbeddedRocksDB table {#create-and-populate-an-embeddedrocksdb-table}
+```sql
+CREATE TABLE rdb
+(
+    `key` UInt32,
+    `value` Array(UInt32),
+    `value2` String
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY key
+```
+
+```sql
+INSERT INTO rdb
+    SELECT
+        toUInt32(sipHash64(number) % 10) AS key,
+        [key, key+1] AS value,
+        ('val2' || toString(key)) AS value2
+    FROM numbers_mt(10);
+```
+
+##### Create and populate a table to join with table `rdb` {#create-and-populate-a-table-to-join-with-table-rdb}
+
+```sql
+CREATE TABLE t2
+(
+    `k` UInt16
+)
+ENGINE = TinyLog
+```
+
+```sql
+INSERT INTO t2 SELECT number AS k
+FROM numbers_mt(10)
+```
+
+##### Set the join algorithm to `direct`{#set-the-join-algorithm-to-direct}
+
+```sql
+SET join_algorithm = 'direct'
+```
+
+##### An INNER JOIN {#an-inner-join}
+```sql
+SELECT *
+FROM
+(
+    SELECT k AS key
+    FROM t2
+) AS t2
+INNER JOIN rdb ON rdb.key = t2.key
+ORDER BY key ASC
+```
+```response
+┌─key─┬─rdb.key─┬─value──┬─value2─┐
+│   0 │       0 │ [0,1]  │ val20  │
+│   2 │       2 │ [2,3]  │ val22  │
+│   3 │       3 │ [3,4]  │ val23  │
+│   6 │       6 │ [6,7]  │ val26  │
+│   7 │       7 │ [7,8]  │ val27  │
+│   8 │       8 │ [8,9]  │ val28  │
+│   9 │       9 │ [9,10] │ val29  │
+└─────┴─────────┴────────┴────────┘
+```
+
+### More information on Joins {#more-information-on-joins}
+- [`join_algorithm` setting](/reference/settings/session-settings/join#join_algorithm)
+- [JOIN clause](/reference/statements/select/join)
+)DOCS_MD",
+        .syntax = "ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(key)",
+        .related = {"Redis"}});
 }
 
 void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
 {
     for (const auto & command : commands)
+    {
         if (!command.isCommentAlter() && !command.isSettingsAlter())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+
+        /// Validate setting values before `IStorage::alter` persists the metadata file,
+        /// otherwise an invalid value blocks attach on the next restart. See issue #88443.
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            for (const auto & change : command.settings_changes)
+                RocksDBSettings::checkCanSet(change.name, change.value);
+        }
+    }
 }
 
 }

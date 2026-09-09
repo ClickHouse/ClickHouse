@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/CurrentThread.h>
@@ -7,9 +8,15 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char thread_group_switcher_post_attach_failure[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 ThreadGroupPtr getCurrentThreadGroup()
@@ -40,7 +47,13 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             else if (!allow_existing_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
             else
+            {
+                /// Borrowing a thread that owns a group: remember its name (even UNKNOWN) before the
+                /// setThreadName below renames it, so we can restore it with the group.
+                prev_thread_name = getThreadName();
+                should_restore_prev_thread_name = true;
                 CurrentThread::detachFromGroupIfNotDetached();
+            }
         }
 
         if (!prev_thread)
@@ -50,11 +63,37 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
 
         CurrentThread::attachToGroup(thread_group);
         setThreadName(thread_name);
+
+        /// Simulate a failure after the attach succeeded (e.g. setThreadName throwing),
+        /// to verify the catch block detaches from the target group and restores the
+        /// previous one instead of leaving the thread attached to the failed target.
+        fiu_do_on(FailPoints::thread_group_switcher_post_attach_failure,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
+        });
     }
     catch (...)
     {
         /// Unexpected. For caller's convenience avoid throwing exceptions.
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        try
+        {
+            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+            /// The attach may have succeeded before a later step (e.g. setThreadName) threw,
+            /// leaving the thread on the target group. Detach it first.
+            if (CurrentThread::getGroup() == thread_group)
+                CurrentThread::detachFromGroupIfNotDetached();
+            /// Restore the borrowed group and name here: the destructor early-returns on this path
+            /// (both groups are nulled below).
+            if (prev_thread_group && !CurrentThread::getGroup())
+                CurrentThread::attachToGroup(prev_thread_group);
+            if (should_restore_prev_thread_name)
+                setThreadName(prev_thread_name);
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         thread_group = nullptr;
         prev_thread_group = nullptr;
     }
@@ -81,6 +120,10 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
         {
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
             CurrentThread::attachToGroup(prev_thread_group);
+            /// Restore the borrowed thread's original name, else it keeps the async-pool name and
+            /// misattributes later logs, traces, /proc names and jemalloc thread profiles.
+            if (should_restore_prev_thread_name)
+                setThreadName(prev_thread_name);
         }
     }
     catch (...)

@@ -1,0 +1,195 @@
+---
+title: 'BYOC AWS プライベートネットワーク設定'
+slug: /cloud/reference/byoc/onboarding/network-aws
+sidebarTitle: 'AWS プライベートネットワーク設定'
+keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud', 'VPCピアリング', 'AWS', 'PrivateLink']
+description: 'AWS 上の BYOC 向けに VPC ピアリングまたは PrivateLink を設定する'
+doc_type: 'リファレンス'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+AWS上の ClickHouse BYOC では、VPC Peering と AWS PrivateLink という 2 つのプライベート接続オプションをサポートしています。
+
+<div id="common-prerequisites">
+  ## 前提条件
+</div>
+
+VPCピアリングとPrivateLinkの両方に共通して必要な手順です。
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### ClickHouse BYOC でプライベートロードバランサーを有効にする
+</div>
+
+ClickHouse Cloud コンソールで、BYOC インフラストラクチャの **プライベートロードバランサー** を有効にします。
+
+<Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC プライベートロードバランサーを有効にする" border />
+
+<div id="aws-vpc-peering">
+  ## VPC ピアリングを設定する
+</div>
+
+ClickHouse BYOC の VPC ピアリングを作成または削除するには、次の手順に従ってください。
+
+<Steps>
+  <Step title="ピアリング接続を作成する" id="step-1-create-a-peering-connection">
+    1. ClickHouse BYOC アカウントの VPC Dashboard に移動します。
+    2. Peering Connections を選択します。
+    3. Create Peering Connection をクリックします。
+    4. VPC Requester に ClickHouse VPC ID を設定します。
+    5. VPC Accepter に対象の VPC ID を設定します (必要に応じて別のアカウントを選択します) 。
+    6. Create Peering Connection をクリックします。
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-1.webp" size="lg" alt="BYOC ピアリング接続の作成" border />
+  </Step>
+
+  <Step title="ピアリング接続リクエストを承認する" id="step-2-accept-the-peering-connection-request">
+    ピアリング先のアカウントで、(VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) に移動すると、この VPC ピアリングリクエストを承認できます。
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-2.webp" size="lg" alt="BYOC ピアリング接続の承認" border />
+  </Step>
+
+  <Step title="ClickHouse VPC のルートテーブルに宛先を追加する" id="step-3-add-destination-to-clickhouse-vpc-route-tables">
+    ClickHouse BYOC アカウントで、
+
+    1. VPC Dashboard で Route Tables を選択します。
+    2. ClickHouse VPC ID を検索します。プライベートサブネットに関連付けられている各ルートテーブルを編集します。
+    3. Routes タブの Edit ボタンをクリックします。
+    4. Add another route をクリックします。
+    5. Destination に対象 VPC の CIDR 範囲を入力します。
+    6. Target で “Peering Connection” とピアリング接続 ID を選択します。
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-3.webp" size="lg" alt="BYOC ルートテーブルの追加" border />
+  </Step>
+
+  <Step title="対象 VPC のルートテーブルに宛先を追加する" id="step-4-add-destination-to-the-target-vpc-route-tables">
+    ピアリング先の AWS アカウントで、
+
+    1. VPC Dashboard で Route Tables を選択します。
+    2. 対象の VPC ID を検索します。
+    3. Routes タブの Edit ボタンをクリックします。
+    4. Add another route をクリックします。
+    5. Destination に ClickHouse VPC の CIDR 範囲を入力します。
+    6. Target で “Peering Connection” とピアリング接続 ID を選択します。
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-4.webp" size="lg" alt="BYOC ルートテーブルの追加" border />
+  </Step>
+
+  <Step title="ピアリングされた VPC からのアクセスを許可するようセキュリティグループを編集する" id="step-5-edit-security-group-to-allow-peered-vpc-access">
+    ClickHouse BYOC アカウントでは、ピアリングされた VPC からのトラフィックを許可するために、セキュリティグループの設定を更新する必要があります。ピアリングされた VPC の CIDR 範囲を含むインバウンドルールの追加を依頼するには、ClickHouse Support にお問い合わせください。
+
+    ***
+
+    これで、ピアリングされた VPC から ClickHouse サービスにアクセスできるようになります。
+  </Step>
+</Steps>
+
+ClickHouse にプライベートにアクセスするために、ユーザーのピアリングされた VPC から安全に接続できるよう、プライベートロードバランサーとエンドポイントがプロビジョニングされます。プライベート エンドポイントは、パブリックエンドポイントの形式に `-private` 接尾辞を付けたものです。たとえば、次のとおりです。
+
+* **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+任意ですが、ピアリングが機能していることを確認した後、ClickHouse BYOC のパブリックロードバランサーの削除を依頼できます。
+
+<div id="setup-privatelink">
+  ## PrivateLink を設定する
+</div>
+
+AWS PrivateLink を使用すると、VPC ピアリングやインターネットゲートウェイを介さずに、ClickHouse BYOC サービスへ安全なプライベート接続を確立できます。すべてのトラフィックは AWS ネットワーク内を流れるため、パブリックインターネットを経由することはありません。
+
+<Note>
+  **リージョン間接続。** ClickHouse コンソールの **Enable private link** トグルでは、エンドポイントサービスがプロビジョニングされ、**同一リージョン**のコンシューマーのみが対象となります。AWS ではエンドポイントサービスのリージョン間アクセスはデフォルトで無効になっており、ClickHouse コンソールでは管理できません。クライアントが別のリージョンにある場合は、ご自身で有効にしてください。エンドポイントサービスは BYOC アカウント内にあるため、ご自身の AWS コンソールで **Supported regions** リストにコンシューマーのリージョンを追加します (以下のステップ 3 を参照) 。ClickHouse がこれらの値を変更またはリセットすることはありません。AWS のリージョン間データ転送料金が適用されます。
+</Note>
+
+<Steps>
+  <Step title="ClickHouseコンソールでプライベートリンクを有効にする" id="step-1-enable-private-link">
+    <Note>
+      前提条件として、**プライベートロードバランサー**が有効になっていることを確認してください。
+    </Note>
+
+    <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink を有効化" border />
+  </Step>
+
+  <Step title={<>エンドポイントの<code>Service name</code>を取得</>} id="step-2-obtain-endpoint-service-name">
+    1. ClickHouse Cloud console で、PrivateLink 経由で接続するサービスの Settings ページに移動します。
+    2. 「Set up private endpoint」をクリックします。
+    3. 開いたフライアウトで、`Service name` の値をコピーします。次の手順で使用します。 (PrivateLink を有効にした後、この値が生成されるまでしばらく時間がかかる場合があります。)
+       <Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="プライベート エンドポイント" border />
+  </Step>
+
+  <Step title="ネットワーク内にエンドポイントを作成" id="step-3-create-endpoint">
+    1. **ご自身の AWS コンソール** (クライアントアプリケーションがある AWS アカウント) を開き、VPC → Endpoints → Create endpoints に移動します。
+
+    2. &quot;Endpoint services that use NLBs and GWLBs&quot; を選択し、前の手順で取得した `Service name` を使用します。
+
+    3. &quot;Verify service&quot; をクリックします。
+       <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink エンドポイント設定" border />
+
+    4. (任意) PrivateLink 経由でクロスリージョン接続を確立する場合は、&quot;Cross region endpoint&quot; チェックボックスを有効にし、サービスリージョンを指定します。サービスリージョンは、BYOC インフラストラクチャが作成されているリージョンです。同時に、次の操作を行います。
+
+    5. **BYOC AWS コンソール** (BYOC インフラストラクチャが作成されている AWS アカウント) を開き、VPC → Endpoint services → `clickhouse-cloud-infra-xxx` → Supported regions に移動します。
+
+    6. クライアントアプリケーションが実行されているリージョンを、サポート対象リージョンのリストに追加します。デフォルトでは、この BYOC インフラストラクチャのリージョンのみがサポートされています。異なるリージョンから接続する場合は複数のリージョンを追加できます。ClickHouse がこれらの値を変更またはリセットすることはありません。
+       <Image img="/images/cloud/reference/byoc-privatelink-aws-cross-region.webp" size="md" alt="AWS PrivateLink クロスリージョンエンドポイント設定" border />
+
+    7. VPC とサブネットを選択します (availability zone ごとに 1 つのサブネットを推奨します) 。
+       <Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="VPC とサブネットを選択" border />
+
+    8. **重要**: エンドポイントで &quot;Private DNS names&quot; を有効にします。これは private DNS が正しく機能するために必要です。
+       BYOC エンドポイントの private DNS (`*.vpce.{subdomain}` 形式) は、AWS PrivateLink に組み込まれた &quot;Private DNS names&quot; 機能を使用します。Route53 レコードは不要です。次の条件を満たす場合、DNS 解決は自動的に行われます。
+       * &quot;Private DNS names&quot; が有効であり、
+       * &quot;DNS Hostnames&quot; が有効である
+
+         これらは VPC Settings → DNS resolution および DNS hostnames で有効にします。
+
+         これにより、`vpce` サブドメインを使用する接続は、追加の DNS 設定なしで自動的に PrivateLink エンドポイント経由でルーティングされます。
+
+    9. (任意) セキュリティグループ/タグを割り当てます。
+
+    <Note>
+      セキュリティグループでポート `443`、`8443`、`9440` が許可されていることを確認してください。
+    </Note>
+
+    8. &quot;Create endpoint&quot; をクリックし、エンドポイントが作成されるまでしばらく待ちます。
+
+    9. エンドポイントを作成した後、`Endpoint ID` の値をコピーします。次の手順で使用します。
+       <Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="VPC Endpoint ID" border />
+  </Step>
+
+  <Step title="エンドポイント接続を承認する" id="step-4-approve-endpoint-connection">
+    1. **BYOC VPC コンソール**を再度開き、Endpoint services → `clickhouse-cloud-infra-xxx` → Endpoint connections に移動します。
+    2. 自身の VPC から作成された接続リクエストを見つけ、&quot;Accept endpoint connection request&quot; をクリックして承認します。
+       <Image img="/images/cloud/reference/byoc-privatelink-2.webp" size="md" alt="BYOC PrivateLink の承認" border />
+  </Step>
+
+  <Step title={<>ClickHouseサービスの許可リストに <code>Endpoint ID</code> を追加する</>} id="step-5-add-endpoint-id-to-services-allow-list">
+    1. ClickHouse Cloud consoleで、PrivateLink 経由で接続するサービスの Settings ページに移動します。
+    2. 「プライベート エンドポイントを設定」をクリックします。
+    3. 開いたフライアウトで、前の手順で取得した `Endpoint ID` と、必要に応じて説明を入力します。
+    4. 「エンドポイントを作成」をクリックします。
+
+    <Note>
+      既存の PrivateLink 接続からのアクセスを許可する場合は、既存のエンドポイントのドロップダウンメニューを使用します。
+      ドロップダウンには、同じインフラストラクチャ内のサービスへの既存の PrivateLink 接続が表示されます。
+    </Note>
+
+    <Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="プライベート エンドポイントのフィルター" border />
+  </Step>
+
+  <Step title="PrivateLink を使用してインスタンスにアクセスする" id="step-6-connect-via-privatelink">
+    1. ClickHouse Cloud Console で、サービスの Settings ページに移動します。
+    2. 「プライベート エンドポイントを設定」をクリックします。
+    3. 開いたフライアウトで、`DNS name` をコピーします。
+
+       <Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="プライベート エンドポイントの DNS 名" border />
+
+       PrivateLink 経由での ClickHouse サービスへのアクセスは、次の 2 つのレベルで制御されます。
+
+       1. **Istio Authorization Policy**: ClickHouse が BYOC インフラストラクチャ内で管理するサービスレベルの認可ポリシー
+       2. **VPC Endpoint Security Group**: VPC エンドポイントにアタッチされたセキュリティグループ。VPC 内でエンドポイントを使用できるリソースを制御します
+
+       <Note>
+         プライベートロードバランサーの「PrivateLink トラフィックにインバウンドルールを適用」機能は無効になっているため、アクセスは Istio 認可ポリシーと VPC エンドポイントのセキュリティグループによってのみ制御されます。
+       </Note>
+  </Step>
+</Steps>

@@ -242,7 +242,10 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         /// Return the whole chunk.
 
         /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-        if (with_ties && rows_read == offset + limit)
+        /// Skip when the chunk is empty (e.g. a virtual row produced by read-in-order pipeline that
+        /// reached us after rows_read already hit the limit): there is no row to remember, and the
+        /// previously stored `previous_row_chunk` is still the correct tie key for the boundary.
+        if (with_ties && rows_read == offset + limit && rows > 0)
             previous_row_chunk = makeChunkWithPreviousRow(data.current_chunk, data.current_chunk.getNumRows() - 1);
     }
     else
@@ -381,8 +384,22 @@ bool LimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort
     size_t size = current_chunk_sort_columns.size();
     const auto & previous_row_sort_columns = previous_row_chunk.getColumns();
     for (size_t i = 0; i < size; ++i)
-        if (0 != current_chunk_sort_columns[i]->compareAt(current_chunk_row_num, 0, *previous_row_sort_columns[i], 1))
+    {
+        const auto & column = *current_chunk_sort_columns[i];
+        const auto & previous_column = *previous_row_sort_columns[i];
+
+        /// Compare ties using the same collation as ORDER BY, otherwise rows that are equal
+        /// according to the collation (for example '1' and '01' under numeric collation) would
+        /// be treated as distinct and wrongly dropped from the result.
+        int res = 0;
+        if (description[i].collator && column.isCollationSupported())
+            res = column.compareAtWithCollation(current_chunk_row_num, 0, previous_column, 1, *description[i].collator);
+        else
+            res = column.compareAt(current_chunk_row_num, 0, previous_column, 1);
+
+        if (res != 0)
             return false;
+    }
     return true;
 }
 

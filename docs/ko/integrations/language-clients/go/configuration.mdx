@@ -1,0 +1,381 @@
+---
+sidebarTitle: '구성'
+keywords: ['ClickHouse', 'Go', 'golang', '구성', '연결', 'TLS', '인증']
+description: 'clickhouse-go 클라이언트 구성: 연결 설정, TLS, 인증, 풀링, 로깅, 압축.'
+slug: /integrations/language-clients/go/configuration
+title: '구성'
+doc_type: 'reference'
+---
+
+<div id="connection-settings">
+  ## 연결 설정
+</div>
+
+<Tip>
+  기본값, DSN 매개변수, 모범 사례, 문제 해결을 포함해 각 옵션을 자세히 확인하려면 [구성 참고](/ko/integrations/language-clients/go/config-reference)를 참조하십시오.
+</Tip>
+
+연결을 열 때 `Options` 구조체를 사용해 클라이언트 동작을 제어할 수 있습니다. 사용할 수 있는 설정은 다음과 같습니다.
+
+| Parameter              | Type                                               | Default            | Description                                                                                                                                                             |
+| ---------------------- | -------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Protocol`             | `Protocol`                                         | `Native`           | 전송 프로토콜입니다: `Native`(TCP) 또는 `HTTP`. [TCP vs HTTP](#tcp-vs-http)를 참조하십시오.                                                                                               |
+| `Addr`                 | `[]string`                                         | —                  | `host:port` 주소 슬라이스입니다. 여러 노드에 연결하는 방법은 [여러 노드에 연결하기](#connecting-to-multiple-nodes)을 참조하십시오.                                                                           |
+| `Auth`                 | `Auth`                                             | —                  | 인증 자격 증명(`Database`, `Username`, `Password`)입니다. [인증](#authentication)을 참조하십시오.                                                                                               |
+| `TLS`                  | `*tls.Config`                                      | `nil`              | TLS 구성입니다. `nil`이 아닌 값이면 TLS가 활성화됩니다. [TLS](#using-tls)를 참조하십시오.                                                                                                        |
+| `DialContext`          | `func(ctx, addr) (net.Conn, error)`                | —                  | TCP 연결을 설정하는 방식을 제어하는 사용자 지정 dial 함수입니다.                                                                                                                                |
+| `DialTimeout`          | `time.Duration`                                    | `30s`              | 새 연결을 열 때까지 기다리는 최대 시간입니다. 유휴 상태일 수 있는 ClickHouse Cloud 서비스에 연결할 때는 `1m`–`2m`로 늘리십시오 — [Timeouts](/ko/integrations/language-clients/go/config-reference#timeouts)를 참조하십시오. |
+| `MaxOpenConns`         | `int`                                              | `MaxIdleConns + 5` | 동시에 열어 둘 수 있는 최대 연결 수입니다.                                                                                                                                               |
+| `MaxIdleConns`         | `int`                                              | `5`                | 연결 풀에 유지할 유휴 연결 수입니다.                                                                                                                                                   |
+| `ConnMaxLifetime`      | `time.Duration`                                    | `1h`               | 연결 풀의 연결이 유지될 수 있는 최대 시간입니다. [연결 풀링](#connection-pooling)을 참조하십시오.                                                                                                      |
+| `ConnOpenStrategy`     | `ConnOpenStrategy`                                 | `ConnOpenInOrder`  | `Addr`에서 노드를 선택하는 전략입니다. [여러 노드에 연결하기](#connecting-to-multiple-nodes)을 참조하십시오.                                                                                          |
+| `BlockBufferSize`      | `uint8`                                            | `2`                | 병렬로 디코딩할 블록 수입니다. 값을 높이면 메모리 사용량이 증가하는 대신 처리량이 늘어납니다. `context`를 통해 쿼리별로 재정의할 수 있습니다.                                                                                   |
+| `Settings`             | `Settings`                                         | —                  | 모든 쿼리에 적용되는 ClickHouse settings의 맵입니다. 개별 쿼리는 [context](/ko/integrations/language-clients/go/clickhouse-api#using-context)를 통해 재정의할 수 있습니다.                                |
+| `Compression`          | `*Compression`                                     | `nil`              | 블록 수준 압축입니다. [압축](#compression)을 참조하십시오.                                                                                                                               |
+| `ReadTimeout`          | `time.Duration`                                    | —                  | 한 번의 호출에서 server로부터 읽기를 기다리는 최대 시간입니다.                                                                                                                                  |
+| `FreeBufOnConnRelease` | `bool`                                             | `false`            | true이면 매 쿼리마다 연결의 메모리 버퍼를 풀로 반환합니다. CPU 사용량이 약간 늘어나는 대신 메모리 사용량을 줄일 수 있습니다.                                                                                             |
+| `Logger`               | `*slog.Logger`                                     | `nil`              | 구조화된 로거(Go `log/slog`)입니다. [로깅](#logging)을 참조하십시오.                                                                                                                       |
+| `Debug`                | `bool`                                             | `false`            | **Deprecated.** 대신 `Logger`를 사용하십시오. stdout으로 레거시 디버그 출력을 활성화합니다.                                                                                                       |
+| `Debugf`               | `func(string, ...any)`                             | —                  | **Deprecated.** 대신 `Logger`를 사용하십시오. 사용자 지정 디버그 로그 함수입니다. `Debug: true`가 필요합니다.                                                                                         |
+| `GetJWT`               | `GetJWTFunc`                                       | —                  | ClickHouse Cloud 인증에 사용할 JWT 토큰을 반환하는 콜백입니다(HTTPS 전용).                                                                                                                  |
+| `HttpHeaders`          | `map[string]string`                                | —                  | 모든 요청에 전송되는 추가 HTTP headers입니다(HTTP 전송 전용).                                                                                                                             |
+| `HttpUrlPath`          | `string`                                           | —                  | HTTP 요청에 덧붙이는 추가 URL 경로입니다(HTTP 전송 전용).                                                                                                                                 |
+| `HttpMaxConnsPerHost`  | `int`                                              | —                  | 내부 `http.Transport`의 `MaxConnsPerHost`를 재정의합니다(HTTP 전송 전용).                                                                                                             |
+| `TransportFunc`        | `func(*http.Transport) (http.RoundTripper, error)` | —                  | 사용자 지정 HTTP 전송 팩터리입니다. 필요한 항목만 선택적으로 재정의할 수 있도록 기본 전송이 함께 전달됩니다(HTTP 전송 전용).                                                                                            |
+| `HTTPProxyURL`         | `*url.URL`                                         | —                  | 모든 요청에 사용할 HTTP 프록시 URL입니다(HTTP 전송 전용).                                                                                                                                 |
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    DialContext: func(ctx context.Context, addr string) (net.Conn, error) {
+        dialCount++
+        var d net.Dialer
+        return d.DialContext(ctx, "tcp", addr)
+    },
+    Debug: true,
+    Debugf: func(format string, v ...interface{}) {
+        fmt.Printf(format, v)
+    },
+    Settings: clickhouse.Settings{
+        "max_execution_time": 60,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionLZ4,
+    },
+    DialTimeout:      time.Duration(10) * time.Second,
+    MaxOpenConns:     5,
+    MaxIdleConns:     5,
+    ConnMaxLifetime:  time.Duration(10) * time.Minute,
+    ConnOpenStrategy: clickhouse.ConnOpenInOrder,
+    BlockBufferSize: 10,
+})
+if err != nil {
+    return err
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/connect_settings.go)
+
+<div id="using-tls">
+  ## TLS
+</div>
+
+하위 수준에서는 모든 클라이언트 연결 메서드(`DSN/OpenDB/Open`)가 보안 연결을 설정하기 위해 [Go tls 패키지](https://pkg.go.dev/crypto/tls)를 사용합니다. `Options` 구조체에 nil이 아닌 `tls.Config` 포인터가 포함되어 있으면 클라이언트는 TLS를 사용해야 함을 인식합니다.
+
+```go
+env, err := GetNativeTestEnvironment()
+if err != nil {
+    return err
+}
+cwd, err := os.Getwd()
+if err != nil {
+    return err
+}
+t := &tls.Config{}
+caCert, err := ioutil.ReadFile(path.Join(cwd, "../../tests/resources/CAroot.crt"))
+if err != nil {
+    return err
+}
+caCertPool := x509.NewCertPool()
+successful := caCertPool.AppendCertsFromPEM(caCert)
+if !successful {
+    return err
+}
+t.RootCAs = caCertPool
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.SslPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    TLS: t,
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+fmt.Println(v.String())
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ssl.go)
+
+이 간단한 `TLS.Config`만으로도 일반적으로 ClickHouse 서버의 보안 네이티브 포트(보통 9440)에 연결하기에 충분합니다. ClickHouse 서버에 유효한 인증서가 없는 경우(인증서가 만료되었거나, 호스트명이 일치하지 않거나, 공개적으로 신뢰되는 루트 인증 기관에서 서명되지 않은 경우) `InsecureSkipVerify`를 true로 설정할 수는 있지만, 이는 강력히 권장되지 않습니다.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.SslPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    TLS: &tls.Config{
+        InsecureSkipVerify: true,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ssl_no_verify.go)
+
+추가 TLS 매개변수가 필요하면 애플리케이션 코드에서 `tls.Config` 구조체의 원하는 필드를 설정해야 합니다. 여기에는 특정 암호 스위트 지정, 특정 TLS 버전(예: 1.2 또는 1.3) 사용 강제, 내부 CA 인증서 체인 추가, ClickHouse 서버에서 요구하는 경우 클라이언트 인증서(및 개인 키) 추가, 그리고 보다 특수한 보안 구성에 필요한 대부분의 다른 옵션이 포함될 수 있습니다.
+
+<div id="authentication">
+  ## 인증
+</div>
+
+username과 password를 지정하려면 연결 정보에 Auth 구조체를 지정합니다.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+
+v, err := conn.ServerVersion()
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/auth.go)
+
+<div id="connecting-to-multiple-nodes">
+  ## 여러 노드에 연결하기
+</div>
+
+여러 주소는 `Addr` 구조체를 통해 지정할 수 있습니다.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{"127.0.0.1:9001", "127.0.0.1:9002", fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+fmt.Println(v.String())
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/1c0d81d0b1388dbb9e09209e535667df212f4ae4/examples/clickhouse_api/multi_host.go#L26-L45)
+
+사용 가능한 연결 전략은 3가지입니다:
+
+* `ConnOpenInOrder` (기본값)  - 주소를 정의된 순서대로 사용합니다. 목록 앞부분의 주소로 연결하지 못한 경우에만 뒤의 주소를 사용합니다. 사실상 장애 조치(failover) 전략입니다.
+* `ConnOpenRoundRobin` - 라운드 로빈 전략으로 각 주소에 부하를 분산합니다.
+* `ConnOpenRandom` - 주소 목록에서 임의로 노드를 선택합니다.
+
+이는 `ConnOpenStrategy` 옵션으로 제어할 수 있습니다.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:             []string{"127.0.0.1:9001", "127.0.0.1:9002", fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    ConnOpenStrategy: clickhouse.ConnOpenRoundRobin,
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/1c0d81d0b1388dbb9e09209e535667df212f4ae4/examples/clickhouse_api/multi_host.go#L50-L67)
+
+<div id="connection-pooling">
+  ## 연결 풀링
+</div>
+
+클라이언트는 연결 풀을 유지하며, 필요에 따라 쿼리 전반에서 이를 재사용합니다. 어느 시점에서든 최대 `MaxOpenConns`개까지 사용되며, 최대 풀 크기는 `MaxIdleConns`로 제어됩니다. 클라이언트는 각 쿼리를 실행할 때마다 풀에서 연결을 가져오고, 재사용할 수 있도록 다시 풀에 반환합니다. 연결은 배치(Batch)가 유지되는 동안 사용되며 `Send()` 시 해제됩니다.
+
+사용자가 `MaxOpenConns=1`로 설정하지 않는 한, 풀 내에서 동일한 연결이 후속 쿼리에도 사용된다고 보장할 수는 없습니다. 이런 설정이 필요한 경우는 드물지만, 임시 테이블(temporary table)을 사용하는 경우에는 필요할 수 있습니다.
+
+또한 `ConnMaxLifetime`의 기본값은 1시간입니다. 이로 인해 노드가 cluster를 이탈하면 ClickHouse에 대한 부하가 불균형해질 수 있습니다. 이는 특정 노드를 사용할 수 없게 되면 연결이 다른 노드로 분산되기 때문에 발생할 수 있습니다. 이렇게 분산된 연결은 문제가 있던 노드가 cluster에 다시 합류하더라도 기본적으로 1시간 동안 유지되며 갱신되지 않습니다. workload가 많은 경우에는 이 값을 낮추는 것이 좋습니다.
+
+연결 풀링은 네이티브(TCP) 및 HTTP 프로토콜 모두에서 활성화됩니다.
+
+<div id="logging">
+  ## 로깅
+</div>
+
+클라이언트는 `Options`의 `Logger` 필드를 사용해 Go의 표준 `log/slog` 패키지로 구조화된 로깅을 지원합니다. 기존 `Debug` 및 `Debugf` 필드는 사용 중단 예정(deprecated)이지만, 하위 호환성을 위해 계속 동작합니다(우선순위: `Debugf` &gt; `Logger` &gt; no-op).
+
+```go
+import (
+    "log/slog"
+    "os"
+)
+
+// JSON 구조화 로깅
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+}))
+
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Logger: logger,
+})
+```
+
+애플리케이션 수준의 컨텍스트를 추가해 로거를 보강할 수도 있습니다:
+
+```go
+baseLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelInfo,
+}))
+enrichedLogger := baseLogger.With(
+    slog.String("service", "my-service"),
+    slog.String("environment", "production"),
+)
+
+conn, err := clickhouse.Open(&clickhouse.Options{
+    // ...
+    Logger: enrichedLogger,
+})
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/logger_test.go)
+
+<div id="compression">
+  ## 압축
+</div>
+
+압축 메서드 지원은 사용 중인 하위 프로토콜에 따라 달라집니다. 네이티브 프로토콜의 경우 클라이언트는 `LZ4` 및 `ZSTD` 압축을 지원합니다. 이는 블록 수준에서만 수행됩니다. 연결에 `Compression` 구성을 포함하면 압축을 활성화할 수 있습니다.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionZSTD,
+    },
+    MaxOpenConns: 1,
+})
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(context.Background(), "DROP TABLE IF EXISTS example")
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            Col1 Array(String)
+    ) Engine Memory
+    `); err != nil {
+    return err
+}
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+for i := 0; i < 1000; i++ {
+    if err := batch.Append([]string{strconv.Itoa(i), strconv.Itoa(i + 1), strconv.Itoa(i + 2), strconv.Itoa(i + 3)}); err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/compression.go)
+
+HTTP 전송에서는 `gzip`, `deflate`, `br`와 같은 추가 압축 기법도 사용할 수 있습니다. 자세한 내용은 [Database/SQL API - 압축](/ko/integrations/language-clients/go/database-sql-api#compression)을 참조하십시오.
+
+<div id="tcp-vs-http">
+  ## TCP vs HTTP
+</div>
+
+전송 방식은 구성 스위치 하나로만 전환되며, 이 가이드의 나머지 내용은 두 방식에 모두 동일하게 적용됩니다. 달라지는 점은 다음과 같습니다:
+
+|                                | TCP (네이티브 프로토콜)       | HTTP                                                |
+| :----------------------------- | :-------------------- | :-------------------------------------------------- |
+| **기본 포트**                      | 9000 (평문), 9440 (TLS) | 8123 (평문), 8443 (TLS)                               |
+| **활성화**                        | 기본값 — `Protocol` 생략   | `Protocol: clickhouse.HTTP` 또는 `http://` DSN 사용     |
+| **압축**                         | `lz4`, `zstd`         | `lz4`, `zstd`, `gzip`, `deflate`, `br`              |
+| **세션**                         | 기본 내장(항상 활성화)         | 명시적 — `session_id`를 설정으로 전달                         |
+| **HTTP 헤더**                    | —                     | `HttpHeaders`, `HttpUrlPath`, `HttpMaxConnsPerHost` |
+| **사용자 정의 전송**                  | —                     | `TransportFunc`                                     |
+| **JWT 인증**                     | —                     | `GetJWT` (ClickHouse Cloud HTTPS)                   |
+| **OpenTelemetry (`WithSpan`)** | ✅                     | 서버는 지원하지만 클라이언트는 아직 `traceparent` 헤더를 보내지 않음        |
+
+각 API를 HTTP로 전환하려면:
+
+```go
+// HTTP를 통한 ClickHouse API
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:     []string{"host:8123"},
+    Protocol: clickhouse.HTTP,
+    // ... 인증 등
+})
+
+// HTTP를 통한 database/sql — Options 방식
+conn := clickhouse.OpenDB(&clickhouse.Options{
+    Addr:     []string{"host:8123"},
+    Protocol: clickhouse.HTTP,
+    // ... 인증 등
+})
+
+// HTTP를 통한 database/sql — DSN 방식
+conn, err := sql.Open("clickhouse", "http://host:8123?username=user&password=pass")
+```

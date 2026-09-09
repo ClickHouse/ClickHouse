@@ -11,6 +11,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int PROTOBUF_BAD_CAST;
+}
+
 ProtobufListInputFormat::ProtobufListInputFormat(
     ReadBuffer & in_,
     SharedHeader header_,
@@ -106,7 +111,11 @@ size_t ProtobufListInputFormat::countRows(size_t max_block_size)
     while (!reader->eof() && num_rows < max_block_size)
     {
         int tag = 0;
-        reader->readFieldNumber(tag);
+        /// readFieldNumber returns false without consuming input once the envelope message is
+        /// exhausted, whereas reader->eof() reports only the underlying buffer, so on a truncated
+        /// message the two disagree and this is the authoritative end of data.
+        if (!reader->readFieldNumber(tag))
+            throw Exception(ErrorCodes::PROTOBUF_BAD_CAST, "Unexpected end of ProtobufList message");
         reader->startNestedMessage();
         reader->endNestedMessage();
         ++num_rows;
@@ -162,6 +171,52 @@ void registerInputFormatProtobufList(FormatFactory & factory)
                 settings.schema.format_schema,
                 settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference);
         });
+
+    factory.setDocumentation("ProtobufList", Documentation{
+        .description = R"DOCS_MD(
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge/>
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+The `ProtobufList` format is similar to the [`Protobuf`](/reference/formats/Protobuf/Protobuf) format but rows are represented as a sequence of sub-messages contained in a message with a fixed name of "Envelope".
+
+## Example usage {#example-usage}
+
+For example:
+
+```sql
+SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
+```
+
+```bash
+cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
+```
+
+Where the file `schemafile.proto` looks like this:
+
+```capnp title="schemafile.proto"
+syntax = "proto3";
+message Envelope {
+  message MessageType {
+    string name = 1;
+    string surname = 2;
+    uint32 birthDate = 3;
+    repeated string phoneNumbers = 4;
+  };
+  MessageType row = 1;
+};
+```
+
+The message type specified in `format_schema` is resolved by first looking for it as a nested type inside a top-level `Envelope` message. If no match is found there — either because the schema has no `Envelope` message, or the `Envelope` does not contain a message with the requested name — the top-level message with that name is used directly.
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 void registerProtobufListSchemaReader(FormatFactory & factory);

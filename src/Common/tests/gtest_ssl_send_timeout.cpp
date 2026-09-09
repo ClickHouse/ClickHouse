@@ -13,91 +13,11 @@
 #include <Poco/Timespan.h>
 #include <Poco/Exception.h>
 
-#include <openssl/evp.h>
-#include <openssl/pem.h>
-#include <openssl/x509.h>
+#include <Common/tests/gtest_ephemeral_certificate.h>
 
 #include <thread>
 #include <atomic>
 #include <vector>
-
-
-namespace
-{
-
-/// Generate a self-signed certificate and private key in memory,
-/// write them to temporary files for Poco::Net::Context.
-struct EphemeralCert
-{
-    std::string cert_path;
-    std::string key_path;
-
-    EphemeralCert()
-    {
-        EVP_PKEY * pkey = EVP_RSA_gen(2048);
-        if (!pkey)
-            throw std::runtime_error("EVP_RSA_gen failed");
-
-        X509 * x509 = X509_new();
-        if (!x509)
-        {
-            EVP_PKEY_free(pkey);
-            throw std::runtime_error("X509_new failed");
-        }
-
-        ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
-        X509_gmtime_adj(X509_getm_notBefore(x509), 0);
-        X509_gmtime_adj(X509_getm_notAfter(x509), 3600);
-        X509_set_pubkey(x509, pkey);
-
-        X509_NAME * name = X509_get_subject_name(x509);
-        X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char *>("localhost"), -1, -1, 0);
-        X509_set_issuer_name(x509, name);
-        X509_sign(x509, pkey, EVP_sha256());
-
-        cert_path = writeToTempFile(
-            [&](BIO * bio) { PEM_write_bio_X509(bio, x509); }, "cert");
-        key_path = writeToTempFile(
-            [&](BIO * bio) { PEM_write_bio_PrivateKey(bio, pkey, nullptr, nullptr, 0, nullptr, nullptr); }, "key");
-
-        X509_free(x509);
-        EVP_PKEY_free(pkey);
-    }
-
-    ~EphemeralCert()
-    {
-        (void)unlink(cert_path.c_str());
-        (void)unlink(key_path.c_str());
-    }
-
-private:
-    template <typename Fn>
-    static std::string writeToTempFile(Fn writer, const char * suffix)
-    {
-        char path[256];
-        (void)snprintf(path, sizeof(path), "/tmp/gtest_ssl_%s_XXXXXX", suffix);
-        int fd = mkstemp(path);
-        if (fd < 0)
-            throw std::runtime_error("mkstemp failed");
-
-        BIO * bio = BIO_new_fd(fd, BIO_CLOSE);
-        writer(bio);
-        BIO_free(bio);
-        return path;
-    }
-};
-
-
-Poco::Net::Context::Ptr makeContext(const EphemeralCert & cert, Poco::Net::Context::Usage usage)
-{
-    Poco::Net::Context::Params params;
-    params.privateKeyFile = cert.key_path;
-    params.certificateFile = cert.cert_path;
-    params.verificationMode = Poco::Net::Context::VERIFY_NONE;
-    return new Poco::Net::Context(usage, params);
-}
-
-}
 
 
 /// Test that a blocking SSL socket write throws TimeoutException
@@ -105,8 +25,8 @@ Poco::Net::Context::Ptr makeContext(const EphemeralCert & cert, Poco::Net::Conte
 TEST(SSLSocketTimeout, SendBytesThrowsTimeoutOnBlockingSocket)
 {
     EphemeralCert cert;
-    auto server_ctx = makeContext(cert, Poco::Net::Context::SERVER_USE);
-    auto client_ctx = makeContext(cert, Poco::Net::Context::CLIENT_USE);
+    auto server_ctx = cert.makeContext(Poco::Net::Context::SERVER_USE);
+    auto client_ctx = cert.makeContext(Poco::Net::Context::CLIENT_USE);
 
     Poco::Net::SecureServerSocket server_socket(
         Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx);
@@ -188,7 +108,7 @@ TEST(SSLSocketTimeout, SendBytesThrowsTimeoutOnBlockingSocket)
 TEST(SSLSocketTimeout, HandshakeThrowsTimeoutOnNonSSLPeer)
 {
     EphemeralCert cert;
-    auto client_ctx = makeContext(cert, Poco::Net::Context::CLIENT_USE);
+    auto client_ctx = cert.makeContext(Poco::Net::Context::CLIENT_USE);
 
     /// Listen but never accept -- kernel backlog handles TCP handshake.
     Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1);

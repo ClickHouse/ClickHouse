@@ -9,12 +9,27 @@ namespace BuzzHouse
 
 enum class DumpOracleStrategy
 {
-    DUMP_TABLE = 1,
+    DO_NOTHING = 0,
+    REINSERT_TABLE = 1,
     OPTIMIZE = 2,
     REATTACH = 3,
     BACKUP_RESTORE = 4,
     ALTER_UPDATE = 5,
-    INSERT_COUNT = 6
+    INSERT_COUNT = 6,
+    RENAME_BACK = 7,
+    FREEZE_UNFREEZE = 8,
+    MOVE_PARTITION = 9,
+    REPLACE_PARTITION = 10,
+    ALTER_COLUMN = 11,
+    ALTER_TABLE = 12,
+    TRUNCATE_COUNT = 13
+};
+
+enum class OracleCombination
+{
+    WHERE_ONLY = 0,
+    HAVING_ONLY = 1,
+    WHERE_AND_HAVING = 2
 };
 
 struct MatchHandler
@@ -29,7 +44,7 @@ struct MatchHandler
 class QueryOracle
 {
 private:
-    static const std::vector<std::vector<OutFormat>> oracleFormats;
+    static const DB::Strings oracleFormats;
     FuzzConfig & fc;
     const std::filesystem::path qcfile;
     const std::filesystem::path qsfile;
@@ -47,6 +62,7 @@ private:
     uint64_t nrows = 0;
     std::uniform_int_distribution<uint64_t> rows_dist;
     bool other_steps_success = true;
+    OracleCombination oracle_combination = OracleCombination::WHERE_ONLY;
     bool can_test_oracle_result;
     bool can_test_success;
     bool measure_performance;
@@ -104,6 +120,12 @@ public:
     /// Query 2: SELECT count() FROM <from_clause> WHERE roundtrip(col) = col
     /// Both queries must return the same value, catching any roundtrip failures.
     void generateRoundtripOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
+
+    /// ARRAY JOIN oracle: ARRAY JOIN clause vs arrayJoin function.
+    /// Query 1: SELECT s0 FROM <from_clause> ARRAY JOIN expr AS s0 [GROUP BY s0] ORDER BY ALL
+    /// Query 2: SELECT arrayJoin(expr) AS s0 FROM <from_clause> [GROUP BY s0] ORDER BY ALL
+    /// Both must produce identical sorted result sets.
+    void generateArrayJoinOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2);
 
     /// COUNT(DISTINCT expr) consistency oracle
     /// Query 1: SELECT COUNT(DISTINCT expr) FROM <from_clause>

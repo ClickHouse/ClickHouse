@@ -21,6 +21,8 @@
 extern "C"
 {
     extern void zone_register();
+    /// Wrap the default (jemalloc) malloc zone's callbacks so raw C allocations are tracked. Defined in malloc.cpp.
+    void initializeJemallocZoneMemoryTracking();
 }
 
 static struct InitializeJemallocZoneAllocatorForOSX
@@ -37,6 +39,8 @@ static struct InitializeJemallocZoneAllocatorForOSX
         {
             free(ptr);
         }
+        /// jemalloc is now the default zone; wrap its callbacks for memory tracking.
+        initializeJemallocZoneMemoryTracking();
     }
 } initializeJemallocZoneAllocatorForOSX;
 #endif

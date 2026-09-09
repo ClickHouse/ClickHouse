@@ -21,7 +21,9 @@ SpillingHashJoin::SpillingHashJoin(
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t initial_num_buckets_,
-    size_t max_num_buckets_)
+    size_t max_num_buckets_,
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    bool any_take_last_row_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -29,9 +31,14 @@ SpillingHashJoin::SpillingHashJoin(
     , tmp_data(std::move(tmp_data_))
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
+    , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    hash_join = std::make_shared<HashJoin>(table_join, right_sample_block_);
+    hash_join = std::make_shared<HashJoin>(
+        table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
+        /*is_concurrent_hash_join_=*/false, stats_collecting_params_);
+    /// Until the build phase ends this join may have to hand its right blocks to `GraceHashJoin`.
+    hash_join->keepRightBlocksForAnotherAlgorithm();
 }
 
 SpillingHashJoin::SpillingHashJoin(
@@ -42,7 +49,8 @@ SpillingHashJoin::SpillingHashJoin(
     size_t initial_num_buckets_,
     size_t max_num_buckets_,
     size_t concurrent_slots_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    bool any_take_last_row_)
     : log(getLogger("SpillingHashJoin"))
     , table_join(std::move(table_join_))
     , left_sample_block(std::move(left_sample_block_))
@@ -50,6 +58,7 @@ SpillingHashJoin::SpillingHashJoin(
     , tmp_data(std::move(tmp_data_))
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
+    , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
     concurrent_join = std::make_shared<ConcurrentHashJoin>(
@@ -57,8 +66,10 @@ SpillingHashJoin::SpillingHashJoin(
         concurrent_slots_,
         right_sample_block_,
         stats_collecting_params_,
-        /*any_take_last_row_=*/false,
+        any_take_last_row,
         max_bytes_before_external_join);
+    /// As above: the slots' blocks go to `GraceHashJoin` if the switch happens.
+    concurrent_join->keepRightBlocksForAnotherAlgorithm();
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
 }
 
@@ -187,7 +198,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
                 left_sample_block,
                 std::make_shared<const Block>(right_sample_block),
                 tmp_data,
-                /*any_take_last_row_=*/false,
+                any_take_last_row,
                 max_bytes_before_external_join);
             grace_join->initialize(*left_sample_block);
             chosen_join = grace_join;
@@ -214,7 +225,7 @@ void SpillingHashJoin::switchToGraceHashJoin()
         left_sample_block,
         std::make_shared<const Block>(right_sample_block),
         tmp_data,
-        /*any_take_last_row_=*/false,
+        any_take_last_row,
         max_bytes_before_external_join);
 
     chosen_join->initialize(*left_sample_block);
@@ -266,6 +277,43 @@ void SpillingHashJoin::onBuildPhaseFinish()
     }
 
     chosen_join->onBuildPhaseFinish();
+
+    /// The switch to `GraceHashJoin` can only happen while collecting, and that is over: whatever
+    /// right blocks were kept in case it did are now dead weight for the whole probe phase, so a
+    /// join that stores only the keys can drop them.
+    if (state.load(std::memory_order_acquire) == State::IN_MEMORY_JOIN)
+    {
+        if (concurrent_join)
+            concurrent_join->dropRightBlocksKeptForAnotherAlgorithm();
+        else
+            hash_join->dropRightBlocksKeptForAnotherAlgorithm();
+    }
+}
+
+void SpillingHashJoin::onProbePhaseFinish(size_t matched_right_rows)
+{
+    chosen_join->onProbePhaseFinish(matched_right_rows);
+}
+
+bool SpillingHashJoin::hasPostBuildPhase() const
+{
+    /// `FillingRightJoinSideTransform` asks this right after `onBuildPhaseFinish`, so `chosen_join`
+    /// is already set. Stay defensive anyway: with no chosen join there is nothing to post-process.
+    return chosen_join && chosen_join->hasPostBuildPhase();
+}
+
+void SpillingHashJoin::runPostBuildPhase()
+{
+    if (chosen_join)
+        chosen_join->runPostBuildPhase();
+}
+
+void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
+{
+    if (hash_join)
+        hash_join->setEnableLazyColumnsIndexing(value);
+    if (concurrent_join)
+        concurrent_join->setEnableLazyColumnsIndexing(value);
 }
 
 void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
@@ -279,7 +327,9 @@ void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 void SpillingHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
-    if (!concurrent_join)
+    if (concurrent_join)
+        concurrent_join->initialize(sample_block);
+    else
         hash_join->initialize(sample_block);
 }
 
@@ -340,6 +390,20 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
         return hash_join->alwaysReturnsEmptySet();
     }
     return chosen_join->alwaysReturnsEmptySet();
+}
+
+StepAnalysisReport SpillingHashJoin::getAnalysisReport() const
+{
+    /// This method always runs after the built phase, so in principal we could have
+    /// written it without this if statement. However, we keep it
+    /// for canonicity with the other accessors and safety in case the call order ever changes.
+    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    {
+        if (concurrent_join)
+            return concurrent_join->getAnalysisReport();
+        return hash_join->getAnalysisReport();
+    }
+    return chosen_join->getAnalysisReport();
 }
 
 bool SpillingHashJoin::supportParallelNonJoinedBlocksProcessing() const

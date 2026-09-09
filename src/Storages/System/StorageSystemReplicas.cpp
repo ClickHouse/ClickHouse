@@ -1,4 +1,5 @@
 #include <future>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <memory>
 
 #include <Columns/ColumnString.h>
@@ -184,7 +185,7 @@ void StorageSystemReplicas::readImpl(
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         /// Check if database can contain replicated tables
         if (db.second->isExternal())
@@ -397,7 +398,8 @@ Chunk SystemReplicasSource::generate()
         {
             if (e.code() == ErrorCodes::ABORTED)
             {
-                tryLogCurrentException(logger, "Received the ABORTED error while trying to get the status of a storage, this is likely because it has been shut down");
+                /// The table has been shut down or dropped, so its row is skipped instead of being reported as an error.
+                LOG_DEBUG(logger, "Cannot get the status of a storage: {}", e.displayText());
                 continue;
             }
             throw;
@@ -465,3 +467,6 @@ Chunk SystemReplicasSource::generate()
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemReplicas) }

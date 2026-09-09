@@ -73,6 +73,10 @@ Optional:
 
 - `--setup-nodes-snapshot-path` to build/update initial snapshot state inferred from expected replay outcomes.
 
+### Storage mode (`--storage`)
+
+Instead of a full Keeper cluster, runs only the KeeperStorage component, inside the keeper-bench process. Measures performance of just the storage and its request processing, without Raft, network, and request dispatch. `connections` configuration is not needed. Workload is generated the same way as in Generated mode.
+
 ## Configuration file
 
 Config can be YAML or XML.
@@ -359,6 +363,9 @@ list:
     path: PathGetter
     watch_probability: 0.5           # in [0.0, 1.0], default: 0 (no watches)
 ```
+
+Requests are sent as `getChildren`, the only list operation that ZooKeeper-compatible servers accept
+both standalone and as a `multi` sub-request; responses carry child names without a `Stat`.
 
 When `watch_probability` is set, each request has that probability of setting a watch on the node.
 Watch fire events are counted and reported in stats.

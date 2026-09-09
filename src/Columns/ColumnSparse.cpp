@@ -7,7 +7,6 @@
 #include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/iota.h>
 
 #include <algorithm>
@@ -55,7 +54,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
             "Size of sparse column ({}) should be greater than last position of non-default value ({})",
                 _size, offsets_concrete->getData().back());
 
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     const auto & offsets_data = getOffsetsData();
     const auto * it = std::adjacent_find(offsets_data.begin(), offsets_data.end(), std::greater_equal<>());
     if (it != offsets_data.end())
@@ -79,6 +78,15 @@ MutableColumnPtr ColumnSparse::cloneResized(size_t new_size) const
 bool ColumnSparse::isDefaultAt(size_t n) const
 {
     return getValueIndex(n) == 0;
+}
+
+bool ColumnSparse::hasOnlyTypeDefaults() const
+{
+    if (_size == 0)
+        return true;
+    /// All rows map to values[0] when offsets is empty, but values[0] may
+    /// not be the type-default (e.g. after deserialization), so verify it.
+    return getOffsetsData().empty() && values->isDefaultAt(0);
 }
 
 bool ColumnSparse::isNullAt(size_t n) const
@@ -177,11 +185,6 @@ std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n, const IColu
 void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
-}
-
-void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
-{
-    values->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -361,32 +364,36 @@ ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
     values_filter.push_back(static_cast<UInt8>(1));
     size_t values_result_size_hint = 1;
 
+    /// Walk the offsets array (small: only non-default rows) and for the runs of default
+    /// rows between offsets accumulate `res_offset` via SIMD popcount over `filt`. This
+    /// is O(non_defaults + _size/64) instead of O(_size).
+    const auto & src_offsets_data = getOffsetsData();
+    const size_t num_offsets = src_offsets_data.size();
+    const UInt8 * filt_data = filt.data();
+
     size_t res_offset = 0;
-    auto offset_it = begin();
-    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
-    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
-    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    size_t prev = 0;
+    for (size_t k = 0; k < num_offsets; ++k)
     {
-        if (!offset_it.isDefault())
+        const size_t row = src_offsets_data[k];
+        if (row > prev)
+            res_offset += countBytesInFilter(filt_data, prev, row);
+
+        if (filt_data[row])
         {
-            if (filt[i])
-            {
-                res_offsets_data.push_back(res_offset);
-                values_filter.push_back(static_cast<UInt8>(1));
-                ++res_offset;
-                ++values_result_size_hint;
-            }
-            else
-            {
-                values_filter.push_back(static_cast<UInt8>(0));
-            }
-            offset_it.increaseCurrentOffset();
+            res_offsets_data.push_back(res_offset);
+            values_filter.push_back(static_cast<UInt8>(1));
+            ++res_offset;
+            ++values_result_size_hint;
         }
         else
         {
-            res_offset += filt[i] != 0;
+            values_filter.push_back(static_cast<UInt8>(0));
         }
+        prev = row + 1;
     }
+    if (_size > prev)
+        res_offset += countBytesInFilter(filt_data, prev, _size);
 
     auto res_values = values->filter(values_filter, values_result_size_hint);
     return create(res_values, std::move(res_offsets), res_offset);
@@ -404,38 +411,40 @@ void ColumnSparse::filter(const Filter & filt)
     }
 
     auto & res_offsets_data = getOffsetsData();
+    const size_t num_offsets = res_offsets_data.size();
     size_t res_offsets_pos = 0;
 
     Filter values_filter;
     values_filter.reserve_exact(values->size());
     values_filter.push_back(static_cast<UInt8>(1));
 
+    /// See the const overload for the algorithm: walk the offsets and SIMD-popcount the
+    /// runs of default rows between them. In-place write into `res_offsets_data` is safe
+    /// because `res_offsets_pos <= k` always.
+    const UInt8 * filt_data = filt.data();
     size_t res_offset = 0;
-    auto offset_it = begin();
-    /// Replace the `++offset_it` with `offset_it.increaseCurrentRow()` and `offset_it.increaseCurrentOffset()`,
-    /// to remove the redundant `isDefault()` in `++` of `Interator` and reuse the following `isDefault()`.
-    for (size_t i = 0; i < _size; ++i, offset_it.increaseCurrentRow())
+    size_t prev = 0;
+    for (size_t k = 0; k < num_offsets; ++k)
     {
-        if (!offset_it.isDefault())
+        const size_t row = res_offsets_data[k];
+        if (row > prev)
+            res_offset += countBytesInFilter(filt_data, prev, row);
+
+        if (filt_data[row])
         {
-            if (filt[i])
-            {
-                res_offsets_data[res_offsets_pos] = res_offset;
-                values_filter.push_back(static_cast<UInt8>(1));
-                ++res_offsets_pos;
-                ++res_offset;
-            }
-            else
-            {
-                values_filter.push_back(static_cast<UInt8>(0));
-            }
-            offset_it.increaseCurrentOffset();
+            res_offsets_data[res_offsets_pos] = res_offset;
+            values_filter.push_back(static_cast<UInt8>(1));
+            ++res_offsets_pos;
+            ++res_offset;
         }
         else
         {
-            res_offset += filt[i] != 0;
+            values_filter.push_back(static_cast<UInt8>(0));
         }
+        prev = row + 1;
     }
+    if (_size > prev)
+        res_offset += countBytesInFilter(filt_data, prev, _size);
 
     values->filter(values_filter);
     res_offsets_data.resize_assume_reserved(res_offsets_pos);
@@ -497,6 +506,32 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     auto res_values = values->cloneEmpty();
     res_values->insertDefault();
 
+    auto insert_run = [&](size_t value_index, size_t output_start, size_t length)
+    {
+        if (value_index == 0)
+            return;
+
+        if (length == 1)
+        {
+            res_values->insertFrom(*values, value_index);
+            res_offsets_data.push_back(output_start);
+            return;
+        }
+
+        res_values->insertManyFrom(*values, value_index, length);
+        for (size_t i = 0; i < length; ++i)
+            res_offsets_data.push_back(output_start + i);
+    };
+
+    auto get_run_end = [&](size_t start)
+    {
+        const auto index = indexes[start];
+        size_t end = start + 1;
+        while (end < limit && indexes[end] == index)
+            ++end;
+        return end;
+    };
+
     /// If we need to permute full column, or if limit is large enough,
     /// it's better to save indexes of values in O(size)
     /// and avoid binary search for obtaining every index.
@@ -511,26 +546,20 @@ ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         for (size_t i = 0; i < _size; ++i, ++offset_it)
             values_index[i] = offset_it.getValueIndex();
 
-        for (size_t i = 0; i < limit; ++i)
+        for (size_t i = 0; i < limit;)
         {
-            size_t index = values_index[indexes[i]];
-            if (index != 0)
-            {
-                res_values->insertFrom(*values, index);
-                res_offsets_data.push_back(i);
-            }
+            size_t run_end = get_run_end(i);
+            insert_run(values_index[indexes[i]], i, run_end - i);
+            i = run_end;
         }
     }
     else
     {
-        for (size_t i = 0; i < limit; ++i)
+        for (size_t i = 0; i < limit;)
         {
-            size_t index = getValueIndex(indexes[i]);
-            if (index != 0)
-            {
-                res_values->insertFrom(*values, index);
-                res_offsets_data.push_back(i);
-            }
+            size_t run_end = get_run_end(i);
+            insert_run(getValueIndex(indexes[i]), i, run_end - i);
+            i = run_end;
         }
     }
 
@@ -775,22 +804,21 @@ void ColumnSparse::updateHashWithValue(size_t n, SipHash & hash) const
     values->updateHashWithValue(getValueIndex(n), hash);
 }
 
-WeakHash32 ColumnSparse::getWeakHash32() const
+void ColumnSparse::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 values_hash = values->getWeakHash32();
-    WeakHash32 hash(size());
+    const size_t values_size = values->size();
 
-    auto & hash_data = hash.getData();
-    auto & values_hash_data = values_hash.getData();
+    PaddedPODArray<UInt32> values_hash(values_size);
+    if (values_size)
+        values->computeHashInto(0, values_size, values_hash.data(), true);
 
-    auto offset_it = begin();
-    for (size_t i = 0; i < _size; ++i, ++offset_it)
+    auto offset_it = getIterator(row_begin);
+    for (size_t i = row_begin; i < row_end; ++i, ++offset_it)
     {
-        size_t value_index = offset_it.getValueIndex();
-        hash_data[i] = values_hash_data[value_index];
+        const UInt32 value = values_hash[offset_it.getValueIndex()];
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? value : combineWeakHash32(value, out);
     }
-
-    return hash;
 }
 
 void ColumnSparse::updateHashFast(SipHash & hash) const
@@ -981,6 +1009,26 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     }
 
     return column->convertToFullColumnIfSparse();
+}
+
+bool recursiveHasSparse(const ColumnPtr & column)
+{
+    if (!column)
+        return false;
+
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+        return recursiveHasSparse(column_replicated->getNestedColumn());
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        for (const auto & element : column_tuple->getColumns())
+            if (recursiveHasSparse(element))
+                return true;
+
+        return false;
+    }
+
+    return column->isSparse();
 }
 
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)

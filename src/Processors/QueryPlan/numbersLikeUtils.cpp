@@ -74,6 +74,24 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
 
     const auto & query = query_info.query->as<ASTSelectQuery &>();
 
+    /// `arrayJoin` (function or `ARRAY JOIN` clause) changes row cardinality after the
+    /// source has run. Pushing the outer `LIMIT` into the source would truncate input
+    /// rows BEFORE expansion, silently dropping output rows when arrays are empty or
+    /// producing wrong rows when arrays expand. See issue #82279 and the sibling guards
+    /// in the query-plan optimizer passes (`liftUpFunctions`, `optimizeLazyMaterialization`,
+    /// `optimizeTopK`, `topKThroughJoin`, `pushLimitByIntoSort`,
+    /// `optimizePrimaryKeyConditionAndLimit`).
+    ///
+    /// The `arrayJoin` function call appears in the SELECT clause, while the `ARRAY JOIN`
+    /// clause is stored separately in `arrayJoinExpressionList()` (the clause itself is
+    /// already an array-join operation, regardless of what its expressions contain).
+    /// Both forms must reject pushdown.
+    /// The function may sit in any clause, e.g. only in WHERE through a WITH alias, and still multiply the rows.
+    if (astContainsArrayJoinFunction(query_info.query))
+        return false;
+    if (query.arrayJoinExpressionList().first)
+        return false;
+
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
     return !query.distinct
@@ -83,7 +101,9 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
         /// For the analyzer, window will be deleted from AST, so we should not use query.window()
         && !query_info.has_window
         && !query_info.additional_filter_ast
-        && !query.limit_with_ties;
+        && !query.limit_with_ties
+        && !query.limitAfter()
+        && !query.limitUntil();
 }
 
 }

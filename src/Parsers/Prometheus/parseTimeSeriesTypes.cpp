@@ -1,5 +1,6 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
+#include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
 #include <Common/quoteString.h>
 #include <Core/DecimalFunctions.h>
@@ -46,8 +47,16 @@ namespace
     template <is_decimal T>
     T getFromFloat(Float64 float_value, UInt32 scale)
     {
+        /// A non-finite value bypasses the range check below (every comparison with NaN is false),
+        /// so the final static_cast<NativeType>(NaN) would be undefined behavior. Reject it up front.
+        if (!std::isfinite(float_value))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot convert {} to {}: the value is not finite",
+                            float_value, getTypeName<T>());
+        }
         Float64 scaled_value = float_value * static_cast<Float64>(DecimalUtils::scaleMultiplier<T>(scale));
-        if ((scaled_value > static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
+        if ((scaled_value >= static_cast<Float64>(std::numeric_limits<typename T::NativeType>::max())) ||
             (scaled_value < static_cast<Float64>(std::numeric_limits<typename T::NativeType>::min())))
         {
             throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
@@ -159,8 +168,11 @@ namespace
             if (PrometheusQueryParsingUtil::tryParseTimestamp(str, scale, result, &error_message, &error_pos))
                 return result;
 
+            /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
             ReadBufferFromString buf{str};
-            if (tryReadDateTime64Text(result, scale, buf))
+            if (tryReadDateTime64Text(result, scale, buf, DateLUT::instance(),
+                    /* allowed_date_delimiters = */ nullptr, /* allowed_time_delimiters = */ nullptr, /* saturate_on_overflow = */ false)
+                && buf.eof())
                 return result;
         }
         else
@@ -187,7 +199,14 @@ namespace
             }
             case Field::Types::UInt64:
             {
-                return getFromInt<T>(field.safeGet<UInt64>(), scale);
+                UInt64 uint_value = field.safeGet<UInt64>();
+                if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                {
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                                    "Cannot convert {} to {}: Overflow, the number is too big",
+                                    uint_value, getTypeName<T>());
+                }
+                return getFromInt<T>(static_cast<Int64>(uint_value), scale);
             }
             case Field::Types::Float64:
             {
