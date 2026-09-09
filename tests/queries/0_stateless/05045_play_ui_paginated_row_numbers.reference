@@ -10,4 +10,4 @@ createTextNode(this._rowNumberOffset() + this._row_idx)
                 skipped_rows: skipped_rows,
         skipped_rows: stateData.skipped_rows ?? 0,
 --- the replay of a failed snapshot numbers its rows from the persisted offset
-            el._skipped_rows = Number.isFinite(skipped_rows) && skipped_rows > 0 ? skipped_rows : 0;
+        el._skipped_rows = Number.isFinite(skipped_rows) && skipped_rows > 0 ? skipped_rows : 0;

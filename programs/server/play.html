@@ -12712,6 +12712,17 @@ async function materializeResult(tab) {
     let format = result.format;
     const kind = snapshotFramingKind(result);
 
+    if (!result.ok) {
+        /// The rows a failed run streamed before failing are replayed below, and they are numbered
+        /// from the offset of the page the run was on (see `_rowNumberOffset`): the shape itself was
+        /// dropped by the failure (see `postSingle`), so the offset comes from the snapshot, validated
+        /// like the rest of it rather than trusted. Set before any of the failure branches: the
+        /// default-format run of a current server is a framed `EventStream` and replays in the first
+        /// branch, not in the plain one.
+        const skipped_rows = Math.floor(Number(result.skipped_rows));
+        el._skipped_rows = Number.isFinite(skipped_rows) && skipped_rows > 0 ? skipped_rows : 0;
+    }
+
     if (kind === 'event_stream') {
         /// A framing `EventStream` snapshot: replay the multiplexed data, logs, progress, and
         /// (on failure) the exception. The default format is a table; any other format is raw text,
@@ -12762,12 +12773,8 @@ async function materializeResult(tab) {
         if (result.data || typeof result.display_error === 'string') {
             /// Replay any output that streamed before the mid-stream failure, exactly as the live
             /// path left it, with the error rendered beneath (see `renderFailedSnapshot`); replayed
-            /// table rows need the same layout pass as the success restore below. The rows are
-            /// numbered from the offset of the page the failed run was on (see `_rowNumberOffset`):
-            /// the shape itself was dropped by the failure, so it comes from the snapshot, validated
-            /// like the rest of it rather than trusted.
-            const skipped_rows = Math.floor(Number(result.skipped_rows));
-            el._skipped_rows = Number.isFinite(skipped_rows) && skipped_rows > 0 ? skipped_rows : 0;
+            /// table rows need the same layout pass as the success restore below, and are numbered
+            /// from the offset restored above.
             renderFailedSnapshot(el, result.data, format, result.exception_tag, result.display_error, result.plain_http_each_row_error);
             if (el.rowCount > 0) el._changeTableLayout();
         } else {
