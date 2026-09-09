@@ -478,7 +478,10 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        /// For `Map`, disabling statistics requires a getter that seeks each substream,
+        /// because corrected advanced shared data still writes an empty statistics flag.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;

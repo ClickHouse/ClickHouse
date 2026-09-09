@@ -792,7 +792,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             }
 
             /// Read statistics if needed.
-            if (settings.object_and_dynamic_read_statistics)
+            if (settings.read_statistics)
             {
                 bool has_statistics = true;
                 /// In V3 version we have additional flag that indicates if we have statistics or not.
