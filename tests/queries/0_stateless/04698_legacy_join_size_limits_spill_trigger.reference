@@ -9,3 +9,5 @@ legacy: grace_hash needs no spill threshold
 10
 legacy: the spill threshold does not apply
 2000000
+legacy: the caps spill the on-disk phase of hash instead of failing it
+200000

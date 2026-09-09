@@ -3790,8 +3790,10 @@ Defines what action ClickHouse performs when a join reaches any of the following
 
 Every hash-based [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm)
 value honors this setting, including the ones that spill to disk: reaching the
-limit stops the query rather than triggering a spill. `ie_join` honors it as
-well, on the input it accumulates from both sides. `partial_merge` still
+limit stops the query rather than triggering a spill. The exception is
+`legacy_join_size_limits_trigger_spilling`: with it on, the part of a join that
+already runs on disk spills further instead of acting on this setting.
+`ie_join` honors it as well, on the input it accumulates from both sides. `partial_merge` still
 handles the limits by switching strategy — see
 [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
