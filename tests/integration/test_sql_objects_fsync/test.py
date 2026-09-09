@@ -70,8 +70,9 @@ def test_sql_object_writes_are_fsynced():
     reading the FileSync / DirectorySync ProfileEvents of each DDL query: the write
     runs synchronously on the query thread, so its fsync is attributed to the query.
 
-    With fsync_metadata = 1 every create renames a `.sql` (file + directory fsync)
-    and every drop unlinks it (directory fsync, nothing to content-sync). Named
+    With fsync_metadata = 1 every create persists the store directory's own entry and
+    renames a `.sql` (file fsync + two directory fsyncs), and every drop unlinks it
+    (directory fsync, nothing to content-sync). Named
     collections honor the global fsync_metadata (their storage uses the global
     context, matching the pre-existing content fsync), so they are checked with the
     default setting value of 1 only.
@@ -90,10 +91,10 @@ def test_sql_object_writes_are_fsynced():
         # First create: directory may be created here.
         _run(create1, 1)
 
-        # Second create: the directory already exists, so a directory fsync here is the
-        # commit rename being synced, not the mkdir.
+        # Second create: the store directory already exists, so the two directory syncs are
+        # its own entry and the commit rename. Either one alone leaves the other unproven.
         file_sync, dir_sync = _run(create2, 1)
-        assert file_sync >= 1 and dir_sync >= 1, f"{create2}: {file_sync}, {dir_sync}"
+        assert file_sync >= 1 and dir_sync >= 2, f"{create2}: {file_sync}, {dir_sync}"
 
         file_sync, dir_sync = _run(drop2, 1)
         assert dir_sync >= 1, f"{drop2} directory not synced: {file_sync}, {dir_sync}"
@@ -110,12 +111,12 @@ def test_sql_object_writes_are_fsynced():
         )
 
     # Named collections: their local storage syncs based on the (default = 1)
-    # fsync_metadata of the global context. Use a second create (directory already
-    # present) to isolate the commit-rename fsync.
+    # fsync_metadata of the global context. Use a second create, with the store directory
+    # already present, so the count is the store directory's entry plus the commit rename.
     _run("CREATE NAMED COLLECTION nc_fsync1 AS a = 1", 1)
 
     file_sync, dir_sync = _run("CREATE NAMED COLLECTION nc_fsync2 AS a = 1, b = 2", 1)
-    assert file_sync >= 1 and dir_sync >= 1, f"CREATE NAMED COLLECTION: {file_sync}, {dir_sync}"
+    assert file_sync >= 1 and dir_sync >= 2, f"CREATE NAMED COLLECTION: {file_sync}, {dir_sync}"
 
     file_sync, dir_sync = _run("DROP NAMED COLLECTION nc_fsync2", 1)
     assert dir_sync >= 1, f"DROP NAMED COLLECTION directory not synced: {file_sync}, {dir_sync}"
@@ -222,13 +223,14 @@ def test_failed_directory_sync_fails_the_ddl():
     `directory_sync_fail` makes the directory sync of every on-disk SQL-object store fail.
     Each store is first exercised with the failpoint disabled: that both proves the DDL
     itself is valid (so a raise below is caused by the failed sync, not by the statement)
-    and creates the store directory, so the failure under test is the commit sync rather
-    than a directory-creation sync.
+    and creates the store directory, so no directory has to be created below.
 
-    The file state after each failure also pins the ordering: the sync has to happen after
-    the rename or unlink it makes durable, so the `.sql` file is already in place when a
-    failing create raises and already gone when a failing drop raises. A sync moved before
-    the mutation would raise just the same, so the exception alone does not show this.
+    The file state after each failure also pins the ordering. A create persists the store
+    directory's entry before it writes the object, and every directory sync fails here, so it
+    stops there and leaves neither the object nor its temporary file behind. A drop's sync is
+    the one that makes its unlink durable, so it comes after it and the `.sql` file is already
+    gone when the drop raises. A sync moved before the unlink would raise just the same, so the
+    exception alone does not show this.
     """
     try:
         for i, (create, drop, committed_file) in enumerate(FAILING_SYNC_CASES):
@@ -240,8 +242,11 @@ def test_failed_directory_sync_fails_the_ddl():
             failing = f"ds_failing_{i}"
             with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
                 node.query(create.format(n=failing), settings={"fsync_metadata": 1})
-            assert _exists(committed_file.format(n=failing)), (
-                f"{failing}: the rename must already have committed when the sync failed"
+            assert not _exists(committed_file.format(n=failing)), (
+                f"{failing}: nothing may be committed once the store directory could not be persisted"
+            )
+            assert not _exists(committed_file.format(n=failing) + ".tmp"), (
+                f"{failing}: a temporary file was left behind, so a later attempt would fail on it"
             )
 
             with pytest.raises(QueryRuntimeException, match="Cannot fsync directory"):
@@ -298,4 +303,33 @@ def test_failed_store_directory_creation_is_rolled_back():
     assert node.query("SELECT count() FROM system.resources WHERE name = 'dc_probe'").strip() == "1"
 
     node.query("DROP RESOURCE dc_probe")
+    node.restart_clickhouse()
+
+
+def test_store_directory_of_an_unsynced_write_is_persisted_later():
+    """
+    A store directory created while fsync_metadata was disabled has an entry that was never
+    persisted. A later enabled write finds the directory present, so it used to sync only the
+    file it renames into it, and the object it acknowledged could still be lost together with
+    the directory holding it. An enabled write now persists the store directory's own entry as
+    well, whoever created it.
+    """
+    node.query("DROP RESOURCE IF EXISTS pd_disabled")
+    node.query("DROP RESOURCE IF EXISTS pd_enabled")
+    node.exec_in_container(["bash", "-c", f"rm -rf {WORKLOAD_ROOT}"])
+
+    # Creates the store directory and persists nothing, which is what the setting asks for.
+    _, dir_sync = _run("CREATE RESOURCE pd_disabled (WRITE DISK pd_disabled_disk)", 0)
+    assert dir_sync == 0, f"fsync_metadata=0 synced {dir_sync} directories"
+
+    # Nothing left to create, so the two syncs are the store directory's own entry and the
+    # rename committed inside it. Only the rename was synced before.
+    _, dir_sync = _run("CREATE RESOURCE pd_enabled (WRITE DISK pd_enabled_disk)", 1)
+    assert dir_sync >= 2, (
+        f"only {dir_sync} directory syncs, so the store directory left unpersisted by the "
+        "disabled write was not persisted here either"
+    )
+
+    node.query("DROP RESOURCE pd_enabled")
+    node.query("DROP RESOURCE pd_disabled")
     node.restart_clickhouse()

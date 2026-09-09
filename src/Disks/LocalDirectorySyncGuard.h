@@ -50,8 +50,9 @@ private:
     String path;
 };
 
-/// Creates `dir` and any missing ancestor of it. When `fsync` is set, each directory this call
-/// creates is persisted in its own parent, and failure to persist one throws.
+/// Creates `dir` and any missing ancestor of it. When `fsync` is set, `dir`'s own entry is
+/// persisted whether this call created it or found it, each ancestor this call creates is
+/// persisted in its parent, and failure to persist one throws.
 /// A file's own fsync does not persist its directory entry, which is why the directory holding
 /// it is synced separately after any create, rename or remove inside it.
 void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec);

@@ -136,6 +136,29 @@ void CheckedDirectorySync::sync()
     ProfileEvents::increment(ProfileEvents::DirectorySyncElapsedMicroseconds, watch.elapsedMicroseconds());
 }
 
+namespace
+{
+
+/// A relative leaf has no directory part of its own and lives in the current directory.
+void syncParentOf(const fs::path & path)
+{
+    const auto parent = path.parent_path();
+    CheckedDirectorySync parent_sync(parent.empty() ? "." : parent.string());
+    parent_sync.sync();
+}
+
+/// Deepest first, since a directory still holding another cannot be removed.
+void removeDirectories(const std::vector<fs::path> & dirs)
+{
+    for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
+    {
+        std::error_code remove_ec;
+        fs::remove(*it, remove_ec);
+    }
+}
+
+}
+
 void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & ec)
 {
     /// Strip a trailing separator so parent_path() walks real components.
@@ -143,38 +166,59 @@ void createDirectoriesAndSync(const String & dir, bool fsync, std::error_code & 
     if (!normalized.has_filename())
         normalized = normalized.parent_path();
 
-    /// Collect the not-yet-existing components before creating them, deepest first.
-    std::vector<fs::path> to_create;
-    if (fsync)
-        for (fs::path p = normalized; !p.empty() && p != p.parent_path() && !fs::exists(p); p = p.parent_path())
-            to_create.push_back(p);
-
-    fs::create_directories(normalized, ec);
-    if (ec || !fsync)
+    if (!fsync)
+    {
+        fs::create_directories(normalized, ec);
         return;
+    }
+
+    /// Collect the not-yet-existing components before creating them, deepest first.
+    std::vector<fs::path> missing;
+    for (fs::path p = normalized; !p.empty() && p != p.parent_path() && !fs::exists(p); p = p.parent_path())
+        missing.push_back(p);
+
+    /// Created one at a time, shallowest first: fs::create_directories does not report which
+    /// components it created, and only the directories this call created may be removed again
+    /// below. A single create returning false without an error is one that appeared in between,
+    /// so it belongs to whoever created it.
+    std::vector<fs::path> created;
+    bool created_leaf = false;
+    for (auto it = missing.rbegin(); it != missing.rend(); ++it)
+    {
+        std::error_code create_ec;
+        const bool is_new = fs::create_directory(*it, create_ec);
+        if (create_ec)
+        {
+            /// A half-made path left here would be taken for a finished one by the next call,
+            /// which would then never persist the entries of the components already present.
+            removeDirectories(created);
+            ec = create_ec;
+            return;
+        }
+        if (is_new)
+        {
+            created.push_back(*it);
+            created_leaf = (*it == normalized);
+        }
+    }
+    ec.clear();
 
     try
     {
         /// Persist each new component in its parent, shallowest first, so a directory only becomes
-        /// durably visible after the one containing it. A relative leaf has no directory part of
-        /// its own and lives in the current directory.
-        for (auto it = to_create.rbegin(); it != to_create.rend(); ++it)
-        {
-            const auto parent = it->parent_path();
-            CheckedDirectorySync parent_sync(parent.empty() ? "." : parent.string());
-            parent_sync.sync();
-        }
+        /// durably visible after the one containing it.
+        for (const auto & new_directory : created)
+            syncParentOf(new_directory);
+
+        /// A directory that was already there may come from a write that ran with fsync_metadata
+        /// disabled, so its entry was never persisted. Persist it here: an object committed inside
+        /// it is only as durable as the directory holding it.
+        if (!created_leaf)
+            syncParentOf(normalized);
     }
     catch (...)
     {
-        /// A directory kept here would be seen as already created by the next call, which would
-        /// then never persist its entry. Removal fails on one that is no longer empty, which
-        /// belongs to a concurrent writer.
-        for (const auto & created : to_create)
-        {
-            std::error_code remove_ec;
-            fs::remove(created, remove_ec);
-        }
+        removeDirectories(created);
         throw;
     }
 }
