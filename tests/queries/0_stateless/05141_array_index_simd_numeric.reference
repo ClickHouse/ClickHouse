@@ -13,4 +13,5 @@ UInt64 threshold	1	31	1	32	0	0	1	1
 UInt16 lane equality	0	0	1	1
 UInt32 lane equality	0	0	1	1
 UInt64 lane equality	0	0	1	1
+Unsigned max SIMD	1	41	1	21	1	13	1	9
 UInt32 duplicate SIMD	17	17
