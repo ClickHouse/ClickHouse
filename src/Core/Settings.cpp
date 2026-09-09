@@ -3421,49 +3421,23 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
 )", 0) \
     \
     DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
-An absolute threshold, in bytes, for tracked query memory. When exceeded, the final hash-based
-`DISTINCT` can spill temporary data to disk
-(see [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory)).
-Preliminary hash-based `DISTINCT` steps can release their optional hash sets and pass subsequent rows
-to the final deduplicating step. This can increase work in intervening steps such as sorting.
+Query memory threshold, in bytes, for spilling `DISTINCT` data to disk. Actual memory usage can exceed
+this threshold.
 
-`0` disables the absolute threshold. If `max_bytes_ratio_before_external_distinct` also supplies a
-threshold, the smaller threshold is used. Set both settings to `0` to disable external `DISTINCT`
-and its associated preliminary memory shedding.
+`0` disables this threshold. If `max_bytes_ratio_before_external_distinct` also provides a threshold,
+the smaller is used. Set both settings to `0` to disable spilling.
 
-The threshold is a trigger, not a hard memory bound. Memory used elsewhere in the query contributes
-to it, and processing blocks, preparing runs, and merging files require additional memory.
-The sorted-prefix `DISTINCT` optimization does not spill and can retain a large equal-prefix range.
-
-With external `DISTINCT` enabled, each chunk is also checked for possible hash-table growth before
-insertion. If the projected buffer allocations would leave insufficient server/user memory for
-spilling, the set is spilled or released first. The estimate treats all input rows as new keys, so
-it can trigger on duplicate-heavy input. This check excludes `max_memory_usage` and does not bound
-other allocations or concurrent memory usage.
-
-Key shapes that require serialized storage retain their key values even before spilling.
-The first spill also needs memory to materialize keys from the hash set.
+See [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory).
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_distinct, 0.5, R"(
-Derives a query-memory threshold for external `DISTINCT` as a fraction of available memory.
-The available memory is measured when the execution pipeline is built, under the strictest
-applicable server or user memory limit. For example, `0.6` uses 60% of that available memory.
-When no applicable memory limit is configured, the ratio contributes no threshold.
+Fraction of available server or user memory used to calculate the external `DISTINCT` threshold at
+the start of execution. For example, `0.5` uses half of the available memory.
 
-The threshold is compared with tracked memory used by the whole query. The final hash-based
-`DISTINCT` can spill, while preliminary hash-based steps can release their optional hash sets.
-Processing blocks, preparing runs, and merging files can exceed the threshold. The sorted-prefix
-`DISTINCT` optimization does not spill.
+Values must be at least `0` and less than `1`. `0` disables this threshold. Without an applicable
+server or user memory limit, the ratio has no effect.
 
-`0` disables the ratio threshold. If `max_bytes_before_external_distinct` also supplies a threshold,
-the smaller threshold is used. Set both settings to `0` to disable external `DISTINCT` and its
-associated preliminary memory shedding.
-
-:::note
-[max_memory_usage](#max_memory_usage) does not affect the available memory used to compute this ratio.
-To configure spilling for a query's memory limit, set `max_bytes_before_external_distinct` in addition
-to `max_memory_usage`, leaving room for processing blocks and merging runs.
-:::
+`max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
+use `max_bytes_before_external_distinct`, leaving room for additional memory usage.
 )", 0) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
