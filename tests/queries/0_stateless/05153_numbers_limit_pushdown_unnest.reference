@@ -18,3 +18,7 @@ generate_series
 3
 4
 5
+sql udf
+3
+4
+5
