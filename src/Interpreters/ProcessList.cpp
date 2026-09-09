@@ -331,12 +331,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
             if (thread_group->charge_memory_to_query_user && !already_on_a_user)
             {
-                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
-                if (Int64 allocated = thread_group->memory_tracker.get(); allocated > 0)
+                const Int64 allocated = thread_group->memory_tracker.get();
+                if (allocated > 0)
                 {
                     /// Moving them is not an allocation, so nothing checks the user's limit on the way in.
                     /// Check it here, or a query that allocated more than its own limit before it had a user
                     /// would start already above it and only be stopped by whatever it allocates next.
+                    /// Before the re-parent below, so a refusal does not leave the query freeing these bytes
+                    /// against a user that was never charged for them.
                     Int64 hard_limit = user_process_list.user_memory_tracker.getHardLimit();
                     Int64 will_be = user_process_list.user_memory_tracker.get() + allocated;
                     if (hard_limit && will_be > hard_limit)
@@ -347,9 +349,11 @@ ProcessList::EntryPtr ProcessList::insert(
                             ReadableSize(will_be),
                             ReadableSize(allocated),
                             ReadableSize(hard_limit));
-
-                    user_process_list.user_memory_tracker.transferToGlobal(-allocated);
                 }
+
+                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+                if (allocated > 0)
+                    user_process_list.user_memory_tracker.transferToGlobal(-allocated);
 
                 /// Mirror the tracker parent, so the query's monitor escalates against the user it joined.
                 thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
