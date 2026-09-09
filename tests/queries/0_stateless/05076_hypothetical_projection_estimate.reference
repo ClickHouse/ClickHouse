@@ -49,11 +49,14 @@ marks: 1
 rows: 100
 read_ratio: 1.00x
 verdict: not chosen
-reason: the same 1 mark would be read, and the projection order does not serve the ORDER BY
+reason: the same 1 mark would be read, and the query has no ORDER BY to serve
 source: empirical
 real:
 ReadFromMergeTree (default.t_real)
 Granules: 1
+--- a tie with an ORDER BY the projection order cannot serve ---
+verdict: not chosen
+reason: the same 1 mark would be read, and the projection order does not serve the ORDER BY
 --- key over a computed expression ---
 hypothetical:
 marks: 10
@@ -96,9 +99,9 @@ source: empirical
 real:
 ReadFromMergeTree (p_b)
 Granules: 10
-reason: Query has no filter predicate
-reason: Query has no filter predicate
-reason: Query has no filter predicate
+reason: Query has no filter predicate, and reading in order is disabled
+reason: Query has no filter predicate, and reading in order is disabled
+reason: Query has no filter predicate, and reading in order is disabled
 --- the INDEX form, which the optimizer serves the read from ---
 hypothetical:
 marks: 10

@@ -72,6 +72,30 @@ struct ProjectionPartData
     size_t bytes = 0;
 };
 
+/// why the ORDER BY tie-break is or is not available
+enum class SortOrderHelp
+{
+    Helps,
+    NotUseful,
+    NoOrderBy,
+    ReadInOrderDisabled,
+};
+
+String describe(SortOrderHelp help)
+{
+    switch (help)
+    {
+        case SortOrderHelp::Helps:
+            return "the projection order serves the ORDER BY";
+        case SortOrderHelp::NotUseful:
+            return "the projection order does not serve the ORDER BY";
+        case SortOrderHelp::NoOrderBy:
+            return "the query has no ORDER BY to serve";
+        case SortOrderHelp::ReadInOrderDisabled:
+            return "reading in order is disabled";
+    }
+}
+
 bool findPath(const QueryPlan::Node * node, const IQueryPlanStep * target, std::vector<const QueryPlan::Node *> & path)
 {
     if (!node)
@@ -303,7 +327,7 @@ bool tryEstimateProjection(
     WhatIfCandidateResult & result,
     const ProjectionDescription & projection,
     const KeyCondition * key_condition,
-    bool sort_order_helps,
+    SortOrderHelp sort_help,
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
     UInt64 baseline_marks,
@@ -368,7 +392,7 @@ bool tryEstimateProjection(
     const UInt64 margin = adaptive_parts;
     /// fewer marks never loses, so the estimate decides only when both ends of its interval agree
     auto would_win = [&](UInt64 marks)
-    { return marks < baseline_marks || (marks == baseline_marks && sort_order_helps); };
+    { return marks < baseline_marks || (marks == baseline_marks && sort_help == SortOrderHelp::Helps); };
     const UInt64 fewest = projection_marks > margin ? projection_marks - margin : 0;
     if (would_win(fewest) != would_win(projection_marks + margin))
     {
@@ -387,11 +411,9 @@ bool tryEstimateProjection(
     }
     else
     {
-        result.verdict = sort_order_helps ? "chosen" : "not chosen";
-        result.verdict_reason = fmt::format(
-            "the same {} would be read, and the projection order {} the ORDER BY",
-            marks_text(projection_marks),
-            sort_order_helps ? "serves" : "does not serve");
+        result.verdict = sort_help == SortOrderHelp::Helps ? "chosen" : "not chosen";
+        result.verdict_reason
+            = fmt::format("the same {} would be read, and {}", marks_text(projection_marks), describe(sort_help));
     }
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
@@ -517,11 +539,17 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    const auto [outer_sorting, subtree_above_reading] = QueryPlanOptimizationSettings(context).read_in_order
-        ? findOuterSorting(plan_root, read_step)
-        : std::pair<const SortingStep *, const QueryPlan::Node *>{};
-    const bool sort_order_helps
-        = outer_sorting && QueryPlanOptimizations::wouldReadInOrderBeUseful(*outer_sorting, proj_key, *subtree_above_reading);
+    const auto [outer_sorting, subtree_above_reading] = findOuterSorting(plan_root, read_step);
+    SortOrderHelp sort_help = SortOrderHelp::NoOrderBy;
+    if (outer_sorting)
+    {
+        if (!QueryPlanOptimizationSettings(context).read_in_order)
+            sort_help = SortOrderHelp::ReadInOrderDisabled;
+        else if (QueryPlanOptimizations::wouldReadInOrderBeUseful(*outer_sorting, proj_key, *subtree_above_reading))
+            sort_help = SortOrderHelp::Helps;
+        else
+            sort_help = SortOrderHelp::NotUseful;
+    }
 
     /// PK-range condition over the projection key, from the query predicate
     const auto & filter_dag = read_step->getFilterActionsDAG();
@@ -536,10 +564,13 @@ WhatIfCandidateResult evaluateProjection(
             key_condition.reset();
     }
 
-    if (!key_condition && !sort_order_helps)
+    if (!key_condition && sort_help != SortOrderHelp::Helps)
     {
-        result.not_applicable_reason = filter_dag ? "Projection sort key cannot filter this predicate (always unknown or true)"
-                                                  : "Query has no filter predicate";
+        result.not_applicable_reason = fmt::format(
+            "{}, and {}",
+            filter_dag ? "Projection sort key cannot filter this predicate (always unknown or true)"
+                       : "Query has no filter predicate",
+            describe(sort_help));
         return result;
     }
 
@@ -548,7 +579,7 @@ WhatIfCandidateResult evaluateProjection(
     if (settings.empirical)
     {
         if (tryEstimateProjection(
-                result, *projection, key_condition ? &*key_condition : nullptr, sort_order_helps, read_step, baseline_parts,
+                result, *projection, key_condition ? &*key_condition : nullptr, sort_help, read_step, baseline_parts,
                 analysis.selected_marks, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;

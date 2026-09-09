@@ -63,6 +63,13 @@ compare p_ba "(SELECT a, b, v ORDER BY (b, a))" "SELECT count() FROM TABLE WHERE
 echo "--- base PK already prunes to one granule, the projection cannot beat it ---"
 compare p_b "(SELECT a, b, v ORDER BY b)" "SELECT count() FROM TABLE WHERE a < 100 AND b = 42"
 
+# a tie plus an ORDER BY this projection cannot serve, the fourth state of the tie-break reason
+echo "--- a tie with an ORDER BY the projection order cannot serve ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE a < 100 AND b = 42 ORDER BY v SETTINGS ${PIN};
+" | grep -E '^\s+(verdict|reason):' | awk '{$1=$1; print}'
+
 echo "--- key over a computed expression ---"
 compare p_c "(SELECT a, b, v, b * 2 AS c ORDER BY c)" "SELECT count() FROM TABLE WHERE b * 2 = 84"
 

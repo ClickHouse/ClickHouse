@@ -1,6 +1,6 @@
 --- not applicable cases ---
 With p_key (normal projection, hypothetical):
-reason: Projection sort key cannot filter this predicate (always unknown or true)
+reason: Projection sort key cannot filter this predicate (always unknown or true), and the query has no ORDER BY to serve
 With p_agg (aggregate projection, hypothetical):
 reason: EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet
 With p_where (normal projection, hypothetical):
@@ -12,7 +12,7 @@ reason: EXPLAIN WHATIF does not estimate projections with their own skip indexes
 --- projections disabled by the query ---
 reason: Projections are disabled by `optimize_use_projections = 0`
 --- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
-reason: Projection sort key cannot filter this predicate (always unknown or true)
+reason: Projection sort key cannot filter this predicate (always unknown or true), and the query has no ORDER BY to serve
 real: read from the base table
 --- empirical = 0 scans nothing, and reports no marks it does not have ---
 status: applicable
