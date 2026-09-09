@@ -288,16 +288,15 @@ constexpr bool compressMatchesLut()
 static_assert(compressMatchesLut<2, 32>());
 static_assert(compressMatchesLut<3, 21>());
 static_assert(compressMatchesLut<5, 12>());
-static_assert(compressMatchesLut<6, 10>());
 static_assert(compressMatchesLut<7, 9>());
 
 /// AArch64 has no pdep/pext, so it reaches this arm rather than the BMI2 one below. Which
-/// dimensions use the compress decoder is a measured list, not a derived one: at 4 and 8 it
-/// did not beat `MortonNDLutDecoder`, so those two keep the table.
+/// dimensions use the compress decoder is a measured list, not a derived one: at 4, 6 and 8
+/// it did not beat `MortonNDLutDecoder` there, so those three keep the table.
 template <size_t Dimensions>
 constexpr bool use_compress_decoder =
 #if defined(__aarch64__)
-    Dimensions != 4 && Dimensions != 8;
+    Dimensions != 4 && Dimensions != 6 && Dimensions != 8;
 #else
     false;
 #endif
