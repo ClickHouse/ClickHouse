@@ -1007,6 +1007,21 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
         if (append && append->added_files == 0)
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Found an append with 0 added_files, snapshot={}", history_record.snapshot_id);
+
+        /// Compaction rewrites the table from the snapshots it is given, and `writeMetadataFiles` replays
+        /// them in order, publishing each one in turn. A retained snapshot that is not an ancestor of the
+        /// current snapshot - the branch a rollback abandoned - would therefore be republished, silently
+        /// moving the table off the snapshot it was rolled back to and changing the rows a `SELECT`
+        /// returns. Dropping such a snapshot instead is not safe either: its data files may still be
+        /// referenced by another branch or tag, and compaction deletes the files it did not carry over.
+        /// So refuse the rewrite and leave the table as it is.
+        if (!history_record.is_current_ancestor)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Compaction is supported only for a history whose snapshots are all ancestors of the current snapshot, but "
+                "snapshot={} is retained and is not one. Drop the branches or tags that retain it, then expire the "
+                "abandoned snapshots",
+                history_record.snapshot_id);
     }
 }
 
