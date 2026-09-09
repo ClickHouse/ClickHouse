@@ -310,12 +310,9 @@ public:
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
         int64_t time,
-        int64_t new_last_zxid,
+        int64_t commit_zxid,
         bool check_acl,
         int64_t log_idx);
-    /// Call after calling processOneRequest for all requests in batch (except ones that don't need
-    /// transactions, like SessionID).
-    void endProcessBatch(const KeeperRequestBatch & batch);
 
     /// Commit one previously preprocessed request of the current batch. Apply the changes to the
     /// committed state. Produce triggered watch notifications, and the response for the request
@@ -325,14 +322,17 @@ public:
     virtual KeeperResponsesForSessions processOneRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
-        std::optional<int64_t> new_last_zxid,
+        int64_t commit_zxid,
         bool produce_response) = 0;
+    /// Call after calling processOneRequest for all requests in batch (except ones that don't need
+    /// transactions, like SessionID).
+    void endProcessBatch(const KeeperRequestBatch & batch);
 
     /// Convenience wrapper for tools and tests: commit a single request as a batch of one.
     KeeperResponsesForSessions processRequest(
         const Coordination::ZooKeeperRequestPtr & request,
         int64_t session_id,
-        std::optional<int64_t> new_last_zxid);
+        int64_t commit_zxid);
 
     void rollbackBatch(const KeeperRequestBatch & batch, bool allow_missing);
 

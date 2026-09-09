@@ -1868,7 +1868,7 @@ template <typename NS>
 KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
     const Coordination::ZooKeeperRequestPtr & zk_request,
     int64_t session_id,
-    std::optional<int64_t> new_last_zxid,
+    int64_t commit_zxid,
     bool produce_response)
 {
     Stopwatch watch;
@@ -1892,20 +1892,6 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
 
     if (!initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
-
-    /// (The request's membership in the current batch is validated by endProcessBatch.
-    ///  Skipping or reordering commits within the batch would trip the delta order chassert
-    ///  below: deltas are committed strictly from the front.)
-    int64_t commit_zxid = 0;
-    if (new_last_zxid)
-    {
-        commit_zxid = *new_last_zxid;
-    }
-    else
-    {
-        std::lock_guard lock(transaction_mutex);
-        commit_zxid = zxid;
-    }
 
     std::list<Delta> deltas;
     {
@@ -2006,17 +1992,6 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
         };
 
         callOnConcreteRequestType(*zk_request, process_request);
-    }
-
-    {
-        std::lock_guard lock(transaction_mutex);
-
-        /// Committed transactions have strictly increasing zxids.
-        if (commit_zxid < zxid || (new_last_zxid && commit_zxid == zxid))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Trying to commit ZXID {} while ZXID {} is already committed", commit_zxid, zxid);
-
-        zxid = commit_zxid;
     }
 
     return results;

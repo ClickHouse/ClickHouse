@@ -596,13 +596,13 @@ KeeperDigest KeeperStorage::preprocessRequest(
     const Coordination::ZooKeeperRequestPtr & request,
     int64_t session_id,
     int64_t time,
-    int64_t new_last_zxid,
+    int64_t commit_zxid,
     bool check_acl,
     int64_t log_idx)
 {
     KeeperRequestBatch batch;
     batch.requests.push_back(KeeperRequestForSession{.session_id = session_id, .time = time, .request = request});
-    batch.first_zxid = new_last_zxid;
+    batch.first_zxid = commit_zxid;
     batch.log_idx = log_idx;
 
     auto digest = preprocessBatch(batch, check_acl);
@@ -616,6 +616,13 @@ void KeeperStorage::endProcessBatch(const KeeperRequestBatch & batch)
     uint64_t preprocessed_digest = 0;
     {
         std::lock_guard lock(transaction_mutex);
+
+        /// Committed transactions have strictly increasing zxids.
+        if (batch.getLastZxid() <= zxid)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Trying to commit ZXID {} while ZXID {} is already committed", batch.getLastZxid(), zxid);
+
+        zxid = batch.getLastZxid();
 
         if (uncommitted_batches.empty())
             throw Exception(
@@ -666,16 +673,13 @@ void KeeperStorage::endProcessBatch(const KeeperRequestBatch & batch)
 }
 
 KeeperResponsesForSessions KeeperStorage::processRequest(
-    const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, std::optional<int64_t> new_last_zxid)
+    const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, int64_t commit_zxid)
 {
-    if (!new_last_zxid)
-        return processOneRequest(request, session_id, new_last_zxid, /*produce_response=*/true);
-
     KeeperRequestBatch batch;
     batch.requests.push_back(KeeperRequestForSession{.session_id = session_id, .request = request});
-    batch.first_zxid = *new_last_zxid;
+    batch.first_zxid = commit_zxid;
 
-    auto responses = processOneRequest(request, session_id, new_last_zxid, /*produce_response=*/true);
+    auto responses = processOneRequest(request, session_id, commit_zxid, /*produce_response=*/true);
     endProcessBatch(batch);
     return responses;
 }
