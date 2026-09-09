@@ -8,10 +8,13 @@
 # Every case here has to create and wipe a RocksDB directory on the server's filesystem, which a
 # stateless test is not allowed to do, hence an integration test.
 
+import threading
+
 import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -272,3 +275,64 @@ def test_schema_mismatch_is_rejected():
     assert (
         node.query(f"SELECT count(), sum(b) FROM {case}.dst_same").strip() == "50\t2450"
     )
+
+
+def test_restore_does_not_disturb_a_concurrent_read_only_scan():
+    # finalizeRestoreFromBackup() replaces the read_only sibling's RocksDB handle, and
+    # RestorerFromBackup::finalizeTables() holds only a shared table lock, so unlike truncate() and
+    # drop() it does not exclude readers: a full scan of that sibling can be iterating the handle at
+    # that moment. RocksDB aborts if a database is closed while an iterator into it is alive, so the
+    # restore has to hand the handle over to the scan rather than close it.
+    case = "rdb_concurrent"
+    reset(case)
+    directory = f"{case}_dir"
+    node.query(f"""
+        CREATE TABLE {case}.rw (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '{directory}') PRIMARY KEY k;
+        INSERT INTO {case}.rw SELECT number, 'v' || toString(number) FROM numbers(300);
+        """)
+    # Opened after the first insert, so this handle's snapshot holds those rows and scanning it takes
+    # long enough to still be in flight when the restore finalizes.
+    node.query(
+        f"CREATE TABLE {case}.ro (k UInt64, v String) ENGINE = EmbeddedRocksDB(0, '{directory}', 1) PRIMARY KEY k"
+    )
+    # The rest of the rows land after that, so the read_only snapshot and the directory differ: 300
+    # rows means the scan kept its own handle, 500 means it was served the reopened one.
+    node.query(
+        f"INSERT INTO {case}.rw SELECT number, 'v' || toString(number) FROM numbers(300, 200)"
+    )
+    assert node.query(f"SELECT count() FROM {case}.ro").strip() == "300"
+    node.query(f"BACKUP DATABASE {case} TO {backup_to(case)} FORMAT Null")
+
+    # One row per block with a sleep per row: ~9s of iteration inside the full-scan source.
+    scanned = []
+
+    def scan():
+        scanned.append(
+            node.query(
+                f"SELECT count() FROM {case}.ro WHERE NOT ignore(sleepEachRow(0.03)) "
+                f"SETTINGS max_block_size = 1",
+                query_id=f"{case}_scan",
+            ).strip()
+        )
+
+    scanner = threading.Thread(target=scan)
+    scanner.start()
+    try:
+        # Barrier rather than a sleep. It waits for rows already read, not just for the query to be
+        # in the process list: the list entry is made before the pipeline is built, so waiting on it
+        # alone would let the restore finish before the iterator this test is about even exists.
+        assert_eq_with_retry(
+            node,
+            f"SELECT read_rows > 0 FROM system.processes WHERE query_id = '{case}_scan'",
+            "1",
+        )
+        node.query(
+            f"RESTORE DATABASE {case} FROM {backup_to(case)} SETTINGS allow_non_empty_tables = 1 FORMAT Null"
+        )
+    finally:
+        scanner.join()
+    # The in-flight scan finishes on the snapshot it started from rather than on the handle the
+    # restore installed, and the server is still there afterwards to serve that new handle. Without
+    # the fix the restore aborts the server inside RocksDB, which fails both of these.
+    assert scanned == ["300"]
+    assert node.query(f"SELECT count(), sum(k) FROM {case}.ro").strip() == "500\t124750"

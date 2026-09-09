@@ -149,12 +149,14 @@ public:
         const StorageEmbeddedRocksDB & storage_,
         const StorageSnapshotPtr & storage_snapshot_,
         SharedHeader header,
+        std::shared_ptr<rocksdb::DB> rocksdb_ptr_,
         std::unique_ptr<rocksdb::Iterator> iterator_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , physical_header(storage_snapshot_->metadata->getSampleBlock())
+        , rocksdb_ptr(std::move(rocksdb_ptr_))
         , iterator(std::move(iterator_))
         , max_block_size(max_block_size_)
     {
@@ -230,7 +232,9 @@ private:
     FieldVector::const_iterator end;
     FieldVector::const_iterator it;
 
-    /// For full scan
+    /// For full scan. The handle is declared before the iterator it was taken from: members are
+    /// destroyed in reverse declaration order, and RocksDB requires the iterator to go first.
+    std::shared_ptr<rocksdb::DB> rocksdb_ptr;
     std::unique_ptr<rocksdb::Iterator> iterator = nullptr;
 
     const size_t max_block_size;
@@ -774,20 +778,17 @@ void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer
 
 void StorageEmbeddedRocksDB::finalizeRestoreFromBackup()
 {
-    /// A read_only handle snapshots the RocksDB directory at open time. When tables share one rocksdb_dir,
-    /// the read_only sibling's handle was opened during createAndCheckTables(), before the writable owner
-    /// replayed the rows in a data restore task, so it still serves the pre-restore snapshot. finalizeTables()
-    /// runs after every data restore task has completed, so reopen the read_only handle here to observe the
-    /// restored data (the writable owner needs no reopen: it wrote through its own live handle).
+    /// A read_only handle serves the snapshot its directory had when it was opened, and a read_only
+    /// sibling sharing a rocksdb_dir was opened before the writable owner replayed the rows, so it
+    /// still serves pre-restore data. The owner wrote through its own live handle and needs no reopen.
     if (!read_only)
         return;
 
     std::lock_guard lock(rocksdb_ptr_mx);
-    if (rocksdb_ptr)
-    {
-        rocksdb_ptr->Close();
-        rocksdb_ptr = nullptr;
-    }
+    /// Released, not closed: finalizeTables() holds only a shared table lock, unlike truncate() and
+    /// drop(), so a full scan may be iterating this handle right now and closing it under an iterator
+    /// aborts inside RocksDB. The last reference, possibly that scan, closes it by destroying it.
+    rocksdb_ptr.reset();
     initDB();
 }
 
@@ -1156,6 +1157,7 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     const auto & sample_block = getOutputHeader();
     if (all_scan)
     {
+        std::shared_ptr<rocksdb::DB> rocksdb_ptr;
         std::unique_ptr<rocksdb::Iterator> iterator;
         {
             SharedLockGuard lock(storage.rocksdb_ptr_mx);
@@ -1164,10 +1166,12 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
                 pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
                 return;
             }
-            iterator.reset(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
+            rocksdb_ptr = storage.rocksdb_ptr;
+            iterator.reset(rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
         }
         iterator->SeekToFirst();
-        auto source = std::make_shared<EmbeddedRocksDBSource>(storage, storage_snapshot, sample_block, std::move(iterator), max_block_size);
+        auto source = std::make_shared<EmbeddedRocksDBSource>(
+            storage, storage_snapshot, sample_block, std::move(rocksdb_ptr), std::move(iterator), max_block_size);
         source->setStorageLimits(query_info.storage_limits);
         pipeline.init(Pipe(std::move(source)));
         return;

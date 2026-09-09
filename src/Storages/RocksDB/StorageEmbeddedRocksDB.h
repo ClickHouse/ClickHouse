@@ -153,7 +153,10 @@ private:
     DataTypes primary_key_types;
     std::vector<size_t> value_column_pos;
 
-    using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
+    /// Shared, not unique: a full scan iterates outside rocksdb_ptr_mx, and RocksDB requires every
+    /// iterator to be released before its database is closed, so the reading source keeps the handle
+    /// it took the iterator from alive even if the table replaces rocksdb_ptr meanwhile.
+    using RocksDBPtr = std::shared_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr TSA_GUARDED_BY(rocksdb_ptr_mx);
 
     mutable SharedMutex rocksdb_ptr_mx;
