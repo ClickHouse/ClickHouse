@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <base/unit.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -20,6 +21,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -281,7 +288,11 @@ TEST(RuntimeFilterLookup, SkipBudgetDoesNotLoseConcurrentReplenishment)
     EXPECT_EQ(lost_replenishments, 0);
 }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+TEST(RuntimeFilterLookupDeathTest, MergeRejectsSelf)
+#else
 TEST(RuntimeFilterLookup, MergeRejectsSelf)
+#endif
 {
     const auto type = makeUInt64Type();
     RuntimeFilter filter(
@@ -292,7 +303,22 @@ TEST(RuntimeFilterLookup, MergeRejectsSelf)
             /*bytes_limit_=*/1_MiB,
             /*exact_values_limit_=*/100));
 
-    EXPECT_ANY_THROW(filter.merge(filter));
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    EXPECT_DEATH(filter.merge(filter), "Trying to merge a runtime filter with itself");
+#else
+    try
+    {
+        filter.merge(filter);
+        FAIL() << "Expected LOGICAL_ERROR when merging a runtime filter with itself";
+    }
+    catch (Exception & e)
+    {
+        e.markAsLogged();
+        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+        EXPECT_EQ(e.message(), "Trying to merge a runtime filter with itself");
+    }
+#endif
 }
 
 TEST(RuntimeFilterLookup, ReciprocalMergesAreSerialized)
