@@ -40,12 +40,17 @@ def query(clause, serialized=0, hedged=0, enabled="1", local=False, analyzer=1):
     )
 
 
-def native(sql, expected=None):
+def native_batch(cases):
+    # Each statement has query-local settings; reuse the client to bound sanitizer startup costs.
+    sql = ";\n".join(sql for sql, _ in cases)
+    expected = "".join(f"{value}\n" for _, value in cases)
     result = subprocess.run(client + ["--query", sql], capture_output=True, text=True, timeout=30)
-    if expected is None:
-        assert result.returncode != 0 and "(CANNOT_PARSE_BOOL)" in result.stderr, (sql, result.returncode, result.stderr)
-    else:
-        assert result.returncode == 0 and result.stdout == f"{expected}\n", (sql, expected, result.stdout, result.stderr)
+    assert result.returncode == 0 and result.stdout == expected, (sql, expected, result.stdout, result.stderr)
+
+
+def invalid_native(sql):
+    result = subprocess.run(client + ["--query", sql], capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0 and "(CANNOT_PARSE_BOOL)" in result.stderr, (sql, result.returncode, result.stderr)
 
 
 def plain_http(sql):
@@ -66,19 +71,18 @@ def plain_http(sql):
 
 for analyzer in (0, 1):
     cases = [(clause, "0" if not analyzer and "DEFAULT" in clause else expected) for clause, expected in clauses]
-    for clause, expected in cases:
-        native(query(clause, local=True, analyzer=analyzer), expected)
+    native_batch([(query(clause, local=True, analyzer=analyzer), expected) for clause, expected in cases])
     print(f"analyzer={analyzer}: local duplicate and shorthand controls passed")
 
     for serialized in (0, 1) if analyzer else (0,):
         for hedged in (0, 1):
-            for clause, expected in cases:
-                native(query(clause, serialized, hedged, analyzer=analyzer), expected)
+            native_cases = [(query(clause, serialized, hedged, analyzer=analyzer), expected) for clause, expected in cases]
             final_opt_in = clauses[0][0]
-            native(query(final_opt_in, serialized, hedged, enabled="0", analyzer=analyzer), "0")
-            native(query(final_opt_in, serialized, hedged, enabled="DEFAULT", analyzer=analyzer), "0")
+            native_cases.append((query(final_opt_in, serialized, hedged, enabled="0", analyzer=analyzer), "0"))
+            native_cases.append((query(final_opt_in, serialized, hedged, enabled="DEFAULT", analyzer=analyzer), "0"))
+            native_batch(native_cases)
             plain_http(query(final_opt_in, serialized, hedged, analyzer=analyzer))
             for invalid in (f"{setting}='not-a-bool', {setting}=1", f"{setting}=1, {setting}='not-a-bool'"):
-                native(query(invalid, serialized, hedged, analyzer=analyzer))
+                invalid_native(query(invalid, serialized, hedged, analyzer=analyzer))
             print(f"analyzer={analyzer} serialized={serialized} hedged={hedged}: duplicates, defaults, gating and invalid values preserved")
 PY
