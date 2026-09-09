@@ -15,7 +15,12 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
 
     cache_path=02241_filesystem_cache_on_write_operations_$disk
     $CLICKHOUSE_CLIENT --echo --query "DROP TABLE IF EXISTS test_02241"
-    $CLICKHOUSE_CLIENT --echo --query "CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk=disk(type='cache', path='$cache_path', disk='$disk', max_size=10_000_000_000, cache_on_write_operations=1), min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic', auto_statistics_types = ''"
+    # Pin the default compression codec to `LZ4` so the per-part `data.bin` cached-segment sizes asserted
+    # below (the `Vertical` outputs) stay fixed regardless of the server default codec. Note: the aggregate
+    # `sum(size)` over `system.filesystem_cache` additionally counts a few bytes per part from auxiliary
+    # streams written with the server default codec that this setting does not control, so those totals
+    # track the current default (`ZSTD(3)`) and must be regenerated if the default codec changes.
+    $CLICKHOUSE_CLIENT --echo --query "CREATE TABLE test_02241 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk=disk(type='cache', path='$cache_path', disk='$disk', max_size=10_000_000_000, cache_on_write_operations=1), min_bytes_for_wide_part = 10485760, compress_marks=false, compress_primary_key=false, min_bytes_for_full_part_storage=0, ratio_of_defaults_for_sparse_serialization = 1, write_marks_for_substreams_in_compact_parts=1, serialization_info_version='basic', auto_statistics_types = '', default_compression_codec='LZ4'"
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM STOP MERGES test_02241"
     cache_name=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.disks WHERE cache_path LIKE '%$cache_path'")
 
