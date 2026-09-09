@@ -36,6 +36,27 @@ namespace ErrorCodes
 /// Guards a size stream against requesting an unbounded String data allocation.
 static constexpr UInt64 MAX_TOTAL_STRING_SIZE = 1ULL << 48;
 
+/// The size of a string comes from the data, so it has to be validated before it is used to resize anything.
+/// `format_binary_max_string_size` is a user-facing limit that can be disabled by setting it to `0`,
+/// while `MAX_STRING_SIZE` is a hard limit that is always enforced.
+static void checkStringSize(UInt64 size, const FormatSettings & settings)
+{
+    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
+            "format_binary_max_string_size",
+            size,
+            settings.binary.max_binary_string_size);
+
+    if (size > SerializationString::MAX_STRING_SIZE)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}.",
+            size,
+            SerializationString::MAX_STRING_SIZE);
+}
+
 UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
 {
     SipHash hash;
@@ -69,13 +90,7 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 {
     UInt64 size = 0;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            size,
-            settings.binary.max_binary_string_size);
+    checkStringSize(size, settings);
 
     field = String();
     String & s = field.safeGet<String>();
@@ -108,13 +123,7 @@ void SerializationString::deserializeBinary(IColumn & column, ReadBuffer & istr,
 
     UInt64 size = 0;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
-        throw Exception(
-            ErrorCodes::TOO_LARGE_STRING_SIZE,
-            "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
-            "format_binary_max_string_size",
-            size,
-            settings.binary.max_binary_string_size);
+    checkStringSize(size, settings);
 
     size_t old_chars_size = data.size();
     size_t offset = old_chars_size + size;
@@ -657,15 +666,25 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
-    IColumn::Offset prev_offset = offsets.empty() ? 0 : offsets.back();
 
     offsets.reserve(offsets.size() + rows);
 
+    /// The sizes come from a separate stream, so nothing bounds them by the data that follows them and
+    /// their sum can overflow the offsets. A 128-bit accumulator cannot overflow, so one check of the
+    /// total is enough: below it every offset is exact.
+    unsigned __int128 offset = offsets.empty() ? 0 : offsets.back();
     for (size_t i = 0; i < rows; ++i)
     {
-        prev_offset += sizes[start + i];
-        offsets.push_back(prev_offset);
+        offset += sizes[start + i];
+        offsets.push_back(static_cast<IColumn::Offset>(offset));
     }
+
+    if (unlikely(offset > MAX_TOTAL_STRING_SIZE))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Total size of String column is too large: the sizes stream declares more than {} bytes, "
+            "most likely the data is corrupted",
+            MAX_TOTAL_STRING_SIZE);
 }
 
 }
@@ -791,11 +810,16 @@ size_t SerializationString::deserializeStringOffsetsAndGetDataSize(
         const size_t prev_num_rows = offsets.size();
         SerializationNumber<ColumnString::Offset>::deserializeBinaryBulk(offsets, *offsets_stream, limit);
 
-        /// Offsets come from untrusted input and must be monotonically increasing.
-        if (auto * it = std::adjacent_find(offsets.begin() + prev_num_rows, offsets.end(), std::greater<>()); it != offsets.end())
+        /// The offsets come from untrusted input and address the characters of the column, so they have to
+        /// increase monotonically; their total is checked by the caller. Everything below `prev_num_rows`
+        /// was verified by the previous call, and starting one element earlier covers the pair across the
+        /// boundary.
+        auto * const scan_begin = offsets.begin() + (prev_num_rows ? prev_num_rows - 1 : 0);
+        auto * const it = std::adjacent_find(scan_begin, offsets.end(), std::greater<>());
+        if (it != offsets.end())
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
-                "String offsets stream is not monotonically increasing (at index {}, value {})",
+                "String offsets are not monotonically increasing (starting at {}, value {})",
                 std::distance(offsets.begin(), it),
                 *it);
 
