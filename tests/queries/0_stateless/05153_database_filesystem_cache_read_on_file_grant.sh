@@ -9,9 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-user="user_05076_${CLICKHOUSE_DATABASE}_$RANDOM"
-fs_db="db_05076_${CLICKHOUSE_DATABASE}_$RANDOM"
-dir="${USER_FILES_PATH}/d_05076_${CLICKHOUSE_DATABASE}_$RANDOM"
+user="user_05153_${CLICKHOUSE_DATABASE}_$RANDOM"
+fs_db="db_05153_${CLICKHOUSE_DATABASE}_$RANDOM"
+dir="${USER_FILES_PATH}/d_05153_${CLICKHOUSE_DATABASE}_$RANDOM"
 
 mkdir -p "$dir"
 echo 7 > "$dir/warm.csv"
