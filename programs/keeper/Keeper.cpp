@@ -709,16 +709,17 @@ try
                 servers_lock,
                 config().getInt("shutdown_wait_unfinished", 5),
                 [&](const auto & server) { return !is_keeper_tcp_server(server); });
-
-            if (non_keeper_tcp_connections)
-            {
-                LOG_INFO(log, "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.", non_keeper_tcp_connections);
-                safeExit(0);
-            }
         }
 
         global_context->signalKeeperDispatcherShutdown();
         global_context->shutdownKeeperDispatcherBeforeConnectionsFinish();
+
+        if (non_keeper_tcp_connections)
+        {
+            global_context->shutdownKeeperDispatcherAfterConnectionsFinish(false);
+            LOG_INFO(log, "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.", non_keeper_tcp_connections);
+            safeExit(0);
+        }
 
         if (keeper_tcp_connections)
             LOG_INFO(log, "Closed all Keeper TCP listening sockets. Waiting for {} outstanding connections.", keeper_tcp_connections);

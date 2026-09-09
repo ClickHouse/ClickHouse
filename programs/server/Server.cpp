@@ -1594,20 +1594,21 @@ try
                 servers_lock,
                 server_settings[ServerSetting::shutdown_wait_unfinished],
                 [&](const auto & server) { return !is_keeper_tcp_server(server); });
-
-            if (non_keeper_tcp_connections)
-            {
-                dumpCoverageReportIfPossible();
-                LOG_WARNING(
-                    log,
-                    "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.",
-                    non_keeper_tcp_connections);
-                safeExit(0, LeakCheck::SkipAndReport);
-            }
         }
 
         global_context->signalKeeperDispatcherShutdown();
         global_context->shutdownKeeperDispatcherBeforeConnectionsFinish();
+
+        if (non_keeper_tcp_connections)
+        {
+            global_context->shutdownKeeperDispatcherAfterConnectionsFinish(false);
+            dumpCoverageReportIfPossible();
+            LOG_WARNING(
+                log,
+                "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.",
+                non_keeper_tcp_connections);
+            safeExit(0, LeakCheck::SkipAndReport);
+        }
 
         if (!servers_to_start_before_tables.empty())
         {
