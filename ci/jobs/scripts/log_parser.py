@@ -472,16 +472,24 @@ class FuzzerLogParser:
 
         return result_name, info, files
 
+    # A real server log line has its level in the structured prefix
+    # "[ <thread> ] {<query_id>} <Level>". Anchoring the generic-fatal search to
+    # this prefix avoids matching a "<Fatal>" substring quoted inside query text
+    # or a comment on an ordinary <Debug>/<Error> line (the query id has no "}").
+    GENERIC_FATAL_PATTERN = r"\[ \d+ \] \{[^}]*\} <Fatal> .*"
+
     def get_generic_fatal(self):
         # Fallback used when no specific pattern matched but the server still
         # logged a <Fatal> message. Return the message (with a few following
-        # lines of context) with the "<Fatal> " prefix stripped, so the report
-        # shows the real message instead of a bare "Unknown error". Returns None
-        # when there is no <Fatal> line to surface.
+        # lines of context) with the log prefix up to and including "<Fatal> "
+        # stripped, so the report shows the real message instead of a bare
+        # "Unknown error". Returns None when there is no <Fatal> record to
+        # surface. The match is anchored to the log-level field so a "<Fatal>"
+        # substring inside quoted query text is not mistaken for a failure.
         if not self.server_log:
             return None
         output = Shell.get_output(
-            f"rg --text -A 10 -o '<Fatal> .*' {self.server_log} | head -n10"
+            f"rg --text -A 10 -o '{self.GENERIC_FATAL_PATTERN}' {self.server_log} | head -n10"
         ).strip()
         if not output:
             return None

@@ -167,6 +167,28 @@ def test_generic_fatal_fallback_surfaces_message(tmp_path):
     assert parser.is_generic_fatal is True
 
 
+def test_quoted_fatal_in_query_text_is_not_a_generic_fatal(tmp_path):
+    # A "<Fatal>" substring quoted inside query text (or a comment) on an ordinary
+    # <Debug>/<Error> line must not be mistaken for a fatal record: the generic
+    # fallback is anchored to the "[ <tid> ] {<qid>} <Fatal>" log-level prefix.
+    server_log = tmp_path / "clickhouse-server.err.log"
+    server_log.write_text(
+        "2026.09.04 00:44:57.900000 [ 1068 ] {q} <Debug> executeQuery: "
+        "(from 127.0.0.1) SELECT '<Fatal> not an error' (stage: Complete)\n"
+        "2026.09.04 00:44:58.000000 [ 1068 ] {} <Information> Application: shutting down\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log), stderr_log="", fuzzer_log=""
+    )
+    result_name, info, _ = parser.parse_failure()
+
+    assert result_name == FuzzerLogParser.UNKNOWN_ERROR
+    assert parser.is_generic_fatal is False
+    assert "not an error" not in result_name
+
+
 def test_unknown_error_when_no_fatal(tmp_path):
     # With neither a specific pattern nor any <Fatal> message, the parser still
     # falls back to "Unknown error".
