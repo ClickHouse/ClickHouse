@@ -1118,6 +1118,77 @@ def test_function_over_time():
         ],
     )
 
+    # max_over_time: uses `resets` (not `test`) because `test` never decreases, so max_over_time would equal
+    # last_over_time on it and not exercise the "extremum isn't the most recent sample" case.
+    do_query_test(
+        "max_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "5"], [135, "8"], [150, "8"], [165, "8"], [180, "6"], [195, "10"], [210, "10"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:15.000',8),('1970-01-01 00:02:30.000',8),('1970-01-01 00:02:45.000',8),('1970-01-01 00:03:00.000',6),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',10)]",
+            ]
+        ],
+    )
+
+    # min_over_time
+    do_query_test(
+        "min_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "2"], [180, "2"], [195, "10"], [210, "3"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',2),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',3)]",
+            ]
+        ],
+    )
+
+    # ts_of_min_over_time: among equal values the latest timestamp wins, e.g. at 210 the minimum 5 occurs
+    # at 190 and 200, so the result is 200.
+    do_query_test(
+        "ts_of_min_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "120"], [135, "120"], [150, "120"], [165, "130"], [180, "140"], [195, "190"], [210, "200"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',120),('1970-01-01 00:02:15.000',120),('1970-01-01 00:02:30.000',120),('1970-01-01 00:02:45.000',130),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',200)]",
+            ]
+        ],
+    )
+
+    # ts_of_max_over_time: `resets` decreases within windows, so the timestamp of the maximum differs from the
+    # last timestamp; the tags (except the metric name) are kept.
+    do_query_test(
+        "ts_of_max_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "120"], [135, "130"], [150, "130"], [165, "130"], [180, "150"], [195, "190"], [210, "190"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',120),('1970-01-01 00:02:15.000',130),('1970-01-01 00:02:30.000',130),('1970-01-01 00:02:45.000',130),('1970-01-01 00:03:00.000',150),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',190)]",
+            ]
+        ],
+    )
+
+    # Instant queries: the window (165, 210] of `test` holds 5@190, 5@200, 8@210, the same window of `resets`
+    # holds 10@190, 3@200, 9@210.
+    do_query_test(
+        "ts_of_max_over_time(test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "210"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 210]],
+    )
+
+    do_query_test(
+        "ts_of_min_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [210, "200"]}]}',
+        [["[('job','test')]", "1970-01-01 00:03:30.000", 200]],
+    )
+
 
 def test_function_absent():
     # A non-empty input produces an empty vector.
