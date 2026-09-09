@@ -2809,6 +2809,18 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
+### Iguana {#iguana}
+
+<ExperimentalBadge/>
+
+`Iguana` — the [Iguana compression algorithm](https://github.com/SnellerInc/iguana): LZ-style structural compression followed by a 32-way interleaved 8-bit rANS entropy stage applied to each of the six substreams the LZ stage produces.
+
+`Iguana` reaches a compression ratio close to `ZSTD` while decompressing with wide SIMD kernels (AVX-512 on x86-64, NEON on AArch64, selected at runtime). Blocks and individual substreams that do not compress are stored verbatim, so the output never grows by more than a small header. Compression is slower than both `LZ4` and `ZSTD`, so it fits the compress-once, decompress-many pattern.
+
+<Note>
+This codec is experimental and requires `SET enable_iguana_codec = 1` to use.
+</Note>
+
 ### ZXC {#zxc}
 
 <ExperimentalBadge/>
