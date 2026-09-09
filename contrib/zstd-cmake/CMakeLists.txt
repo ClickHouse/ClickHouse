@@ -158,4 +158,4 @@ set_source_files_properties(
         "${LIBRARY_DIR}/decompress/zstd_ddict.c"
         "${LIBRARY_DIR}/decompress/zstd_decompress_block.c"
         "${LIBRARY_DIR}/decompress/zstd_decompress.c"
-        PROPERTIES COMPILE_OPTIONS "-fno-unroll-loops")
+        PROPERTIES COMPILE_OPTIONS "-fno-unroll-loops;-fno-jump-tables")
