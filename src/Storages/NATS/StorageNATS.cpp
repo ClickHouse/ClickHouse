@@ -20,11 +20,13 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/MessageQueueSink.h>
 #include <Storages/NATS/NATSCoreConsumer.h>
 #include <Storages/NATS/NATSCoreProducer.h>
 #include <Storages/NATS/NATSJetStreamConsumer.h>
 #include <Storages/NATS/NATSJetStreamProducer.h>
+#include <Storages/NATS/NATSConnection.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
@@ -35,6 +37,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
@@ -57,6 +60,9 @@ namespace NATSSetting
 {
 extern const NATSSettingsString nats_credentials;
 extern const NATSSettingsString nats_credential_file;
+extern const NATSSettingsString nats_ca_file;
+extern const NATSSettingsString nats_client_cert_file;
+extern const NATSSettingsString nats_client_key_file;
 extern const NATSSettingsMilliseconds nats_flush_interval_ms;
 extern const NATSSettingsBool nats_wait_for_flush_interval;
 extern const NATSSettingsBool nats_commit_on_select;
@@ -94,6 +100,10 @@ extern const int CANNOT_CONNECT_NATS;
 extern const int QUERY_NOT_ALLOWED;
 }
 
+namespace FailPoints
+{
+extern const char nats_pause_before_building_insert_pipeline[];
+}
 
 StorageNATS::StorageNATS(
     const StorageID & table_id_,
@@ -102,7 +112,8 @@ StorageNATS::StorageNATS(
     const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
     LoadingStrictnessLevel mode,
-    bool authentication_determined_by_table_)
+    bool authentication_determined_by_table_,
+    bool fresh_definition_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
@@ -116,12 +127,17 @@ StorageNATS::StorageNATS(
     , semaphore(0, static_cast<int>(num_consumers))
     , queue_size(std::max(QUEUE_SIZE, static_cast<uint32_t>(getMaxBlockSize())))
     , throw_on_startup_failure(mode <= LoadingStrictnessLevel::CREATE)
+    , fresh_definition(fresh_definition_)
 {
     auto nats_username = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_username]);
     auto nats_password = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_password]);
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
     auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
+    auto nats_ca_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_ca_file]);
+    auto nats_client_cert_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
+    auto nats_client_key_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
+
     /// `libnats` sends every configured authentication method in the `CONNECT` frame, so a table
     /// authentication method must not be combined with the server-global fallback: inline
     /// credentials can be used with a query-supplied destination.
@@ -150,9 +166,23 @@ StorageNATS::StorageNATS(
            .token = nats_token.empty() ? global_token : nats_token,
            .credential_file = nats_credential_file.empty() ? global_credential_file : nats_credential_file,
            .credentials = nats_credentials,
+           .ca_file = nats_ca_file,
+           .client_cert_file = nats_client_cert_file,
+           .client_key_file = nats_client_key_file,
            .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
            .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
            .secure = (*nats_settings)[NATSSetting::nats_secure].value};
+
+    if (configuration.client_cert_file.empty() != configuration.client_key_file.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings nats_client_cert_file and nats_client_key_file must be specified together");
+
+    if (!configuration.secure && !(configuration.ca_file.empty() && configuration.client_cert_file.empty()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "TLS certificates are specified for a NATS table without nats_secure");
+
+    /// The files are checked for a definition the user supplies now, so an unusable one is reported
+    /// before the table exists even on a server which never connects to the broker.
+    if (fresh_definition && !(configuration.ca_file.empty() && configuration.client_cert_file.empty()))
+        validateNATSCertificates(configuration);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -353,6 +383,27 @@ bool StorageNATS::subscribeConsumers()
     {
         try
         {
+            /// A consumer can reach this point still subscribed, because `unsubscribeConsumers`
+            /// only reaches the consumers that are in the pool at that moment: a direct `SELECT`
+            /// holds one out of the pool and hands it back subscribed whenever it found it that
+            /// way. What such a consumer buffered belongs to the window when the table was not
+            /// streaming - messages published while the materialized view was detached - and must
+            /// not be inserted into the views by the cycles that follow. Clearing the queue alone
+            /// does not guarantee that: `onMsg` keeps appending from the NATS client thread, and
+            /// `subscribe` does nothing for a consumer that is subscribed already, so the live
+            /// subscription is replaced the way `unsubscribeConsumers` would have replaced it. The
+            /// queue is finished before the drain inside `unsubscribe` delivers what the
+            /// subscription still holds, so nothing from that window can land behind the cleanup,
+            /// and a JetStream message goes back to the broker while the subscription it arrived
+            /// on is still alive, so it is redelivered at once rather than after the ACK deadline.
+            if (consumer->isSubscribed())
+            {
+                consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+                consumer->unsubscribe();
+            }
+
+            /// What an unsubscribed consumer still holds are leftovers of a subscription that is
+            /// already gone, which can only be thrown away.
             consumer->dropBuffered();
             consumer->subscribe();
             ++num_initialized;
@@ -374,10 +425,51 @@ bool StorageNATS::subscribeConsumers()
     return are_consumers_initialized;
 }
 
-bool StorageNATS::consumersNeedResubscribe()
+void StorageNATS::resubscribeStaleConsumers()
 {
     std::lock_guard lock(consumers_mutex);
-    return std::ranges::any_of(consumers, [](const auto & consumer) { return consumer->needsResubscribe(); });
+    for (auto & consumer : consumers)
+    {
+        if (!consumer->needsResubscribe())
+            continue;
+
+        /// Nothing the consumer holds locally can outlive its subscription: a `natsMsg` keeps a
+        /// plain pointer to the `natsSubscription` it arrived on, and `natsMsg_Ack` follows it to
+        /// reach the JetStream context and the connection, so acknowledging a message whose
+        /// subscription has been destroyed reads freed memory. Recovery therefore prefers a
+        /// consumer that holds nothing: the streaming cycles insert and acknowledge what the
+        /// broker delivered before it went stale, and a stale subscription delivers nothing more,
+        /// so the queue does drain and the reconnect this keys on is still reported once it has.
+        if (!consumer->queueEmpty())
+        {
+            LOG_DEBUG(log, "A subscription stopped consuming from the NATS server, resubscribing once the buffered messages are drained");
+            continue;
+        }
+
+        LOG_INFO(log, "A subscription stopped consuming from the NATS server, resubscribing");
+
+        /// The check above is only a snapshot: `onMsg` runs on the NATS client thread and appends
+        /// to the queue without `consumers_mutex`, and the drain inside `unsubscribe` delivers
+        /// whatever the subscription still has. So the messages are returned to the broker rather
+        /// than destroyed, while the subscription they arrived on is still alive, and the queue is
+        /// finished first so that nothing can be appended behind that.
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
+
+        try
+        {
+            consumer->subscribe();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            /// A consumer left unsubscribed no longer reports that it needs to be recovered, so it
+            /// would stay silent. Hand it to `subscribeConsumers`, which only runs while the
+            /// consumers are not ready.
+            consumers_ready.store(false);
+            break;
+        }
+    }
 }
 
 void StorageNATS::unsubscribeConsumers()
@@ -385,8 +477,8 @@ void StorageNATS::unsubscribeConsumers()
     std::lock_guard lock(consumers_mutex);
     for (auto & consumer : consumers)
     {
-        consumer->unsubscribe(/*finish_queue=*/true);
-        consumer->dropBuffered();
+        consumer->finishAndReturnUnprocessed(INATSConsumer::SkippedMessages::Acknowledge);
+        consumer->unsubscribe();
     }
 
     consumers_ready.store(false);
@@ -699,13 +791,10 @@ void StorageNATS::threadFunc()
     if (consumers_ready && subscription_stale.exchange(false))
         unsubscribeConsumers();
 
-    /// A consumer whose subscription the NATS client has closed never receives another message,
-    /// so drop the subscriptions here and let the cycle below subscribe again.
-    if (consumers_ready && consumersNeedResubscribe())
-    {
-        LOG_INFO(log, "A subscription was closed by the NATS server, resubscribing");
-        unsubscribeConsumers();
-    }
+    /// A subscription the NATS client has closed, or one that outlived a reconnect, never receives
+    /// another message, so replace it here, keeping everything the consumer already holds locally.
+    if (consumers_ready)
+        resubscribeStaleConsumers();
 
     const size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
     const bool is_connected = consumers_connection && consumers_connection->isConnected();
@@ -808,6 +897,8 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
     /// ensure no stale state is reused.
     new_context->makeQueryContext();
 
+    FailPointInjection::pauseFailPoint(FailPoints::nats_pause_before_building_insert_pipeline);
+
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
@@ -817,6 +908,24 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /* no_destination */ true,
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
+
+    /// `threadFunc` streams only while the table has ready dependent views, but the interpreter looks
+    /// them up again, and a `DROP VIEW` or `DETACH TABLE` landing in between leaves it with nowhere
+    /// to insert into: the pipeline it builds then discards whatever the sources consume (see
+    /// `InsertDependenciesBuilder::createChainWithDependencies`), and the acknowledgement below
+    /// would confirm to the broker messages that were never inserted anywhere. Such a cycle must not
+    /// consume anything. What the consumers hold goes back to the broker when the next cycle finds
+    /// the last view gone and unsubscribes them, or stays with them until the view is attached again.
+    /// This repeats the readiness check of `threadFunc`, not a check of the dependency metadata or of
+    /// the shape of the pipeline: a plain `DETACH TABLE` keeps the dependency registered while the
+    /// view is gone, and a materialized view whose target is `Null` legitimately ends in the same
+    /// discarding sink while being a view the table streams to. The check can only err towards
+    /// skipping a cycle whose pipeline would have inserted somewhere, which consumes nothing.
+    if (!checkDependencies(table_id))
+    {
+        LOG_DEBUG(log, "The last materialized view was dropped or detached while the streaming cycle was being prepared, nothing to stream to");
+        return true;
+    }
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
@@ -852,6 +961,7 @@ bool StorageNATS::streamToViews(UInt64 cycle_epoch)
         /// Only hold blocks open for the whole flush interval when `nats_wait_for_flush_interval` is set.
         source->setWaitForFlushInterval(
             (*nats_settings)[NATSSetting::nats_wait_for_flush_interval] && max_execution_time.totalMicroseconds() > 0);
+        source->setBackgroundStreaming(true);
     }
 
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
@@ -908,6 +1018,43 @@ namespace
 constexpr std::string_view CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE
     = "`nats_credential_file` can only be specified in a named collection defined in the server configuration file. "
       "Pass the contents of the file in `nats_credentials` instead";
+
+/// The server opens these paths with its own privileges and presents the client certificate to the
+/// table's destination, so they are taken only from a named collection defined in the server configuration.
+void resolveCertificateSource(
+    const NATSSettings & nats_settings,
+    bool collection_defined_in_config,
+    bool ca_file_assigned_by_query,
+    bool client_cert_file_assigned_by_query,
+    bool client_key_file_assigned_by_query,
+    bool destination_assigned_by_query)
+{
+    const std::tuple<const char *, String, bool> paths[] = {
+        {"nats_ca_file", nats_settings[NATSSetting::nats_ca_file].value, ca_file_assigned_by_query},
+        {"nats_client_cert_file", nats_settings[NATSSetting::nats_client_cert_file].value, client_cert_file_assigned_by_query},
+        {"nats_client_key_file", nats_settings[NATSSetting::nats_client_key_file].value, client_key_file_assigned_by_query},
+    };
+
+    bool has_certificates = false;
+    for (const auto & [name, value, assigned_by_query] : paths)
+    {
+        /// Rejected on provenance: an assignment of the empty string carries no path of its own,
+        /// but it drops the one the operator configured.
+        if (assigned_by_query || (!value.empty() && !collection_defined_in_config))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` can only be specified in a named collection defined in the server configuration file",
+                name);
+
+        has_certificates |= !value.empty();
+    }
+
+    /// The operator's certificates must not be presented to a destination the query selected.
+    if (has_certificates && destination_assigned_by_query)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The destination of a named collection which carries TLS certificates cannot be overridden by the query");
+}
 
 /// `nats_credential_file` and `nats_credentials` are two ways to provide the same credentials - a path to a
 /// file on the server filesystem, and the contents of that file - so only one of them may be specified.
@@ -1123,6 +1270,9 @@ void registerStorageNATS(StorageFactory & factory)
         bool password_assigned_by_query = false;
         bool token_assigned_by_query = false;
         bool destination_assigned_by_query = false;
+        bool ca_file_assigned_by_query = false;
+        bool client_cert_file_assigned_by_query = false;
+        bool client_key_file_assigned_by_query = false;
         /// Whether the named collection is defined in the server configuration file rather than created by SQL.
         bool collection_defined_in_config = false;
         auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id);
@@ -1137,6 +1287,9 @@ void registerStorageNATS(StorageFactory & factory)
             token_assigned_by_query = named_collection->isQueryOverridden("nats_token");
             destination_assigned_by_query
                 = named_collection->isQueryOverridden("nats_url") || named_collection->isQueryOverridden("nats_server_list");
+            ca_file_assigned_by_query = named_collection->isQueryOverridden("nats_ca_file");
+            client_cert_file_assigned_by_query = named_collection->isQueryOverridden("nats_client_cert_file");
+            client_key_file_assigned_by_query = named_collection->isQueryOverridden("nats_client_key_file");
             collection_defined_in_config = named_collection->getSourceId() == NamedCollection::SourceId::CONFIG;
         }
         else if (!args.storage_def->settings)
@@ -1163,6 +1316,12 @@ void registerStorageNATS(StorageFactory & factory)
                     token_assigned_by_query = true;
                 else if (change.name == "nats_url" || change.name == "nats_server_list")
                     destination_assigned_by_query = true;
+                else if (change.name == "nats_ca_file")
+                    ca_file_assigned_by_query = true;
+                else if (change.name == "nats_client_cert_file")
+                    client_cert_file_assigned_by_query = true;
+                else if (change.name == "nats_client_key_file")
+                    client_key_file_assigned_by_query = true;
             }
         }
 
@@ -1186,6 +1345,9 @@ void registerStorageNATS(StorageFactory & factory)
         (*nats_settings)[NATSSetting::nats_token] = macros->expand((*nats_settings)[NATSSetting::nats_token]);
         (*nats_settings)[NATSSetting::nats_credential_file] = macros->expand((*nats_settings)[NATSSetting::nats_credential_file]);
         (*nats_settings)[NATSSetting::nats_credentials] = macros->expand((*nats_settings)[NATSSetting::nats_credentials]);
+        (*nats_settings)[NATSSetting::nats_ca_file] = macros->expand((*nats_settings)[NATSSetting::nats_ca_file]);
+        (*nats_settings)[NATSSetting::nats_client_cert_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
+        (*nats_settings)[NATSSetting::nats_client_key_file] = macros->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
 
         const bool authentication_determined_by_table = resolveCredentialSource(
             *nats_settings,
@@ -1201,6 +1363,14 @@ void registerStorageNATS(StorageFactory & factory)
             (isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax)
                 && (!named_collection || collection_defined_in_config));
 
+        resolveCertificateSource(
+            *nats_settings,
+            collection_defined_in_config,
+            ca_file_assigned_by_query,
+            client_cert_file_assigned_by_query,
+            client_key_file_assigned_by_query,
+            destination_assigned_by_query);
+
         if ((*nats_settings)[NATSSetting::nats_consumer_name].changed && !(*nats_settings)[NATSSetting::nats_stream].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
 
@@ -1211,7 +1381,8 @@ void registerStorageNATS(StorageFactory & factory)
             args.comment,
             std::move(nats_settings),
             args.mode,
-            authentication_determined_by_table);
+            authentication_determined_by_table,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     };
 
     factory.registerStorage(
@@ -1288,6 +1459,9 @@ Optional parameters:
 - `nats_token` - NATS auth token. When it is stored in a named collection defined in the server configuration file, the query cannot override the collection's `nats_url` or `nats_server_list`.
 - `nats_credential_file` - Path to a NATS credentials file. It is accepted only from a named collection defined in the server configuration file whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges. In a query, pass the contents of the file in `nats_credentials` instead.
 - `nats_credentials` - NATS credentials content (the same payload as in a `.creds` file with user JWT and seed). Because it is the only spelling a query can use, it replaces a `nats_credential_file` inherited from a named collection instead of conflicting with it - unless the operator locked that path with `<nats_credential_file overridable="false">`. It cannot be assigned the empty string to drop the credentials a named collection carries.
+- `nats_ca_file` - Path to a file with the trusted CA certificates used to verify the NATS server certificate. Requires `nats_secure`. Like `nats_credential_file`, it is accepted only from a named collection defined in the server configuration file whose `nats_url` and `nats_server_list` are not overridden by the query, because the server opens the path with its own privileges.
+- `nats_client_cert_file` - Path to the client certificate presented to the NATS server. Requires `nats_secure` and `nats_client_key_file`. Accepted from the same sources as `nats_ca_file`.
+- `nats_client_key_file` - Path to the private key of `nats_client_cert_file`. Accepted from the same sources as `nats_ca_file`.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
 - `nats_commit_on_select` - Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements. Default: `0`.
@@ -1298,6 +1472,12 @@ SSL connection:
 For secure connection use `nats_secure = 1`.
 Certificate verification is controlled by the `CLICKHOUSE_NATS_TLS_SECURE` environment variable;
 If the certificate is expired, self-signed, missing, or otherwise invalid, disable verification by setting `CLICKHOUSE_NATS_TLS_SECURE=0`.
+
+A server certificate signed by a private CA is verified by pointing `nats_ca_file` at the CA certificate,
+which is preferable to turning verification off. When the server requires client certificates,
+supply them with `nats_client_cert_file` and `nats_client_key_file`. All three are operator settings:
+they come from a named collection defined in the server configuration file. Every file is read when
+the table connects, so an unreadable or malformed one fails the query instead of the handshake.
 
 Writing to NATS table:
 
