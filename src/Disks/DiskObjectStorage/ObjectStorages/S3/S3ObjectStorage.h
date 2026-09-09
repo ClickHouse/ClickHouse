@@ -9,6 +9,7 @@
 #include <memory>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
+#include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <IO/ReadBufferFromS3.h>
@@ -49,6 +50,7 @@ private:
         , s3_capabilities(s3_capabilities_)
         , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
+        , limited_log(std::make_shared<LogSeriesLimiter>(log, 1, 30))
         , for_disk_s3(for_disk_s3_)
         , credentials_refresh_callback(credentials_refresh_callback_)
     {
@@ -182,6 +184,9 @@ private:
     const ObjectStorageKeyGeneratorPtr key_generator;
 
     LoggerPtr log;
+    /// A store may report an empty page with more to come for long stretches, so the notice about it
+    /// is throttled rather than emitted per page.
+    LogSeriesLimiterPtr limited_log;
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
