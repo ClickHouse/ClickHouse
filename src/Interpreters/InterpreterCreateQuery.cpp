@@ -1654,7 +1654,16 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         }
 
         if (storage_def)
-            check_access_to_inherited_definition(*storage_def);
+        {
+            /// The settings written in the new query are kept as they are and only the missing ones are
+            /// taken from the source, so a masked setting the query overrides is not inherited at all.
+            auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
+            if (inherited->settings && create.storage && create.storage->settings)
+                for (const auto & change : create.storage->settings->changes)
+                    inherited->settings->changes.removeSetting(change.name);
+
+            check_access_to_inherited_definition(*inherited);
+        }
     }
 
     if (create.storage)

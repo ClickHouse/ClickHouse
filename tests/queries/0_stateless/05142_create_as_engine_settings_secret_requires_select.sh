@@ -30,6 +30,11 @@ echo "with SHOW COLUMNS only:"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "CREATE TABLE ${db}.copy_of_kafka_src AS ${db}.kafka_src" 2>&1 \
     | grep -oE "necessary to have the grant [A-Z ]+ ON ${db}\.[a-z_]+" | head -n 1 | sed "s/${db}/db/"
 
+# Overriding the masked setting means it is not inherited, so the copy needs nothing more.
+echo "with the password overridden:"
+${CLICKHOUSE_CLIENT} --user "${user}" -q "CREATE TABLE ${db}.own_password AS ${db}.kafka_src SETTINGS kafka_sasl_password = 'own'"
+${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = 'own_password'"
+
 echo "after GRANT SELECT:"
 ${CLICKHOUSE_CLIENT} -q "GRANT SELECT ON ${db}.kafka_src TO ${user}"
 ${CLICKHOUSE_CLIENT} --user "${user}" -q "CREATE TABLE ${db}.copy_of_kafka_src AS ${db}.kafka_src"
