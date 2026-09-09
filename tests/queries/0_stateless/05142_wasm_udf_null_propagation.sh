@@ -5,6 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `ColumnBinary` is gated behind `allow_experimental_column_binary_format`.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+
 # A WASM UDF is never handed a nullable argument column: the framework strips the `Nullable`
 # wrappers before the call and reapplies them to the result, exactly as it does for built-in
 # functions. This is what the `NULL handling` section of the documentation describes, and it is

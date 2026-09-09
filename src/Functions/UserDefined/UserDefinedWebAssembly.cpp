@@ -273,28 +273,6 @@ private:
     StopToken stop_token;
 };
 
-/// The user-facing `ColumnBinary` format is gated behind
-/// `allow_experimental_column_binary_format`, which keeps an unfrozen layout out of persisted
-/// data. The `ColumnBinary` WASM UDF ABI shares that wire format but not the gate: WASM UDFs
-/// are experimental in their own right, and their frames never outlive a single call, so
-/// nothing written through them can be left unreadable by a future layout change. Start from
-/// the query's own format settings so per-query knobs (e.g.
-/// `column_binary_disable_preallocation`) still apply.
-static FormatSettings wasmFormatSettings(const ContextPtr & context)
-{
-    auto format_settings = getFormatSettings(context);
-    format_settings.column_binary.allow_experimental = true;
-    return format_settings;
-}
-
-/// Same, for the construction-time probe format, which has no Context to read settings from.
-static FormatSettings columnBinaryEnabledFormatSettings()
-{
-    FormatSettings format_settings;
-    format_settings.column_binary.allow_experimental = true;
-    return format_settings;
-}
-
 class UserDefinedWebAssemblyFunctionBufferedV1 : public UserDefinedWebAssemblyFunction
 {
 public:
@@ -309,18 +287,24 @@ public:
             String col_name = !argument_names[i].empty() ? argument_names[i] : fmt::format("arg{}", i);
             input_header.insert(ColumnWithTypeAndName(arguments[i], col_name));
         }
-        // Built once, with default FormatSettings, purely for its constructor's side effect:
-        // it validates argument types eagerly when serialization_format is ColumnBinary (see
-        // ColumnBinaryOutputFormat's constructor) instead of deferring to the first call.
-        // executeOnBlock below builds its own format from the query's actual Context for the
-        // real precompute/serialize work, since this one's default settings would silently
-        // diverge from whatever the query actually configured.
-        probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(
-            serialization_format, probe_null_wb, input_header, columnBinaryEnabledFormatSettings());
-        // The result type is only read back lazily on the first call, so validate it eagerly
-        // here too.
+        // Validate the argument and result types eagerly, at declaration time, instead of
+        // deferring to the first call. For `ColumnBinary` this is the same check its output
+        // format runs in its constructor, done directly rather than by building that format:
+        // building it would also demand `allow_experimental_column_binary_format`, and whether
+        // the experimental wire may be used belongs to the query that calls the function, not
+        // to the statement that declares it. Every other format is probed by construction,
+        // which is also what rejects a serialization format that does not exist.
         if (serialization_format == "ColumnBinary")
+        {
+            for (const auto & column : input_header)
+                validateColumnBinaryWireSupportedType(column.type);
             validateColumnBinaryWireSupportedType(result_type);
+        }
+        else
+        {
+            probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(
+                serialization_format, probe_null_wb, input_header);
+        }
     }
 
     /// The input block is serialized into a buffer the guest allocates, and the result read
@@ -413,7 +397,7 @@ public:
         // run three times per invocation (probe, real output format, input format), with
         // `block.cloneEmpty()` running twice on top of that. They are query-invariant, so hoisting
         // them changes nothing about which settings apply while removing the repeated work.
-        const FormatSettings format_settings = wasmFormatSettings(context);
+        const FormatSettings format_settings = getFormatSettings(context);
         const Block empty_header = block.cloneEmpty();
 
         WasmMemoryGuard wasm_data = nullptr;
@@ -421,14 +405,14 @@ public:
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
 
-            // Build a fresh probe from the query's actual Context here rather than reusing
-            // probe_format (built once at construction with FormatFactory's default
-            // FormatSettings, kept only for its early argument-type-validation side effect):
-            // otherwise this precompute/allocate fast path silently ignores per-query settings
-            // like column_binary_disable_preallocation while the real `out` format below
-            // correctly picks them up from context, so the two could disagree on whether/how
-            // to serialize. A local NullWriteBuffer (not the probe_null_wb member) avoids a
-            // data race if this const method is called concurrently for the same instance.
+            // Build the probe from the query's actual Context rather than reusing probe_format
+            // (built once at construction with default FormatSettings, kept only for its early
+            // validation side effect): otherwise this precompute/allocate fast path would
+            // ignore per-query settings like column_binary_disable_preallocation while the real
+            // `out` format below picks them up from context, and the two could disagree on
+            // whether or how to serialize. A local NullWriteBuffer (not the probe_null_wb
+            // member) avoids a data race if this const method is called concurrently for the
+            // same instance.
             NullWriteBuffer local_probe_wb;
             auto probe = context->getOutputFormat(serialization_format, local_probe_wb, empty_header, format_settings);
             std::optional<uint64_t> precomputed = probe->precomputeSerializedSize(block, num_rows);
@@ -622,7 +606,7 @@ static bool computePreserveConstColumns(const ContextPtr & context, const std::s
     size_t arg_idx = 0;
     for (const auto & arg : udf->getArguments())
         sample_block.insert(ColumnWithTypeAndName(arg->createColumn(), arg, "arg" + std::to_string(arg_idx++)));
-    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block, wasmFormatSettings(context));
+    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block);
     return !format->expectMaterializedColumns() || format->supportsColumnSchema();
 }
 
@@ -828,7 +812,7 @@ private:
         auto block = getArgumentsBlock(arguments, start_idx, length);
         NullWriteBuffer measure_buf;
         auto measure_out
-            = context->getOutputFormat(serialization_format, measure_buf, block.cloneEmpty(), wasmFormatSettings(context));
+            = context->getOutputFormat(serialization_format, measure_buf, block.cloneEmpty());
 
         /// `ColumnBinary` states the size of a block without writing it. This is the very
         /// primitive `executeOnBlock` sizes the guest buffer with, so the measurement and the
