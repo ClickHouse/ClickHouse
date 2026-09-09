@@ -8,6 +8,16 @@
 namespace DB::QueryPlanOptimizations
 {
 
+/// A merged step's description names the two steps it absorbed. Steps that never had one of their own
+/// would render as `( + )`, which tells a reader less than the empty description it replaced, so keep it
+/// empty in that case.
+static String mergeStepDescriptions(std::string_view parent, std::string_view child)
+{
+    if (parent.empty() && child.empty())
+        return {};
+    return fmt::format("({} + {})", parent, child);
+}
+
 static void removeFromOutputs(ActionsDAG & dag, const ActionsDAG::Node & node)
 {
     auto & outputs = dag.getOutputs();
@@ -55,7 +65,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
-        expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        expr->setStepDescription(mergeStepDescriptions(parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             expr->setPreventInputRemoval();
 
@@ -82,7 +92,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             std::move(merged),
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
-        filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
         if (prevent_input_removal)
             filter->setPreventInputRemoval();
 
@@ -137,7 +147,7 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
                                                    std::move(child_actions),
                                                    condition_name,
                                                    true);
-        filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
+        filter->setStepDescription(mergeStepDescriptions(parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);

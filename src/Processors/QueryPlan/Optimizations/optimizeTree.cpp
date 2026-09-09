@@ -246,7 +246,7 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index);
+        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index, extra_settings);
 
         auto & frame = stack.back();
 
@@ -749,13 +749,12 @@ void optimizeTreeSecondPass(
 
                     /// Merge Expression/Filter steps (on enter) and apply lazy FINAL
                     /// (on leave) in the transformed subtree.
-                    Optimization::ExtraSettings extra{};
                     Stack sub_stack;
                     traverseQueryPlan(sub_stack, *frame.node,
                         [&](QueryPlan::Node & node)
                         {
-                            tryMergeExpressions(&node, nodes, extra);
-                            tryMergeFilters(&node, nodes, extra);
+                            tryMergeExpressions(&node, nodes, extra_settings);
+                            tryMergeFilters(&node, nodes, extra_settings);
                         },
                         [&](QueryPlan::Node &)
                         {

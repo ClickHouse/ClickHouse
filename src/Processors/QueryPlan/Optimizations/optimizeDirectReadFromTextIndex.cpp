@@ -1161,7 +1161,8 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 /// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
 ///
 /// See TextIndexDAGReplacer class for more details.
-void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index)
+void processAndOptimizeTextIndexFunctions(
+    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1206,7 +1207,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (stack.size() >= 3 && typeid_cast<ExpressionStep *>(walk_begin->node->step.get()))
     {
         QueryPlan::Node * node_above = (stack.rbegin() + 2)->node;
-        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, {}))
+        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, settings))
             ++walk_begin; /// the merged-away step is detached now, the filter sits directly above the scan
     }
 
