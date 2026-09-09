@@ -1040,10 +1040,15 @@ inline MutableColumnPtr readColumnFromDesc(
         if (static_cast<uint64_t>(n) * elem_bytes > static_cast<uint64_t>(data_end - p))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_COMPLEX fixed data out of bounds");
+        // The bound above is computed in 64-bit, so the copy has to be too: n is bounded only by
+        // the uint32_t row count, and n * elem_bytes in uint32_t arithmetic wraps for a frame the
+        // bound accepts - copying a short prefix, or nothing at all, into a destination the
+        // decoder then reports as fully decoded.
+        const uint64_t fixed_bytes = static_cast<uint64_t>(n) * elem_bytes;
         auto col = type->createColumn();
         col->insertManyDefaults(n);
-        std::memcpy(const_cast<char *>(col->getRawData().data()), p, n * elem_bytes);
-        p += n * elem_bytes;
+        std::memcpy(const_cast<char *>(col->getRawData().data()), p, fixed_bytes);
+        p += fixed_bytes;
         return col;
     };
 
@@ -1181,19 +1186,24 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED16 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
+        // Materialized once in 64-bit and reused by both checks and the copy: rows_to_dec is
+        // bounded only by the uint32_t row count, so recomputing the size as rows_to_dec * 2 in
+        // uint32_t arithmetic would wrap for a frame the checks accept and leave the column at
+        // the defaults insertManyDefaults filled in, with the decode reported as successful.
+        const uint64_t data_bytes = static_cast<uint64_t>(rows_to_dec) * 2u;
         // See the matching check in COL_FIXED8 above.
-        if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 2u)
+        if (desc.data_size != data_bytes)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED16 data_size {} does not match row count {}",
                 desc.data_size, rows_to_dec);
-        if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 2u > buf.size() - desc.data_offset)
+        if (desc.data_offset > buf.size() || data_bytes > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED16 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
         std::memcpy(const_cast<char *>(inner->getRawData().data()),
-                    buf.data() + desc.data_offset, rows_to_dec * 2);
+                    buf.data() + desc.data_offset, data_bytes);
         col = maybe_nullable(std::move(inner));
     }
     else if (raw_type == COL_FIXED32)
@@ -1202,19 +1212,24 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED32 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
+        // Materialized once in 64-bit and reused by both checks and the copy: rows_to_dec is
+        // bounded only by the uint32_t row count, so recomputing the size as rows_to_dec * 4 in
+        // uint32_t arithmetic would wrap for a frame the checks accept and leave the column at
+        // the defaults insertManyDefaults filled in, with the decode reported as successful.
+        const uint64_t data_bytes = static_cast<uint64_t>(rows_to_dec) * 4u;
         // See the matching check in COL_FIXED8 above.
-        if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 4u)
+        if (desc.data_size != data_bytes)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED32 data_size {} does not match row count {}",
                 desc.data_size, rows_to_dec);
-        if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 4u > buf.size() - desc.data_offset)
+        if (desc.data_offset > buf.size() || data_bytes > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED32 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
         std::memcpy(const_cast<char *>(inner->getRawData().data()),
-                    buf.data() + desc.data_offset, rows_to_dec * 4);
+                    buf.data() + desc.data_offset, data_bytes);
         col = maybe_nullable(std::move(inner));
     }
     else if (raw_type == COL_FIXED64)
@@ -1223,19 +1238,24 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED64 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
+        // Materialized once in 64-bit and reused by both checks and the copy: rows_to_dec is
+        // bounded only by the uint32_t row count, so recomputing the size as rows_to_dec * 8 in
+        // uint32_t arithmetic would wrap for a frame the checks accept and leave the column at
+        // the defaults insertManyDefaults filled in, with the decode reported as successful.
+        const uint64_t data_bytes = static_cast<uint64_t>(rows_to_dec) * 8u;
         // See the matching check in COL_FIXED8 above.
-        if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 8u)
+        if (desc.data_size != data_bytes)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED64 data_size {} does not match row count {}",
                 desc.data_size, rows_to_dec);
-        if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 8u > buf.size() - desc.data_offset)
+        if (desc.data_offset > buf.size() || data_bytes > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: COL_FIXED64 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
         std::memcpy(const_cast<char *>(inner->getRawData().data()),
-                    buf.data() + desc.data_offset, rows_to_dec * 8);
+                    buf.data() + desc.data_offset, data_bytes);
         col = maybe_nullable(std::move(inner));
     }
     else if (raw_type == COL_FIXEDN)
