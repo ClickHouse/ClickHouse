@@ -305,9 +305,7 @@ def _prepare_submodule_cache(workflow, workflow_config: RunConfig) -> Result:
     )
 
 
-def _filter_unaffected_jobs(
-    jobs, workflow_config, changed_files, affected_dockers=(), forced_jobs=()
-):
+def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_dockers=()):
     """
     Update workflow_config.filtered_jobs for jobs unaffected by changed_files.
 
@@ -319,11 +317,6 @@ def _filter_unaffected_jobs(
     Fix 2 (Bug 3) — all_required_artifacts is propagated to a fixed point after
     the initial sweep.  When an unaffected job is rescued because an affected job
     requires it, that rescued job's own dependencies are also rescued.
-
-    Jobs in forced_jobs (force-included by a workflow filter hook returning
-    Workflow.FILTER_HOOK_FORCE_JOB) are treated as affected, so they run even
-    when no changed file matches their digest_config, and their dependencies
-    are kept alive through the usual rescue propagation.
     """
     affected_artifacts = []
     unaffected_jobs = {}  # name → job
@@ -337,10 +330,7 @@ def _filter_unaffected_jobs(
 
         is_affected = False
 
-        if job.name in forced_jobs:
-            print(f"Job [{job.name}] is force-included by a workflow filter hook")
-            is_affected = True
-        elif any(dep in affected_artifacts for dep in job.requires):
+        if any(dep in affected_artifacts for dep in job.requires):
             print(f"Job [{job.name}] requires affected artifacts")
             is_affected = True
         elif job.get_docker_image_name() in affected_dockers:
@@ -637,7 +627,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    force_jobs = set()
     if results[-1].is_ok() and workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
@@ -658,11 +647,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                             )
                             workflow_config.set_job_as_filtered(job.name, reason)
                             continue
-                        if reason == Workflow.FILTER_HOOK_FORCE_JOB:
-                            print(
-                                f"Job [{job.name}] set to forced by custom hook [{hook.__name__}] - exempt from filtering by changed files"
-                            )
-                            force_jobs.add(job.name)
             status = Result.Status.OK
             workflow_config.dump()
             info = ""
@@ -704,11 +688,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                 print(f"Affected docker images [{all_affected_dockers}]")
 
             _filter_unaffected_jobs(
-                workflow.jobs,
-                workflow_config,
-                changed_files,
-                all_affected_dockers,
-                force_jobs,
+                workflow.jobs, workflow_config, changed_files, all_affected_dockers
             )
 
             workflow_config.dump()
