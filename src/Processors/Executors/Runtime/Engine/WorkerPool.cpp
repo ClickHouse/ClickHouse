@@ -38,16 +38,13 @@ namespace ErrorCodes
 namespace
 {
 
-SlotAllocationPtr allocateCPU(size_t max_threads, bool concurrency_control, WorkersCoordinator & coordinator)
+SlotAllocationPtr allocateCPU(size_t max_threads, bool concurrency_control, SlotCount initial_max, WorkersCoordinator & coordinator)
 {
     const SlotCount master_threads = 1;
     const SlotCount worker_threads = max_threads - master_threads;
 
     if (!concurrency_control)
         return std::make_shared<GrantedAllocation>(max_threads);
-
-    const bool lazy_allocation = ConcurrencyControl::instance().getLazyAllocation();
-    const SlotCount initial_max = lazy_allocation ? master_threads : max_threads;
 
     auto query_context = CurrentThread::tryGetQueryContext();
     ResourceLink master_thread_link;
@@ -102,7 +99,8 @@ WorkerPool::WorkerPool(TaskScheduler & scheduler_, WorkersCoordinator & coordina
     , coordinator(coordinator_)
     , pipeline(pipeline_)
     , max_threads(max_threads_)
-    , cpu_slots(allocateCPU(max_threads, concurrency_control, coordinator))
+    , requested_threads(concurrency_control && ConcurrencyControl::instance().getLazyAllocation() ? 1 : max_threads)
+    , cpu_slots(allocateCPU(max_threads, concurrency_control, requested_threads, coordinator))
 {
     if (max_threads > 1)
         pool = std::make_unique<ThreadPool>(
@@ -170,7 +168,12 @@ void WorkerPool::grow()
     if (!lock || workers_count >= max_threads)
         return;
 
-    cpu_slots->setMax(workers_count + 1);
+    if (requested_threads < workers_count + 1)
+    {
+        requested_threads = workers_count + 1;
+        cpu_slots->setMax(requested_threads);
+    }
+
     auto slot = cpu_slots->tryAcquire();
     if (!slot)
         return;
@@ -200,6 +203,9 @@ void WorkerPool::stop()
 
     if (pool)
         pool->wait();
+
+    single_slot.reset();
+    cpu_slots.reset();
 }
 
 }
