@@ -2457,6 +2457,90 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
+/// Whether the value is, or contains at any depth, a floating point zero. A stored `-0.` compares equal
+/// to such a zero, so a key range built from it stands for the predicate only if the key transform sends
+/// both spellings of the zero to key values the index compares as equal.
+/// Iterative because `Field`s nest inside `Field`s and a recursive walk overflows the native stack.
+static bool fieldHoldsFloatingPointZero(const Field & field)
+{
+    absl::InlinedVector<const Field *, 16> pending{&field};
+
+    while (!pending.empty())
+    {
+        const Field * current = pending.back();
+        pending.pop_back();
+
+        switch (current->getType())
+        {
+            case Field::Types::Float64:
+                if (current->safeGet<Float64>() == 0)
+                    return true;
+                break;
+            case Field::Types::Array:
+                for (const Field & element : current->safeGet<Array>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Tuple:
+                for (const Field & element : current->safeGet<Tuple>())
+                    pending.push_back(&element);
+                break;
+            case Field::Types::Map:
+                for (const Field & entry : current->safeGet<Map>())
+                    pending.push_back(&entry);
+                break;
+            case Field::Types::Object:
+                for (const auto & entry : current->safeGet<Object>())
+                    pending.push_back(&entry.second);
+                break;
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+
+/// A predicate on a floating point zero holds for both `-0.` and `+0.`, which are distinct values that
+/// every comparison treats as equal, so key ranges built from the elements of a set stand for the
+/// predicate only if the key transform sends both spellings to key values the index compares as equal.
+/// `{-0., +0.}` is the only such pair on a floating point domain: every other pair of distinct bit
+/// patterns compares unequal, and a `NaN` equals nothing. `Field` has no `Float32`, so `Float32` and
+/// `BFloat16` values arrive here as `Float64`.
+static bool keyTransformSeparatesEqualSetElements(const IColumn & set_column, const DeterministicKeyTransformDag & dag)
+{
+    const size_t set_size = set_column.size();
+    bool set_holds_a_zero = false;
+    for (size_t i = 0; i < set_size && !set_holds_a_zero; ++i)
+        set_holds_a_zero = fieldHoldsFloatingPointZero(set_column[i]);
+
+    /// A set without a zero in it has nothing that a stored `-0.` compares equal to, so no transform on
+    /// it can be narrower than the predicate.
+    if (!set_holds_a_zero)
+        return false;
+
+    const DataTypePtr input_type = removeNullable(removeLowCardinality(dag.input_type));
+
+    /// A value that holds several zeros at once - a container, or a member whose type is only known at
+    /// runtime - is not decided by a single pair of probes, so such a domain is declined instead.
+    if (!WhichDataType(input_type).isFloat())
+        return true;
+
+    /// Both spellings go through in one column, in the transform's own input type, so neither the
+    /// conversion nor the transform can treat them differently for any other reason.
+    auto probe_column = dag.input_type->createColumn();
+    probe_column->insert(Field(0.0));
+    probe_column->insert(Field(-0.0));
+
+    ColumnPtr transformed_column;
+    DataTypePtr transformed_type;
+    if (!applyDeterministicDagToColumn(
+            std::move(probe_column), dag.input_type, dag.input_name, dag, transformed_column, transformed_type))
+        return true;
+
+    return !Range::equals((*transformed_column)[0], (*transformed_column)[1]);
+}
+
 bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -2662,6 +2746,13 @@ static bool tryPrepareSetColumnsForIndex(
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
+
+            /// The key ranges would be narrower than the predicate they stand for: the index would probe
+            /// only the spelling of the zero that is in the set and prune the granule that holds the
+            /// other one, which row evaluation matches.
+            if (keyTransformSeparatesEqualSetElements(*set_column, set_transforming_dag))
+                return false;
+
             if (!applyDeterministicDagToColumn(
                     set_column,
                     set_element_type,
