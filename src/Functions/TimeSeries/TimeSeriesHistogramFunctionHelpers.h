@@ -97,7 +97,7 @@ private:
 /// indexed by TimeSeriesHistogramPayloadTupleIndex.
 using TimeSeriesHistogramPayloadPositions = std::array<size_t, TimeSeriesHistogramPayloadTupleIndex::Size>;
 
-/// Validates that arguments[0] is a named tuple containing all 11 elements of getTimeSeriesHistogramPayloadTupleType
+/// Validates that arguments[0] is a named tuple containing all 15 elements of getTimeSeriesHistogramPayloadTupleType
 /// with the canonical types (at any positions) and returns the element positions. Shared by the function bases below.
 inline TimeSeriesHistogramPayloadPositions resolveTimeSeriesHistogramPayloadPositions(
     const ColumnsWithTypeAndName & arguments, const String & function_name)
@@ -181,7 +181,7 @@ protected:
         size_t row) const = 0;
 
 private:
-    /// Validates that the argument is a named tuple containing all 11 payload elements with the canonical
+    /// Validates that the argument is a named tuple containing all 15 payload elements with the canonical
     /// types (at any positions) and returns the element positions.
     TimeSeriesHistogramPayloadPositions resolveElementPositions(const ColumnsWithTypeAndName & arguments) const
     {

@@ -17,34 +17,35 @@ CREATE TABLE ts_nh_agg ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
 
 -- Group {job='exp'}: e1 (count 4, sum 10, buckets (0.5,1]x1, (1,2]x3) and e2 (count 8, sum 21, x2, x6), both @100.
 INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
-    ('nh_e1', map('job', 'exp'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [])]),
-    ('nh_e2', map('job', 'exp'), [(toDateTime64(100, 3), 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [])]);
+    ('nh_e1', map('job', 'exp'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]),
+    ('nh_e2', map('job', 'exp'), [(toDateTime64(100, 3), 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [], 8, 0, [2, 6], [])]);
 -- Group {job='custom'}: c1 (custom bounds [1,2,4], count 4, sum 10, buckets (-Inf,1]x1, (1,2]x3) and c2 (count 8, sum 21, x0/x2/x6), both @100.
 INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
-    ('nh_c1', map('job', 'custom'), [(toDateTime64(100, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.])]),
-    ('nh_c2', map('job', 'custom'), [(toDateTime64(100, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.])]);
+    ('nh_c1', map('job', 'custom'), [(toDateTime64(100, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.], 4, 0, [1, 3], [])]),
+    ('nh_c2', map('job', 'custom'), [(toDateTime64(100, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.], 8, 0, [0, 2, 6], [])]);
 -- Group {job='mixed'}: a float series (5 @100) and a histogram series (e1 @100).
 INSERT INTO ts_nh_agg (metric_name, tags, time_series) VALUES
     ('mx_f', map('job', 'mixed'), [(toDateTime64(100, 3), 5)]);
 INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
-    ('mx_h', map('job', 'mixed'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [])]);
+    ('mx_h', map('job', 'mixed'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
 -- Group {job='incompat'}: an exponential series (e1) and a custom series (c1).
 INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
-    ('ix_e', map('job', 'incompat'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [])]),
-    ('ix_c', map('job', 'incompat'), [(toDateTime64(100, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.])]);
+    ('ix_e', map('job', 'incompat'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]),
+    ('ix_c', map('job', 'incompat'), [(toDateTime64(100, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.], 4, 0, [1, 3], [])]);
 -- Group {job='float'}: two float series (5 and 7 @100).
 INSERT INTO ts_nh_agg (metric_name, tags, time_series) VALUES
     ('fl_1', map('job', 'float'), [(toDateTime64(100, 3), 5)]),
     ('fl_2', map('job', 'float'), [(toDateTime64(100, 3), 7)]);
 -- Group {job='kahan'}: big (count 1, sum 1e16) and two smalls (count 1, sum 1), all @100.
 INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
-    ('kbig', map('job', 'kahan'), [(toDateTime64(100, 3), 0, 0, 0., 1., 1e16, 0., [(0, 1)], [1e16], [], [], [])]),
-    ('ksm1', map('job', 'kahan'), [(toDateTime64(100, 3), 0, 0, 0., 1., 1., 0., [(0, 1)], [1.], [], [], [])]),
-    ('ksm2', map('job', 'kahan'), [(toDateTime64(100, 3), 0, 0, 0., 1., 1., 0., [(0, 1)], [1.], [], [], [])]);
+    ('kbig', map('job', 'kahan'), [(toDateTime64(100, 3), 0, 0, 0., 1., 1e16, 0., [(0, 1)], [1e16], [], [], [], 1, 0, [10000000000000000], [])]),
+    ('ksm1', map('job', 'kahan'), [(toDateTime64(100, 3), 0, 0, 0., 1., 1., 0., [(0, 1)], [1.], [], [], [], 1, 0, [1], [])]),
+    ('ksm2', map('job', 'kahan'), [(toDateTime64(100, 3), 0, 0, 0., 1., 1., 0., [(0, 1)], [1.], [], [], [], 1, 0, [1], [])]);
 -- Group {job='huge'}: two samples with count = sum = bucket = 1.5e308 @100.
+-- They are float-flavor histograms (flags bit 0): such counts do not fit the exact UInt64 carriers.
 INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
-    ('huge1', map('job', 'huge'), [(toDateTime64(100, 3), 0, 0, 0., 1.5e308, 1.5e308, 0., [(0, 1)], [1.5e308], [], [], [])]),
-    ('huge2', map('job', 'huge'), [(toDateTime64(100, 3), 0, 0, 0., 1.5e308, 1.5e308, 0., [(0, 1)], [1.5e308], [], [], [])]);
+    ('huge1', map('job', 'huge'), [(toDateTime64(100, 3), 1, 0, 0., 1.5e308, 1.5e308, 0., [(0, 1)], [1.5e308], [], [], [], 0, 0, [], [])]),
+    ('huge2', map('job', 'huge'), [(toDateTime64(100, 3), 1, 0, 0., 1.5e308, 1.5e308, 0., [(0, 1)], [1.5e308], [], [], [], 0, 0, [], [])]);
 
 SELECT '-- sum by (job): exp -> (count 12, sum 31, buckets x3, x9), custom -> (count 12, sum 31,';
 SELECT '-- buckets x1, x5, x6 over [1,2,4]), float -> 12; the mixed and incompatible groups drop entirely';

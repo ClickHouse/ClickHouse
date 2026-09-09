@@ -16,19 +16,19 @@ CREATE TABLE ts_nh_math ENGINE = TimeSeries SETTINGS store_native_histograms = 1
 -- All series that should match each other carry the same tags {job='x'} (the metric name is not
 -- part of the join key). e1 @100: exponential schema 0, count 4, sum 10, buckets (0.5,1]x1, (1,2]x3.
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
-    ('nh_e1', map('job', 'x'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [])]);
+    ('nh_e1', map('job', 'x'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
 -- e2 @100: count 8, sum 21, buckets x2, x6.
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
-    ('nh_e2', map('job', 'x'), [(toDateTime64(100, 3), 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [])]);
+    ('nh_e2', map('job', 'x'), [(toDateTime64(100, 3), 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [], 8, 0, [2, 6], [])]);
 -- s1 @100: schema 1, count 8, sum 21, buckets (0.71,1]x1, (1,1.41]x1, (1.41,2]x6.
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
-    ('nh_s1', map('job', 'x'), [(toDateTime64(100, 3), 0, 1, 0., 8., 21., 0., [(0, 3)], [1., 1., 6.], [], [], [])]);
+    ('nh_s1', map('job', 'x'), [(toDateTime64(100, 3), 0, 1, 0., 8., 21., 0., [(0, 3)], [1., 1., 6.], [], [], [], 8, 0, [1, 1, 6], [])]);
 -- c1 @100: custom bounds [1,2,4], count 4, sum 10, buckets (-Inf,1]x1, (1,2]x3.
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
-    ('nh_c1', map('job', 'x'), [(toDateTime64(100, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.])]);
+    ('nh_c1', map('job', 'x'), [(toDateTime64(100, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.], 4, 0, [1, 3], [])]);
 -- c3 @100: custom bounds [2,4,8], count 4, sum 14, buckets (-Inf,2]x5, (2,4]x7.
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
-    ('nh_c3', map('job', 'x'), [(toDateTime64(100, 3), 0, -53, 0., 4., 14., 0., [(0, 2)], [5., 7.], [], [], [2., 4., 8.])]);
+    ('nh_c3', map('job', 'x'), [(toDateTime64(100, 3), 0, -53, 0., 4., 14., 0., [(0, 2)], [5., 7.], [], [], [2., 4., 8.], 4, 0, [5, 7], [])]);
 -- f1 @100: float 5.
 INSERT INTO ts_nh_math (metric_name, tags, time_series) VALUES
     ('nh_f1', map('job', 'x'), [(toDateTime64(100, 3), 5)]);
@@ -36,9 +36,9 @@ INSERT INTO ts_nh_math (metric_name, tags, time_series) VALUES
 INSERT INTO ts_nh_math (metric_name, tags, time_series) VALUES
     ('mx1', map('job', 'mx'), [(toDateTime64(100, 3), 100)]);
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
-    ('mx1', map('job', 'mx'), [(toDateTime64(110, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [])]);
+    ('mx1', map('job', 'mx'), [(toDateTime64(110, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
-    ('mx2', map('job', 'mx'), [(toDateTime64(100, 3), 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [])]);
+    ('mx2', map('job', 'mx'), [(toDateTime64(100, 3), 0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [], 8, 0, [2, 6], [])]);
 
 SELECT '-- histogram + histogram: e1 + e2 = (count 12, sum 31, buckets x3, x9)';
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'nh_e1 + nh_e2', 105);
@@ -111,7 +111,7 @@ SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'mx1
 SELECT '-- one-to-many matching: g1 {job=grp, inst=a} (histogram e1) * on(job) group_left() g2 {job=grp} (float 2)';
 SELECT '-- -> e1 * 2 with the tags of the "many" side';
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
-    ('nh_g1', map('job', 'grp', 'inst', 'a'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [])]);
+    ('nh_g1', map('job', 'grp', 'inst', 'a'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
 INSERT INTO ts_nh_math (metric_name, tags, time_series) VALUES
     ('nh_g2', map('job', 'grp'), [(toDateTime64(100, 3), 2)]);
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'nh_g1 * on(job) group_left() nh_g2', 105);

@@ -7,6 +7,8 @@
 #include <optional>
 #include <unordered_set>
 
+#include <base/arithmeticOverflow.h>
+
 #include <Interpreters/IcebergMetadataLog.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -22,6 +24,7 @@
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromString.h>
@@ -70,8 +73,11 @@ namespace
     /// To handle this issue we subtract 1 from the integral part for lower_bound and add 1 to integral
     /// part of upper_bound. This produces: 17.22 -> [16.0, 18.0]. So this is more rough boundary,
     /// but at least it doesn't lead to incorrect results.
+    /// `compensate_rounding` widens the bound as described above; pass false to read the value exactly
+    /// as the manifest declares it.
     template <typename DecimalType>
-    std::optional<DB::Field> deserializeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound)
+    std::optional<DB::Field>
+    deserializeDecimalBound(const std::string & str, UInt32 scale, bool lower_bound, bool compensate_rounding = true)
     {
         using NativeType = typename DecimalType::NativeType;
         using UnsignedType = make_unsigned_t<NativeType>;
@@ -87,13 +93,16 @@ namespace
 
         NativeType unscaled_value = static_cast<NativeType>(unscaled);
 
-        if (scale)
+        if (compensate_rounding && scale)
         {
             NativeType scaler = lower_bound ? -10 : 10;
             for (UInt32 i = 1; i < scale; ++i)
                 scaler *= 10;
 
-            unscaled_value += scaler;
+            /// The bound is stored as raw bytes and is never checked against the declared precision, so
+            /// widening it can leave the type. A value that has no widened form is not a usable bound.
+            if (common::addOverflow(unscaled_value, scaler, unscaled_value))
+                return std::nullopt;
         }
 
         return DB::DecimalField<DecimalType>(unscaled_value, scale);
@@ -101,7 +110,8 @@ namespace
 
     /// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
     /// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
-    std::optional<DB::Field> deserializeFieldFromBinaryRepr(std::string str, DB::DataTypePtr expected_type, bool lower_bound)
+    std::optional<DB::Field> deserializeFieldFromBinaryRepr(
+        std::string str, DB::DataTypePtr expected_type, bool lower_bound, bool compensate_rounding = true)
     {
         auto non_nullable_type = DB::removeNullable(expected_type);
         auto column = non_nullable_type->createColumn();
@@ -112,13 +122,13 @@ namespace
 
             const UInt32 scale = DB::getDecimalScale(*non_nullable_type);
             if (DB::checkDecimal<DB::Decimal32>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal32>(str, scale, lower_bound);
+                return deserializeDecimalBound<DB::Decimal32>(str, scale, lower_bound, compensate_rounding);
             if (DB::checkDecimal<DB::Decimal64>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal64>(str, scale, lower_bound);
+                return deserializeDecimalBound<DB::Decimal64>(str, scale, lower_bound, compensate_rounding);
             if (DB::checkDecimal<DB::Decimal128>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal128>(str, scale, lower_bound);
+                return deserializeDecimalBound<DB::Decimal128>(str, scale, lower_bound, compensate_rounding);
             if (DB::checkDecimal<DB::Decimal256>(*non_nullable_type))
-                return deserializeDecimalBound<DB::Decimal256>(str, scale, lower_bound);
+                return deserializeDecimalBound<DB::Decimal256>(str, scale, lower_bound, compensate_rounding);
             return std::nullopt;
         }
         else if (non_nullable_type->getTypeId() == DB::TypeIndex::Variant)
@@ -630,7 +640,47 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto left = deserializeFieldFromBinaryRepr(left_str, name_and_type.type, true);
                 auto right = deserializeFieldFromBinaryRepr(right_str, name_and_type.type, false);
                 if (!left || !right)
+                {
+                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
+                    /// form can still be a value the column holds, so this is not on its own a malformed
+                    /// manifest and stays out of the warning log.
+                    LOG_DEBUG(
+                        getLogger("ManifestFileIterator"),
+                        "Manifest file '{}' declares a bound that cannot be read as a usable range border "
+                        "for column id {} of data file '{}'; skipping min/max pruning for this column",
+                        path_to_manifest_file,
+                        column_id,
+                        parsed_entry->file_path_key.serialize());
                     continue;
+                }
+
+                /// At a non-zero scale the outward shift moves each decimal bound one integral unit, so it
+                /// un-inverts any declared pair no more than `2 * 10^scale` apart. Only the values as
+                /// declared expose that inversion, which is why they are read again here.
+                std::optional<DB::Field> declared_left = left;
+                std::optional<DB::Field> declared_right = right;
+                if (DB::WhichDataType(DB::removeNullable(name_and_type.type)).isDecimal())
+                {
+                    declared_left = deserializeFieldFromBinaryRepr(
+                        left_str, name_and_type.type, true, /*compensate_rounding=*/false);
+                    declared_right = deserializeFieldFromBinaryRepr(
+                        right_str, name_and_type.type, false, /*compensate_rounding=*/false);
+                }
+
+                /// A pair inverted as declared means the manifest's statistics are untrustworthy, so no
+                /// range derived from them is safe to prune on. Dropping the column's bounds is therefore
+                /// right where swapping or clamping them would prune on a value nothing vouches for.
+                if (accurateLess(*declared_right, *declared_left))
+                {
+                    LOG_WARNING(
+                        getLogger("ManifestFileIterator"),
+                        "Manifest file '{}' declares a lower bound above the upper bound for column id "
+                        "{} of data file '{}'; skipping min/max pruning for this column",
+                        path_to_manifest_file,
+                        column_id,
+                        parsed_entry->file_path_key.serialize());
+                    continue;
+                }
 
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }

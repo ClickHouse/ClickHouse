@@ -70,6 +70,12 @@ inline void appendTimeSeriesHistogramPayloadRow(const TimeSeriesFloatHistogram &
     append_spans(histogram.negative_spans, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeSpans)));
     append_floats(histogram.negative_buckets, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::NegativeValues)));
     append_floats(histogram.custom_values, typeid_cast<ColumnArray &>(tuple_to.getColumn(Idx::CustomValues)));
+    /// A computed histogram is a float one, so the exact integer carriers stay zero/empty
+    /// (as in AggregateFunctionTimeseriesHistogramBase::appendHistogramToResultColumns).
+    tuple_to.getColumn(Idx::CountInt).insertDefault();
+    tuple_to.getColumn(Idx::ZeroCountInt).insertDefault();
+    tuple_to.getColumn(Idx::PositiveValuesInt).insertDefault();
+    tuple_to.getColumn(Idx::NegativeValuesInt).insertDefault();
 }
 
 /// Base class for `timeSeriesHistogramAdd`/`timeSeriesHistogramSub`: NULL when either input is NULL
