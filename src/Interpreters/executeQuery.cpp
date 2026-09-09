@@ -843,7 +843,7 @@ static void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToSettingValueString(change.value));
             }
         }
         query_span->finish(time);
