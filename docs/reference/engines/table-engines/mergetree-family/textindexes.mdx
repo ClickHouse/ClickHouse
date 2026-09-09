@@ -311,7 +311,7 @@ For an optimal user experience, we therefore recommend using preprocessor expres
 </Note>
 
 Functions [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken), [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens), [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens), and [hasPhrase](/reference/functions/regular-functions/string-search-functions#hasPhrase) use the preprocessor to first transform the search term before tokenizing it.
-Note that because the preprocessor is only applied on the text index path, results from these functions may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
+The preprocessor is part of the index definition, so it applies wherever these functions are evaluated: in the `WHERE`/`PREWHERE` filter, in the `SELECT` list, and independently of whether the index is read (e.g. `SETTINGS use_skip_indexes = 0`).
 
 For example,
 
