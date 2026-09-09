@@ -1,0 +1,15 @@
+UInt64 key, String element, NOT IN	1
+String key, UInt8 element, IN	1
+String key transformed by length(), UInt8 element, IN	1
+UInt8 key, Bool element, IN	1
+String key, Variant element, NOT IN	1
+(String, UInt64) key, Tuple element, IN	1
+control UInt64 key, UInt64 element, prunes	1
+control UInt64 key, UInt64 element, answer	1
+control UInt64 key, UInt8 element, prunes	1
+control UInt64 key, UInt8 element, answer	1
+control DateTime key, other-timezone element, prunes	1
+control DateTime key, other-timezone element, IN answer	1
+control DateTime key, other-timezone element, NOT IN answer	1
+control LowCardinality(String) key, String element, prunes	1
+control LowCardinality(String) key, String element, answer	1
