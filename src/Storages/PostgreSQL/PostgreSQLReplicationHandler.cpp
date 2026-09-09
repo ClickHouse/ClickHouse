@@ -27,6 +27,7 @@
 #include <Databases/DatabaseOnDisk.h>
 
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/String.h>
 
@@ -1045,6 +1046,24 @@ void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 }
 
 
+/// `pos` points at the `"` that opens a quoted identifier; returns the position of the `"` closing it, or
+/// the last position when it is unterminated. A `""` pair inside the identifier is one escaped quote.
+static size_t skipQuotedIdentifier(const String & str, size_t pos)
+{
+    chassert(str[pos] == '"');
+    for (++pos; pos < str.size(); ++pos)
+    {
+        if (str[pos] != '"')
+            continue;
+        if (pos + 1 < str.size() && str[pos + 1] == '"')
+            ++pos;
+        else
+            return pos;
+    }
+    return str.size() - 1;
+}
+
+
 /// Allowed columns for table from materialized_postgresql_tables_list setting
 Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string & table_name) const
 {
@@ -1068,14 +1087,53 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
     }
 
     String column_list = tables_list.substr(table_pos + table_name.length() + 1);
-    column_list.erase(std::remove(column_list.begin(), column_list.end(), '"'), column_list.end());
     boost::trim(column_list);
     if (column_list.empty() || column_list[0] != '(')
         return result;
 
-    size_t end_bracket_pos = column_list.find(')');
+    /// `fetchRequiredTables` has already quoted this list (`"t"("id","a""b")`), so the identifier
+    /// delimiters have to be honoured while scanning: a `)` or a `,` inside a quoted name belongs to the
+    /// name rather than ending the list or the element.
+    size_t end_bracket_pos = std::string::npos;
+    for (size_t pos = 1; pos < column_list.size(); ++pos)
+    {
+        if (column_list[pos] == '"')
+            pos = skipQuotedIdentifier(column_list, pos);
+        else if (column_list[pos] == ')')
+        {
+            end_bracket_pos = pos;
+            break;
+        }
+    }
+
     column_list = column_list.substr(1, end_bracket_pos - 1);
-    splitInto<','>(result, column_list);
+    if (column_list.empty())
+        return result;
+
+    size_t part_start = 0;
+    for (size_t pos = 0; pos <= column_list.size(); ++pos)
+    {
+        if (pos < column_list.size())
+        {
+            if (column_list[pos] == '"')
+                pos = skipQuotedIdentifier(column_list, pos);
+            if (column_list[pos] != ',')
+                continue;
+        }
+
+        String column = column_list.substr(part_start, pos - part_start);
+        part_start = pos + 1;
+
+        boost::trim(column);
+        /// A quoted element carries the name with its `"` doubled; an unquoted one is a legacy list
+        /// element and stands for itself.
+        if (column.size() > 1 && column.front() == '"' && column.back() == '"')
+        {
+            column = column.substr(1, column.size() - 2);
+            boost::replace_all(column, "\"\"", "\"");
+        }
+        result.push_back(std::move(column));
+    }
 
     return result;
 }

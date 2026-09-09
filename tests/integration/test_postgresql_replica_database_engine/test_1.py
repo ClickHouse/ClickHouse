@@ -936,6 +936,7 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
         "pg_inj_backslash_ctl",
         "pg_inj_nul",
     ]
+    cols_table = "pg_inj_cols"
     try:
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
@@ -964,9 +965,49 @@ def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster
         assert (
             marker_count() == 0
         ), "a remote table name containing a NUL byte reached PostgreSQL as executable SQL"
+
+        # 5. `getTableAllowedColumns` re-parses the quoted `materialized_postgresql_tables_list`, so a
+        #    requested column named `a"b` has to survive the doubling instead of collapsing onto `ab`,
+        #    which is a different real column here.
+        cursor.execute(f'DROP TABLE IF EXISTS "{cols_table}"')
+        cursor.execute(
+            f'CREATE TABLE "{cols_table}" (key integer PRIMARY KEY, "a""b" integer, ab integer)'
+        )
+        cursor.execute(
+            f'INSERT INTO "{cols_table}" SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i'
+        )
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{cols_table}(key, a\"b)'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, cols_table)
+        wait_for_rows(f"`test_database`.`{cols_table}`", 5)
+
+        replicated = instance.query(
+            "SELECT name FROM system.columns WHERE database = 'test_database'"
+            f" AND table = '{cols_table}'"
+        ).splitlines()
+        assert 'a"b' in replicated, (
+            'the column named a"b is missing, so the allowed-columns list did not carry the name '
+            f"through: {replicated}"
+        )
+        assert "ab" not in replicated, (
+            'the column named ab was replicated instead of a"b: the allowed-columns list dropped the '
+            f"identifier delimiters and both names collapsed onto ab: {replicated}"
+        )
+        assert instance.query(
+            f'SELECT key, `a"b` FROM `test_database`.`{cols_table}` ORDER BY key'
+        ) == "".join(f"{i}\t{100 + i}\n" for i in range(5))
     finally:
         for ch_table in ch_tables:
             instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
+        pg_manager.drop_materialized_db()
+        cursor.execute(f'DROP TABLE IF EXISTS "{cols_table}"')
         cursor.execute("DROP TABLE IF EXISTS injected_marker")
 
 
