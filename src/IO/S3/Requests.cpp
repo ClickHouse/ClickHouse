@@ -1,6 +1,9 @@
 #include <IO/S3/Requests.h>
 #include <Common/StringUtils.h>
 
+#include <algorithm>
+#include <cctype>
+
 #if USE_AWS_S3
 
 #include <Common/logger_useful.h>
@@ -18,6 +21,14 @@ namespace
 {
 
 /// Translated in both directions; a name added here is renamed going out and recognised coming back.
+/// These are the names Google's own migration guide maps.
+///
+/// The rename carries the value through untouched, which is right for a copy source, for COPY or
+/// REPLACE, and for the user's own metadata. It is only half the story for the storage class: the two
+/// clouds share no class name but STANDARD, so an S3 one renamed onto GCS answers 400
+/// InvalidStorageClass. Nothing can send a GCS class today either, because `GetStorageClassForName`
+/// knows only S3 names and maps the rest to NOT_SET. Making the setting work on GCS means passing the
+/// user's string through instead of the enum, which is a change of its own.
 constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
     {"x-amz-copy-source", "x-goog-copy-source"},
     {"x-amz-metadata-directive", "x-goog-metadata-directive"},
@@ -36,10 +47,16 @@ std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
         if (equalsCaseInsensitive(name, gcs_header))
             return std::string(amz_header);
 
-    /// HTTP/1.1 preserves the case a server sent, so match the prefix case-insensitively.
+    /// HTTP/1.1 preserves the case a server sent, so match the prefix case-insensitively. The result
+    /// is lower-cased whole: the SDK turns whatever follows the prefix into the metadata key of a
+    /// case-sensitive map, and both S3 and GCS store user metadata keys lower-cased.
     if (name.size() > GCS_META_PREFIX.size()
         && equalsCaseInsensitive(std::string_view(name).substr(0, GCS_META_PREFIX.size()), GCS_META_PREFIX))
-        return std::string(AMZ_META_PREFIX) + name.substr(GCS_META_PREFIX.size());
+    {
+        auto suffix = name.substr(GCS_META_PREFIX.size());
+        std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+        return std::string(AMZ_META_PREFIX) + suffix;
+    }
 
     return {};
 }
