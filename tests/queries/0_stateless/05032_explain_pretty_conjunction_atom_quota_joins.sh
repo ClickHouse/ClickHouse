@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long, no-tsan, no-msan, no-flaky-check
+# long: a 4099-column fixture and a 4097-key join is 37s on a release build and 158s under ASan, the build this arm is kept for.
+# no-tsan: quadratic join planning at this key count does not fit the 600s per-test cap under thread instrumentation.
+# no-msan: its EXPLAIN alone measured over 250s under memory instrumentation, against that same cap shared with the rest of the shard.
+# no-flaky-check: nothing here is timing or order dependent, so repeating a multi-minute run cannot expose anything a single run does not.
 # Random settings limits: min_bytes_for_full_part_storage=(0, 0)
 #
 # A wide part written into one packed file costs time in the number of columns, and these tables
@@ -11,10 +15,8 @@
 # depth on an instrumented build, where a frame costs more than the depth a plain build reaches.
 #
 # Planning a join grows quadratically in its key count and is most of the run time, of which
-# rendering is a fraction of a second. That planning is instrumented along with everything else, so
-# the slowest instrumentation exceeds the per-test cap and is excluded; the same quota is crossed
-# through the condition class in 05025, which no build skips. no-flaky-check because repeating this
-# cannot expose anything the single run does not.
+# rendering is a fraction of a second. The same quota is crossed through the condition class in
+# 05025, which every build but TSan runs.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: long, no-sanitizers, no-flaky-check
+# long: four wide-table fixtures and join planning over thousands of keys is about 160s even on a release build.
+# no-sanitizers: twice the quota arm's join keys, planning quadratic in them, does not fit the 600s cap once instrumented; ASan and MSan get the bound from 05025.
+# no-flaky-check: nothing here is timing or order dependent, so repeating a multi-minute run cannot expose anything a single run does not.
 # Random settings limits: min_bytes_for_full_part_storage=(0, 0)
 #
 # A wide part written into one packed file costs time in the number of columns, and these tables
@@ -9,12 +12,9 @@
 # a query holding one class only still terminates. Crossing that bound with runtime filters takes one
 # join key per filter and so twice the keys of the per-class quota, and planning a join grows
 # quadratically in its key count: these two arms are eight times the planning of the quota arm in
-# 05032 while asserting the same rendering code, which is a fraction of a second of either. That
-# planning is what no-sanitizers excludes, since it is instrumented along with everything else and
-# there exceeds the per-test cap. The bound is reached on every other build, and reached far more
-# cheaply through the condition class by 05025, which no build skips.
-#
-# no-flaky-check because repeating these cannot expose anything the single run does not.
+# 05032 while asserting the same rendering code, which is a fraction of a second of either. The bound
+# is reached on every build that runs this file, and reached far more cheaply through the condition
+# class by 05025, which only TSan skips.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

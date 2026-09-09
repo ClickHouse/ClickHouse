@@ -1,10 +1,8 @@
 -- Tags: no-flaky-check
+-- no-flaky-check: the arms are deliberately expensive plans, 137s instrumented, and that check runs each 50 times under a 180s per-run limit only it applies.
 --
 -- A deep chain where each level references the previous column three times. The ActionsDAG stays
 -- small, but rendering it as a tree emitted 3^N characters and the server was OOM-killed.
---
--- no-flaky-check: every arm is a deliberately expensive plan, and the repeated-run harness both
--- multiplies that cost and holds the result to a 180s per-test limit. The work is the same each run.
 
 -- Asserted on the rendered expression, with the `indent + label` prefix stripped, because the limit
 -- bounds one expression and a plan line is `indent + label + expression` (and may carry several

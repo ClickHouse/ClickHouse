@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Tags: long, no-tsan, no-flaky-check
+# long: an 8302-column table and a WHERE of 8300 conjuncts to analyze and render is 11s on a release build and 320s instrumented.
+# no-tsan: this file reached the 600s per-test cap under thread instrumentation; MSan, the slowest build that still runs it, is at 320s.
+# no-flaky-check: nothing here is timing or order dependent, so repeating a multi-minute run cannot expose anything a single run does not.
 # Random settings limits: min_bytes_for_full_part_storage=(0, 0)
 #
 # A wide part written into one packed file costs time in the number of columns, and these tables
@@ -10,8 +13,7 @@
 #
 # Crossing the walk's bound through the condition class takes two join keys, so this arm reaches it
 # without the join planning that grows quadratically in key count. The arms that reach it through
-# runtime filters need one key per filter and live in 05031 and 05032. no-flaky-check because
-# repeating this cannot expose anything the single run does not.
+# runtime filters need one key per filter and live in 05031 and 05032.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
