@@ -1,5 +1,8 @@
 -- A filter comparing an ARRAY JOIN element with a column of the row is fused into the step.
 
+-- fusion is skipped for serialized plans, pin it so the plan-shape checks hold in the distributed-plan suite
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t_aj_row;
 CREATE TABLE t_aj_row (key String, n UInt8, nk Nullable(String), lc LowCardinality(String), arr Array(String), payload String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_aj_row SELECT toString(number % 5), number % 3, if(number % 4 = 0, NULL, toString(number % 5)), toString(number % 2), arrayMap(x -> toString(x), range(number % 6)), repeat('p', 10) FROM numbers(100);
