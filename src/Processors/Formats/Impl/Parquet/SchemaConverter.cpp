@@ -164,22 +164,20 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(
     auto it = map.find(element.field_id);
     if (it == map.end())
     {
-        /// The field id is not part of the read schema. Such a column is not selected, because a
-        /// reader projects by field id (https://iceberg.apache.org/spec/#column-projection), but
-        /// only if the table could have written it in the first place, which holds for:
-        /// - a reserved-range id (> 2147483447), e.g. the v3 row-lineage fields `_row_id` and
-        ///   `_last_updated_sequence_number`, which spec-compliant writers materialize into data
-        ///   files without them being part of the table schema;
-        /// - an id the table has assigned before, i.e. one at or below `last-column-id` of the
-        ///   table metadata. That is a column dropped from the table: `DROP COLUMN` is a
-        ///   metadata-only operation, so the existing data files keep the column.
-        /// Any other id means the file does not belong to this table, or the schema of the file
-        /// was resolved to the wrong one, and is reported rather than silently ignored.
+        /// Reserved field ids (https://iceberg.apache.org/spec/#reserved-field-ids) are not part of
+        /// the table schema, e.g. the v3 row-lineage fields `_row_id` (2147483540) and
+        /// `_last_updated_sequence_number` (2147483539) that spec-compliant writers materialize
+        /// into data files. Those are requested by their physical name, so they are matched by name.
         static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
+        if (element.field_id > iceberg_max_user_field_id)
+            return element.name;
+
+        /// An id at or below `last-column-id` of the table metadata belongs to a column dropped
+        /// from the table: `DROP COLUMN` is metadata-only, so data files keep the column. Any other
+        /// id means the file does not belong to this table, or its schema was resolved to a wrong
+        /// one, which is reported rather than silently ignored.
         const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
-        const bool table_could_have_assigned_it = element.field_id > iceberg_max_user_field_id
-            || (element.field_id >= 1 && last_assigned_field_id.has_value() && element.field_id <= *last_assigned_field_id);
-        if (!table_could_have_assigned_it)
+        if (element.field_id < 1 || !last_assigned_field_id.has_value() || element.field_id > *last_assigned_field_id)
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
                 "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
