@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # flushed by another query's `INSERT` must not re-run the `Too many parts` check later and count the
 # part that flush created from its own rows.
 #
-# Query B buffers its first block and writes its second one 2.4 seconds later. In between, query A
+# Query B buffers its first block and writes its second one 1.5 seconds later. In between, query A
 # appends to the buffer, and doing so flushes B's buffered block to the destination, creating a part.
 # B's second block exceeds the buffer thresholds and is written to the destination directly - with
 # `parts_to_throw_insert = 1` that nested `INSERT` used to run the check, count the part holding B's
@@ -31,22 +31,26 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 
 # Query B: the first branch produces a single row at once, the second one a single three-row block
-# after 2.4 seconds of sleeping.
+# after 1.5 seconds of sleeping.
 ${CLICKHOUSE_CLIENT} -q "
     INSERT INTO t_05054_buf
     SELECT number FROM numbers(1)
     UNION ALL
-    SELECT number + 10 + ignore(sleepEachRow(0.8)) FROM numbers(3)
+    SELECT number + 10 + ignore(sleepEachRow(0.5)) FROM numbers(3)
     SETTINGS max_block_size = 65536, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1,
         max_insert_threads = 1, max_threads = 2
 " &
 query_b_pid=$!
 
 # Wait until B's first block sits in the buffer, so that query A below is the one to flush it.
-for _ in {1..600}
+# The wait is bounded in wall-clock time rather than in iterations: every poll starts a client
+# process, which costs seconds rather than milliseconds under a sanitizer, so a fixed iteration
+# count would let the test run far longer there than the interleaving it waits for is worth.
+poll_deadline=$((SECONDS + 15))
+while [ "$SECONDS" -lt "$poll_deadline" ]
 do
     [ "$(${CLICKHOUSE_CLIENT} -q 'SELECT count() FROM t_05054_buf')" = "1" ] && break
-    sleep 0.05
+    sleep 0.2
 done
 
 # Query A: two rows are buffered, and appending them first flushes B's block to the destination.
