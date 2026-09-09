@@ -159,6 +159,9 @@ namespace
                     socket.peerAddress().toString(), StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, description));
 
             ssize_t received = StreamingExchangeProtocol::tryReceive(socket, dst + position, size - position, description);
+            if (received < 0)
+                throw Poco::Net::NetException(fmt::format(
+                    "Failed to receive {} from {}, peer closed connection", description, socket.peerAddress().toString()));
             if (received == 0)
                 throw Poco::Net::NetException(fmt::format(
                     "Failed to receive {} from {}, socket reported would-block on a blocking handshake after {} of {} bytes",

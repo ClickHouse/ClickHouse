@@ -37,6 +37,90 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+bool parseAuthenticationValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until, bool & is_interval)
+{
+    return IParserBase::wrapParseImpl(pos, [&]
+    {
+        if (ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
+        {
+            is_interval = false;
+            ParserStringAndSubstitution until_p;
+            return until_p.parse(pos, valid_until, expected);
+        }
+
+        /// VALID FOR <interval> is a shortcut: the deadline is computed as `now` plus the interval
+        /// at query execution time and stored in the VALID UNTIL form.
+        if (ParserKeyword{Keyword::VALID_FOR}.ignore(pos, expected))
+        {
+            is_interval = true;
+            ParserExpression interval_p;
+            if (!interval_p.parse(pos, valid_until, expected))
+                return false;
+
+            /// `IN` is a normal operator in expression parsing, so with the trailing access-storage
+            /// clause (`CREATE USER ... VALID FOR INTERVAL 1 DAY IN <storage>`) the expression parser
+            /// greedily consumes `IN <storage>` as part of the interval expression instead of leaving
+            /// it for `parseAccessStorageName`. (`VALID UNTIL` is not affected: its value parser stops
+            /// at the string literal.) Detect this exact shape - a top-level `in` whose right side is
+            /// a bare one-token access-storage name - and give the clause back to the caller: keep the
+            /// left side as the interval and rewind the position to the `IN` keyword. Anything else,
+            /// e.g. a genuine membership test, is left as-is and rejected by the interval type check
+            /// at execution time.
+            if (const auto * maybe_in = valid_until->as<ASTFunction>();
+                maybe_in && maybe_in->name == "in" && maybe_in->arguments && maybe_in->arguments->children.size() == 2)
+            {
+                /// `parseAccessStorageName` accepts both an identifier and a string literal, so both
+                /// `IN memory` and `IN 'memory'` have to be given back.
+                const auto & storage_ast = maybe_in->arguments->children[1];
+                const auto * storage_identifier = storage_ast->as<ASTIdentifier>();
+                const auto * storage_literal = storage_ast->as<ASTLiteral>();
+                const bool is_storage_name = (storage_identifier && storage_identifier->isShort())
+                    || (storage_literal && storage_literal->value.getType() == Field::Types::String);
+
+                if (is_storage_name)
+                {
+                    /// A short identifier, a string literal and the `IN` keyword are one token each.
+                    /// Verify the rewound position really points at `IN` before acting on it.
+                    IParserBase::Pos in_pos = pos;
+                    --in_pos;
+                    --in_pos;
+                    if (ParserKeyword{Keyword::IN}.checkWithoutMoving(in_pos, expected))
+                    {
+                        valid_until = maybe_in->arguments->children[0];
+                        pos = in_pos;
+                    }
+                }
+            }
+            return true;
+        }
+
+        return false;
+    });
+}
+
+bool parseAuthenticationGrants(IParserBase::Pos & pos, Expected & expected, AccessRightsElements & grants)
+{
+    return IParserBase::wrapParseImpl(pos, [&]
+    {
+        if (!ParserKeyword{Keyword::GRANTS}.ignore(pos, expected))
+            return false;
+
+        if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
+            return false;
+
+        AccessRightsElements elements;
+        if (!parseAccessRightsElementsWithoutOptions(pos, expected, elements))
+            return false;
+
+        if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
+            return false;
+
+        grants = std::move(elements);
+        return true;
+    });
+}
+
+
 namespace
 {
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
@@ -51,89 +135,6 @@ namespace
                 return false;
 
             new_name.emplace(std::move(maybe_new_name));
-            return true;
-        });
-    }
-
-    bool parseValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until, bool & is_interval)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (ParserKeyword{Keyword::VALID_UNTIL}.ignore(pos, expected))
-            {
-                is_interval = false;
-                ParserStringAndSubstitution until_p;
-                return until_p.parse(pos, valid_until, expected);
-            }
-
-            /// VALID FOR <interval> is a shortcut: the deadline is computed as `now` plus the interval
-            /// at query execution time and stored in the VALID UNTIL form.
-            if (ParserKeyword{Keyword::VALID_FOR}.ignore(pos, expected))
-            {
-                is_interval = true;
-                ParserExpression interval_p;
-                if (!interval_p.parse(pos, valid_until, expected))
-                    return false;
-
-                /// `IN` is a normal operator in expression parsing, so with the trailing access-storage
-                /// clause (`CREATE USER ... VALID FOR INTERVAL 1 DAY IN <storage>`) the expression parser
-                /// greedily consumes `IN <storage>` as part of the interval expression instead of leaving
-                /// it for `parseAccessStorageName`. (`VALID UNTIL` is not affected: its value parser stops
-                /// at the string literal.) Detect this exact shape - a top-level `in` whose right side is
-                /// a bare one-token access-storage name - and give the clause back to the caller: keep the
-                /// left side as the interval and rewind the position to the `IN` keyword. Anything else,
-                /// e.g. a genuine membership test, is left as-is and rejected by the interval type check
-                /// at execution time.
-                if (const auto * maybe_in = valid_until->as<ASTFunction>();
-                    maybe_in && maybe_in->name == "in" && maybe_in->arguments && maybe_in->arguments->children.size() == 2)
-                {
-                    /// `parseAccessStorageName` accepts both an identifier and a string literal, so both
-                    /// `IN memory` and `IN 'memory'` have to be given back.
-                    const auto & storage_ast = maybe_in->arguments->children[1];
-                    const auto * storage_identifier = storage_ast->as<ASTIdentifier>();
-                    const auto * storage_literal = storage_ast->as<ASTLiteral>();
-                    const bool is_storage_name = (storage_identifier && storage_identifier->isShort())
-                        || (storage_literal && storage_literal->value.getType() == Field::Types::String);
-
-                    if (is_storage_name)
-                    {
-                        /// A short identifier, a string literal and the `IN` keyword are one token each.
-                        /// Verify the rewound position really points at `IN` before acting on it.
-                        IParserBase::Pos in_pos = pos;
-                        --in_pos;
-                        --in_pos;
-                        if (ParserKeyword{Keyword::IN}.checkWithoutMoving(in_pos, expected))
-                        {
-                            valid_until = maybe_in->arguments->children[0];
-                            pos = in_pos;
-                        }
-                    }
-                }
-                return true;
-            }
-
-            return false;
-        });
-    }
-
-    bool parseGrants(IParserBase::Pos & pos, Expected & expected, AccessRightsElements & grants)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (!ParserKeyword{Keyword::GRANTS}.ignore(pos, expected))
-                return false;
-
-            if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
-                return false;
-
-            AccessRightsElements elements;
-            if (!parseAccessRightsElementsWithoutOptions(pos, expected, elements))
-                return false;
-
-            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
-                return false;
-
-            grants = std::move(elements);
             return true;
         });
     }
@@ -329,9 +330,9 @@ namespace
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
             ASTPtr method_valid_until;
-            if (parseValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
+            if (parseAuthenticationValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
                 auth_data->setValidUntil(std::move(method_valid_until));
-            parseGrants(pos, expected, auth_data->grants);
+            parseAuthenticationGrants(pos, expected, auth_data->grants);
 
             return true;
         });
@@ -394,9 +395,9 @@ namespace
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
                 ASTPtr method_valid_until;
-                if (parseValidUntil(pos, expected, method_valid_until, authentication_methods.back()->valid_until_is_interval))
+                if (parseAuthenticationValidUntil(pos, expected, method_valid_until, authentication_methods.back()->valid_until_is_interval))
                     authentication_methods.back()->setValidUntil(std::move(method_valid_until));
-                parseGrants(pos, expected, authentication_methods.back()->grants);
+                parseAuthenticationGrants(pos, expected, authentication_methods.back()->grants);
 
                 return true;
             }
@@ -785,7 +786,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (auth_data.empty() && !global_valid_until)
         {
-            if (parseValidUntil(pos, expected, global_valid_until, global_valid_until_is_interval))
+            if (parseAuthenticationValidUntil(pos, expected, global_valid_until, global_valid_until_is_interval))
             {
                 continue;
             }
@@ -891,6 +892,8 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 ```
 
 `ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
+
+`CREATE USER` requires the [CREATE USER](/reference/statements/grant#access-management) privilege. `OR REPLACE` overwrites an existing user of the same name - its authentication methods, its granted roles and its settings - so it additionally requires the [DROP USER](/reference/statements/grant#access-management) privilege. The `DROP USER` privilege is required on every name listed in the statement whether or not that user already exists, so the statement cannot be used to find out which users exist.
 
 ## Identification {#identification}
 
@@ -1161,6 +1164,14 @@ Create the user account `john` and allow him to grant his privileges to the user
 CREATE USER john GRANTEES jack;
 ```
 
+Create the user account `john` with a default database:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` leaves the default database unset. To use a database named `NONE`, quote its name with backticks: ``DEFAULT DATABASE `NONE```.
+
 Use a query parameter to create the user account `john`:
 
 ```sql
@@ -1201,6 +1212,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -1284,6 +1296,14 @@ Reset authentication methods and keep the most recent added one:
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
+Change the default database for a user:
+
+```sql
+ALTER USER user1 DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` clears the user's default database. To use a database named `NONE`, quote its name with backticks: ``DEFAULT DATABASE `NONE```.
+
 ## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`. The accepted deadline range is `1900-01-01 00:00:00 UTC` through `9999-12-31 09:59:59 UTC` — the latest instant that stays within year 9999 in every time zone, so the stored instant is never clamped when it is rendered. A deadline in the past means the credentials are already expired. Deadlines before `1970-01-01 00:00:01 UTC` are accepted only as an "already expired" marker: they are canonicalized to the smallest expired instant, one second after the Unix epoch (`1970-01-01 00:00:01 UTC`), so `SHOW CREATE USER` reports that instant instead of the deadline you wrote. Deadlines from that instant onward are stored exactly.
@@ -1333,6 +1353,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]

@@ -641,14 +641,14 @@ try
 
     Coordination::EventPtr unused_event = std::make_shared<Poco::Event>();
 
-    const std::string cert_path = config().getString("openSSL.server.certificateFile", "");
-    const std::string key_path = config().getString("openSSL.server.privateKeyFile", "");
-
+    /// TLS certificates, keys and CA certificates are reloaded by CertificateReloader when these files change.
     std::vector<std::string> extra_paths = {include_from_path};
-    if (!cert_path.empty())
-        extra_paths.emplace_back(cert_path);
-    if (!key_path.empty())
-        extra_paths.emplace_back(key_path);
+    for (const auto * key : {"openSSL.server.certificateFile", "openSSL.server.privateKeyFile", "openSSL.server.caConfig",
+                             "openSSL.client.certificateFile", "openSSL.client.privateKeyFile", "openSSL.client.caConfig"})
+    {
+        if (auto file_path = config().getString(key, ""); !file_path.empty())
+            extra_paths.emplace_back(std::move(file_path));
+    }
 
     /// ConfigReloader have to strict parameters which are redundant in our case
     auto main_config_reloader = std::make_unique<ConfigReloader>(
