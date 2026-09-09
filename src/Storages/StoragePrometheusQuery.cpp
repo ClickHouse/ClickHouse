@@ -1,9 +1,6 @@
 #include <Storages/StoragePrometheusQuery.h>
 
 #include <Common/logger_useful.h>
-#include <Columns/IColumn.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -16,7 +13,6 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
 namespace DB
@@ -26,26 +22,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-namespace
-{
-
-/// Read a required String literal argument as a value, without materializing a `Field`.
-String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, std::string_view arg_name)
-{
-    auto [column, type] = evaluateConstantExpressionAsColumn(arg, context);
-    /// Accept `Nullable`/`LowCardinality` wrappers: the previous `Field`-based code read the value
-    /// via `operator[]`, which flattens wrappers, so a non-NULL `Nullable(String)`/
-    /// `LowCardinality(String)` constant passed the String check. Preserve that, and still reject a
-    /// NULL value as before.
-    if (!isStringOrFixedString(removeLowCardinalityAndNullable(type)))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got {}", arg_name, type->getName());
-    if (column->isNullAt(0))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
-    return String(column->getDataAt(0));
-}
-
 }
 
 StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(ASTs & args, const ContextPtr & context, bool over_range)
@@ -85,28 +61,46 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         if (args.size() == min_num_args)
         {
             /// prometheusQuery( 'my_time_series_table', ... )
-            time_series_storage_id.table_name = getStringConstArgument(args[argument_index++], context, "table_name");
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
         }
         else
         {
             /// prometheusQuery( 'mydb', 'my_time_series_table', ... )
-            time_series_storage_id.database_name = getStringConstArgument(args[argument_index++], context, "database_name");
-            time_series_storage_id.table_name = getStringConstArgument(args[argument_index++], context, "table_name");
+            auto database_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+            auto table_name_field = evaluateConstantExpression(args[argument_index++], context).first;
+
+            if (database_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a literal with type String, got {}", database_name_field.getType());
+
+            if (table_name_field.getType() != Field::Types::String)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_name' must be a literal with type String, got {}", table_name_field.getType());
+
+            time_series_storage_id.database_name = database_name_field.safeGet<String>();
+            time_series_storage_id.table_name = table_name_field.safeGet<String>();
         }
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
-    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, context)->getInMemoryMetadataPtr();
+    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
+    auto scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
-    PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), timestamp_scale};
+    auto promql_query_field = evaluateConstantExpression(args[argument_index++], context).first;
+    if (promql_query_field.getType() != Field::Types::String)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'promql_query' must be a literal with type String, got {}", promql_query_field.getType());
 
-    PrometheusQueryEvaluationMode mode = {};
+    PrometheusQueryTree promql_query{promql_query_field.safeGet<String>()};
+
+    PrometheusQueryEvaluationMode mode;
     DateTime64 start_time;
     DateTime64 end_time;
     Decimal64 step;
@@ -151,25 +145,16 @@ StoragePrometheusQuery::StoragePrometheusQuery(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const Configuration & config_)
-    : StorageWithCommonVirtualColumns{table_id_}
+    : IStorage{table_id_}
     , config(config_)
     , log(getLogger("StoragePrometheusQuery"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
-VirtualColumnsDescription StoragePrometheusQuery::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StoragePrometheusQuery::readImpl(
+void StoragePrometheusQuery::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,

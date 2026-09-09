@@ -63,12 +63,6 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
-            {"increase",
-             {
-                 "timeSeriesIncreaseToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
             {"irate",
              {
                  "timeSeriesInstantRateToGrid",
@@ -93,19 +87,8 @@ namespace
                  /* drop_metric_name = */ false,
              }},
 
-            {"changes",
-             {
-                 "timeSeriesChangesToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"resets",
-             {
-                 "timeSeriesResetsToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
             /// TODO:
+            /// resets
             /// predict_linear
             /// deriv
             /// avg_over_time

@@ -84,7 +84,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -211,7 +210,7 @@ namespace
         /// Extracts the settings of transport compression from a query info if possible.
         static std::optional<TransportCompression> fromQueryInfo(const GRPCQueryInfo & query_info)
         {
-            TransportCompression res{};
+            TransportCompression res;
             if (!query_info.transport_compression_type().empty())
             {
                 res.setAlgorithm(query_info.transport_compression_type(), ErrorCodes::INVALID_GRPC_QUERY_INFO);
@@ -247,7 +246,7 @@ namespace
         /// Extracts the settings of transport compression from the server configuration.
         static TransportCompression fromConfiguration(const Poco::Util::AbstractConfiguration & config)
         {
-            TransportCompression res{};
+            TransportCompression res;
             if (config.has("grpc.transport_compression_type"))
             {
                 res.setAlgorithm(config.getString("grpc.transport_compression_type"), ErrorCodes::INVALID_CONFIG_PARAMETER);
@@ -421,6 +420,9 @@ namespace
             grpc_context.set_compression_algorithm(transport_compression.algorithm);
             grpc_context.set_compression_level(transport_compression.level);
         }
+
+        /// Makes the pending operations of this call complete (with `ok` set to false).
+        void cancel() { grpc_context.TryCancel(); }
 
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
@@ -654,8 +656,8 @@ namespace
     private:
         bool nextImpl() override
         {
-            const void * new_pos = nullptr;
-            size_t new_size = 0;
+            const void * new_pos;
+            size_t new_size;
             std::tie(new_pos, new_size) = callback();
             if (!new_size)
                 return false;
@@ -1018,8 +1020,7 @@ namespace
             if (context != query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected context in Input initializer");
             input_function_is_used = true;
-            auto metadata_snapshot = input_storage->getInMemoryMetadataPtr(context, false);
-            initializePipeline(metadata_snapshot->getSampleBlock());
+            initializePipeline(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
@@ -1141,11 +1142,9 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        read_buffer = wrapReadBufferWithCompressionMethod(
-            std::move(read_buffer), input_compression_method,
-            /*zstd_window_log_max=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
+        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), input_compression_method);
 
-        chassert(!pipeline);
+        assert(!pipeline);
 
         const Settings & settings = query_context->getSettingsRef();
 
@@ -1203,8 +1202,11 @@ namespace
                 if (!external_table.data().empty())
                 {
                     /// The data will be written directly to the table.
-                    auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+                    auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context, /*async_insert=*/false);
+
+                    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
+                    buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
 
                     String format = external_table.format();
                     if (format.empty())
@@ -1222,14 +1224,6 @@ namespace
                         external_table_context->applySettingsChanges(settings_changes);
                     }
                     const Settings & settings = external_table_context->getSettingsRef();
-
-                    /// Wrap the decompression buffer after the external table's own settings are applied, so a
-                    /// per-table `snappy_mode` in `external_table.settings()` is honored (otherwise it would be
-                    /// read from the outer `query_context` before the per-table settings take effect).
-                    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
-                    buf = wrapReadBufferWithCompressionMethod(
-                        std::move(buf), chooseCompressionMethod("", external_table.compression_type()),
-                        /*zstd_window_log_max=*/ 0, settings[Setting::snappy_mode]);
 
                     auto in = external_table_context->getInputFormat(
                         format,
@@ -1303,9 +1297,7 @@ namespace
         nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
         if (output_compression_method != CompressionMethod::None)
         {
-            write_buffer = wrapWriteBufferWithCompressionMethod(
-                std::move(write_buffer), output_compression_method, output_compression_level,
-                /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
+            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), output_compression_method, output_compression_level);
             compressing_write_buffer = write_buffer.get();
         }
 
@@ -1407,7 +1399,7 @@ namespace
 
         LOG_INFO(
             log,
-            "Finished call {} in {:.3f} secs. (including reading by client: {:.3f}, writing by client: {:.3f})",
+            "Finished call {} in {} secs. (including reading by client: {}, writing by client: {})",
             getCallName(call_type),
             query_time.elapsedSeconds(),
             static_cast<double>(waited_for_client_reading) / 1000000000ULL,
@@ -1478,6 +1470,17 @@ namespace
 
     void Call::close()
     {
+        /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
+        /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
+        /// owned by the responder, so both have to outlive it.
+        if (reading_query_info.get())
+        {
+            /// If the call has not been finished, nothing would complete that read on its own.
+            if (!responder_finished)
+                responder->cancel();
+            reading_query_info.wait(false);
+        }
+
         responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;
@@ -1631,9 +1634,7 @@ namespace
         if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(
-            std::move(buf), output_compression_method, output_compression_level,
-            /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
         auto format = query_context->getOutputFormat(output_format, *buf, totals);
         format->write(materializeBlock(totals));
         format->finalize();
@@ -1651,9 +1652,7 @@ namespace
         if (output_compression_method != CompressionMethod::None)
             memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
         std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
-        buf = wrapWriteBufferWithCompressionMethod(
-            std::move(buf), output_compression_method, output_compression_level,
-            /*zstd_window_log=*/ 0, query_context->getSettingsRef()[Setting::snappy_mode]);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), output_compression_method, output_compression_level);
         auto format = query_context->getOutputFormat(output_format, *buf, extremes);
         format->write(materializeBlock(extremes));
         format->finalize();
@@ -1688,7 +1687,6 @@ namespace
         static_assert(::clickhouse::grpc::LOG_INFORMATION == static_cast<int>(Poco::Message::PRIO_INFORMATION));
         static_assert(::clickhouse::grpc::LOG_DEBUG       == static_cast<int>(Poco::Message::PRIO_DEBUG));
         static_assert(::clickhouse::grpc::LOG_TRACE       == static_cast<int>(Poco::Message::PRIO_TRACE));
-        static_assert(::clickhouse::grpc::LOG_TEST        == static_cast<int>(Poco::Message::PRIO_TEST));
 
         MutableColumns columns;
         while (logs_queue->tryPop(columns))
@@ -1736,7 +1734,7 @@ namespace
         /// Copy output to `result.output`, with optional compressing.
         if (write_buffer)
         {
-            size_t output_size = 0;
+            size_t output_size;
             if (send_final_message)
             {
                 if (compressing_write_buffer)

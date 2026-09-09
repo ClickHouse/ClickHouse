@@ -18,7 +18,6 @@ public:
     const SerializationPtr & getNested() const  { return nested_serialization; }
 
     KindStack getKindStack() const override { return nested_serialization->getKindStack(); }
-    bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

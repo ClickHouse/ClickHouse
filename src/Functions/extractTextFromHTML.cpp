@@ -291,7 +291,7 @@ size_t extract(const char * __restrict src, size_t size, char * __restrict dst)
 }
 
 
-class FunctionExtractTextFromHTML final : public IFunction
+class FunctionExtractTextFromHTML : public IFunction
 {
 public:
     static constexpr auto name = "extractTextFromHTML";

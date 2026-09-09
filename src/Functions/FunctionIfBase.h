@@ -2,7 +2,6 @@
 
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
 
@@ -54,7 +53,7 @@ public:
         auto * head = b.GetInsertBlock();
         auto * join = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
 
-        VectorWithMemoryTracking<std::pair<llvm::BasicBlock *, llvm::Value *>> returns;
+        std::vector<std::pair<llvm::BasicBlock *, llvm::Value *>> returns;
         for (size_t i = 0; i + 1 < arguments.size(); i += 2)
         {
             auto * then = llvm::BasicBlock::Create(head->getContext(), "then_" + std::to_string(i), head->getParent());

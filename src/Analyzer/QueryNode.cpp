@@ -40,7 +40,7 @@ namespace ErrorCodes
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
 {
@@ -253,10 +253,10 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     buffer << std::string(indent + 2, ' ') << "PROJECTION\n";
     getProjection().dumpTreeImpl(buffer, format_state, indent + 4);
 
-    if (children[join_tree_child_index])
+    if (getJoinTree())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "JOIN TREE\n";
-        children[join_tree_child_index]->dumpTreeImpl(buffer, format_state, indent + 4);
+        getJoinTree()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
     if (getPrewhere())
@@ -415,7 +415,6 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     {
         state.update(setting_change.name.size());
         state.update(setting_change.name);
-        state.update(setting_change.shorthand);
 
         auto setting_change_value_dump = setting_change.value.dump();
         state.update(setting_change_value_dump.size());
@@ -451,8 +450,7 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_query = make_intrusive<ASTSelectQuery>();
-    /// Preserve the parser invariant `recursive_with -> with() != nullptr`.
-    select_query->recursive_with = is_recursive_with && hasWith();
+    select_query->recursive_with = is_recursive_with;
     select_query->distinct = is_distinct;
     select_query->limit_with_ties = is_limit_with_ties;
     select_query->group_by_with_totals = is_group_by_with_totals;
@@ -521,7 +519,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(projection_ast));
 
     ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
-    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[join_tree_child_index], options);
+    addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, getJoinTree(), options);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables_in_select_query_ast));
 
     if (getPrewhere())
