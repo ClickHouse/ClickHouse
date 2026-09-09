@@ -1049,7 +1049,7 @@ BlockIO InterpreterSystemQuery::execute()
             dropDatabaseReplica(query);
             break;
         case Type::DROP_S3QUEUE_FAILED_FILES:
-            dropS3QueueFailedFiles(query);
+            dropObjectStorageQueueFailedFiles(query);
             break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
@@ -2568,7 +2568,7 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
     queue->waitForPathToBeProcessed(query.queue_path, context);
 }
 
-void InterpreterSystemQuery::dropS3QueueFailedFiles(ASTSystemQuery & /* query */)
+void InterpreterSystemQuery::dropObjectStorageQueueFailedFiles(ASTSystemQuery & /* query */)
 {
     auto context = getContext();
     context->checkAccess(AccessType::SYSTEM_DROP_S3QUEUE_FAILED_FILES, table_id);
