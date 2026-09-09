@@ -546,6 +546,9 @@ def test_unrepresentable_row_id_block_does_not_prune(
     )
 
 
+# The tests above read what Spark wrote. The ones below prune over metadata ClickHouse wrote itself:
+# the inherited row id range of a manifest entry is only as good as the `first_row_id` the writer put
+# into the manifest list, so the same filters are replayed against a table of its own making.
 INSERT_SETTINGS = {"allow_insert_into_iceberg": 1}
 
 
@@ -569,6 +572,7 @@ def _clickhouse_table_with_five_appends(
         )
 
 
+@pytest.mark.parametrize("storage_type", ["s3"])
 def test_row_id_filter_prunes_files_clickhouse(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_row_id_pruning_clickhouse_" + storage_type + "_" + get_uuid_str()
@@ -611,6 +615,7 @@ def test_row_id_filter_prunes_files_clickhouse(started_cluster_iceberg_with_spar
     )
 
 
+@pytest.mark.parametrize("storage_type", ["s3"])
 def test_incremental_read_by_sequence_number_prunes_files_clickhouse(
     started_cluster_iceberg_with_spark, storage_type
 ):
@@ -659,6 +664,7 @@ def test_incremental_read_by_sequence_number_prunes_files_clickhouse(
     )
 
 
+@pytest.mark.parametrize("storage_type", ["s3"])
 def test_row_id_pruning_is_skipped_for_orc_clickhouse(
     started_cluster_iceberg_with_spark, storage_type
 ):
