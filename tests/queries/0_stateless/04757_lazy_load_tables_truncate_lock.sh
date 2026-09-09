@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, zookeeper, memory-engine
+# Tags: no-replicated-database, zookeeper, memory-engine, log-engine
 #
 # `TRUNCATE` of a MergeTree table in a `lazy_load_tables = 1` database must skip the exclusive
 # lock, exactly as it does for an eagerly loaded MergeTree. `InterpreterDropQuery` classified
@@ -9,9 +9,11 @@
 # `DEADLOCK_AVOIDED` once `lock_acquire_timeout` expired.
 #
 # Each arm starts a long reader, waits until it has actually read a row, then truncates with a
-# short `lock_acquire_timeout`. `blocked=0` means the truncate was exempt from the lock.
-# Arms C and D are controls: a plain non-MergeTree table must still be blocked (the fix is not a
-# blanket lock removal) and an eagerly loaded MergeTree must stay exempt (unchanged behaviour).
+# short `lock_acquire_timeout`. `blocked=0` means the truncate skipped the exclusive lock.
+# Arms C, D and E are controls. C and D pin the eager cases: a non-MergeTree table must still be
+# blocked (the fix is not a blanket lock removal) and a MergeTree must stay exempt. E is the lazy
+# non-MergeTree case and must be blocked as well, so that the classification cannot degrade into
+# "exempt every proxy", which is the one mutant arms A to D all accept.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -35,6 +37,8 @@ ${CLICKHOUSE_CLIENT} -nq "
         ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/rmt', 'r1')
         ORDER BY id;
     INSERT INTO \`${LAZY}\`.rmt SELECT number FROM numbers(300);
+    CREATE TABLE \`${LAZY}\`.log (id UInt64) ENGINE = Log;
+    INSERT INTO \`${LAZY}\`.log SELECT number FROM numbers(300);
     CREATE DATABASE \`${PLAIN}\` ENGINE = Atomic;
     CREATE TABLE \`${PLAIN}\`.mem (id UInt64) ENGINE = Memory;
     INSERT INTO \`${PLAIN}\`.mem SELECT number FROM numbers(300);
@@ -45,6 +49,10 @@ ${CLICKHOUSE_CLIENT} -nq "
 # The inserts materialize the proxies, so re-attach to get them back. Assert the fixture is really
 # a proxy before probing: if it reads `MergeTree` the arms would pass without exercising the fix.
 # Query `engine` only: `parts` and `data_paths` materialize the proxy.
+# `log` is asserted here for the same reason, and the assertion is load-bearing rather than
+# decorative: an eagerly loaded Log is blocked too, so without it arm E keeps passing while no longer
+# covering a proxy at all. If lazy loading ever stops admitting non-MergeTree engines this line is
+# meant to fail, because that retires arm E rather than weakening it.
 ${CLICKHOUSE_CLIENT} -q "DETACH DATABASE \`${LAZY}\` SYNC"
 ${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE \`${LAZY}\`"
 ${CLICKHOUSE_CLIENT} -q "SELECT name, engine FROM system.tables WHERE database = '${LAZY}' ORDER BY name"
@@ -97,3 +105,4 @@ arm A_lazy_mergetree            "\`${LAZY}\`.mt"
 arm B_lazy_replicated_mergetree "\`${LAZY}\`.rmt"
 arm C_plain_memory              "\`${PLAIN}\`.mem"
 arm D_plain_mergetree           "\`${PLAIN}\`.mt"
+arm E_lazy_log                  "\`${LAZY}\`.log"
