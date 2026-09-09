@@ -131,7 +131,9 @@ def test_clickhouse_local_uses_configured_loopback_cluster(started_cluster):
     # value even though it listens on no port, so the inherited value says nothing about it.
     # The configuration of the server is used, because it is the one that declares both the
     # cluster and `tcp_port`; a separate working directory keeps the tool away from the data
-    # directory of the running server.
+    # directory of the running server. Every shape gets a working directory of its own: the tool
+    # persists the metadata of the database it creates under `--path`, so a shared directory would
+    # make the next invocation start with `proxy` already attached.
     for cluster_name in ("loopback", "loopback_default_port"):
         assert (
             node1.exec_in_container(
@@ -139,7 +141,7 @@ def test_clickhouse_local_uses_configured_loopback_cluster(started_cluster):
                     "clickhouse",
                     "local",
                     "--config-file=/etc/clickhouse-server/config.xml",
-                    "--path=/var/lib/clickhouse-local-cluster-test",
+                    f"--path=/var/lib/clickhouse-local-cluster-test-{cluster_name}",
                     "--multiquery",
                     f"--query=CREATE DATABASE proxy ENGINE = Cluster('{cluster_name}', 'local_src'); SELECT count() FROM proxy.t",
                 ]
