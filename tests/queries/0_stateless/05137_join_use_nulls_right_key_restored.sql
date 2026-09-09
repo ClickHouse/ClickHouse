@@ -1,6 +1,7 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/118738
--- With join_use_nulls, a selected right join key is joined on as its Nullable output column, so the
--- join stores it once and restores it from the left key, instead of keeping a plain key plus a Nullable copy.
+-- With join_use_nulls, a selected right join key is joined on as its Nullable output column, so the right
+-- side carries one column that the join restores from the left key, instead of the plain key plus the
+-- Nullable wrapper as a payload column.
 
 SET join_use_nulls = 1;
 SET enable_analyzer = 1;

@@ -858,7 +858,9 @@ static void predicateOperandsToCommonType(
 /// Under `join_use_nulls`, a right column selected from a LEFT or FULL JOIN is output through `toNullable(x)`
 /// (see `addToNullableIfNeeded`). When that column is also a join key, joining on the `Nullable` node makes
 /// it the single right column that is both the key and the output, which the join restores from the left
-/// key; joining on the plain input would make the join store a `Nullable` copy of the key next to it.
+/// key. Joining on the plain input instead leaves the `Nullable` wrapper as a payload column next to the
+/// key: a whole extra column where the join keeps keys only in its arena, and a second count of the same
+/// bytes toward the spill threshold where it saves the key columns too.
 static void preferNullableRightKey(
     JoinActionRef & right_node,
     const JoinPlanningContext & planning_context,
@@ -1771,7 +1773,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     /// An input that only feeds a used expression, such as the `toNullable(x)` key under `join_use_nulls`
     /// or a key cast to a common type, is not passed to the join as a column of its own: the join would
-    /// store it as payload for nothing.
+    /// keep it as payload for nothing. `ActionsDAG::updateHeader` drops such consumed inputs anyway.
     std::unordered_set<const ActionsDAG::Node *> consumed_inputs;
     {
         std::unordered_set<const ActionsDAG::Node *> used_nodes;
