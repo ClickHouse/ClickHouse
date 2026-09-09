@@ -377,6 +377,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(converting_transform_pause) \
     PAUSEABLE_ONCE(check_constraints_transform_before_expression_pause) \
     PAUSEABLE_ONCE(check_constraints_transform_pause) \
+    PAUSEABLE_ONCE(check_constraints_transform_between_constraints_pause) \
     PAUSEABLE_ONCE(adding_defaults_transform_before_expression_pause) \
     PAUSEABLE_ONCE(adding_defaults_transform_before_execute_pause) \
     PAUSEABLE_ONCE(adding_defaults_transform_pause) \
