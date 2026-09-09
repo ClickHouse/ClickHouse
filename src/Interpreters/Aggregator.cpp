@@ -2215,7 +2215,16 @@ bool Aggregator::executeOnBlock(Columns columns,
     AdaptiveAggregationProducer * adaptive) const
 {
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    const MemoryTracker * own_tracker = switchToOwnTracker(result, memory_tracker_switcher);
+    MemoryTracker * own_tracker = switchToOwnTracker(result, memory_tracker_switcher);
+
+    /// Staged records and the shared drain table belong to the session, not to this table:
+    /// the local tracker is what a spill of this table can release, so the shared work runs
+    /// under the aggregator's tracker instead.
+    const auto session_scope = [&](std::optional<MemoryTrackerSwitcher> & scope)
+    {
+        if (own_tracker)
+            scope.emplace(own_tracker);
+    };
 
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
@@ -2297,6 +2306,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// The frozen adaptive path: hits update the local table in place, misses become delayed
         /// records of the shared table.
+        std::optional<MemoryTrackerSwitcher> scope;
+        session_scope(scope);
         executeFrozen(
             columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const);
     }
@@ -2335,6 +2346,8 @@ bool Aggregator::executeOnBlock(Columns columns,
             else
             {
                 freezeAdaptive(result, *adaptive);
+                std::optional<MemoryTrackerSwitcher> scope;
+                session_scope(scope);
                 executeFrozen(
                     columns,
                     split,
@@ -2405,6 +2418,8 @@ bool Aggregator::executeOnBlock(Columns columns,
                 if (params.max_bytes_before_external_group_by
                     && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
                 {
+                    std::optional<MemoryTrackerSwitcher> scope;
+                    session_scope(scope);
                     flushPendingChunks(*adaptive);
                     drainStagedChunksUnderMemoryPressure(*adaptive->session);
                 }
@@ -2475,6 +2490,8 @@ bool Aggregator::executeOnBlock(Columns columns,
         && result.isTwoLevel() && worth_convert_to_two_level
         && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
     {
+        std::optional<MemoryTrackerSwitcher> scope;
+        session_scope(scope);
         if (auto sampled = releaseAdaptiveDrainResidue(*adaptive->session))
             spill_decision_memory = *sampled;
     }

@@ -93,6 +93,7 @@ void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & c
 void AdaptiveAggregationSession::StagedBacklog::registerChunk(const StagedChunkPtr & chunk)
 {
     std::shared_lock registry_lock(registry_mutex);
+    enqueued_bytes.fetch_add(chunk->allocatedBytes(), std::memory_order_relaxed);
     for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
     {
         if (!chunk->keys.recordsForBucket(b))
@@ -130,6 +131,10 @@ std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllFo
             if (seen.insert(chunk.get()).second)
                 chunks.push_back(std::move(chunk));
     }
+    size_t claimed_bytes = 0;
+    for (const auto & chunk : chunks)
+        claimed_bytes += chunk->allocatedBytes();
+    enqueued_bytes.fetch_sub(claimed_bytes, std::memory_order_relaxed);
     return chunks;
 }
 

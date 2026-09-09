@@ -232,6 +232,9 @@ struct AdaptiveAggregationSession
         void recordDrained(size_t records) { undrained_records.fetch_sub(records, std::memory_order_relaxed); }
         size_t undrainedRecords() const { return undrained_records.load(std::memory_order_relaxed); }
 
+        /// The footprint of the chunks currently enqueued: registered chunks in, claimed chunks out.
+        size_t enqueuedBytes() const { return enqueued_bytes.load(std::memory_order_relaxed); }
+
         /// Retires a bucket's chunk references after its merge-and-convert completed: the
         /// borrow of staged key bytes ends at conversion. A chunk frees once the last bucket
         /// holding it retires.
@@ -259,6 +262,7 @@ struct AdaptiveAggregationSession
         SharedMutex registry_mutex;
 
         std::atomic<size_t> undrained_records{0};
+        std::atomic<size_t> enqueued_bytes{0};
     };
 
     StagedBacklog backlog;

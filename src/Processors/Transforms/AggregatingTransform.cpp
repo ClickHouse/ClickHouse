@@ -1302,6 +1302,10 @@ ProcessorMemoryStats AggregatingTransform::getMemoryStats() const
     ProcessorMemoryStats res;
     res.spillable_memory_bytes = variants.memoryUsage();
     res.need_reserved_memory_bytes = variants.isTwoLevel() ? /* negligible */ 0 : res.spillable_memory_bytes;
+    /// The staged backlog is shared, and any producer's spill can drain it: each one reports an
+    /// equal share, so the sum over the producers is the backlog once.
+    if (adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire))
+        res.spillable_memory_bytes += adaptive_context->session->backlog.enqueuedBytes() / many_data->num_producers;
     return res;
 }
 
