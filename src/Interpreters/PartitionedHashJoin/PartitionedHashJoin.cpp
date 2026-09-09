@@ -47,6 +47,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int SET_SIZE_LIMIT_EXCEEDED;
@@ -102,7 +103,8 @@ PartitionedHashJoin::PartitionedHashJoin(
           /*allow_set_maps_=*/false))
     , delegate_mode(!table_join->oneDisjunct())
     , maps_variant_index(leaf_join->data->maps.empty() ? 1 : leaf_join->data->maps.front().index())
-    , max_fanout_per_pass(ColumnsScatter::MAX_FANOUT_PER_PASS)
+    , max_fanout_per_pass(table_join->partitionedHashJoinMaxFanoutPerPass())
+    , cap_partitions_by_l1_descriptors(table_join->partitionedHashJoinCapPartitionsByL1Descriptors())
     , stats_collecting_params(stats_collecting_params_)
     , log(getLogger("PartitionedHashJoin"))
 {
@@ -111,6 +113,15 @@ PartitionedHashJoin::PartitionedHashJoin(
             ErrorCodes::LOGICAL_ERROR,
             "PartitionedHashJoin was created for an unsupported map type {}; the plan-time gate must reject this shape",
             leaf_join->data->type);
+
+    /// The first scatter pass numbers `2^bits + 1` buckets in UInt16 - one drop bucket past the
+    /// partitions for the skipped rows - so it may take at most 15 bits. A wider ceiling would let a
+    /// 16-bit plan wrap the drop bucket onto partition 0 and insert the skipped rows there.
+    if (max_fanout_per_pass < 2 || max_fanout_per_pass > 32768)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting partitioned_hash_join_max_fanout_per_pass must be between 2 and 32768, got {}",
+            max_fanout_per_pass);
 
     /// Sized once and never resized, because the lock-free paths index them without synchronizing
     /// against growth. A lane past the table takes the fallback.
@@ -413,14 +424,17 @@ void PartitionedHashJoin::decidePartitionPlan()
             ++bits;
 
         /// Past this many leaves the descriptor array stops fitting the cache it is gathered from
-        /// once per probe row, and buying L2-resident leaf buckets with a cold descriptor gather
-        /// plus a second scatter pass is a net loss. Budgeted against L1, charging the array only a
-        /// quarter of it so the rest of the probe's per-row working set - the cell the descriptor
-        /// points at, the key and result columns - still fits alongside.
-        const size_t l1_bytes = std::max<size_t>(getL1CacheSize(), 32 << 10);
-        const size_t max_leaves_for_descs = std::max<size_t>(1, l1_bytes / 4 / sizeof(LeafMapDesc));
-        const auto descriptor_cap_bits = static_cast<size_t>(std::bit_width(max_leaves_for_descs) - 1);
-        bits = std::min(bits, descriptor_cap_bits);
+        /// once per probe row, and buying L2-resident leaf buckets with a cold descriptor gather is
+        /// a net loss. Budgeted against L1, charging the array only a quarter of it so the rest of
+        /// the probe's per-row working set - the cell the descriptor points at, the key and result
+        /// columns - still fits alongside. The setting switches the rule off for experiments.
+        if (cap_partitions_by_l1_descriptors)
+        {
+            const size_t l1_bytes = l1_cache_bytes_for_tests.value_or(std::max<size_t>(getL1CacheSize(), 32 << 10));
+            const size_t max_leaves_for_descs = std::max<size_t>(1, l1_bytes / 4 / sizeof(LeafMapDesc));
+            const auto descriptor_cap_bits = static_cast<size_t>(std::bit_width(max_leaves_for_descs) - 1);
+            bits = std::min(bits, descriptor_cap_bits);
+        }
 
         if (bits > 0)
         {

@@ -8931,6 +8931,12 @@ Initial number of grace hash join buckets
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
 Limit on the number of grace hash join buckets
 )", EXPERIMENTAL) \
+    DECLARE(NonZeroUInt64, partitioned_hash_join_max_fanout_per_pass, 8192, R"(
+Upper bound on the number of partitions one scatter pass of a `partitioned_hash` join writes to. Values from 2 to 32768 are accepted and rounded down to a power of two. A plan with more partitions scatters the build side in several passes. Each partition of a pass needs about 76 bytes of write buffer per thread, so the default keeps those buffers near 600 KiB, inside a 1 MiB L2 cache.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, partitioned_hash_join_cap_partitions_by_l1_descriptors, true, R"(
+Limit the number of partitions of a `partitioned_hash` join to the number of per-partition table descriptors that fit in a quarter of the L1 data cache. The probe reads one descriptor per row, and past this count that read misses the L1 cache.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
 The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
 )", EXPERIMENTAL) \

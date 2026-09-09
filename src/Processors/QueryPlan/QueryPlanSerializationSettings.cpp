@@ -90,6 +90,8 @@ namespace DB
     \
     DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, "Initial number of grace hash join buckets", 0) \
     DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, "Limit on the number of grace hash join buckets", 0) \
+    DECLARE(NonZeroUInt64, partitioned_hash_join_max_fanout_per_pass, 8192, "Upper bound on the number of partitions one scatter pass of a `partitioned_hash` join writes to. Values from 2 to 32768 are accepted and rounded down to a power of two.", 0) \
+    DECLARE(Bool, partitioned_hash_join_cap_partitions_by_l1_descriptors, true, "Limit the number of partitions of a `partitioned_hash` join to the number of per-partition table descriptors that fit in a quarter of the L1 data cache.", 0) \
     \
     DECLARE(UInt64, max_bytes_before_external_join, 0, "If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), automatic spilling is disabled.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0., "Spill threshold for hash joins expressed as a fraction of available memory. Combined with the absolute `max_bytes_before_external_join`, the smaller resulting threshold applies. The ratio is recomputed on each executor against its local memory limits.", 0) \

@@ -36,9 +36,6 @@ constexpr size_t HIST_INTERLEAVE_MAX_FANOUT = 2048;
 /// the lines written in between.
 constexpr size_t SCATTER_BATCH_MIN_ROWS = 256 << 10;
 constexpr size_t SCATTER_BATCH_LINES_PER_PARTITION = 64;
-/// One pass may fan out no wider than its staging cache fits in L2 (~76 B per partition per
-/// worker). This is also what keeps partition ids inside 16 bits on the per-pass hot paths.
-constexpr size_t MAX_FANOUT_PER_PASS = 1024;
 
 inline size_t scatterBatchRowsTarget(size_t fanout)
 {
@@ -191,8 +188,8 @@ struct ScatterScratch
 /** Chunk kernels: one call scatters one chunk of one column, with the cursors living in the
   * caller's `ScatterScratch` across chunks - seed once per column, scatter every chunk, drain once.
   * The row loops stay inside this module's translation unit, so the call cost is per chunk and never
-  * per row. Partition ids come in both widths because UInt16 halves the pid bandwidth and covers any
-  * fanout up to `MAX_FANOUT_PER_PASS`.
+  * per row. Partition ids come in both widths because UInt16 halves the pid bandwidth. A pass takes at
+  * most 15 route bits, so its ids fit even with the build's one extra drop bucket.
   */
 
 /// Partition is `(routeWord(key) >> shift) & mask`; the pids are written out too when `pids_out` is

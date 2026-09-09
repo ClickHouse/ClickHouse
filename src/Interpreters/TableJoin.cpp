@@ -86,6 +86,8 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const SettingsNonZeroUInt64 partitioned_hash_join_max_fanout_per_pass;
+    extern const SettingsBool partitioned_hash_join_cap_partitions_by_l1_descriptors;
 }
 
 namespace ErrorCodes
@@ -234,6 +236,8 @@ TableJoin::TableJoin(
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
+    , partitioned_hash_join_max_fanout_per_pass(settings[Setting::partitioned_hash_join_max_fanout_per_pass])
+    , partitioned_hash_join_cap_partitions_by_l1_descriptors(settings[Setting::partitioned_hash_join_cap_partitions_by_l1_descriptors])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -269,6 +273,8 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
+    , partitioned_hash_join_max_fanout_per_pass(settings.partitioned_hash_join_max_fanout_per_pass)
+    , partitioned_hash_join_cap_partitions_by_l1_descriptors(settings.partitioned_hash_join_cap_partitions_by_l1_descriptors)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)

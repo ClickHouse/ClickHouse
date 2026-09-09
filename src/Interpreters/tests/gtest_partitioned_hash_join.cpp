@@ -123,7 +123,9 @@ BuiltJoin buildJoin(
     JoinKind kind = JoinKind::Inner,
     bool disable_amac = false,
     size_t max_fanout_per_pass_for_tests = 0,
-    const StatsCollectingParams & stats_collecting_params = {})
+    const StatsCollectingParams & stats_collecting_params = {},
+    bool cap_partitions_by_l1_descriptors = true,
+    size_t l1_cache_bytes_for_tests = 0)
 {
     const Block left_header = twoColumnBlock("k", "probe_id", {}, {});
     const Block right_header = twoColumnBlock("rk", "build_id", {}, {});
@@ -145,6 +147,10 @@ BuiltJoin buildJoin(
     /// partition count must not.
     if (max_fanout_per_pass_for_tests > 0)
         result.join->setMaxFanoutPerPassForTests(max_fanout_per_pass_for_tests);
+    if (!cap_partitions_by_l1_descriptors)
+        result.join->setCapPartitionsByL1DescriptorsForTests(false);
+    if (l1_cache_bytes_for_tests > 0)
+        result.join->setL1CacheSizeForTests(l1_cache_bytes_for_tests);
 
     std::vector<UInt64> keys;
     std::vector<UInt64> ids;
@@ -595,6 +601,48 @@ TEST(PartitionedHashJoin, MultiPassForcedPlanLeafParity)
     EXPECT_EQ(multi_stats.leaf_rows, distinct_keys);
 
     probeAndCheck(multi, distinct_keys, /*duplicates=*/1, /*misses=*/10000);
+}
+
+TEST(PartitionedHashJoin, DescriptorCapClampsPlan)
+{
+    /// A 256-byte L1 holds four 16-byte descriptors in its quarter, so the cap clamps a 2M-key build
+    /// to four leaves; with the cap switched off the same L1 changes nothing. Results stay exact.
+    constexpr size_t distinct_keys = 2000000;
+    constexpr size_t l1_bytes = 256;
+
+    auto uncapped = buildJoin(
+        distinct_keys,
+        /*duplicates=*/1,
+        /*num_threads=*/4,
+        /*reserve_safety_for_tests=*/0,
+        block_rows,
+        JoinKind::Inner,
+        /*disable_amac=*/false,
+        /*max_fanout_per_pass_for_tests=*/0,
+        /*stats_collecting_params=*/{},
+        /*cap_partitions_by_l1_descriptors=*/false,
+        l1_bytes);
+    ASSERT_GT(uncapped.join->getBuildStats().partitions, 4u) << "the cap must have a wider plan to clamp";
+
+    auto capped = buildJoin(
+        distinct_keys,
+        /*duplicates=*/1,
+        /*num_threads=*/4,
+        /*reserve_safety_for_tests=*/0,
+        block_rows,
+        JoinKind::Inner,
+        /*disable_amac=*/false,
+        /*max_fanout_per_pass_for_tests=*/0,
+        /*stats_collecting_params=*/{},
+        /*cap_partitions_by_l1_descriptors=*/true,
+        l1_bytes);
+    const auto stats = capped.join->getBuildStats();
+
+    EXPECT_EQ(stats.partitions, 4u);
+    EXPECT_EQ(stats.leaf_rows, distinct_keys);
+    EXPECT_EQ(stats.leaf_growths, 0u);
+
+    probeAndCheck(capped, distinct_keys, /*duplicates=*/1, /*misses=*/10000);
 }
 
 TEST(PartitionedHashJoin, MultiPassWideLocatorsManyPassesWithDuplicates)

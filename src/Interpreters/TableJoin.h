@@ -171,6 +171,8 @@ private:
     const bool enable_join_fixed_hash_table_conversion = false;
     const bool enable_join_key_only_hash_tables = false;
     const bool join_runtime_filter_from_fixed_hash_table = false;
+    const size_t partitioned_hash_join_max_fanout_per_pass = 8192;
+    const bool partitioned_hash_join_cap_partitions_by_l1_descriptors = true;
 
     /// Value if setting max_memory_usage for query, can be used when max_bytes_in_join is not specified.
     size_t max_memory_usage = 0;
@@ -353,6 +355,8 @@ public:
     bool enableJoinFixedHashTableConversion() const { return enable_join_fixed_hash_table_conversion; }
     bool enableJoinKeyOnlyHashTables() const { return enable_join_key_only_hash_tables; }
     bool joinRuntimeFilterFromFixedHashTable() const { return join_runtime_filter_from_fixed_hash_table; }
+    size_t partitionedHashJoinMaxFanoutPerPass() const { return partitioned_hash_join_max_fanout_per_pass; }
+    bool partitionedHashJoinCapPartitionsByL1Descriptors() const { return partitioned_hash_join_cap_partitions_by_l1_descriptors; }
     void setRowStoreEnabled(bool value) { enable_row_store = value; }
     bool isRowStoreEnabled() const { return enable_row_store; }
 

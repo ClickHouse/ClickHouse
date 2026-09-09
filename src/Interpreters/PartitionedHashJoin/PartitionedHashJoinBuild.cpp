@@ -998,6 +998,7 @@ void PartitionedHashJoin::preparePostBuildContext()
     chassert(!pass_bits.empty());
     ctx.multi_pass = pass_bits.size() > 1;
     ctx.route_bits = pass_bits.front();
+    chassert(ctx.route_bits <= 15); /// the bucket ids are UInt16 and the drop bucket needs one more
     ctx.fanout = (1uz << ctx.route_bits) + 1;
     ctx.num_key_columns = build_blocks.front().key_columns.size();
 
@@ -1644,7 +1645,6 @@ void PartitionedHashJoin::refinePassWave(
     const size_t new_buckets = groups * sub_fanout;
     const bool last_pass = bits_done + refine_bits == bits;
     chassert(bits_done + refine_bits <= 16);
-    chassert(sub_fanout <= ColumnsScatter::MAX_FANOUT_PER_PASS);
     const auto shift = static_cast<UInt32>(16 - bits_done - refine_bits);
     const auto mask = static_cast<UInt32>(sub_fanout - 1);
 

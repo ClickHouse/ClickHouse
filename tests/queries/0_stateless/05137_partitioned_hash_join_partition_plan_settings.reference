@@ -1,0 +1,11 @@
+-- hash, for reference
+500000	2202590526775294775
+-- default plan
+500000	2202590526775294775
+-- two partitions per pass: several passes, same plan
+500000	2202590526775294775
+-- descriptor cap off
+500000	2202590526775294775
+-- the ceiling must keep the first scatter pass within 15 bits
+-- all three plans partitioned, and into the same number of partitions
+3	1	1

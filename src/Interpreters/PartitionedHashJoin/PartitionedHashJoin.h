@@ -189,6 +189,11 @@ public:
     /// build.
     void setMaxFanoutPerPassForTests(size_t value) { max_fanout_per_pass = value; }
 
+    /// The descriptor cap binds only past a few hundred leaves, a build too large for a unit test.
+    /// A tiny L1 makes it bind on a small one; the cap itself can be switched off for the control.
+    void setL1CacheSizeForTests(size_t bytes) { l1_cache_bytes_for_tests = bytes; }
+    void setCapPartitionsByL1DescriptorsForTests(bool value) { cap_partitions_by_l1_descriptors = value; }
+
     /// The post-build memory verdict, taken once at the barrier from numbers that already exist.
     enum class PostBuildPlan
     {
@@ -397,8 +402,11 @@ private:
     size_t partitions = 1;
     /// MSB-first slices of the route word, summing to `bits`.
     std::vector<size_t> pass_bits;
-    /// `ColumnsScatter::MAX_FANOUT_PER_PASS`, overridable by tests.
+    /// `partitioned_hash_join_max_fanout_per_pass`; tests lower it to force refine passes.
     size_t max_fanout_per_pass;
+    /// `partitioned_hash_join_cap_partitions_by_l1_descriptors`.
+    bool cap_partitions_by_l1_descriptors;
+    std::optional<size_t> l1_cache_bytes_for_tests;
     double hll_estimate = 0;
     double reserve_safety = 1.2; /// covers the sketch error (~1.15% at precision 13) and per-leaf spread
     /// Cross-run distinct-key statistics, keyed as the other algorithms key theirs but in a
