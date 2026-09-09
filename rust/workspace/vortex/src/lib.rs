@@ -848,7 +848,7 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                     let row_idx_struct = pack([(name, row_idx())], Nullability::NonNullable);
                     projection = Some(merge([row_idx_struct, projection.unwrap_or_else(root)]));
                     let mut fields = Vec::with_capacity(schema.fields.len() + 1);
-                    fields[0] = Arc::new(Field::new(name, DataType::UInt64, false));
+                    fields.push(Arc::new(Field::new(name, DataType::UInt64, false)));
                     fields.extend_from_slice(&schema.fields);
                     schema = Arc::new(Schema::new(fields));
                 }

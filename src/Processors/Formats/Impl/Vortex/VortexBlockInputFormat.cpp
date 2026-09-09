@@ -496,8 +496,8 @@ void VortexBlockInputFormat::prepareReader()
     options.num_columns = column_name_pointers.size();
     options.filter = plan.filter.get();
 
-    row_index_column = false;
-    options.row_index_column = format_filter_info && format_filter_info->need_row_numbers;
+    row_index_column = format_filter_info && format_filter_info->need_row_numbers;
+    options.row_index_column = row_index_column;
 
     /// Splits allowed in flight at once: being read, decoded, or queued for `read`. Two per
     /// decoding thread leaves each thread something to decode while the next split is still being
