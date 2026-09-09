@@ -1,7 +1,0 @@
-<clickhouse>
-    <!-- Make the system-wide default profile an empty one, so SQL-created users
-         without an explicit profile do not pick up the constraints declared on
-         the <default> profile in users.xml. The default user is unaffected
-         because it still references <profile>default</profile> directly. -->
-    <default_profile>empty_profile</default_profile>
-</clickhouse>
