@@ -1227,14 +1227,16 @@ DDLGuardPtr DatabaseCatalog::tryGetDDLGuardForStorage(
     static constexpr auto wait_chunk = std::chrono::milliseconds(50);
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(timeout.totalMicroseconds());
-    while (is_alive())
+    /// A zero or exhausted budget still gets one attempt, `try_lock_for` degrades to `try_lock`.
+    for (bool attempted = false; is_alive(); attempted = true)
     {
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-        if (remaining <= std::chrono::milliseconds::zero())
+        if (attempted && remaining <= std::chrono::milliseconds::zero())
             return nullptr;
+        const auto attempt_timeout = std::max(std::chrono::milliseconds::zero(), std::min(wait_chunk, remaining));
 
         StorageID before = storage->getStorageID();
-        DDLGuardPtr guard = tryGetDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr, std::min(wait_chunk, remaining));
+        DDLGuardPtr guard = tryGetDDLGuard(before.database_name, before.table_name, /*expected_database=*/nullptr, attempt_timeout);
         if (guard->ownsTableLock())
         {
             /// Re-check StorageID: a RENAME could have moved the storage while we were waiting.
@@ -1258,7 +1260,7 @@ DDLGuardPtr DatabaseCatalog::getDDLGuardForStorage(const StoragePtr & storage, c
     auto guard = tryGetDDLGuardForStorage(storage, timeout);
     if (!guard)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-            "Cannot acquire the DDL guard for {} within {} ms: a concurrent DDL query is running",
+            "Cannot acquire the DDL guard for {} within {} ms",
             storage->getStorageID().getNameForLogs(), timeout.totalMilliseconds());
     return guard;
 }
