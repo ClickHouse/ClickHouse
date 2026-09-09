@@ -28,12 +28,33 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT sum(v) FROM t_est WHERE a = 500 SETTINGS ${PIN};
 " | grep -E '^With|^\s+reason:' | awk '{$1=$1; print}'
 
-# a key over `_part_offset` cannot be rebuilt from the stored columns, and 0 marks is not an estimate
-echo "--- a key the scan cannot build is not reported as measured ---"
+# a key over a virtual column has no source among the columns the projection stores
+echo "--- a key over a virtual column is not estimated ---"
 $CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL PROJECTION p_po ON t_est (SELECT _part_offset ORDER BY _part_offset);
-    EXPLAIN WHATIF SELECT _part_offset FROM t_est WHERE _part_offset = 7 SETTINGS ${PIN};
-" | grep -E '^\s+(status|marks|verdict|source|empirical_status|empirical_reason):' | awk '{$1=$1; print}'
+    CREATE HYPOTHETICAL PROJECTION p_mx ON t_est (SELECT a, _part_offset ORDER BY _part_offset);
+    EXPLAIN WHATIF SELECT a FROM t_est WHERE _part_offset = 7 SETTINGS ${PIN};
+" 2>&1 | grep -E '^\s+reason:|Code:' | awk '{$1=$1; print}'
+
+# an ALTER can re-point an ALIAS the definition selects, and the estimate must not read the new source
+echo "--- retargeting an ALIAS the projection selects denies the estimate ---"
+alias_user="u3_05141_${CLICKHOUSE_DATABASE}"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_alias;
+    CREATE TABLE t_alias (a UInt64, b UInt64, d UInt64, c UInt64 ALIAS b + 1) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    INSERT INTO t_alias (a, b, d) SELECT number, number % 100, number FROM numbers(1000);
+    DROP USER IF EXISTS ${alias_user};
+    CREATE USER ${alias_user} NOT IDENTIFIED;
+    GRANT ALTER ADD PROJECTION ON ${CLICKHOUSE_DATABASE}.t_alias TO ${alias_user};
+    GRANT SELECT(a, b, c) ON ${CLICKHOUSE_DATABASE}.t_alias TO ${alias_user};
+"
+# the store is per session, so the ALTER has to land between two statements of one HTTP session
+alias_url="${CLICKHOUSE_URL}&user=${alias_user}&session_id=${CLICKHOUSE_DATABASE}_alias&session_timeout=600&optimize_respect_aliases=1"
+${CLICKHOUSE_CURL} -sS "${alias_url}" --data-binary "CREATE HYPOTHETICAL PROJECTION p_al ON ${CLICKHOUSE_DATABASE}.t_alias (SELECT a, c ORDER BY a)"
+${CLICKHOUSE_CURL} -sS "${alias_url}" --data-binary "EXPLAIN WHATIF SELECT a FROM ${CLICKHOUSE_DATABASE}.t_alias WHERE a = 500 SETTINGS ${PIN}" | grep -E '^\s+status:' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_alias MODIFY COLUMN c UInt64 ALIAS d + 1;"
+${CLICKHOUSE_CURL} -sS "${alias_url}" --data-binary "EXPLAIN WHATIF SELECT a FROM ${CLICKHOUSE_DATABASE}.t_alias WHERE a = 500 SETTINGS ${PIN}" 2>&1 | grep -m1 -oE 'ACCESS_DENIED'
+$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${alias_user}; DROP TABLE IF EXISTS t_alias;"
 
 echo "--- projections disabled by the query ---"
 $CLICKHOUSE_CLIENT -q "

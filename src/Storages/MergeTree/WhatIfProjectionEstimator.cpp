@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
 
 namespace DB
@@ -443,10 +444,11 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
         context->checkAccess(AccessType::SELECT, data.getStorageID(), stored.required_columns);
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
+    std::optional<ProjectionDescription> fresh;
     try
     {
         checkHypotheticalProjectionIsAddable(data, metadata, stored.definition_ast, /* if_not_exists */ false, context);
-        return ProjectionDescription::getProjectionFromAST(
+        fresh = ProjectionDescription::getProjectionFromAST(
             stored.definition_ast, metadata->getColumns(), &metadata->partition_key, context, LoadingStrictnessLevel::CREATE);
     }
     catch (const Exception &)
@@ -454,6 +456,12 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
         reason = "Hypothetical projection can no longer be added to this table: " + getCurrentExceptionMessage(false);
         return std::nullopt;
     }
+
+    /// an ALTER can re-point an ALIAS the definition selects, so the columns the scan will really read
+    /// are not the ones stored at CREATE time, and a denial here must not read as drift
+    if (!fresh->required_columns.empty())
+        context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
+    return fresh;
 }
 
 WhatIfCandidateResult evaluateProjection(
@@ -544,6 +552,18 @@ WhatIfCandidateResult evaluateProjection(
     {
         result.not_applicable_reason = "Projection has no sort key to prune on";
         return result;
+    }
+
+    /// the scan reads what the projection stores, so a key over a virtual column has no source there
+    for (const auto & required : proj_key.expression->getRequiredColumns())
+    {
+        if (!metadata->getColumns().hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required))
+        {
+            result.not_applicable_reason = fmt::format(
+                "Projection orders by {}, which it does not store, so EXPLAIN WHATIF cannot rebuild its key",
+                backQuoteIfNeed(required));
+            return result;
+        }
     }
 
     const auto [outer_sorting, subtree_above_reading] = findOuterSorting(plan_root, read_step);
