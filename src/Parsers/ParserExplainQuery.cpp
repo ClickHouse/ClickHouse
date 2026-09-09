@@ -790,8 +790,13 @@ Right: rows estimated <right_rows>
   the join condition. It is derived from the number of distinct values (NDV) of the join keys:
   a key equality keeps about `1 / max(NDV_left, NDV_right)` of the pairs, and the smallest
   fraction over the join conditions is used.
-- `Output rows` — the estimated number of rows the join produces, computed as
-  `<selectivity> * <left_rows> * <right_rows>`.
+- `Output rows` — the estimated number of rows the join produces:
+  `<selectivity> * <left_rows> * <right_rows>` for an inner join, floored at `<left_rows>` for
+  `LEFT`, at `<right_rows>` for `RIGHT`, and at `<left_rows> + <right_rows>` for `FULL`, because an
+  outer join keeps every row of its preserved side. When a `SEMI` or `ANTI` join takes part in the
+  reordering, it is estimated as a fraction of its preserved side,
+  `<preserved_rows> * min(1, <selectivity> * <other_rows>)` for `SEMI` and the remaining rows for
+  `ANTI`; otherwise it uses the formula of its join kind.
 - `Left` / `Right` — the estimated number of rows entering the join from each side.
 
 A value the optimizer could not estimate is reported as `no stats`. This happens when the
