@@ -1,5 +1,6 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
@@ -2227,20 +2228,32 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
             if ((column_size.data_compressed != 0 || getType() == MergeTreeDataPartType::Compact) && is_default_coded(part_column.name))
             {
                 String path_to_data_file;
-                getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                if (getType() == MergeTreeDataPartType::Compact)
                 {
-                    if (path_to_data_file.empty())
+                    /// A Compact part has no per-column streams to look for: every column is written
+                    /// into the shared data file, and its first frame is what proves the default codec
+                    /// once every stored column is known to be default-coded (checked above).
+                    const String data_file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+                    if (getDataPartStorage().existsFile(data_file_name) && getDataPartStorage().getFileSize(data_file_name) != 0)
+                        path_to_data_file = data_file_name;
+                }
+                else
+                {
+                    getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                     {
-                        auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
-                        if (!stream_name)
-                            return;
+                        if (path_to_data_file.empty())
+                        {
+                            auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                            if (!stream_name)
+                                return;
 
-                        auto file_name = *stream_name + ".bin";
-                        /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                        if (getDataPartStorage().getFileSize(file_name) != 0)
-                            path_to_data_file = file_name;
-                    }
-                });
+                            auto file_name = *stream_name + ".bin";
+                            /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                            if (getDataPartStorage().getFileSize(file_name) != 0)
+                                path_to_data_file = file_name;
+                        }
+                    });
+                }
 
                 if (path_to_data_file.empty())
                 {
