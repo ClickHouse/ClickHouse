@@ -11,6 +11,7 @@ Converted from stateless tests (which must not modify the server's data on disk)
   - 04323_text_index_marks_empty_part.sh
   - 04506_packed_part_fetch_checksum.sh
   - 02346_text_index_corrupted_positions.sh
+  - 04545_empty_columns_txt_not_fatal.sh
 """
 
 import shlex
@@ -651,3 +652,400 @@ def test_packed_part_fetch_checksum(started_cluster):
 
     node1.query("DROP TABLE packed_fetch_src SYNC")
     node2.query("DROP TABLE packed_fetch_dst SYNC")
+
+
+# The tests below are converted from stateless test 04545_empty_columns_txt_not_fatal.sh.
+#
+# writeColumns rewrites columns.txt in place (no atomic rename, no fsync), so an interrupted rewrite
+# plus a power loss can leave a zero-byte columns.txt in a committed part directory. An empty
+# columns.txt used to throw on load (NamesAndTypesList::readText begins with assertString) and
+# detach the whole part as broken, losing every row of an otherwise-intact part. It must instead be
+# treated like an absent columns.txt: for a wide part the column list (including any persistent
+# virtual columns the part carries) is rebuilt from metadata.
+#
+# Each case manipulates one part's columns.txt by an absolute path captured once, so every table
+# must hold exactly one active part with no covered sibling: merges are stopped and the insert block
+# size is pinned so that a single insert produces a single part.
+
+# A single part per insert, whatever the server's block-size defaults are.
+ONE_PART_PER_INSERT = {
+    "max_insert_threads": 1,
+    "min_insert_block_size_rows": 100000,
+    "min_insert_block_size_bytes": 0,
+    "max_block_size": 100000,
+}
+
+# The recovery under test rebuilds a wide part's column list from the stream files present in the
+# part directory, so the part must be wide and unpacked. Persistent virtual columns are off unless a
+# case asks for them.
+WIDE_PART_SETTINGS = """min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+                 min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0,
+                 enable_block_number_column = 0, enable_block_offset_column = 0"""
+
+
+def create_wide_part_table(table, columns, order_by, extra_settings=""):
+    node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node1.query(
+        f"""
+        CREATE TABLE {table} ({columns})
+        ENGINE = MergeTree ORDER BY {order_by}
+        SETTINGS {WIDE_PART_SETTINGS}{extra_settings}
+        """
+    )
+
+
+def truncate_file(node, path):
+    bash(node, f": > {shlex.quote(path)}")
+
+
+def assert_no_detached_parts(table):
+    # A part lost to a failed rebuild is detached as broken, and a row-count or digest oracle alone
+    # can miss that: for a part produced by a mutation the entry is still in the mutations list, so
+    # the server replays it from the source part and the query results match again while the part
+    # under test is gone. Measured on master, which destroys the mutated part twice (first
+    # CANNOT_PARSE_INPUT on the empty file, then CORRUPTED_DATA because its own rebuild drops
+    # _row_exists) and still answers 500 rows with the expected digest.
+    assert node1.query(f"SELECT count() FROM system.detached_parts WHERE database = 'default' AND table = '{table}'") == "0\n"
+
+
+def single_wide_part_path(table):
+    # The fixture is only meaningful on a single wide part in full storage: a compact part keeps its
+    # column list nowhere else, and a packed part has no per-column stream files to rebuild from.
+    assert node1.query(f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' AND active") == "1\n"
+    assert node1.query(f"SELECT part_type, part_storage_type FROM system.parts WHERE database = 'default' AND table = '{table}' AND active") == "Wide\tFull\n"
+    return get_active_part_path(node1, table)
+
+
+def empty_columns_txt_reload_cycle(table, digest_query, expect_digest, expect_columns_txt):
+    """Empty columns.txt, then absent columns.txt, must both leave the part intact.
+
+    The assertions are server-side (row counts and per-column digests) plus one read of the
+    quiescent, detached part directory: a rebuild that only lived in memory would leave columns.txt
+    empty on disk, and a rebuild that dropped a physical column would read that column back as
+    default values while keeping the row count.
+    """
+    data_path = single_wide_part_path(table)
+    assert node1.query(digest_query) == expect_digest
+
+    # An empty (zero-byte) columns.txt must not brick the part.
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns.txt")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(digest_query) == expect_digest
+
+    # The rebuilt list must have reached disk, so the part loads from the file next time.
+    node1.query(f"DETACH TABLE {table}")
+    assert bash(node1, f"cat {shlex.quote(data_path + 'columns.txt')}") == expect_columns_txt
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(digest_query) == expect_digest
+
+    # An absent columns.txt must still self-heal (regression guard for the pre-existing path).
+    node1.query(f"DETACH TABLE {table}")
+    bash(node1, f"rm -f {shlex.quote(data_path + 'columns.txt')}")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(digest_query) == expect_digest
+
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def empty_columns_txt_digest_cycle(table, digest_query, expect_digest):
+    """Same as above for a column whose values, not the file content, are the oracle.
+
+    A count()-only oracle cannot catch a column dropped from the rebuilt list: the row count
+    survives and every value is silently synthesized as a default.
+    """
+    data_path = single_wide_part_path(table)
+    assert node1.query(digest_query) == expect_digest
+
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns.txt")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(digest_query) == expect_digest
+
+    # Persistence proof: reload from disk and re-digest.
+    node1.query(f"DETACH TABLE {table}")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(digest_query) == expect_digest
+
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_empty_columns_txt_plain_part(started_cluster):
+    table = "t_empty_columns"
+    create_wide_part_table(table, "a UInt64, s String", "a")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+
+    empty_columns_txt_reload_cycle(
+        table,
+        f"SELECT count(), sum(a), sum(cityHash64(s)) FROM {table}",
+        "1000\t499500\t12688800205083956790\n",
+        "columns format version: 1\n2 columns:\n`a` UInt64\n`s` String\n",
+    )
+
+
+def test_empty_columns_txt_persistent_virtual_columns(started_cluster):
+    # The part physically carries _block_number and _block_offset, which getAllPhysical() does not
+    # report; the rebuild must append them in the order writeColumns wrote them (physical columns
+    # first) or columns_substreams.txt validation detaches the part.
+    table = "t_empty_columns_bn"
+    create_wide_part_table(
+        table,
+        "a UInt64, s String",
+        "a",
+        ", enable_block_number_column = 1, enable_block_offset_column = 1",
+    )
+    # Two inserts plus OPTIMIZE FINAL produce a merged part that physically writes the two columns.
+    # Merges are stopped only afterwards, so the captured part directory does not move.
+    node1.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(500)", settings=ONE_PART_PER_INSERT)
+    node1.query(f"INSERT INTO {table} SELECT number + 500, toString(number) FROM numbers(500)", settings=ONE_PART_PER_INSERT)
+    node1.query(f"OPTIMIZE TABLE {table} FINAL")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+
+    empty_columns_txt_reload_cycle(
+        table,
+        f"SELECT count(), sum(a), sum(cityHash64(s)) FROM {table}",
+        "1000\t499500\t12444261028201855304\n",
+        "columns format version: 1\n4 columns:\n`a` UInt64\n`s` String\n`_block_number` UInt64\n`_block_offset` UInt64\n",
+    )
+
+
+def test_empty_columns_txt_lightweight_delete_mask(started_cluster):
+    # The rebuild must keep _row_exists, otherwise the deletion mask is silently dropped and the
+    # deleted rows reappear.
+    table = "t_empty_columns_ld"
+    create_wide_part_table(table, "a UInt64, s String", "a")
+    node1.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+    # Materialize the deletion mask, then stop merges so the mutated part directory does not move.
+    node1.query(f"DELETE FROM {table} WHERE a % 2 = 0", settings={"mutations_sync": 2})
+    node1.query(f"SYSTEM STOP MERGES {table}")
+
+    empty_columns_txt_reload_cycle(
+        table,
+        f"SELECT count(), sum(a), sum(cityHash64(s)) FROM {table}",
+        "500\t250000\t6753304225218678229\n",
+        "columns format version: 1\n3 columns:\n`a` UInt64\n`s` String\n`_row_exists` UInt8\n",
+    )
+
+
+def test_empty_columns_txt_tuple_column(started_cluster):
+    # SerializationTuple emits only element streams and no <column>.bin, so presence detection must
+    # enumerate the column's streams instead of probing one fixed path, or the whole Tuple is
+    # dropped from the rebuilt list and read back as defaults.
+    table = "t_empty_columns_tuple"
+    create_wide_part_table(table, "a UInt64, t Tuple(x UInt64, y String)", "a")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, (number * 2, toString(number)) FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+
+    empty_columns_txt_digest_cycle(table, f"SELECT sum(t.x) FROM {table}", "999000\n")
+
+
+def test_empty_columns_txt_map_column(started_cluster):
+    # A Map column likewise has no <column>.bin: only size, key and value streams.
+    table = "t_empty_columns_map"
+    create_wide_part_table(table, "a UInt64, m Map(String, UInt64)", "a")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, map('k', number * 3) FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+
+    empty_columns_txt_digest_cycle(table, f"SELECT sum(m['k']) FROM {table}", "1498500\n")
+
+
+def test_empty_columns_txt_bucketed_map_column(started_cluster):
+    # A bucketed Map writes m.buckets_info, m.0.size0, m.0.keys, ..., none of which match the
+    # default serialization's streams (m.size0, m.keys, ...). Presence detection must not assume the
+    # default serialization, or the column is judged absent and dropped, and columns_substreams.txt
+    # validation then detaches the part.
+    table = "t_empty_columns_map_bucketed"
+    create_wide_part_table(
+        table,
+        "a UInt64, m Map(String, UInt64)",
+        "a",
+        ", map_serialization_version = 'with_buckets',"
+        " map_serialization_version_for_zero_level_parts = 'with_buckets',"
+        " max_buckets_in_map = 11, map_buckets_strategy = 'constant'",
+    )
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, map('k', number * 3) FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+
+    empty_columns_txt_digest_cycle(table, f"SELECT sum(m['k']) FROM {table}", "1498500\n")
+
+
+def test_empty_columns_txt_shared_nested_offsets(started_cluster):
+    # With share_nested_offsets a Nested column added by ALTER (n.b) has no data of its own; its
+    # only on-disk stream is the offsets stream owned by n.a. The rebuild must decide presence from
+    # a column's own streams, not from any stream that merely exists, or n.b is wrongly included and
+    # columns_substreams.txt validation detaches the part.
+    table = "t_empty_columns_nested"
+    create_wide_part_table(table, "id UInt64, `n.a` Array(UInt64)", "id", ", share_nested_offsets = 1")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, [number, number + 1] FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+    node1.query(f"ALTER TABLE {table} ADD COLUMN `n.b` Array(String)")
+
+    data_path = single_wide_part_path(table)
+    assert node1.query(f"SELECT sum(arraySum(n.a)) FROM {table}") == "1000000\n"
+
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns.txt")
+    node1.query(f"ATTACH TABLE {table}")
+
+    # A single active part proves validation passed, i.e. the data-less n.b was not included.
+    assert node1.query(f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' AND active") == "1\n"
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT sum(arraySum(n.a)) FROM {table}") == "1000000\n"
+
+    # Persistence proof: reload from disk and re-digest.
+    node1.query(f"DETACH TABLE {table}")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT sum(arraySum(n.a)) FROM {table}") == "1000000\n"
+
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_empty_columns_txt_discarded_substreams_refused(started_cluster):
+    # columns_substreams.txt present but discarded as corrupted: recovery must refuse instead of
+    # inferring presence from the default serialization. A bucketed Map is stored as m.buckets_info,
+    # m.0.keys, ..., so the default streams are absent, the column would be judged missing, and
+    # writeColumns would persist that omission, leaving an intact column reading back as all-default
+    # values. Refusing detaches the part, which is recoverable.
+    #
+    # The asserted outcome (nothing active, the part kept in detached) is also what a server that
+    # simply fails to parse the empty file produces, so this case pins the deliberate refusal; it is
+    # not an oracle for the recovery itself.
+    table = "t_empty_columns_discarded"
+    create_wide_part_table(
+        table,
+        "a UInt64, m Map(String, UInt64)",
+        "a",
+        ", map_serialization_version = 'with_buckets',"
+        " map_serialization_version_for_zero_level_parts = 'with_buckets',"
+        " max_buckets_in_map = 11, map_buckets_strategy = 'constant'",
+    )
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, map('k', number * 3) FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+
+    data_path = single_wide_part_path(table)
+    assert node1.query(f"SELECT sum(m['k']) FROM {table}") == "1498500\n"
+
+    node1.query(f"DETACH TABLE {table}")
+    # Give the first substream a prefix that does not match its column: the rename-bug corruption
+    # that loadColumnsSubstreams discards for wide parts. Rewriting whichever substream comes first
+    # keeps this independent of the stream names the serialization versions produce.
+    bash(node1, f"sed -i '0,/^\\t/s/^\\t.*/\\tnot_a_valid_prefix/' {shlex.quote(data_path + 'columns_substreams.txt')}")
+    truncate_file(node1, data_path + "columns.txt")
+    node1.query(f"ATTACH TABLE {table}")
+
+    assert node1.query(f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' AND active") == "0\n"
+    # The part is kept for recovery rather than deleted.
+    assert node1.query(f"SELECT count() FROM system.detached_parts WHERE database = 'default' AND table = '{table}'") == "1\n"
+
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_empty_columns_txt_without_substreams_file(started_cluster):
+    # columns_substreams.txt is the primary presence oracle, but a part predating it must still
+    # recover by enumerating each column's own streams. Remove both files so the fallback is
+    # exercised, on a Tuple that a single-fixed-path probe would wrongly drop.
+    table = "t_empty_columns_fallback"
+    create_wide_part_table(table, "a UInt64, t Tuple(x UInt64, y String)", "a")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, (number * 2, toString(number)) FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+
+    data_path = single_wide_part_path(table)
+    assert node1.query(f"SELECT sum(t.x) FROM {table}") == "999000\n"
+
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns.txt")
+    bash(node1, f"rm -f {shlex.quote(data_path + 'columns_substreams.txt')}")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT sum(t.x) FROM {table}") == "999000\n"
+
+    # Persistence proof: reload from disk and re-digest.
+    node1.query(f"DETACH TABLE {table}")
+    node1.query(f"ATTACH TABLE {table}")
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT sum(t.x) FROM {table}") == "999000\n"
+
+    node1.query(f"DROP TABLE {table} SYNC")
+
+
+def test_empty_columns_txt_without_substreams_file_shared_offsets(started_cluster):
+    # On the legacy no-substreams path a column's presence is decided by enumerating its own
+    # streams. With share_nested_offsets the offsets stream is named after the Nested table, so it
+    # exists as soon as any sibling has data: accepting it lists a data-less n.b in the rebuilt
+    # columns.txt and CHECK TABLE then reports NO_FILE_IN_DATA_PART.
+    table = "t_empty_columns_shared_offsets"
+    create_wide_part_table(table, "id UInt64, `n.a` Array(UInt64)", "id", ", share_nested_offsets = 1")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, [number, number + 1] FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+    node1.query(f"ALTER TABLE {table} ADD COLUMN `n.b` Array(String)")
+
+    data_path = single_wide_part_path(table)
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns.txt")
+    bash(node1, f"rm -f {shlex.quote(data_path + 'columns_substreams.txt')}")
+    node1.query(f"ATTACH TABLE {table}")
+
+    # CHECK TABLE returns 1 for a table with no parts at all, so assert the part is still there.
+    assert_no_detached_parts(table)
+    assert node1.query(f"SELECT sum(arraySum(n.a)) FROM {table}") == "1000000\n"
+    assert node1.query(f"CHECK TABLE {table} SETTINGS check_query_single_value_result = 1") == "1\n"
+    node1.query(f"DROP TABLE {table} SYNC")
+
+    # Control: the same shape with n.b written with data must keep n.b, so the rule above rejects
+    # only streams the column does not own.
+    control = "t_empty_columns_shared_offsets_data"
+    create_wide_part_table(control, "id UInt64, `n.a` Array(UInt64), `n.b` Array(String)", "id", ", share_nested_offsets = 1")
+    node1.query(f"SYSTEM STOP MERGES {control}")
+    node1.query(f"INSERT INTO {control} SELECT number, [number, number + 1], ['x', 'y'] FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+
+    control_path = single_wide_part_path(control)
+    node1.query(f"DETACH TABLE {control}")
+    truncate_file(node1, control_path + "columns.txt")
+    bash(node1, f"rm -f {shlex.quote(control_path + 'columns_substreams.txt')}")
+    node1.query(f"ATTACH TABLE {control}")
+
+    assert_no_detached_parts(control)
+    assert node1.query(f"SELECT sum(arraySum(n.a)), sum(length(n.b)) FROM {control}") == "1000000\t2000\n"
+    assert node1.query(f"CHECK TABLE {control} SETTINGS check_query_single_value_result = 1") == "1\n"
+    node1.query(f"DROP TABLE {control} SYNC")
+
+
+def test_empty_columns_txt_projection_part(started_cluster):
+    # A projection lists the parent virtuals it stores among its own physical columns, so a rebuild
+    # that appends the persistent virtuals unconditionally writes `_block_number` twice; the
+    # projection then fails to load with DUPLICATE_COLUMN and is marked broken.
+    table = "t_empty_columns_projection"
+    create_wide_part_table(
+        table,
+        "id UInt64, v UInt64",
+        "id",
+        ", enable_block_number_column = 1, enable_block_offset_column = 1,"
+        " allow_commit_order_projection = 1, deduplicate_merge_projection_mode = 'rebuild'",
+    )
+    node1.query(f"ALTER TABLE {table} ADD PROJECTION p (SELECT id, v, _block_number ORDER BY v)")
+    node1.query(f"INSERT INTO {table} SELECT number, number * 2 FROM numbers(300)", settings=ONE_PART_PER_INSERT)
+    node1.query(f"INSERT INTO {table} SELECT number + 300, number FROM numbers(300)", settings=ONE_PART_PER_INSERT)
+    # Merge so the projection is materialized in one part, then freeze the layout.
+    node1.query(f"OPTIMIZE TABLE {table} FINAL")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+
+    proj_path = node1.query(f"SELECT path FROM system.projection_parts WHERE database = 'default' AND table = '{table}' AND active").strip()
+    assert proj_path.startswith("/"), f"Projection path is relative: {proj_path}"
+    assert node1.query(f"SELECT count(), sum(v) FROM {table}") == "600\t134550\n"
+
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, proj_path + "columns.txt")
+    node1.query(f"ATTACH TABLE {table}")
+
+    assert node1.query(f"SELECT count() FROM system.projection_parts WHERE database = 'default' AND table = '{table}' AND active AND NOT is_broken") == "1\n"
+    assert bash(node1, f"grep -c '^`_block_number`' {shlex.quote(proj_path + 'columns.txt')}").strip() == "1"
+    assert node1.query(f"SELECT count(), sum(v) FROM {table}") == "600\t134550\n"
+
+    node1.query(f"DROP TABLE {table} SYNC")
