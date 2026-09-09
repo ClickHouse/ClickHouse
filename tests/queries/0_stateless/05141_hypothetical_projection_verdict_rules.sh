@@ -75,6 +75,19 @@ for w in "_part_offset = 7" "b = 42 AND _part_offset = 7" "b = 42"; do
 done
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_off; DROP TABLE IF EXISTS t_off_plain;"
 
+# a commit_order projection is keyed on the commit order itself, which the scan cannot rebuild
+echo "--- a commit_order projection is not estimated ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_co;
+    CREATE TABLE t_co (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+                 allow_commit_order_projection = 1, enable_block_number_column = 1, enable_block_offset_column = 1;
+    INSERT INTO t_co SELECT number, number % 100, number FROM numbers(1000);
+    CREATE HYPOTHETICAL PROJECTION p_co ON t_co INDEX b TYPE commit_order;
+    EXPLAIN WHATIF SELECT count() FROM t_co WHERE b = 42 SETTINGS ${PIN};
+" | grep -E '^\s+reason:' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_co;"
+
 echo "--- projections disabled by the query ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);

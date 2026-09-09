@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PartDirIntent.h>
+#include <Storages/MergeTree/ProjectionIndex/ProjectionIndexCommitOrder.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ProjectionsDescription.h>
@@ -244,6 +245,9 @@ bool buildProjectionPart(
         return true;
 
     out.rows = key_columns[0]->size();
+    /// a projection index also stores the parent offset, which the writer sizes but `required_columns` omits
+    if (projection.with_parent_part_offset)
+        out.bytes += out.rows * sizeof(UInt64);
     for (size_t i = 0; i < key_columns.size(); ++i)
         out.key_block.insert({std::move(key_columns[i]), proj_key.data_types[i], proj_key.column_names[i]});
 
@@ -551,6 +555,13 @@ WhatIfCandidateResult evaluateProjection(
     if (proj_key.column_names.empty())
     {
         result.not_applicable_reason = "Projection has no sort key to prune on";
+        return result;
+    }
+
+    if (projection->index && projection->index->getName() == ProjectionIndexCommitOrder::name)
+    {
+        result.not_applicable_reason
+            = "EXPLAIN WHATIF does not estimate `TYPE commit_order` projections yet, their key is the commit order itself";
         return result;
     }
 

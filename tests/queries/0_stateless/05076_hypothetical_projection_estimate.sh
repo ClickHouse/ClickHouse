@@ -178,4 +178,18 @@ $CLICKHOUSE_CLIENT -q "
 compare p_s "(SELECT t, v ORDER BY t.x)" "SELECT t, v FROM TABLE WHERE t.x = 42" t_est_s t_real_s
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_s; DROP TABLE IF EXISTS t_real_s;"
 
+# a projection index also stores the parent offset, so a byte-driven granularity has to count it
+echo "--- a byte-driven projection index counts the parent offset it stores ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_i; DROP TABLE IF EXISTS t_real_i;
+    CREATE TABLE t_est_i (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+    CREATE TABLE t_real_i AS t_est_i;
+    ALTER TABLE t_real_i ADD PROJECTION p_i INDEX b TYPE basic;
+    INSERT INTO t_est_i SELECT number, intDiv(number, 100), number FROM numbers(5000);
+    INSERT INTO t_real_i SELECT number, intDiv(number, 100), number FROM numbers(5000);
+"
+compare p_i "INDEX b TYPE basic" "SELECT count() FROM TABLE WHERE b = 7" t_est_i t_real_i
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_i; DROP TABLE IF EXISTS t_real_i;"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real; DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;"

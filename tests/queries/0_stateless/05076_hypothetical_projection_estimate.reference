@@ -182,3 +182,17 @@ source: empirical
 real:
 ReadFromMergeTree (p_s)
 Granules: 1
+--- a byte-driven projection index counts the parent offset it stores ---
+hypothetical:
+marks: 120
+rows: 5000
+status: applicable
+marks: 3
+rows: 192
+read_ratio: 0.03x
+verdict: chosen
+reason: 3 marks would be read instead of 120 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_i)
+Granules: 3
