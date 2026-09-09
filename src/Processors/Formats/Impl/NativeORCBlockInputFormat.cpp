@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -42,7 +43,6 @@
 #include <Common/setThreadName.h>
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/memory.h>
 #include <Common/AllocationInterceptors.h>
@@ -2111,21 +2111,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         if (null_as_default)
             insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
 
-        try
-        {
-            column.column = castColumn(column, header_column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name),
-                column.type->getName(),
-                header_column.type->getName()));
-            throw;
-        }
-
-        column.type = header_column.type;
+        castColumnToRequestedType(column, header_column.type);
         columns_list.push_back(std::move(column.column));
     }
 
