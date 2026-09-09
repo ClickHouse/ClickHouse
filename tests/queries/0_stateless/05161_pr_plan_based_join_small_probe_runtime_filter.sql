@@ -11,6 +11,15 @@
 -- the coordinator rejects the replica's read request with `Got read request from replica N for
 -- unknown stream`.
 --
+-- Note where the failure mode comes from, because it explains what this test does and does not
+-- catch. Before the join order decision travelled, a replica re-ran the join order pass and so
+-- derived a row estimate of its own, declined for the same reason as the initiator, and the two
+-- agreed by accident. Once that decision travels, the replica returns from `optimizeJoinLogical`
+-- at its `isOptimized` gate, before the only `setInputRelations` call site, so its estimate is
+-- always absent and a sub-threshold probe would diverge every time. This test pins the second
+-- decision against that: it passes on a server that ships neither decision and on one that ships
+-- both, and fails on one that ships only the join order.
+--
 -- `jd_probe` is deliberately below the threshold while `jd_build` is far above it, so the initiator
 -- declines and only a replica could disagree.
 
