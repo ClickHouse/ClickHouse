@@ -45,12 +45,18 @@ void addMergingFinal(
     MergeTreeData::MergingParams merging_params,
     const StorageMetadataPtr & metadata_snapshot,
     size_t max_block_size_rows,
-    bool enable_vertical_final)
+    bool enable_vertical_final,
+    bool read_in_reverse)
 {
     auto header = pipe.getSharedHeader();
     size_t num_outputs = pipe.numOutputPorts();
 
     auto now = time(nullptr);
+
+    /// Only the Replacing merging algorithm supports reading in the reverse order
+    /// (see `ReadFromMergeTree::requestReadingInOrder`).
+    if (read_in_reverse && merging_params.mode != MergeTreeData::MergingParams::Replacing)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading in reverse order with FINAL is supported only for ReplacingMergeTree");
 
     auto get_merging_processor = [&]() -> MergingTransformPtr
     {
@@ -77,7 +83,7 @@ void addMergingFinal(
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final);
+                            sort_description, merging_params.is_deleted_column, merging_params.version_column, max_block_size_rows, /*max_block_size_bytes=*/0, /*max_dynamic_subcolumns*/std::nullopt, /*out_row_sources_buf_*/ nullptr, /*use_average_block_sizes*/ false, /*cleanup*/ !merging_params.is_deleted_column.empty(), enable_vertical_final, read_in_reverse);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
@@ -215,6 +221,15 @@ Pipe buildDistributedFinalPipe(
                 "Distributed FINAL got primary-key-range layers for a table whose primary key cannot be range-split");
 
         Pipe pipe = read_lane_in_order(lane.marks);
+
+        /// A lane may carry an empty primary-key-range layer (the layer split may produce layers with
+        /// no parts, and older initiators serialize them all). The in-order getter creates one source
+        /// per part, so such a lane yields an empty pipe, which has no header and must not reach the
+        /// transforms below. Dropping it is safe: the merge lanes are simply united, so their positions
+        /// carry no meaning.
+        if (pipe.empty())
+            continue;
+
         pipe.addSimpleTransform([sorting_expr](const SharedHeader & header)
                                 { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
         addLayerRangeFilterToPipe(pipe, primary_key, lane.borders, lane.index, *in_reverse_order, context);

@@ -5,6 +5,8 @@
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -213,6 +215,20 @@ void registerOutputFormatVertical(FormatFactory & factory)
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");
 
+    /// Each field is labelled with its column name, written verbatim, so a name that is not valid UTF-8
+    /// makes the output not valid UTF-8 either. The values are written through the plain
+    /// `serializeText` kind, which writes the `Bool` representations verbatim (see
+    /// `settingsLiteralsMayProduceRawBytes`). The text framings reject or base64-encode the output in
+    /// these cases (see `checkIfOutputFormatMayProduceRawBytes`). `Vertical` does not write the data
+    /// type names.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "Vertical",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
+                || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None);
+        });
+
     factory.setDocumentation("Vertical", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias |
@@ -223,7 +239,7 @@ void registerOutputFormatVertical(FormatFactory & factory)
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
 
-Note that [`NULL`](/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ` to make it easier to distinguish between the string value `NULL` and no value. JSON columns will be pretty printed, and `NULL` is output as `null`, because it is a valid JSON value and easily distinguishable from `"null"`.
+Note that [`NULL`](/reference/syntax) is output as `ᴺᵁᴸᴸ` to make it easier to distinguish between the string value `NULL` and no value. JSON columns will be pretty printed, and `NULL` is output as `null`, because it is a valid JSON value and easily distinguishable from `"null"`.
 
 ## Example usage {#example-usage}
 

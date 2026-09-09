@@ -117,7 +117,11 @@ public:
     }
 
     void addConditions(ActionsDAG actions_dag);
-    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(JoinTableSide side, const SharedHeader & stream_header);
+
+    /// Extract the part of the JOIN ON expression that can be evaluated on `side` alone, to be applied
+    /// as a filter on that input.
+    std::optional<ActionsDAG::ActionsForFilterPushDown> getFilterActions(
+        JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header);
 
     struct ActionsDAGWithKeys
     {
@@ -173,8 +177,8 @@ public:
 
     ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
 
-    std::string_view getDummyStats() const { return dummy_stats; }
-    void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
+    std::string_view getTableStatsHint() const { return table_stats_hint; }
+    void setTableStatsHint(String table_stats_hint_) { table_stats_hint = std::move(table_stats_hint_); }
 
     bool canRemoveUnusedColumns() const override;
     RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
@@ -183,8 +187,25 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    /// Swap left and right sides
+    void swapInputs();
+
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
+
+    UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
+    void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }
+
+    const NameSet & notNullFiltersDerivedColumns(JoinTableSide side) const
+    {
+        return side == JoinTableSide::Left ? not_null_filters_derived_left : not_null_filters_derived_right;
+    }
+
+    void addNotNullFiltersDerivedColumns(JoinTableSide side, const NameSet & columns)
+    {
+        auto & derived = side == JoinTableSide::Left ? not_null_filters_derived_left : not_null_filters_derived_right;
+        derived.insert(columns.begin(), columns.end());
+    }
 
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
@@ -215,17 +236,22 @@ protected:
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
     bool imprecise_estimate = false;
     UInt64 right_hash_table_cache_key = 0;
+    UInt64 join_output_cache_key = 0;
 
     RelationEstimateInfo left_relation;
     RelationEstimateInfo right_relation;
 
-    /// Dummy stats retrieved from hints, used for debugging
-    String dummy_stats;
+    /// Table statistics hint passed via query parameter, consumed by the Cascades optimizer.
+    String table_stats_hint;
 
 
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
+
+    /// Columns of each input for which an IS NOT NULL filter was already derived.
+    NameSet not_null_filters_derived_left;
+    NameSet not_null_filters_derived_right;
 
 private:
 
