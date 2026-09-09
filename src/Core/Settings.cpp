@@ -8819,6 +8819,21 @@ Enable transforming the payload of a hash join into a row-major layout.
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0) \
+    DECLARE(Bool, query_plan_derive_not_null_filters_from_joins, true, R"(
+Derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions.
+
+Only conditions of the form `expr1` <op> `expr2` are considered, where <op> is one of `=`, `<`, `<=`, `>`, `>=`. Each side can be a column or an expression that propagates NULLs, such as `col1` + 1, in which case a filter is derived for every column the expression propagates NULLs from.
+
+The derived filters allow converting `OUTER JOIN` to `INNER JOIN`. This setting is only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
+
+The derived filters are not executed unless `query_plan_allow_derived_not_null_filters_execution` is enabled.
+)", 0) \
+    DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
+Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
+)", 0) \
+    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.7, R"(
+The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
+)", 0) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
@@ -9262,13 +9277,13 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_cd_a_conflict_detector, false, R"(
+    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_a, false, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
 reorderings are valid using the CD-A conflict detector).
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_cd_c_conflict_detector, false, R"(
+    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_c, false, R"(
 Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
-are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_cd_a_conflict_detector` when both are enabled.
+are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_conflict_detector_a` when both are enabled.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
