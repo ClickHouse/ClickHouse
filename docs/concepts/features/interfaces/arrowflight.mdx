@@ -396,7 +396,12 @@ for endpoint in info.endpoints:
 
 All data is transferred in Apache Arrow IPC format. Only the `Arrow` format is supported — specifying other ClickHouse formats (e.g., `FORMAT JSON`, `FORMAT CSV`) results in an error.
 
-ClickHouse data types are mapped to Arrow types during serialization. A type with no Arrow equivalent, such as `JSON`, `Dynamic`, `QBit` or `AggregateFunction`, is handled according to the setting [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format):
+ClickHouse data types are mapped to Arrow types during serialization. Arrow Flight always uses the canonical Arrow mapping and, unlike the `Arrow` and `ArrowStream` output formats, does **not** follow the `output_format_arrow_*` settings that change how a type is represented — `output_format_arrow_string_as_string`, `output_format_arrow_low_cardinality_as_dictionary`, `output_format_arrow_date_as_uint16`, `output_format_arrow_fixed_string_as_fixed_byte_array` and the dictionary index settings have no effect here. The same query can therefore produce a different schema over Arrow Flight than over `FORMAT Arrow`, by design, for two reasons:
+
+- Flight SQL fixes the schema of its metadata responses. `CommandGetTables`, for example, must return `catalog_name: utf8, db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null, table_schema: bytes not null`. Letting a session setting turn those `utf8` columns into `binary` would make ClickHouse non-conforming for every Flight SQL driver, and would also change the per-table schema ClickHouse advertises inside `table_schema`.
+- A Flight client fetches the schema and the data in separate calls (`GetFlightInfo` or `GetSchema`, then `DoGet`). Any setting able to change the schema is a way for the advertised schema and the delivered stream to disagree if the session changes in between.
+
+The one exception is a type with no Arrow equivalent at all, such as `JSON`, `Dynamic`, `QBit` or `AggregateFunction`. There is no canonical mapping to pin to, so ClickHouse must choose a representation, and [`output_format_arrow_unsupported_types`](/reference/settings/formats/output-format) lets you say which:
 
 | Value              | Behavior                                                                                          |
 |--------------------|---------------------------------------------------------------------------------------------------|
@@ -404,7 +409,9 @@ ClickHouse data types are mapped to Arrow types during serialization. A type wit
 | `text`             | One value per row in its text form, as an Arrow `Utf8` column — what `CAST(col AS String)` returns. |
 | `binary` (default) | One value per row in its binary form, as an Arrow `Binary` column — the encoding `RowBinary` uses.  |
 
-Such a column is otherwise indistinguishable from a genuine `Utf8`/`Binary` one, so it is declared an Arrow extension type: the field metadata holds `ARROW:extension:name` = `clickhouse.opaque` and the original ClickHouse type name in `ARROW:extension:metadata`. A client that does not recognize the extension name sees the plain storage type, as the Arrow specification prescribes. Nested columns are tagged on their own field, so the child of an `Array(JSON)` carries the tag rather than the array itself.
+An `AggregateFunction` column is the one type that stays an Arrow `Binary` column even in `text` mode: its text form is the raw aggregate state, which is not valid UTF-8, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` if you want a readable value.
+
+Such a column is otherwise indistinguishable from a genuine `Utf8`/`Binary` one, so it is declared an Arrow extension type: the field metadata holds `ARROW:extension:name` = `clickhouse.opaque` and the original ClickHouse type name in `ARROW:extension:metadata`. A client that does not recognize the extension name sees the plain storage type, as the Arrow specification prescribes. Nested columns are tagged on their own field, so the child of an `Array(JSON)` carries the tag, and so does the key of a `Map(JSON, ...)`, rather than the container itself.
 
 The older boolean `output_format_arrow_unsupported_types_as_binary` still works and is equivalent to `throw` when `0` and `binary` when `1`. It is only consulted while `output_format_arrow_unsupported_types` is left at its default.
 

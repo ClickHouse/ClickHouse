@@ -36,13 +36,27 @@ namespace ArrowFlight
 
 CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & context)
 {
-    /// Note that the remaining schema settings (`output_format_arrow_string_as_string`,
-    /// `output_format_arrow_low_cardinality_as_dictionary`, `output_format_arrow_date_as_uint16`, the
-    /// dictionary index ones and `output_format_arrow_fixed_string_as_fixed_byte_array`) are not read from
-    /// the context, so an Arrow Flight schema can differ from what `FORMAT Arrow` writes for the same
-    /// query - `output_string_as_string` in particular is pinned on, since a Flight SQL client expects
-    /// `utf8` rather than `binary` strings. Deriving them all would change the wire format of every Flight
-    /// response that sets them, so it belongs in its own change rather than here.
+    /// Arrow Flight pins the canonical Arrow mapping and follows exactly one output setting: what to do
+    /// with a type that has no canonical mapping. The other `output_format_arrow_*` settings are
+    /// deliberately not read from the context, so a Flight schema does not track `FORMAT Arrow` for the
+    /// same query.
+    ///
+    /// That is a conformance requirement rather than a simplification. This same conversion builds the
+    /// Flight SQL metadata responses, whose schemas the specification fixes - `CommandGetTables` is
+    /// `catalog_name: utf8, db_schema_name: utf8, table_name: utf8 not null, table_type: utf8 not null,
+    /// table_schema: bytes not null` - so honoring `output_format_arrow_string_as_string = 0` would answer
+    /// a driver with `binary` where the specification requires `utf8`, and would change the per-table
+    /// schema ClickHouse advertises inside `table_schema`. `output_format_arrow_date_as_uint16` is a
+    /// ClickHouse backward-compatibility knob in the same way: a client handed `uint16` for a `Date` has no
+    /// way to tell it is a date. The schema also travels separately from the data - `GetFlightInfo`,
+    /// `GetSchema` and `DoGet` are distinct calls, each building its own query context from the session -
+    /// so every setting that can move the schema is another way for the advertised schema and the
+    /// delivered stream to disagree.
+    ///
+    /// `output_format_arrow_unsupported_types` is the exception because `JSON`, `Dynamic`, `QBit` and
+    /// `AggregateFunction` have no canonical Arrow mapping at all. ClickHouse has to invent one, only the
+    /// user can say whether they want text or bytes, and the `clickhouse.opaque` field metadata tells the
+    /// client that the column is an invention rather than a native Arrow type.
     return {
         .output_string_as_string = true,
         .output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef()),
