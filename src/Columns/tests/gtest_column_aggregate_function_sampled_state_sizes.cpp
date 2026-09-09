@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
+#include <Compression/CompressionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/tests/gtest_global_register.h>
@@ -221,19 +222,47 @@ TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedGiantPayloadStaysIncompre
     EXPECT_LE(repeated.compressed_bytes, repeated.sample_bytes);
 }
 
-/// A truncated sample can fall inside LZ4's match window even though one materialized copy does not.
-/// Its repetitions must not provide an optimistic cross-copy compression ratio for the full payload.
-TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedTruncatedPayloadDoesNotCompressAcrossCopies)
+/// A truncated sample fits far more copies into one match window than the full payload does: the sample
+/// below is ~1 KiB while a materialized copy is ~128 KiB, so all 32 repetitions of the sample compress
+/// against each other while the wire fits only 8 copies into one `ZSTD` compressed block. The measurement
+/// must be capped at the copies the *full* payload fits into the window, otherwise it invents a cross-copy
+/// compression ratio several times better than the output can have.
+TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedTruncatedPayloadCompressesOnlyWithinOneWindow)
 {
     tryRegisterAggregateFunctions();
 
     auto column = createDistinctGroupArrayRows(/*rows=*/128, /*elements_per_row=*/128);
-    const auto one_copy = column->sampledStateSizes(/*max_states_to_serialize=*/1);
+    const auto zstd = CompressionCodecFactory::instance().get("ZSTD", 3);
+    const auto one_copy = column->sampledStateSizes(/*max_states_to_serialize=*/1, /*repetitions=*/1, /*skip_rows=*/0, zstd);
     ASSERT_LT(one_copy.sample_bytes, 64 * 1024u);
     ASSERT_GT(one_copy.bytes, 64 * 1024u);
 
     constexpr size_t repetitions = 32;
-    const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1, repetitions);
+    const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1, repetitions, /*skip_rows=*/0, zstd);
+
+    EXPECT_EQ(repeated.sample_bytes, one_copy.sample_bytes * repetitions);
+    /// The copies do compress against each other - `ZSTD` reaches the whole compressed block - but only
+    /// about eight of them share a block, so the ratio must stay far above the 1/32 that measuring all
+    /// repetitions of the truncated sample gives.
+    EXPECT_LT(repeated.compressed_bytes, one_copy.compressed_bytes * repetitions);
+    EXPECT_GT(repeated.compressed_bytes * 16, repeated.sample_bytes);
+}
+
+/// The match window is a property of the codec the payload is compressed with, not a constant: the same
+/// column that cross-compresses under `ZSTD` above cannot compress at all under `LZ4`, which reaches only
+/// 64 KiB back while a copy is ~128 KiB. Measuring the sample with the default codec and judging its
+/// repetitions by `LZ4`'s window (or the other way round) misprices the output either way.
+TEST(ColumnAggregateFunctionSampledStateSizes, RepeatedPayloadWindowFollowsTheCodec)
+{
+    tryRegisterAggregateFunctions();
+
+    auto column = createDistinctGroupArrayRows(/*rows=*/128, /*elements_per_row=*/128);
+    const auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
+    const auto one_copy = column->sampledStateSizes(/*max_states_to_serialize=*/1, /*repetitions=*/1, /*skip_rows=*/0, lz4);
+    ASSERT_GT(one_copy.bytes, 64 * 1024u);
+
+    constexpr size_t repetitions = 32;
+    const auto repeated = column->sampledStateSizes(/*max_states_to_serialize=*/1, repetitions, /*skip_rows=*/0, lz4);
 
     EXPECT_EQ(repeated.sample_bytes, one_copy.sample_bytes * repetitions);
     EXPECT_EQ(repeated.compressed_bytes, one_copy.compressed_bytes * repetitions);

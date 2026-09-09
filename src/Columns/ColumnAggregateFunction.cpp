@@ -585,63 +585,52 @@ ColumnAggregateFunction::SampledStateSizes ColumnAggregateFunction::sampledState
     res.bytes *= repetitions;
 
     size_t compressed = one_copy_compressed_bytes;
-    /// A codec cannot reference data farther back than its match window - 64 KiB for `LZ4`, a whole
-    /// compressed block for `ZSTD`. A truncated sample may fit in that window even though one materialized
-    /// copy does not; measuring repetitions of such a sample would then invent cross-copy compression that
-    /// the actual output cannot have. Keep the one-copy ratio in that case. The window has to come from the
-    /// codec the payload is actually compressed with: with the `ZSTD(3)` default, copies of a payload well
-    /// past 64 KiB still compress against each other inside one block, and pinning them to the one-copy
-    /// ratio would overstate the output by the cross-copy ratio.
-    const size_t match_window = compressionMatchWindowSize(*sample_codec);
     if (repetitions > 1)
     {
-        if (estimated_one_copy_bytes > match_window)
+        /// The wire repeats the same serialized payload, and identical copies compress to almost nothing
+        /// while they fit one compressed block together and are within the codec's match window - and not at
+        /// all when a copy alone outgrows either - so the repetitions have to be measured, not scaled:
+        /// scaling the one-copy figure would pin the repeated payload's compression ratio to one copy's.
+        ///
+        /// How many copies can compress against each other is a property of the codec and of the *full*
+        /// copy, not of the sample: `LZ4` cannot reference data farther than 64 KiB back, `ZSTD` reaches
+        /// the whole compressed block, and a new block - with a new window - starts every
+        /// `DBMS_DEFAULT_BUFFER_SIZE`. So measure exactly as many copies as fit that window at full size
+        /// and scale the measured figure by the ratio of the uncompressed sizes: the wire repeats a block of
+        /// the measured shape. Measuring more copies of a *truncated* sample than the full payload can pack
+        /// into one window would invent cross-copy compression the actual output cannot have, and
+        /// extrapolating the marginal cost of one more copy within a block would assume a window spanning
+        /// the whole output and understate an incompressible payload several-fold.
+        const size_t copies_within_window = compressionMatchWindowSize(*sample_codec) / std::max<size_t>(estimated_one_copy_bytes, 1);
+        /// Serializing states is not free, so the measurement gets a budget of its own on top of that.
+        static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
+        const size_t measured_repetitions = std::min(
+            {repetitions,
+             std::max<size_t>(copies_within_window, 1),
+             std::max<size_t>(max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1), 1)});
+
+        if (measured_repetitions <= 1)
         {
+            /// A single copy already fills the window (or the measurement budget). Do not serialize another
+            /// giant state merely to estimate its marginal compressed size; the copies do not compress
+            /// against each other.
             compressed = one_copy_compressed_bytes * repetitions;
         }
         else
         {
-            /// The wire repeats the same serialized payload, and identical copies compress to almost nothing
-            /// while they fit the codec's match window - and not at all once a copy outgrows it - so the
-            /// repetitions have to be measured, not scaled: scaling the one-copy figure would pin the repeated
-            /// payload's compression ratio to one copy's. Serialize the same sample enough times to fill one
-            /// compressed block and extrapolate the remaining copies from it.
-            static constexpr size_t max_repeated_sample_bytes = 1024 * 1024;
-            const size_t measured_repetitions = std::min(
-                repetitions, std::max<size_t>(1, max_repeated_sample_bytes / std::max<size_t>(one_copy_sample_bytes, 1)));
+            NullWriteBuffer repeated_null_buf;
+            CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf, sample_codec);
+            for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
+                for (size_t i = 0; i < rows; i += period)
+                    func->serialize(data[skip_rows + i], repeated_compressed_buf, version);
+            repeated_compressed_buf.finalize();
+            const size_t measured_compressed_bytes = repeated_null_buf.count();
 
-            if (measured_repetitions == 1)
-            {
-                /// A single copy already exhausts the measurement budget. Do not serialize another giant
-                /// state merely to estimate its marginal compressed size; conservatively assume that the
-                /// remaining copies do not compress against it.
-                compressed = one_copy_compressed_bytes * repetitions;
-            }
-            else
-            {
-                NullWriteBuffer repeated_null_buf;
-                CompressedWriteBuffer repeated_compressed_buf(repeated_null_buf, sample_codec);
-                for (size_t repetition = 0; repetition < measured_repetitions; ++repetition)
-                    for (size_t i = 0; i < rows; i += period)
-                        func->serialize(data[skip_rows + i], repeated_compressed_buf, version);
-                repeated_compressed_buf.finalize();
-                const size_t measured_compressed_bytes = repeated_null_buf.count();
-
-                if (measured_repetitions == repetitions)
-                    compressed = measured_compressed_bytes;
-                else
-                {
-                    /// The compressed stream starts a new block - and with it a new match window - every
-                    /// `DBMS_DEFAULT_BUFFER_SIZE` of uncompressed data, which is the measurement budget above, so
-                    /// the copies beyond the measured ones cannot compress against them: the wire repeats a block
-                    /// of the measured shape. Scale the measured figure by the ratio of the uncompressed sizes.
-                    /// Extrapolating the marginal cost of one more copy *within* the block instead would assume a
-                    /// window spanning the whole output and understate an incompressible payload several-fold.
-                    compressed = static_cast<size_t>(
-                        static_cast<double>(measured_compressed_bytes) * static_cast<double>(repetitions)
-                        / static_cast<double>(measured_repetitions));
-                }
-            }
+            compressed = measured_repetitions == repetitions
+                ? measured_compressed_bytes
+                : static_cast<size_t>(
+                      static_cast<double>(measured_compressed_bytes) * static_cast<double>(repetitions)
+                      / static_cast<double>(measured_repetitions));
         }
     }
 
