@@ -1,0 +1,6 @@
+before the rename	1000	499500
+attach refused: 1
+still detached	1
+nothing attached	0
+unchanged schema attaches	1000	499500
+dropped column attaches	1000	499500

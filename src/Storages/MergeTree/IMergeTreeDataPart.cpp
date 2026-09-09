@@ -2705,6 +2705,52 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         auto storage_metdata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
         loaded_metadata_version = storage_metdata_snapshot->getMetadataVersion();
         old_part_with_no_metadata_version_on_disk = true;
+
+        /** Reading the part at the table's current version claims its data already reflects every
+          * metadata-only `ALTER`; that is why a `metadata_version.txt` that IS there is never
+          * overwritten from the table. A part detached before a `RENAME COLUMN` that then lost this
+          * file - which is not covered by the part checksums, so nothing detects its absence - would be
+          * served with the rename skipped: the renamed column reads as its default for every row, with
+          * no error anywhere.
+          *
+          * The claim is provably false when the part holds a column the schema does not while the
+          * schema holds a column the part does not: the signature of a rename this part has not
+          * applied. Refuse the part instead of serving defaults - `ATTACH` reports it, and a part found
+          * this way while loading the table is treated as broken. A part that only carries a dropped
+          * column, or only misses a column added later, still loads: reading it at the current version
+          * gives the same answer as reading it at its own.
+          */
+        if (load_metadata_version)
+        {
+            const auto & current_columns = storage_metdata_snapshot->getColumns();
+
+            Names columns_only_in_part;
+            NameSet part_column_names;
+            for (const auto & column : loaded_columns)
+            {
+                part_column_names.insert(column.name);
+                if (!current_columns.hasPhysical(column.name))
+                    columns_only_in_part.push_back(column.name);
+            }
+
+            Names columns_only_in_table;
+            for (const auto & column : current_columns.getAllPhysical())
+                if (!part_column_names.contains(column.name))
+                    columns_only_in_table.push_back(column.name);
+
+            if (!columns_only_in_part.empty() && !columns_only_in_table.empty())
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Part {} has no {} and its columns do not match the table's: it holds {} which the table "
+                    "does not, and does not hold {} which the table does, so the schema version its data was "
+                    "written at cannot be determined. Reading it at the table's current version would skip the "
+                    "metadata changes it still needs and answer with default values. Restore the file with the "
+                    "part's own metadata version, or drop the part",
+                    name,
+                    METADATA_VERSION_FILE_NAME,
+                    fmt::join(columns_only_in_part, ", "),
+                    fmt::join(columns_only_in_table, ", "));
+        }
     }
 
     LOG_DEBUG(storage.log, "Loaded metadata version {}", *loaded_metadata_version);
