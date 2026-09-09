@@ -78,6 +78,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="إعداد البنية التحتية لـ BYOC" id="set-up-byoc-infrastructure">
+    <Note>
+      عند النقر فوق **إعداد البنية التحتية**، تُجري ClickHouse Cloud تلقائيًا [التحقق المسبق](/ar/products/bring-your-own-cloud/onboarding/standard#preflight-validation) قبل التوفير. إذا كانت VPC المخصصة أو الحساب الخاص بك لا يفيان بالمتطلبات، يُوقَف الإعداد مع تحديد المشكلات التي يجب إصلاحها.
+    </Note>
+
     في ClickHouse Cloud console، قم بتهيئة ما يلي عند إعداد بنية تحتية جديدة:
 
     1. ضمن **تهيئة VPC**، اختر **استخدام شبكة VPC الحالية**.
