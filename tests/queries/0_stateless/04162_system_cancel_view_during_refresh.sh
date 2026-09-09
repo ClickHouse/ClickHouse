@@ -69,6 +69,11 @@ echo "parked $(enabled)"
 # The WAIT is keyed on the failpoint name, not on this view, so confirm OUR refresh is the parked one.
 wait_status c Running
 
+# The park is before `executor.execute()`, so the refresh cannot have read anything yet.
+# `execution.progress` is reset at the top of `executeRefreshUnlocked`, and the refresh thread is
+# parked, so this is stable: a park moved to after `execute()` would read 1 for this one-row source.
+echo "read_rows_at_park $($CLICKHOUSE_CLIENT -q "select read_rows from refreshes where view = 'c' -- $LINENO" | xargs)"
+
 # The refresh is parked, so the cancel cannot be outrun; disabling the failpoint resumes it.
 $CLICKHOUSE_CLIENT -q "
     system cancel view c;
