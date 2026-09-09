@@ -1331,6 +1331,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
                 after_send_progress.restart();
                 sendLogs(state);
                 sendInsertProfileEvents(state);
+                out->sync();
             }
         }
 
