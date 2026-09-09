@@ -53,6 +53,16 @@ SELECT count() FROM b AS l INNER JOIN b AS r ON l.uid = r.uid; -- { serverError 
 WITH a AS (SELECT uid FROM users_04322), b AS MATERIALIZED (SELECT database, uid FROM a)
 SELECT count() FROM b AS l CROSS JOIN b AS r; -- { serverError UNSUPPORTED_METHOD }
 
+-- A surviving `PLACEHOLDER` has a second route, taken when the CTE body aggregates: query-plan
+-- optimization hashes the sub-plan's `ActionsDAG` for an aggregation cache key
+-- (`setAggregationHashTableCacheKeys`), and `ActionsDAG::serialize` has no case for a
+-- `PLACEHOLDER`, so it throws `Unknown node type 5` before execution. Without the two
+-- `collect_hash_table_stats_*` settings, or without the aggregation, this takes the route above.
+SET collect_hash_table_stats_during_aggregation = 1;
+SET collect_hash_table_stats_during_joins = 1;
+WITH rs AS MATERIALIZED (SELECT database, count() FROM users_04322 GROUP BY database)
+SELECT count() FROM rs AS a, rs AS b; -- { serverError UNSUPPORTED_METHOD }
+
 -- A non-correlated `MATERIALIZED` CTE reused in a JOIN must still work.
 WITH b AS MATERIALIZED (SELECT uid FROM users_04322)
 SELECT count() FROM b AS l SEMI LEFT JOIN b AS r ON l.uid = r.uid;
