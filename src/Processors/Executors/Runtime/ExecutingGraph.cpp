@@ -308,21 +308,25 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         }
     }
 
+    UpdateNodeScratch scratch;
     while (!stack.empty())
     {
         Node * node = stack.top();
         stack.pop();
 
-        updateNode(node, queue, async_queue);
+        updateNode(node, queue, async_queue, scratch);
     }
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Queue & queue, Queue & async_queue)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Queue & queue, Queue & async_queue, UpdateNodeScratch & scratch)
 {
     Processors delayed_destruction;
-    boost::container::devector<Edge *> updated_edges;
-    boost::container::devector<Node *> updated_processors;
-    std::vector<Node *> pending_expansion;
+    auto & updated_edges = scratch.updated_edges;
+    auto & updated_processors = scratch.updated_processors;
+    auto & pending_expansion = scratch.pending_expansion;
+    updated_edges.clear();
+    updated_processors.clear();
+    pending_expansion.clear();
     updated_processors.push_back(start_node);
 
     std::shared_lock read_lock(nodes_mutex);

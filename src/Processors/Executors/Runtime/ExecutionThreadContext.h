@@ -43,6 +43,13 @@ public:
     constexpr static size_t max_scheduled_local_tasks = 128;
     size_t num_scheduled_local_tasks = 0;
 
+    /// Work containers for `ExecutingGraph::updateNode` and the queues it fills, kept per thread so
+    /// their capacity survives between the processors this thread prepares. The queues are drained
+    /// by `ExecutorTasks::pushTasks` after every update.
+    ExecutingGraph::UpdateNodeScratch update_node_scratch;
+    ExecutingGraph::Queue update_node_queue;
+    ExecutingGraph::Queue update_node_async_queue;
+
     const StepWallClockRegistry * step_to_wall_clock_registry = nullptr;
 
     const size_t thread_number;

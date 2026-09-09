@@ -404,7 +404,11 @@ struct HashMethodSerialized
     bool use_batch_serialize = false;
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
-    std::vector<std::string_view> serialized_keys;
+    /// Where each row's serialized key ends in `serialized_buffer` (the batch serialization
+    /// advances these cursors column by column, so after it they mark the row ends). Row `i`
+    /// starts where row `i - 1` ends, so the per-row key views are derived from this array
+    /// instead of being stored as a second, twice as wide one.
+    VectorWithMemoryTracking<char *> serialized_key_ends;
     /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
     /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
     /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
@@ -478,22 +482,23 @@ struct HashMethodSerialized
 
                 const size_t rows = row_sizes.size();
                 char * memory = serialized_buffer.data();
-                VectorWithMemoryTracking<char *> memories(rows);
-                serialized_keys.resize(rows);
-                for (size_t i = 0; i < row_sizes.size(); ++i)
+                serialized_key_ends.resize(rows);
+                char ** __restrict cursors = serialized_key_ends.data();
+                const UInt64 * __restrict sizes = row_sizes.data();
+                for (size_t i = 0; i < rows; ++i)
                 {
-                    memories[i] = memory;
-                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
-
-                    memory += row_sizes[i];
+                    cursors[i] = memory;
+                    memory += sizes[i];
                 }
 
+                /// Each column advances the cursors by what it wrote, so afterwards row `i`'s
+                /// cursor is the end of its key, the start of row `i + 1`.
                 for (size_t i = 0; i < keys_size; ++i)
                 {
                     if constexpr (nullable)
-                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i], &serialization_settings);
+                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(serialized_key_ends, null_maps[i], &serialization_settings);
                     else
-                        key_columns[i]->batchSerializeValueIntoMemory(memories, &serialization_settings);
+                        key_columns[i]->batchSerializeValueIntoMemory(serialized_key_ends, &serialization_settings);
                 }
             }
         }
@@ -517,7 +522,15 @@ struct HashMethodSerialized
         }
     }
 
-    /// Compute per-row canonical hashes from `serialized_keys` using `Data::hash`.
+    /// The batch-serialized key of a row: from the previous row's end (the buffer start for the
+    /// first row) to its own end. Only valid when `use_batch_serialize`.
+    ALWAYS_INLINE std::string_view serializedKey(size_t row) const
+    {
+        const char * begin = row ? serialized_key_ends[row - 1] : serialized_buffer.data();
+        return std::string_view(begin, serialized_key_ends[row] - begin);
+    }
+
+    /// Compute per-row canonical hashes from the serialized keys using `Data::hash`.
     /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
     /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the precomputed-hash
     /// + prefetch path when the hash table is small enough to fit in caches. Matches
@@ -540,10 +553,10 @@ struct HashMethodSerialized
             return;
         }
 
-        const size_t rows = serialized_keys.size();
+        const size_t rows = serialized_key_ends.size();
         precomputed_hashes.resize(rows);
         for (size_t i = 0; i < rows; ++i)
-            precomputed_hashes[i] = data.hash(serialized_keys[i]);
+            precomputed_hashes[i] = data.hash(serializedKey(i));
     }
 
     bool shouldUseBatchSerialize() const
@@ -566,7 +579,7 @@ struct HashMethodSerialized
     requires prealloc
     {
         if (use_batch_serialize)
-            return ArenaKeyHolder{serialized_keys[row], pool};
+            return ArenaKeyHolder{serializedKey(row), pool};
         else
         {
             serialize_scratch.resize(row_sizes[row]);

@@ -4603,28 +4603,54 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
             > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
+    auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
+
+    /// The destination grows by doubling while the sources are merged in: every step reallocates
+    /// the buffer, zeroes the new half and rehashes the whole table. The final size is bounded by
+    /// the sum of the source sizes, but the keys overlap between the sources, so the sum alone
+    /// would over-reserve. Instead the first merged source measures the fraction of its keys
+    /// that were new, and that rate, extrapolated over the remaining sources, sizes the table
+    /// once (with the same headroom the adaptive drain uses). Tables without `reserve` (the
+    /// fixed-size ones) never resize and skip this.
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); };
+    size_t remaining_records = 0;
+    if constexpr (can_reserve)
+        for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
+            remaining_records += getDataVariant<Method>(*data[result_num]).data.impls[bucket].size();
+    const size_t dst_size_before = dst.size();
+    size_t processed_records = 0;
+    bool reserved = false;
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         if (is_cancelled.load(std::memory_order_seq_cst))
             return;
 
         AggregatedDataVariants & current = *data[result_num];
+        auto & src = getDataVariant<Method>(current).data.impls[bucket];
+        const size_t src_size = src.size();
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena, true, prefetch, is_cancelled);
+            mergeDataImpl<Method>(dst, src, arena, true, prefetch, is_cancelled);
         }
         else
 #endif
         {
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data.impls[bucket],
-                getDataVariant<Method>(current).data.impls[bucket],
-                arena,
-                false,
-                prefetch,
-                is_cancelled);
+            mergeDataImpl<Method>(dst, src, arena, false, prefetch, is_cancelled);
+        }
+
+        if constexpr (can_reserve)
+        {
+            processed_records += src_size;
+            if (!reserved && processed_records && processed_records < remaining_records)
+            {
+                reserved = true;
+                const double insert_rate = static_cast<double>(dst.size() - dst_size_before) / static_cast<double>(processed_records);
+                const auto expected = static_cast<size_t>(
+                    static_cast<double>(remaining_records - processed_records) * insert_rate * adaptive_reserve_headroom);
+                dst.reserve(dst.size() + expected);
+            }
         }
     }
 }

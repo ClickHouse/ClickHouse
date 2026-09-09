@@ -31,6 +31,8 @@ protected:
 private:
     MergeTreeSelectProcessorPtr processor;
     const std::string log_name;
+    /// The tracing span name of `tryGenerate`, formatted once instead of on every chunk.
+    const std::string span_operation_name;
 
 #if defined(OS_LINUX)
     struct AsyncReadingState;

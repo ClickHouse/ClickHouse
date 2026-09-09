@@ -106,6 +106,15 @@ constexpr size_t adaptive_pressure_detached_bytes_budget = 256 << 20;
 /// the routing structures come in the same 256 buckets as the two-level hash tables.
 inline constexpr size_t ADAPTIVE_AGGREGATION_NUM_BUCKETS = 256;
 
+/// The two-level bucket of a key hash. Mirrors `TwoLevelHashTable::getBucketFromHash` (and its
+/// string twin) for the 8 bucket bits the adaptive tables use, so a staged record needs no
+/// bucket field of its own.
+ALWAYS_INLINE inline UInt8 adaptiveBucketOfHash(UInt64 hash)
+{
+    static_assert(ADAPTIVE_AGGREGATION_NUM_BUCKETS == 256);
+    return static_cast<UInt8>((hash >> (32 - 8)) & (ADAPTIVE_AGGREGATION_NUM_BUCKETS - 1));
+}
+
 /// All delayed records of one consumed block, grouped by bucket. One record batch per
 /// consumed block, rather than one per (block, bucket); a thread's small batches are
 /// further coalesced into one larger chunk of the same shape before they reach the
@@ -470,15 +479,42 @@ struct AdaptiveAggregationProducer
 
     AdaptiveAggregationSessionPtr session;
 
-    /// The current block's misses, one entry per delayed record, in staging order.
-    PaddedPODArray<UInt32> miss_source_rows;
-    PaddedPODArray<UInt64> miss_hashes;
-    PaddedPODArray<UInt8> miss_buckets;
-    PaddedPODArray<UInt64> miss_key_sizes;
-    PaddedPODArray<UInt32> miss_multiplicities;
+    /// One delayed record of the current block. The fields live in one record rather than in
+    /// parallel arrays: the publish visits the records in a grouped (random) order, and a
+    /// record's fields then cost one cache line instead of one per array. The record carries
+    /// no bucket: it is a function of the hash (`adaptiveBucketOfHash`). Fixed-size keys stage
+    /// no size either (it is a compile-time constant the publish substitutes), so their record
+    /// is 16 bytes and a byte-staged key's 24.
+    template <bool stages_key_bytes>
+    struct StagedMiss
+    {
+        struct NoKeySize {};
+
+        UInt64 hash;
+        UInt32 source_row;
+        /// Run length of a count record (unused by value-staged records).
+        UInt32 multiplicity;
+        /// Bytes of a byte-staged key.
+        [[no_unique_address]] std::conditional_t<stages_key_bytes, UInt64, NoKeySize> key_size;
+    };
+    static_assert(sizeof(StagedMiss<false>) == 16 && sizeof(StagedMiss<true>) == 24);
+
+    /// The current block's misses, one entry per delayed record, in staging order. A producer
+    /// stages one key kind, so only the array of that kind is ever used; `misses` picks it.
+    PaddedPODArray<StagedMiss<false>> fixed_key_misses;
+    PaddedPODArray<StagedMiss<true>> byte_key_misses;
+
+    template <bool stages_key_bytes>
+    PaddedPODArray<StagedMiss<stages_key_bytes>> & misses()
+    {
+        if constexpr (stages_key_bytes)
+            return byte_key_misses;
+        else
+            return fixed_key_misses;
+    }
 
     /// Scratch for the value-staged publish grouping: the records' staging indexes in group
-    /// order (the hashes stay in `miss_hashes`, so the entries are four bytes, not sixteen).
+    /// order (the hashes stay in the misses, so the entries are four bytes, not sixteen).
     std::vector<UInt32> grouped_index_scratch;
     std::vector<UInt32> group_offsets_scratch;
     std::vector<UInt32> group_cursor_scratch;
