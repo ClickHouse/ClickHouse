@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# no-parallel: this test coordinates through the server-global
+# `scalar_subquery_before_cardinality_check` PAUSEABLE failpoint; concurrent instances can
+# notify or disable each other's channel.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
