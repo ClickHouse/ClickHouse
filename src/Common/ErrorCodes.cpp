@@ -661,6 +661,7 @@
     M(780, SW_SERVER_NO_WORKERS_AVAILABLE) \
     M(781, AI_PROVIDER_RESPONSE_TRUNCATED) \
     M(782, AI_PROVIDER_RESPONSE_INCOMPLETE) \
+    M(783, SSH_AGENT_ERROR) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -689,6 +690,7 @@
     M(1015, FILE_CHANGED_DURING_READ) \
     M(1016, TABLE_SIZE_LIMIT_EXCEEDED) \
     M(1017, ASYNC_INSERT_FLUSH_TIMEOUT) \
+    M(1018, EXCHANGE_PEER_DISCONNECTED) \
     /* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
@@ -705,7 +707,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1017;
+    constexpr ErrorCode END = 1018;
 
 #if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,
