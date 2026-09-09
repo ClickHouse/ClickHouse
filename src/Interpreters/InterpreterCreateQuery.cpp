@@ -1592,10 +1592,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
 
-        /// Credentials are masked in `SHOW CREATE TABLE`, so copying a definition that has them would
-        /// give away the data of the source table to someone who cannot `SELECT` from it. Everything
-        /// else in the definition is already visible with `SHOW COLUMNS` and can just be typed again.
-        auto check_access_to_inherited_definition = [&](const ASTFunction & definition)
+        /// Credentials are masked in `SHOW CREATE TABLE`, whether they sit in the engine arguments or in
+        /// the settings, so copying a definition that has them would give away the data of the source
+        /// table to someone who cannot `SELECT` from it. The rest is already visible with `SHOW COLUMNS`
+        /// and can just be typed again.
+        auto check_access_to_inherited_definition = [&](const IAST & definition)
         {
             if (definition.hasSecretParts())
                 getContext()->checkAccess(AccessType::SELECT, as_database_name, as_table_name);
@@ -1626,7 +1627,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             /// clauses were specified for the new table; otherwise keep the explicit storage definition.
             if (!create.storage)
             {
-                check_access_to_inherited_definition(as_create.as_table_function->as<ASTFunction &>());
+                check_access_to_inherited_definition(*as_create.as_table_function);
                 create.set(create.as_table_function, as_create.as_table_function->ptr());
                 return;
             }
@@ -1647,8 +1648,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
         }
 
-        if (storage_def && storage_def->engine)
-            check_access_to_inherited_definition(*storage_def->engine);
+        if (storage_def)
+            check_access_to_inherited_definition(*storage_def);
     }
 
     if (create.storage)
