@@ -1,5 +1,4 @@
 import struct
-import threading
 
 import pytest
 
@@ -58,21 +57,19 @@ def test_idle_connection_does_not_delay_shutdown(started_cluster):
     )
     node.query("INSERT INTO replicated_table VALUES (1)")
 
-    client = open_keeper_session(session_timeout=60000)
-    shutdown_errors = []
+    session_timeout_ms = 60_000
+    graceful_shutdown_deadline_seconds = 30
+    assert graceful_shutdown_deadline_seconds * 1000 < session_timeout_ms
 
-    def stop_node():
-        try:
-            node.stop_clickhouse()
-        except Exception as ex:
-            shutdown_errors.append(ex)
-
-    shutdown_thread = threading.Thread(target=stop_node)
-    shutdown_thread.start()
+    client = open_keeper_session(session_timeout=session_timeout_ms)
+    clickhouse_pid = node.get_process_pid("clickhouse server")
+    assert clickhouse_pid is not None
+    node.exec_in_container(
+        ["bash", "-c", f"kill -TERM {clickhouse_pid}"], user="root"
+    )
 
     try:
-        shutdown_thread.join(timeout=30)
-        assert not shutdown_thread.is_alive()
+        node.wait_start_failed(graceful_shutdown_deadline_seconds)
 
         client.settimeout(3)
         assert client.recv(1) == b""
@@ -81,9 +78,6 @@ def test_idle_connection_does_not_delay_shutdown(started_cluster):
         )
     finally:
         client.close()
-        shutdown_thread.join(timeout=30)
-        if not shutdown_thread.is_alive():
-            node.start_clickhouse()
-
-    assert not shutdown_thread.is_alive()
-    assert not shutdown_errors
+        if node.get_process_pid("clickhouse server") is not None:
+            node.stop_clickhouse(kill=True)
+        node.start_clickhouse()

@@ -98,9 +98,18 @@ private:
     std::mutex early_shutdown_wait_mutex;
     std::condition_variable early_shutdown_wait_cv;
 
+    /// Protects admission and completion of four-letter commands. `signalShutdown` closes
+    /// admission under this mutex before any Keeper state can be destroyed.
+    std::mutex four_letter_command_mutex;
+    std::condition_variable four_letter_command_cv;
+    size_t running_four_letter_commands{0};
+
     /// Sleep for `period`, returning early if `shutting_down` becomes true.
-    /// Useful for containerGarbageCollectorThread that sleeps for a minute by default.
+    /// Useful for background work that must exit promptly during shutdown.
     void interruptibleSleep(std::chrono::milliseconds period);
+
+    /// Wait for commands admitted before shutdown to stop accessing Keeper state.
+    void waitForFourLetterCommands();
 
     /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
@@ -163,6 +172,11 @@ public:
 
     /// Returns true if signalShutdown() was called.
     bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
+
+    /// Begin executing a four-letter command unless shutdown has started. Each successful call
+    /// must be matched by finishFourLetterCommand.
+    bool tryBeginFourLetterCommand();
+    void finishFourLetterCommand();
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     /// `closed_all_connections` should be false if there may be any remaining KeeperTCPHandler instances.

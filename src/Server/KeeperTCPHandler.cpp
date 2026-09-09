@@ -721,7 +721,15 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer &
 
     try
     {
-        String res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
+        String res;
+        if (!keeper_dispatcher->tryBeginFourLetterCommand())
+            return false;
+
+        {
+            SCOPE_EXIT({ keeper_dispatcher->finishFourLetterCommand(); });
+
+            res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
+        }
         out->write(res.data(), res.size());
         out->next();
     }

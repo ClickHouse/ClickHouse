@@ -240,6 +240,7 @@ void KeeperDispatcher::shutdownBeforeConnectionsFinish()
     {
         {
             signalShutdown();
+            waitForFourLetterCommands();
 
             if (!keeper_context || !keeper_context->setShutdownCalled())
                 return;
@@ -452,13 +453,42 @@ void KeeperDispatcher::interruptibleSleep(std::chrono::milliseconds period)
 
 void KeeperDispatcher::signalShutdown()
 {
-    if (shutting_down.exchange(true))
-        return; // already called
+    {
+        std::lock_guard lock(four_letter_command_mutex);
+        if (shutting_down.exchange(true))
+            return; // already called
+    }
 
     {
         std::lock_guard lock(early_shutdown_wait_mutex);
     }
     early_shutdown_wait_cv.notify_all();
+}
+
+bool KeeperDispatcher::tryBeginFourLetterCommand()
+{
+    std::lock_guard lock(four_letter_command_mutex);
+    if (shutting_down.load(std::memory_order_relaxed))
+        return false;
+
+    ++running_four_letter_commands;
+    return true;
+}
+
+void KeeperDispatcher::finishFourLetterCommand()
+{
+    {
+        std::lock_guard lock(four_letter_command_mutex);
+        chassert(running_four_letter_commands > 0);
+        --running_four_letter_commands;
+    }
+    four_letter_command_cv.notify_all();
+}
+
+void KeeperDispatcher::waitForFourLetterCommands()
+{
+    std::unique_lock lock(four_letter_command_mutex);
+    four_letter_command_cv.wait(lock, [this] { return running_four_letter_commands == 0; });
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
@@ -851,8 +881,8 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
         LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
         while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
         {
-            if (keeper_context->isShutdownCalled())
-                throw Exception(ErrorCodes::ABORTED, "Shutdown called, aborting configuration update");
+            if (isShuttingDown() || keeper_context->isShutdownCalled())
+                throw Exception(ErrorCodes::ABORTED, "Shutdown started, aborting configuration update");
 
             if (check_callback(server.get()))
             {
@@ -860,7 +890,7 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
                 return;
             }
 
-            std::this_thread::sleep_for(1000ms);
+            interruptibleSleep(1000ms);
         }
         LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
     }
