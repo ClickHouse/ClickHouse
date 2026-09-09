@@ -244,6 +244,11 @@ class TestLatestTagIsBaseBranchOnly:
         monkeypatch.setattr(native_jobs, "Info", lambda: _Info())
         monkeypatch.setattr(native_jobs.Shell, "check", lambda *a, **k: True)
         monkeypatch.setattr(native_jobs.Docker, "merge_manifest", _merge_manifest)
+        # `_build_dockers` refuses to run when it cannot name the host CPU, and
+        # `platform.processor` is `uname -p`, which is `unknown` on some hosts.
+        # The subject here is which `add_latest` reaches the merge, not the
+        # architecture detection, so pin it rather than depend on the host.
+        monkeypatch.setattr(native_jobs.platform, "processor", lambda: "aarch64")
         with pytest.raises(_Stop):
             native_jobs._build_dockers(
                 _mangled("NightlyFuzzers"),
