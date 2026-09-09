@@ -10,6 +10,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadStatus.h>
+#include <base/scope_guard.h>
 
 #include <ranges>
 
@@ -35,6 +36,11 @@ bool canAddInfoToException(const Exception & exception)
         && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED
         && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
+
+thread_local std::vector<InputPort *> pending_inputs;
+thread_local std::vector<OutputPort *> pending_outputs;
+thread_local std::vector<Task> ready_tasks;
+thread_local std::vector<IProcessor *> finished_processors;
 
 }
 
@@ -64,12 +70,11 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
     while (auto task = pickTask())
     {
-        if (scheduler.queued() > 0 || coordinator.needsPoller())
-        {
-            coordinator.wakeOne();
-            pool.grow();
-        }
+        if (coordinator.idle() > 0)
+            if (scheduler.hasTasksForOthers(worker_id) || coordinator.needsPoller())
+                coordinator.wakeOne();
 
+        pool.grow();
         runTask(*task);
 
         if (pipeline.hasReadyForRemoval())
@@ -114,6 +119,7 @@ void Worker::runTask(Task task)
             break;
         case Task::Kind::Work:
             runWork(*task.state);
+            runPrepare(*task.state);
             break;
         case Task::Kind::AsyncReady:
             runAsyncReady(*task.state);
@@ -126,29 +132,76 @@ void Worker::runTask(Task task)
 
 void Worker::notifyOwner(ProcessorState & owner)
 {
-    if (owner.lock.isFinished())
-        return;
-
-    owner.lock.notify();
-
-    if (owner.lock.tryLock())
-        scheduler.push(Task{.state = &owner, .kind = Task::Kind::Prepare}, worker_id);
-    else
-        owner.processor->onUpdatePorts();
+    auto round_lock = owner.lock.lockRound();
+    switch (owner.lock.status())
+    {
+        case ProcessorLock::Status::Idle:
+            owner.lock.setExecuting();
+            scheduler.push(Task{.state = &owner, .kind = Task::Kind::Prepare}, worker_id);
+            return;
+        case ProcessorLock::Status::Executing:
+            owner.processor->onUpdatePorts();
+            return;
+        case ProcessorLock::Status::Finished:
+            return;
+    }
 }
 
 template <class PortT>
-void Worker::notifyNeighbour(PortT & neighbour)
+void Worker::visitNeighbour(PortT & neighbour)
 {
     ProcessorState & owner = neighbour.getUpdateChannel().getOwner();
     if (owner.lock.isFinished())
         return;
 
+    auto round_lock = owner.lock.lockRound();
     owner.incoming_updates.push(neighbour);
-    notifyOwner(owner);
+
+    switch (owner.lock.status())
+    {
+        case ProcessorLock::Status::Idle:
+            prepareRound(owner, std::move(round_lock));
+            return;
+        case ProcessorLock::Status::Executing:
+            owner.processor->onUpdatePorts();
+            return;
+        case ProcessorLock::Status::Finished:
+            return;
+    }
 }
 
 void Worker::runPrepare(ProcessorState & state)
+{
+    pending_inputs.clear();
+    pending_outputs.clear();
+    ready_tasks.clear();
+    finished_processors.clear();
+
+    {
+        auto round_lock = state.lock.lockRound();
+        state.lock.setIdle();
+        prepareRound(state, std::move(round_lock));
+    }
+
+    size_t processed_inputs = 0;
+    size_t processed_outputs = 0;
+    while (processed_outputs < pending_outputs.size() || processed_inputs < pending_inputs.size())
+    {
+        for (; processed_outputs < pending_outputs.size(); ++processed_outputs)
+            visitNeighbour(*pending_outputs[processed_outputs]);
+
+        for (; processed_inputs < pending_inputs.size(); ++processed_inputs)
+            visitNeighbour(*pending_inputs[processed_inputs]);
+    }
+
+    for (const auto & task : ready_tasks | std::views::reverse)
+        scheduler.push(task, worker_id);
+
+    for (auto * processor : finished_processors)
+        pipeline.recordAsFinished(*processor);
+}
+
+void Worker::prepareRound(ProcessorState & state, std::unique_lock<std::mutex>)
 {
     thread_local IProcessor::UpdatedInputPorts hint_inputs;
     thread_local IProcessor::UpdatedOutputPorts hint_outputs;
@@ -157,58 +210,54 @@ void Worker::runPrepare(ProcessorState & state)
 
     IProcessor & processor = *state.processor;
 
-    while (true)
+    state.incoming_updates.drain(hint_inputs, hint_outputs);
+    const auto last_status = state.last_status;
+    const auto new_status = processor.prepare(hint_inputs, hint_outputs);
+    state.last_status = new_status;
+
+    if (pipeline.profile_processors)
+        profileWaits(processor, last_status, new_status);
+
+    state.round_updates.drain(changed_inputs, changed_outputs);
+    for (auto * input : changed_inputs)
+        pending_outputs.push_back(&input->getOutputPort());
+    for (auto * output : changed_outputs)
+        pending_inputs.push_back(&output->getInputPort());
+
+    switch (new_status)
     {
-        const uint64_t snapshot = state.lock.snapshot();
-        state.incoming_updates.drain(hint_inputs, hint_outputs);
+        case IProcessor::Status::NeedData:
+        case IProcessor::Status::PortFull:
+            return;
 
-        const auto last_status = state.last_status;
-        const auto new_status = processor.prepare(hint_inputs, hint_outputs);
-        state.last_status = new_status;
+        case IProcessor::Status::Finished:
+            if (CurrentThread::getGroup())
+                CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
+            state.lock.finish();
+            finished_processors.push_back(&processor);
+            return;
 
-        if (pipeline.profile_processors)
-            profileWaits(processor, last_status, new_status);
+        case IProcessor::Status::Ready:
+            state.lock.setExecuting();
+            ready_tasks.push_back(Task{.state = &state, .kind = Task::Kind::Work});
+            return;
 
-        state.round_updates.drain(changed_inputs, changed_outputs);
-        for (auto * input : changed_inputs | std::views::reverse)
-            notifyNeighbour(input->getOutputPort());
-        for (auto * output : changed_outputs | std::views::reverse)
-            notifyNeighbour(output->getInputPort());
-
-        switch (new_status)
+        case IProcessor::Status::Async:
         {
-            case IProcessor::Status::NeedData:
-            case IProcessor::Status::PortFull:
-                if (state.lock.tryUnlock(snapshot))
-                    return;
-                continue;
-
-            case IProcessor::Status::Finished:
-                if (CurrentThread::getGroup())
-                    CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
-                state.lock.finish();
-                pipeline.recordAsFinished(processor);
-                return;
-
-            case IProcessor::Status::Ready:
-                scheduler.push(Task{.state = &state, .kind = Task::Kind::Work}, worker_id);
-                return;
-
-            case IProcessor::Status::Async:
-            {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-                auto [fd, events, timeout_ms] = processor.scheduleForEvent();
-                scheduler.push(AsyncTask{.state = &state, .fd = fd, .events = events, .timeout_ms = timeout_ms});
-                return;
+            auto [fd, events, timeout_ms] = processor.scheduleForEvent();
+            state.lock.setExecuting();
+            scheduler.push(AsyncTask{.state = &state, .fd = fd, .events = events, .timeout_ms = timeout_ms});
+            return;
 #else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Asynchronous processors are not supported on this platform");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Asynchronous processors are not supported on this platform");
 #endif
-            }
-
-            case IProcessor::Status::UpdatePipeline:
-                scheduler.push(Task{.state = &state, .kind = Task::Kind::UpdatePipeline}, worker_id);
-                return;
         }
+
+        case IProcessor::Status::UpdatePipeline:
+            state.lock.setExecuting();
+            scheduler.push(Task{.state = &state, .kind = Task::Kind::UpdatePipeline}, worker_id);
+            return;
     }
 }
 
@@ -242,7 +291,19 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
     if (pipeline.profile_processors || pipeline.trace_processors || clock)
         execution_time_watch.emplace();
 
-    std::exception_ptr exception;
+    SCOPE_EXIT({
+        if (execution_time_watch)
+        {
+            const UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
+            processor.elapsed_ns += elapsed_ns;
+            if (span)
+                span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
+        }
+
+        if (clock)
+            clock->onLeave();
+    });
+
     try
     {
         if (processor.isSpillable() && CurrentThread::getGroup())
@@ -271,28 +332,8 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
     {
         if (canAddInfoToException(e))
             e.addMessage("While executing " + processor.getName());
-        exception = std::current_exception();
+        throw;
     }
-    catch (...)
-    {
-        exception = std::current_exception();
-    }
-
-    if (execution_time_watch)
-    {
-        const UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
-        processor.elapsed_ns += elapsed_ns;
-        if (span)
-            span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
-    }
-
-    if (clock)
-        clock->onLeave();
-
-    if (exception)
-        std::rethrow_exception(exception);
-
-    scheduler.push(Task{.state = &state, .kind = Task::Kind::Prepare}, worker_id);
 }
 
 void Worker::runAsyncReady(ProcessorState & state)
