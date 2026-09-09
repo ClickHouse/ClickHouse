@@ -18,6 +18,7 @@ DistinctSortedAlgorithm::DistinctSortedAlgorithm(
     , max_block_size_rows(max_block_size_rows_)
     , current_inputs(num_inputs)
     , cursors(num_inputs)
+    , output_columns(num_inputs)
     , merged_data(false, max_block_size_rows, 0, std::nullopt)
 {
     DataTypes sort_types;
@@ -30,21 +31,31 @@ void DistinctSortedAlgorithm::addInput()
 {
     current_inputs.emplace_back();
     cursors.emplace_back();
+    output_columns.emplace_back();
 }
 
 void DistinctSortedAlgorithm::initialize(Inputs inputs)
 {
     removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
-    merged_data.initialize(*header, inputs);
     current_inputs = std::move(inputs);
+    Inputs output_inputs(current_inputs.size());
 
     for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
     {
         const auto & chunk = current_inputs[source_num].chunk;
         if (chunk.hasRows())
+        {
             cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
+            output_columns[source_num] = cursors[source_num].all_columns;
+            output_columns[source_num].erase(output_columns[source_num].begin() + flag_column_pos);
+            output_inputs[source_num].chunk = chunk.clone();
+            output_inputs[source_num].chunk.erase(flag_column_pos);
+        }
     }
+    auto output_header = *header;
+    output_header.erase(flag_column_pos);
+    merged_data.initialize(output_header, output_inputs);
     queue = SortingQueueBatch<SortCursor>(cursors);
 }
 
@@ -55,6 +66,8 @@ void DistinctSortedAlgorithm::consume(Input & input, size_t source_num)
     current_inputs[source_num].swap(input);
     const auto & chunk = current_inputs[source_num].chunk;
     cursors[source_num].reset(chunk.getColumns(), *header, chunk.getNumRows());
+    output_columns[source_num] = cursors[source_num].all_columns;
+    output_columns[source_num].erase(output_columns[source_num].begin() + flag_column_pos);
     queue.push(cursors[source_num]);
 }
 
@@ -75,10 +88,8 @@ void DistinctSortedAlgorithm::saveLastKey()
 
 Chunk DistinctSortedAlgorithm::pull()
 {
-    auto chunk = merged_data.pull();
-    chunk.erase(flag_column_pos);
     consumed_rows = 0;
-    return chunk;
+    return merged_data.pull();
 }
 
 IMergingAlgorithm::Status DistinctSortedAlgorithm::merge()
@@ -117,22 +128,28 @@ IMergingAlgorithm::Status DistinctSortedAlgorithm::merge()
         last_key.row_num = first_row + batch_size - 1;
         const bool source_exhausted = current->isLast(batch_size);
         if (source_exhausted)
+        {
             saveLastKey();
+            queue.removeTop();
+        }
 
         const size_t rows_to_insert = batch_size - skipped_rows;
         if (rows_to_insert)
         {
             if (whole_chunk && batch_size == initial_batch_size && skipped_rows == 0)
-                merged_data.insertChunk(std::move(current_inputs[current->order].chunk), rows_to_insert);
+            {
+                auto & chunk = current_inputs[current->order].chunk;
+                chunk.erase(flag_column_pos);
+                merged_data.insertChunk(std::move(chunk), rows_to_insert);
+            }
             else
-                merged_data.insertRows(current->all_columns, first_row + skipped_rows, rows_to_insert, current->rows);
+                merged_data.insertRows(output_columns[current->order], first_row + skipped_rows, rows_to_insert, current->rows);
         }
         consumed_rows += batch_size;
 
         if (source_exhausted)
         {
             const size_t source_num = current->order;
-            queue.removeTop();
             Status status(source_num);
             if (whole_chunk || consumed_rows == max_block_size_rows)
                 status.chunk = pull();

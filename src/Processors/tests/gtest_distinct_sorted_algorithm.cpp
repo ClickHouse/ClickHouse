@@ -44,11 +44,14 @@ SortDescription runDescription()
 Chunk makeChunk(const Block & header, const Array & keys, UInt64 first_payload, UInt8 flag = 0)
 {
     auto columns = header.cloneEmptyColumns();
+    const size_t key_pos = header.getPositionByName("key");
+    const size_t payload_pos = header.getPositionByName("payload");
+    const size_t flag_pos = header.getPositionByName("flag");
     for (const auto & key : keys)
     {
-        columns[0]->insert(key);
-        columns[1]->insert(first_payload++);
-        columns[2]->insert(flag);
+        columns[key_pos]->insert(key);
+        columns[payload_pos]->insert(first_payload++);
+        columns[flag_pos]->insert(flag);
     }
     return Chunk(std::move(columns), keys.size());
 }
@@ -58,10 +61,11 @@ std::vector<UInt64> mergePayloads(
     bool dynamic_inputs = false, SortDescription description = runDescription())
 {
     Block output_header = *header;
-    output_header.erase(2);
+    const size_t flag_column_pos = header->getPositionByName("flag");
+    output_header.erase(flag_column_pos);
     auto merge = std::make_shared<DistinctSortedTransform>(
         header, std::make_shared<const Block>(output_header), dynamic_inputs ? 0 : sources.size(),
-        std::move(description), 2, block_size, !dynamic_inputs);
+        std::move(description), flag_column_pos, block_size, !dynamic_inputs);
     auto processors = std::make_shared<Processors>();
     if (dynamic_inputs)
     {
@@ -301,4 +305,28 @@ TEST(DistinctSortedAlgorithm, UniqueTailSuppressesDuplicatesAcrossItsChunks)
         for (size_t row = 0; row < block.rows(); ++row)
             payloads.push_back(block.getByPosition(1).column->getUInt(row));
     EXPECT_EQ(payloads, (std::vector<UInt64>{100, 201, 101}));
+}
+
+TEST(DistinctSortedAlgorithm, OutputColumnsWithDifferentFlagPositions)
+{
+    for (const size_t flag_pos : {0, 1, 2})
+    {
+        SCOPED_TRACE(flag_pos);
+        Block block = *makeHeader();
+        const auto flag = block.getByName("flag");
+        block.erase("flag");
+        block.insert(flag_pos, flag);
+        const auto header = std::make_shared<const Block>(std::move(block));
+        for (const size_t block_size : {2, 64})
+        {
+            std::vector<Chunks> sources(3);
+            sources[0].push_back(makeChunk(*header, {1u, 2u, 3u, 4u, 5u}, 100));
+            sources[0].push_back(makeChunk(*header, {5u, 6u, 7u}, 105));
+            sources[0].push_back(makeChunk(*header, {20u, 21u}, 108));
+            sources[1].push_back(makeChunk(*header, {5u, 8u}, 200));
+            sources[2].push_back(makeChunk(*header, {1u, 7u}, 0, 1));
+            EXPECT_EQ(mergePayloads(header, std::move(sources), block_size),
+                (std::vector<UInt64>{101, 102, 103, 104, 106, 201, 108, 109}));
+        }
+    }
 }

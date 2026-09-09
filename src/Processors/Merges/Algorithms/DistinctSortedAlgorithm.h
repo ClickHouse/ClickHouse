@@ -30,7 +30,7 @@ public:
 private:
     /// Copies the boundary key before its input is replaced or forwarded to the output.
     void saveLastKey();
-    /// Removes the service flag from the output and resets the consumed-row count.
+    /// Returns the accumulated output and resets the consumed-row count.
     Chunk pull();
 
     const SharedHeader header;
@@ -40,6 +40,7 @@ private:
     const size_t max_block_size_rows;
     Inputs current_inputs;
     SortCursorImpls cursors;
+    std::vector<ColumnRawPtrs> output_columns;
     SortingQueueBatch<SortCursor> queue;
     MergedData merged_data;
 
