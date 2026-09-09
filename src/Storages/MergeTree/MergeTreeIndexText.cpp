@@ -44,6 +44,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
+#include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
 #include <limits>
@@ -1642,12 +1643,12 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     char * data = arena->alloc(total_size) + pad_left;
 
     bool inserted = false;
-    TokenToPostingsBuilderMap::LookupResult it;
+    TokenToPostingsBuilderMap::LookupResult it{};
 
     for (const auto & filter_token : filter_tokens)
     {
         memcpy(data, filter_token.data(), filter_token.size());
-        std::string_view key(data, filter_token.size());
+        auto key = PackedStringRef::build(data, filter_token.size(), PackedStringRefHash{});
         data += filter_token.size();
 
         tokens_map.emplace(key, it, inserted);
@@ -1659,11 +1660,12 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context)
 {
     const auto row = static_cast<UInt32>(current_row);
+    auto packed_key = PackedStringRef::build(token.data(), token.size(), PackedStringRefHash{});
 
     /// Keep-set mode: the map is pre-seeded with the only tokens to keep, everything else is skipped.
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
-        auto it = tokens_map.find(token);
+        auto it = tokens_map.find(packed_key);
         if (!it)
             return;
 
@@ -1680,9 +1682,9 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     }
 
     bool inserted = false;
-    TokenToPostingsBuilderMap::LookupResult it;
+    TokenToPostingsBuilderMap::LookupResult it{};
 
-    ArenaKeyHolder key_holder(token, *arena);
+    ArenaPackedStringHolder key_holder{packed_key, *arena};
     tokens_map.emplace(key_holder, it, inserted);
 
     if (inserted)
@@ -1723,7 +1725,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        std::string_view token = key;
+        std::string_view token = static_cast<std::string_view>(key);
         if (mapped.isFiltered())
             return;
         sorted_tokens.push_back(SortedToken{token, &mapped});

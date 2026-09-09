@@ -216,7 +216,7 @@ void CoordinationSettings::dump(WriteBufferFromOwnString & buf) const
         if (val.getType() == Field::Types::Bool)
             writeText(val.safeGet<UInt64>() ? "true" : "false", buf);
         else
-            writeText(field.getValueString(), buf);
+            writeText(field.getValueString(/* show_secrets */ true), buf);
         buf.write('\n');
     }
 }
