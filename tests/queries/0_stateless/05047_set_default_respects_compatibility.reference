@@ -76,3 +76,17 @@ SETTING_CONSTRAINT_VIOLATION
 ACCESS_DENIED
 a profile constraint on a MergeTree setting leaves an unrelated reset alone
 1
+a compatibility carried by a profile switch is checked the same way
+SETTING_CONSTRAINT_VIOLATION
+1
+
+0
+and the same profile carried by the URL is refused too
+SETTING_CONSTRAINT_VIOLATION
+a profile deriving the same value with nothing constraining it still applies
+0
+a compatibility that moves a setting back onto its declared default is checked as well
+0
+SETTING_CONSTRAINT_VIOLATION
+0
+26.7

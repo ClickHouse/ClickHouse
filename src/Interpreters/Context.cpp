@@ -3602,9 +3602,11 @@ void Context::applySettingsChangesAndResets(const SettingsChanges & changes, con
     /// reset lands on follows the `compatibility` those changes leave in force, and the readonly mode
     /// they can enter applies to the reset as well. A derived value additionally needs the undo, since
     /// it is already in place by the time it can be read.
+    /// A `profile` installs its own constraints, so the pre-statement set cannot judge what it derives.
     const bool must_check_after_the_changes
         = !names_to_reset.empty()
-        || ((changes.tryGet("compatibility") != nullptr || changes.tryGet("profile") != nullptr)
+        || changes.tryGet("profile") != nullptr
+        || (changes.tryGet("compatibility") != nullptr
             && !getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.empty());
     if (!must_check_after_the_changes)
     {

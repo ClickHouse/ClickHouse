@@ -12,10 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Both probes changed in 26.8 and are never randomized by the test runner.
+# All three probes changed in 26.8 and are never randomized by the test runner.
 # `input_format_read_datetime_number_as_raw_value`: declared default false, under `26.7` true.
-# `enable_group_by_top_k_optimization`: declared default true, under `26.7` false - the polarity a
-# `MIN 1` constraint needs.
+# `enable_group_by_top_k_optimization`: declared default true, under `26.7` false - the polarity the
+# `MIN 1` and `MAX 0` constraints need.
 # `merge_tree_min_bytes_per_read_stream`: a `Settings` setting despite the prefix, declared default
 # 65536, under `26.7` zero.
 P=input_format_read_datetime_number_as_raw_value
@@ -27,11 +27,13 @@ USER_CONST="u_const_05047_${CLICKHOUSE_DATABASE}"
 USER_STREAM="u_stream_05047_${CLICKHOUSE_DATABASE}"
 USER_LOGIN="u_login_05047_${CLICKHOUSE_DATABASE}"
 USER_MT="u_mt_05047_${CLICKHOUSE_DATABASE}"
+USER_MAX="u_max_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_MIN="p_min_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_CONST="p_const_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_STREAM="p_stream_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_LOGIN="p_login_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_MT="p_mt_05047_${CLICKHOUSE_DATABASE}"
+PROFILE_MAX="p_max_05047_${CLICKHOUSE_DATABASE}"
 
 BASE_URL="${CLICKHOUSE_URL%%\?*}"
 session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}_$$_$1"; }
@@ -40,8 +42,8 @@ user_session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}
 read_setting() { ${CLICKHOUSE_CURL} -sS "$1" -d "SELECT value FROM system.settings WHERE name = '$2'"; }
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t1_05047, ${CLICKHOUSE_DATABASE}.t2_05047"
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}, ${USER_MT}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}, ${USER_MT}, ${USER_MAX}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}, ${PROFILE_MAX}"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MIN} SETTINGS ${Q} = 1 MIN 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_CONST} SETTINGS compatibility = '26.7' CONST"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_STREAM} SETTINGS ${R} MIN 1"
@@ -52,9 +54,14 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_STREAM} SETTINGS PROFILE '${PROFILE_
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_LOGIN} SETTINGS PROFILE '${PROFILE_LOGIN}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MT} SETTINGS merge_tree_min_bytes_for_wide_part MAX 100000"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MT} SETTINGS PROFILE '${PROFILE_MT}'"
+# The only MAX on a `Settings` probe: it forbids the declared default and allows the 26.7 value, the
+# opposite polarity to every constraint above.
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MAX} SETTINGS ${Q} MAX 0"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MAX} SETTINGS PROFILE '${PROFILE_MAX}'"
 
 echo 'the probe values differ from their declared defaults under compatibility 26.7'
-# If either 26.8 history row is ever dropped, this fails loudly instead of leaving the arms below vacuous.
+# If any of the three 26.8 history rows is ever dropped, this fails loudly instead of leaving the arms
+# below vacuous.
 U=$(session_url a0)
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SELECT name, value != default FROM system.settings WHERE name IN ('${P}', '${Q}', '${R}') ORDER BY name"
@@ -269,5 +276,40 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = 0"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = DEFAULT"
 read_setting "$U" "${P}"
 
-${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}, ${USER_MT}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}"
+echo 'a compatibility carried by a profile switch is checked the same way'
+# A profile brings its own constraints with it, so what forbids the values it derives is not yet in force
+# when the statement starts. The switch is still a statement moving those values, unlike the login above.
+# The reads show the refusal put the profile back: neither the derived value nor the `compatibility`
+# that produced it survives. Restored values alone would not prove the profile pointer was restored
+# too, so the assignment at the end has to be accepted: it is refused while the constraint is live.
+U=$(session_url a19)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET profile = '${PROFILE_LOGIN}'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+read_setting "$U" "compatibility"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${Q} = 0" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+
+echo 'and the same profile carried by the URL is refused too'
+${CLICKHOUSE_CURL} -sS "$(session_url a20)&profile=${PROFILE_LOGIN}" -d "SELECT 1" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+
+echo 'a profile deriving the same value with nothing constraining it still applies'
+# The control: same `compatibility`, same derived value, no constraint on it. So the refusal above is the
+# constraint on the derived value and not the profile switch.
+U=$(session_url a21)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET profile = '${PROFILE_CONST}'"
+read_setting "$U" "${Q}"
+
+echo 'a compatibility that moves a setting back onto its declared default is checked as well'
+# The other direction. Every constraint above forbids the value an era derives, so a check that only ever
+# looked at values moving away from their declared default would satisfy them all. Here the era value is
+# the allowed one and the declared default is forbidden, so the refusal can only come from a check that
+# reads the value the change lands on whichever way it moved.
+U=$(user_session_url a22 "${USER_MAX}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+read_setting "$U" "${Q}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.8'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+read_setting "$U" "compatibility"
+
+${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}, ${USER_MT}, ${USER_MAX}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}, ${PROFILE_MAX}"
