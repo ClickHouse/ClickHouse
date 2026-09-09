@@ -1,13 +1,13 @@
 ---
-description: '윈도 함수 개요 페이지'
-sidebarTitle: '윈도우 함수'
+description: '윈도우 함수 개요 페이지'
+sidebarTitle: '개요'
 slug: /sql-reference/window-functions/
 title: '윈도우 함수'
 doc_type: 'reference'
 ---
 
-윈도 함수를 사용하면 현재 행과 관련된 행 집합 전체에 걸쳐 계산을 수행할 수 있습니다.
-집계 함수로 수행하는 계산과 비슷한 계산을 수행하는 데 사용할 수 있지만, 윈도 함수는 행을 하나의 출력으로 그룹화하지 않으므로 개별 행이 그대로 반환됩니다.
+윈도우 함수를 사용하면 현재 행과 관련된 행 집합 전체에 걸쳐 계산을 수행할 수 있습니다.
+집계 함수로 수행하는 계산과 비슷한 계산을 수행하는 데 사용할 수 있지만, 윈도우 함수는 행을 하나의 출력으로 그룹화하지 않으므로 개별 행이 그대로 반환됩니다.
 
 <div id="standard-window-functions">
   ## 표준 윈도우 함수
@@ -24,7 +24,7 @@ ClickHouse는 윈도우 및 윈도 함수에 대한 표준 SQL 문법을 지원�
 | `ROWS` 프레임                                                         | ✅     |                                                                                                                                                                                                                                                                                                                            |
 | `RANGE` 프레임                                                        | ✅     | 프레임을 명시적으로 지정하지 않으면 기본값으로 사용됩니다 (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                     |
 | `DateTime` `RANGE OFFSET` 프레임용 `INTERVAL` 구문                       | ❌     | 대신 초 단위 숫자를 지정하십시오 (`RANGE`는 모든 숫자형과 함께 사용할 수 있습니다).                                                                                                                                                                                                                                                                       |
-| `GROUPS` 프레임                                                       | ❌     |                                                                                                                                                                                                                                                                                                                            |
+| `GROUPS` 프레임                                                       | ✅     | 프레임 경계는 전체 피어 그룹(`ORDER BY` 키에서 같은 행)을 계산합니다. `N PRECEDING` 및 `N FOLLOWING`은 현재 행의 피어 그룹 전후에 있는 `N`개의 피어 그룹을 계산합니다.                                                                                                                                                                                                        |
 | 프레임에 대한 집계 함수 계산 (`sum(value) OVER (ORDER BY time)`)               | ✅     | 모든 집계 함수가 지원됩니다.                                                                                                                                                                                                                                                                                                           |
 | `rank()`, `dense_rank()`/`denseRank()`, `row_number()`             | ✅     |                                                                                                                                                                                                                                                                                                                            |
 | `percent_rank()`/`percentRank()`                                   | ✅     | 파티션 내에서 값의 상대적 순위를 효율적으로 계산합니다. 더 장황하고 계산 비용이 큰 수동 SQL 계산식 `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`을 대체합니다.                                                                                                                                              |
@@ -39,18 +39,18 @@ ClickHouse는 윈도우 및 윈도 함수에 대한 표준 SQL 문법을 지원�
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - 결과 집합을 어떻게 그룹으로 나눌지 정의합니다.
 * `ORDER BY` - aggregate&#95;function을 계산할 때 그룹 내 행의 순서를 정의합니다.
-* `ROWS or RANGE` - 프레임의 경계를 정의하며, aggregate&#95;function은 프레임 내에서 계산됩니다.
+* `ROWS`, `RANGE` 또는 `GROUPS` - 프레임의 경계를 정의하며, aggregate&#95;function은 프레임 내에서 계산됩니다. `ROWS`는 물리적 행을 세고, `RANGE`는 `ORDER BY` 값을 세며, `GROUPS`는 피어 그룹(`ORDER BY` 키 값이 같은 행)을 셉니다.
 * `WINDOW` - 여러 표현식에서 동일한 윈도우 정의를 사용할 수 있도록 합니다.
 
 ```text
@@ -526,6 +526,44 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
+
+<div id="groups-frame">
+  ### GROUPS 프레임
+</div>
+
+`GROUPS` 프레임은 물리적 행(`ROWS`)이나 `ORDER BY` 값(`RANGE`)이 아니라 `ORDER BY` 키가 같은 행들로 이루어진 전체 *피어 그룹*을 기준으로 계산합니다. `N PRECEDING` 및 `N FOLLOWING`은 현재 행이 속한 피어 그룹의 앞뒤에 있는 `N`개의 피어 그룹을 세며, 포함되는 피어 그룹은 항상 해당 그룹의 모든 행을 포함합니다.
+
+아래 쿼리는 `ROWS`, `RANGE`, `GROUPS` 프레임에 동일한 `1 PRECEDING AND 1 FOLLOWING` 범위를 적용합니다. `order` 컬럼에는 중복되거나 연속되지 않는 값이 있으므로 세 모드에서 포함되는 행이 서로 다릅니다:
+
+```sql
+CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
+INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
+
+SELECT
+    order,
+    value,
+    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
+    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
+    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
+FROM wf_frame_groups
+ORDER BY order, value;
+```
+
+```response
+┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
+│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
+│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
+│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
+│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
+│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
+└───────┴───────┴────────────┴─────────────┴──────────────┘
+```
+
+각 모드는 경계를 서로 다르게 해석합니다:
+
+* `ROWS`는 물리적 행을 기준으로 계산하므로 프레임에는 현재 행과 양쪽의 행 1개씩, 최대 3개의 연속된 행이 포함됩니다.
+* `RANGE`는 `order` 값을 기준으로 계산하므로 `1 PRECEDING` 및 `1 FOLLOWING`은 `order` 값이 현재 행의 `order` 값에서 1 이내인 행을 포함합니다. 간격이 10이면 인접 행은 조건을 충족하지 않으므로 프레임에는 현재 `order` 값을 공유하는 행만 포함됩니다.
+* `GROUPS`는 피어 그룹을 기준으로 계산하므로 `1 PRECEDING` 및 `1 FOLLOWING`은 `order` 값 간의 간격과 관계없이 항상 인접 그룹 전체를 포함합니다.
 
 <div id="real-world-examples">
   ## 실제 사용 예시

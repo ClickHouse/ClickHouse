@@ -40,7 +40,7 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 解析器的目标是将查询文本转换为 AST (抽象语法树) 。可以用 `EXPLAIN AST` 直观地展示这一步骤：
 
 ```sql
-EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -64,8 +64,22 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 
 输出结果是一棵抽象语法树，可视化效果如下所示：
 
-<Image img="/images/guides/developer/analyzer2.webp" alt="AST 输出" size="md" />
-
+```mermaid
+graph TD
+    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
+    el_root --> sq["SelectQuery"]
+    sq --> el_select["ExpressionList"]
+    sq --> tisq["TablesInSelectQuery"]
+    el_select --> fmin["Function min (alias minimum_date)"]
+    el_select --> fmax["Function max (alias maximum_date)"]
+    fmin --> el_min["ExpressionList"]
+    el_min --> id_min["Identifier timestamp"]
+    fmax --> el_max["ExpressionList"]
+    el_max --> id_max["Identifier timestamp"]
+    tisq --> tisqe["TablesInSelectQueryElement"]
+    tisqe --> te["TableExpression"]
+    te --> ti["TableIdentifier session_events"]
+```
 每个节点都有对应的子节点，整棵树表示查询的整体结构。这是一种有助于处理查询的逻辑结构。从终端用户的角度来看 (除非你对查询执行感兴趣) ，它的实用性并不高；这个工具主要供开发者使用。
 
 <div id="analyzer">

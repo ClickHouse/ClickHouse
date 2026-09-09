@@ -117,89 +117,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-operator 会通过无头 Service 按如下格式访问每个 pod (容器组) ：
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`。该后缀会传递到
-生成配置的两个部分中：
+对于 ClickHouse 副本，operator 会创建一个负责处理客户端流量的主无头 Service `<cluster-name>-clickhouse-headless`。
+并为每个副本创建 Service `<cluster-name>-clickhouse-internal-<shard>-<index>`，用于暴露尚未就绪的 Pod (容器组) ，以处理内部流量
+以及来自 operator 的管理请求。如果副本自身无法就绪，这可用于副本恢复。
 
-* 在 `ClickHouseCluster` 中，其值会用于
-  `remote_servers` 里的副本主机名 (跨副本和 `Distributed` 查询) 。
-* 在 `KeeperCluster` 中，其值会用于构建
-  ClickHouse 用于协调的 Keeper 节点主机名。
-
-<Note>
-  仅当你的集群中 `kubelet` 节点代理使用的 `--cluster-domain`
-  不是 `cluster.local` 时，才应覆盖此值。如果该值与实际的集群域不一致，
-  ClickHouse 将无法解析 Keeper 和副本主机名——协调以及
-  `Distributed` 查询都会因 DNS 解析错误而失败。请在
-  `ClickHouseCluster` 及其引用的 `KeeperCluster` 中设置**相同**的值。
-</Note>
-
-<div id="multi-disk-jbod-storage">
-  ### 多磁盘 (JBOD) 存储
-</div>
-
-`additionalVolumeClaimTemplates` 会为每个 ClickHouse 副本挂载额外磁盘；而要使用这些磁盘，仍必须配置主 `dataVolumeClaimSpec`。
-每一项都是一个 PVC 模板——即一个 `metadata.name` 加上一个 PVC `spec`。
-这些磁盘的协调方式与主数据磁盘完全相同——都作为 StatefulSet 的 `volumeClaimTemplates`——因此 StatefulSet 控制器会为每个副本创建并保留一个 PVC，名称为 `<name>-<statefulset>-0`。
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-operator 会将每个附加卷挂载到 `/var/lib/clickhouse/disks/<name>`，并将其添加到自动生成的 ClickHouse 存储配置中。
-名称中的连字符在 ClickHouse 的磁盘标识符中会转换为下划线；挂载路径则保留原始名称。
-
-主数据磁盘和每个附加磁盘都会被放入 `default` 存储策略中的同一个卷，因此 ClickHouse 会以轮询方式将新的数据分区片段分布到所有这些磁盘上。
-可用容量等于所有磁盘容量之和，且每个未设置自身 `storage_policy` 的表 (包括 `system.*` 表) 都会使用这组组合存储。
-
-<Note>
-  PVC 名称必须匹配 `^[a-z]([-a-z0-9]*[a-z0-9])?$`，并且不得与主数据卷名称冲突。
-  与主数据磁盘一样，附加磁盘集合在创建时即固定：创建后添加、删除或重命名条目都会被拒绝。
-  与主数据磁盘一样，删除集群时会保留附加 PVC。
-  如果存储类支持扩容，则可以扩展现有条目的存储大小。
-</Note>
-
-<div id="cluster-domain">
-  ## 集群域
-</div>
-
-`spec.clusterDomain` 用于设置 operator 在构建并写入 ClickHouse server
-配置的 pod (容器组) 完全限定主机名时所使用的 Kubernetes DNS 后缀。默认值为 `cluster.local`，并且在
-`ClickHouseCluster` 和 `KeeperCluster` 中都可用。
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-operator 会通过无头 Service 按如下格式访问每个 pod (容器组) ：
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`。该后缀会传递到
-生成配置的两个部分中：
-
-* 在 `ClickHouseCluster` 中，其值会用于
-  `remote_servers` 里的副本主机名 (跨副本和 `Distributed` 查询) 。
-* 在 `KeeperCluster` 中，其值会用于构建
-  ClickHouse 用于协调的 Keeper 节点主机名。
+Keeper 节点会通过其无头 Service 使用 pod 名称：`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`。
 
 <Note>
   仅当你的集群中 `kubelet` 节点代理使用的 `--cluster-domain`
@@ -594,7 +516,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
   ## 附加端口
 </div>
 
-该 Operator 会在每个 ClickHouse pod (容器组) 及其无头 Service 上暴露一组固定端口：`8123` HTTP、`9000` native、`9009` interserver、`9001` management、`9363` Prometheus 指标，以及启用 TLS 时对应的 `8443`/`9440` TLS 端口变体。若要让 ClickHouse 监听更多协议 (如 MySQL、PostgreSQL、gRPC 或其他自定义端口) ，请在 `spec.additionalPorts` 中声明：
+该 Operator 会在每个 ClickHouse pod (容器组) 及其公网无头 Service 上暴露一组固定端口：`8123` HTTP、`9000` native、`9009` interserver、`9001`/`9002` management、`9363` Prometheus 指标，以及启用 TLS 时对应的 `8443`/`9440` TLS 端口变体。`interserver` 和 management 端口还会通过每个副本的内部 Service 暴露，以便副本和 operator 能够在副本就绪前进行通信。若要让 ClickHouse 监听更多协议 (如 MySQL、PostgreSQL、gRPC 或其他自定义端口) ，请在 `spec.additionalPorts` 中声明：
 
 ```yaml
 spec:
@@ -607,7 +529,8 @@ spec:
       port: 9100
 ```
 
-operator 会将这些端口添加到 Pod 的 `containerPorts` 和无头 Service 中。完整示例见 [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml)。
+operator 会将这些端口添加到 Pod 的 `containerPorts` 和公网无头 Service 中。
+完整示例见 [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml)。
 
 <Warning>
   `additionalPorts` 只会在 Kubernetes 这一侧开放端口。它**不会**配置 ClickHouse 服务器 在这些端口上监听。你还需要在 `spec.settings.extraConfig.protocols` 中启用对应的协议。否则，虽然 Service 上的端口已开放，但 pod (容器组) 内部不会有任何程序响应。
@@ -633,7 +556,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -927,7 +850,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -969,10 +893,16 @@ spec:
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # 默认值：true
+    enableDatabaseSync: true  # Default: true
 ```
 
 启用后，该 Operator 会将 Replicated 表和集成表同步到新副本。
+
+每个副本 pod (容器组) 都带有 `clickhouse.com/ReplicaInitialized` 就绪门控，因此只有在 Operator 完成初始化后，新副本才会通过公网无头 Service 对外发布：`default` 数据库会转换为 Replicated 引擎，并同步 schema。在此之前，Operator 和其他副本会通过其内部 Service 访问该副本。使用 `enableDatabaseSync: false` 时，Operator 会立即将副本标记为已初始化，因此就绪状态仅取决于容器探针。
+
+Operator 绝不会删除已填充数据的非 Replicated `default` 数据库。此类副本在完成 schema 准备后仍会开始处理客户端流量，但在您自行解决该数据库的问题之前，集群会报告 `SchemaInSync=False`，原因为 `DefaultDatabaseNotReplicated`。
+
+在缩容移除副本之前，Operator 会先将客户端流量从该副本卸载，等待其停止对外发布，将其剩余数据复制到存活副本，然后才将其删除。
 
 <div id="server-logging">
   ### 服务器日志

@@ -10,10 +10,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user_del="${CLICKHOUSE_DATABASE}_del_04328"
 user_upd="${CLICKHOUSE_DATABASE}_upd_04328"
+# The name of a SQL user-defined function is global, not scoped to a database.
+udf_zero="${CLICKHOUSE_DATABASE}_zero_04328"
+udf_one="${CLICKHOUSE_DATABASE}_one_04328"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS tab, tab_lw, tab_mem, tab_mem2;
 DROP USER IF EXISTS $user_del, $user_upd;
+DROP FUNCTION IF EXISTS $udf_zero;
+DROP FUNCTION IF EXISTS $udf_one;
+
+CREATE FUNCTION $udf_zero AS () -> 0;
+CREATE FUNCTION $udf_one AS () -> 1;
 
 CREATE TABLE tab (id UInt32, val UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab SELECT number, number FROM numbers(10);
@@ -94,6 +102,15 @@ check_access "$user_upd" "UPDATE tab_lw SET _row_exists = 0 WHERE id = 9 SETTING
 check_access "$user_del" "UPDATE tab_lw SET _row_exists = 1 WHERE id = 9 SETTINGS enable_lightweight_update = 1"
 check_access "$user_upd" "UPDATE tab_lw SET _row_exists = 1 WHERE id = 9 SETTINGS enable_lightweight_update = 1"
 
+# The split is decided after SQL user-defined functions are inlined, so a function body of `0` is the
+# delete form just like the literal. Only the zero rows differ from the arms above: a function body of
+# `1` is a control that stays an update whichever order the inlining and the classification run in.
+echo "-- the split is decided after SQL UDF inlining, so a UDF body of 0 is also the delete form"
+check_access "$user_del" "UPDATE tab_lw SET _row_exists = ${udf_zero}() WHERE id = 9 SETTINGS enable_lightweight_update = 1"
+check_access "$user_upd" "UPDATE tab_lw SET _row_exists = ${udf_zero}() WHERE id = 9 SETTINGS enable_lightweight_update = 1"
+check_access "$user_del" "UPDATE tab_lw SET _row_exists = ${udf_one}() WHERE id = 9 SETTINGS enable_lightweight_update = 1"
+check_access "$user_upd" "UPDATE tab_lw SET _row_exists = ${udf_one}() WHERE id = 9 SETTINGS enable_lightweight_update = 1"
+
 # On an engine where `_row_exists` is an ordinary physical column (Memory), it is not the hidden
 # lightweight-delete marker, so `_row_exists = 0` is a normal update requiring ALTER UPDATE.
 echo "-- physical _row_exists column (Memory): _row_exists = 0 is an ordinary update, needs ALTER UPDATE"
@@ -111,4 +128,6 @@ check_access "$user_del" "ALTER TABLE tab_mem2 ADD COLUMN \`_row_exists\` UInt8 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE IF EXISTS tab, tab_lw, tab_mem, tab_mem2;
 DROP USER IF EXISTS $user_del, $user_upd;
+DROP FUNCTION IF EXISTS $udf_zero;
+DROP FUNCTION IF EXISTS $udf_one;
 "

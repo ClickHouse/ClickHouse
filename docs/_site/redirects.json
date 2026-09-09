@@ -1,131 +1,191 @@
 [
   {
-    "source": "/docs/products/bring-your-own-cloud",
-    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+    "destination": "/get-started/setup/cloud",
+    "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/products/bring-your-own-cloud/overview/overview",
-    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+    "destination": "/ar/get-started/setup/cloud",
+    "source": "/ar/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/products/managed-postgres/migrations/clickhouse-cloud",
-    "destination": "/products/managed-postgres/migrations/clickpipes"
+    "destination": "/es/get-started/setup/cloud",
+    "source": "/es/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
-    "destination": "/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker"
+    "destination": "/fr/get-started/setup/cloud",
+    "source": "/fr/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/concepts/features/operations/update/on-fly-mutations",
-    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+    "destination": "/ja/get-started/setup/cloud",
+    "source": "/ja/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/guides/developer/on-the-fly-mutations",
-    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+    "destination": "/ko/get-started/setup/cloud",
+    "source": "/ko/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/guides/developer/on-fly-mutations",
-    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+    "destination": "/pt-BR/get-started/setup/cloud",
+    "source": "/pt-BR/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/products/managed-postgres/benchmarks",
-    "destination": "https://clickhouse.com/blog/postgresbench"
+    "destination": "/ru/get-started/setup/cloud",
+    "source": "/ru/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/cloud/managed-postgres/benchmarks",
-    "destination": "https://clickhouse.com/blog/postgresbench"
+    "destination": "/zh/get-started/setup/cloud",
+    "source": "/zh/get-started/quickstarts/create-your-first-service-on-cloud"
   },
   {
-    "source": "/products/bring-your-own-cloud/onboarding/aws",
-    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data"
   },
   {
-    "source": "/cloud/reference/byoc/onboarding/aws",
-    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+    "destination": "/clickstack/ingesting-data/overview",
+    "source": "/clickstack/ingesting-data/index"
   },
   {
-    "source": "/products/bring-your-own-cloud/onboarding/azure-private-preview",
-    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion"
   },
   {
-    "source": "/cloud/reference/byoc/onboarding/azure-private-preview",
-    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+    "destination": "/integrations/home",
+    "source": "/integrations/connectors/data-ingestion/index"
   },
   {
-    "source": "/products/bring-your-own-cloud/reference/faq-aws",
-    "destination": "/products/bring-your-own-cloud/reference/faq"
+    "destination": "/products/cloud/features/backups/overview",
+    "source": "/products/cloud/features/backups/faq"
   },
   {
-    "source": "/concepts/features/operations/delete/delete-mutations",
-    "destination": "/reference/statements/alter/delete"
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
+    "source": "/products/cloud/guides/migration/oss-to-cloud-backup-restore"
   },
   {
-    "source": "/guides/oss/deployment-and-scaling",
-    "destination": "/guides/oss/deployment-and-scaling/terminology"
+    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
+    "source": "/docs/products/bring-your-own-cloud"
   },
   {
-    "source": "/guides/oss/deployment-and-scaling/index",
-    "destination": "/guides/oss/deployment-and-scaling/terminology"
+    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
+    "source": "/products/bring-your-own-cloud/overview/overview"
   },
   {
-    "source": "/integrations/clickpipes/kinesis/index",
-    "destination": "/integrations/clickpipes/kinesis/overview"
+    "destination": "/products/managed-postgres/migrations/clickpipes",
+    "source": "/products/managed-postgres/migrations/clickhouse-cloud"
   },
   {
-    "source": "/integrations/clickpipes/pubsub/index",
-    "destination": "/integrations/clickpipes/pubsub/overview"
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+    "source": "/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker"
   },
   {
-    "source": "/products/cloud/reference/billing/marketplace",
-    "destination": "/products/cloud/reference/billing/marketplace/overview"
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations",
+    "source": "/concepts/features/operations/update/on-fly-mutations"
   },
   {
-    "source": "/products/cloud/reference/billing/marketplace/index",
-    "destination": "/products/cloud/reference/billing/marketplace/overview"
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations",
+    "source": "/guides/developer/on-the-fly-mutations"
   },
   {
-    "source": "/get-started/migrate/postgres",
-    "destination": "/get-started/migrate/postgres/overview"
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations",
+    "source": "/guides/developer/on-fly-mutations"
   },
   {
-    "source": "/get-started/migrate/postgres/index",
-    "destination": "/get-started/migrate/postgres/overview"
+    "destination": "https://clickhouse.com/blog/postgresbench",
+    "source": "/products/managed-postgres/benchmarks"
   },
   {
-    "source": "/get-started/migrate/bigquery",
-    "destination": "/get-started/migrate/bigquery/overview"
+    "destination": "https://clickhouse.com/blog/postgresbench",
+    "source": "/cloud/managed-postgres/benchmarks"
   },
   {
-    "source": "/get-started/migrate/bigquery/index",
-    "destination": "/get-started/migrate/bigquery/overview"
+    "destination": "/products/bring-your-own-cloud/onboarding/standard",
+    "source": "/products/bring-your-own-cloud/onboarding/aws"
   },
   {
-    "source": "/products/cloud/features/admin-features/api",
-    "destination": "/products/cloud/features/admin-features/api/api-overview"
+    "destination": "/products/bring-your-own-cloud/onboarding/standard",
+    "source": "/cloud/reference/byoc/onboarding/aws"
   },
   {
-    "source": "/products/cloud/features/admin-features/api/index",
-    "destination": "/products/cloud/features/admin-features/api/api-overview"
+    "destination": "/products/bring-your-own-cloud/onboarding/standard",
+    "source": "/products/bring-your-own-cloud/onboarding/azure-private-preview"
   },
   {
-    "source": "/products/cloud/reference/billing",
-    "destination": "/products/cloud/reference/billing/billing-overview"
+    "destination": "/products/bring-your-own-cloud/onboarding/standard",
+    "source": "/cloud/reference/byoc/onboarding/azure-private-preview"
   },
   {
-    "source": "/products/cloud/reference/billing/index",
-    "destination": "/products/cloud/reference/billing/billing-overview"
+    "destination": "/products/bring-your-own-cloud/reference/faq",
+    "source": "/products/bring-your-own-cloud/reference/faq-aws"
   },
   {
-    "source": "/reference/system-tables",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/statements/alter/delete",
+    "source": "/concepts/features/operations/delete/delete-mutations"
   },
   {
-    "source": "/reference/system-tables/index",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/guides/oss/deployment-and-scaling/terminology",
+    "source": "/guides/oss/deployment-and-scaling"
   },
   {
-    "source": "/engines/table-engines/special/materializedview",
-    "destination": "/concepts/features/materialized-views"
+    "destination": "/guides/oss/deployment-and-scaling/terminology",
+    "source": "/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/integrations/clickpipes/kinesis/overview",
+    "source": "/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/integrations/clickpipes/pubsub/overview",
+    "source": "/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/products/cloud/reference/billing/marketplace/overview",
+    "source": "/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/products/cloud/reference/billing/marketplace/overview",
+    "source": "/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/get-started/migrate/postgres/overview",
+    "source": "/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/get-started/migrate/postgres/overview",
+    "source": "/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/get-started/migrate/bigquery/overview",
+    "source": "/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/get-started/migrate/bigquery/overview",
+    "source": "/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/products/cloud/features/admin-features/api/api-overview",
+    "source": "/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/products/cloud/features/admin-features/api/api-overview",
+    "source": "/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/products/cloud/reference/billing/billing-overview",
+    "source": "/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/products/cloud/reference/billing/billing-overview",
+    "source": "/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/reference/system-tables/overview",
+    "source": "/reference/system-tables"
+  },
+  {
+    "destination": "/reference/system-tables/overview",
+    "source": "/reference/system-tables/index"
+  },
+  {
+    "destination": "/concepts/features/materialized-views",
+    "source": "/engines/table-engines/special/materializedview"
   },
   {
     "destination": "/get-started/sample-datasets",
@@ -1264,7 +1324,7 @@
     "source": "/changelogs/26.5"
   },
   {
-    "destination": "/resources/changelogs/oss/2026#266",
+    "destination": "/resources/changelogs/cloud/release-notes/26_6",
     "source": "/changelogs/26.6"
   },
   {
@@ -1396,7 +1456,7 @@
     "source": "/cloud/connect"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/cloud/data-ingestion"
   },
   {
@@ -1488,8 +1548,12 @@
     "source": "/cloud/features/ai-ml/agents/sharing-and-access"
   },
   {
-    "destination": "/products/cloud/features/ai-ml/ask-ai",
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
     "source": "/cloud/features/ai-ml/ask-ai"
+  },
+  {
+    "destination": "/products/cloud/features/ai-ml/aichat/using-ai-chat",
+    "source": "/products/cloud/features/ai-ml/ask-ai"
   },
   {
     "destination": "/products/cloud/features/ai-ml/langfuse",
@@ -1528,7 +1592,7 @@
     "source": "/cloud/features/backups"
   },
   {
-    "destination": "/products/cloud/features/backups/faq",
+    "destination": "/products/cloud/features/backups/overview",
     "source": "/cloud/features/backups/faq"
   },
   {
@@ -1604,8 +1668,16 @@
     "source": "/cloud/get-started/sql-console"
   },
   {
-    "destination": "/products/cloud/guides",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/guides/index"
   },
   {
     "destination": "/products/cloud/guides/security/data-masking",
@@ -1624,7 +1696,7 @@
     "source": "/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -1636,7 +1708,7 @@
     "source": "/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -1648,8 +1720,8 @@
     "source": "/cloud/infrastructure/clickhouse-private"
   },
   {
-    "source": "/cloud/manage",
-    "destination": "/products/cloud/features/admin-features/api/api-overview"
+    "destination": "/products/cloud/features/admin-features/api/api-overview",
+    "source": "/cloud/manage"
   },
   {
     "destination": "/products/cloud/features/admin-features/api/api-overview",
@@ -1704,8 +1776,8 @@
     "source": "/cloud/manage/backups/overview"
   },
   {
-    "source": "/cloud/manage/billing",
-    "destination": "/products/cloud/reference/billing/billing-overview"
+    "destination": "/products/cloud/reference/billing/billing-overview",
+    "source": "/cloud/manage/billing"
   },
   {
     "destination": "/products/cloud/reference/billing/billing-overview",
@@ -1728,8 +1800,8 @@
     "source": "/cloud/manage/close_account"
   },
   {
-    "source": "/cloud/manage/cloud-api",
-    "destination": "/products/cloud/features/admin-features/api/api-overview"
+    "destination": "/products/cloud/features/admin-features/api/api-overview",
+    "source": "/cloud/manage/cloud-api"
   },
   {
     "destination": "/products/cloud/features/cloud-tiers",
@@ -1756,8 +1828,8 @@
     "source": "/cloud/manage/jan-2025-faq/backup"
   },
   {
-    "source": "/cloud/manage/jan-2025-faq/billing",
-    "destination": "/products/cloud/reference/billing/billing-overview"
+    "destination": "/products/cloud/reference/billing/billing-overview",
+    "source": "/cloud/manage/jan-2025-faq/billing"
   },
   {
     "destination": "/products/cloud/features/cloud-tiers",
@@ -1780,8 +1852,8 @@
     "source": "/cloud/manage/jan-2025-faq/summary"
   },
   {
-    "source": "/cloud/manage/marketplace/",
-    "destination": "/products/cloud/reference/billing/marketplace/overview"
+    "destination": "/products/cloud/reference/billing/marketplace/overview",
+    "source": "/cloud/manage/marketplace/"
   },
   {
     "destination": "/products/cloud/features/monitoring/advanced-dashboard",
@@ -1956,8 +2028,8 @@
     "source": "/cloud/managed-postgres/upgrades"
   },
   {
-    "source": "/cloud/marketplace",
-    "destination": "/products/cloud/reference/billing/marketplace/overview"
+    "destination": "/products/cloud/reference/billing/marketplace/overview",
+    "source": "/cloud/marketplace"
   },
   {
     "destination": "/products/cloud/reference/billing/marketplace/overview",
@@ -1980,7 +2052,7 @@
     "source": "/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -2008,8 +2080,16 @@
     "source": "/cloud/overview"
   },
   {
-    "destination": "/products/cloud/reference",
+    "destination": "/products/cloud/getting-started/cloud-get-started",
     "source": "/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference"
+  },
+  {
+    "destination": "/products/cloud/getting-started/cloud-get-started",
+    "source": "/products/cloud/reference/index"
   },
   {
     "destination": "/products/cloud/reference/architecture",
@@ -2288,6 +2368,10 @@
     "source": "/cloud/security/saml-setup"
   },
   {
+    "destination": "/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+    "source": "/cloud/security/jwt-authentication-setup"
+  },
+  {
     "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup",
     "source": "/cloud/security/scim-setup"
   },
@@ -2536,8 +2620,8 @@
     "source": "/deletes/overview"
   },
   {
-    "source": "/deployment-guides/index",
-    "destination": "/guides/oss/deployment-and-scaling/terminology"
+    "destination": "/guides/oss/deployment-and-scaling/terminology",
+    "source": "/deployment-guides/index"
   },
   {
     "destination": "/products/cloud/features/infrastructure/parallel-replicas",
@@ -2690,6 +2774,10 @@
   {
     "destination": "/reference/engines/database-engines/postgresql",
     "source": "/engines/database-engines/postgresql"
+  },
+  {
+    "destination": "/reference/engines/database-engines/remote",
+    "source": "/engines/database-engines/remote"
   },
   {
     "destination": "/reference/engines/database-engines/replicated",
@@ -3716,7 +3804,7 @@
     "source": "/guides"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/apply_catboost_model"
   },
   {
@@ -3732,7 +3820,7 @@
     "source": "/guides/developer/alternative-query-languages"
   },
   {
-    "destination": "/reference/functions/regular-functions/other-functions",
+    "destination": "/reference/functions/regular-functions/machine-learning-functions",
     "source": "/guides/developer/apply-catboost-model"
   },
   {
@@ -3872,8 +3960,8 @@
     "source": "/guides/joining-tables"
   },
   {
-    "source": "/guides/manage-and-deploy-index",
-    "destination": "/guides/oss/deployment-and-scaling/terminology"
+    "destination": "/guides/oss/deployment-and-scaling/terminology",
+    "source": "/guides/manage-and-deploy-index"
   },
   {
     "destination": "/concepts/features/operations/update/replacing-merge-tree",
@@ -4124,8 +4212,8 @@
     "source": "/integrations/clickpipes/kinesis"
   },
   {
-    "source": "/integrations/clickpipes/kinesis-index",
-    "destination": "/integrations/clickpipes/kinesis/overview"
+    "destination": "/integrations/clickpipes/kinesis/overview",
+    "source": "/integrations/clickpipes/kinesis-index"
   },
   {
     "destination": "/integrations/clickpipes/mongodb/add-table",
@@ -4252,8 +4340,8 @@
     "source": "/integrations/clickpipes/pubsub"
   },
   {
-    "source": "/integrations/clickpipes/pubsub-index",
-    "destination": "/integrations/clickpipes/pubsub/overview"
+    "destination": "/integrations/clickpipes/pubsub/overview",
+    "source": "/integrations/clickpipes/pubsub-index"
   },
   {
     "destination": "/integrations/clickpipes/kinesis/auth",
@@ -4344,7 +4432,7 @@
     "source": "/integrations/data-ingestion"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion",
+    "destination": "/integrations/home",
     "source": "/integrations/data-ingestion-overview"
   },
   {
@@ -4368,8 +4456,12 @@
     "source": "/integrations/data-ingestion/dbms/"
   },
   {
-    "destination": "/integrations/connectors/data-ingestion/odbc-with-clickhouse",
+    "destination": "/reference/engines/table-engines/integrations/odbc",
     "source": "/integrations/data-ingestion/dbms/odbc-with-clickhouse"
+  },
+  {
+    "destination": "/reference/engines/table-engines/integrations/odbc",
+    "source": "/integrations/connectors/data-ingestion/odbc-with-clickhouse"
   },
   {
     "destination": "/integrations/home",
@@ -4880,6 +4972,10 @@
     "source": "/integrations/metabase"
   },
   {
+    "destination": "/integrations/connectors/data-integrations/integrations/microsoft-fabric",
+    "source": "/integrations/microsoft-fabric"
+  },
+  {
     "destination": "/integrations/connectors/data-integrations/integrations/middleware",
     "source": "/integrations/middleware"
   },
@@ -5006,6 +5102,10 @@
   {
     "destination": "/integrations/connectors/data-visualization/powerbi-and-clickhouse",
     "source": "/integrations/powerbi"
+  },
+  {
+    "destination": "/integrations/connectors/sql-clients/probedeck",
+    "source": "/integrations/probedeck"
   },
   {
     "destination": "/products/cloud/features/monitoring/prometheus",
@@ -5142,6 +5242,10 @@
   {
     "destination": "/integrations/connectors/sql-clients/jupysql",
     "source": "/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/integrations/connectors/sql-clients/probedeck",
+    "source": "/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/integrations/connectors/sql-clients/qstudio",
@@ -6500,7 +6604,7 @@
     "source": "/jp/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/jp/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -6512,7 +6616,7 @@
     "source": "/jp/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/jp/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -6848,7 +6952,7 @@
     "source": "/jp/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/ja/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/ja/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/jp/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -9848,6 +9952,10 @@
     "source": "/jp/integrations/powerbi"
   },
   {
+    "destination": "/ja/integrations/connectors/sql-clients/probedeck",
+    "source": "/jp/integrations/probedeck"
+  },
+  {
     "destination": "/ja/products/cloud/features/monitoring/prometheus",
     "source": "/jp/integrations/prometheus"
   },
@@ -9982,6 +10090,10 @@
   {
     "destination": "/ja/integrations/connectors/sql-clients/jupysql",
     "source": "/jp/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ja/integrations/connectors/sql-clients/probedeck",
+    "source": "/jp/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ja/integrations/connectors/sql-clients/qstudio",
@@ -10568,7 +10680,7 @@
     "source": "/jp/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ja/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ja/integrations/language-clients/third-party/client-libraries",
     "source": "/jp/interfaces/third-party/moose-olap"
   },
   {
@@ -11044,7 +11156,7 @@
     "source": "/jp/managing-data/core-concepts"
   },
   {
-    "destination": "/ja/concepts/features/operations/delete/delete-mutations",
+    "destination": "/ja/reference/statements/alter/delete",
     "source": "/jp/managing-data/delete_mutations"
   },
   {
@@ -13800,7 +13912,7 @@
     "source": "/jp/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/ja/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/ja/reference/functions/regular-functions/overview",
     "source": "/jp/sql-reference/functions/regular-functions"
   },
   {
@@ -14388,7 +14500,7 @@
     "source": "/jp/sql-reference/statements/use"
   },
   {
-    "destination": "/ja/reference/statements/watch",
+    "destination": "/ja/reference/statements/create/view",
     "source": "/jp/sql-reference/statements/watch"
   },
   {
@@ -17256,7 +17368,7 @@
     "source": "/ko/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ko/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -17268,7 +17380,7 @@
     "source": "/ko/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ko/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -17604,7 +17716,7 @@
     "source": "/ko/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/ko/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/ko/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/ko/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -20600,6 +20712,10 @@
     "source": "/ko/integrations/powerbi"
   },
   {
+    "destination": "/ko/integrations/connectors/sql-clients/probedeck",
+    "source": "/ko/integrations/probedeck"
+  },
+  {
     "destination": "/ko/products/cloud/features/monitoring/prometheus",
     "source": "/ko/integrations/prometheus"
   },
@@ -20734,6 +20850,10 @@
   {
     "destination": "/ko/integrations/connectors/sql-clients/jupysql",
     "source": "/ko/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ko/integrations/connectors/sql-clients/probedeck",
+    "source": "/ko/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ko/integrations/connectors/sql-clients/qstudio",
@@ -21320,7 +21440,7 @@
     "source": "/ko/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ko/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ko/integrations/language-clients/third-party/client-libraries",
     "source": "/ko/interfaces/third-party/moose-olap"
   },
   {
@@ -21796,7 +21916,7 @@
     "source": "/ko/managing-data/core-concepts"
   },
   {
-    "destination": "/ko/concepts/features/operations/delete/delete-mutations",
+    "destination": "/ko/reference/statements/alter/delete",
     "source": "/ko/managing-data/delete_mutations"
   },
   {
@@ -24552,7 +24672,7 @@
     "source": "/ko/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/ko/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/ko/reference/functions/regular-functions/overview",
     "source": "/ko/sql-reference/functions/regular-functions"
   },
   {
@@ -25140,7 +25260,7 @@
     "source": "/ko/sql-reference/statements/use"
   },
   {
-    "destination": "/ko/reference/statements/watch",
+    "destination": "/ko/reference/statements/create/view",
     "source": "/ko/sql-reference/statements/watch"
   },
   {
@@ -26992,8 +27112,8 @@
     "source": "/migrations/postgres/en/migrations/postgresql"
   },
   {
-    "source": "/migrations/postgresql",
-    "destination": "/get-started/migrate/postgres/overview"
+    "destination": "/get-started/migrate/postgres/overview",
+    "source": "/migrations/postgresql"
   },
   {
     "destination": "/get-started/migrate/postgres/appendix",
@@ -27096,8 +27216,8 @@
     "source": "/observability/managing-data"
   },
   {
-    "source": "/operations",
-    "destination": "/guides/oss/deployment-and-scaling/terminology"
+    "destination": "/guides/oss/deployment-and-scaling/terminology",
+    "source": "/operations"
   },
   {
     "destination": "/concepts/features/security/access-rights",
@@ -27412,8 +27532,8 @@
     "source": "/operations/storing-data"
   },
   {
-    "source": "/operations/system-tables/",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/operations/system-tables/"
   },
   {
     "destination": "/reference/system-tables/aggregate_function_combinators",
@@ -28100,8 +28220,8 @@
     "source": "/operations/system-tables/zookeeper_watches"
   },
   {
-    "source": "/operations/system_tables",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/operations/system_tables"
   },
   {
     "destination": "/reference/engines/table-engines",
@@ -29364,7 +29484,7 @@
     "source": "/ru/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ru/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -29376,7 +29496,7 @@
     "source": "/ru/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/ru/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -29712,7 +29832,7 @@
     "source": "/ru/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/ru/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/ru/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/ru/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -32708,6 +32828,10 @@
     "source": "/ru/integrations/powerbi"
   },
   {
+    "destination": "/ru/integrations/connectors/sql-clients/probedeck",
+    "source": "/ru/integrations/probedeck"
+  },
+  {
     "destination": "/ru/products/cloud/features/monitoring/prometheus",
     "source": "/ru/integrations/prometheus"
   },
@@ -32842,6 +32966,10 @@
   {
     "destination": "/ru/integrations/connectors/sql-clients/jupysql",
     "source": "/ru/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ru/integrations/connectors/sql-clients/probedeck",
+    "source": "/ru/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ru/integrations/connectors/sql-clients/qstudio",
@@ -33428,7 +33556,7 @@
     "source": "/ru/interfaces/third-party/integrations"
   },
   {
-    "destination": "/ru/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ru/integrations/language-clients/third-party/client-libraries",
     "source": "/ru/interfaces/third-party/moose-olap"
   },
   {
@@ -33904,7 +34032,7 @@
     "source": "/ru/managing-data/core-concepts"
   },
   {
-    "destination": "/ru/concepts/features/operations/delete/delete-mutations",
+    "destination": "/ru/reference/statements/alter/delete",
     "source": "/ru/managing-data/delete_mutations"
   },
   {
@@ -36660,7 +36788,7 @@
     "source": "/ru/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/ru/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/ru/reference/functions/regular-functions/overview",
     "source": "/ru/sql-reference/functions/regular-functions"
   },
   {
@@ -37248,7 +37376,7 @@
     "source": "/ru/sql-reference/statements/use"
   },
   {
-    "destination": "/ru/reference/statements/watch",
+    "destination": "/ru/reference/statements/create/view",
     "source": "/ru/sql-reference/statements/watch"
   },
   {
@@ -39148,6 +39276,10 @@
     "source": "/sql-reference/aggregate-functions/reference/flame_graph"
   },
   {
+    "destination": "/reference/functions/aggregate-functions/gini",
+    "source": "/sql-reference/aggregate-functions/reference/gini"
+  },
+  {
     "destination": "/reference/functions/aggregate-functions/groupArray",
     "source": "/sql-reference/aggregate-functions/reference/grouparray"
   },
@@ -39948,8 +40080,12 @@
     "source": "/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/reference/functions/regular-functions/overview",
     "source": "/sql-reference/functions/regular-functions"
+  },
+  {
+    "destination": "/reference/functions/regular-functions/overview",
+    "source": "/reference/functions/regular-functions/regular-functions-index"
   },
   {
     "destination": "/reference/functions/regular-functions/rounding-functions",
@@ -40536,7 +40672,7 @@
     "source": "/sql-reference/statements/use"
   },
   {
-    "destination": "/reference/statements/watch",
+    "destination": "/reference/statements/create/view",
     "source": "/sql-reference/statements/watch"
   },
   {
@@ -41228,80 +41364,80 @@
     "source": "/starter-guides"
   },
   {
-    "source": "/system_tables",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables"
   },
   {
-    "source": "/system_tables/system.asynchronous_metrics",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.asynchronous_metrics"
   },
   {
-    "source": "/system_tables/system.clusters",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.clusters"
   },
   {
-    "source": "/system_tables/system.columns",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.columns"
   },
   {
-    "source": "/system_tables/system.databases",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.databases"
   },
   {
-    "source": "/system_tables/system.dictionaries",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.dictionaries"
   },
   {
-    "source": "/system_tables/system.events",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.events"
   },
   {
-    "source": "/system_tables/system.functions",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.functions"
   },
   {
-    "source": "/system_tables/system.merges",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.merges"
   },
   {
-    "source": "/system_tables/system.metrics",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.metrics"
   },
   {
-    "source": "/system_tables/system.numbers",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.numbers"
   },
   {
-    "source": "/system_tables/system.numbers_mt",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.numbers_mt"
   },
   {
-    "source": "/system_tables/system.one",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.one"
   },
   {
-    "source": "/system_tables/system.parts",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.parts"
   },
   {
-    "source": "/system_tables/system.processes",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.processes"
   },
   {
-    "source": "/system_tables/system.replicas",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.replicas"
   },
   {
-    "source": "/system_tables/system.settings",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.settings"
   },
   {
-    "source": "/system_tables/system.tables",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.tables"
   },
   {
-    "source": "/system_tables/system.zookeeper",
-    "destination": "/reference/system-tables/overview"
+    "destination": "/reference/system-tables/overview",
+    "source": "/system_tables/system.zookeeper"
   },
   {
     "destination": "/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
@@ -41760,7 +41896,7 @@
     "source": "/use-cases/observability/clickstack/getting-started/telemetrygen"
   },
   {
-    "destination": "/clickstack/ingesting-data",
+    "destination": "/clickstack/ingesting-data/overview",
     "source": "/use-cases/observability/clickstack/ingesting-data"
   },
   {
@@ -42920,7 +43056,7 @@
     "source": "/zh/cloud/guides/security/manage-custom-roles"
   },
   {
-    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/zh/cloud/guides/sql-console/config-sql-console-role-assignments"
   },
   {
@@ -42932,7 +43068,7 @@
     "source": "/zh/cloud/guides/sql-console/gather-connection-details"
   },
   {
-    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/zh/cloud/guides/sql-console/manage-sql-console-role-assignments"
   },
   {
@@ -43268,7 +43404,7 @@
     "source": "/zh/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/zh/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/zh/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/zh/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -46264,6 +46400,10 @@
     "source": "/zh/integrations/powerbi"
   },
   {
+    "destination": "/zh/integrations/connectors/sql-clients/probedeck",
+    "source": "/zh/integrations/probedeck"
+  },
+  {
     "destination": "/zh/products/cloud/features/monitoring/prometheus",
     "source": "/zh/integrations/prometheus"
   },
@@ -46398,6 +46538,10 @@
   {
     "destination": "/zh/integrations/connectors/sql-clients/jupysql",
     "source": "/zh/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/zh/integrations/connectors/sql-clients/probedeck",
+    "source": "/zh/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/zh/integrations/connectors/sql-clients/qstudio",
@@ -46984,7 +47128,7 @@
     "source": "/zh/interfaces/third-party/integrations"
   },
   {
-    "destination": "/zh/integrations/language-clients/third-party/moose-olap",
+    "destination": "/zh/integrations/language-clients/third-party/client-libraries",
     "source": "/zh/interfaces/third-party/moose-olap"
   },
   {
@@ -47460,7 +47604,7 @@
     "source": "/zh/managing-data/core-concepts"
   },
   {
-    "destination": "/zh/concepts/features/operations/delete/delete-mutations",
+    "destination": "/zh/reference/statements/alter/delete",
     "source": "/zh/managing-data/delete_mutations"
   },
   {
@@ -50216,7 +50360,7 @@
     "source": "/zh/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/zh/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/zh/reference/functions/regular-functions/overview",
     "source": "/zh/sql-reference/functions/regular-functions"
   },
   {
@@ -50804,7 +50948,7 @@
     "source": "/zh/sql-reference/statements/use"
   },
   {
-    "destination": "/zh/reference/statements/watch",
+    "destination": "/zh/reference/statements/create/view",
     "source": "/zh/sql-reference/statements/watch"
   },
   {
@@ -54344,7 +54488,579 @@
     "source": "/cloud/reference/byoc/reference/security-shared-responsibility"
   },
   {
-    "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
     "source": "/cloud/guides/security/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+    "source": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles"
+  },
+  {
+    "destination": "/ar/concepts/features/interfaces/prometheus",
+    "source": "/ar/interfaces/prometheus"
+  },
+  {
+    "destination": "/ar/reference/functions/table-functions/prometheusQuery",
+    "source": "/ar/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/ar/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/ar/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/es/concepts/features/interfaces/prometheus",
+    "source": "/es/interfaces/prometheus"
+  },
+  {
+    "destination": "/es/reference/functions/table-functions/prometheusQuery",
+    "source": "/es/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/es/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/es/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/fr/concepts/features/interfaces/prometheus",
+    "source": "/fr/interfaces/prometheus"
+  },
+  {
+    "destination": "/fr/reference/functions/table-functions/prometheusQuery",
+    "source": "/fr/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/fr/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/fr/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/prometheus",
+    "source": "/ja/interfaces/prometheus"
+  },
+  {
+    "destination": "/ja/reference/functions/table-functions/prometheusQuery",
+    "source": "/ja/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/ja/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/ja/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/interfaces/prometheus",
+    "source": "/pt-BR/interfaces/prometheus"
+  },
+  {
+    "destination": "/pt-BR/reference/functions/table-functions/prometheusQuery",
+    "source": "/pt-BR/sql-reference/table-functions/prometheusQuery"
+  },
+  {
+    "destination": "/pt-BR/reference/functions/table-functions/prometheusQueryRange",
+    "source": "/pt-BR/sql-reference/table-functions/prometheusQueryRange"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/partitioning-keys",
+    "source": "/ar/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/choosing-a-primary-key",
+    "source": "/ar/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/select-data-type",
+    "source": "/ar/best-practices/select-data-types"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/using-data-skipping-indices",
+    "source": "/ar/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/ar/concepts/best-practices/use-materialized-views",
+    "source": "/ar/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/ar/guides/clickhouse/data-modelling/denormalization",
+    "source": "/ar/data-modeling/denormalization"
+  },
+  {
+    "destination": "/ar/concepts/features/projections/projections",
+    "source": "/ar/data-modeling/projections"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/ar/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/ar/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/ar/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/ar/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/ar/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/ar/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/ar/concepts/features/interfaces/client",
+    "source": "/ar/interfaces/client"
+  },
+  {
+    "destination": "/ar/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/ar/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/ar/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/ar/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/ar/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/ar/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/ar/concepts/features/performance/caches/query-condition-cache",
+    "source": "/ar/operations/query-condition-cache"
+  },
+  {
+    "destination": "/ar/concepts/core-concepts/parts",
+    "source": "/ar/parts"
+  },
+  {
+    "destination": "/ar/concepts/core-concepts/primary-indexes",
+    "source": "/ar/primary-indexes"
+  },
+  {
+    "destination": "/es/concepts/best-practices/partitioning-keys",
+    "source": "/es/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/es/concepts/best-practices/choosing-a-primary-key",
+    "source": "/es/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/es/concepts/best-practices/select-data-type",
+    "source": "/es/best-practices/select-data-types"
+  },
+  {
+    "destination": "/es/concepts/best-practices/using-data-skipping-indices",
+    "source": "/es/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/es/concepts/best-practices/use-materialized-views",
+    "source": "/es/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/es/guides/clickhouse/data-modelling/denormalization",
+    "source": "/es/data-modeling/denormalization"
+  },
+  {
+    "destination": "/es/concepts/features/projections/projections",
+    "source": "/es/data-modeling/projections"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/es/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/es/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/es/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/es/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/es/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/es/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/es/concepts/features/interfaces/client",
+    "source": "/es/interfaces/client"
+  },
+  {
+    "destination": "/es/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/es/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/es/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/es/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/es/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/es/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/es/concepts/features/performance/caches/query-condition-cache",
+    "source": "/es/operations/query-condition-cache"
+  },
+  {
+    "destination": "/es/concepts/core-concepts/parts",
+    "source": "/es/parts"
+  },
+  {
+    "destination": "/es/concepts/core-concepts/primary-indexes",
+    "source": "/es/primary-indexes"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/partitioning-keys",
+    "source": "/fr/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/choosing-a-primary-key",
+    "source": "/fr/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/select-data-type",
+    "source": "/fr/best-practices/select-data-types"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/using-data-skipping-indices",
+    "source": "/fr/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/fr/concepts/best-practices/use-materialized-views",
+    "source": "/fr/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/fr/guides/clickhouse/data-modelling/denormalization",
+    "source": "/fr/data-modeling/denormalization"
+  },
+  {
+    "destination": "/fr/concepts/features/projections/projections",
+    "source": "/fr/data-modeling/projections"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/fr/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/fr/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/fr/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/fr/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/fr/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/fr/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/fr/concepts/features/interfaces/client",
+    "source": "/fr/interfaces/client"
+  },
+  {
+    "destination": "/fr/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/fr/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/fr/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/fr/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/fr/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/fr/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/fr/concepts/features/performance/caches/query-condition-cache",
+    "source": "/fr/operations/query-condition-cache"
+  },
+  {
+    "destination": "/fr/concepts/core-concepts/parts",
+    "source": "/fr/parts"
+  },
+  {
+    "destination": "/fr/concepts/core-concepts/primary-indexes",
+    "source": "/fr/primary-indexes"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/partitioning-keys",
+    "source": "/ja/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/choosing-a-primary-key",
+    "source": "/ja/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/select-data-type",
+    "source": "/ja/best-practices/select-data-types"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/using-data-skipping-indices",
+    "source": "/ja/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/ja/concepts/best-practices/use-materialized-views",
+    "source": "/ja/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/ja/guides/clickhouse/data-modelling/denormalization",
+    "source": "/ja/data-modeling/denormalization"
+  },
+  {
+    "destination": "/ja/concepts/features/projections/projections",
+    "source": "/ja/data-modeling/projections"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/ja/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/ja/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/ja/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/ja/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/ja/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/ja/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/client",
+    "source": "/ja/interfaces/client"
+  },
+  {
+    "destination": "/ja/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/ja/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/ja/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/ja/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/ja/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/ja/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/ja/concepts/features/performance/caches/query-condition-cache",
+    "source": "/ja/operations/query-condition-cache"
+  },
+  {
+    "destination": "/ja/concepts/core-concepts/parts",
+    "source": "/ja/parts"
+  },
+  {
+    "destination": "/ja/concepts/core-concepts/primary-indexes",
+    "source": "/ja/primary-indexes"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/partitioning-keys",
+    "source": "/pt-BR/best-practices/choosing-a-partitioning-key"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/choosing-a-primary-key",
+    "source": "/pt-BR/best-practices/choosing-a-primary-key"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/select-data-type",
+    "source": "/pt-BR/best-practices/select-data-types"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/using-data-skipping-indices",
+    "source": "/pt-BR/best-practices/use-data-skipping-indices-where-appropriate"
+  },
+  {
+    "destination": "/pt-BR/concepts/best-practices/use-materialized-views",
+    "source": "/pt-BR/best-practices/use-materialized-views"
+  },
+  {
+    "destination": "/pt-BR/guides/clickhouse/data-modelling/denormalization",
+    "source": "/pt-BR/data-modeling/denormalization"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/projections/projections",
+    "source": "/pt-BR/data-modeling/projections"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/mysql/source/generic-maria",
+    "source": "/pt-BR/integrations/clickpipes/mysql/source/generic_maria"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/mysql/source/rds-maria",
+    "source": "/pt-BR/integrations/clickpipes/mysql/source/rds_maria"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/object-storage/azure-blob-storage/overview",
+    "source": "/pt-BR/integrations/clickpipes/object-storage/abs/overview"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/object-storage/google-cloud-storage/overview",
+    "source": "/pt-BR/integrations/clickpipes/object-storage/gcs/overview"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/object-storage/amazon-s3/get-started",
+    "source": "/pt-BR/integrations/clickpipes/object-storage/s3/get-started"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview",
+    "source": "/pt-BR/integrations/clickpipes/object-storage/s3/overview"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/interfaces/client",
+    "source": "/pt-BR/interfaces/client"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/projections/materialized-views-versus-projections",
+    "source": "/pt-BR/managing-data/materialized-views-versus-projections"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/materialized-views/incremental-materialized-view",
+    "source": "/pt-BR/materialized-view/incremental-materialized-view"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/materialized-views/refreshable-materialized-view",
+    "source": "/pt-BR/materialized-view/refreshable-materialized-view"
+  },
+  {
+    "destination": "/pt-BR/concepts/features/performance/caches/query-condition-cache",
+    "source": "/pt-BR/operations/query-condition-cache"
+  },
+  {
+    "destination": "/pt-BR/concepts/core-concepts/parts",
+    "source": "/pt-BR/parts"
+  },
+  {
+    "destination": "/pt-BR/concepts/core-concepts/primary-indexes",
+    "source": "/pt-BR/primary-indexes"
+  },
+  {
+    "destination": "/reference/statements/create/view",
+    "source": "/reference/statements/watch"
+  },
+  {
+    "destination": "/ar/reference/statements/create/view",
+    "source": "/ar/reference/statements/watch"
+  },
+  {
+    "destination": "/es/reference/statements/create/view",
+    "source": "/es/reference/statements/watch"
+  },
+  {
+    "destination": "/fr/reference/statements/create/view",
+    "source": "/fr/reference/statements/watch"
+  },
+  {
+    "destination": "/ja/reference/statements/create/view",
+    "source": "/ja/reference/statements/watch"
+  },
+  {
+    "destination": "/ko/reference/statements/create/view",
+    "source": "/ko/reference/statements/watch"
+  },
+  {
+    "destination": "/pt-BR/reference/statements/create/view",
+    "source": "/pt-BR/reference/statements/watch"
+  },
+  {
+    "destination": "/ru/reference/statements/create/view",
+    "source": "/ru/reference/statements/watch"
+  },
+  {
+    "destination": "/zh/reference/statements/create/view",
+    "source": "/zh/reference/statements/watch"
+  },
+  {
+    "destination": "/reference/settings/session-settings",
+    "source": "/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ar/reference/settings/session-settings",
+    "source": "/ar/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/es/reference/settings/session-settings",
+    "source": "/es/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/fr/reference/settings/session-settings",
+    "source": "/fr/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ja/reference/settings/session-settings",
+    "source": "/ja/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ko/reference/settings/session-settings",
+    "source": "/ko/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/pt-BR/reference/settings/session-settings",
+    "source": "/pt-BR/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/ru/reference/settings/session-settings",
+    "source": "/ru/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/zh/reference/settings/session-settings",
+    "source": "/zh/reference/settings/session-settings/window-view"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/es/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/fr/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ja/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/ru/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
+  },
+  {
+    "destination": "/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
+    "source": "/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
   }
 ]

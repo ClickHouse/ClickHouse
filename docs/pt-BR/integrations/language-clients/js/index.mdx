@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: 'Visão geral'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'web', 'browser', 'Cloudflare', 'workers', 'client', 'connect', 'integrate']
 slug: /integrations/javascript
 description: 'O cliente JS oficial para conectar ao ClickHouse.'
@@ -33,7 +33,7 @@ O código-fonte do cliente está disponível no [repositório GitHub ClickHouse-
   O cliente JS vem com Skills para agentes de IA que podem ajudar agentes de codificação a trabalhar com o cliente. Instale-as com:
 
   ```sh
-  npm skills add ClickHouse/clickhouse-js
+  npx skills add ClickHouse/clickhouse-js
   ```
 </Info>
 
@@ -1011,7 +1011,7 @@ Embora o servidor possa aceitá-los como números, eles são retornados como str
 overflow de inteiro, já que os valores máximos desses tipos são maiores que `Number.MAX_SAFE_INTEGER`.
 
 Esse comportamento, no entanto, pode ser alterado
-com a [configuração `output_format_json_quote_64bit_integers`](/pt-BR/reference/settings/formats#output_format_json_quote_64bit_integers)
+com a [configuração `output_format_json_quote_64bit_integers`](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 .
 
 **Exemplo:** Ajuste o formato de saída JSON para números de 64 bits.
@@ -1103,7 +1103,7 @@ await client.query({
 })
 ```
 
-Consulte https://clickhouse.com/docs/interfaces/cli#cli-queries-with-parameters-syntax para mais detalhes.
+Consulte https://clickhouse.com/docs/interfaces/client#cli-queries-with-parameters-syntax para mais detalhes.
 
 <div id="compression">
   ### Compressão

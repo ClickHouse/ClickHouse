@@ -19,6 +19,7 @@
         "products/managed-postgres/high-availability",
         "products/managed-postgres/read-replicas",
         "products/managed-postgres/backup-and-restore",
+        "products/managed-postgres/branching",
         "products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
@@ -26,6 +27,14 @@
             "products/managed-postgres/extensions/pg_clickhouse/introduction",
             "products/managed-postgres/extensions/pg_clickhouse/reference",
             "products/managed-postgres/extensions/pg_clickhouse/tutorial"
+          ]
+        },
+        {
+          "group": "pg_chdb",
+          "pages": [
+            "products/managed-postgres/extensions/chdb/introduction",
+            "products/managed-postgres/extensions/chdb/chdb",
+            "products/managed-postgres/extensions/chdb/chdb_hook"
           ]
         },
         "products/managed-postgres/upgrades",
@@ -49,11 +58,12 @@
       "group": "Migrations",
       "pages": [
         "products/managed-postgres/migrations/overview",
-        "products/managed-postgres/migrations/pg_dump-pg_restore",
-        "products/managed-postgres/migrations/logical-replication",
-        "products/managed-postgres/migrations/peerdb",
         "products/managed-postgres/migrations/clickpipes",
         "products/managed-postgres/migrations/data-validation",
+        "products/managed-postgres/migrations/logical-replication",
+        "products/managed-postgres/migrations/neon",
+        "products/managed-postgres/migrations/pg_dump-pg_restore",
+        "products/managed-postgres/migrations/peerdb",
         "products/managed-postgres/migrations/faq"
       ]
     },
@@ -64,7 +74,8 @@
         "products/managed-postgres/monitoring/dashboard",
         "products/managed-postgres/monitoring/metrics",
         "products/managed-postgres/monitoring/prometheus",
-        "products/managed-postgres/monitoring/query-insights"
+        "products/managed-postgres/monitoring/query-insights",
+        "products/managed-postgres/monitoring/notifications"
       ]
     },
     {

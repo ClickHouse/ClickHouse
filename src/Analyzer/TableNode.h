@@ -124,11 +124,8 @@ public:
         return table_expression_modifiers;
     }
 
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
+    /// Set table expression modifiers and update the storage snapshot metadata accordingly
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
     const MaterializedCTEPtr & getMaterializedCTE() const
     {
