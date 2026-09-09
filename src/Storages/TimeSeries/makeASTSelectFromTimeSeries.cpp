@@ -444,18 +444,18 @@ namespace
     }
 
     /// Builds a JOIN clause for the "tags" table to join it to the "samples" table:
-    /// SEMI LEFT JOIN tags USING id
-    ASTPtr makeTagsSemiJoinElement(const StorageID & tags_table_id)
+    /// INNER ANY JOIN tags USING id
+    ASTPtr makeTagsJoinElement(const StorageID & tags_table_id)
     {
         auto join = make_intrusive<ASTTableJoin>();
-        join->kind = JoinKind::Left;
-        join->strictness = JoinStrictness::Semi;
+        join->kind = JoinKind::Inner;
+        join->strictness = JoinStrictness::Any;
         auto using_list = make_intrusive<ASTExpressionList>();
         using_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
         join->using_expression_list = using_list;
         join->children.push_back(join->using_expression_list);
 
-        /// Duplicate tags rows per `id` (unmerged parts) are harmless here,
+        /// Samples are grouped by `id`, and `ANY` suppresses duplicate tags rows per `id`,
         /// so the "tags" table is read without the `LIMIT 1 BY id` deduplication.
         auto tags_elem = makeTagsTableElement(tags_table_id, /* deduplicate_by_id= */ false);
 
@@ -523,7 +523,7 @@ namespace
     ///     GROUP BY id
     /// ) AS __samples
     ///
-    /// Unlike the joined read (where the SEMI JOIN with the "tags" table drops them), this branch also returns
+    /// Unlike the joined read (where the `INNER ANY JOIN` with the "tags" table drops them), this branch also returns
     /// samples whose id has no "tags" row - possible only after direct writes into the inner "samples" table.
     ASTPtr buildSelectQueryFromSamplesOnly(const StorageID & samples_table_id, const NameSet & requested_columns)
     {
@@ -638,7 +638,7 @@ namespace
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
-    /// SEMI LEFT JOIN <tags> USING (id)
+    /// INNER ANY JOIN <tags> USING (id)
     /// FULL JOIN
     /// (
     ///     SELECT *, concat(metric_family_name, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
@@ -674,7 +674,7 @@ namespace
         {
             /// Samples-anchored: samples are the (streamed) probe side, tags/metrics the smaller build sides.
             tables->children.push_back(makeSamplesTableElement(*samples_table_id));
-            tables->children.push_back(makeTagsSemiJoinElement(tags_table_id));
+            tables->children.push_back(makeTagsJoinElement(tags_table_id));
         }
         else
         {
