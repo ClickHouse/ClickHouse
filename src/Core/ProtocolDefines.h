@@ -145,8 +145,13 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
-/// Version 3 added runtime filter receive descriptors to the task.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
+/// Version 3 added the error code of a failed task to its status reply.
+/// Version 4 added runtime filter receive descriptors to the task.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
+/// First distributed-task serialization version that carries the runtime filter receive
+/// descriptors. Gates writing them, and refusing to write them to an older peer that would skip
+/// the field and misread everything after it.
+static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS = 4;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

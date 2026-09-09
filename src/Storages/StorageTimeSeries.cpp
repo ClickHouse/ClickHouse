@@ -39,7 +39,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_table;
 }
 
 namespace TimeSeriesSetting
@@ -123,11 +123,11 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     const ContextPtr & local_context,
     LoadingStrictnessLevel mode)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::allow_experimental_time_series_table])
+    if (mode <= LoadingStrictnessLevel::CREATE && !local_context->getSettingsRef()[Setting::enable_time_series_table])
     {
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Experimental TimeSeries table engine "
-                        "is not enabled (the setting 'allow_experimental_time_series_table')");
+                        "TimeSeries table engine "
+                        "is not enabled (the setting 'enable_time_series_table')");
     }
 
     auto targets = findTargets(create_query);
@@ -803,12 +803,12 @@ void registerStorageTimeSeries(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # TimeSeries table engine
 
-<ExperimentalBadge/>
+<PrivatePreviewBadge/>
 <CloudNotSupportedBadge/>
 
 A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels):
@@ -819,10 +819,10 @@ metric_name2[...] = ...
 ```
 
 :::info
-This is an experimental feature that may change in backwards-incompatible ways in the future releases.
+This is a private preview feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
-with [allow_experimental_time_series_table](/reference/settings/session-settings/allow-experimental#allow_experimental_time_series_table) setting.
-Input the command `set allow_experimental_time_series_table = 1`.
+with the `enable_time_series_table` setting.
+Input the command `set enable_time_series_table = 1`.
 :::
 
 ## Syntax {#syntax}

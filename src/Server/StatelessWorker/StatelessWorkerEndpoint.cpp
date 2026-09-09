@@ -101,13 +101,14 @@ void serializeTask(const DistributedQueryTaskDescription & task_description, Wri
         writeFieldBinary(change.value, out);
     }
 
-    if (task_description.serialization_version < 3 && !task.runtime_filter_descriptors.empty())
+    if (task_description.serialization_version < DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS
+        && !task.runtime_filter_descriptors.empty())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Distributed task serialization version {} cannot carry runtime filter receive descriptors",
             task_description.serialization_version);
 
-    if (task_description.serialization_version >= 3)
+    if (task_description.serialization_version >= DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS)
     {
         writeVarUInt(task.runtime_filter_descriptors.size(), out);
         for (const auto & descriptor : task.runtime_filter_descriptors)
@@ -225,7 +226,7 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
         }
     }
 
-    if (version >= 3)
+    if (version >= DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS)
     {
         size_t descriptors_size = 0;
         readVarUInt(descriptors_size, in);
@@ -334,6 +335,7 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 task_status.status = "Failed";
                 task_status.error_message = status.message;
+                task_status.error_code = status.error_code;
                 break;
             }
             case StatelessTaskExecutor::UnknownTaskId:

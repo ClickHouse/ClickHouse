@@ -598,7 +598,7 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
 
     auto exchange_lookup = createExchangeLookup(
         "test_query", ExchangeDescriptions{}, ExchangeStreamSources{}, /*temporary_files_=*/ nullptr, context,
-        /*execute_locally=*/true);
+        /*execute_locally=*/true, /*cancellation=*/ nullptr);
 
     auto header = std::make_shared<const Block>();
     const ExchangeStreamId stream_id("test_exchange", 0, 0);
@@ -629,42 +629,6 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     }
 
     EXPECT_EQ(total_rows, 7u);
-}
-
-/// v1 only when every producer port matches the destination worker's exchange port (a v1
-/// consumer dials producers on its own port); v2 as soon as any producer differs;
-/// v3 only when the task carries runtime filter receive descriptors.
-TEST(DistributedTaskSerializationVersion, LowersToV1ForLegacyPorts)
-{
-    const UInt64 destination_exchange_port = 9000;
-    DistributedQueryTask task;
-
-    ExchangeStreamSources sources;
-    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, destination_exchange_port), UInt64(1));
-
-    sources.stream_hosts["s1"] = {"host1", 9000};
-    sources.stream_hosts["s2"] = {"host2", 9000};
-    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, destination_exchange_port), UInt64(1));
-
-    sources.stream_hosts["s3"] = {"host3", 9224};
-    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, destination_exchange_port), UInt64(2));
-
-    /// Producers agreeing among themselves is not enough: a destination whose own port
-    /// differs from the producers' port must still get a version-2 task.
-    ExchangeStreamSources uniform_sources;
-    uniform_sources.stream_hosts["s1"] = {"host1", 9000};
-    EXPECT_EQ(chooseTaskSerializationVersion(task, uniform_sources, /*destination_exchange_port=*/9224), UInt64(2));
-}
-
-TEST(DistributedTaskSerializationVersion, ChoosesV3WhenTaskHasRuntimeFilterDescriptors)
-{
-    const UInt64 destination_exchange_port = 9000;
-    ExchangeStreamSources sources;
-    sources.stream_hosts["s1"] = {"host1", 9000};
-
-    DistributedQueryTask task;
-    task.runtime_filter_descriptors.emplace_back();
-    EXPECT_EQ(chooseTaskSerializationVersion(task, sources, destination_exchange_port), UInt64(3));
 }
 
 namespace DB::ErrorCodes
@@ -725,10 +689,10 @@ RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataType
 
 }
 
-TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTripAtVersion3)
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTripAtVersion4)
 {
     DistributedQueryTaskDescription description;
-    description.serialization_version = 3;
+    description.serialization_version = 4;
     description.initial_query_id = "q1";
     description.task.task_id = "t0";
 
@@ -755,7 +719,7 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTripAtVersion3)
 TEST(DistributedTaskSerialization, RuntimeFilterDescriptorEmptyFilterKeyIsRejected)
 {
     DistributedQueryTaskDescription description;
-    description.serialization_version = 3;
+    description.serialization_version = 4;
     description.task.runtime_filter_descriptors.push_back(
         makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
     description.task.runtime_filter_descriptors.front().filter_key.clear();
@@ -778,7 +742,7 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorEmptyFilterKeyIsReject
 TEST(DistributedTaskSerialization, RuntimeFilterDescriptorEmptyStreamsAreRejected)
 {
     DistributedQueryTaskDescription description;
-    description.serialization_version = 3;
+    description.serialization_version = 4;
     description.task.runtime_filter_descriptors.push_back(
         makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
     description.task.runtime_filter_descriptors.front().streams.clear();
@@ -801,7 +765,7 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorEmptyStreamsAreRejecte
 TEST(DistributedTaskSerialization, RuntimeFilterDescriptorDuplicateFilterKeyIsRejected)
 {
     DistributedQueryTaskDescription description;
-    description.serialization_version = 3;
+    description.serialization_version = 4;
     auto descriptor = makeDescriptor("dup", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")});
     description.task.runtime_filter_descriptors = {descriptor, descriptor};
 
@@ -820,13 +784,13 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorDuplicateFilterKeyIsRe
     }
 }
 
-TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsAtVersion2ThrowOnSerialize)
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsAtVersion3ThrowOnSerialize)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
     DistributedQueryTaskDescription description;
-    description.serialization_version = 2;
+    description.serialization_version = 3;
     description.task.runtime_filter_descriptors.push_back(
         makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
 
@@ -834,7 +798,7 @@ TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsAtVersion2ThrowOnSeri
     try
     {
         serializeTask(description, out);
-        FAIL() << "descriptors at version 2 should throw";
+        FAIL() << "descriptors at version 3 should throw";
     }
     catch (const Exception & e)
     {

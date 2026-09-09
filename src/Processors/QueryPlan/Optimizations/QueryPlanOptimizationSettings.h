@@ -101,8 +101,14 @@ struct QueryPlanOptimizationSettings
     /// Conflict detectors for join reordering validity in the
     /// DPsub algorithm, instead of the default per-relation ON-clause restriction. CD-A is correct
     /// but incomplete; CD-C is correct and complete. CD-C takes precedence when both are set.
-    bool query_plan_optimize_join_order_use_cd_a_conflict_detector = false;
-    bool query_plan_optimize_join_order_use_cd_c_conflict_detector = false;
+    bool query_plan_optimize_join_order_use_conflict_detector_a = false;
+    bool query_plan_optimize_join_order_use_conflict_detector_c = false;
+
+    /// Whether unmatched outer-join rows are padded with real SQL NULLs (true) rather than type
+    /// defaults (false). The conflict detectors' null-rejection analysis only
+    /// unlocks reorderings when the padded value is actually NULL, so with
+    /// `join_use_nulls = 0` no relation is treated as null-rejecting.
+    bool join_use_nulls = false;
 
     /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
     bool enable_join_transitive_predicates = false;
