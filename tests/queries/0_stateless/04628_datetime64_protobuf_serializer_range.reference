@@ -1,0 +1,28 @@
+-- pre-epoch
+1000-01-01 00:00:00.000
+-- post-epoch
+3000-01-01 00:00:00.000
+-- documented upper bound at precision 7
+9999-12-31 23:59:59.9999999
+-- past upper bound at precision 7 (errs)
+-- subsecond precision near the Unix epoch
+1970-01-01 00:00:20.5555555
+-- subsecond precision for a regular timestamp
+2024-06-15 12:34:56.123456
+-- legacy whole-seconds file (written as DateTime64(0) ticks == Unix seconds)
+-- legacy read without setting interprets seconds as ticks (previously incorrect behavior)
+1970-01-19 06:17:16.800
+-- legacy read with setting restores the Unix-second instant
+2020-01-01 00:00:00.000
+-- compatibility 26.8 restores legacy whole-seconds decoding (produces 2020-01-01 00:00:00.000)
+2020-01-01 00:00:00.000
+-- legacy output writes whole Unix seconds (subseconds truncated)
+-- legacy output read as ticks without input setting (seconds misinterpreted as ticks)
+1970-01-19 06:17:16.800
+-- legacy output and legacy input restores the truncated Unix-second instant
+2020-01-01 00:00:00.000
+-- legacy double field stores fractional Unix seconds
+-- legacy double read preserves subseconds
+2020-01-01 00:00:00.125
+-- legacy double write intermediately preserves subseconds
+1577836800.125

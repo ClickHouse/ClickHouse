@@ -35,6 +35,7 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
           with_length_delimiter_,
           /* with_envelope = */ false,
           settings_.protobuf.output_nullables_with_google_wrappers,
+          settings_.protobuf.output_datetime64_legacy_seconds,
           *writer))
     , allow_multiple_rows(with_length_delimiter_ || settings_.protobuf.allow_multiple_rows_without_delimiter)
 {
