@@ -184,10 +184,10 @@ void Worker::runPrepare(ProcessorState & state)
                 continue;
 
             case IProcessor::Status::Finished:
-                state.lock.finish();
-                pipeline.recordAsFinished(processor);
                 if (CurrentThread::getGroup())
                     CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
+                state.lock.finish();
+                pipeline.recordAsFinished(processor);
                 return;
 
             case IProcessor::Status::Ready:
