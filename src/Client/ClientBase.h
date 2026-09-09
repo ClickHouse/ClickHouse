@@ -637,6 +637,11 @@ protected:
     /// profile can make that one setting `const` while leaving the session otherwise writable,
     /// which the `readonly` setting does not show.
     std::optional<bool> ai_query_log_marker_writable;
+    /// Set while the question above is in flight. Asking it is an internal query of the agent like
+    /// any other, and every one of those asks whether the marker may be attached before attaching
+    /// it - this one must not, both because there is no answer yet and because a session that
+    /// rejects the marker would then fail the question instead of answering it.
+    bool ai_query_log_marker_probe_in_progress = false;
     /// The line reader of the interactive loop while it is running, so the queries the agent runs
     /// can be added to its history like typed ones. Not owned; cleared when the loop returns.
     LineReader * ai_line_reader = nullptr;

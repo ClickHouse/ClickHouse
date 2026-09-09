@@ -1,0 +1,4 @@
+session_1_read_query_log_offered: no
+session_2_read_query_log_offered: yes
+user_query_is_returned: yes
+assistant_queries_are_returned: no

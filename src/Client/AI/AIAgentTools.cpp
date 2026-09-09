@@ -109,7 +109,11 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
             "Read the recent queries of the current user from the `system.user_query_log` table: "
             "query text, duration, resource usage and error messages. Useful to see what the user was doing "
             "beyond the recent activity included in the conversation, e.g. in previous sessions. "
-            "Only the queries of the user are returned: the queries run by the assistant itself are excluded. "
+            "The queries the assistant ran on its own - schema probes, documentation lookups, this read - are "
+            "always excluded. The queries the assistant ran on the user's connection and displayed to them are "
+            "excluded only when the session of the time let the assistant tag them, which a read-only session "
+            "does not, so a returned query from an earlier session may be one the assistant ran and showed the "
+            "user rather than one they typed. "
             "Runs internally, nothing is displayed to the user. "
             "The table may be absent on older servers; then rely on the recent activity context.",
             ai::JsonValue{
@@ -131,18 +135,28 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                             limit = std::min<UInt64>(std::max<Int64>(args["limit"].get<Int64>(), 1), 100);
                         bool only_errors = args.contains("only_errors") && args["only_errors"].is_boolean() && args["only_errors"].get<bool>();
 
-                        /// The queries the agent ran itself (schema probes, documentation lookups, its own
-                        /// read-only queries) carry the marker written by the client and are filtered out:
-                        /// the model must not read back its own earlier activity as if the user did it -
+                        /// The queries the agent ran itself must not come back as the history of the
+                        /// user - the model would read its own earlier activity as what the user wanted;
                         /// the in-memory recent-query context hides those entries for the same reason.
+                        /// Two markers are filtered out, because neither alone covers the log: the
+                        /// `log_comment` one is a setting, so it is missing from every row that a session
+                        /// accepting no setting change left behind, and the query-id one is only on the
+                        /// queries the agent ran internally - the ones it ran *visibly* on the user's
+                        /// connection keep the query id the client would have used anyway, since they are
+                        /// echoed and displayed as if the user typed them. Between them they exclude
+                        /// every query of the agent the user never saw, whichever session it ran in.
                         String query = "SELECT event_time, query_duration_ms, read_rows, result_rows, formatReadableSize(memory_usage) AS memory, exception, query "
-                            "FROM system.user_query_log WHERE type != 'QueryStart' AND log_comment != {ai_marker:String}";
+                            "FROM system.user_query_log WHERE type != 'QueryStart' AND log_comment != {ai_marker:String} "
+                            "AND NOT startsWith(query_id, {ai_query_id_prefix:String})";
                         if (only_errors)
                             query += " AND exception != ''";
                         query += " ORDER BY event_time DESC LIMIT {limit:UInt64}";
 
                         return successResult(hooks->execute_internal(
-                            query, {{"limit", std::to_string(limit)}, {"ai_marker", String(AI_AGENT_LOG_COMMENT)}}));
+                            query,
+                            {{"limit", std::to_string(limit)},
+                             {"ai_marker", String(AI_AGENT_LOG_COMMENT)},
+                             {"ai_query_id_prefix", String(AI_AGENT_QUERY_ID_PREFIX)}}));
                     });
             });
     }

@@ -4688,8 +4688,9 @@ bool ClientBase::aiQueryLogMarkerAllowed()
     /// a capability of its own, and the server is asked what it is instead of it being inferred
     /// from `readonly`. The answer belongs to the settings profile of the user, so it is asked
     /// once; the one thing that can replace that profile unseen - a `SET profile` - disables the
-    /// marker for good anyway. The question itself is the one query of the agent that goes to the
-    /// server unmarked: it is asking whether marking works.
+    /// marker for good anyway. The question is an internal query of the agent like any other, so
+    /// it runs under a marked query id: it is the `log_comment` marker it cannot carry, not the
+    /// one `read_query_log` needs to keep it out of the history of the user.
     if (!ai_query_log_marker_writable.has_value())
     {
         /// Without a server there is no query log to mark, and nothing to ask. The question is
@@ -4705,10 +4706,15 @@ bool ClientBase::aiQueryLogMarkerAllowed()
         /// It is answered with a no instead, which is the fail-closed answer: the marker is
         /// dropped and `read_query_log` goes with it, and nothing else changes. Reported once,
         /// because a tool that is silently missing looks like a model that chose not to use it.
+        /// Every internal query of the agent asks whether the marker may be attached before
+        /// attaching it, and this one is such a query, so it has to be told not to ask.
+        ai_query_log_marker_probe_in_progress = true;
+        SCOPE_EXIT(ai_query_log_marker_probe_in_progress = false);
+
         try
         {
             const Block probe = materializeBlock(fetchInternalQueryResult(
-                "SELECT readonly FROM system.settings WHERE name = 'log_comment'", {}, /*from_ai_agent=*/ false));
+                "SELECT readonly FROM system.settings WHERE name = 'log_comment'", {}, /*from_ai_agent=*/ true));
             /// An answer that is not a plain "the current user can change it" is taken for a no: the
             /// marker is optional, and offering `read_query_log` on top of a guess would report the
             /// activity of the agent itself back as the history of the user.
@@ -4958,14 +4964,30 @@ Block ClientBase::fetchInternalQueryResult(
     if (!session_is_readonly)
         settings_to_send = networkCompressionSettings(client_context->getSettingsRef());
 
+    /// Left empty for the queries of the `help` command, so the server assigns the query id.
+    String query_id;
+
 #if USE_CLIENT_AI
-    /// Tag the queries of the agent (schema exploration, documentation lookups) in the query log,
-    /// so they are distinguishable from the queries the user typed themselves - the `read_query_log`
-    /// tool filters them out, like the in-memory recent-query context does. A session with
-    /// `readonly = 1` allows no setting change at all, and the tag is not worth failing these
-    /// queries for: the agent stays usable there, only without the marker (and without the
-    /// `read_query_log` tool, which needs it to tell the queries of the agent from the user's).
-    if (from_ai_agent && aiQueryLogMarkerAllowed())
+    /// Tag the queries the agent runs internally (schema exploration, documentation lookups, the
+    /// query-log read itself) so they are distinguishable in the query log from the queries the
+    /// user typed themselves - the `read_query_log` tool filters them out, like the in-memory
+    /// recent-query context does.
+    ///
+    /// The tag is the query id, because that is the one thing a session cannot take away:
+    /// `readonly = 1` accepts no setting change, and a settings profile can make `log_comment`
+    /// alone `const`. None of these queries is displayed, so the id nobody will see is free to
+    /// carry the tag, and it is what lets the tool promise that the hidden activity of the agent
+    /// stays out of the history of the user - in this session and in every earlier one, whatever
+    /// its settings allowed.
+    if (from_ai_agent)
+        query_id = fmt::format("{}{}", AI_AGENT_QUERY_ID_PREFIX, UUIDHelpers::generateV4());
+
+    /// The `log_comment` marker is kept on top of it: it is the one marker the queries the agent
+    /// runs *visibly* on the user's connection can carry, since those keep the query id of a query
+    /// the user typed. It is not worth failing a query over, so a session that rejects it keeps
+    /// the agent, only without it. The question about whether it may be attached does not attach
+    /// it: it is asking, and asking must not fail over the answer.
+    if (from_ai_agent && !ai_query_log_marker_probe_in_progress && aiQueryLogMarkerAllowed())
     {
         if (!settings_to_send)
             settings_to_send.emplace();
@@ -5022,7 +5044,7 @@ Block ClientBase::fetchInternalQueryResult(
             connection_parameters.timeouts,
             query,
             params,
-            "", /// query_id
+            query_id,
             QueryProcessingStage::Complete,
             settings_to_send ? &*settings_to_send : nullptr,
             &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server

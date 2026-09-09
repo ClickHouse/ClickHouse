@@ -15,6 +15,18 @@ namespace DB
 /// ...) and must keep reporting the real one.
 inline constexpr std::string_view AI_AGENT_LOG_COMMENT = "clickhouse-ai-agent";
 
+/// The queries the agent runs internally - the schema probes, the documentation lookups, the
+/// resolution of the tables of a read-only query, the query-log read itself - additionally run
+/// under a query id starting with this prefix. Unlike the `log_comment` marker, the query id is part of the
+/// protocol rather than a setting, so it is there even in a session that accepts no setting change
+/// (`readonly = 1`, or a settings profile that makes `log_comment` `const`). `read_query_log`
+/// filters on it as well, which is what lets it promise that the queries the agent ran on its own
+/// stay out of the history of the user - including the ones an earlier session left unmarked.
+///
+/// A SQL comment in the query text would not do: a query with parameters is written to the query
+/// log re-formatted from its AST (see `executeQueryImpl`), and comments do not survive that.
+inline constexpr std::string_view AI_AGENT_QUERY_ID_PREFIX = "clickhouse-ai-agent-";
+
 /// What the client decided about a query the agent wants to run through the confirmed tool,
 /// before the user is involved.
 struct AIQueryRunDecision
