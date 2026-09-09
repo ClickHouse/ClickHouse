@@ -1832,13 +1832,17 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             {
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
+                /// Recognize a set-backed table through any `StorageAlias` wrapping, like the analyzer
+                /// and the planner do, so this path also consumes it natively instead of falling
+                /// through to a read that the set storage does not support.
+                if (std::shared_ptr<StorageSet> storage_set = getSetStorageFromTable(table, data.getContext()))
+                {
 #if CLICKHOUSE_CLOUD
-                if (StorageSharedSet * storage_shared_set = dynamic_cast<StorageSharedSet *>(table.get()))
-                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+                    if (storage_set->getName() == "SharedSet")
+                        return data.prepared_sets->addFromStorage(set_key, right_in_operand, static_cast<StorageSharedSet *>(storage_set.get())->getSet(data.getContext()), table_id);
 #endif
-
-                if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
+                }
             }
 
             if (!data.getContext()->isGlobalContext())

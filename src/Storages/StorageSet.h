@@ -97,4 +97,10 @@ private:
     size_t getSize(ContextPtr) const override;
 };
 
+/// Returns the underlying `StorageSet`, resolving a chain of `StorageAlias` wrappers, or nullptr.
+/// Shares ownership: through an alias the caller holds only the wrapper, not the target.
+/// A `context` means the set is about to be consumed and requires `SELECT` on every alias and on the
+/// target; pass none only to ask whether this is a set-backed table.
+std::shared_ptr<StorageSet> getSetStorageFromTable(const StoragePtr & storage, const ContextPtr & context = nullptr);
+
 }
