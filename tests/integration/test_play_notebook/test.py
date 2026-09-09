@@ -3,13 +3,16 @@
 The Web UI can turn a tab into a notebook: an ordered list of query and Markdown cells. The
 display state that used to be tab-wide then belongs to one cell, and the single shared run row
 is docked under the cell whose run it reports. This test pins the contracts that follow from
-that: the shared Logs/Metrics toggles and the logo follow the cell the row is docked under (the
-running cell while a run is in flight, not the cell the editor moved to), color modes and pinned
-columns persist onto the owning cell's own result snapshot without rewriting another cell's
-state, stopping a run repaints the row from the cell that is on screen, the history entry keeps
-every cell's state within a bounded payload, a run whose editor handover was superseded launches
-nothing, and a text cell's Markdown renders (and highlights) block quotes, fenced code and link
-targets the way the page documents.
+that: the notebook structure survives the insert / move / delete / duplicate commands and the
+round trip through IndexedDB, the shared Logs/Metrics toggles and the logo follow the cell the row
+is docked under (the running cell while a run is in flight, not the cell the editor moved to -
+checked both on seeded state and by driving a real run through `runCell`), color modes and pinned
+columns persist onto the owning cell's own result snapshot without rewriting another cell's state
+and come back on the next page load, stopping a run repaints the row from the cell that is on
+screen, the history entry keeps every cell's state within a bounded payload, a run whose editor
+handover was superseded launches nothing, and a text cell's Markdown renders (and highlights)
+block quotes, fenced code and link targets the way the page documents while emitting the source's
+own HTML as text rather than DOM.
 
 Every scenario the harness defines is pinned by name below, so a harness edit that silently
 drops one cannot pass as "all scenarios passed".
@@ -41,9 +44,12 @@ node = cluster.add_instance("node")
 # drops one cannot pass as "all scenarios passed".
 SCENARIOS = (
     "chrome-follows-running-cell",
+    "real-run-chrome-follows-running-cell",
     "color-state-is-per-cell",
     "markdown-relative-links",
+    "markdown-escapes-raw-html",
     "markdown-block-boundaries",
+    "notebook-structure-round-trip",
     "stop-after-editor-moved-repaints-chrome",
     "history-entry-keeps-off-active-cell-state",
     "history-payload-is-bounded",

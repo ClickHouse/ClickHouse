@@ -628,6 +628,10 @@ async function main() {
             const [a, b] = tab.cells;
             tab.activeCellId = b.id;
             /// Both cells hold a result whose snapshot carried no explicit color state.
+            /// B holds the shared editor, so its query lives in the editor until captureActiveTab
+            /// folds it back - set it there, the way a user typing into the active cell would.
+            a.query = 'SELECT 1 AS id';
+            query_area.value = 'SELECT 2 AS id';
             a.result = { ok: true, data: null };
             b.result = { ok: true, data: null };
 
@@ -642,7 +646,7 @@ async function main() {
                 b_modes: { ...b.colorModes },
                 b_snapshot_modes: b.result.color_modes ?? null,
                 url: location.href,
-                serialized: serializeCell(a).result.color_modes,
+                a_id: a.id, b_id: b.id,
                 shared_with_element: a.resultEl ? a.resultEl._colorModes === a.colorModes : null,
                 distinct_objects: a.colorModes !== b.colorModes,
             };
@@ -662,8 +666,6 @@ async function main() {
               a.a_snapshot && a.a_snapshot.id === 'heatmap', a.a_snapshot);
         check(scenario, "a non-active cell's pin lands on its own snapshot",
               a.a_pins && a.a_pins.id === true, a.a_pins);
-        check(scenario, 'it survives the persistence round-trip',
-              a.serialized && a.serialized.id === 'heatmap', a.serialized);
         check(scenario, 'the other cell keeps its own (empty) state',
               Object.keys(a.b_modes).length === 0 && a.b_snapshot_modes === null, a);
         check(scenario, 'the cells hold distinct state objects', a.distinct_objects === true, a);
@@ -678,6 +680,40 @@ async function main() {
               b.b_snapshot && b.b_snapshot.value === 'bar', b.b_snapshot);
         check(scenario, "it does not rewrite the other cell's state",
               b.a_untouched && b.a_untouched.id === 'heatmap' && !b.a_untouched.value, b.a_untouched);
+
+        /// The real persistence round-trip: wait for the debounced `persist` the toggles scheduled,
+        /// then boot a FRESH page whose IndexedDB holds exactly those records and read back what
+        /// `deserializeCells` rehydrated. A snapshot that is written but not restored - or restored
+        /// onto the wrong cell - only shows up here.
+        const records = await waitForNextPersist(r);
+        const meta = r.stores.get('meta').data.get('state') || null;
+        check(scenario, 'the workspace was persisted', records.length === 1, records.length);
+        const reloaded = await runScenario(js, { href: base, seedTabs: records, seedMeta: meta });
+        const back = evalJSON(reloaded.sandbox, `
+            const tab = getActiveTab();
+            const [a, b] = tab.cells;
+            return {
+                cells: tab.cells.length,
+                a_modes: { ...a.colorModes }, a_pins: { ...a.pinnedColumns },
+                b_modes: { ...b.colorModes }, b_pins: { ...b.pinnedColumns },
+                a_query: a.query, b_query: b.query,
+                distinct_objects: a.colorModes !== b.colorModes,
+            };
+        `);
+        check(scenario, 'the reloaded page rebuilds the notebook', back.cells === 2, back);
+        check(scenario, 'the reload restores the cells in order',
+              back.a_query === 'SELECT 1 AS id' && back.b_query === 'SELECT 2 AS id', back);
+        check(scenario, "the reload restores the toggled cell's color mode",
+              back.a_modes.id === 'heatmap', back.a_modes);
+        check(scenario, "the reload restores the toggled cell's pin",
+              back.a_pins.id === true, back.a_pins);
+        check(scenario, 'the reload restores the active cell\'s own color mode',
+              back.b_modes.value === 'bar', back.b_modes);
+        check(scenario, 'the reload does not leak one cell\'s state onto the other',
+              back.b_modes.id === undefined && Object.keys(back.b_pins).length === 0
+              && back.a_modes.value === undefined, back);
+        check(scenario, 'the reloaded cells hold distinct state objects',
+              back.distinct_objects === true, back);
     }
 
     /// Contract 3: a text cell's Markdown may link to ordinary relative targets of the page, while
@@ -711,6 +747,98 @@ async function main() {
               !out.script.includes('<a href'), out.script);
         check(scenario, 'a protocol-relative link does not render',
               !out.protocol_relative.includes('<a href'), out.protocol_relative);
+    }
+
+    /// Contract 3b: the other half of the Markdown safety contract. A text cell's rendered output is
+    /// inserted with `innerHTML`, so the renderer must emit the source's own HTML as TEXT: nothing a
+    /// notebook author (or whoever shared the workspace URL that seeded the cell) writes may become
+    /// DOM. `safeMarkdownUrl` covers only the targets the renderer itself puts into attributes;
+    /// raw tags, raw attributes and raw entities are covered here.
+    {
+        const scenario = 'markdown-escapes-raw-html';
+        const r = await runScenario(js, { href: base });
+        const out = evalJSON(r.sandbox, `
+            const cases = {
+                script: '<script>alert(1)</' + 'script>',
+                img_onerror: '<img src=x onerror=alert(1)>',
+                iframe: '<iframe src="https://evil.example.com/"></iframe>',
+                svg_onload: '<svg onload=alert(1)></svg>',
+                style: '<style>body{display:none}</style>',
+                in_heading: '# <b>bold</b> heading',
+                in_quote: '> <img src=x onerror=alert(1)>',
+                in_list: '- <script>alert(1)</' + 'script>',
+                in_emphasis: '*<b>x</b>*',
+                in_code: '\\u0060<b>x</b>\\u0060',
+                in_link_text: '[<b>x</b>](guide.md)',
+                comment: '<!-- <img src=x onerror=alert(1)> -->',
+                attr_break: '[x](guide.md")onerror="alert(1))',
+                entity: '&lt;script&gt; &amp; &#60;b&#62;',
+            };
+            const rendered = {};
+            for (const [k, v] of Object.entries(cases)) rendered[k] = renderMarkdown(v);
+            /// The cell's own render path (what the page actually inserts), not just the function.
+            const tab = getActiveTab();
+            addCell(tab, 'text', tab.cells.length);
+            const text_cell = tab.cells[tab.cells.length - 1];
+            text_cell.text = '<img src=x onerror=alert(1)>\\n\\n<script>alert(1)</' + 'script>';
+            text_cell.editing = false;
+            renderTextCell(tab, text_cell);
+            /// The DOM fake's querySelector is a stub, so walk the cell's own subtree for the
+            /// rendered-Markdown view the page inserted (matching on className, which is how the
+            /// page sets it).
+            const findByClass = (el, cls) => {
+                if (!el) return null;
+                if (String(el.className || '').split(/\\s+/).includes(cls)) return el;
+                for (const child of (el.children || [])) {
+                    const hit = findByClass(child, cls);
+                    if (hit) return hit;
+                }
+                return null;
+            };
+            const view = findByClass(text_cell.el, 'cell-text-view');
+            return { rendered, cell_html: view ? view.innerHTML : null };
+        `);
+        const rd = out.rendered;
+        /// No case may produce a tag the source asked for: every '<' of the source must have been
+        /// escaped, so the only '<' left in the output are the renderer's own tags.
+        const dangerous = /<\s*\/?\s*(script|img|iframe|svg|style)\b/i;
+        for (const [name, html] of Object.entries(rd)) {
+            check(scenario, 'raw HTML in ' + name + ' is not emitted as DOM',
+                  !dangerous.test(html), html);
+        }
+        check(scenario, 'a raw script tag is shown as text',
+              rd.script.includes('&lt;script&gt;'), rd.script);
+        check(scenario, 'a raw event-handler attribute is shown as text',
+              rd.img_onerror.includes('&lt;img src=x onerror=alert(1)&gt;'), rd.img_onerror);
+        check(scenario, 'raw HTML inside a heading is shown as text',
+              rd.in_heading.includes('&lt;b&gt;bold&lt;/b&gt;'), rd.in_heading);
+        check(scenario, 'raw HTML inside a block quote is shown as text',
+              rd.in_quote.includes('&lt;img'), rd.in_quote);
+        check(scenario, 'raw HTML inside a list item is shown as text',
+              rd.in_list.includes('&lt;script&gt;'), rd.in_list);
+        check(scenario, 'raw HTML inside emphasis is shown as text',
+              rd.in_emphasis.includes('&lt;b&gt;') && rd.in_emphasis.includes('<em>'), rd.in_emphasis);
+        check(scenario, 'raw HTML inside inline code is shown as text',
+              rd.in_code.includes('&lt;b&gt;') && rd.in_code.includes('<code>'), rd.in_code);
+        check(scenario, 'raw HTML inside a link label is shown as text',
+              rd.in_link_text.includes('&lt;b&gt;') && rd.in_link_text.includes('href="guide.md"'),
+              rd.in_link_text);
+        check(scenario, 'an HTML comment is shown as text, not a comment node',
+              rd.comment.includes('&lt;!--'), rd.comment);
+        /// A crafted link target must not be able to close the renderer's own href attribute and
+        /// add one of its own (see `escapeAttr`).
+        const anchor_tag = (/<a\s[^>]*>/.exec(rd.attr_break) || [''])[0];
+        check(scenario, 'a link target cannot break out of its attribute',
+              anchor_tag !== '' && !/onerror/i.test(anchor_tag)
+              && anchor_tag.includes('href="guide.md&quot;"'), anchor_tag);
+        /// Escaping runs once: an author writing an entity sees the entity, not a double escape.
+        check(scenario, 'source entities are escaped once, not twice',
+              rd.entity.includes('&amp;lt;script&amp;gt;') && !rd.entity.includes('&amp;amp;lt;'),
+              rd.entity);
+        check(scenario, 'the rendered text cell inserts no raw tag',
+              out.cell_html !== null && !dangerous.test(out.cell_html)
+              && out.cell_html.includes('&lt;img') && out.cell_html.includes('&lt;script&gt;'),
+              out.cell_html);
     }
 
     /// Contract 3a: block structure of the Markdown renderer. A block quote ends at the first
@@ -751,6 +879,145 @@ async function main() {
         check(scenario, 'an equal-length fence still closes the block',
               out.fence_trailing_text.includes('<pre><code>code</code></pre>'),
               out.fence_trailing_text);
+    }
+
+    /// Contract 3c: the notebook STRUCTURE itself - the primary user behavior of this mode.
+    /// Inserting a cell at a position, moving one up or down, deleting one, and having the editor
+    /// hand over to a neighbour are the operations everything else in a notebook rests on, and the
+    /// ordered list they produce has to survive the write to IndexedDB and the next page load
+    /// (`serializeCell` -> `deserializeCells`). Driven through the real commands - `addCell`,
+    /// `moveCell`, `deleteCell` - then persisted and rebooted from the saved records, so a
+    /// regression in cell ordering, in the type of a restored cell, or in per-tab notebook
+    /// isolation cannot stay green.
+    {
+        const scenario = 'notebook-structure-round-trip';
+        const r = await runScenario(js, { href: base });
+        const built = await evalJSONAsync(r.sandbox, `
+            const settle = () => new Promise(res => setTimeout(res, 30));
+            /// Every command hands the editor over asynchronously, and a cell's own query is only
+            /// read back from the shared editor by captureActiveTab - so type into the editor after
+            /// the handover has settled, and fold it in before reading the notebook's shape.
+            const shape = (tab) => {
+                captureActiveTab();
+                return tab.cells.map(c => c.type + ':' + (c.type === 'text' ? c.text : c.query));
+            };
+            const tab = getActiveTab();
+            /// The bootstrap tab holds a single query cell; give it a query through the editor,
+            /// the way the user would.
+            query_area.value = 'SELECT 1';
+
+            /// Append a query cell, then a text cell, then INSERT one in the middle (index 1).
+            addCell(tab, 'query', tab.cells.length);
+            await settle();
+            query_area.value = 'SELECT 2';
+            addCell(tab, 'text', tab.cells.length);
+            await settle();
+            tab.cells[2].text = 'notes';
+            addCell(tab, 'query', 1);
+            await settle();
+            query_area.value = 'SELECT middle';
+            const after_insert = shape(tab);
+
+            /// Move the text cell up one position, then the first cell down one.
+            moveCell(tab, tab.cells[3], -1);
+            const after_move_up = shape(tab);
+            moveCell(tab, tab.cells[0], 1);
+            const after_move_down = shape(tab);
+
+            /// Delete a cell that is NOT the active one, then the active one - which must hand the
+            /// editor to a remaining QUERY cell (never to the text cell).
+            const active_before = activeCell(tab).id;
+            const victim = tab.cells.find(c => c.id !== active_before && c.type === 'query');
+            deleteCell(tab, victim);
+            await settle();
+            const after_delete = shape(tab);
+            const still_active = activeCell(tab).id === active_before;
+            deleteCell(tab, activeCell(tab));
+            await settle();
+            const after_delete_active = shape(tab);
+            const handover = activeCell(tab);
+
+            /// Duplicating the tab copies the WHOLE notebook, and the copy is then independent:
+            /// the structure is per tab.
+            duplicateTab(tab.id);
+            await settle();
+            const other = getActiveTab();
+            const duplicated_shape = shape(other);
+            addCell(other, 'text', other.cells.length);
+            await settle();
+            other.cells[other.cells.length - 1].text = 'other tab';
+            const other_shape = shape(other);
+            const first_shape = shape(tab);
+            const shared_cells = tab.cells.some(c => other.cells.includes(c));
+
+            return { after_insert, after_move_up, after_move_down, after_delete,
+                     after_delete_active, still_active,
+                     handover_type: handover ? handover.type : null,
+                     duplicated_shape, other_shape, first_shape, shared_cells,
+                     tabs: tabs.length,
+                     active_tab_is_other: activeTabId === other.id };
+        `);
+        check(scenario, 'a cell is inserted at the requested position',
+              JSON.stringify(built.after_insert)
+                  === JSON.stringify(['query:SELECT 1', 'query:SELECT middle', 'query:SELECT 2', 'text:notes']),
+              built.after_insert);
+        check(scenario, 'moving a cell up reorders the notebook',
+              JSON.stringify(built.after_move_up)
+                  === JSON.stringify(['query:SELECT 1', 'query:SELECT middle', 'text:notes', 'query:SELECT 2']),
+              built.after_move_up);
+        check(scenario, 'moving a cell down reorders the notebook',
+              JSON.stringify(built.after_move_down)
+                  === JSON.stringify(['query:SELECT middle', 'query:SELECT 1', 'text:notes', 'query:SELECT 2']),
+              built.after_move_down);
+        check(scenario, 'deleting an inactive cell leaves the editor where it was',
+              built.still_active === true, built);
+        check(scenario, 'deleting an inactive cell removes exactly that cell',
+              built.after_delete.length === 3 && !built.after_delete.includes('query:SELECT 1'),
+              built.after_delete);
+        check(scenario, 'deleting the active cell hands the editor to a query cell',
+              built.handover_type === 'query', built);
+        check(scenario, 'duplicating the tab copies the whole notebook',
+              JSON.stringify(built.duplicated_shape) === JSON.stringify(built.after_delete_active),
+              { got: built.duplicated_shape, expected: built.after_delete_active });
+        check(scenario, 'the copy holds its own cell objects',
+              built.shared_cells === false, built.shared_cells);
+        check(scenario, 'the copy grows its own notebook',
+              JSON.stringify(built.other_shape)
+                  === JSON.stringify(built.duplicated_shape.concat(['text:other tab'])),
+              built.other_shape);
+        check(scenario, "the first tab's notebook is untouched by the copy",
+              JSON.stringify(built.first_shape) === JSON.stringify(built.after_delete_active),
+              { first: built.first_shape, expected: built.after_delete_active });
+
+        /// The round trip: the debounced `persist` the commands scheduled, then a FRESH page whose
+        /// IndexedDB holds only those records.
+        const records = await waitForNextPersist(r);
+        const meta = r.stores.get('meta').data.get('state') || null;
+        check(scenario, 'both notebooks are persisted', records.length === 2, records.length);
+        const reloaded = await runScenario(js, { href: base, seedTabs: records, seedMeta: meta });
+        const back = evalJSON(reloaded.sandbox, `
+            const shape = (tab) => tab.cells.map(c => c.type + ':' + (c.type === 'text' ? c.text : c.query));
+            return {
+                tabs: tabs.length,
+                shapes: tabs.map(shape),
+                active_is_query: tabs.map(t => { const c = activeCell(t); return c ? c.type : null; }),
+                /// Distinct cells, each wired back to its own tab.
+                ids_unique: new Set(tabs.flatMap(t => t.cells.map(c => t.id + '/' + c.id))).size
+                            === tabs.reduce((n, t) => n + t.cells.length, 0),
+                owners_ok: tabs.every(t => t.cells.every(c => c.tab === t)),
+            };
+        `);
+        check(scenario, 'the reload restores both notebooks', back.tabs === 2, back);
+        check(scenario, "the reload restores the first tab's cell order",
+              JSON.stringify(back.shapes[0]) === JSON.stringify(built.first_shape),
+              { got: back.shapes[0], expected: built.first_shape });
+        check(scenario, "the reload restores the second tab's cell order",
+              JSON.stringify(back.shapes[1]) === JSON.stringify(built.other_shape),
+              { got: back.shapes[1], expected: built.other_shape });
+        check(scenario, 'the reload gives every tab a query cell for the editor',
+              back.active_is_query.every(t => t === 'query'), back.active_is_query);
+        check(scenario, 'the restored cells are distinct and owned by their tab',
+              back.ids_unique === true && back.owners_ok === true, back);
     }
 
     /// Contract 4: stopping a run AFTER the editor moved to another cell repaints the shared row
@@ -795,6 +1062,95 @@ async function main() {
               out.stopped.logo === 'block', out.stopped);
         check(scenario, 'a toggle right after the stop acts on the active cell',
               out.bView === 'logs' && out.aView === 'result', { aView: out.aView, bView: out.bView });
+    }
+
+    /// Contract 4a: the same contract as Contract 1, driven through the REAL notebook run path
+    /// instead of hand-seeded state. `runCell` -> `postAll` -> `beginFlight` -> `postMulti` are the
+    /// code that decides which cell owns the run and hides its logo, so a regression there (a
+    /// `beginFlight` that stops recording `tab.runCell`, a `postMulti` that paints the active cell
+    /// instead of its own) is only caught by letting them run. Only the transport boundary is
+    /// replaced - `postImpl`, gated on a promise so the run stays IN FLIGHT while the editor moves
+    /// to another cell - because a stream response cannot be built from this minimal DOM fake
+    /// (the same technique as `run-all-framed-failure` in `image_preview_harness.js`).
+    {
+        const scenario = 'real-run-chrome-follows-running-cell';
+        const r = await runScenario(js, { href: base });
+        const out = await evalJSONAsync(r.sandbox, `
+            const tab = getActiveTab();
+            addCell(tab, 'query', tab.cells.length);
+            const [a, b] = tab.cells;
+            /// The run starts from cell A, and a multi-statement editor takes the "Run all" path
+            /// whose logo handling is per cell.
+            await setActiveCell(tab, a.id);
+            query_area.value = 'SELECT 1; SELECT 2';
+            const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+            /// The transport, held open until this scenario releases it.
+            let release = null;
+            const gate = new Promise(res => { release = res; });
+            const saved_post_impl = postImpl;
+            const posted = [];
+            postImpl = async (cell, req, query) => {
+                posted.push(query);
+                await gate;
+                return { format: '', reply: '', response_ok: true, is_error: false,
+                         is_table: false, is_raw: true, is_chart: false, is_image: false,
+                         is_base64: false, is_truncated: false, framing_kind: '' };
+            };
+
+            runCell(tab, a);
+            await sleep(60);
+            /// What the real run wired up, with the editor still on A.
+            const running = {
+                inFlight: tab.inFlight,
+                run_cell_is_a: tab.runCell === a,
+                chrome_is_a: chromeCell(tab) === a,
+                a_logo_hidden: a.logoVisible === false,
+                logo: logoEl.style.display,
+                statements: posted.length,
+            };
+
+            /// The editor moves to B mid-run - a real activation, not an assignment.
+            const moved = await setActiveCell(tab, b.id);
+            const after_move = {
+                moved,
+                active_is_b: activeCell(tab) === b,
+                chrome_is_a: chromeCell(tab) === a,
+                logo: logoEl.style.display,
+            };
+            /// A shared-row toggle now must still act on the RUNNING cell A.
+            progressEl.dispatchEvent(new CustomEvent('set-view', { detail: { view: 'logs' } }));
+            const toggled = { a_view: a.view, b_view: b.view };
+
+            /// Let the run finish; the row goes back to following the active cell.
+            release();
+            await sleep(120);
+            const idle = {
+                inFlight: tab.inFlight,
+                run_cell: tab.runCell,
+                chrome_is_b: chromeCell(tab) === b,
+                logo: logoEl.style.display,
+            };
+            postImpl = saved_post_impl;
+            return { running, after_move, toggled, idle };
+        `);
+        check(scenario, 'the real run path enters flight', out.running.inFlight === true, out.running);
+        check(scenario, 'the real run path records the cell it runs',
+              out.running.run_cell_is_a === true, out.running);
+        check(scenario, 'both statements of the "Run all" reach the transport',
+              out.running.statements === 2, out.running);
+        check(scenario, 'the real run hides the running cell\'s logo',
+              out.running.a_logo_hidden === true && out.running.logo === 'none', out.running);
+        check(scenario, 'the editor really moves to the other cell mid-run',
+              out.after_move.moved === true && out.after_move.active_is_b === true, out.after_move);
+        check(scenario, 'the chrome keeps following the running cell after the move',
+              out.after_move.chrome_is_a === true && out.after_move.logo === 'none', out.after_move);
+        check(scenario, 'a toggle after the move acts on the running cell',
+              out.toggled.a_view === 'logs' && out.toggled.b_view === 'result', out.toggled);
+        check(scenario, 'the run ends',
+              out.idle.inFlight === false && out.idle.run_cell === null, out.idle);
+        check(scenario, 'once idle the chrome follows the active cell',
+              out.idle.chrome_is_b === true, out.idle);
     }
 
     /// Contract 5: a toggle in a non-active cell also refreshes that cell's serialized copy inside
