@@ -745,6 +745,9 @@ void AlterCommand::apply(
         {
             if (should_skip_column_operation())
                 return;
+            /// `remove()` deletes the whole `n.*` range, so drop the implicit indices of all these columns too.
+            for (const auto & removed_column : metadata.columns.getNested(column_name))
+                metadata.dropImplicitIndicesForColumn(removed_column.name);
             metadata.columns.remove(column_name);
         }
     }
@@ -1259,6 +1262,9 @@ void AlterCommand::apply(
     {
         if (should_skip_column_operation())
             return;
+        /// `rename_to` was free, so an implicit index with its name points to a removed column: drop it,
+        /// otherwise the renamed index below would duplicate the name.
+        metadata.dropImplicitIndicesForColumn(rename_to);
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
