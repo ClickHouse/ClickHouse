@@ -1,6 +1,7 @@
 #include <Interpreters/BloomFilter.h>
 #include <city.h>
 #include <Columns/ColumnArray.h>
+#include <Common/BitHelpers.h>
 #include <Common/Exception.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -42,7 +43,17 @@ ALWAYS_INLINE size_t fastMod(size_t value, size_t modulus, const BloomDivider & 
 /// hash functions is known at compile time, so the compiler unrolls the loop; otherwise the runtime
 /// `hashes` argument is used. This keeps a single source of truth for both the generic and the
 /// specialized (e.g. the default `k = 3`) code paths.
-template <size_t compile_time_hashes>
+/// `pow2`: the modulus is a power of two, so the position is a mask instead of a division.
+template <bool pow2>
+ALWAYS_INLINE size_t bloomPosition(size_t value, size_t modulus, const BloomDivider & divider)
+{
+    if constexpr (pow2)
+        return value & (modulus - 1);
+    else
+        return fastMod(value, modulus, divider);
+}
+
+template <size_t compile_time_hashes, bool pow2>
 ALWAYS_INLINE void addHashPairToFilter(
     BloomFilter::Container & filter,
     const BloomFilterHashPair & pair,
@@ -54,13 +65,13 @@ ALWAYS_INLINE void addHashPairToFilter(
     size_t acc = pair.hash1;
     for (size_t i = 0; i < count; ++i)
     {
-        size_t pos = fastMod(acc + i * i, modulus, divider);
+        size_t pos = bloomPosition<pow2>(acc + i * i, modulus, divider);
         filter[pos / BLOOM_WORD_BITS] |= (1ULL << (pos % BLOOM_WORD_BITS));
         acc += pair.hash2;
     }
 }
 
-template <size_t compile_time_hashes>
+template <size_t compile_time_hashes, bool pow2>
 ALWAYS_INLINE bool findHashPairInFilter(
     const BloomFilter::Container & filter,
     const BloomFilterHashPair & pair,
@@ -72,12 +83,22 @@ ALWAYS_INLINE bool findHashPairInFilter(
     size_t acc = pair.hash1;
     for (size_t i = 0; i < count; ++i)
     {
-        size_t pos = fastMod(acc + i * i, modulus, divider);
+        size_t pos = bloomPosition<pow2>(acc + i * i, modulus, divider);
         if (!(filter[pos / BLOOM_WORD_BITS] & (1ULL << (pos % BLOOM_WORD_BITS))))
             return false;
         acc += pair.hash2;
     }
     return true;
+}
+
+/// Calls `f.template operator()<compile_time_hashes, pow2>()` with the specialization for this filter:
+/// the default `k = 3` unrolled, and the power-of-two modulus as a mask.
+template <typename F>
+ALWAYS_INLINE auto dispatchBloom(size_t hashes, bool modulus_is_pow2, F && f)
+{
+    if (hashes == 3)
+        return modulus_is_pow2 ? f.template operator()<3, true>() : f.template operator()<3, false>();
+    return modulus_is_pow2 ? f.template operator()<0, true>() : f.template operator()<0, false>();
 }
 }
 
@@ -101,7 +122,7 @@ BloomFilter::BloomFilter(const BloomFilterParameters & params)
 
 BloomFilter::BloomFilter(size_t size_, size_t hashes_, size_t seed_)
     : size(size_), hashes(hashes_), seed(seed_), words((size + sizeof(UnderType) - 1) / sizeof(UnderType)),
-      modulus(8 * size_), divider(modulus), filter(words, 0)
+      modulus(8 * size_), divider(modulus), modulus_is_pow2(isPowerOf2(modulus)), filter(words, 0)
 {
     chassert(size != 0);
     chassert(hashes != 0);
@@ -113,6 +134,7 @@ void BloomFilter::resize(size_t size_)
     words = ((size + sizeof(UnderType) - 1) / sizeof(UnderType));
     modulus = 8 * size;
     divider = libdivide::divider<size_t, libdivide::BRANCHFREE>(modulus);
+    modulus_is_pow2 = isPowerOf2(modulus);
     filter.resize(words);
 }
 
@@ -137,17 +159,14 @@ void BloomFilter::add(const char * data, size_t len)
 
 void BloomFilter::addHashPair(const BloomFilterHashPair & pair)
 {
-    if (hashes == 3)
-        addHashPairToFilter<3>(filter, pair, hashes, modulus, divider);
-    else
-        addHashPairToFilter<0>(filter, pair, hashes, modulus, divider);
+    dispatchBloom(hashes, modulus_is_pow2, [&]<size_t k, bool pow2>
+        { addHashPairToFilter<k, pow2>(filter, pair, hashes, modulus, divider); });
 }
 
 bool BloomFilter::findHashPair(const BloomFilterHashPair & pair) const
 {
-    if (hashes == 3)
-        return findHashPairInFilter<3>(filter, pair, hashes, modulus, divider);
-    return findHashPairInFilter<0>(filter, pair, hashes, modulus, divider);
+    return dispatchBloom(hashes, modulus_is_pow2, [&]<size_t k, bool pow2>
+        { return findHashPairInFilter<k, pow2>(filter, pair, hashes, modulus, divider); });
 }
 
 void BloomFilter::addHashPairs(const BloomFilterHashPair * pairs, size_t count)
@@ -155,16 +174,12 @@ void BloomFilter::addHashPairs(const BloomFilterHashPair * pairs, size_t count)
     if (count == 0)
         return;
 
-    /// Dispatch on the number of hash functions once, outside the loop, so the specialized path stays unrolled.
-    if (hashes == 3)
+    /// Dispatch once, outside the loop, so the specialized path stays unrolled.
+    dispatchBloom(hashes, modulus_is_pow2, [&]<size_t k, bool pow2>
     {
         for (size_t i = 0; i < count; ++i)
-            addHashPairToFilter<3>(filter, pairs[i], hashes, modulus, divider);
-        return;
-    }
-
-    for (size_t i = 0; i < count; ++i)
-        addHashPairToFilter<0>(filter, pairs[i], hashes, modulus, divider);
+            addHashPairToFilter<k, pow2>(filter, pairs[i], hashes, modulus, divider);
+    });
 }
 
 size_t BloomFilter::findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const
@@ -172,27 +187,18 @@ size_t BloomFilter::findHashPairs(const BloomFilterHashPair * pairs, size_t coun
     if (count == 0)
         return 0;
 
-    size_t found_count = 0;
-
-    /// Dispatch on the number of hash functions once, outside the loop, so the specialized path stays unrolled.
-    if (hashes == 3)
+    /// Dispatch once, outside the loop, so the specialized path stays unrolled.
+    return dispatchBloom(hashes, modulus_is_pow2, [&]<size_t k, bool pow2>
     {
+        size_t found_count = 0;
         for (size_t i = 0; i < count; ++i)
         {
-            const bool found = findHashPairInFilter<3>(filter, pairs[i], hashes, modulus, divider);
+            const bool found = findHashPairInFilter<k, pow2>(filter, pairs[i], hashes, modulus, divider);
             out_mask[i] = found;
             found_count += found;
         }
         return found_count;
-    }
-
-    for (size_t i = 0; i < count; ++i)
-    {
-        const bool found = findHashPairInFilter<0>(filter, pairs[i], hashes, modulus, divider);
-        out_mask[i] = found;
-        found_count += found;
-    }
-    return found_count;
+    });
 }
 
 void BloomFilter::clear()

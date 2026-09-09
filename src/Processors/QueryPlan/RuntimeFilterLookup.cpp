@@ -1,3 +1,4 @@
+#include <bit>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -190,7 +191,72 @@ ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
     return findImpl(values);
 }
 
-static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
+namespace
+{
+/// A block is one cache line: 512 bits, eight words. The block is selected by the first hash, the
+/// `k` bit positions inside it are nine bits of the second hash each (so `k <= 7`).
+constexpr size_t RUNTIME_BLOOM_BLOCK_WORDS = 8;
+constexpr size_t RUNTIME_BLOOM_BLOCK_BITS = RUNTIME_BLOOM_BLOCK_WORDS * 64;
+
+template <size_t compile_time_hashes, typename F>
+ALWAYS_INLINE void forEachBlockBit(UInt64 hash2, size_t hashes, F && f)
+{
+    const size_t count = compile_time_hashes != 0 ? compile_time_hashes : hashes;
+    for (size_t i = 0; i < count; ++i)
+    {
+        const size_t pos = (hash2 >> (9 * i)) & (RUNTIME_BLOOM_BLOCK_BITS - 1);
+        f(pos / 64, 1ULL << (pos % 64));
+    }
+}
+}
+
+RuntimeBloomFilter::RuntimeBloomFilter(size_t bytes, size_t hashes_, UInt64 seed_)
+    : hashes(std::clamp<size_t>(hashes_, 1, 7)), seed(seed_)
+{
+    /// A power of two number of blocks: the block is selected by masking the first hash.
+    const size_t requested_blocks = std::max<size_t>(1, bytes / (RUNTIME_BLOOM_BLOCK_WORDS * sizeof(UInt64)));
+    const size_t num_blocks = std::bit_ceil(requested_blocks);
+    word_index_mask = num_blocks - 1; /// a block index mask, despite the name
+    words.assign(num_blocks * RUNTIME_BLOOM_BLOCK_WORDS, 0);
+}
+
+void RuntimeBloomFilter::addHashPairs(const BloomFilterHashPair * pairs, size_t count)
+{
+    auto add_all = [&]<size_t k>()
+    {
+        for (size_t i = 0; i < count; ++i)
+        {
+            UInt64 * block = words.data() + (pairs[i].hash1 & word_index_mask) * RUNTIME_BLOOM_BLOCK_WORDS;
+            forEachBlockBit<k>(pairs[i].hash2, hashes, [&](size_t word, UInt64 bit) { block[word] |= bit; });
+        }
+    };
+    if (hashes == 3)
+        add_all.template operator()<3>();
+    else
+        add_all.template operator()<0>();
+}
+
+size_t RuntimeBloomFilter::findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const
+{
+    auto find_all = [&]<size_t k>()
+    {
+        size_t found_count = 0;
+        for (size_t i = 0; i < count; ++i)
+        {
+            const UInt64 * block = words.data() + (pairs[i].hash1 & word_index_mask) * RUNTIME_BLOOM_BLOCK_WORDS;
+            bool found = true;
+            forEachBlockBit<k>(pairs[i].hash2, hashes, [&](size_t word, UInt64 bit) { found &= (block[word] & bit) != 0; });
+            out_mask[i] = found;
+            found_count += found;
+        }
+        return found_count;
+    };
+    if (hashes == 3)
+        return find_all.template operator()<3>();
+    return find_all.template operator()<0>();
+}
+
+static void mergeBloomFilters(RuntimeBloomFilter & destination, const RuntimeBloomFilter & source)
 {
     auto & destination_words = destination.getFilter();
     const auto & source_words = source.getFilter();
@@ -213,6 +279,48 @@ static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
 
 namespace
 {
+/// The runtime filter lives for one query, so its hash need not match the persisted bloom filter
+/// indexes. Keys of 1, 2, 4 or 8 bytes (the usual join keys) take a 64-bit mixer instead of two
+/// CityHash calls over the bytes: a few multiplications per key rather than a full hash. Longer
+/// keys keep CityHash. The choice depends only on the byte length, so the build and the probe side
+/// of a filter always agree.
+ALWAYS_INLINE UInt64 mix64(UInt64 h)
+{
+    h ^= h >> 33;
+    h *= 0xff51afd7ed558ccdULL;
+    h ^= h >> 33;
+    h *= 0xc4ceb9fe1a85ec53ULL;
+    h ^= h >> 33;
+    return h;
+}
+
+template <size_t value_size>
+ALWAYS_INLINE BloomFilterHashPair hashFixedKey(const char * data, UInt64 seed)
+{
+    UInt64 value = 0;
+    memcpy(&value, data, value_size);
+    return {mix64(value ^ seed), mix64(value + (seed * 0x9E3779B97F4A7C15ULL | 1))};
+}
+
+ALWAYS_INLINE BloomFilterHashPair computeRuntimeHashPair(const char * data, size_t len, UInt64 seed)
+{
+    switch (len)
+    {
+        case 1: return hashFixedKey<1>(data, seed);
+        case 2: return hashFixedKey<2>(data, seed);
+        case 4: return hashFixedKey<4>(data, seed);
+        case 8: return hashFixedKey<8>(data, seed);
+        default: return BloomFilter::computeHashPair(data, len, seed);
+    }
+}
+
+template <size_t value_size>
+void hashFixedSizeColumnImpl(const char * raw_data, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
+{
+    for (size_t row = 0; row < row_count; ++row)
+        out_hashes[row] = hashFixedKey<value_size>(raw_data + row * value_size, seed);
+}
+
 void hashFixedSizeColumn(
     const char * raw_data,
     size_t value_size,
@@ -220,6 +328,14 @@ void hashFixedSizeColumn(
     UInt64 seed,
     BloomFilterHashPair * out_hashes)
 {
+    switch (value_size)
+    {
+        case 1: return hashFixedSizeColumnImpl<1>(raw_data, row_count, seed, out_hashes);
+        case 2: return hashFixedSizeColumnImpl<2>(raw_data, row_count, seed, out_hashes);
+        case 4: return hashFixedSizeColumnImpl<4>(raw_data, row_count, seed, out_hashes);
+        case 8: return hashFixedSizeColumnImpl<8>(raw_data, row_count, seed, out_hashes);
+        default: break;
+    }
     const char * position = raw_data;
     for (size_t row = 0; row < row_count; ++row)
     {
@@ -263,7 +379,7 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
         for (size_t index = 0; index < batch_size; ++index)
         {
             const auto value = column.getDataAt(start_row + index);
-            hash_pairs[index] = BloomFilter::computeHashPair(value.data(), value.size(), seed);
+            hash_pairs[index] = computeRuntimeHashPair(value.data(), value.size(), seed);
         }
         process_batch(hash_pairs.data(), batch_size, start_row);
         start_row += batch_size;
@@ -507,7 +623,7 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     if (distinct_keys_hint)
         bloom_filter_bytes = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit(), max_ratio_of_set_bits_in_bloom_filter);
 
-    bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
+    bloom_filter = std::make_unique<RuntimeBloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());
 
     releaseExactValues();
