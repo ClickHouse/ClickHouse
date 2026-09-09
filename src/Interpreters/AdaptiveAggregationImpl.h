@@ -79,6 +79,10 @@ constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
 /// bucket instead of one tiny slice per consumed block; a batch of at least half the target
 /// is enqueued as-is. Also bounds the coalescing buffer per thread.
 constexpr size_t adaptive_seal_target_bytes = 4 << 20;
+/// A batch with at least this many records is enqueued as-is regardless of its bytes: with
+/// 256 buckets it already gives the drain slices of 128 records on average, so coalescing
+/// would copy every record for a slice-size gain the drain no longer notices.
+constexpr size_t adaptive_seal_direct_records = 32 * 1024;
 /// A drain table is detached and written only once it holds at least this many keys, so the
 /// spilled parts stay reasonably sized instead of one tiny file per chunk; the same floor
 /// sizes the batch a pressure sweep claims for a producer-local drain. A key count cannot
