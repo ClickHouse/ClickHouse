@@ -16,6 +16,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <base/types.h>
 #include <Common/formatReadable.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
@@ -1133,7 +1134,7 @@ Block buildKeptKeysSeedBlock(
 void rebuildVariantsToKeptKeys(
     const Aggregator & aggregator,
     AggregatedDataVariants & variants,
-    const Block & seed,
+    ConstBlockPtr seed,
     Aggregator::AggregatedChunks own_chunks,
     std::atomic<bool> & is_cancelled)
 {
@@ -1144,8 +1145,13 @@ void rebuildVariantsToKeptKeys(
     variants.aggregates_pool = variants.aggregates_pools.back().get();
     chassert(!variants.without_key);
 
+    /// None of the merges below may spill: they only re-insert what the table already held, and
+    /// a flush in the middle of them would drop the rest of the rebuild.
+    variants.kept_keys_rebuild_in_progress = true;
+    SCOPE_EXIT({ variants.kept_keys_rebuild_in_progress = false; });
+
     bool rebuild_no_more_keys = false;
-    aggregator.mergeOnBlock(seed.getColumns(), seed.rows(), /*is_overflows=*/false, variants, rebuild_no_more_keys, is_cancelled);
+    aggregator.mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, variants, rebuild_no_more_keys, is_cancelled);
     /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
     chassert(!rebuild_no_more_keys);
     rebuild_no_more_keys = true;
@@ -1160,6 +1166,7 @@ void rebuildVariantsToKeptKeys(
     /// From here on the table admits no key outside the kept set, which is what makes it safe to
     /// flush it to a temporary file under the cutoff (see `Aggregator::Params::SharedKeptKeysControl`).
     variants.restricted_to_kept_keys = true;
+    variants.kept_keys_seed = std::move(seed);
 
     ProfileEvents::increment(ProfileEvents::AggregationSharedKeptKeysRebuilds);
 }
@@ -1384,8 +1391,37 @@ void AggregatingTransform::consume(Chunk chunk)
     /// This stream is the first to exceed `max_rows_to_group_by` (`checkLimits` has just set
     /// `no_more_keys`): publish the kept key set and restrict this stream to it. All the rows
     /// consumed so far, including the chunk above, were aggregated normally.
-    if (shared_kept_keys && no_more_keys && !had_no_more_keys)
-        applySharedKeptKeysCutoff(/*may_freeze=*/true);
+    if (no_more_keys && !had_no_more_keys)
+    {
+        if (shared_kept_keys)
+            applySharedKeptKeysCutoff(/*may_freeze=*/true);
+        else
+            capturePerStreamKeptKeysSeed();
+    }
+}
+
+void AggregatingTransform::capturePerStreamKeptKeysSeed()
+{
+    const auto & aggregator_params = params->params;
+
+    /// Only for the cutoff of the trivial `GROUP BY ... LIMIT` optimization, and only when the
+    /// table can actually be flushed to disk: the seed is needed to re-fill it after the flush.
+    if (!aggregator_params.shared_kept_keys_for_overflow_any || !aggregator_params.max_bytes_before_external_group_by)
+        return;
+
+    /// Already captured — the flag stays set for the rest of the aggregation.
+    if (variants.restricted_to_kept_keys || variants.empty())
+        return;
+
+    const auto & aggregator = params->aggregator;
+
+    /// The table holds exactly the keys this stream kept, so rebuilding it around them changes
+    /// nothing but hands the seed to the `Aggregator`. It happens once, on a table of about
+    /// `max_rows_to_group_by` keys, which is the LIMIT of the query.
+    auto own_chunks = aggregator.convertToChunks(variants, /*final=*/false);
+    auto seed = std::make_shared<const Block>(buildKeptKeysSeedBlock(
+        own_chunks, params->getCustomHeader(/*final_=*/false), aggregator_params.keys_size, aggregator_params.max_rows_to_group_by));
+    rebuildVariantsToKeptKeys(aggregator, variants, std::move(seed), std::move(own_chunks), is_cancelled);
 }
 
 void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
@@ -1421,14 +1457,13 @@ void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
         std::lock_guard lock(shared.mutex);
         if (!shared.frozen.load(std::memory_order_relaxed))
         {
-            shared.seed = buildKeptKeysSeedBlock(
-                own_chunks, params->getCustomHeader(/*final_=*/false), aggregator.getParams().keys_size, aggregator.getParams().max_rows_to_group_by);
             /// The `Aggregator` re-seeds a table emptied by an external-aggregation spill from
-            /// here (see `Aggregator::Params::SharedKeptKeysControl`).
-            if (const auto & control = aggregator.getParams().shared_kept_keys_control)
-                control->publishKeptKeysSeed(std::make_shared<const Block>(shared.seed));
+            /// this block (see `Aggregator::Params::SharedKeptKeysControl`), so every stream
+            /// shares it through `AggregatedDataVariants::kept_keys_seed`.
+            shared.seed = std::make_shared<const Block>(buildKeptKeysSeedBlock(
+                own_chunks, params->getCustomHeader(/*final_=*/false), aggregator.getParams().keys_size, aggregator.getParams().max_rows_to_group_by));
             shared.frozen.store(true, std::memory_order_release);
-            LOG_TRACE(log, "Froze a shared set of {} kept keys for the GROUP BY LIMIT cutoff", shared.seed.rows());
+            LOG_TRACE(log, "Froze a shared set of {} kept keys for the GROUP BY LIMIT cutoff", shared.seed->rows());
         }
     }
 

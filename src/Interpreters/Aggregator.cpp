@@ -3019,6 +3019,13 @@ bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const Aggreg
     if (!params.shared_kept_keys_control)
         return true;
 
+    /// A rebuild or a re-seed of the kept keys is in flight: those merges re-insert data the
+    /// table already held, so flushing it in the middle of them would drop the rest of the
+    /// rebuild (`AggregatedDataVariants::kept_keys_rebuild_in_progress`). The cutoff must not be
+    /// abandoned here either — the kept keys are already frozen.
+    if (result.kept_keys_rebuild_in_progress)
+        return false;
+
     /// This stream has already stopped admitting keys. Its table may be flushed only once it has
     /// been rebuilt to the frozen kept keys: then it holds nothing but kept keys, and it is
     /// re-seeded with them right after the flush, so the remaining rows of those keys keep being
@@ -3026,7 +3033,7 @@ bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const Aggreg
     /// keys, whose merged values would be undercounted, so the spill is skipped — the very next
     /// chunk applies the cutoff and unblocks it.
     if (no_more_keys)
-        return result.restricted_to_kept_keys && params.shared_kept_keys_control->keptKeysSeed() != nullptr;
+        return result.restricted_to_kept_keys && result.kept_keys_seed != nullptr;
 
     /// Before any freeze, the spill wins by permanently abandoning the cutoff: no rows have been
     /// dropped anywhere yet, `checkLimits` stops capping, and the aggregation completes exactly,
@@ -3036,17 +3043,20 @@ bool Aggregator::spillAllowedUnderKeptKeysCutoff(bool no_more_keys, const Aggreg
 
 void Aggregator::reseedKeptKeysAfterSpill(AggregatedDataVariants & result) const
 {
-    if (!result.restricted_to_kept_keys)
+    if (!result.restricted_to_kept_keys || !result.kept_keys_seed)
         return;
 
     /// The flush emptied the table while the stream keeps rejecting new keys, so re-insert the
     /// kept keys with empty aggregate states. Merging an empty state into another is a no-op, so
     /// the flushed partial states and the ones accumulated from here on add up exactly.
-    auto seed = params.shared_kept_keys_control->keptKeysSeed();
+    /// A copy: `mergeOnBlock` below takes `result` by reference.
+    const ConstBlockPtr seed = result.kept_keys_seed;
     chassert(seed);
 
     bool reseed_no_more_keys = false;
     std::atomic<bool> is_cancelled = false;
+    result.kept_keys_rebuild_in_progress = true;
+    SCOPE_EXIT({ result.kept_keys_rebuild_in_progress = false; });
     mergeOnBlock(seed->getColumns(), seed->rows(), /*is_overflows=*/false, result, reseed_no_more_keys, is_cancelled);
     /// The seed has exactly `max_rows_to_group_by` keys, which does not exceed the limit.
     chassert(!reseed_no_more_keys);

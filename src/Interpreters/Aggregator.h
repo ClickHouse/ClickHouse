@@ -233,7 +233,8 @@ public:
         /// rebuilt to the kept keys holds nothing but kept keys, so flushing it to disk cannot
         /// leak a dropped key into the result; the flush empties the table, which under
         /// `no_more_keys` would drop the remaining rows of the kept keys, so the `Aggregator`
-        /// re-seeds it from `keptKeysSeed` right after the flush and keeps aggregating exactly.
+        /// re-seeds it from `AggregatedDataVariants::kept_keys_seed` right after the flush and
+        /// keeps aggregating exactly.
         /// A table that has not been rebuilt yet may not spill — it still holds arbitrary keys.
         /// Created by `AggregatingStep` when the cutoff is armed; null otherwise.
         struct SharedKeptKeysControl
@@ -267,27 +268,6 @@ public:
             {
                 return state.load() == State::Abandoned;
             }
-
-            /// The frozen kept keys with empty aggregate states, in the mergeable block layout
-            /// (`ManyAggregatedData::SharedKeptKeys::seed`). Published by the freezing stream
-            /// before it sets `frozen`, so every stream that has applied the cutoff sees it.
-            /// Used to re-seed a table emptied by an external-aggregation spill.
-            void publishKeptKeysSeed(std::shared_ptr<const Block> seed)
-            {
-                std::lock_guard lock(seed_mutex);
-                if (!kept_keys_seed)
-                    kept_keys_seed = std::move(seed);
-            }
-
-            std::shared_ptr<const Block> keptKeysSeed() const
-            {
-                std::lock_guard lock(seed_mutex);
-                return kept_keys_seed;
-            }
-
-        private:
-            mutable std::mutex seed_mutex;
-            std::shared_ptr<const Block> kept_keys_seed;
         };
 
         std::shared_ptr<SharedKeptKeysControl> shared_kept_keys_control;
