@@ -8,6 +8,11 @@
 
 set -e
 
+# Cancelling is what this test does, and a worker task that outlives the initiator's bounded wait for a
+# terminal state is reported at Warning. The runner fails a test whose stderr is not empty, and the line
+# can arrive on any of this test's clients, so keep only Error and above for all of them.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
