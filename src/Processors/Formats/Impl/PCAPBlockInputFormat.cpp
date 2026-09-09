@@ -697,7 +697,8 @@ capture is not.
 interface description block in the file must declare the same link type and
 the same snapshot length. A capture that mixes interfaces with different link
 types or snapshot lengths - for example one produced by `dumpcap -i eth0 -i
-lo` - is rejected while the file is being opened.
+lo` - is rejected with an error, either when the file is opened or when the
+differing interface description block is reached while reading.
 :::
 
 :::info
