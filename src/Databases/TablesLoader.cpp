@@ -179,13 +179,24 @@ void TablesLoader::buildDependencyGraph()
         /// `check_referential_table_dependencies` guarding the wrong object and the loading edge
         /// that the repair itself relies on missing.
         ASTPtr ast = table_metadata.ast;
-        if (!ast->as<const ASTCreateQuery &>().is_dictionary)
+        const bool is_dictionary = ast->as<const ASTCreateQuery &>().is_dictionary;
+        if (!is_dictionary)
         {
             ast = ast->clone();
             qualifyNamesFromLegacyMetadata(ast->as<ASTCreateQuery &>(), table_name.database, global_context);
         }
 
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
+        /// The names which are still unqualified after the repair have to be resolved the same way
+        /// in both graphs. A bare dictionary name is the case where the repair cannot do it on its
+        /// own: `ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase` only qualifies a
+        /// name it already knows, and no DDL dictionary is registered yet while the graph is being
+        /// built, so the name stays bare here and is repaired later, when the definition is
+        /// attached. Resolving it against the database owning the table - like the loading graph
+        /// does - keeps the two graphs describing the same object, instead of guarding a
+        /// `default.dict` which does not exist. The definitions of the dictionaries are not
+        /// repaired, so they keep resolving against the default database of the server.
+        const String referential_database = is_dictionary ? global_context->getCurrentDatabase() : table_name.database;
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, ast, referential_database, /*can_throw*/ false, /*validate_current_database*/ false);
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, ast, table_name.database);
 
         if (!new_ref_dependencies.dependencies.empty())

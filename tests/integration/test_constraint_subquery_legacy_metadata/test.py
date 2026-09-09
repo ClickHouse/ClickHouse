@@ -180,6 +180,14 @@ def test_legacy_unqualified_dictget_is_the_only_carrier(started_cluster):
     assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error(
         "DROP DICTIONARY db4.dict"
     )
+    # No dictionary is registered yet while the graphs are built, so the repair cannot qualify the
+    # bare name there and the referential graph has to resolve it against the database owning the
+    # table on its own. Otherwise the dependency would be recorded as a `default.dict` which does
+    # not exist and this drop, which only consults the referential graph, would be accepted.
+    assert "HAVE_DEPENDENT_OBJECTS" in node.query_and_get_error(
+        "DROP DICTIONARY db4.dict SETTINGS check_table_dependencies = 0,"
+        " check_referential_table_dependencies = 1"
+    )
     node.query("INSERT INTO db4.t (x) VALUES (1)", database="default")
     assert node.query("SELECT d FROM db4.t") == "one\n"
 

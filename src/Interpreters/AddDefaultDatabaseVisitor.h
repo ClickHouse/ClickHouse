@@ -87,7 +87,14 @@ public:
     /// and for the metadata written before the names were qualified at CREATE time.
     void visitTableExpressions(IAST & ast) const
     {
+        /// `visitTableExpressionsImpl` collects the `WITH RECURSIVE` aliases of the select queries
+        /// it walks, and the callers reuse one visitor for the `SELECT` of a view and for the
+        /// column list of the same `CREATE` query. The aliases of one top-level call must not leak
+        /// into the next one, where the same name is an ordinary table name and has to be qualified.
+        auto enclosing_with_aliases = std::move(with_aliases);
+        with_aliases.clear();
         visitTableExpressionsImpl(ast);
+        with_aliases = std::move(enclosing_with_aliases);
     }
 
     void visit(ASTSelectQuery & select) const
