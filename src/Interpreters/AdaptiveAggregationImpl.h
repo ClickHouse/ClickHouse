@@ -34,8 +34,13 @@ constexpr size_t adaptive_dedup_unproductive_passes_to_bypass = 4;
 constexpr size_t adaptive_dedup_resample_interval = 64;
 /// The drain reserves a bucket's table after sampling this fraction of its records.
 constexpr size_t adaptive_reserve_sample_inverse = 8;
-/// Headroom over the sampled insert rate when reserving.
-constexpr double adaptive_reserve_headroom = 1.25;
+/// Multiplier over the sampled insert rate when reserving. No headroom: the grower already rounds
+/// the reserve up to a power of two at most half full, so on a near-distinct stream (ClickBench
+/// Q19: 56M groups from 56M records) a 1.25 headroom pushed most buckets over the next power of
+/// two and left the merge tables ~25% full; zeroing those tables was 18% of the query's cycles.
+/// An estimate that lands just under a boundary costs one late resize, which is cheaper on
+/// average than doubling every table.
+constexpr double adaptive_reserve_headroom = 1.0;
 /// Fixed lookahead of the drain's hash prefetch.
 constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
 /// A thread gives up on freezing once it has consumed this many times the freeze threshold
