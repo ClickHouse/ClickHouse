@@ -530,6 +530,8 @@ struct AdaptiveAggregationProducer
     /// the next resample, never results.
     struct DedupProductivity
     {
+        /// Consecutive unproductive passes before the dedup is bypassed.
+        size_t unproductive_passes_to_bypass = adaptive_dedup_unproductive_passes_to_bypass;
         size_t consecutive_unproductive = 0;
         size_t passes_since_resample = 0;
         bool bypassed = false;
@@ -555,7 +557,7 @@ struct AdaptiveAggregationProducer
                 return;
             if (surviving_records * 64 > input_records * 63)
             {
-                if (++consecutive_unproductive >= adaptive_dedup_unproductive_passes_to_bypass)
+                if (++consecutive_unproductive >= unproductive_passes_to_bypass)
                     bypassed = true;
             }
             else
@@ -567,7 +569,11 @@ struct AdaptiveAggregationProducer
     };
 
     DedupProductivity publish_dedup;
-    DedupProductivity seal_dedup;
+    /// Keys repeating across the buffered batches are rare by construction (a repeat of a key
+    /// the thread has seen usually hits its frozen table), and a producer seals only a few times
+    /// per query, so one unproductive seal is enough to bypass; the resample re-engages it if the
+    /// distribution changes.
+    DedupProductivity seal_dedup{.unproductive_passes_to_bypass = 1};
 
     /// Small per-block staging batches buffered for coalescing: they are merged into one
     /// bucket-grouped chunk before they reach the backlogs (see `stageChunk`), so the
