@@ -1010,10 +1010,23 @@ static bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
-/// A `FixedString` indexed column stores the padding, and so do its terms. Stripping the constant is
-/// only sound there when the tokenizer keeps the terms of the unpadded value, otherwise the search
-/// would look for a term the index never stored and prune a granule holding matching rows.
-static bool canStripFixedStringPadding(ITokenizer::Type tokenizer_type, const Block & header)
+/// What to do with the trailing zero padding of a `FixedString` needle before its terms are extracted.
+enum class FixedStringPaddingHandling : uint8_t
+{
+    /// The tokenizer treats the zero byte as a separator (or windows it away), so the terms of the
+    /// padded and of the unpadded value are the same and the shorter needle is the natural one.
+    Strip,
+    /// A `FixedString` indexed column stores the padding, and so do its terms, so the padded needle is
+    /// the one the index holds.
+    Keep,
+    /// A term-preserving tokenizer over a `String` column stores `'hello'` and `'hello\0\0\0\0\0'` as
+    /// two different terms, and a `FixedString` needle compares equal to both. One lookup cannot cover
+    /// both spellings, so a needle that really carries padding leaves the index unusable for the atom:
+    /// either spelling would prune the granule holding the other one.
+    DeclineWhenPadded,
+};
+
+static FixedStringPaddingHandling fixedStringPaddingHandling(ITokenizer::Type tokenizer_type, const Block & header)
 {
     static const std::unordered_set<ITokenizer::Type> zero_padding_tolerated_tokenizers = {
         ITokenizer::Type::SplitByNonAlpha,
@@ -1023,17 +1036,20 @@ static bool canStripFixedStringPadding(ITokenizer::Type tokenizer_type, const Bl
     };
 
     if (zero_padding_tolerated_tokenizers.contains(tokenizer_type))
-        return true;
+        return FixedStringPaddingHandling::Strip;
 
     /// A text index is always defined on a single expression.
     if (header.columns() != 1)
-        return false;
+        return FixedStringPaddingHandling::Keep;
 
     auto indexed_type = removeNullable(removeLowCardinality(header.getByPosition(0).type));
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(indexed_type.get()))
         indexed_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
 
-    return !isFixedString(indexed_type);
+    if (isFixedString(indexed_type))
+        return FixedStringPaddingHandling::Keep;
+
+    return FixedStringPaddingHandling::DeclineWhenPadded;
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
@@ -1109,8 +1125,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    if (functionIgnoresFixedStringPadding(function_name) && canStripFixedStringPadding(tokenizer->getType(), header))
-        value_field = stripFixedStringPaddingForTerms(value_field, value_type);
+    if (functionIgnoresFixedStringPadding(function_name))
+    {
+        const Field stripped_value_field = stripFixedStringPaddingForTerms(value_field, value_type);
+        switch (fixedStringPaddingHandling(tokenizer->getType(), header))
+        {
+            case FixedStringPaddingHandling::Strip:
+                value_field = stripped_value_field;
+                break;
+            case FixedStringPaddingHandling::Keep:
+                break;
+            case FixedStringPaddingHandling::DeclineWhenPadded:
+                if (stripped_value_field != value_field)
+                    return false;
+                break;
+        }
+    }
 
     const auto & settings = getContext()->getSettingsRef();
 
@@ -1939,15 +1969,26 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     size_t total_row_count = prepared_set->getTotalRowCount();
     const bool is_fixed_string_element = WhichDataType(set_column.getDataType()).isFixedString();
-    const bool strip_fixed_string_padding = canStripFixedStringPadding(tokenizer->getType(), header);
+    const auto padding_handling = fixedStringPaddingHandling(tokenizer->getType(), header);
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
         std::string_view element = set_column.getDataAt(row);
 
         /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
-        if (is_fixed_string_element && strip_fixed_string_padding)
-            element = element.substr(0, element.find_last_not_of('\0') + 1);
+        if (is_fixed_string_element)
+        {
+            const std::string_view stripped_element = element.substr(0, element.find_last_not_of('\0') + 1);
+            if (padding_handling == FixedStringPaddingHandling::Strip)
+                element = stripped_element;
+            else if (padding_handling == FixedStringPaddingHandling::DeclineWhenPadded && stripped_element != element)
+            {
+                /// A term-preserving tokenizer stores the padded and the unpadded spelling as two
+                /// different terms, and this element compares equal to both, so no lookup covers it.
+                out.text_search_queries.clear();
+                return false;
+            }
+        }
 
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.
