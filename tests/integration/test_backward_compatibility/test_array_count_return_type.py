@@ -103,5 +103,15 @@ def test_array_count_mixed_version_remote(start_cluster):
         == "4\n4\n"
     )
 
+    # The documented `compatibility` path must cover the shard-local wrapper as
+    # well: `compatibility = '26.8'` flips `array_count_legacy_uint32_result` on
+    # the coordinator through the settings-changes history, and the resulting
+    # legacy behavior reaches the new shard too, so `byteSize` observes `UInt32`
+    # on both shards instead of being narrowed only in the initiator's header.
+    assert (
+        new_node.query(wrapped_query, settings={"compatibility": "26.8"})
+        == "4\n4\n"
+    )
+
     for node in (new_node, old_node):
         node.query("DROP TABLE tab")
