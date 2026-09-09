@@ -9,9 +9,13 @@
 -- excluded from primary-key index analysis (`use_index_for_in_with_subqueries_max_values = 1`): index
 -- analysis then works on the continuous range instead of running a generic exclusion search with the
 -- whole set. The `id IN <set>` condition always stays in the WHERE, so the returned rows never change.
--- The range conditions contain the max-UUID literal. The checks below look for it in the
+-- The range is wrapped in `indexHint`, so it reaches index analysis without being evaluated per
+-- row. The range conditions contain the max-UUID literal. The checks below look for it in the
 -- `Condition:` line of `EXPLAIN indexes = 1`, that is, in what primary-key index analysis actually
 -- received, rather than anywhere in the plan text.
+-- `Condition: true` cannot tell an always-true atom from an unknown one (`KeyCondition` describes
+-- both as `True`), so the part-pruning check on `ts_prune` below is what detects a range that
+-- reaches index analysis but no longer constrains the read.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -21,6 +25,7 @@ DROP TABLE IF EXISTS ts_plain;
 DROP TABLE IF EXISTS ts_custom_gen;
 DROP TABLE IF EXISTS ts_altered_gen;
 DROP TABLE IF EXISTS ts_u64;
+DROP TABLE IF EXISTS ts_prune;
 
 -- The metric-clustered layout: id = tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags))).
 -- Inner target tables (their names contain dots and the table UUID - the qualified references of the
@@ -39,6 +44,15 @@ SELECT timestamp, value FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000) OR
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000)));
+
+SELECT '-- the range is an index condition only: it is not part of any row-level filter';
+
+SELECT
+    countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%') > 0 AS range_in_index_condition,
+    countIf(explain ILIKE '%filter column:%' AND explain ILIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%') = 0 AS range_not_row_level,
+    -- control for the check above: filter descriptions are printed and this pattern does match them
+    countIf(explain ILIKE '%filter column:%' AND explain ILIKE '%timestamp%') > 0 AS filter_lines_present
+FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_clustered, 'foo', 0, 1000));
 
 SELECT '-- whole-metric-by-data selector (a matcher every series passes): the range is still emitted';
 
@@ -140,6 +154,31 @@ SELECT timestamp, value FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000) ORDER BY
 SELECT plan LIKE '%18446744073709551615%' AS has_id_range
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_u64, 'foo', 0, 1000)));
 
+SELECT '-- the index-only range still drops the part that holds another metric';
+
+-- Two parts, one metric each: `max_bytes_to_merge_at_max_space_in_pool = 1` keeps them apart.
+-- `foo` has two series, so its id set holds two values and
+-- `use_index_for_in_with_subqueries_max_values = 1` excludes it from index analysis: the range is
+-- then the only condition that can drop the `bar` part, which `id_set_not_in_index_analysis`
+-- asserts rather than assumes.
+CREATE TABLE ts_prune ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID))
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+    SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO ts_prune (metric_name, tags, time_series) VALUES
+    ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
+    ('foo', map('env', 'dev'), [(toDateTime64(100, 3), 2.)]);
+INSERT INTO ts_prune (metric_name, tags, time_series) VALUES
+    ('bar', map('env', 'prod'), [(toDateTime64(100, 3), 4.)]);
+
+SELECT sum(value), count() FROM timeSeriesSelector(ts_prune, 'foo', 0, 1000);
+
+SELECT
+    countIf(explain LIKE '%Parts: 1/2%') > 0 AS prunes_the_other_metrics_part,
+    countIf(explain ILIKE '%Condition:%' AND explain ILIKE '%element set%') = 0 AS id_set_not_in_index_analysis
+FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_prune, 'foo', 0, 1000));
+
+DROP TABLE ts_prune;
 DROP TABLE ts_u64;
 DROP TABLE ts_altered_gen;
 DROP TABLE ts_custom_gen;
