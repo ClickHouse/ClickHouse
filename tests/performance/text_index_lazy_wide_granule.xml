@@ -1,0 +1,60 @@
+<test>
+    <settings>
+        <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+        <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+        <query_plan_optimize_count_from_text_index>0</query_plan_optimize_count_from_text_index>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <text_index_posting_list_apply_mode>lazy</text_index_posting_list_apply_mode>
+    </settings>
+
+    <!-- One text-index granule per part: every posting list spans the whole part, so a dense token gets full
+         1M-posting segments (8192 packed blocks) that the lazy cursor applies granule by granule. -->
+    <create_query>
+        CREATE TABLE text_index_lazy_wide
+        (
+            id UInt64,
+            s String,
+            INDEX idx s TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'bitpacking') GRANULARITY 100000000
+        )
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <!-- half: 50% of the rows, third: 33%, quarter: 25%, fifth: 20%, dense: 10%, medium: 6.7%, sparse: 2%;
+         dense and medium overlap on every 30th row. The tokens with density >= 0.2 make hasAllTokens pick the
+         brute-force intersection by default, so those queries exercise linearOr + linearAnd on long posting lists. -->
+    <fill_query>
+        INSERT INTO text_index_lazy_wide
+        SELECT number,
+            concat('common',
+                if(number % 2 = 0, ' half', ''),
+                if(number % 3 = 0, ' third', ''),
+                if(number % 4 = 0, ' quarter', ''),
+                if(number % 5 = 0, ' fifth', ''),
+                if(number % 10 = 0, ' dense', ''),
+                if(number % 15 = 0, ' medium', ''),
+                if(number % 50 = 7, ' sparse', ''),
+                ' filler', toString(number % 1000))
+        FROM numbers(50000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE text_index_lazy_wide FINAL</fill_query>
+
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasToken(s, 'dense')</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasToken(s, 'half')</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAnyTokens(s, ['dense', 'medium', 'sparse'])</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAnyTokens(s, ['half', 'third', 'quarter', 'fifth'])</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['dense', 'medium']) SETTINGS text_index_lazy_intersection_density_threshold = 0</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third', 'quarter'])</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['dense', 'medium'])</query>
+
+    <!-- Leapfrog intersection on long posting lists: the density threshold of 1 forces it for tokens that would
+         otherwise take the brute-force path. `third` and `sparse` co-occur on a third of the sparse rows, so the
+         sparse cursor leads and the dense one jumps about 17 postings per advance. -->
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third']) SETTINGS text_index_lazy_intersection_density_threshold = 1</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third', 'quarter', 'fifth']) SETTINGS text_index_lazy_intersection_density_threshold = 1</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['third', 'sparse'])</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third']) SETTINGS text_index_lazy_intersection_density_threshold = 1, max_threads = 4</query>
+    <query>SELECT count() FROM text_index_lazy_wide WHERE hasAllTokens(s, ['half', 'third', 'quarter', 'fifth']) SETTINGS text_index_lazy_intersection_density_threshold = 1, max_threads = 4</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_lazy_wide</drop_query>
+</test>
