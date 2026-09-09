@@ -478,7 +478,11 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
-    Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes)
+    Statistics & statistics,
+    size_t num_rows,
+    const ColumnsWithTypeAndName & cols,
+    const CompressionCodecPtr & wire_codec,
+    std::optional<size_t> full_bytes)
 {
     Stopwatch watch;
 
@@ -546,9 +550,9 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     size_t compressed_bytes = 0;
     /// Only output columns get here, and they model what a replica sends to the initiator rather than
     /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
-    /// The transfer codec is `network_compression_method`, whose default the default codec matches.
-    /// It is generic, so it applies to any serialization layout.
-    const ColumnCodecs codecs{.generic = CompressionCodecFactory::instance().getDefaultCodec()};
+    /// The transfer codec is what `network_compression_method` resolves to, threaded in from the
+    /// optimization settings. It is generic, so it applies to any serialization layout.
+    const ColumnCodecs codecs{.generic = wire_codec ? wire_codec : CompressionCodecFactory::instance().getDefaultCodec()};
     if (serialize_states)
     {
         /// The same ~1000-sample target as `Aggregator::estimateSizeOfCompressedState` uses for a
@@ -648,7 +652,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     cols.reserve(columns.size());
     for (size_t i = 0; i < columns.size(); ++i)
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols);
+    recordColumns(output_bytes_statistics[OutputStatisticsType::OutputChunk], chunk.getNumRows(), cols, wire_codec);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
@@ -683,7 +687,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     cols.reserve(keys_positions.size());
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols);
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols, wire_codec);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
@@ -694,7 +698,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
     cols.reserve(keys_positions.size());
     for (size_t i = 0; i < keys_positions.size(); ++i)
         cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols, full_key_bytes);
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols, wire_codec, full_key_bytes);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
@@ -715,7 +719,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(
             continue;
         cols.emplace_back(columns[i], header.getByPosition(i).type, "");
     }
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols);
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationState], chunk.getNumRows(), cols, wire_codec);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(

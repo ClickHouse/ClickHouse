@@ -1,3 +1,4 @@
+#include <Client/Connection.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Core/ServerSettings.h>
@@ -388,6 +389,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_threads = from[Setting::max_threads];
 
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
+    /// Only resolved when the runtime dataflow statistics can be collected at all: the setting is
+    /// validated here, and a query that never considers parallel replicas must not start failing for it.
+    if (automatic_parallel_replicas_mode != 0)
+        network_compression_codec = chooseNetworkCompressionCodec(&from);
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi

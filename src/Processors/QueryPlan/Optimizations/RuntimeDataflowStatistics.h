@@ -111,9 +111,13 @@ class RuntimeDataflowStatisticsCacheUpdater
     };
 
 public:
-    RuntimeDataflowStatisticsCacheUpdater(size_t cache_key_, size_t total_rows_to_read_)
+    /// `wire_codec_` is the codec a replica sends its output with (`network_compression_method`); the
+    /// compression samples of the output columns are measured with it. The factory default is used when
+    /// it is null.
+    RuntimeDataflowStatisticsCacheUpdater(size_t cache_key_, size_t total_rows_to_read_, CompressionCodecPtr wire_codec_ = nullptr)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , wire_codec(std::move(wire_codec_))
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsCacheUpdater cannot be zero");
@@ -164,11 +168,16 @@ private:
 
     /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
     /// are only a sample of the dataflow being accounted.
-    static void
-    recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes = {});
+    static void recordColumns(
+        Statistics & statistics,
+        size_t num_rows,
+        const ColumnsWithTypeAndName & cols,
+        const CompressionCodecPtr & wire_codec,
+        std::optional<size_t> full_bytes = {});
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    const CompressionCodecPtr wire_codec;
 
     std::atomic_bool unsupported_case{false};
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Compression/ICompressionCodec.h>
 #include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
@@ -245,6 +246,11 @@ struct QueryPlanOptimizationSettings
 
     size_t max_parallel_replicas = 1;
     size_t automatic_parallel_replicas_mode;
+    /// The codec a replica sends its output to the initiator with, i.e. what
+    /// `network_compression_method` resolves to. The runtime dataflow statistics price a
+    /// parallel-replicas plan by the bytes that reach the initiator, so their compression samples have
+    /// to be measured with it. Null when the statistics are not collected for this query.
+    CompressionCodecPtr network_compression_codec;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
 

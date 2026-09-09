@@ -13,6 +13,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -39,10 +40,11 @@ namespace
 
 /// The compressed size of a whole column as `NativeWriter` puts it on the wire - the ground truth the
 /// estimate approximates for a materialized column.
-size_t compressedColumnSize(const ColumnWithTypeAndName & column)
+/// `codec` is the codec the wire uses; the factory default when it is null.
+size_t compressedColumnSize(const ColumnWithTypeAndName & column, const CompressionCodecPtr & codec = nullptr)
 {
     NullWriteBuffer null_buf;
-    CompressedWriteBuffer compressed_buf(null_buf);
+    CompressedWriteBuffer compressed_buf(null_buf, codec ? codec : CompressionCodecFactory::instance().getDefaultCodec());
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
     NativeWriter::writeData(
         *serialization, column_to_write, compressed_buf, std::nullopt, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
@@ -961,4 +963,48 @@ TEST(RuntimeDataflowStatisticsStateSampling, ManyConstantNestedRepetitionsScaleB
 {
     /// 16 KiB of strings per copy, so the copies pass the 1 MiB measurement budget well before the last one.
     checkConstantNestedPayloadCompression(/*rows=*/256, /*cache_key=*/0x111985 + 12);
+}
+
+/// The output columns are compressed with what `network_compression_method` resolves to, not with the
+/// factory default, and the codec decides how well a repeated constant payload compresses: `LZ4` cannot
+/// reference data farther than 64 KiB back, so copies of the ~128 KiB state below do not compress against
+/// each other at all, while the `ZSTD(3)` default reaches the whole compressed block and packs eight of
+/// them per block. Measuring the sample with the default codec while the wire uses `LZ4` therefore
+/// understates `output_bytes` about eightfold - enough to enable automatic parallel replicas for a query
+/// whose transfer is eight times the estimate.
+TEST(RuntimeDataflowStatisticsStateSampling, ConstantStateCompressionFollowsTheWireCodec)
+{
+    tryRegisterAggregateFunctions();
+
+    constexpr size_t rows = 32;
+    /// ~128 KiB of distinct values: incompressible on its own and well past `LZ4`'s match window.
+    constexpr size_t elements_in_state = 16000;
+
+    AggregateFunctionPtr function;
+    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
+
+    /// `cloneResized` would give a fresh default state, so share the giant one explicitly.
+    auto one_row = ColumnAggregateFunction::create(function);
+    one_row->insertFrom(*source_state, 0);
+    ColumnPtr constant = ColumnConst::create(std::move(one_row), rows);
+    /// `NativeWriter` materializes the constant, so the wire ground truth is the same state once per row.
+    auto materialized = ColumnAggregateFunction::create(function);
+    for (size_t row = 0; row < rows; ++row)
+        materialized->insertFrom(*source_state, 0);
+
+    const auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
+    const size_t cache_key = 0x111985 + 15;
+    const auto exact_compressed_bytes = compressedColumnSize({std::move(materialized), state_type, "constant_state"}, lz4);
+    {
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows, lz4);
+        Block header;
+        header.insert(ColumnWithTypeAndName{nullptr, state_type, "constant_state"});
+        updater.recordOutputChunk(Chunk(Columns{std::move(constant)}, rows), header);
+    }
+
+    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
+    ASSERT_TRUE(stats.has_value());
+    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
+    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
