@@ -359,6 +359,23 @@ DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 DROP NAMED COLLECTION foobar;
 ```
+
+## DROP HANDLER {#drop-handler}
+
+Deletes a SQL-defined HTTP handler created by [CREATE HANDLER](/reference/statements/create/handler).
+
+**Syntax**
+
+```sql
+DROP HANDLER [IF EXISTS] name
+```
+
+**Example**
+
+```sql
+CREATE HANDLER my_handler URL '/my_handler' AS SELECT version();
+DROP HANDLER my_handler;
+```
 )DOCS_MD",
         .syntax = R"(
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
@@ -373,6 +390,7 @@ DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storag
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 DROP FUNCTION [IF EXISTS] function_name [ON CLUSTER cluster]
 DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
+DROP HANDLER [IF EXISTS] name
 )",
         .related = {"DETACH", "TRUNCATE", "UNDROP", "CREATE"},
     });
