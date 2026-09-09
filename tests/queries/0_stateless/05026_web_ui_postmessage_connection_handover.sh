@@ -78,7 +78,15 @@ do
     # the newly handed-over server with the credentials of the old one, which is the very leak the
     # handover exists to prevent.
     credentials=$(echo "$content" | grep -qE "\|\| (user|password)\b" && echo sticky || echo replaced)
-    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint} credentials=${credentials}"
+    # That default endpoint keeps the query string of the served URL as well, minus the page's own
+    # parameters: a proxy can expose one origin as several backends and select between them with
+    # `?cluster=a`, and the query string of the configured address is part of the endpoint identity
+    # everywhere else (it is sent verbatim with every request). Clearing `search` wholesale would send a
+    # direct load - and a handover that carries no `url` - to the proxy's default backend instead.
+    routing_query=$(echo "$content" | grep -qF "PAGE_URL_PARAMETERS" \
+        && ! echo "$content" | sed -n '/function defaultServerAddress()/,/^ *}$/p' | grep -qF "url.search = '';" \
+        && echo preserved || echo dropped)
+    echo "${page} announces=${announces} accepts=${accepts} origins=${origins} endpoint_query=${endpoint_query} default_endpoint=${default_endpoint} routing_query=${routing_query} credentials=${credentials}"
 done
 
 content=$(fetch_page webterminal)
@@ -142,6 +150,39 @@ terminal_query=$(echo "$content" | sed -n '/function getTerminalURL()/,/^    }/p
     && ! echo "$content" | sed -n '/function getTerminalURL()/,/^    }/p' | grep -qF "url.search = '';" \
     && echo preserved || echo dropped)
 echo "play terminal_route=${terminal_route} terminal_query=${terminal_query} credential_store=${credential_store} derived_url_userinfo=${derived_url_userinfo}"
+
+# The Documentation and Web Terminal URLs are derived from the configured server address, and that
+# address is not trusted input: it comes from `?url=`, from a `postMessage` handover and from a text
+# field. `new URL` parses `javascript:alert(1)` and `data:text/html,...` just as happily as an HTTP
+# endpoint, so without a scheme gate the derived URL - written into a link `href` and into an iframe
+# `src` - would let a plain click navigate this origin to an arbitrary scheme.
+derived_url_scheme=$(echo "$content" | sed -n '/function docsURL()/,/^}/p' \
+        | grep -qF "if (!isHTTPEndpoint(url)) return null;" \
+    && echo "$content" | sed -n '/function getTerminalURL()/,/^    }$/p' \
+        | grep -qF "if (!isHTTPEndpoint(url)) return null;" \
+    && echo gated || echo open)
+# The relay page reads its target out of its OWN URL, and a foreign page can open it
+# (`window.open('/play?docs_relay=...')`) and satisfy the `window.opener` condition. So the target has
+# to be held to the same rule the launcher applies before it opens a relay at all - a real HTTP(S)
+# endpoint at a trusted origin - and it has to be checked before it becomes an iframe `src`.
+relay_target_guard=$(echo "$content" \
+        | grep -qF "isHTTPEndpoint(docs_url) && isTrustedHostOrigin(docs_url.origin)" \
+    && echo validated || echo trusting)
+# Whether the Web Terminal is available is a property of the configured server, which can be edited in
+# the field or replaced wholesale by a handover at any time. A verdict cached from the first probe
+# would leave the opener - which loads its URL into an iframe - live for an endpoint that has no
+# terminal at all, or that is not even an HTTP endpoint.
+terminal_probe=$(echo "$content" | grep -qF "url_elem.addEventListener('input', probeTerminal);" \
+    && echo "$content" | sed -n '/function probeTerminal()/,/^    }$/p' | grep -qF "terminal_probe_generation" \
+    && echo live || echo cached)
+# The documentation page runs its own queries against the server it is opened at, so the Documentation
+# link has to name the whole configured endpoint, routing query included - exactly like the terminal
+# link. Only `user` and `password` are dropped: they are the docs page's own parameters, and a password
+# must not travel in a URL.
+docs_query=$(echo "$content" | sed -n '/function docsURL()/,/^}/p' | grep -qF "url.searchParams.delete('user');" \
+    && ! echo "$content" | sed -n '/function docsURL()/,/^}/p' | grep -qF "url.search = '';" \
+    && echo preserved || echo dropped)
+echo "play derived_url_scheme=${derived_url_scheme} relay_target_guard=${relay_target_guard} terminal_probe=${terminal_probe} docs_query=${docs_query}"
 
 # `/schema` persists a credential under the same rule, and additionally retrieves a remembered one on
 # open, which is the path that would fill a login saved for one endpoint into a page pointed at another.

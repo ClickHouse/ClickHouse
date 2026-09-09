@@ -68,10 +68,22 @@
         /// are attached as non-strict paths (`attachNonStrictPath` in `HTTPHandlerFactory`), so the served
         /// URL may carry a suffix - `/binary/`, `/binary?user=x` - and the prefix is therefore taken as
         /// everything up to and including the last `/` before the route name.
+
+        /// The parameters this page reads out of its own URL. Everything ELSE in the query string of the
+        /// served URL is routing information that belongs to the endpoint: a reverse proxy can expose one
+        /// origin as several backends and select between them with `?cluster=a`, and the query string of the
+        /// configured address is treated as part of the endpoint identity everywhere else (it is sent
+        /// verbatim with every request). So the default connection preserves it instead of clearing `search`
+        /// wholesale - otherwise a direct load, or a `clickhouse-credentials` handover that carries no `url`,
+        /// would talk to the proxy's default backend instead of the selected one.
+        const PAGE_URL_PARAMETERS = ['host', 'user', 'password', 'x', 'y', 'zoom', 'px', 'py'];
+
         function defaultServerAddress() {
             if (location.protocol == 'file:') return 'http://localhost:8123/';
             const url = new URL(location.href);
-            url.search = '';
+            /// The keys are snapshotted: deleting from a live `URLSearchParams` iterator skips entries.
+            for (const name of [...url.searchParams.keys()])
+                if (PAGE_URL_PARAMETERS.includes(name)) url.searchParams.delete(name);
             url.hash = '';
             const route = url.pathname.lastIndexOf('/binary');
             if (route != -1) url.pathname = url.pathname.slice(0, route + 1);
