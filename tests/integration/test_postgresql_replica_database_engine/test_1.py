@@ -857,6 +857,119 @@ def test_drop_database_while_enumerating_tables(started_cluster):
     assert instance.query("SELECT 1") == "1\n"
 
 
+def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster):
+    # `PostgreSQLReplicationHandler` embeds the remote table name into `CREATE PUBLICATION ... FOR
+    # TABLE ONLY ...` as a quoted identifier. `doubleQuoteString` escapes an embedded `"` as `\"`,
+    # which PostgreSQL does not accept as an escape inside a quoted identifier: the identifier ends at
+    # that quote and the remainder is executed as SQL over the simple-query protocol, as the role
+    # ClickHouse connects with. Plain `CREATE TABLE ... ENGINE = MaterializedPostgreSQL(...)` DDL
+    # reaches it: https://github.com/ClickHouse/ClickHouse/issues/118954
+    #
+    # Every scenario asserts PostgreSQL-side state, so scenario 1 fails on an unfixed server rather
+    # than merely observing a different error message.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    conn = get_postgres_conn(ip=ip, port=port, database=True)
+    cursor = conn.cursor()
+
+    def as_clickhouse_literal(name):
+        return name.replace("\\", "\\\\").replace("'", "''")
+
+    def marker_count():
+        cursor.execute(
+            "SELECT count(*) FROM pg_tables WHERE tablename = 'injected_marker'"
+        )
+        return cursor.fetchall()[0][0]
+
+    # Every scenario sets `materialized_postgresql_use_unique_replication_consumer_identifier`, which
+    # makes the replication slot the ClickHouse UUID. Otherwise the slot name embeds the remote table
+    # name and `checkReplicationSlot` rejects anything outside [a-z0-9_] before the publication is
+    # created, which is what both hides the injection and makes a legitimately odd name unusable.
+    def create_materialized_table(ch_table, remote_name_literal):
+        instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
+        ddl = f"""
+            CREATE TABLE {ch_table} (key Int32, value Int32)
+            ENGINE = MaterializedPostgreSQL('{ip}:{port}', 'postgres_database', '{remote_name_literal}', 'postgres', '{pg_pass}')
+            ORDER BY key
+            SETTINGS materialized_postgresql_use_unique_replication_consumer_identifier = 1
+            """
+        return instance.query_and_get_answer_with_error(ddl)
+
+    def wait_for_rows(ch_table, expected):
+        deadline = time.monotonic() + 120
+        last = None
+        while time.monotonic() < deadline:
+            try:
+                last = instance.query(f"SELECT count() FROM {ch_table}").strip()
+                if last == str(expected):
+                    return
+            except Exception as e:
+                last = str(e)
+            time.sleep(1)
+        raise AssertionError(
+            f"{ch_table} did not reach {expected} rows within 120 seconds, last: {last}"
+        )
+
+    def check_replicates(ch_table, remote_name):
+        # Doubling the `"` is what PostgreSQL accepts inside a quoted identifier, and the property the
+        # fix teaches ClickHouse, so the test has to spell these names the same way.
+        quoted = '"' + remote_name.replace('"', '""') + '"'
+        cursor.execute(f"DROP TABLE IF EXISTS {quoted}")
+        cursor.execute(
+            f"CREATE TABLE {quoted} (key integer PRIMARY KEY, value integer)"
+        )
+        cursor.execute(
+            f"INSERT INTO {quoted} SELECT i, i FROM generate_series(0, 49) AS i"
+        )
+        create_materialized_table(ch_table, as_clickhouse_literal(remote_name))
+        # The snapshot load quotes the relation for `SELECT ... FROM ONLY ...`.
+        wait_for_rows(ch_table, 50)
+        cursor.execute(
+            f"INSERT INTO {quoted} SELECT i, i FROM generate_series(50, 99) AS i"
+        )
+        # Ongoing replication quotes it again, into the publication the consumer subscribes to.
+        wait_for_rows(ch_table, 100)
+
+    ch_tables = [
+        "pg_inj_name",
+        "pg_inj_quote_ctl",
+        "pg_inj_backslash_ctl",
+        "pg_inj_nul",
+    ]
+    try:
+        cursor.execute("DROP TABLE IF EXISTS injected_marker")
+
+        # 1. Injection through the remote table name.
+        payload = 'a"; CREATE TABLE injected_marker(x integer); --'
+        create_materialized_table(ch_tables[0], as_clickhouse_literal(payload))
+        assert marker_count() == 0, (
+            "the remote table name was executed as SQL by PostgreSQL: the publication statement was "
+            "built with an identifier quoter that escapes a quote with a backslash"
+        )
+
+        # 2. Control: a remote table whose name contains a double quote still replicates, so the fix
+        #    escapes such a name rather than rejecting it.
+        check_replicates(ch_tables[1], 'ctl_quote_a"b')
+
+        # 3. Control: a remote table whose name contains a backslash replicates, so the backslash
+        #    reaches PostgreSQL literally instead of being doubled into a different relation name.
+        check_replicates(ch_tables[2], "ctl_backslash_a\\b")
+
+        # 4. A NUL in the remote table name creates nothing. `\0` below is a ClickHouse escape
+        #    sequence, so the name really carries a NUL; with the quote doubled the statement always
+        #    ends inside an open identifier, whatever libpq does with the NUL.
+        create_materialized_table(
+            ch_tables[3], 'nul_a\\0"; CREATE TABLE injected_marker(x integer); --'
+        )
+        assert (
+            marker_count() == 0
+        ), "a remote table name containing a NUL byte reached PostgreSQL as executable SQL"
+    finally:
+        for ch_table in ch_tables:
+            instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
+        cursor.execute("DROP TABLE IF EXISTS injected_marker")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

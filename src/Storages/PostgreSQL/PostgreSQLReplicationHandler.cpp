@@ -463,7 +463,7 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
 
     auto slot_exists = [&](const String & name)
     {
-        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_replication_slots WHERE slot_name = '{}'", name))};
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_replication_slots WHERE slot_name = {}", quoteStringPostgreSQL(name)))};
         return !result.empty();
     };
     auto publication_exists = [&](const String & name)
@@ -925,7 +925,7 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
     else
         slot_name = replication_slot;
 
-    String query_str = fmt::format("SELECT active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = '{}'", slot_name);
+    String query_str = fmt::format("SELECT active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = {}", quoteStringPostgreSQL(slot_name));
     pqxx::result result{tx.exec(query_str)};
 
     /// Replication slot does not exist
@@ -995,7 +995,7 @@ void PostgreSQLReplicationHandler::dropReplicationSlot(pqxx::nontransaction & tx
     else
         slot_name = replication_slot;
 
-    std::string query_str = fmt::format("SELECT pg_drop_replication_slot('{}')", slot_name);
+    std::string query_str = fmt::format("SELECT pg_drop_replication_slot({})", quoteStringPostgreSQL(slot_name));
 
     tx.exec(query_str);
     LOG_DEBUG(log, "Dropped replication slot: {}", slot_name);
