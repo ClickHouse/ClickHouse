@@ -4,6 +4,7 @@
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
+#include <Core/Names.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
@@ -1808,9 +1809,22 @@ public:
 
     const MergeTreeSettings & getMergeTreeSettings() const;
     const MergeTreeSettings & getReplicatedMergeTreeSettings() const;
-    /// The `compatibility` the cached baseline above was actually built with, which is whatever the
-    /// first caller's settings said and not necessarily what any later reader sees.
-    String getMergeTreeSettingsCompatibility(bool replicated) const;
+
+    /// Which names the cached baseline above was explicitly assigned, and by which of the two
+    /// steps that build it. `getMergeTreeSettings` applies the `compatibility` setting first and
+    /// the config section second, and both leave a setting merely "changed": assignment sets the
+    /// changed bit unconditionally, even when the assigned value already equals the baseline. So a
+    /// reader cannot recover this by comparing values afterwards - the sets have to be captured
+    /// while the baseline is built, which is what these are for.
+    ///
+    /// They also answer for the `compatibility` the baseline was actually built with, which is
+    /// whatever the first caller's settings said and not necessarily what any later reader sees.
+    struct MergeTreeSettingsProvenance
+    {
+        NameSet set_in_config;
+        NameSet set_by_compatibility;
+    };
+    MergeTreeSettingsProvenance getMergeTreeSettingsProvenance(bool replicated) const;
     const DatabaseReplicatedSettings & getDatabaseReplicatedSettings() const;
     const DistributedSettings & getDistributedSettings() const;
     const S3SettingsByEndpoint & getStorageS3Settings() const;

@@ -14034,37 +14034,16 @@ TableSettings MergeTreeData::getTableSettings(ContextPtr query_context) const
 
     /// A `MergeTree` table is created from the settings the server has in effect, not from the
     /// compiled defaults, and `Context` builds those by applying the `compatibility` setting first
-    /// and the config section second - see `Context::getMergeTreeSettings`. Both leave a setting
-    /// simply "changed", so telling them apart needs the two intermediate baselines rebuilt here.
-    /// The replicated family reads an additional config section and so has its own baseline.
-    const MergeTreeSettings & server_effective = supportsReplication()
-        ? query_context->getReplicatedMergeTreeSettings()
-        : query_context->getMergeTreeSettings();
-
-    const MergeTreeSettings compiled_defaults;
-    MergeTreeSettings after_compatibility(compiled_defaults);
-
-    /// Ask the context which `compatibility` it actually built the baseline with, rather than
-    /// reading one here. `Context::getMergeTreeSettings` caches the instance a table is created
-    /// from, and whichever context first asked for it decided the value for the lifetime of the
-    /// server - so a reader that consults its own settings, global or otherwise, can compare
-    /// against a baseline the server never used and report `other` where it should say
-    /// `compatibility`.
+    /// and the config section second - see `Context::getMergeTreeSettings`.
     ///
-    /// Empty by default, and then `applyCompatibilitySetting` does nothing and no setting can have
-    /// come from it - so the second baseline costs nothing in the ordinary case.
-    const String compatibility = query_context->getMergeTreeSettingsCompatibility(supportsReplication());
-    if (!compatibility.empty())
-        after_compatibility.applyCompatibilitySetting(compatibility);
-
-    NameSet changed_by_config;
-    for (const auto & change : server_effective.changesFrom(after_compatibility))
-        changed_by_config.insert(change.name);
-
-    NameSet changed_by_compatibility;
-    if (!compatibility.empty())
-        for (const auto & change : after_compatibility.changesFrom(compiled_defaults))
-            changed_by_compatibility.insert(change.name);
+    /// Ask the context which names each step assigned rather than reconstructing the baselines
+    /// here, for two reasons. Whichever context first asked for the baseline decided the
+    /// `compatibility` for the lifetime of the server, so a reader that consults its own settings
+    /// can compare against a baseline the server never used. And an explicit assignment cannot be
+    /// recovered by comparing values afterwards: assignment sets the changed bit unconditionally,
+    /// so a config section that sets a setting to the value it already had is invisible to a diff
+    /// while still being the answer to "who set this".
+    const auto provenance = query_context->getMergeTreeSettingsProvenance(supportsReplication());
 
     for (auto & setting : settings)
     {
@@ -14072,9 +14051,9 @@ TableSettings MergeTreeData::getTableSettings(ContextPtr query_context) const
             continue;
 
         /// Config before compatibility, because the config section is applied second and wins.
-        if (changed_by_config.contains(setting.name))
+        if (provenance.set_in_config.contains(setting.name))
             setting.origin = TableSettingOrigin::Config;
-        else if (changed_by_compatibility.contains(setting.name))
+        else if (provenance.set_by_compatibility.contains(setting.name))
             setting.origin = TableSettingOrigin::Compatibility;
     }
 
