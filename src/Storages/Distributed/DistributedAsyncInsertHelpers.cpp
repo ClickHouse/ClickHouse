@@ -7,10 +7,17 @@
 #include <IO/ReadBufferFromFile.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char distributed_async_insert_pause_before_send[];
+}
 
 namespace ErrorCodes
 {
@@ -75,6 +82,12 @@ void writeRemoteConvert(
     ReadBufferFromFile & in,
     LoggerPtr log)
 {
+    /// Every async send of a spool file passes through here, so a killed flush stops at the next
+    /// file instead of at the end of the backlog. No-op off-query, which is what the background
+    /// sender is, so it can never abort a background send.
+    CurrentThread::checkIfNotCancelled();
+    FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_pause_before_send);
+
     if (remote.getHeader().empty())
     {
         CheckingCompressedReadBuffer checking_in(in);

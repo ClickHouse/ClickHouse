@@ -18,6 +18,7 @@
 #include <Disks/IDisk.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
@@ -77,6 +78,9 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Upper bound on how long a flush can stay unaware that its query was killed.
+constexpr auto flush_lock_wait_slice = std::chrono::milliseconds{100};
 
 template <typename PoolFactory>
 ConnectionPoolPtrs createPoolsForAddresses(const Cluster::Addresses & addresses, PoolFactory && factory, LoggerPtr log)
@@ -170,7 +174,17 @@ void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & 
     if (pending_files.isFinished())
         return;
 
-    std::lock_guard lock{mutex};
+    /// A drain can hold `mutex` for the whole pending backlog, so the wait is sliced to stay
+    /// cancellable, and the check follows the acquiring attempt too: a kill can land inside it.
+    /// No deadline: the flush must still complete in full, only not outlive the query asking for it.
+    std::unique_lock lock(mutex, std::defer_lock);
+    bool locked = false;
+    while (!locked)
+    {
+        locked = lock.try_lock_for(flush_lock_wait_slice);
+        CurrentThread::checkIfNotCancelled();
+    }
+
     if (!hasPendingFiles())
         return;
     processFiles(/*force=*/true, settings_changes);
@@ -431,6 +445,10 @@ try
 }
 catch (...)
 {
+    /// A kill is not a send failure: counting it would double the send backoff
+    /// (`calculateSleepTime`) and surface as `last_exception` in `system.distribution_queue`.
+    CurrentThread::checkIfNotCancelled();
+
     ProfileEvents::increment(ProfileEvents::DistributedAsyncInsertionFailures);
 
     std::lock_guard status_lock(status_mutex);
@@ -592,8 +610,16 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, 
 
     try
     {
-        while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(file_path))
+        while (force || !monitor_blocker.isCancelled())
         {
+            /// Before the pop, not after: the catch below requeues only files already added to a
+            /// batch, so throwing between the pop and `batch.files.push_back` would strand this
+            /// `.bin` until the next `initializeFilesFromDisk()`.
+            CurrentThread::checkIfNotCancelled();
+
+            if (pending_files.isFinished() || !pending_files.tryPop(file_path))
+                break;
+
             if (!fs::exists(file_path))
             {
                 LOG_WARNING(log, "File {} does not exist, likely due to current_batch.txt processing", file_path);

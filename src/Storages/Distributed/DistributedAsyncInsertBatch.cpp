@@ -8,6 +8,7 @@
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/formatReadable.h>
@@ -210,8 +211,11 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     /// hold an unsent file in front of a quarantined one. Never finalize a file that
     /// still exists here. Resending it may duplicate rows, deleting it loses them.
     auto first_existing_file = files.begin();
+    /// A recovered batch lists as many files as the batch limits allowed, and each one is stat'ed
+    /// and has its header read, so a killed flush must not scan the whole list before it stops.
     while (first_existing_file != files.end() && !fs::exists(*first_existing_file))
     {
+        CurrentThread::checkIfNotCancelled();
         LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", *first_existing_file);
         ++first_existing_file;
     }
@@ -220,6 +224,8 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     /// A missing file inside the surviving suffix cannot be recovered safely.
     for (const auto & file : files)
     {
+        CurrentThread::checkIfNotCancelled();
+
         if (!fs::exists(file))
         {
             LOG_WARNING(parent.log, "File {} does not exist, likely due abnormal shutdown", file);
