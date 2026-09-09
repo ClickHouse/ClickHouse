@@ -199,7 +199,7 @@ def test_remote_read_needs_the_select_grant():
         node.ip_address, 9093, f"{DIST}/read", read_request
     )
     assert allowed.headers["X-ClickHouse-Exception-Code"] == error_code(
-        "NOT_IMPLEMENTED"
+        node, "NOT_IMPLEMENTED"
     )
 
     # The restricted caller is stopped before that, so the refusal never reaches it.
