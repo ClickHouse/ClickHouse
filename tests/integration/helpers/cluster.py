@@ -2743,6 +2743,11 @@ class ClickHouseCluster:
             exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
             output = self.docker_client.api.exec_start(exec_id, detach=detach)
 
+            if detach:
+                # A detached exec is left running, so docker reports `ExitCode: None` for it; a
+                # value here would only mean it happened to finish first, which was not waited for.
+                return exec_id if get_exec_id else output
+
             exit_code = self.docker_client.api.exec_inspect(exec_id)["ExitCode"]
             if exit_code:
                 container_info = self.docker_client.api.inspect_container(container_id)
@@ -2762,10 +2767,8 @@ class ClickHouseCluster:
                     logging.debug(message)
                 else:
                     raise Exception(message)
-            if not detach:
-                assert not get_exec_id
-                return output.decode()
-            return exec_id if get_exec_id else output
+            assert not get_exec_id
+            return output.decode()
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
