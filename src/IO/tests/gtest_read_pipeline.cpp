@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Core/ServerUUID.h>
 #include <IO/ReadPipeline.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -8,10 +9,12 @@
 #include <Common/PageCache.h>
 #include <base/scope_guard.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <stdexcept>
 
 
 using namespace DB;
@@ -36,9 +39,12 @@ namespace
 class TestReadBuffer : public ReadBufferFromFileBase
 {
 public:
-    explicit TestReadBuffer(String data_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE)
+    explicit TestReadBuffer(
+        String data_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, std::function<void()> cancellation_hook_ = {})
         : ReadBufferFromFileBase(buf_size, nullptr, 0)
         , data(std::move(data_))
+        , chunk_size(buf_size)
+        , cancellation_hook(std::move(cancellation_hook_))
     {
     }
 
@@ -60,9 +66,11 @@ public:
 private:
     bool nextImpl() override
     {
+        if (cancellation_hook)
+            cancellation_hook();
         if (file_offset >= data.size())
             return false;
-        size_t to_read = std::min(data.size() - file_offset, internal_buffer.size());
+        size_t to_read = std::min({data.size() - file_offset, internal_buffer.size(), chunk_size});
         memcpy(internal_buffer.begin(), data.data() + file_offset, to_read);
         working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + to_read);
         file_offset += to_read;
@@ -70,6 +78,8 @@ private:
     }
 
     String data;
+    size_t chunk_size;
+    std::function<void()> cancellation_hook;
     size_t file_offset = 0;
 };
 
@@ -110,6 +120,7 @@ StoredObject testObject(size_t size = 100)
 
 FileCachePtr createTestFileCache(const String & name)
 {
+    ServerUUID::setRandomForUnitTests();
     const auto cache_path = fs::current_path() / (name + "_cache");
     fs::remove_all(cache_path);
     fs::create_directories(cache_path);
@@ -125,6 +136,23 @@ FileCachePtr createTestFileCache(const String & name)
     auto cache = FileCacheFactory::instance().getOrCreate(name, settings, "");
     cache->initialize();
     return cache;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> createCachedCancellationReader(
+    const FileCachePtr & cache, std::function<void()> cancellation_hook = {})
+{
+    ReadSettings settings;
+    settings.remote_fs_settings.buffer_size = 4;
+    settings.local_fs_settings.buffer_size = 4;
+    ReadPipeline pipeline(cancellation_hook);
+    pipeline.setSource(
+        [cancellation_hook](const StoredObject &, const ReadSettings &, bool, bool)
+        {
+            return std::make_unique<TestReadBuffer>("abcdefghijkl", 4, cancellation_hook);
+        },
+        StoredObjects{testObject(12)}, settings);
+    pipeline.needFilesystemCache(cache, FilesystemCacheSettings{});
+    return pipeline.build();
 }
 
 }
@@ -321,6 +349,72 @@ try
     String result;
     readStringUntilEOF(result, *buf);
     EXPECT_EQ(result, data);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, FilesystemCacheDoesNotShareCancelledCopySource)
+try
+{
+    const String cache_name = "read_pipeline_cancelled_source";
+    auto cache = createTestFileCache(cache_name);
+    SCOPE_EXIT({
+        FileCacheFactory::instance().clear();
+        fs::remove_all(fs::current_path() / (cache_name + "_cache"));
+    });
+
+    bool cancelled = false;
+    auto copy = createCachedCancellationReader(cache, [&]
+    {
+        if (cancelled)
+            throw std::runtime_error("copy cancelled");
+    });
+    String prefix(4, '\0');
+    copy->readStrict(prefix.data(), prefix.size());
+    ASSERT_EQ(prefix, "abcd");
+    const auto segments = cache->getFileSegmentInfos(FileCache::getCommonOrigin().user_id);
+    ASSERT_EQ(segments.size(), 1u);
+    ASSERT_EQ(segments.front().downloaded_size, 4u);
+    cancelled = true;
+
+    /// Keep the first reader alive while another reader continues its partially cached segment.
+    auto ordinary = createCachedCancellationReader(cache);
+    String result;
+    readStringUntilEOF(result, *ordinary);
+    EXPECT_EQ(result, "abcdefghijkl");
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, FilesystemCacheCopyDoesNotInheritUncancellableSource)
+try
+{
+    const String cache_name = "read_pipeline_inherited_source";
+    auto cache = createTestFileCache(cache_name);
+    SCOPE_EXIT({
+        FileCacheFactory::instance().clear();
+        fs::remove_all(fs::current_path() / (cache_name + "_cache"));
+    });
+
+    auto ordinary = createCachedCancellationReader(cache);
+    String prefix(4, '\0');
+    ordinary->readStrict(prefix.data(), prefix.size());
+    ASSERT_EQ(prefix, "abcd");
+    const auto segments = cache->getFileSegmentInfos(FileCache::getCommonOrigin().user_id);
+    ASSERT_EQ(segments.size(), 1u);
+    ASSERT_EQ(segments.front().downloaded_size, 4u);
+
+    auto copy = createCachedCancellationReader(cache, [] { throw std::runtime_error("copy cancelled"); });
+    /// Already cached bytes remain readable; the first source miss must check this copy's hook.
+    copy->readStrict(prefix.data(), prefix.size());
+    ASSERT_EQ(prefix, "abcd");
+    EXPECT_THROW(copy->next(), std::runtime_error);
 }
 catch (...)
 {

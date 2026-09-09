@@ -891,7 +891,36 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
 
 
 @pytest.fixture
-def s3_cancellation(cluster, broken_s3):
+def s3_cancellation_read_mode(request, cluster, broken_s3):
+    if not hasattr(request, "param"):
+        yield None
+        return
+
+    node = cluster.instances["node"]
+    config_path = "/etc/clickhouse-server/users.d/users.xml"
+    original_config = node.exec_in_container(["cat", config_path])
+    assert original_config.count("</profiles>") == 1
+    assert "<background>" not in original_config
+    profile = (
+        "<background><profile>default</profile>"
+        f"<use_reader_executor>{request.param}</use_reader_executor>"
+        "<remote_filesystem_read_method>read</remote_filesystem_read_method>"
+        "<use_page_cache_for_disks_without_file_cache>0</use_page_cache_for_disks_without_file_cache>"
+        "</background>"
+    )
+    try:
+        with node.with_replace_config(
+            config_path, original_config.replace("</profiles>", profile + "</profiles>")
+        ):
+            node.restart_clickhouse()
+            yield request.param
+    finally:
+        broken_s3.reset()
+        node.restart_clickhouse()
+
+
+@pytest.fixture
+def s3_cancellation(cluster, broken_s3, s3_cancellation_read_mode):
     node = cluster.instances["node"]
     table = "cancel_s3"
     try:
@@ -1027,6 +1056,70 @@ def test_cancelling_untouched_mutation_copy_stops_s3_retries(
     )
     wait_for_s3_request(broken_s3, "object_upload", count=2)
     assert_s3_cancelled(node, table, request, broken_s3, "object_upload")
+
+
+@pytest.mark.parametrize(
+    "s3_cancellation_read_mode", [0, 1], indirect=True, ids=["legacy", "executor"]
+)
+def test_cancelling_packed_mutation_copy_source_stops_s3_retries(
+    s3_cancellation, broken_s3, s3_cancellation_read_mode
+):
+    node, table = s3_cancellation
+    node.query(
+        f"CREATE TABLE {table} (key UInt32, value String) "
+        "ENGINE=MergeTree ORDER BY key "
+        "SETTINGS storage_policy='broken_s3_long_retries', "
+        "always_use_copy_instead_of_hardlinks=1, min_bytes_for_full_part_storage='10M'"
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(10000)")
+    assert node.query(
+        f"SELECT part_storage_type FROM system.parts "
+        f"WHERE database=currentDatabase() AND table='{table}' AND active"
+    ).strip() == "Packed"
+
+    failpoint = "packed_part_freeze_pause_before_copy"
+    try:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        request = node.get_query_request(
+            f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
+            timeout=30,
+        )
+        node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        mutation_query_id = node.query(
+            "SELECT concat(toString(t.uuid), '::', m.result_part_name) "
+            "FROM system.merges AS m INNER JOIN system.tables AS t "
+            "ON m.database=t.database AND m.table=t.name "
+            f"WHERE m.database=currentDatabase() AND m.table='{table}'"
+        ).strip()
+        assert mutation_query_id
+        log_line = node.count_log_lines()
+
+        # The predicate finished before this gate. Only the physical copy sees GET failures.
+        broken_s3.reset()
+        broken_s3.setup_at_object_read(action="internal_error", count=10000)
+        node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        wait_for_s3_request(broken_s3, "object_read", count=2)
+
+        # The packed view wraps a disk pipeline; prove that inner pipeline's actual reader.
+        copy_log = node.exec_in_container(
+            ["tail", "-n", f"+{log_line + 1}", "/var/log/clickhouse-server/clickhouse-server.log"]
+        )
+        mutation_log = "\n".join(
+            line for line in copy_log.splitlines() if "{" + mutation_query_id + "}" in line
+        )
+        executor = "ReadPipeline: build: using ReaderExecutor for object storage"
+        if s3_cancellation_read_mode:
+            assert executor in mutation_log, mutation_log
+        else:
+            assert "ReadBufferFromRemoteFSGather: Reading from file:" in mutation_log, mutation_log
+            assert executor not in mutation_log, mutation_log
+
+        assert_s3_cancelled(node, table, request, broken_s3, "object_read")
+    finally:
+        try:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        finally:
+            broken_s3.reset()
 
 
 def test_cancelling_partial_mutation_copy_stops_s3_retries(

@@ -80,7 +80,8 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     const FilesystemCacheSettings & cache_settings_,
     size_t local_fs_buffer_size_,
     size_t read_until_position_,
-    ThrottlerPtr local_throttler_)
+    ThrottlerPtr local_throttler_,
+    bool use_private_remote_reader_)
     : cache_key(cache_key_)
     , source_file_path(source_file_path_)
     , implementation_buffer_creator(impl_creator_)
@@ -88,6 +89,7 @@ CachedOnDiskReadBufferFromFile::ReadInfo::ReadInfo(
     , cache_settings(cache_settings_)
     , local_fs_buffer_size(local_fs_buffer_size_)
     , local_throttler(std::move(local_throttler_))
+    , use_private_remote_reader(use_private_remote_reader_)
     , read_until_position(read_until_position_)
 {
 }
@@ -114,7 +116,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
-    ThrottlerPtr local_throttler_)
+    ThrottlerPtr local_throttler_,
+    bool use_private_remote_reader_)
     : ReadBufferFromFileBase(
         /* buf_size */use_external_buffer_ ? 0 : remote_fs_buffer_size_,
         /* existing_memory */nullptr,
@@ -142,7 +145,8 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
         cache_settings_,
         local_fs_buffer_size_,
         read_until_position_.value_or(file_size_),
-        std::move(local_throttler_))
+        std::move(local_throttler_),
+        use_private_remote_reader_)
 {
     LOG_TEST(
         log, "Cache key: {}, source file path: {}, boundary alignment: {}, "
@@ -497,6 +501,25 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
             return impl;
         return std::make_unique<BoundedReadBuffer>(std::move(impl));
     };
+
+    if (info.use_private_remote_reader
+        && (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE || read_type == ReadType::REMOTE_FS_READ_BYPASS_CACHE))
+    {
+        size_t read_offset = offset;
+        if (read_type == ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE)
+        {
+            /// Only the downloader may discard a shared source. Its offset becomes stale once
+            /// this private reader adds bytes; it must not be inherited by the next downloader.
+            file_segment.resetRemoteFileReader();
+            read_offset = file_segment.getCurrentWriteOffset();
+        }
+
+        /// Share cached bytes, never a source carrying another operation's cancellation hook.
+        /// Keeping the reader out of `FileSegment` also prevents background download from owning it.
+        if (!info.remote_file_reader || info.remote_file_reader->getFileOffsetOfBufferEnd() != read_offset)
+            info.remote_file_reader = create_remote_read_buffer();
+        return info.remote_file_reader;
+    }
 
     switch (read_type)
     {
@@ -1835,7 +1858,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
         info.use_external_buffer, info.cache_settings, info.local_fs_buffer_size,
-        /* read_until_position */range_begin + n, info.local_throttler);
+        /* read_until_position */range_begin + n, info.local_throttler, info.use_private_remote_reader);
 
     if (info.cache_settings.temp_cache_only)
     {

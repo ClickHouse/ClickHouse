@@ -266,9 +266,12 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjectForCopy(
     const StoredObject & object,
     const ReadSettings & read_settings,
-    const std::function<void()> & cancellation_hook) const
+    const std::function<void()> & cancellation_hook,
+    std::optional<size_t>,
+    bool use_external_buffer,
+    bool restrict_seek) const
 {
-    return readObjectImpl(object, read_settings, /*use_external_buffer=*/ false, /*restrict_seek=*/ false, cancellation_hook);
+    return readObjectImpl(object, read_settings, use_external_buffer, restrict_seek, cancellation_hook);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjectImpl(

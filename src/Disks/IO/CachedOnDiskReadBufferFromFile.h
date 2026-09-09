@@ -43,7 +43,8 @@ public:
         bool use_external_buffer_,
         std::optional<size_t> read_until_position_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
-        ThrottlerPtr local_throttler_ = nullptr);
+        ThrottlerPtr local_throttler_ = nullptr,
+        bool use_private_remote_reader_ = false);
 
     ~CachedOnDiskReadBufferFromFile() override;
 
@@ -101,7 +102,8 @@ public:
             const FilesystemCacheSettings & cache_settings_,
             size_t local_fs_buffer_size_,
             size_t read_until_position_,
-            ThrottlerPtr local_throttler_ = nullptr);
+            ThrottlerPtr local_throttler_ = nullptr,
+            bool use_private_remote_reader_ = false);
 
         /// The readers can be reused among different ReadFromFileSegmentState
         /// objects, therefore they are stored here.
@@ -123,6 +125,8 @@ public:
         const size_t local_fs_buffer_size;
         /// Throttler for local filesystem reads (cache file reads).
         const ThrottlerPtr local_throttler;
+        /// Operation-owned source readers must not be shared through `FileSegment`.
+        const bool use_private_remote_reader;
 
         /// Non-included range end offset.
         size_t read_until_position = 0;

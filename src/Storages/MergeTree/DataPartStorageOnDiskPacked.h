@@ -163,12 +163,14 @@ private:
     /// path. We route the inner-archive header read through the outer reader instead. The archive
     /// helpers (copy/filter/seedFrom/hasSkipIndicesPackedArchive) rely on this returning the inner
     /// reader for packed source parts.
-    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const override;
+    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader(
+        const std::function<void()> & cancellation_hook = {}) const override;
 
     /// Disable the base file-read overlay for packed storage: its standalone-archive read
     /// composition can't reach a skp_idx.packed that lives inside data.packed. The *Impl hooks above
     /// serve the index substreams instead (via the inner-archive composition).
-    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string &) const override { return nullptr; }
+    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(
+        const std::string &, const std::function<void()> & = {}) const override { return nullptr; }
 
     void resetReader(const ReadSettings & read_settings);
     void resetWriterFromTransaction();

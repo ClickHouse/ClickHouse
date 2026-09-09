@@ -98,11 +98,14 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 std::unique_ptr<ReadBufferFromFileBase> IObjectStorage::readObjectForCopy(
     const StoredObject & object,
     const ReadSettings & read_settings,
-    const std::function<void()> & cancellation_hook) const
+    const std::function<void()> & cancellation_hook,
+    std::optional<size_t> read_hint,
+    bool use_external_buffer,
+    bool restrict_seek) const
 {
     if (cancellation_hook)
         cancellation_hook();
-    return readObject(object, read_settings);
+    return readObject(object, read_settings, read_hint, use_external_buffer, restrict_seek);
 }
 
 const std::string & IObjectStorage::getCacheName() const

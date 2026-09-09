@@ -78,9 +78,10 @@ void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path)
 std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
     const std::string & name,
     const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
+    std::optional<size_t> read_hint,
+    std::function<void()> cancellation_hook) const
 {
-    ReadPipeline pipeline;
+    ReadPipeline pipeline(std::move(cancellation_hook));
     prepareRead(name, settings, read_hint, pipeline);
     return pipeline.build();
 }
@@ -1134,13 +1135,14 @@ bool DataPartStorageOnDiskBase::isCaseInsensitive() const
     return getDisk()->isCaseInsensitive();
 }
 
-std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveReaderForFile(const std::string & name) const
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveReaderForFile(
+    const std::string & name, const std::function<void()> & cancellation_hook) const
 {
     /// Prefix gate: only "skp_idx_..." names can be archive members, so unrelated files never load
     /// or probe skp_idx.packed.
     if (!looksLikePackedSkipIndexFile(name))
         return nullptr;
-    auto reader = getSkipIndicesPackedReader();
+    auto reader = getSkipIndicesPackedReader(cancellation_hook);
     return (reader && reader->exists(name)) ? reader : nullptr;
 }
 
@@ -1164,7 +1166,7 @@ void DataPartStorageOnDiskBase::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    if (auto reader = getArchiveReaderForFile(name))
+    if (auto reader = getArchiveReaderForFile(name, pipeline.getCancellationHook()))
     {
         /// Members of skp_idx.packed skip the disk's normal pipeline (filesystem cache, async
         /// prefetch) and read through PackedFilesReader::readFile, which opens the archive via the
@@ -1173,9 +1175,10 @@ void DataPartStorageOnDiskBase::prepareRead(
         auto disk = volume->getDisk();
         String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
         ReadPipeline::BufferCreator creator =
-            [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
+            [reader, disk, archive_path, name, read_hint, cancellation_hook = pipeline.getCancellationHook()]
+            (const StoredObject &, const ReadSettings & s, bool, bool)
             {
-                return reader->readFile(disk, archive_path, name, s, read_hint);
+                return reader->readFile(disk, archive_path, name, s, read_hint, cancellation_hook);
             };
         pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
         return;
@@ -1196,8 +1199,11 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExi
     return readFileIfExistsImpl(name, settings, read_hint);
 }
 
-std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader(
+    const std::function<void()> & cancellation_hook) const
 {
+    if (cancellation_hook)
+        cancellation_hook();
     std::lock_guard lock(skip_indices_packed_mutex);
     if (skip_indices_packed_probed)
         return skip_indices_packed_reader;
@@ -1220,10 +1226,12 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
         Expect404ResponseScope scope;
         try
         {
-            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{}, cancellation_hook);
         }
         catch (const Exception &)
         {
+            if (cancellation_hook)
+                cancellation_hook();
             if (disk->existsFile(packed_path))
                 throw;
             return nullptr;
@@ -1277,7 +1285,7 @@ void DataPartStorageOnDiskBase::copyArchiveEntryTo(
     /// Route the read through this storage's readFile (the overlay), not source_archive.readFile,
     /// so a storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
     const auto file_size = source_archive.getFileSize(file_name);
-    auto src = readFile(file_name, read_settings, file_size);
+    auto src = readFile(file_name, read_settings, file_size, cancellation_hook);
     auto dst = target.writeFile(file_name);
     copyData(*src, *dst, cancellation_hook);
     dst->finalize();
@@ -1295,7 +1303,7 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     if (file_names.empty())
         return;
 
-    auto source_archive = getSkipIndicesPackedReader();
+    auto source_archive = getSkipIndicesPackedReader(cancellation_hook);
     if (!source_archive)
         return;
 
@@ -1315,7 +1323,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     MergeTreeDataPartChecksums & checksums,
     bool sync) const
 {
-    auto source_archive = getSkipIndicesPackedReader();
+    auto source_archive = getSkipIndicesPackedReader(cancellation_hook);
     if (!source_archive)
         return;
 

@@ -151,7 +151,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const std::string & name,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const;
+        std::optional<size_t> read_hint,
+        std::function<void()> cancellation_hook = {}) const;
 
     /// Populate a ReadPipeline with the stages needed to read from this part storage.
     /// Every implementation must override this method.
