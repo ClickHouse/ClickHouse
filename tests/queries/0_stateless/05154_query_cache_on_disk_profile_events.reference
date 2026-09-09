@@ -1,0 +1,15 @@
+-- A miss in both backends is one QueryCacheMisses and no age
+499500
+QueryCacheMisses	1
+QueryCacheOnDiskMisses	1
+QueryCacheAgeSeconds >= 1	0
+-- A miss in memory followed by a hit on disk is one QueryCacheHits, no miss, and the age of the entry
+499500
+QueryCacheHits	1
+QueryCacheOnDiskHits	1
+QueryCacheAgeSeconds >= 1	1
+-- A lookup that consults only the disk still records the overall miss
+500500
+QueryCacheMisses	1
+QueryCacheOnDiskMisses	1
+QueryCacheAgeSeconds >= 1	0

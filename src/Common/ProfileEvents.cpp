@@ -171,13 +171,13 @@
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(EncryptionHeaderCacheHits, "Number of times encryption header bytes were found in the encryption header cache, so the source read of the header was skipped.", ValueType::Number) \
     M(EncryptionHeaderCacheMisses, "Number of times encryption header bytes were not found in the encryption header cache, so they were read from the source.", ValueType::Number) \
-    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
-    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
-    M(QueryCacheOnDiskHits, "Number of times a query result has been found in the query cache on disk (see setting query_cache_on_disk_cache_name). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
-    M(QueryCacheOnDiskMisses, "Number of times a query result has not been found in the query cache on disk (see setting query_cache_on_disk_cache_name). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Counts the query cache as a whole: a miss in memory followed by a hit in the query cache on disk is one hit. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Counts the query cache as a whole: a query is a miss only if it was found in neither the in-memory nor the on-disk backend. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheOnDiskHits, "Number of times a query result has been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheHits. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheOnDiskMisses, "Number of times a query result has not been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheMisses. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheOnDiskReadBytes, "Number of serialized bytes read from the query cache on disk.", ValueType::Bytes) \
     M(QueryCacheOnDiskWrittenBytes, "Number of serialized bytes written into the query cache on disk.", ValueType::Bytes) \
-    M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.", ValueType::Number) \
+    M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. Only updated for hits, of both the in-memory and the on-disk backend of the query cache.", ValueType::Number) \
     M(QueryCacheReadRows, "The number of rows read from the query cache.", ValueType::Number) \
     M(QueryCacheReadBytes, "The number of (uncompressed) bytes read from the query cache.", ValueType::Bytes) \
     M(QueryCacheWrittenRows, "The number of rows saved into the query cache.", ValueType::Number) \

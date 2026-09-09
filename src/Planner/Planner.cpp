@@ -2703,6 +2703,8 @@ void Planner::buildPlanForQueryNode()
                 reader.reset();
         }
 
+        QueryResultCacheReader::recordProbeResult(reader.has_value());
+
         if (reader)
         {
             addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());

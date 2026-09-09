@@ -933,9 +933,6 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         return;
     }
 
-    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
-    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
-
     if (!entry_key.is_compressed)
     {
         // Cloning chunks isn't exactly great. It could be avoided by another indirection, i.e. wrapping Entry's members chunks, totals and
@@ -982,13 +979,26 @@ bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) con
 
     if (update_profile_events)
     {
+        /// Only the per-backend breakdown of the on-disk cache is recorded here. `QueryCacheHits` / `QueryCacheMisses` describe
+        /// the query result cache as a whole and are recorded by `recordProbeResult` once every backend has been probed: with
+        /// both backends enabled, a miss in memory followed by a hit on disk is a hit of the query result cache.
         if (source == Source::OnDisk)
             ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheOnDiskHits : ProfileEvents::QueryCacheOnDiskMisses);
-        else
-            ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheHits : ProfileEvents::QueryCacheMisses);
+
+        /// The age of the entry is a property of the hit and not of the backend that served it, so it is recorded for both.
+        if (has_entry)
+        {
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - created_at).count();
+            ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
+        }
     }
 
     return has_entry;
+}
+
+void QueryResultCacheReader::recordProbeResult(bool has_entry)
+{
+    ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheHits : ProfileEvents::QueryCacheMisses);
 }
 
 

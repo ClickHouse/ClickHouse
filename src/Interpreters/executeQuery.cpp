@@ -3053,6 +3053,8 @@ static BlockIO executeQueryImpl(
                             reader.reset();
                     }
 
+                    QueryResultCacheReader::recordProbeResult(reader.has_value());
+
                     if (reader)
                     {
                         result_details.query_cache_entry_created_at = reader->entryCreatedAt();

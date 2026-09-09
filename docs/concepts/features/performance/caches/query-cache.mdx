@@ -78,7 +78,9 @@ use_query_cache = true`) but one should keep in mind that all `SELECT` queries m
 The query cache can be cleared using statement `SYSTEM CLEAR QUERY CACHE`. The content of the query cache is displayed in system table
 [system.query_cache](/reference/system-tables/query_cache). The number of query cache hits and misses since database start are shown as events
 "QueryCacheHits" and "QueryCacheMisses" in system table [system.events](/reference/system-tables/events). Both counters are only updated for
-`SELECT` queries which run with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". Field `query_cache_usage`
+`SELECT` queries which run with setting `use_query_cache = true`, other queries do not affect "QueryCacheMisses". They describe the query
+cache as a whole: with the query cache on disk enabled (see below), a query that misses in memory and is then served from disk counts as
+one "QueryCacheHits", and a query that misses in both backends counts as one "QueryCacheMisses". Field `query_cache_usage`
 in system table [system.query_log](/reference/system-tables/query_log) shows for each executed query whether the query result was written into or
 read from the query cache. Metrics `QueryCacheEntries` and `QueryCacheBytes` in system table
 [system.metrics](/reference/system-tables/metrics) show how many entries / bytes the query cache currently contains.
@@ -298,7 +300,9 @@ cache itself apply. Statement `SYSTEM DROP FILESYSTEM CACHE '<name>'` removes th
 cache; `SYSTEM CLEAR QUERY CACHE` only clears the in-memory query cache. Likewise, system table
 [system.query_cache](/reference/system-tables/query_cache) shows only the entries of the in-memory query cache. The number of query
 cache hits and misses on disk are shown as events "QueryCacheOnDiskHits" and "QueryCacheOnDiskMisses" in system table
-[system.events](/reference/system-tables/events).
+[system.events](/reference/system-tables/events). These are the breakdown of the on-disk backend alone, whereas "QueryCacheHits" and
+"QueryCacheMisses" stay the counters of the query cache as a whole, and "QueryCacheAgeSeconds" accounts for hits of both backends. The
+in-memory cache is probed first, so the number of in-memory hits is "QueryCacheHits" minus "QueryCacheOnDiskHits".
 
 ## Related content {#related-content}
 
