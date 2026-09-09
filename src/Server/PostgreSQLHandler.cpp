@@ -1233,6 +1233,82 @@ static String removePgCatalogQualifier(const String & query)
     return result;
 }
 
+/// `pg_table_is_visible(oid)` answers whether a relation can be referenced without a schema qualifier,
+/// which is what psql's `\d` and `\dt` use to filter the relation list. The emulated `pg_class` exposes
+/// every ClickHouse database as a schema, so the answer is not a constant: an unqualified name resolves in
+/// the current database only, and a relation of another database is reachable only through its schema. The
+/// call is therefore rewritten into a search-path check against the emulated catalog - the current
+/// database, plus the built-in `pg_catalog` rows, which are always on the search path in PostgreSQL too.
+/// The global SQL function of the same name keeps returning 1: outside a PostgreSQL session there is no
+/// emulated catalog to consult.
+static String rewritePgTableIsVisible(const String & query)
+{
+    static constexpr std::string_view function_name = "pg_table_is_visible";
+    static constexpr std::string_view visible_oids
+        = "SELECT oid FROM pg_class_oids WHERE database = currentDatabase()"
+          " UNION ALL SELECT oid FROM pg_class WHERE relnamespace = 11 AND oid < 16384";
+
+    /// A fast path for the common case of a query that does not call the function at all.
+    if (std::search(query.begin(), query.end(), function_name.begin(), function_name.end(),
+            [](char a, char b) { return equalsCaseInsensitive(a, b); }) == query.end())
+        return query;
+
+    std::vector<Token> tokens;
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        tokens.push_back(token);
+
+    String result;
+    result.reserve(query.size());
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        const Token & token = tokens[i];
+        std::string_view text(token.begin, token.size());
+        /// PostgreSQL folds an unquoted identifier to lower case, so any spelling of the name calls the
+        /// same function; a quoted identifier keeps its case there, so only the exact spelling matches.
+        const bool is_call = (token.type == TokenType::BareWord && equalsCaseInsensitive(text, function_name))
+            || (token.type == TokenType::QuotedIdentifier && text == "\"pg_table_is_visible\"");
+        if (!is_call)
+        {
+            result.append(token.begin, token.end);
+            continue;
+        }
+
+        /// The argument list must follow immediately, and its parentheses have to balance. Anything else is
+        /// not a call this rewrite understands (a column of that name, a truncated query), and is left as
+        /// it is for the parser to deal with.
+        size_t open = i + 1;
+        while (open < tokens.size() && !tokens[open].isSignificant())
+            ++open;
+        if (open >= tokens.size() || tokens[open].type != TokenType::OpeningRoundBracket)
+        {
+            result.append(token.begin, token.end);
+            continue;
+        }
+
+        size_t depth = 0;
+        size_t close = open;
+        for (; close < tokens.size(); ++close)
+        {
+            if (tokens[close].type == TokenType::OpeningRoundBracket)
+                ++depth;
+            else if (tokens[close].type == TokenType::ClosingRoundBracket && --depth == 0)
+                break;
+        }
+        if (close >= tokens.size())
+        {
+            result.append(token.begin, token.end);
+            continue;
+        }
+
+        /// The argument is emitted once, so an expression with a side effect is not evaluated twice.
+        const std::string_view argument(tokens[open].end, static_cast<size_t>(tokens[close].begin - tokens[open].end));
+        result += fmt::format("(({}) IN ({}))", argument, visible_oids);
+        i = close;
+    }
+    return result;
+}
+
 PostgreSQLHandler::CopyQueryResult PostgreSQLHandler::processCopyQuery(const String & query)
 {
     copy_protocol_error = false;
@@ -1930,7 +2006,7 @@ void PostgreSQLHandler::processQuery()
 
         /// PostgreSQL clients qualify catalog objects with the `pg_catalog` schema; the emulated
         /// catalog lives in per-session temporary views instead, so the qualifier is stripped here.
-        String query_text = removePgCatalogQualifier(query->query);
+        String query_text = rewritePgTableIsVisible(removePgCatalogQualifier(query->query));
 
         /// The message is split into statements without parsing them: a PostgreSQL simple-query
         /// message may mix ClickHouse SQL with statements only this handler understands (`BEGIN`,
@@ -2178,7 +2254,7 @@ void PostgreSQLHandler::processParseQuery()
 
         auto statement = make_intrusive<ASTPreparedStatement>();
         statement->function_name = query->function_name;
-        statement->function_body = removePgCatalogQualifier(query->sql_query);
+        statement->function_body = rewritePgTableIsVisible(removePgCatalogQualifier(query->sql_query));
         statement->parameter_types = query->parameter_types;
         prepared_statements_manager.addStatement(statement.get());
         message_transport->send(PostgreSQLProtocol::Messaging::ParseQueryComplete(), true);
@@ -2569,7 +2645,7 @@ void PostgreSQLHandler::initializeSystemTables(ContextMutablePtr query_context)
     /// select an unsupported input path.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_type SQL SECURITY INVOKER AS
 SELECT * FROM VALUES(
-    'oid UInt32, typnamespace UInt32, typname String, typrelid UInt32, typnotnull UInt8, typtype String, typreceive UInt32, typelem UInt32, typbasetype UInt32, typcategory String',
+    'oid UInt32, typnamespace UInt32, typname String, typrelid UInt32, typnotnull Bool, typtype String, typreceive UInt32, typelem UInt32, typbasetype UInt32, typcategory String',
     (16,   11, 'bool',        0, 0, 'b', 0, 0, 0, 'B'),
     (17,   11, 'bytea',       0, 0, 'b', 0, 0, 0, 'U'),
     (18,   11, 'char',        0, 0, 'b', 0, 0, 0, 'S'),
@@ -2851,9 +2927,13 @@ SELECT * FROM VALUES(
     /// PostgreSQL proper, because the emulated view renders them differently: `pg_attribute.attnotnull` is
     /// declared `text` (the view emits the strings 't'/'f', which do not parse as a boolean), and
     /// `pg_attribute.attnum` / `attndims` / `atttypmod` are `int4` (the view emits plain integers).
+    /// The boolean columns of the emulated catalog (`pg_type.typnotnull`, `pg_attribute.attisdropped`) are
+    /// backed by `Bool` rather than `UInt8` so that the `RowDescription` a client receives for them says
+    /// `bool`, which is both what these rows declare and what PostgreSQL says; a `UInt8` would be sent as
+    /// `int2` and contradict the declaration.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_attribute SQL SECURITY INVOKER AS
 SELECT atttypid, attrelid, attname, attnum, attisdropped, atttypmod, attnotnull, attndims, attgenerated, 't' AS attelemnotnull FROM VALUES(
-    'atttypid UInt32, attrelid UInt32, attname String, attnum Int32, attisdropped UInt8, atttypmod Int32, attnotnull String, attndims Int32, attgenerated String',
+    'atttypid UInt32, attrelid UInt32, attname String, attnum Int32, attisdropped Bool, atttypmod Int32, attnotnull String, attndims Int32, attgenerated String',
     (26, 1247, 'oid',          1,  0, -1, 't', 0, ''),
     (26, 1247, 'typnamespace', 2,  0, -1, 't', 0, ''),
     (19, 1247, 'typname',      3,  0, -1, 't', 0, ''),
@@ -2939,7 +3019,7 @@ SELECT
     oids.oid AS attrelid,
     cols.name AS attname,
     toInt32(cols.position) AS attnum,
-    0 AS attisdropped,
+    false AS attisdropped,
     /// For the types advertised as `numeric`, encode precision and scale the way PostgreSQL does -
     /// `((precision << 16) | scale) + 4` - so that `format_type` renders `numeric(p, s)` and schema
     /// inference recovers the exact type. For an array column the modifier applies to the element type, as in
@@ -3028,10 +3108,22 @@ void PostgreSQLHandler::prepareSystemTables(ContextMutablePtr query_context, con
 
 void PostgreSQLHandler::refreshCatalogOids(ContextMutablePtr query_context)
 {
-    auto internal_context = Context::createCopy(server.context());
+    /// The OID state is filled with the privileges of the session user, not of the server: the state
+    /// tables are ordinary session temporary tables, which the client can also read directly (access to a
+    /// temporary table is not privilege-checked once it exists), so an entry for an object the user cannot
+    /// see would publish that object's identity - its UUID, or the hex-encoded database and table name -
+    /// and defeat the grant filtering the catalog views apply. Under the user's rights `system.databases`
+    /// and `system.tables` list exactly the objects the user may see, so an object the user has no `SHOW`
+    /// privilege for simply gets no OID until it becomes visible.
+    ///
+    /// Only the statement kind is elevated: writing into a temporary table is a plain `INSERT`, which a
+    /// read-only profile would refuse, and the emulated catalog is server-owned machinery rather than
+    /// something the client asked to write.
+    auto internal_context = Context::createCopy(query_context);
     internal_context->makeQueryContext();
     internal_context->setCurrentQueryId(fmt::format("postgres-oids:{:d}", connection_id));
     internal_context->setSessionContext(query_context->getSessionContext());
+    internal_context->setSetting("readonly", Field(0u));
 
     String out_str;
     auto out_buffer = WriteBufferFromString(out_str);

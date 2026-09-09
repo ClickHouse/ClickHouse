@@ -2135,15 +2135,10 @@ public:
     {
     }
 
+    /// `statement->parameter_types` are the type OIDs an extended-protocol `Parse` declares for the
+    /// statement's parameters; a simple-query `PREPARE` supplies none, and its `EXECUTE` arguments
+    /// are SQL text already, so they need no literalization.
     void addStatement(ASTPreparedStatement * statement)
-    {
-        addStatement(statement, {});
-    }
-
-    /// `parameter_types` are the type OIDs an extended-protocol `Parse` declares for the statement's
-    /// parameters; a simple-query `PREPARE` supplies none, and its `EXECUTE` arguments are SQL text
-    /// already, so they need no literalization.
-    void addStatement(ASTPreparedStatement * statement, const VectorWithMemoryTracking<Int32> & parameter_types)
     {
         /// The unnamed prepared statement is replaceable, but PostgreSQL
         /// requires clients to close a named statement before parsing another
@@ -2184,14 +2179,12 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
-        statement_parameter_types.erase(function_name);
     }
 
     /// `Close` on an unknown statement is a successful no-op.
     void tryDeleteStatement(const String & function_name)
     {
         statements.erase(function_name);
-        statement_parameter_types.erase(function_name);
     }
 
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)

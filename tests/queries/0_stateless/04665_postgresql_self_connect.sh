@@ -45,14 +45,20 @@ INSERT INTO self_source VALUES (1, 'one', 10, 1.5, [1, 2], 18446744073709551615,
 SELECT '--- the query from the issue';
 SELECT 1 FROM postgresql('${PG_HOST}', 'system', 'one', '${USER_NAME}', 'pgpass');
 
+-- The table is read back over the protocol exactly once, into a temporary table that keeps the inferred
+-- column types, and the assertions below run against that. Reading the source per assertion would open a
+-- self-connect per statement, and a self-connect costs a whole connection setup - the emulated catalog is
+-- built per connection - which is what makes this test slow under a sanitizer.
+CREATE TEMPORARY TABLE self_read AS SELECT * FROM ${PG_SOURCE};
+
 SELECT '--- reading a table back through the PostgreSQL protocol';
-SELECT a, b, c, d, e, f FROM ${PG_SOURCE} ORDER BY a;
+SELECT a, b, c, d, e, f FROM self_read ORDER BY a;
 
 SELECT '--- the structure schema inference recovers';
-SELECT toTypeName(a), toTypeName(b), toTypeName(c), toTypeName(d), toTypeName(e), toTypeName(f) FROM ${PG_SOURCE} LIMIT 1;
+SELECT toTypeName(a), toTypeName(b), toTypeName(c), toTypeName(d), toTypeName(e), toTypeName(f) FROM self_read LIMIT 1;
 
 SELECT '--- nullable array elements survive schema inference';
-SELECT has(g, NULL), has(h, NULL) FROM ${PG_SOURCE} ORDER BY a;
+SELECT has(g, NULL), has(h, NULL) FROM self_read ORDER BY a;
 
 DROP TABLE self_source;
 DROP USER ${USER_NAME};
