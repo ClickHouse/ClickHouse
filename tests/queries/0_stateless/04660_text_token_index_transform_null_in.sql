@@ -29,6 +29,10 @@ SELECT extract(explain, 'Granules: \\d+/\\d+') FROM (EXPLAIN indexes = 1 SELECT 
 SELECT count() FROM tab WHERE s GLOBAL IN ('word1') SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM tab WHERE s GLOBAL NOT IN ('word1') SETTINGS force_data_skipping_indices = 'idx';
 
+-- Without transform_null_in the same predicates keep the globalIn/globalNotIn spellings, which must prune too.
+SELECT count() FROM tab WHERE s GLOBAL IN ('word1') SETTINGS transform_null_in = 0, force_data_skipping_indices = 'idx';
+SELECT count() FROM tab WHERE s GLOBAL NOT IN ('word1') SETTINGS transform_null_in = 0, force_data_skipping_indices = 'idx';
+
 -- ngrambf_v1
 
 DROP TABLE tab;
