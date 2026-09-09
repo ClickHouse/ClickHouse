@@ -411,6 +411,8 @@ ASTPtr ASTCreateQuery::clone() const
             res->set(res->dictionary_attributes_list, dictionary_attributes_list->clone());
         if (dictionary)
             res->set(res->dictionary, dictionary->clone());
+        if (sql_security)
+            res->set(res->sql_security, sql_security->clone());
         if (comment)
             res->set(res->comment, comment->clone());
     }
