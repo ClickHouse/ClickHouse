@@ -1511,8 +1511,10 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
 What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
 
 - `throw` — reject the query;
-- `text` — the text representation of each value, as an Arrow `Utf8` column (what `CAST(col AS String)` would produce);
+- `text` — one text-form value per row (what `CAST(col AS String)` would produce), in whichever Arrow type a `String` column would use: `Utf8`, or `Binary` when `output_format_arrow_string_as_string = 0`;
 - `binary` — the binary representation of each value, as an Arrow `Binary` column (the same per-value encoding as `RowBinary`).
+
+An `AggregateFunction` column is `Binary` in `text` mode as well, because its text form is the raw aggregate state rather than text, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` to get a readable value.
 
 In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
 
