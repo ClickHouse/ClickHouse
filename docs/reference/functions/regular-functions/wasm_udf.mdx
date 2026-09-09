@@ -225,15 +225,23 @@ RETURNS return_type
 
 ## NULL handling {#null-handling}
 
-A WASM UDF is never handed a nullable argument column. `NULL` arguments are propagated by
-ClickHouse around the call, exactly as they are for built-in functions: the `Nullable` wrappers
-are stripped before the module runs, the module sees only the nested values, and the null maps of
-all arguments are combined onto the result afterwards. A row whose argument is `NULL` therefore
-yields `NULL` without the module deciding anything about it.
+A WASM UDF is never handed a nullable argument column. `NULL` arguments are handled by ClickHouse
+around the call, exactly as they are for built-in functions: the `Nullable` wrappers are stripped
+before the module runs and the module sees only the nested values.
 
-One consequence is that the declared return type is not the type of the expression. Calling a
-function declared `RETURNS UInt64` with a `Nullable(String)` argument produces `Nullable(UInt64)`,
-because the wrapper is reapplied on the way out.
+What happens to a `NULL` row after that depends on whether the declared return type can be
+`Nullable`, and the two cases behave differently:
+
+- For a return type that can be wrapped, such as `UInt64` or `String`, the null maps of all
+  arguments are combined onto the result. A row whose argument is `NULL` yields `NULL` without the
+  module deciding anything about it, and the declared return type is not the type of the
+  expression: a function declared `RETURNS UInt64` called with a `Nullable(String)` argument
+  produces `Nullable(UInt64)`, because the wrapper is reapplied on the way out.
+- For a return type that cannot be wrapped - `Array`, `Tuple` and `Map` - there is no `NULL` to
+  return, so nothing is propagated. Null rows are replaced by the default value of the nested
+  argument type and the module is called on those, `f(default(x))`. A function declared
+  `RETURNS Array(UInt64)` called with a `Nullable(String)` argument still produces
+  `Array(UInt64)`, and the `NULL` row gets whatever the module computes for the empty string.
 
 The module cannot distinguish "the argument was `NULL`" from "the argument was the default
 value", because it is never shown the difference. A function that needs that distinction has to

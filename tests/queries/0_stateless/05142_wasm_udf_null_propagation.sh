@@ -13,10 +13,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MODULE="null_prop_${CLICKHOUSE_DATABASE}"
 FUNC="wasm_null_prop_${CLICKHOUSE_DATABASE}"
 FUNC_NULLABLE="wasm_null_prop_nullable_${CLICKHOUSE_DATABASE}"
+FUNC_ARRAY="wasm_null_prop_array_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} << EOF
 DROP FUNCTION IF EXISTS ${FUNC};
 DROP FUNCTION IF EXISTS ${FUNC_NULLABLE};
+DROP FUNCTION IF EXISTS ${FUNC_ARRAY};
 DELETE FROM system.webassembly_modules WHERE name = '${MODULE}';
 EOF
 
@@ -45,6 +47,26 @@ SELECT s, ${FUNC}(s) AS r
 FROM (SELECT arrayJoin([CAST('ab', 'Nullable(String)'), NULL, '']) AS s)
 ORDER BY s NULLS LAST" | sed 's/^\t/(empty)\t/'
 
+# A return type that cannot be `Nullable` - `Array`, `Tuple`, `Map` - takes the other branch of
+# the framework's null handling: there is no `NULL` to propagate, so the null rows are replaced by
+# the default of the nested argument type and the module runs on those. The result type stays
+# non-nullable and the `NULL` row gets the module's answer for the empty string, which is the
+# same answer the empty string itself gets.
+${CLICKHOUSE_CLIENT} --query "
+CREATE OR REPLACE FUNCTION ${FUNC_ARRAY}
+    LANGUAGE WASM ABI BUFFERED_V1
+    FROM '${MODULE}' :: 'array_of_len_col'
+    ARGUMENTS (s String) RETURNS Array(UInt64)
+    SETTINGS serialization_format = 'ColumnBinary';"
+
+${CLICKHOUSE_CLIENT} --query "
+SELECT toTypeName(${FUNC_ARRAY}(s)) FROM (SELECT CAST(NULL, 'Nullable(String)') AS s)"
+
+${CLICKHOUSE_CLIENT} --query "
+SELECT s, ${FUNC_ARRAY}(s) AS r
+FROM (SELECT arrayJoin([CAST('ab', 'Nullable(String)'), NULL, '']) AS s)
+ORDER BY s NULLS LAST" | sed 's/^\t/(empty)\t/'
+
 # Declaring a `Nullable` return type does not hand the module nullable arguments; it only
 # requires the module to return a nullable column. This one returns a plain `COL_FIXED64`, so the
 # mismatch must be reported as bad data rather than as an internal error.
@@ -61,5 +83,6 @@ ${CLICKHOUSE_CLIENT} --query "SELECT ${FUNC_NULLABLE}('ab')" 2>&1 \
 ${CLICKHOUSE_CLIENT} << EOF
 DROP FUNCTION IF EXISTS ${FUNC};
 DROP FUNCTION IF EXISTS ${FUNC_NULLABLE};
+DROP FUNCTION IF EXISTS ${FUNC_ARRAY};
 DELETE FROM system.webassembly_modules WHERE name = '${MODULE}';
 EOF
