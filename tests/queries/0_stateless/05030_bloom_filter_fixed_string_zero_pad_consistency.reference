@@ -1,0 +1,14 @@
+index must not change the result
+fs3 needle	1
+fs5 needle	1
+str needle	1
+skip index setting must not change the result
+fs3 needle	1
+matching rows
+fs3 needle	[0,1,2]
+fs5 needle	[0,1,2]
+str needle	[0]
+fixed string column
+wider needle	1
+narrower needle	1
+exact needle	1

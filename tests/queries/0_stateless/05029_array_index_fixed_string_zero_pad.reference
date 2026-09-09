@@ -1,0 +1,50 @@
+equals reference
+fs3 = fs4	1
+fs3 = str_padded	1
+fs3 = str_short	1
+str = str_padded	0
+issue repro
+has fs4 needle	1	1
+has str_padded needle	1	1
+indexOf fs4 needle	1	1
+has tuple fs4 needle	1	1
+has tuple str_padded needle	1	1
+width directions
+has wide element	1	1
+indexOf wide element	1	1
+has str_short needle	1	1
+has materialized needle	1	1
+indexOf materialized needle	1	1
+string element, fixed string needle
+has str elem fs3 needle	1	1
+has str elem fs5 needle	1	1
+nullable
+has nullable element	1	1
+has nullable needle	1	1
+countEqual
+countEqual single	1	1
+countEqual duplicates	2	2
+countEqual str_padded needle	1	1
+countEqual no match	0	0
+indexOfAssumeSorted
+indexOfAssumeSorted fs4 needle	1	1
+map
+has map fs4 needle	1	1
+has map str_padded needle	1	1
+has map string key	1	1
+mapContains fs4 needle	1
+positions
+indexOf second element	2	2
+long values
+has long match	1	1
+has long no match	0	0
+negative controls
+str vs str_padded must differ	0	0
+str prefix must differ	0	0
+same width different content	0	0
+same width same content	1	1
+interior zero preserved	1	1
+interior zero not collapsed	0	0
+agreement with arrayExists
+const array	1
+materialized array	1
