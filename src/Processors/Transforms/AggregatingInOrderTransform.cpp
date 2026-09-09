@@ -27,12 +27,14 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     const SortDescription & group_by_description_,
     size_t max_block_size_, size_t max_block_bytes_,
     size_t limit_hint_,
+    size_t limit_prefix_columns_,
     RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : AggregatingInOrderTransform(std::move(header), std::move(params_),
         sort_description_for_merging, group_by_description_,
         max_block_size_, max_block_bytes_,
         std::make_unique<ManyAggregatedData>(1), 0,
         limit_hint_,
+        limit_prefix_columns_,
         std::move(dataflow_cache_updater_))
 {
 }
@@ -44,6 +46,7 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
     size_t max_block_size_, size_t max_block_bytes_,
     ManyAggregatedDataPtr many_data_, size_t current_variant,
     size_t limit_hint_,
+    size_t limit_prefix_columns_,
     RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
     : IProcessor({std::move(header)}, {params_->getCustomHeader(false)})
     , max_block_size(max_block_size_)
@@ -72,6 +75,22 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
         /// group_by_description may contains duplicates, so we use keys_size from Aggregator::params
         key_columns_raw.resize(params->params.keys_size);
     }
+
+    /// The `ORDER BY` may extend past the columns the input is sorted by; a boundary of the
+    /// sorted columns alone is then a boundary of the `ORDER BY` prefix as well.
+    limit_prefix_columns = std::min(limit_prefix_columns_, group_by_description.size());
+}
+
+bool AggregatingInOrderTransform::isLimitPrefixBoundary(const Columns & key_columns, size_t row) const
+{
+    for (size_t i = 0; i < limit_prefix_columns; ++i)
+    {
+        const auto & elem = group_by_description[i];
+        size_t ind = elem.column_number;
+        if (res_key_columns[ind]->compareAt(cur_block_size - 1, row, *key_columns[ind], elem.base.nulls_direction) != 0)
+            return true;
+    }
+    return false;
 }
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
@@ -214,9 +233,13 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (!group_by_key)
                 params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
 
+            /// Enough groups have been emitted and the new key starts a new value of the
+            /// `ORDER BY` prefix, so the rest of the input cannot be needed (see `limit_prefix_columns`).
+            if (limit_hint && cur_block_size + res_rows >= limit_hint && isLimitPrefixBoundary(key_columns, key_end))
+                limit_reached = true;
+
             /// If max_block_size or limit_hint is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
-            if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes
-                || (limit_hint && cur_block_size + res_rows >= limit_hint))
+            if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes || limit_reached)
             {
                 if (group_by_key)
                     group_by_chunk
@@ -225,9 +248,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
                 /// When limit is reached, don't save leftover rows — we're done.
                 /// Set block_end_reached + need_generate to trigger generate(),
-                /// which will produce the output and then set is_consume_finished
-                /// via the limit check after res_rows is updated.
-                if (limit_hint && cur_block_size + res_rows >= limit_hint)
+                /// which will produce the output and then set is_consume_finished.
+                if (limit_reached)
                 {
                     block_end_reached = true;
                     need_generate = true;
@@ -416,8 +438,8 @@ void AggregatingInOrderTransform::generate()
     res_rows += to_push_chunk.getNumRows();
     need_generate = false;
 
-    /// If we have emitted enough groups, stop consuming more input.
-    if (limit_hint && res_rows >= limit_hint)
+    /// If we have emitted enough groups up to a boundary of the `ORDER BY` prefix, stop consuming more input.
+    if (limit_reached)
         is_consume_finished = true;
 }
 

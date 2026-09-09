@@ -98,8 +98,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
             {"query_plan_derive_not_null_filters_from_joins", false, true, "New setting to derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
             {"query_plan_allow_derived_not_null_filters_execution", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be executed."},
-            {"query_plan_max_selectivity_for_not_null_filters_execution", 0.7, 0.7, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."},
-            {"optimize_aggregation_in_order_limit", true, true, "The `LIMIT` push-down into aggregation-in-order now requires the `ORDER BY` to match the full `GROUP BY` sort description; a strict prefix returned incomplete aggregate values when a group spanned several parts (https://github.com/ClickHouse/ClickHouse/issues/116849). The previous value is deliberately equal to the new one so that `compatibility` with 26.7 or 26.8 does not restore the incorrect prefix push-down."},
+            {"query_plan_max_selectivity_for_not_null_filters_execution", 0.7, 0.7, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."}
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {

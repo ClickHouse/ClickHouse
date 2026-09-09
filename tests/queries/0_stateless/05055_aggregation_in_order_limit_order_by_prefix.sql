@@ -1,8 +1,10 @@
 -- Regression test for issue #116849: with `optimize_aggregation_in_order_limit`
 -- enabled, a query whose `ORDER BY` is a strict prefix of the `GROUP BY` key
 -- returned incomplete aggregate values when groups tie on that prefix and a
--- group's rows span more than one part. The limit must not be pushed into the
--- in-order aggregation unless the `ORDER BY` covers the full `GROUP BY` key.
+-- group's rows span more than one part. Each in-order stream stopped as soon as
+-- it had emitted `LIMIT` groups, at a boundary of the full group key; now it
+-- stops only at a boundary of the `ORDER BY` prefix, so the groups it drops
+-- always sort after at least `LIMIT` complete groups.
 
 DROP TABLE IF EXISTS t_agg_in_order_limit_prefix;
 
@@ -47,3 +49,80 @@ LIMIT 5
 SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
 
 DROP TABLE t_agg_in_order_limit_prefix;
+
+-- With enough distinct values of the prefix the push-down still stops the streams
+-- early, and the groups it returns are complete even though every group spans two parts.
+
+DROP TABLE IF EXISTS t_agg_in_order_limit_prefix_reads;
+
+CREATE TABLE t_agg_in_order_limit_prefix_reads (a UInt32, b UInt32, x UInt32)
+ENGINE = MergeTree ORDER BY (a, b)
+SETTINGS index_granularity = 8;
+
+SYSTEM STOP MERGES t_agg_in_order_limit_prefix_reads;
+
+-- Two parts, 100 values of `a` with 10 values of `b` each; sum(x) is 3 for every group.
+INSERT INTO t_agg_in_order_limit_prefix_reads SELECT intDiv(number, 10), number % 10, 1 FROM numbers(1000);
+INSERT INTO t_agg_in_order_limit_prefix_reads SELECT intDiv(number, 10), number % 10, 2 FROM numbers(1000);
+
+-- Every returned group must be complete.
+SELECT sum(x) = 3
+FROM t_agg_in_order_limit_prefix_reads
+GROUP BY a, b
+ORDER BY a
+LIMIT 5
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+
+SELECT sum(x) = 3
+FROM t_agg_in_order_limit_prefix_reads
+GROUP BY a, b
+ORDER BY a
+LIMIT 5 OFFSET 7
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_block_size = 65409, aggregation_in_order_max_block_bytes = 50000000;
+
+-- The push-down is observed through `read_rows`. The small-block settings expose the
+-- effect on a 2000-row table; `enable_parallel_replicas = 0` is required because
+-- `read_rows` is accounted per reading node.
+SELECT sum(x) = 3
+FROM t_agg_in_order_limit_prefix_reads
+GROUP BY a, b
+ORDER BY a
+LIMIT 5
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_threads = 1, max_block_size = 16,
+         merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0,
+         merge_tree_min_rows_for_seek = 0,
+         enable_parallel_replicas = 0,
+         log_comment = '05055_prefix_pushdown_on';
+
+SELECT sum(x) = 3
+FROM t_agg_in_order_limit_prefix_reads
+GROUP BY a, b
+ORDER BY a
+LIMIT 5
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0,
+         max_threads = 1, max_block_size = 16,
+         merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_bytes_for_concurrent_read = 0,
+         merge_tree_min_rows_for_seek = 0,
+         enable_parallel_replicas = 0,
+         log_comment = '05055_prefix_pushdown_off';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT if(on_reads < off_reads, 'PUSHDOWN_FIRES', format('FAIL: on={} off={}', on_reads, off_reads))
+FROM
+(
+    SELECT
+        anyIf(read_rows, log_comment = '05055_prefix_pushdown_on') AS on_reads,
+        anyIf(read_rows, log_comment = '05055_prefix_pushdown_off') AS off_reads
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND log_comment IN ('05055_prefix_pushdown_on', '05055_prefix_pushdown_off')
+      AND type = 'QueryFinish'
+      AND event_date >= yesterday()
+      AND event_time >= now() - 600
+);
+
+DROP TABLE t_agg_in_order_limit_prefix_reads;

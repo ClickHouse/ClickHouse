@@ -35,6 +35,7 @@ public:
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
         size_t limit_hint_,
+        size_t limit_prefix_columns_,
         RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
     AggregatingInOrderTransform(
@@ -45,6 +46,7 @@ public:
         size_t max_block_size_,
         size_t max_block_bytes_,
         size_t limit_hint_,
+        size_t limit_prefix_columns_,
         RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_);
 
     ~AggregatingInOrderTransform() override;
@@ -61,6 +63,9 @@ public:
 private:
     void generate();
     void finalizeCurrentChunk(Chunk chunk, size_t key_end);
+    /// Whether the key at `row` of `key_columns` differs from the current key in the first
+    /// `limit_prefix_columns` columns, i.e. whether a boundary of the `ORDER BY` prefix is reached.
+    bool isLimitPrefixBoundary(const Columns & key_columns, size_t row) const;
 
     size_t max_block_size;
     size_t max_block_bytes;
@@ -89,7 +94,14 @@ private:
     UInt64 src_bytes = 0;
     UInt64 res_rows = 0;
 
+    /// The stream may stop early once it has emitted `limit_hint` groups, but only at a
+    /// boundary of the first `limit_prefix_columns` columns of `group_by_description`, which
+    /// are the columns the query is ordered by. Otherwise a group tied on those columns with
+    /// the emitted ones could be cut off here while another stream emits its partial state,
+    /// and the final sort could pick that partial group.
     size_t limit_hint = 0;
+    size_t limit_prefix_columns = 0;
+    bool limit_reached = false;
 
     bool need_generate = false;
     bool block_end_reached = false;

@@ -601,6 +601,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     many_data,
                     counter++,
                     limit_hint,
+                    limit_hint_prefix_columns,
                     nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
                 );
             });
@@ -652,6 +653,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes,
                     limit_hint,
+                    limit_hint_prefix_columns,
                     dataflow_cache_updater);
             });
 
