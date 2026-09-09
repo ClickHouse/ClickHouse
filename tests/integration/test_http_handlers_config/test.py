@@ -124,6 +124,99 @@ def test_dynamic_query_handler():
         )
 
 
+def test_predefined_handler_delete_body():
+    # A config-defined `predefined_query_handler` whose query reads the plain request body - through the
+    # `_request_body` parameter, or as the data of an `INSERT` - must not be reachable with an unframed `DELETE`:
+    # `HTTPServerRequest` turns such a request into an empty body stream, so the handler would run with a
+    # silently dropped body instead of rejecting the malformed request. A framed `DELETE` reaches the query with
+    # the body, and a handler whose query never reads the body keeps accepting an unframed `DELETE`.
+    with contextlib.closing(
+        SimpleCluster(
+            ClickHouseCluster(__file__, "test_predefined_handler_delete_body"),
+            "predefined_handler",
+            "test_predefined_handler",
+        )
+    ) as cluster:
+        # The framed form reaches the query, which binds the body to `_request_body` and returns it.
+        res_body = cluster.instance.http_request(
+            "test_predefined_handler_delete_body",
+            method="DELETE",
+            data="TEST".encode("utf8"),
+        )
+        assert res_body.status_code == 200, res_body.content
+        assert b"TEST\n" == res_body.content
+
+        # The same request without framing is rejected before execution instead of binding an empty body.
+        with socket.create_connection(
+            (cluster.instance.ip_address, 8123), timeout=5
+        ) as sock:
+            sock.sendall(
+                b"DELETE /test_predefined_handler_delete_body HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+
+            response = b""
+            while b"\r\n\r\n" not in response:
+                chunk = sock.recv(4096)
+                assert chunk, "connection closed before receiving HTTP response"
+                response += chunk
+
+        assert "411" == response.split(b" ", 2)[1].decode(), response
+
+        # The same holds for a handler whose query takes the body as the data of an `INSERT`. Only the framing
+        # gate is pinned here: config-defined handlers still force `readonly` over `DELETE` (see
+        # `test_dynamic_handler_put_delete_still_readonly`), so the framed request is rejected later, by query
+        # execution - what matters is that it is not rejected as unframed.
+        cluster.instance.query(
+            "CREATE TABLE test_table (id UInt32, data String) Engine=TinyLog"
+        )
+        res_framed_insert = cluster.instance.http_request(
+            "test_predefined_handler_delete_insert_body",
+            method="DELETE",
+            data="200\tINSERTED\n".encode("utf8"),
+        )
+        assert 411 != res_framed_insert.status_code, res_framed_insert.content
+        cluster.instance.query("DROP TABLE test_table")
+
+        with socket.create_connection(
+            (cluster.instance.ip_address, 8123), timeout=5
+        ) as sock:
+            sock.sendall(
+                b"DELETE /test_predefined_handler_delete_insert_body HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+
+            response = b""
+            while b"\r\n\r\n" not in response:
+                chunk = sock.recv(4096)
+                assert chunk, "connection closed before receiving HTTP response"
+                response += chunk
+
+        assert "411" == response.split(b" ", 2)[1].decode(), response
+
+        # A handler whose query never reads the body still accepts an unframed DELETE.
+        with socket.create_connection(
+            (cluster.instance.ip_address, 8123), timeout=5
+        ) as sock:
+            sock.sendall(
+                b"DELETE /test_predefined_handler_delete_no_body HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+
+            response = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+
+        assert b"HTTP/1.1 200" in response, response
+        assert b"1" in response.split(b"\r\n\r\n", 1)[1], response
+
+
 def test_dynamic_handler_put_delete_still_readonly():
     # SQL-defined handlers (CREATE HANDLER) may run modifying queries over PUT and DELETE, but that
     # relaxation must not leak to config-defined dynamic_query_handler rules: a PUT or DELETE request
@@ -185,8 +278,10 @@ def test_dynamic_handler_put_delete_still_readonly():
             status = response.split(b" ", 2)[1].decode()
             assert "411" == status, (method, status, response)
 
-        # Keep unframed DELETE requests compatible for configured handlers that only use URL parameters, and
-        # close the connection so any pipelined bytes are not reused as another request.
+        # A configured dynamic handler appends the request body to the query, so an unframed DELETE must be
+        # rejected too: the HTTP layer would present it as an empty body stream, and the handler would execute
+        # only the URL part of the query instead of what the client actually sent. The connection is also closed,
+        # so any pipelined bytes are never reused as another request.
         with socket.create_connection((cluster.instance.ip_address, 8123), timeout=5) as sock:
             sock.sendall(
                 b"DELETE /test_dynamic_handler_put_delete?get_dynamic_handler_query=SELECT+1 HTTP/1.1\r\n"
@@ -205,7 +300,7 @@ def test_dynamic_handler_put_delete_still_readonly():
                 response += chunk
 
         assert 1 == response.count(b"HTTP/1.1 "), response
-        assert b"HTTP/1.1 200" in response, response
+        assert b"HTTP/1.1 411" in response, response
         assert b"connection: close" in response.lower(), response
         assert b"42424242" not in response, response
 

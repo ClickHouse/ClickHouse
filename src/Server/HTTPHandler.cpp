@@ -23,9 +23,13 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TableNameHints.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Core/Defines.h>
 #include <Parsers/Lexer.h>
+#include <Parsers/ParserQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
+#include <Parsers/parseQuery.h>
 #include <Common/SQLDefinedHandlers/SQLDefinedHandler.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlerFromAST.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
 #include <Processors/Port.h>
@@ -1648,15 +1652,20 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// the POST contract.
         ///
         /// But require it only when the body is actually consumed - either by the handler's query
-        /// (`consumes_request_body`), by the path-table upload route, by an unknown handler whose query may consume
-        /// a POST or PUT body, or by the form/multipart parsing that the handler layer itself performs.
+        /// (`consumes_request_body`), by the path-table upload route, by a config-defined or unknown handler whose
+        /// query may consume the body, or by the form/multipart parsing that the handler layer itself performs.
         /// A handler such as `CREATE HANDLER h URL '/x' METHODS (DELETE) AS SELECT 1` never looks at the body, and
         /// demanding `Content-Length: 0` from every ordinary HTTP client would make that class of handlers unusable.
         /// The same applies to `POST`, `PUT`, and `DELETE` when the handler's body contract is known (a SQL-defined handler): a plain
         /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
         /// accept it. For unknown/config-defined handlers, `POST` and `PUT` keep the historical unconditional
-        /// requirement because their body may be the rest of the query text or the data of an `INSERT`. `DELETE` is
-        /// intentionally excluded from that fallback for compatibility with existing handlers that only use URL parameters.
+        /// requirement because their body may be the rest of the query text or the data of an `INSERT`. A `DELETE`
+        /// to such a handler requires the length only when the handler's query may actually read the body
+        /// (`config_query_may_consume_request_body`, see `setConfigQueryMayConsumeRequestBody`): a configured
+        /// `dynamic_query_handler` appends the body to the query text and a `predefined_query_handler` may take the
+        /// body as its data or bind `_request_body`, and an unframed `DELETE` is presented to the handler as an empty
+        /// body stream (`src/Server/HTTP/HTTPServerRequest.cpp`), so it would otherwise execute with a silently
+        /// dropped body. Configured handlers that only use URL parameters keep accepting an unframed `DELETE`.
         ///
         /// Accepting a lengthless non-chunked `POST`/`PUT` here is framing-safe even if the client does send
         /// bytes: the request stream stays unbounded (EOF-delimited), so `HTTPServerRequest::canKeepAlive`
@@ -1672,6 +1681,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             : (is_path_table_upload
                 || method == HTTPRequest::HTTP_POST
                 || method == HTTPRequest::HTTP_PUT
+                || (method == HTTPRequest::HTTP_DELETE && config_query_may_consume_request_body)
                 || requestDeclaresFormBody(request));
         const bool method_requires_content_length = is_body_carrying_method && body_may_be_consumed;
         const bool request_is_unframed = !request.getChunkedTransferEncoding() && !request.hasContentLength();
@@ -1743,6 +1753,10 @@ DynamicQueryHandler::DynamicQueryHandler(
     , param_name(param_name_)
     , allow_path_table_uploads(allow_path_table_uploads_)
 {
+    /// A dynamic handler always appends the request body to the query text (see `getQuery`), so its query may
+    /// always read the body. Only a configured rule can route a `DELETE` here (the built-in routes never do, see
+    /// `HTTPHandlerFactory`), and for such a rule the `DELETE` therefore has to be framed.
+    setConfigQueryMayConsumeRequestBody(true);
 }
 
 bool DynamicQueryHandler::allowMutatingIdempotentMethods(const HTTPServerRequest & request, const HTMLForm & params) const
@@ -1815,13 +1829,18 @@ PredefinedQueryHandler::PredefinedQueryHandler(
     const std::string & predefined_query_,
     const CompiledRegexPtr & url_regexp_,
     const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
-    const HTTPResponseHeaderSetup & http_response_headers_override_)
+    const HTTPResponseHeaderSetup & http_response_headers_override_,
+    bool query_may_consume_request_body_)
     : HTTPHandler(server_, connection_config, "PredefinedQueryHandler", http_response_headers_override_)
     , receive_params(receive_params_)
     , predefined_query(predefined_query_)
     , url_regexp(url_regexp_)
     , header_name_with_capture_regexp(header_name_with_regexp_)
 {
+    /// A predefined handler runs a fixed query, so whether the body can be read at all is known in advance
+    /// (computed once by `createPredefinedHandlerFactory`). A SQL-defined handler overrides this with its full
+    /// body contract in `SQLDefinedQueryHandler`.
+    setConfigQueryMayConsumeRequestBody(query_may_consume_request_body_);
 }
 
 bool PredefinedQueryHandler::customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value)
@@ -1986,7 +2005,8 @@ SQLDefinedQueryHandler::SQLDefinedQueryHandler(
         handler.query,
         handler.url_match_type == SQLDefinedHandler::URLMatchType::Regexp ? handler.url_regex : CompiledRegexPtr{},
         {},
-        std::nullopt)
+        std::nullopt,
+        handler.consumes_request_body)
 {
     setIntrospectionHandlerName(handler.name);
     setConsumesRequestBody(handler.consumes_request_body);
@@ -2055,6 +2075,20 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
     boost::algorithm::trim(predefined_query);
     NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
+    /// Whether this handler's query can read the request body at all. Computed once here, at config load time,
+    /// and not per request: the HTTP layer needs it to decide whether an unframed body-carrying request (in
+    /// particular a `DELETE`, which is otherwise presented to the handler as an empty body stream) must be
+    /// rejected with `411 Length Required` instead of running the query with a silently dropped body.
+    /// Parse failures are not swallowed - the query has to be parseable anyway, `analyzeReceiveQueryParams`
+    /// above already throws on a malformed one.
+    const char * query_begin = predefined_query.data();
+    const char * query_end = query_begin + predefined_query.size();
+    ParserQuery parser(query_end);
+    ASTPtr predefined_query_ast = parseQuery(
+        parser, query_begin, query_end, "predefined_query_handler query", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    const bool query_may_consume_request_body
+        = queryConsumesRequestBody(*predefined_query_ast) || analyze_receive_params.contains("_request_body");
+
     HTTPHandlerConnectionConfig connection_config(config, config_prefix);
     connection_config.default_session_user = default_session_user;
 
@@ -2077,7 +2111,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
         url_regexp = regexps.url_regexp,
         headers_name_with_regexp = std::move(regexps.headers_name_with_regexp),
         http_response_headers_override,
-        connection_config]
+        connection_config,
+        query_may_consume_request_body]
         -> std::unique_ptr<PredefinedQueryHandler>
     {
         return std::make_unique<PredefinedQueryHandler>(
@@ -2087,7 +2122,8 @@ HTTPRequestHandlerFactoryPtr createPredefinedHandlerFactory(IServer & server,
             predefined_query,
             url_regexp,
             headers_name_with_regexp,
-            http_response_headers_override);
+            http_response_headers_override,
+            query_may_consume_request_body);
     };
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);

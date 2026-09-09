@@ -100,6 +100,19 @@ protected:
         feeds_request_body_to_query = value;
     }
 
+    /// Set by the config-defined handlers, whose body contract is not fully known - `body_contract_known` stays
+    /// false, so their `POST` and `PUT` keep the historical unconditional `Content-Length` requirement - but for
+    /// which it is known whether the handler's query can read the body at all:
+    /// - a `dynamic_query_handler` always appends the body to the query text, so it always may consume it;
+    /// - a `predefined_query_handler` runs a fixed query, so it may consume the body only when that query takes
+    ///   the body as its data (an `INSERT`, or an `INSERT ... SELECT` reading from `input`) or binds the
+    ///   `_request_body` parameter.
+    /// A `DELETE` request must be framed exactly for the handlers that may consume the body: `HTTPServerRequest`
+    /// turns an unframed `DELETE` into an empty body stream, so such a handler would otherwise run with a
+    /// silently dropped body - a `dynamic_query_handler` would execute only the URL prefix of the query, and a
+    /// `predefined_query_handler` would bind an empty `_request_body`.
+    void setConfigQueryMayConsumeRequestBody(bool value) { config_query_may_consume_request_body = value; }
+
 private:
     String introspection_handler_name;
 
@@ -113,6 +126,10 @@ private:
     /// do not set it, POST and PUT require the length. The path-table upload route additionally requires it for its
     /// PUT shape.
     bool consumes_request_body = false;
+
+    /// Whether a config-defined handler's query may read the request body. Only meaningful while
+    /// `body_contract_known` is false; see `setConfigQueryMayConsumeRequestBody`.
+    bool config_query_may_consume_request_body = false;
 
     /// Whether the request body is appended to the query text. Defaults to `true` - the historical behavior, where
     /// the body is the continuation of the `query` parameter or the data of an `INSERT`.
@@ -285,7 +302,8 @@ public:
         const std::string & predefined_query_,
         const CompiledRegexPtr & url_regexp_,
         const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regexp_,
-        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt);
+        const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
+        bool query_may_consume_request_body_ = false);
 
     void customizeContext(HTTPServerRequest & request, ContextMutablePtr context, ReadBuffer & body) override;
 

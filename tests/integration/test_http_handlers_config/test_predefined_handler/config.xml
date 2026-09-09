@@ -34,6 +34,30 @@
             </handler>
         </rule>
         <rule>
+            <methods>DELETE</methods>
+            <url>/test_predefined_handler_delete_body</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT {_request_body:String}</query>
+            </handler>
+        </rule>
+        <rule>
+            <methods>DELETE</methods>
+            <url>/test_predefined_handler_delete_insert_body</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>INSERT INTO test_table(id, data) FORMAT TSV</query>
+            </handler>
+        </rule>
+        <rule>
+            <methods>DELETE</methods>
+            <url>/test_predefined_handler_delete_no_body</url>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT 1</query>
+            </handler>
+        </rule>
+        <rule>
             <methods>POST</methods>
             <url>/test_predefined_handler_post_form_body</url>
             <handler>
