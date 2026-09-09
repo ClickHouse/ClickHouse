@@ -34,9 +34,9 @@ SELECT CAST(x AS Nullable(Int32)) + 1 FROM t_jit_cast_null ORDER BY x;
 SET compile_expressions = 1, min_count_to_compile_expression = 0;
 
 -- Every row above is a value oracle, so all of them would still pass if the conversion silently
--- stopped or started being compiled. The shapes below pin which of them compiles. Each holds
--- exactly two compilable nodes, the addition and the conversion fused into it, so once the
--- conversion is declined nothing is left to compile. `CompiledFunctionExecute` counts executions
+-- stopped or started being compiled. The shapes below pin which of them compiles. Each conversion
+-- shape holds exactly two compilable nodes, the addition and the conversion fused into it, so once
+-- the conversion is declined nothing is left to compile. `CompiledFunctionExecute` counts executions
 -- of an already-compiled node, so a warm compiled cache does not change any of them.
 SELECT CAST(x AS Int32) + 1 FROM t_jit_cast_no_null
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05170_declined' FORMAT Null;
@@ -44,6 +44,8 @@ SELECT CAST(x AS Nullable(Int32)) + 1 FROM t_jit_cast_null
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05170_nullable_target' FORMAT Null;
 SELECT CAST(y AS Int32) + 1 FROM t_jit_cast_plain
     SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05170_control' FORMAT Null;
+SELECT (y + 1) * 2 FROM t_jit_cast_plain
+    SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0, log_comment = '05170_arith' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -54,12 +56,15 @@ WITH shapes AS
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05170_%'
     GROUP BY log_comment
 )
--- The control keeps the second column honest in a build without the embedded compiler, where every
--- shape is interpreted and an absolute assertion would go green on nothing being compiled.
+-- `05170_arith` contains no conversion, so it measures whether the embedded compiler is working at
+-- all, independently of `FunctionCast`. Comparing both surviving conversion shapes against it keeps
+-- the row red when conversions stop being compiled and green when the compiler is simply absent.
 SELECT
     (SELECT compiled FROM shapes WHERE log_comment = '05170_declined') = 0,
     (SELECT compiled FROM shapes WHERE log_comment = '05170_nullable_target')
-        = (SELECT compiled FROM shapes WHERE log_comment = '05170_control');
+        = (SELECT compiled FROM shapes WHERE log_comment = '05170_arith'),
+    (SELECT compiled FROM shapes WHERE log_comment = '05170_control')
+        = (SELECT compiled FROM shapes WHERE log_comment = '05170_arith');
 
 DROP TABLE t_jit_cast_null;
 DROP TABLE t_jit_cast_no_null;
