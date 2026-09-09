@@ -137,7 +137,7 @@ In `EventStream`, the event name is `profile_traces` and its single `data:` fiel
 | `event_time_microseconds` | Sample collection time in microseconds since the Unix epoch, encoded as a decimal string. |
 | `trace` | Stack frame addresses, innermost frame first, encoded as decimal strings using the same normalization as `system.trace_log`. |
 | `symbols` | Server-resolved symbol names in the same order and with the same length as `trace`; an unresolved frame has an empty string. |
-| `size` | Signed allocation size for memory samples, or zero for CPU and real-time samples, encoded as a decimal string. |
+| `size` | Allocation size for `Memory`; signed allocation/deallocation size for `MemorySample`; total tracked usage at a new peak for `MemoryPeak` (all in bytes); zero for `CPU`, `Real`, and `Incomplete`; positive loss delta for `Dropped`. Encoded as a decimal string. |
 
 All 64-bit integers use strings to preserve precision in JavaScript. All string fields, including symbol names and query identifiers, are sanitized to valid UTF-8 using the replacement character (`U+FFFD`) for invalid sequences.
 

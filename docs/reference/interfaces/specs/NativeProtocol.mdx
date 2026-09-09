@@ -386,31 +386,34 @@ sequenceDiagram
     C->>S: External-table Data packets (0 or more)
     Note over C,S: No empty Data marker here —<br/>it would end the row stream before it starts
     opt metadata before schema
-        S->>C: TableColumns / Progress / ...
+        S->>C: TableColumns / Progress / ProfileInfo / Log / ProfileEvents / ProfileTraces
     end
     S->>C: Data packet — schema block (columns, 0 rows)
     Note over C,S: Schema block is the contract:<br/>rows sent next must match these column shapes
     loop one or more blocks
         C->>S: Data packet (rows N)
+        opt interleaved metadata
+            S->>C: Log / ProfileEvents / ProfileTraces
+        end
     end
     C->>S: Data packet — empty block (0 rows), end-of-input terminator
-    loop until EndOfStream or Exception
-        S->>C: Progress / ProfileInfo / Log / ProfileEvents
-    end
     opt async_insert = 1 and negotiated_version ≥ 54484
-        S->>C: trailing Progress, then insert ProfileEvents
+        S->>C: trailing Progress
+    end
+    loop until EndOfStream or Exception
+        S->>C: Progress / ProfileInfo / Log / ProfileEvents / ProfileTraces
     end
     S->>C: EndOfStream
 ```
 
 1. The client sends [`Query`](#query) with `body` set to the INSERT SQL.
 2. The client sends any external tables (rare for INSERT). Unlike the [Query phase](#query-phase), it does **not** send an empty Data marker here. The `INSERT` `Query` packet is sent with pending data, so the empty end-of-data block is deferred to step 5; sending it before the schema block would make the server read it as the end of the row stream, finish the INSERT with no rows, and then parse the first real row packet as a stray top-level packet.
-3. The client drains metadata packets (TableColumns, Progress, ProfileInfo, Log, ProfileEvents) until it reads the schema Data packet — a Block with 0 rows but full column structure (names and types). The schema block is the contract: the rows the client sends next must match these column shapes.
-4. The client sends data block(s). For each block it writes `VarUInt(ClientPacket::Data = 2)`, then `String("")` for the empty external-table name, then the Block. Column types must align with the schema block's columns by position.
+3. The client drains metadata packets (`TableColumns`, `Progress`, `ProfileInfo`, `Log`, `ProfileEvents`, and `ProfileTraces`) until it reads the schema `Data` packet — a Block with 0 rows but full column structure (names and types). The schema block is the contract: the rows the client sends next must match these column shapes. A `ProfileTraces` block is auxiliary metadata, not the insertion schema.
+4. The client sends data block(s). For each block it writes `VarUInt(ClientPacket::Data = 2)`, then `String("")` for the empty external-table name, then the Block. Column types must align with the schema block's columns by position. The server may send interleaved `Log`, `ProfileEvents`, and `ProfileTraces` packets while the client uploads rows.
 5. The client sends the end-of-input terminator: a Data packet with an empty Block (0 columns, 0 rows).
-6. The client drains the response stream until `EndOfStream` (success) or `Exception` (failure).
+6. The client drains the response stream, including `Progress`, `ProfileInfo`, `Log`, `ProfileEvents`, and `ProfileTraces`, until `EndOfStream` (success) or `Exception` (failure). The final trace drain can emit additional `ProfileTraces` packets before the terminal packet. Trace delivery requires revision `54493`+ and `send_profile_traces = 1`; see [ProfileTraces](#profiletraces) for its bounded-drain and cancellation behavior.
 
-**Asynchronous INSERT (v54484+).** When the query carries `async_insert = 1`, the server queues the rows and flushes them as part of a batch. At negotiated version ≥ 54484 (`PROGRESS_IN_ASYNC_INSERT`), once the flush completes the server emits an extra [`Progress`](#progress) packet, immediately followed by the insert's `ProfileEvents`, then `EndOfStream`. Below 54484 the server skips that trailing Progress. The packet is an ordinary `Progress`; because the server resets the query pipeline before folding in the write counts, the increment in practice carries only the elapsed time, and the written-row and byte stats reach the client via the accompanying `ProfileEvents`. A client that already drains interleaved Progress in step 6 needs only to accept one more packet.
+**Asynchronous INSERT (v54484+).** When the query carries `async_insert = 1`, the server queues the rows and flushes them as part of a batch. At negotiated version ≥ 54484 (`PROGRESS_IN_ASYNC_INSERT`), once the flush completes the server emits an extra [`Progress`](#progress) packet before the insert's `ProfileEvents` and `EndOfStream`. `ProfileTraces` packets may be interleaved with this metadata and emitted by the final drain. Below 54484 the server skips that trailing `Progress`. The packet is an ordinary `Progress`; because the server resets the query pipeline before folding in the write counts, the increment in practice carries only the elapsed time, and the written-row and byte stats reach the client via the accompanying `ProfileEvents`. A client that already drains interleaved `Progress` in step 6 needs only to accept one more packet.
 
 The connection returns to `READY` on `EndOfStream` or a handled `Exception`. Protocol violations and I/O errors terminate it.
 
@@ -773,7 +776,7 @@ The envelope is a packet-type `VarUInt` of `19`, an empty `table_name` binary st
 | 5 | `event_time_microseconds` | `UInt64` | Sample timestamp in microseconds since the Unix epoch. |
 | 6 | `trace` | `Array(UInt64)` | Normalized instruction addresses, ordered from the leaf frame outward. |
 | 7 | `symbols` | `Array(String)` | Symbol corresponding to each address; an empty string denotes an unresolved frame. |
-| 8 | `size` | `Int64` | Allocation size for `Memory`; signed allocation/deallocation size for `MemorySample`; total tracked usage at a new peak for `MemoryPeak` (all in bytes); zero for `CPU` and `Real`; positive loss delta for `Dropped`. |
+| 8 | `size` | `Int64` | Allocation size for `Memory`; signed allocation/deallocation size for `MemorySample`; total tracked usage at a new peak for `MemoryPeak` (all in bytes); zero for `CPU`, `Real`, and `Incomplete`; positive loss delta for `Dropped`. |
 
 Delivery status rows use empty `trace` and `symbols` arrays and zero `thread_id` and `event_time_microseconds`. `Dropped` reports a positive delta in the number of samples discarded by bounded queues or by a collector flush timeout. Add these deltas across the response; each delta saturates at `9223372036854775807`, which denotes a lower bound. `Incomplete` has `size = 0` and reports that a collector flush timed out, so additional losses cannot be quantified. Status rows count towards the 1024-row batch limit and can be sent without any samples.
 
