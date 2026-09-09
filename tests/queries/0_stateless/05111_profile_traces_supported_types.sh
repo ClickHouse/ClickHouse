@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-msan
+# Tags: no-msan, no-parallel
 # The sampling query profiler is disabled under MSan.
+# This test flushes the shared `system.trace_log`; concurrent profilers extend that global barrier.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
