@@ -1818,12 +1818,20 @@ void LocalServer::processConfig()
         global_context->setCurrentDatabase(server_default_database);
     }
 
+    /// The `--no-system-tables` option is honored in both modes below. The default working directory
+    /// sets `path` as well, so without this the option would be silently ignored unless the user also
+    /// passes `--tmp`, while it used to work in the default mode when that mode had no `path` at all.
+    const bool attach_system_tables = !getClientConfiguration().has("no-system-tables");
+
     if (getClientConfiguration().has("path"))
     {
-        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
-            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
-        createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
-            [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        if (attach_system_tables)
+        {
+            createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
+                [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+            createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE,
+                [context = global_context](IDatabase & database) { attachInformationSchema(context, database); });
+        }
 
         /// Attaching "automatic" tables in the system database is done after attaching the system database.
         /// Consequently, it depends on whether we load it from the path.
@@ -1852,11 +1860,13 @@ void LocalServer::processConfig()
             throw;
         }
 
+        bool started_background_tasks = false;
+
         if (fs::exists(fs::path(path) / "metadata"))
         {
             LOG_DEBUG(log, "Loading metadata from {}", path);
 
-            if (fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
+            if (attach_system_tables && fs::exists(std::filesystem::path(path) / "metadata" / "system.sql"))
             {
                 LoadTaskPtrs load_system_metadata_tasks = loadMetadataSystem(global_context);
                 waitLoad(TablesLoaderForegroundPoolId, load_system_metadata_tasks);
@@ -1870,18 +1880,27 @@ void LocalServer::processConfig()
                 DatabaseCatalog::instance().createBackgroundTasks();
                 waitLoad(loadMetadata(global_context));
                 DatabaseCatalog::instance().startupBackgroundTasks();
+                started_background_tasks = true;
             }
 
             LOG_DEBUG(log, "Loaded metadata.");
         }
 
-        if (!attached_system_database)
+        if (attach_system_tables && !attached_system_database)
             deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+
+        /// DDL operations like `DROP VIEW SYNC` need the background tasks, also when there was no
+        /// metadata to load yet - which is the usual case on the first run in the default directory.
+        if (!started_background_tasks && !getClientConfiguration().has("only-system-tables"))
+        {
+            DatabaseCatalog::instance().createBackgroundTasks();
+            DatabaseCatalog::instance().startupBackgroundTasks();
+        }
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
-    else if (!getClientConfiguration().has("no-system-tables"))
+    else if (attach_system_tables)
     {
         deferSystemDatabaseTables(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::INFORMATION_SCHEMA,
