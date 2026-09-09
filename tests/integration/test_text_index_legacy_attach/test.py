@@ -93,6 +93,7 @@ def test_legacy_nested_fixed_string_index_attaches(started_cluster):
 def test_legacy_text_index_alter_replays_on_new_replica(started_cluster):
     database = "legacy_text_index_alter_replay"
     table = "t"
+    created_table = "created"
     attached_table = "attached"
     database_path = f"/clickhouse/databases/{database}"
 
@@ -120,6 +121,12 @@ def test_legacy_text_index_alter_replays_on_new_replica(started_cluster):
                 "ADD INDEX idx t TYPE text(tokenizer = 'splitByNonAlpha')",
                 settings={"distributed_ddl_task_timeout": 0},
             )
+            old_node.query(
+                f"CREATE TABLE {database}.{created_table} "
+                "(t Array(Array(String)), INDEX idx t TYPE text(tokenizer = 'splitByNonAlpha')) "
+                "ENGINE = MergeTree ORDER BY tuple()",
+                settings={"distributed_ddl_task_timeout": 0},
+            )
             attached_table_uuid = old_node.query("SELECT generateUUIDv4()").strip()
             old_node.query(
                 f"ATTACH TABLE {database}.{attached_table} UUID '{attached_table_uuid}' "
@@ -136,7 +143,7 @@ def test_legacy_text_index_alter_replays_on_new_replica(started_cluster):
         # the ReplicatedMergeTree queue and must be pulled and executed separately.
         new_node.query(f"SYSTEM SYNC REPLICA {database}.{table} PULL", timeout=60)
 
-        for table_name in (table, attached_table):
+        for table_name in (table, created_table, attached_table):
             assert_eq_with_retry(
                 new_node,
                 "SELECT count() FROM system.data_skipping_indices "
