@@ -1042,10 +1042,41 @@ void SystemLog<LogElement>::prepareUnionTable()
 
         if (union_table)
         {
-            String existing_create_query = getCreateTableQueryClean(union_table_id, getContext())->formatWithSecretsOneLine();
+            ASTPtr existing_create_query_ast = getCreateTableQueryClean(union_table_id, getContext());
+            String existing_create_query = existing_create_query_ast->formatWithSecretsOneLine();
             if (existing_create_query == union_create_query)
             {
                 union_table_check_pending = false;
+                return;
+            }
+
+            /** The `CREATE OR REPLACE` below drops whatever occupies this name, which is only safe for
+              * a definition this feature generated itself: those are proxies over the `merge` /
+              * `clusterAllReplicas` table function and hold no data. Users may create tables in the
+              * `system` database, and `system.all_query_log` is exactly the name a hand-rolled union of
+              * the rotated logs would take - a `MergeTree` history table, or a materialized view's
+              * target. Such a table must not lose its data to a name collision, so leave it alone.
+              * `union_table_broken` stops the attempt from repeating on every flush; a restart or a
+              * rotation of the log table checks again.
+              */
+            const auto * existing_create = existing_create_query_ast->as<ASTCreateQuery>();
+            const auto * existing_table_function
+                = existing_create && existing_create->as_table_function ? existing_create->as_table_function->as<ASTFunction>() : nullptr;
+            const bool is_generated_union_table = existing_table_function
+                && (existing_table_function->name == "merge" || existing_table_function->name == "clusterAllReplicas");
+
+            if (!is_generated_union_table)
+            {
+                LOG_ERROR(
+                    log,
+                    "Not creating {} for {}: the name is taken by a table that this server did not generate for it, and replacing it"
+                    " would drop that table with its data. Rename or drop it to let the union table be created."
+                    "\nExisting: {}\nWanted: {}\n.",
+                    union_table_id.getNameForLogs(),
+                    LogElement::name(),
+                    existing_create_query,
+                    union_create_query);
+                union_table_broken = true;
                 return;
             }
 
