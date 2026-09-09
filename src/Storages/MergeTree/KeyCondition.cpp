@@ -600,7 +600,21 @@ static bool isTrivialCast(const ActionsDAG::Node & node)
         return false;
 
     auto type_name = field.safeGet<String>();
-    return node.children[0]->result_type->getName() == type_name;
+    const auto & source_type = node.children[0]->result_type;
+    if (source_type->getName() == type_name)
+        return true;
+
+    /// A CAST that only wraps a non-nullable type into Nullable of that very same
+    /// underlying type can never turn a non-NULL value into NULL, so it is value-preserving
+    /// and safe to drop for index analysis purposes, exactly like a same-type trivial CAST.
+    /// Such casts are inserted by query rewrites (e.g. optimize_extract_common_expressions)
+    /// that must keep a WHERE/PREWHERE/JOIN ON expression's static result type unchanged,
+    /// even though only the expression's truthiness matters there.
+    if (!source_type->isNullable() && node.result_type->isNullable()
+        && removeNullable(node.result_type)->equals(*source_type))
+        return true;
+
+    return false;
 }
 
 static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
