@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
@@ -209,6 +210,28 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
     void cleanupPersistentProcessingNodes();
+    void removeFromCacheIfGenerationMatches(const std::string & file_path, const std::unordered_map<std::string, uint64_t> & failed_generations);
+    size_t removeStaleFailedCacheEntries(const std::unordered_map<std::string, uint64_t> & failed_generations,
+        const std::function<bool(const std::string &)> & path_filter = [](const std::string &) { return true; });
+    bool verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg, size_t & out_terminal_failed_count);
+    void waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path);
+    /// Executes `remove_requests` as a single Keeper `multi` and reconciles the result, retrying
+    /// individually the requests that were aborted with `ZRUNTIMEINCONSISTENCY`. For every node that is
+    /// confirmed gone, drops the local cache entry (only if its generation still matches the snapshot)
+    /// and appends its file path to `file_paths`.
+    ///
+    /// Precondition: the last `remove_requests.size()` entries of `batch_file_paths` correspond 1:1 to
+    /// `remove_requests` (the caller pushes them in lockstep).
+    void deleteFailedNodeBatch(
+        const Coordination::Requests & remove_requests,
+        const std::vector<std::string> & batch_file_paths,
+        const std::unordered_map<std::string, uint64_t> & failed_generations,
+        ZooKeeperRetriesControl & zk_retries,
+        std::string_view batch_description,
+        size_t report_batch_index,
+        size_t & total_deleted,
+        std::vector<std::string> & file_paths,
+        std::vector<std::pair<size_t, Coordination::Error>> & failed_batches);
     void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description, UInt64 ttl_seconds, UInt64 nodes_limit);
 
     void migrateToBucketsInKeeper(size_t value);
