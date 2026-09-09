@@ -1481,8 +1481,25 @@ static NameToNameVector collectFilesForRenames(
                     }
                 };
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                /** A column the part holds no data for has no stream files to remove, and its
+                  * serialization must not be looked up by name either: a column named like a subcolumn
+                  * of another column (`a.size0` next to an `Array` column `a`) resolves to that
+                  * subcolumn's serialization when the part itself has no streams for the column, as
+                  * happens for a missing-column marker. The stream enumerated from it is the array's
+                  * offsets file, and removing it leaves the part unreadable.
+                  */
+                const auto & serialization_infos = source_part->getSerializationInfos();
+                auto part_column = source_part->getColumns().tryGetByName(command.column_name);
+
+                if (part_column && !serialization_infos.isMissingColumn(command.column_name))
+                {
+                    auto info_it = serialization_infos.find(command.column_name);
+                    auto serialization = info_it == serialization_infos.end()
+                        ? IDataType::getSerialization(*part_column, serialization_infos.getSettings())
+                        : IDataType::getSerialization(*part_column, *info_it->second);
+
                     serialization->enumerateStreams(callback);
+                }
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
