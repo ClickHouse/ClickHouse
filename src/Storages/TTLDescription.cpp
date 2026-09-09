@@ -119,6 +119,106 @@ public:
 using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionData>;
 using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
 
+/// Widens `Date` / `DateTime` to `Date32` / `DateTime64(0, tz)`, recursively inside
+/// `Tuple`, `Array`, and `Map` carriers. A TTL expression can refer to a nested temporal
+/// value while its syntax-level source column is the enclosing carrier, so widening only
+/// top-level source types would leave that value in the 16/32-bit domain.
+DataTypePtr widenTemporalType(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto widened_nested = widenTemporalType(nullable_type->getNestedType());
+        if (!nullable_type->getNestedType()->equals(*widened_nested))
+            return std::make_shared<DataTypeNullable>(std::move(widened_nested));
+
+        return type;
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes widened_elements;
+        widened_elements.reserve(tuple_type->getElements().size());
+        bool widened_any = false;
+
+        for (const auto & element : tuple_type->getElements())
+        {
+            auto widened_element = widenTemporalType(element);
+            widened_any |= !element->equals(*widened_element);
+            widened_elements.push_back(std::move(widened_element));
+        }
+
+        if (widened_any)
+            return std::make_shared<DataTypeTuple>(std::move(widened_elements), tuple_type->getElementNames());
+
+        return type;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto widened_nested = widenTemporalType(array_type->getNestedType());
+        if (!array_type->getNestedType()->equals(*widened_nested))
+            return std::make_shared<DataTypeArray>(std::move(widened_nested));
+
+        return type;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto widened_key = widenTemporalType(map_type->getKeyType());
+        auto widened_value = widenTemporalType(map_type->getValueType());
+        if (!map_type->getKeyType()->equals(*widened_key) || !map_type->getValueType()->equals(*widened_value))
+            return std::make_shared<DataTypeMap>(std::move(widened_key), std::move(widened_value));
+
+        return type;
+    }
+
+    const auto inner = removeLowCardinalityAndNullable(type);
+    DataTypePtr widened;
+    if (isDate(inner))
+    {
+        widened = std::make_shared<DataTypeDate32>();
+    }
+    else if (isDateTime(inner))
+    {
+        const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
+        const String & tz = dt.getTimeZone().getTimeZone();
+        widened = std::make_shared<DataTypeDateTime64>(0, tz);
+    }
+    else
+    {
+        return type;
+    }
+
+    if (isNullableOrLowCardinalityNullable(type))
+        widened = std::make_shared<DataTypeNullable>(widened);
+
+    return widened;
+}
+
+/// Returns the column list with every `Date` / `DateTime` source column widened to
+/// `Date32` / `DateTime64(0, tz)` (looking through `Nullable` / `LowCardinality` and
+/// through `Tuple`, `Array`, and `Map` carriers).
+/// The TTL expression is analyzed against this widened view so arithmetic in
+/// `column + INTERVAL ...` is performed in the 64-bit domain and cannot silently
+/// wrap on overflow. The original timezone is preserved so calendar transforms
+/// (`addMonths` / `addYears`) and DST boundaries produce the user-expected results.
+///
+/// `Nullable` is preserved: dropping it would let the analyzer treat the column as
+/// non-null, which constant-folds `isNull` / `ifNull` and silently changes TTL
+/// decisions for rows that are actually `NULL` (for both rows-TTL and `DELETE WHERE`).
+/// `LowCardinality` is dropped because `LowCardinality(DateTime64)` is not allowed
+/// in the type system; the runtime cast in `ITTLAlgorithm::executeExpressionAndGetColumn`
+/// converts the original `LC` column to the widened type.
+NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
+{
+    NamesAndTypesList result;
+    for (const auto & col : columns)
+    {
+        result.emplace_back(col.name, widenTemporalType(col.type));
+    }
+    return result;
+}
+
 }
 
 TTLDescription::TTLDescription(const TTLDescription & other)
@@ -175,9 +275,15 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
     return * this;
 }
 
-static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
+static ExpressionAndSets analyzeExpressionAndSets(
+    const ASTPtr & ast_template,
+    const NamesAndTypesList & columns,
+    const ContextPtr & context)
 {
     ExpressionAndSets result;
+    /// `TreeRewriter::analyze` mutates the AST in place; clone so a failed attempt does
+    /// not leave a half-rewritten AST behind for the fallback analysis to choke on.
+    auto ast = ast_template->clone();
     auto ttl_string = ast->formatWithSecretsOneLine();
     auto syntax_analyzer_result = TreeRewriter(context).analyze(ast, columns);
     ExpressionAnalyzer analyzer(ast, syntax_analyzer_result, context);
@@ -196,6 +302,49 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     return result;
 }
 
+static ExpressionAndSets buildExpressionAndSets(
+    ASTPtr & ast,
+    const NamesAndTypesList & columns,
+    const ContextPtr & context,
+    bool widen_temporal_columns = true)
+{
+    /// Analyze the TTL expression against `Date` / `DateTime` source columns widened to
+    /// `Date32` / `DateTime64(0, tz)`, so `column + INTERVAL ...` arithmetic runs in the
+    /// 64-bit domain and cannot silently 16/32-bit wrap on overflow (issue #101763).
+    ///
+    /// Some valid TTL expressions use functions that accept only the narrow temporal
+    /// types and reject the widened ones (e.g. `tumbleStart` / `tumbleEnd` require
+    /// `DateTime`, not `DateTime64`). The widened analysis would reject those and break
+    /// `ATTACH` of legacy tables after an upgrade, so we fall back to analyzing against
+    /// the original column types. Such expressions explicitly operate in the narrow
+    /// `Date` / `DateTime` domain and are out of scope for the overflow fix.
+    if (!widen_temporal_columns)
+        return analyzeExpressionAndSets(ast, columns, context);
+
+    auto widened_columns = widenTemporalColumns(columns);
+    bool widened_any = !std::equal(
+        columns.begin(), columns.end(), widened_columns.begin(), widened_columns.end(),
+        [](const auto & lhs, const auto & rhs) { return lhs.type->equals(*rhs.type); });
+
+    if (widened_any)
+    {
+        try
+        {
+            auto result = analyzeExpressionAndSets(ast, widened_columns, context);
+
+            return result;
+        }
+        catch (const Exception &) // NOLINT(bugprone-empty-catch): intentional fallback to the narrow analysis below
+        {
+            /// A function in the expression rejected the widened temporal type
+            /// (e.g. `tumbleStart` requires `DateTime`, not `DateTime64`).
+            /// Retry the analysis against the original (narrow) column types.
+        }
+    }
+
+    return analyzeExpressionAndSets(ast, columns, context);
+}
+
 ExpressionAndSets TTLDescription::buildExpression(const ContextPtr & context) const
 {
     auto ast = expression_ast->clone();
@@ -207,7 +356,9 @@ ExpressionAndSets TTLDescription::buildWhereExpression(const ContextPtr & contex
     if (where_expression_ast)
     {
         auto ast = where_expression_ast->clone();
-        return buildExpressionAndSets(ast, where_expression_columns, context);
+        /// Only the TTL timestamp expression needs widening. The `DELETE WHERE`
+        /// predicate must keep the table's original static column types.
+        return buildExpressionAndSets(ast, where_expression_columns, context, /*widen_temporal_columns=*/ false);
     }
 
     return {};
@@ -258,7 +409,8 @@ TTLDescription TTLDescription::getTTLFromAST(
                 result.where_expression_ast = where_expr_ast->clone();
 
                 ASTPtr ast = where_expr_ast->clone();
-                where_expression = buildExpressionAndSets(ast, columns.getAllPhysical(), context).expression;
+                where_expression = buildExpressionAndSets(
+                    ast, columns.getAllPhysical(), context, /*widen_temporal_columns=*/ false).expression;
                 result.where_expression_columns = where_expression->getRequiredColumnsWithTypes();
                 result.where_result_column = where_expression->getSampleBlock().safeGetByPosition(0).name;
             }
