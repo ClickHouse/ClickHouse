@@ -743,7 +743,12 @@ void AlterCommand::apply(
         /// Otherwise just clear data on disk
         if (!clear && !partition)
         {
-            if (should_skip_column_operation())
+            /// `ColumnsDescription::has` is exact-only, but a Nested parent like `n` exists in a table
+            /// that physically stores the flattened members `n.x` / `n.y` -- the same `n.*` range that
+            /// `getNested()` and `remove()` below operate on and that prepare() and validate() check.
+            const bool column_exists
+                = metadata.columns.has(column_name) || (share_nested_offsets && metadata.columns.hasNested(column_name));
+            if (if_exists && !column_exists)
                 return;
             /// `remove()` deletes the whole `n.*` range, so drop the implicit indices of all these columns too.
             for (const auto & removed_column : metadata.columns.getNested(column_name))
