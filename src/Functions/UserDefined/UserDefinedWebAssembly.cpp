@@ -4,7 +4,6 @@
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
-#include <atomic>
 #include <algorithm>
 #include <base/hex.h>
 
@@ -833,11 +832,14 @@ private:
     /// how far it landed from the budget, keeping the largest candidate known to fit and the
     /// smallest known to overflow, so the bracket shrinks on every step.
     ///
-    /// The batch that is sent has always been measured, so the choice never depends on the hint
-    /// carried across calls; the hint only saves probes. It is a relaxed atomic because
-    /// `executeImpl` runs concurrently over pipeline threads on one function object, and a stale
-    /// or torn-looking value costs at most an extra probe.
-    size_t chooseBatchRows(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t remaining, size_t budget) const
+    /// `rows_hint` carries the count the previous batch fitted, so the walk over one block pays
+    /// the bootstrap once rather than per batch. It lives for a single block: a hint is a row
+    /// count, and a row count only means something for rows of a known width, so a count fitted
+    /// by a narrow block would have the next block materialize that many wide rows before any
+    /// measurement of those rows justified it. Every candidate a probe builds is therefore
+    /// derived from a measurement of the block it belongs to.
+    size_t chooseBatchRows(
+        const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t remaining, size_t budget, size_t & rows_hint) const
     {
         /// A function without arguments is handed no input buffer, so no size bounds its calls.
         if (arguments.empty())
@@ -854,8 +856,7 @@ private:
         /// whole block would expand exactly the input the splitting exists to rescue. Measuring
         /// one row over-states the marginal cost, because it carries the whole per-batch state,
         /// so the rescaled candidate is an undershoot that later probes grow into.
-        const size_t hint = batch_rows_hint.load(std::memory_order_relaxed);
-        size_t candidate = std::clamp(hint == 0 ? static_cast<size_t>(1) : hint, static_cast<size_t>(1), remaining);
+        size_t candidate = std::clamp(rows_hint == 0 ? static_cast<size_t>(1) : rows_hint, static_cast<size_t>(1), remaining);
         size_t largest_fitting = 0;
         size_t smallest_overflowing = remaining + 1;
 
@@ -891,7 +892,7 @@ private:
         }
 
         const size_t chosen = std::max<size_t>(largest_fitting, 1);
-        batch_rows_hint.store(chosen, std::memory_order_relaxed);
+        rows_hint = chosen;
         return chosen;
     }
 
@@ -955,8 +956,9 @@ private:
             /// Take the rows a call can hold, measure the call, and start the next one where
             /// it ended. A stride derived from an average row size cannot bound a skewed block:
             /// one huge row among many tiny ones would still share a call with its neighbours.
+            size_t rows_hint = 0;
             while (batch_start < input_rows_count)
-                flush_batch(batch_start + chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget));
+                flush_batch(batch_start + chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget, rows_hint));
         }
         else if (fixed_block_size > 0)
         {
@@ -1013,10 +1015,6 @@ private:
 
     /// Configured `webassembly_udf_max_memory` in bytes, empty when the host caps nothing.
     std::optional<size_t> module_memory_limit;
-
-    /// Rows the previous call fitted into the budget, reused as the first candidate for the
-    /// next one. A hint only, never a bound: see `chooseBatchRows`.
-    mutable std::atomic<size_t> batch_rows_hint{0};
 
     mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;
