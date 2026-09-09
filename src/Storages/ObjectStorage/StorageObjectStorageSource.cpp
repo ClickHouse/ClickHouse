@@ -190,6 +190,11 @@ namespace
             hash.update('\0');
             hash.update(url.query_fragment);
             hash.update('\0');
+            /// Two shards can share the same origin/query but point to different path failover sets.
+            /// Include every concrete override so they cannot share cached bytes or metadata.
+            if (url.path_override)
+                hash.update(*url.path_override);
+            hash.update('\0');
         }
 
         return fmt::format("web:{}:{}", toString(hash.get128()), object_info.getPath());
@@ -470,33 +475,53 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     if (is_locally_expanded_web_path)
     {
         const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
-        const auto expanded_paths = reading_path.hasGlobs()
-            ? parseRemoteDescription(
-                reading_path.path,
-                0,
-                reading_path.path.size(),
-                ',',
-                query_settings.list_object_keys_size,
-                "url")
-            : Strings{reading_path.path};
-
         const auto & url_shards = web_object_storage.getURLShards();
-        const size_t max_expanded_elements = query_settings.list_object_keys_size;
-        /// Host/query shards and path selectors are expanded independently, but every indexed key
-        /// is their Cartesian product. Bound that final product before reserving or materializing it.
-        if (!expanded_paths.empty() && url_shards.size() > max_expanded_elements / expanded_paths.size())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Table function 'url': first argument generates too many result addresses");
-        }
+        /// `StorageWebConfiguration` has already expanded path unions when path-level failover is
+        /// present. In that case each URL shard is one logical object and its `URLOptions` carry the
+        /// concrete failover paths, so create exactly one indexed key per shard instead of expanding
+        /// the original path again and converting failover into union.
+        const bool has_path_overrides = !url_shards.empty() && !url_shards.front().empty()
+            && url_shards.front().front().path_override.has_value();
 
         RelativePathsWithMetadata indexed_paths;
-        indexed_paths.reserve(url_shards.size() * expanded_paths.size());
-        for (size_t source_index = 0; source_index < url_shards.size(); ++source_index)
+        if (has_path_overrides)
         {
-            for (const auto & expanded_path : expanded_paths)
-                indexed_paths.emplace_back(std::make_shared<RelativePathWithMetadata>(expanded_path, source_index));
+            indexed_paths.reserve(url_shards.size());
+            for (size_t source_index = 0; source_index < url_shards.size(); ++source_index)
+            {
+                chassert(!url_shards[source_index].empty() && url_shards[source_index].front().path_override.has_value());
+                indexed_paths.emplace_back(
+                    std::make_shared<RelativePathWithMetadata>(*url_shards[source_index].front().path_override, source_index));
+            }
+        }
+        else
+        {
+            const auto expanded_paths = reading_path.hasGlobs()
+                ? parseRemoteDescription(
+                    reading_path.path,
+                    0,
+                    reading_path.path.size(),
+                    ',',
+                    query_settings.list_object_keys_size,
+                    "url")
+                : Strings{reading_path.path};
+
+            const size_t max_expanded_elements = query_settings.list_object_keys_size;
+            /// Host/query shards and path selectors are expanded independently, but every indexed key
+            /// is their Cartesian product. Bound that final product before reserving or materializing it.
+            if (!expanded_paths.empty() && url_shards.size() > max_expanded_elements / expanded_paths.size())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table function 'url': first argument generates too many result addresses");
+            }
+
+            indexed_paths.reserve(url_shards.size() * expanded_paths.size());
+            for (size_t source_index = 0; source_index < url_shards.size(); ++source_index)
+            {
+                for (const auto & expanded_path : expanded_paths)
+                    indexed_paths.emplace_back(std::make_shared<RelativePathWithMetadata>(expanded_path, source_index));
+            }
         }
 
         ExpressionActionsPtr deferred_filter_actions;

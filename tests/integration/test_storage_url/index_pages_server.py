@@ -87,6 +87,9 @@ SIMPLE_ARCHIVES = {
     ),
     "/data/archive_braces/a.zip": make_zip_file([("value.tsv", "11\n")]),
     "/data/archive_braces/b.zip": make_zip_file([("value.tsv", "22\n")]),
+    "/data/archive_failover/archivegood.zip": make_zip_file([("value.tsv", "17\n")]),
+    "/data/archive_failover/archive0good.zip": make_zip_file([("value.tsv", "10\n")]),
+    "/data/archive_failover/archive1good.zip": make_zip_file([("value.tsv", "20\n")]),
 }
 SEVEN_ZIP_ARCHIVE = base64.b64decode(
     "N3q8ryccAAR6+uLAhgAAAAAAAAAhAAAAAAAAALNtaxHgABsAGF0AGIsG6KncZB+qxtE07L6V51NQRUvIscAAAAAAgTMHrg/QD"

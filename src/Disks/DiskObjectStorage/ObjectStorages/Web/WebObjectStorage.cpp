@@ -79,7 +79,7 @@ WebObjectStorage::WebObjectStorage(
     HTTPHeaderEntries headers_,
     size_t max_directories_to_read_)
     : WebObjectStorage(
-        URLShards{{URL{.base_url = url_, .query_fragment = query_fragment_}}},
+        URLShards{{URL{.base_url = url_, .query_fragment = query_fragment_, .path_override = std::nullopt}}},
         context_,
         std::move(headers_),
         max_directories_to_read_)
@@ -519,7 +519,11 @@ std::vector<String> WebObjectStorage::buildURLs(const std::string & path, size_t
 
 std::string WebObjectStorage::buildURL(const URL & url_option, const std::string & path)
 {
-    if (path.empty())
+    /// `path` is the logical object identity shared by the shard. A path-level failover option can
+    /// override only the concrete request path while keeping scheduling, caching, and task identity
+    /// attached to that logical object.
+    const auto & effective_path = url_option.path_override ? *url_option.path_override : path;
+    if (effective_path.empty())
         return url_option.base_url + url_option.query_fragment;
 
     Poco::URI base_uri(url_option.base_url, false);
@@ -527,7 +531,7 @@ std::string WebObjectStorage::buildURL(const URL & url_option, const std::string
     if (!base_path.ends_with('/'))
         base_path += '/';
 
-    Poco::URI path_uri(stripLeadingSlashes(path), false);
+    Poco::URI path_uri(stripLeadingSlashes(effective_path), false);
     base_uri.setPath(base_path + stripLeadingSlashes(path_uri.getPath()));
 
     Poco::URI source_uri(url_option.base_url + url_option.query_fragment, false);

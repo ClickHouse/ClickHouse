@@ -702,6 +702,53 @@ def test_url_archive_path_braces_are_expanded_without_index_listing():
         assert "first argument generates too many result addresses" in error
 
 
+def test_url_archive_path_failover():
+    settings = {
+        "allow_experimental_url_wildcard_from_index_pages": 0,
+        "glob_expansion_max_elements": 4,
+    }
+    single_source = "http://resolver:8087/data/archive_failover/archive{missing|good}.zip :: value.tsv"
+    union_source = "http://resolver:8087/data/archive_failover/archive{0,1}{missing|good}.zip :: value.tsv"
+    shard_and_failover_source = (
+        "http://resolver:8087/data/archive_failover/archive{missing|good}.zip?shard={0,1} :: value.tsv"
+    )
+
+    table_functions = [
+        (f"url('{single_source}', 'TSV', 'x UInt64')", "17"),
+        (f"urlCluster('test_cluster_two_shards', '{single_source}', 'TSV', 'x UInt64')", "17"),
+        (f"url('{union_source}', 'TSV', 'x UInt64')", "30"),
+        (f"urlCluster('test_cluster_two_shards', '{union_source}', 'TSV', 'x UInt64')", "30"),
+        (f"url('{shard_and_failover_source}', 'TSV', 'x UInt64')", "34"),
+        (f"urlCluster('test_cluster_two_shards', '{shard_and_failover_source}', 'TSV', 'x UInt64')", "34"),
+    ]
+    for table_function, expected_sum in table_functions:
+        assert node1.query(f"SELECT sum(x) FROM {table_function}", settings=settings).strip() == expected_sum
+
+    limited_settings = dict(settings)
+    limited_settings["glob_expansion_max_elements"] = 3
+    combined_queries = [
+        f"SELECT * FROM url('{shard_and_failover_source}', 'TSV', 'x UInt64')",
+        f"SELECT * FROM urlCluster('test_cluster_two_shards', '{shard_and_failover_source}', 'TSV', 'x UInt64')",
+    ]
+    for query in combined_queries:
+        reset_index_page_server_stats()
+        error = node1.query_and_get_error(query, settings=limited_settings)
+        assert "first argument generates too many result addresses" in error
+        assert get_index_page_server_stats() == {}
+
+    listing_source = "http://resolver:8087/data/archive_failover/archive{missing|good}*.zip :: value.tsv"
+    queries = [
+        f"SELECT * FROM url('{listing_source}', 'TSV', 'x UInt64')",
+        f"SELECT * FROM urlCluster('test_cluster_two_shards', '{listing_source}', 'TSV', 'x UInt64')",
+    ]
+    listing_settings = dict(settings)
+    listing_settings["allow_experimental_url_wildcard_from_index_pages"] = 1
+    for query in queries:
+        error = node1.query_and_get_error(query, settings=listing_settings)
+        assert "Failover patterns ('|') in the path are not supported" in error
+        assert "index listing" in error
+
+
 def test_url_archive_combined_expansion_limit():
     settings = {
         "allow_experimental_url_wildcard_from_index_pages": 0,
