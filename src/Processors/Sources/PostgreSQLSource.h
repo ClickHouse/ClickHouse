@@ -52,8 +52,6 @@ private:
 
     void finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx::stream_from * stream_to_close) noexcept;
 
-    void interruptRead(int fd) noexcept;
-
     const UInt64 max_block_size;
     bool auto_commit = true;
     ExternalResultDescription description;
@@ -69,8 +67,7 @@ private:
 
     /// tx and stream are written only by the pipeline thread; this is for onCancel() to read tx.
     std::mutex tx_mutex;
-    /// Our own duplicate of the connection's socket, published with `tx`. The client library may
-    /// close its descriptor on a failed read, so onCancel() must never act on that one directly.
+    /// Our own duplicate of the connection's socket. The client library may close its own on a failed read.
     int interrupt_fd = -1;
     /// Serializes the cancel_query() in finalize() between onCancel() and the destructor.
     std::mutex cancel_mutex;

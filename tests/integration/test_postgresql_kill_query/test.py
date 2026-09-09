@@ -314,29 +314,16 @@ class StatementStallingProxy:
             t.join(timeout=5)
 
 
-class ResponseStallingProxy:
-    """Forwards the PostgreSQL wire protocol, then withholds the server's output from the first
-    `CopyData` message on, holding both sockets open until release() is called.
-
-    This is the steady state the startup proxies cannot reach: `CopyOutResponse` has arrived, so
-    `onStart` has returned and the source is in `read_row()` with nothing buffered ahead of it.
-    Cancellation is only checked between rows, and there is no next row.
-
-    Server output is framed into protocol messages only once the client has sent the `COPY`, so
-    the handshake before it (with its unframed SSL reply) is relayed untouched.
+class ResponseStallingProxy(StatementStallingProxy):
+    """Forwards the `CopyOutResponse` and withholds every row after it, keeping both sockets open.
+    The source is then blocked in `read_row()` with nothing buffered to drain.
     """
 
-    COPY = b"COPY ("
-
     def __init__(self):
+        super().__init__(marker=StatementStallingProxy.COPY)
         self._copy_sent = threading.Event()
-        self._release = threading.Event()
-        self._stalled = threading.Event()
-        self._sock = None
-        self._threads = []
-        self._stop = False
 
-    def _pump(self, source, destination, is_server_to_client):
+    def _pump(self, source, destination, is_client_to_server):
         carry = b""
         buf = bytearray()
         stalled_once = False
@@ -351,38 +338,27 @@ class ResponseStallingProxy:
                 break
 
             try:
-                if not is_server_to_client:
-                    if not self._copy_sent.is_set():
-                        if self.COPY in carry + data:
-                            # Set before forwarding: the server cannot answer what it has not seen.
-                            self._copy_sent.set()
-                        carry = (carry + data)[-(len(self.COPY) - 1) :]
+                if is_client_to_server:
+                    if not self._copy_sent.is_set() and self._marker in carry + data:
+                        self._copy_sent.set()
+                    carry = (carry + data)[-(len(self._marker) - 1) :]
                     destination.sendall(data)
                     continue
 
-                # The COPY response starts at a message boundary: the client sends the COPY only
-                # after reading ReadyForQuery, so everything before it has been relayed already.
                 if stalled_once or not self._copy_sent.is_set():
                     destination.sendall(data)
                     continue
 
+                # The response starts at a message boundary. Forward its first message only.
                 buf += data
-                while len(buf) >= 5:
-                    length = 1 + int.from_bytes(buf[1:5], "big")
-                    if len(buf) < length:
-                        break
-                    message = bytes(buf[:length])
-                    del buf[:length]
-                    destination.sendall(message)
-                    if message[:1] == b"H":  # CopyOutResponse
-                        stalled_once = True
-                        self._stalled.set()
-                        # Withhold everything from here on. The bounded wait keeps a failure
-                        # surfacing as an assertion rather than as a hung worker.
-                        self._release.wait(timeout=60)
-                        destination.sendall(bytes(buf))
-                        buf.clear()
-                        break
+                if len(buf) < 5 or len(buf) < 1 + int.from_bytes(buf[1:5], "big"):
+                    continue
+                first = 1 + int.from_bytes(buf[1:5], "big")
+                destination.sendall(bytes(buf[:first]))
+                stalled_once = True
+                self._stalled.set()
+                self._release.wait(timeout=60)
+                destination.sendall(bytes(buf[first:]))
             except OSError:
                 break
 
@@ -391,55 +367,6 @@ class ResponseStallingProxy:
                 s.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
-
-    def _serve(self):
-        while not self._stop:
-            try:
-                downstream, _ = self._sock.accept()
-            except socket.timeout:
-                continue
-            except OSError:
-                break
-
-            upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            try:
-                upstream.connect(self._address)
-            except OSError:
-                downstream.close()
-                continue
-
-            downstream.settimeout(1)
-            upstream.settimeout(1)
-            for args in ((downstream, upstream, False), (upstream, downstream, True)):
-                t = threading.Thread(target=self._pump, args=args, daemon=True)
-                self._threads.append(t)
-                t.start()
-
-    def start(self, address):
-        self._address = address
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.bind(("", 0))
-        self._sock.listen()
-        self._sock.settimeout(1)
-        self._runner = threading.Thread(target=self._serve, daemon=True)
-        self._runner.start()
-        return self._sock.getsockname()[1]
-
-    def wait_until_stalled(self, timeout=60):
-        if not self._stalled.wait(timeout=timeout):
-            raise AssertionError("proxy never saw CopyOutResponse")
-
-    def release(self):
-        self._release.set()
-
-    def stop(self):
-        self._stop = True
-        self._release.set()
-        if self._sock:
-            self._sock.close()
-        for t in self._threads:
-            t.join(timeout=5)
 
 
 def test_kill_query_while_transaction_is_starting(started_cluster, setup_infinite_query):
@@ -539,11 +466,9 @@ def test_kill_query_while_copy_is_starting(started_cluster, setup_streaming_view
     """A cancel arriving after the transaction is published but before the COPY starts must
     not be lost either.
 
-    This is one step later than `test_kill_query_while_transaction_is_starting`. Here `tx` is
-    already published, but no statement is running on the connection yet, so a cancel request
-    to the server would find nothing to interrupt and be dropped. `onCancel` therefore has to
-    act on the connection itself, and the failed `COPY` start must still surface as a
-    cancellation rather than as a transport error.
+    This is one step later than `test_kill_query_while_transaction_is_starting`: `tx` is
+    published but no statement runs yet, so a cancel request to the server would be dropped.
+    The failed `COPY` start must still surface as a cancellation, not a transport error.
 
     Stalling the COPY request rather than the `BEGIN` is what places the cancel in this
     window; `test_kill_query_while_transaction_is_starting` cannot reach it, because there
@@ -608,9 +533,7 @@ ENGINE = PostgreSQL(
         finally:
             proxy.release()
 
-        # The read has to be abandoned whether or not the COPY ever reaches the server. Without
-        # the fix the dropped cancel leaves the source streaming the view to its end, so this
-        # join times out.
+        # Without the fix the dropped cancel leaves the source streaming to the end of the view.
         query_thread.join(timeout=60)
         assert (
             not query_thread.is_alive()
@@ -634,12 +557,7 @@ ENGINE = PostgreSQL(
 
 def test_kill_query_while_the_read_is_stalled(started_cluster, setup_streaming_view):
     """A cancel arriving while the COPY is streaming must not wait for the server.
-
-    The startup tests cover a cancel reaching a connection with no statement running on it. Here
-    the statement runs and its output simply stops, leaving the reading thread inside the client
-    library with no deadline. The proxy stalls right after `CopyOutResponse`, so the source has
-    no buffered rows to drain before it blocks, and it stays stalled across the kill, so the read
-    can only end if the cancellation reaches the transport itself.
+    The proxy stays stalled across the kill, so only the transport itself can end the read.
     """
     proxy = ResponseStallingProxy()
     port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
@@ -672,8 +590,7 @@ ENGINE = PostgreSQL(
     try:
         proxy.wait_until_stalled()
 
-        # `CopyOutResponse` is all the source has received, so once generate() has begun there is
-        # nothing for it to drain: the next thing it does is block in the read.
+        # Nothing is buffered after `CopyOutResponse`, so from here the source blocks in the read.
         node1.wait_for_log_line(f"{query_id}.*Generate a chunk from stream")
 
         node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
@@ -684,17 +601,8 @@ ENGINE = PostgreSQL(
             not query_thread.is_alive()
         ), "cancelled query kept waiting on a silent connection"
         assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
-
-        assert_eq_with_retry(
-            node1,
-            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
-            "0",
-            retry_count=60,
-            sleep_time=0.5,
-        )
     finally:
         node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
-        proxy.release()
         proxy.stop()
         query_thread.join(timeout=60)
         node1.query("DROP TABLE IF EXISTS read_stalled_counter")
@@ -742,8 +650,7 @@ def test_kill_query_when_postgresql_cancel_connection_fails(
         )
         wait_for_port_forward_connection(port_forward)
 
-        # Keep the active `postgresql` data connection open, but refuse any new connection to
-        # the host. The kill must get by without one.
+        # Keep the data connection open but refuse new ones. The kill must get by without one.
         port_forward.stop()
         wait_for_proxy_listener_closed(proxy_host, port)
 

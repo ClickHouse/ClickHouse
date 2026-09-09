@@ -107,27 +107,6 @@ void PostgreSQLSource<T>::finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx
         connection_holder->setBroken();
 }
 
-
-/// Wakes a read parked in the client library, which waits on the socket with no deadline of its own.
-/// `shutdown` and not `close` keeps the descriptor valid for the thread still reading it.
-template<typename T>
-void PostgreSQLSource<T>::interruptRead(int fd) noexcept
-{
-    if (fd < 0 || connection_torn_down.exchange(true))
-        return;
-
-    ::shutdown(fd, SHUT_RDWR);
-
-    try
-    {
-        LOG_DEBUG(getLogger("PostgreSQLSource"), "Shut the connection down to interrupt the read");
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
-
 template<typename T>
 void PostgreSQLSource<T>::onStart()
 {
@@ -236,8 +215,7 @@ Chunk PostgreSQLSource<T>::generate()
         }
         catch (const pqxx::failure &)
         {
-            /// An interrupted read fails here instead of returning. Report the cancellation, not a
-            /// transport error the user did not cause.
+            /// An interrupted read fails here instead of returning. Report the cancellation.
             if (stop_requested.load())
                 break;
             throw;
@@ -313,10 +291,16 @@ void PostgreSQLSource<T>::onCancel() noexcept
         if (!tx_snapshot)
             return;
 
-        /// The connection is ours to discard, so the read can be interrupted at any point of its life.
+        /// The connection is ours to discard, so a read parked in the client library with no deadline is
+        /// woken by taking the transport away. `shutdown` keeps the descriptor valid for that thread.
         if (connection_holder)
         {
-            interruptRead(fd);
+            if (fd >= 0)
+            {
+                ::shutdown(fd, SHUT_RDWR);
+                connection_torn_down.store(true);
+                LOG_DEBUG(getLogger("PostgreSQLSource"), "Shut the connection down to interrupt the read");
+            }
             connection_holder->setBroken();
         }
         /// A connection that came with the transaction outlives this source, so ask the server instead.
@@ -337,12 +321,9 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     /// The teardown owner for every path but a clean finish, which prepare() claims. Without
     /// cancelling the COPY the ROLLBACK issued during transaction abort waits for it. With no
     /// transaction nothing reached the connection, so it stays healthy and is left in the pool.
+    /// A connection already taken down has nothing left to cancel, and the attempt would block.
     if (!finalized.exchange(true) && tx)
-    {
-        /// A connection already taken down has nothing left to cancel, and the attempt would block.
-        const bool cancel_running_query = stream && !connection_torn_down.load();
-        finalize(cancel_running_query ? tx : nullptr, stream.get());
-    }
+        finalize((stream && !connection_torn_down.load()) ? tx : nullptr, stream.get());
 
     stream.reset();
     tx.reset();
