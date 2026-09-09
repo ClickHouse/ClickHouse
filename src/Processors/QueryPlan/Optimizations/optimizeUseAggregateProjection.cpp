@@ -56,12 +56,6 @@ namespace Setting
 namespace FailPoints
 {
     extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
-    extern const char aggregate_projection_analyze_implicit_minmax[];
-}
-
-namespace ErrorCodes
-{
-    extern const int FAULT_INJECTED;
 }
 }
 
@@ -792,14 +786,6 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (can_use_minmax_projection)
     {
-        /// Test hook: reaching this point means the implicit projection is being analysed for this
-        /// query, which is observable no other way.
-        fiu_do_on(FailPoints::aggregate_projection_analyze_implicit_minmax,
-        {
-            throw Exception(ErrorCodes::FAULT_INJECTED,
-                            "Failpoint aggregate_projection_analyze_implicit_minmax is triggered");
-        });
-
         const auto * projection = &*(metadata->minmax_count_projection);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
         if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
