@@ -32,6 +32,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Databases/IDatabase.h>
+#include <Functions/CancellationBudget.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -115,6 +116,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char storage_merge_create_children_plans_pause[];
+    extern const char storage_merge_schema_inference_pause[];
 }
 
 namespace ErrorCodes
@@ -302,7 +304,18 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     size_t table_num = 0;
     ColumnsDescription res;
 
-    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context](auto && t)
+    /// One deeply nested column's substream walk takes seconds. Unlike `createChildrenPlans` below, which
+    /// keeps the tables it reached, this throws even in `break` mode: `CREATE TABLE ... AS merge(...)`
+    /// persists the inferred schema, so a truncated one is a wrong structure, not a smaller result.
+    const std::function<void()> check_cancellation = [inner = makeCancellationCheck("merge")]
+    {
+        if (inner)
+            inner();
+        FailPointInjection::pauseFailPoint(FailPoints::storage_merge_schema_inference_pause);
+    };
+    CancellationBudget budget(check_cancellation);
+
+    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context, &budget](auto && t)
     {
         if (!t)
             return false;
@@ -319,7 +332,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
         {
             if (!res.has(column.name))
             {
-                res.add(column, prev_column_name);
+                res.add(column, prev_column_name, /*first=*/ false, /*add_subcolumns=*/ true, &budget);
             }
             else if (column != res.get(column.name))
             {
@@ -328,7 +341,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
                     what.type = getLeastSupertypeOrVariant(DataTypes{what.type, column.type});
                     if (what.default_desc != column.default_desc)
                         what.default_desc = {};
-                });
+                }, &budget);
             }
             prev_column_name = column.name;
         }

@@ -43,6 +43,8 @@ using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
 using MutableSerializationInfoPtr = std::shared_ptr<SerializationInfo>;
 struct SerializationInfoSettings;
 
+struct CancellationBudget;
+
 /** Properties of data type.
   *
   * Contains methods for getting serialization instances.
@@ -112,9 +114,12 @@ public:
         const String &,
         const SubstreamData &)>;
 
+    /// The substream tree of a nested type grows exponentially with its nesting depth, so one call can run
+    /// for seconds. A caller running on behalf of a query passes a budget to make the walk interruptible.
     static void forEachSubcolumn(
         const SubcolumnCallback & callback,
-        const SubstreamData & data);
+        const SubstreamData & data,
+        CancellationBudget * budget = nullptr);
 
     /// Call callback for each nested type recursively.
     using ChildCallback = std::function<void(const IDataType &)>;
