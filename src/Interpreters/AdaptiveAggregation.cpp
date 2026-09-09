@@ -326,7 +326,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealedChunks);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, batch_records - keys.size());
 
-    LOG_TRACE(
+    LOG_TEST(
         log,
         "Adaptive aggregation: sealed {} staged batches into one chunk of {} records",
         num_minis,
