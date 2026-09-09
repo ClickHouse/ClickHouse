@@ -31,7 +31,7 @@ Chunk makeChunk()
     return Chunk(std::move(columns), 1);
 }
 
-/// Pushes a chunk per round, chunks_to_push times, then finishes.
+/// Makes a chunk in work and pushes it in the next round, chunks_to_push times, then finishes.
 class CountingSource final : public IProcessor
 {
 public:
@@ -47,23 +47,32 @@ public:
     {
         auto & output = outputs.front();
 
+        if (chunk)
+        {
+            if (!output.canPush())
+                return Status::PortFull;
+
+            output.push(std::move(*chunk));
+            chunk.reset();
+            ++pushed;
+            return Status::PortFull;
+        }
+
         if (pushed == chunks_to_push)
         {
             output.finish();
             return Status::Finished;
         }
 
-        if (!output.canPush())
-            return Status::PortFull;
-
-        output.push(makeChunk());
-        ++pushed;
-        return Status::PortFull;
+        return Status::Ready;
     }
+
+    void work() override { chunk = makeChunk(); }
 
 private:
     size_t chunks_to_push;
     size_t pushed = 0;
+    std::optional<Chunk> chunk;
 };
 
 /// Produces its only chunk inside work, then finishes. Throws in work when asked.
@@ -285,7 +294,10 @@ struct Harness
     {
         for (auto * sink : pipeline.sinks())
         {
-            EXPECT_TRUE(sink->lock.tryLock());
+            {
+                auto round_lock = sink->lock.lockRound();
+                sink->lock.setExecuting();
+            }
             scheduler.push(Task{.state = sink, .kind = Task::Kind::Prepare});
         }
         coordinator.enter(0);

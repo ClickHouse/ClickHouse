@@ -123,10 +123,8 @@ TEST(ExecutingPipeline, AllFinishedNeedsEveryLockClosed)
     ProcessorState & sink_state = chain.sink->input().getUpdateChannel().getOwner();
 
     EXPECT_FALSE(pipeline.allFinished());
-    ASSERT_TRUE(source_state.lock.tryLock());
     source_state.lock.finish();
     EXPECT_FALSE(pipeline.allFinished());
-    ASSERT_TRUE(sink_state.lock.tryLock());
     sink_state.lock.finish();
     EXPECT_TRUE(pipeline.allFinished());
 }

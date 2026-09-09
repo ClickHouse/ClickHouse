@@ -75,9 +75,10 @@ TEST(TaskScheduler, LocalQueueOverflowsTheOldestHalfIntoTheGlobalQueue)
         f.scheduler.push(f.task(i), 0);
     EXPECT_EQ(f.states.size(), f.scheduler.queued());
 
-    EXPECT_EQ(0u, f.popIndex(1));
+    /// The other worker takes a batch of seven from the global front and pops it newest first.
+    EXPECT_EQ(6u, f.popIndex(1));
     EXPECT_EQ(199u, f.popIndex(0));
-    EXPECT_EQ(1u, f.popIndex(1));
+    EXPECT_EQ(5u, f.popIndex(1));
 }
 
 TEST(TaskScheduler, AChainGetsTheOldestTaskAfterTheCap)
@@ -101,17 +102,21 @@ TEST(TaskScheduler, AChainGetsTheOldestTaskAfterTheCap)
     EXPECT_FALSE(f.scheduler.tryPop(0));
 }
 
-TEST(TaskScheduler, GlobalQueueIsTakenFromTheFront)
+TEST(TaskScheduler, GlobalQueueIsTakenFromTheFrontInBatches)
 {
     Fixture f(2);
     for (size_t i = 0; i < 6; ++i)
         f.scheduler.push(f.task(i));
 
-    EXPECT_EQ(0u, f.popIndex(1));
+    /// The oldest half moves into the own queue and is popped newest first; the rest stays for others.
+    EXPECT_EQ(2u, f.popIndex(1));
     EXPECT_EQ(5u, f.scheduler.queued());
     EXPECT_EQ(1u, f.popIndex(1));
-    EXPECT_EQ(2u, f.popIndex(1));
+    EXPECT_EQ(0u, f.popIndex(1));
+    EXPECT_EQ(4u, f.popIndex(0));
     EXPECT_EQ(3u, f.popIndex(0));
+    EXPECT_EQ(5u, f.popIndex(1));
+    EXPECT_EQ(0u, f.scheduler.queued());
 }
 
 TEST(TaskScheduler, StealTakesTheOldestHalfOfAnotherWorker)
