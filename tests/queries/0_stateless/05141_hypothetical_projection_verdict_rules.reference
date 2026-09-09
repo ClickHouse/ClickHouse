@@ -14,6 +14,10 @@ reason: Projection orders by _part_offset, which it does not store, so EXPLAIN W
 --- retargeting an ALIAS the projection selects denies the estimate ---
 status: applicable
 ACCESS_DENIED
+--- a _part_offset predicate does not engage a projection ---
+_part_offset = 7: with Granules: 1, without Granules: 1, from projection 0
+b = 42 AND _part_offset = 7: with Granules: 1, without Granules: 1, from projection 0
+b = 42: with Granules: 1, without Granules: 10, from projection 1
 --- projections disabled by the query ---
 reason: Projections are disabled by `optimize_use_projections = 0`
 --- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---

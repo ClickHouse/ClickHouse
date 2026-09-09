@@ -56,6 +56,25 @@ $CLICKHOUSE_CLIENT -q "ALTER TABLE t_alias MODIFY COLUMN c UInt64 ALIAS d + 1;"
 ${CLICKHOUSE_CURL} -sS "${alias_url}" --data-binary "EXPLAIN WHATIF SELECT a FROM ${CLICKHOUSE_DATABASE}.t_alias WHERE a = 500 SETTINGS ${PIN}" 2>&1 | grep -m1 -oE 'ACCESS_DENIED'
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${alias_user}; DROP TABLE IF EXISTS t_alias;"
 
+# the base read prunes a `_part_offset` predicate with its own offset condition, so a projection is
+# not engaged at all: the granule count matches a table that has none, while `b = 42` still uses it
+echo "--- a _part_offset predicate does not engage a projection ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_off; DROP TABLE IF EXISTS t_off_plain;
+    CREATE TABLE t_off (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    CREATE TABLE t_off_plain AS t_off;
+    ALTER TABLE t_off ADD PROJECTION p_b INDEX b TYPE basic;
+    INSERT INTO t_off SELECT number, number % 100, number FROM numbers(1000);
+    INSERT INTO t_off_plain SELECT number, number % 100, number FROM numbers(1000);
+"
+for w in "_part_offset = 7" "b = 42 AND _part_offset = 7" "b = 42"; do
+    plan=$($CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT count() FROM t_off WHERE ${w} SETTINGS ${PIN}")
+    plain=$($CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT count() FROM t_off_plain WHERE ${w} SETTINGS ${PIN}")
+    echo "${w}: with $(echo "$plan" | grep -oE 'Granules: [0-9]+$' | head -1), without $(echo "$plain" | grep -oE 'Granules: [0-9]+$' | head -1), from projection $(echo "$plan" | grep -cE 'ReadFromMergeTree \(p_b\)')"
+done
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_off; DROP TABLE IF EXISTS t_off_plain;"
+
 echo "--- projections disabled by the query ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
