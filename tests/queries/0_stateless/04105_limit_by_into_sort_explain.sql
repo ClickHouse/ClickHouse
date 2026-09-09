@@ -117,10 +117,13 @@ INSERT INTO test_join_a SELECT number % 100, number FROM numbers(10000);
 INSERT INTO test_join_b SELECT number % 100, number FROM numbers(10000);
 INSERT INTO test_join_b SELECT number % 100, number FROM numbers(10000);
 
+-- Pin the join spill thresholds off, so that this golden tracks the `LIMIT BY` optimization
+-- and not the global default of the automatic spilling of the hash join.
 EXPLAIN PIPELINE
 SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
-ORDER BY k, v LIMIT 2, 3 BY k;
+ORDER BY k, v LIMIT 2, 3 BY k
+SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 
 -- With `full_sorting_merge`, the optimization applies to the final `ORDER BY` sort above
 -- the `JOIN`, not to the input sorts used by the join algorithm.
