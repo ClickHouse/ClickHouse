@@ -463,8 +463,12 @@ private:
         {
             /// In the cluster mode, the settings constraints are checked by the destination cluster.
             if (cluster_name.empty())
+            {
                 job_context->checkSettingsConstraints(job.settings_changes, SettingSource::QUERY);
-            job_context->applySettingsChanges(job.settings_changes);
+                job_context->applySettingsChangesAndResets(job.settings_changes, {}, SettingSource::QUERY);
+            }
+            else
+                job_context->applySettingsChanges(job.settings_changes);
         }
 
         /// After the job's settings, so the database explicitly recorded for the job wins over a

@@ -296,13 +296,22 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
     }
 }
 
-void SettingsConstraints::checkCompatibilityDerivedValues(const Settings & current_settings, const Settings & settings_before, SettingSource source) const
+void SettingsConstraints::checkMovedValues(const Settings & current_settings, const Settings & settings_before, SettingSource source) const
 {
-    /// Walk the constraints rather than the derived settings: an old `compatibility` value derives
-    /// hundreds of settings, while a profile constrains a handful.
+    /// Walk the constraints rather than the settings: an old `compatibility` value moves hundreds of
+    /// them, while a profile constrains a handful.
     for (const auto & [name, constraint] : constraints)
     {
-        if (!current_settings.isChangedByCompatibility(name))
+        /// A profile also constrains `MergeTreeSettings` and custom names. Only a `Settings` setting can
+        /// be moved by a `compatibility` or by a post-processor, and reading one of the others off the
+        /// session settings throws instead of reporting that it is absent.
+        if (!Settings::hasBuiltin(name))
+            continue;
+
+        /// A value something assigned is checked where it is assigned, and a profile's own settings are
+        /// applied without checking the profile's own constraints - deliberately, or no statement could
+        /// run under a profile whose settings its constraints forbid.
+        if (current_settings.isExplicitlyAssigned(name))
             continue;
 
         /// A profile that carries a `compatibility` of its own derives settings when it is applied at login,
@@ -311,8 +320,8 @@ void SettingsConstraints::checkCompatibilityDerivedValues(const Settings & curre
         if (value == settings_before.get(name))
             continue;
 
-        /// The derived value is already in place, so the regular check would see a change that keeps the
-        /// current value and permit it. Here the value itself is what has to satisfy the constraint.
+        /// The value is already in place, so the regular check would see a change that keeps the current
+        /// value and permit it. Here the value itself is what has to satisfy the constraint.
         SettingChange change{name, value};
         Checker(constraint, Settings::resolveName).check(change, value, THROW_ON_VIOLATION, source);
     }

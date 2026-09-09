@@ -224,6 +224,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                 ASTSetQuery * engine_settings = create_query->storage->settings;
                 auto const & features = StorageFactory::instance().getStorageFeatures(*storage_name);
                 chassert(!features.supports_settings || features.has_builtin_setting_fn != nullptr);
+                SettingsChanges moved_to_context;
                 for (auto it = engine_settings->changes.begin(); it != engine_settings->changes.end();)
                 {
                     String & name = it->name;
@@ -234,7 +235,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                         /// below converts the value first, so this has to come before it.
                         context_settings.checkShorthandChange(*it);
                         context_->checkSettingsConstraints(*it, SettingSource::QUERY);
-                        context_->applySettingChange(*it);
+                        moved_to_context.push_back(*it);
                         it = engine_settings->changes.erase(it);
                     }
                     else
@@ -242,6 +243,11 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                         it++;
                     }
                 }
+                /// All of them in one call, as a `SET` carrying the same names does: applied one at a
+                /// time, whether a `compatibility` among them derives a forbidden value would depend on
+                /// where in the clause it was written.
+                if (!moved_to_context.empty())
+                    context_->applySettingsChangesAndResets(moved_to_context, {}, SettingSource::QUERY);
 
                 if (engine_settings->changes.empty())
                     create_query->storage->reset(create_query->storage->settings);
@@ -305,7 +311,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
             if (!core_settings.empty())
             {
                 context_->checkSettingsConstraints(core_settings, SettingSource::QUERY);
-                context_->applySettingsChanges(core_settings);
+                context_->applySettingsChangesAndResets(core_settings, {}, SettingSource::QUERY);
             }
         }
     }

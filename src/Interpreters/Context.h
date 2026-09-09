@@ -1263,7 +1263,8 @@ public:
 
     /// Applies `changes` and then resets `names_to_reset`, the way a `SET` statement does, and checks the
     /// values `compatibility` derives for the settings neither of them names - which no other check sees,
-    /// because nobody asked for them. On a violation nothing the call did is left in place.
+    /// because nobody asked for them. The resets are checked against the state `changes` leave behind, so
+    /// the caller must not check them itself. On a violation nothing the call did is left in place.
     /// Only for callers that fail a forbidden change: one that clamps instead must not use this.
     void applySettingsChangesAndResets(const SettingsChanges & changes, const std::vector<String> & names_to_reset, SettingSource source);
 
@@ -2128,13 +2129,20 @@ private:
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
-    /// Checks the values `compatibility` derived for the settings nothing assigned. Only the state after a
-    /// change tells what they are, so the caller has to apply the change before calling this.
-    void checkCompatibilityDerivedSettingsWithLock(const Settings & settings_before, SettingSource source) const;
+    /// Checks the constrained settings that moved without the request assigning them: a value
+    /// `compatibility` derived, one it stopped deriving, one a post-processor moved. Only the state after
+    /// the change tells what they are, so the caller has to apply the change before calling this.
+    void checkSettingsMovedWithoutBeingAssignedWithLock(const Settings & settings_before, SettingSource source) const;
+
+    /// Performs the resets on `target`, which is either the live settings or a copy the caller checks
+    /// before committing to them. One routine for both, so the value checked is the value applied.
+    void resetToDefaultValueWithLock(
+        Settings & target, const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock) const;
 
     void resetSettingsToDefaultValueWithLock(const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void checkSettingsConstraintsForSettingsResetWithLock(const std::vector<String> & names, SettingSource source) const;
+    void checkSettingsConstraintsForSettingsResetWithLock(
+        const std::vector<String> & names, SettingSource source, const std::lock_guard<ContextSharedMutex> & lock) const;
 
     ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 

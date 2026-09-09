@@ -91,10 +91,11 @@ public:
     /// `after_reset` holds the values the resets land on, which the caller obtains by performing them.
     void checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const;
 
-    /// Checks the values that `compatibility` derived for the settings a request did not assign. Nobody
-    /// asked for those values, so this is the only check that ever sees them. Only the values that differ
-    /// from `settings_before` are checked: what a request did not move is not the request's to answer for.
-    void checkCompatibilityDerivedValues(const Settings & current_settings, const Settings & settings_before, SettingSource source) const;
+    /// Checks the constrained values that moved without anything assigning them - one `compatibility`
+    /// derived, one it stopped deriving. No other check ever sees those, because nobody asked for them.
+    /// Only values that differ from `settings_before` are checked: what the request did not move is not
+    /// the request's to answer for.
+    void checkMovedValues(const Settings & current_settings, const Settings & settings_before, SettingSource source) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;

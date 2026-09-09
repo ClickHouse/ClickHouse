@@ -26,10 +26,12 @@ USER_MIN="u_min_05047_${CLICKHOUSE_DATABASE}"
 USER_CONST="u_const_05047_${CLICKHOUSE_DATABASE}"
 USER_STREAM="u_stream_05047_${CLICKHOUSE_DATABASE}"
 USER_LOGIN="u_login_05047_${CLICKHOUSE_DATABASE}"
+USER_MT="u_mt_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_MIN="p_min_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_CONST="p_const_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_STREAM="p_stream_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_LOGIN="p_login_05047_${CLICKHOUSE_DATABASE}"
+PROFILE_MT="p_mt_05047_${CLICKHOUSE_DATABASE}"
 
 BASE_URL="${CLICKHOUSE_URL%%\?*}"
 session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}_$$_$1"; }
@@ -37,8 +39,9 @@ user_session_url() { echo "${BASE_URL}?session_id=s_05047_${CLICKHOUSE_DATABASE}
 # `system.settings` is read at execution time, so it also reports a reset made by the same statement.
 read_setting() { ${CLICKHOUSE_CURL} -sS "$1" -d "SELECT value FROM system.settings WHERE name = '$2'"; }
 
-${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t1_05047, ${CLICKHOUSE_DATABASE}.t2_05047"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}, ${USER_MT}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MIN} SETTINGS ${Q} = 1 MIN 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_CONST} SETTINGS compatibility = '26.7' CONST"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_STREAM} SETTINGS ${R} MIN 1"
@@ -47,6 +50,8 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MIN} SETTINGS PROFILE '${PROFILE_MIN
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_CONST} SETTINGS PROFILE '${PROFILE_CONST}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_STREAM} SETTINGS PROFILE '${PROFILE_STREAM}'"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_LOGIN} SETTINGS PROFILE '${PROFILE_LOGIN}'"
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MT} SETTINGS merge_tree_min_bytes_for_wide_part MAX 100000"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MT} SETTINGS PROFILE '${PROFILE_MT}'"
 
 echo 'the probe values differ from their declared defaults under compatibility 26.7'
 # If either 26.8 history row is ever dropped, this fails loudly instead of leaving the arms below vacuous.
@@ -203,5 +208,64 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = ''"
 ${CLICKHOUSE_CURL} -sS "$U" -d "SET make_distributed_plan = 0"
 read_setting "$U" compile_expressions
 
-${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}"
+echo 'control: each half of that statement is accepted on its own'
+# The assignment is what makes the reset below move the setting: without it the reset lands on the value
+# the setting already holds, and a change that changes nothing is permitted in readonly mode too.
+U=$(session_url a14)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = 0"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = DEFAULT"
+read_setting "$U" "${P}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET readonly = 1"
+read_setting "$U" readonly
+
+echo 'a reset is refused when the same statement enters readonly mode'
+# The reset is checked against the state the statement`s own changes leave behind, so the readonly mode
+# they enter applies to it. The reads afterwards show the refused statement left neither half in place.
+U=$(session_url a15)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = 0"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET readonly = 1, ${P} = DEFAULT" 2>&1 | grep -o 'READONLY' | head -1
+read_setting "$U" readonly
+read_setting "$U" "${P}"
+
+echo 'and a declared constraint does not change that answer'
+# The two routes used to disagree here: the reset was checked before the statement`s changes when nothing
+# was constrained and after them when something was, so the same statement was accepted for one user and
+# refused for the other.
+U=$(user_session_url a15b "${USER_MIN}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = 1"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET readonly = 1, ${P} = DEFAULT" 2>&1 | grep -o 'READONLY' | head -1
+read_setting "$U" readonly
+read_setting "$U" "${P}"
+
+echo 'a compatibility carried by a CREATE settings clause is checked the same way'
+# The clause is not an engine setting, so it is moved to the context from there rather than reaching it
+# through a `SET`. The control carries a version that derives an allowed value, so the refusal cannot be
+# the grant, the engine or the clause itself.
+${CLICKHOUSE_CLIENT} -q "GRANT CREATE TABLE ON ${CLICKHOUSE_DATABASE}.* TO ${USER_STREAM}"
+U=$(user_session_url a16 "${USER_STREAM}")
+${CLICKHOUSE_CURL} -sS "$U" -d "CREATE TABLE ${CLICKHOUSE_DATABASE}.t1_05047 (x Int) ENGINE = MergeTree ORDER BY x SETTINGS compatibility = '26.7'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+${CLICKHOUSE_CURL} -sS "$U" -d "CREATE TABLE ${CLICKHOUSE_DATABASE}.t2_05047 (x Int) ENGINE = MergeTree ORDER BY x SETTINGS compatibility = '26.8'"
+${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = currentDatabase() AND name LIKE 't%\\_05047' ORDER BY name"
+
+echo 'a compatibility carried by BACKUP core settings is checked the same way'
+# `BACKUP`/`RESTORE` keep their settings outside `settings_ast`, so they reach the context by a route of
+# their own. The check runs before the backup starts, which the control shows: without the setting the
+# same statement gets as far as the privilege check instead.
+U=$(user_session_url a17 "${USER_STREAM}")
+${CLICKHOUSE_CURL} -sS "$U" -d "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t2_05047 TO Disk('backups', 'b_05047') SETTINGS compatibility = '26.7'" 2>&1 | grep -oE 'SETTING_CONSTRAINT_VIOLATION|ACCESS_DENIED' | head -1
+${CLICKHOUSE_CURL} -sS "$U" -d "BACKUP TABLE ${CLICKHOUSE_DATABASE}.t2_05047 TO Disk('backups', 'b_05047')" 2>&1 | grep -oE 'SETTING_CONSTRAINT_VIOLATION|ACCESS_DENIED' | head -1
+
+echo 'a profile constraint on a MergeTree setting leaves an unrelated reset alone'
+# What a profile constrains is not always a `Settings` name. Reading a `MergeTreeSettings` one off the
+# session settings throws rather than reporting it absent, so the check on values nothing assigned has to
+# skip it - and a reset under such a profile has to go through and land on the era value like any other.
+U=$(user_session_url a18 "${USER_MT}")
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = 0"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${P} = DEFAULT"
+read_setting "$U" "${P}"
+
+${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}, ${USER_MT}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}"

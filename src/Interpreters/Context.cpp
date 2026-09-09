@@ -3598,38 +3598,36 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 void Context::applySettingsChangesAndResets(const SettingsChanges & changes, const std::vector<String> & names_to_reset, SettingSource source)
 {
     std::lock_guard lock(mutex);
-    /// A value nobody named can only be refused by a declared constraint, and only a `compatibility`
-    /// change, a `profile` that can carry one, or a reset writes one. Copying the settings is what the undo
-    /// costs, on a path every query takes, so it is worth not paying for it.
-    const bool can_derive_a_forbidden_value
-        = (!names_to_reset.empty() || changes.tryGet("compatibility") != nullptr || changes.tryGet("profile") != nullptr)
-        && !getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.empty();
-    if (!can_derive_a_forbidden_value)
+    /// Both checks below can only see what they have to judge once `changes` are applied: the value a
+    /// reset lands on follows the `compatibility` those changes leave in force, and the readonly mode
+    /// they can enter applies to the reset as well. A derived value additionally needs the undo, since
+    /// it is already in place by the time it can be read.
+    const bool must_check_after_the_changes
+        = !names_to_reset.empty()
+        || ((changes.tryGet("compatibility") != nullptr || changes.tryGet("profile") != nullptr)
+            && !getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.empty());
+    if (!must_check_after_the_changes)
     {
-        /// The reset check runs before the changes, as it did when it was the caller's to make: it also
-        /// enforces readonly mode, which the statement's own changes can enter.
-        checkSettingsConstraintsForSettingsResetWithLock(names_to_reset, source);
+        /// Nothing is left to refuse once the changes are applied, so the undo below is not worth
+        /// paying for on a path every query takes.
         applySettingsChangesWithLock(changes, lock);
-        resetSettingsToDefaultValueWithLock(names_to_reset, lock);
         return;
     }
 
-    /// Which values a `compatibility` change derives is only known once it is applied, and a violation must
-    /// not leave them in place, so keep what it takes to undo everything the statement did.
+    /// A violation must leave nothing the call did in place, so keep what it takes to undo all of it.
     Settings settings_before = *settings;
     auto profiles_before = settings_constraints_and_current_profiles;
     try
     {
         applySettingsChangesWithLock(changes, lock);
-        /// After the statement's own changes: the value a reset lands on follows the `compatibility` in
-        /// force once they are applied, which is not the one the statement was parsed under.
-        checkSettingsConstraintsForSettingsResetWithLock(names_to_reset, source);
+        checkSettingsConstraintsForSettingsResetWithLock(names_to_reset, source, lock);
         resetSettingsToDefaultValueWithLock(names_to_reset, lock);
-        checkCompatibilityDerivedSettingsWithLock(settings_before, source);
+        checkSettingsMovedWithoutBeingAssignedWithLock(settings_before, source);
     }
     catch (...)
     {
-        *settings = std::move(settings_before);
+        /// `Settings` is not move assignable.
+        *settings = settings_before;
         settings_constraints_and_current_profiles = std::move(profiles_before);
         throw;
     }
@@ -3698,16 +3696,16 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
     doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
 }
 
-void Context::checkSettingsConstraintsForSettingsResetWithLock(const std::vector<String> & names, SettingSource source) const
+void Context::checkSettingsConstraintsForSettingsResetWithLock(
+    const std::vector<String> & names, SettingSource source, const std::lock_guard<ContextSharedMutex> & lock) const
 {
     if (names.empty())
         return;
-    /// The value a reset lands on is the one an active `compatibility` implies for the setting, so
-    /// perform the resets on a copy and read the outcome off it.
+    /// The value a reset lands on is only known by performing it, so perform it on a copy and read the
+    /// outcome off that. The same routine does it here and for real, or a value a post-processor moves
+    /// would be checked as one thing and applied as another.
     Settings after_reset = *settings;
-    for (const String & name : names)
-        after_reset.setDefaultValue(name);
-    after_reset.reapplyCompatibility();
+    resetToDefaultValueWithLock(after_reset, names, lock);
     getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, after_reset, names, source);
 }
 
@@ -3729,18 +3727,24 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
     checkMergeTreeSettingsConstraintsWithLock(merge_tree_settings, changes);
 }
 
+void Context::resetToDefaultValueWithLock(
+    Settings & target, const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock) const
+{
+    for (const String & name : names)
+        target.setDefaultValue(name);
+    target.reapplyCompatibility();
+    /// A reset can move a setting the same way an assignment can, so the invariants the assignment
+    /// path establishes have to be re-established here too.
+    applySettingsQuirks(target);
+    adjustSettingsForMakeDistributedPlan(target);
+    contextSanityClampSettingsWithLock(*this, target, lock);
+}
+
 void Context::resetSettingsToDefaultValueWithLock(const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock)
 {
     if (names.empty())
         return;
-    for (const String & name : names)
-        settings->setDefaultValue(name);
-    settings->reapplyCompatibility();
-    /// A reset can move a setting the same way an assignment can, so the invariants the assignment
-    /// path establishes have to be re-established here too.
-    applySettingsQuirks(*settings);
-    adjustSettingsForMakeDistributedPlan(*settings);
-    contextSanityClampSettingsWithLock(*this, *settings, lock);
+    resetToDefaultValueWithLock(*settings, names, lock);
 }
 
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
@@ -3751,14 +3755,12 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
     resetSettingsToDefaultValueWithLock(names, lock);
 }
 
-void Context::checkCompatibilityDerivedSettingsWithLock(const Settings & settings_before, SettingSource source) const
+void Context::checkSettingsMovedWithoutBeingAssignedWithLock(const Settings & settings_before, SettingSource source) const
 {
-    if (!settings->hasSettingsChangedByCompatibility())
-        return;
     const auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
     if (constraints_and_profiles->constraints.empty())
         return;
-    constraints_and_profiles->constraints.checkCompatibilityDerivedValues(*settings, settings_before, source);
+    constraints_and_profiles->constraints.checkMovedValues(*settings, settings_before, source);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const

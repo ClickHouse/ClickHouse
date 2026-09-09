@@ -9489,10 +9489,10 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     void set(std::string_view name, const Field & value) override;
 
     bool hasSettingsChangedByCompatibility() const { return num_settings_changed_by_compatibility_setting != 0; }
-    bool isChangedByCompatibility(std::string_view name) const
+    bool isExplicitlyAssigned(std::string_view name) const
     {
         const size_t index = Traits::Accessor::instance().find(SettingsTraits::resolveName(name));
-        return index != static_cast<size_t>(-1) && isChangedByCompatibility(index);
+        return index != static_cast<size_t>(-1) && isChanged(name) && !isChangedByCompatibility(index);
     }
     void resetSettingsChangedByCompatibility();
     void markSettingsChangedByCompatibilityAsUnchanged();
@@ -9951,9 +9951,9 @@ bool Settings::hasSettingsChangedByCompatibility() const
     return impl->hasSettingsChangedByCompatibility();
 }
 
-bool Settings::isChangedByCompatibility(std::string_view name) const
+bool Settings::isExplicitlyAssigned(std::string_view name) const
 {
-    return impl->isChangedByCompatibility(name);
+    return impl->isExplicitlyAssigned(name);
 }
 
 void Settings::resetSettingsChangedByCompatibility()

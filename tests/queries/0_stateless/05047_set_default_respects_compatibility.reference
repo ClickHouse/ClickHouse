@@ -57,3 +57,22 @@ SET compatibility = DEFAULT re-applies the settings post-processors
 0
 and the spelling it has to agree with reaches the same state
 0
+control: each half of that statement is accepted on its own
+1
+1
+a reset is refused when the same statement enters readonly mode
+READONLY
+0
+0
+and a declared constraint does not change that answer
+READONLY
+0
+1
+a compatibility carried by a CREATE settings clause is checked the same way
+SETTING_CONSTRAINT_VIOLATION
+t2_05047
+a compatibility carried by BACKUP core settings is checked the same way
+SETTING_CONSTRAINT_VIOLATION
+ACCESS_DENIED
+a profile constraint on a MergeTree setting leaves an unrelated reset alone
+1
