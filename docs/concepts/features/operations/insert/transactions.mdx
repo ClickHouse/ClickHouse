@@ -13,9 +13,7 @@ This page describes transaction guarantees in the ClickHouse analytical database
 <Tip>
 **Looking for a database for transactional workloads (OLTP)?**
 
-For applications that need frequent reads and writes to individual records, and transactions across multiple statements—for example, creating an order and updating inventory together—consider [ClickHouse Managed Postgres](/products/managed-postgres/overview).
-
-Use Postgres as your application's system of record, and add ClickHouse for analytics by replicating committed changes with ClickPipes. [Learn how Postgres and ClickHouse work together](/products/managed-postgres/overview#transactions-and-analytics).
+For applications that need frequent reads and writes to individual records, use [ClickHouse Managed Postgres](/products/managed-postgres/overview) as your application's system of record, and add ClickHouse for analytics by replicating committed changes with ClickPipes. [Learn how Postgres and ClickHouse work together](/products/managed-postgres/overview#transactions-and-analytics).
 </Tip>
 
 If you're checking the atomicity, isolation, or durability of inserts into ClickHouse, continue with the cases below.
@@ -67,7 +65,7 @@ Same as Case 1 above, with this detail:
 
 In addition to the functionality described at the top of this document, ClickHouse has experimental support for transactions, commits, and rollback functionality.
 
-For application workloads that need transactions across multiple statements, consider [ClickHouse Managed Postgres](/products/managed-postgres/overview#transactions-and-analytics).
+For application workloads, consider [ClickHouse Managed Postgres](/products/managed-postgres/overview#transactions-and-analytics).
 
 ### Requirements {#requirements}
 
