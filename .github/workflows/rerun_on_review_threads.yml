@@ -205,18 +205,44 @@ jobs:
             fi
             # `Mergeable Check` is the aggregate verdict of the PR workflow.
             # A new unresolved thread must block merging immediately, but do
-            # not turn an unrelated CI failure into success when it resolves.
+            # not turn an unrelated CI failure into success when it resolves,
+            # and do not overwrite one either: the gate owns this status only
+            # while nothing else is failing in it.
+            mergeable=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
+              --jq --arg context "$MERGEABLE_CHECK_STATUS_NAME" \
+              '[.[] | select(.context == $context)] | first // {}')
+            mergeable_state=$(echo "$mergeable" | jq -r '.state // "none"')
+            mergeable_description=$(echo "$mergeable" | jq -r '.description // ""')
+            gate_owned_mergeable=false
+            if [[ "$mergeable_description" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \
+               || [ "$mergeable_description" = "Failed: review threads only" ]; then
+              gate_owned_mergeable=true
+            fi
             if [ "$desired_blocked" = "true" ]; then
               # This distinct description lets the resolving event identify a
               # failure injected here rather than one from the PR workflow.
-              mergeable_description="review threads: $unresolved unresolved review thread(s)"
-              post_status failure "$MERGEABLE_CHECK_STATUS_NAME" "$mergeable_description"
+              #
+              # Only claim `Mergeable Check` when the last completed run left
+              # it green (or it is missing/pending, so there is no verdict to
+              # hide), or when it already carries one of this workflow's own
+              # markers. Overwriting an unrelated failure would both hide the
+              # real reason and strand the marker: the resolving path below
+              # refuses to green a status whose run did not conclude
+              # `success`, so the review-thread text would survive until a
+              # manual rerun. `Review Threads` alone records the new block.
+              if [ "$mergeable_state" = "failure" ] || [ "$mergeable_state" = "error" ]; then
+                if [ "$gate_owned_mergeable" = "true" ]; then
+                  post_status failure "$MERGEABLE_CHECK_STATUS_NAME" \
+                    "review threads: $unresolved unresolved review thread(s)"
+                else
+                  echo "'$MERGEABLE_CHECK_STATUS_NAME' already fails for another reason" \
+                       "($mergeable_description) - leaving it intact; '$STATUS_NAME' records the block."
+                fi
+              else
+                post_status failure "$MERGEABLE_CHECK_STATUS_NAME" \
+                  "review threads: $unresolved unresolved review thread(s)"
+              fi
             else
-              mergeable=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/statuses?per_page=100" \
-                --jq --arg context "$MERGEABLE_CHECK_STATUS_NAME" \
-                '[.[] | select(.context == $context)] | first // {}')
-              mergeable_state=$(echo "$mergeable" | jq -r '.state // "none"')
-              mergeable_description=$(echo "$mergeable" | jq -r '.description // ""')
               last_pr_run=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
                 --jq '[.workflow_runs[] | select(.name == "PR" and .status == "completed")] | sort_by(.created_at) | last // {}')
               last_pr_conclusion=$(echo "$last_pr_run" | jq -r '.conclusion // ""')

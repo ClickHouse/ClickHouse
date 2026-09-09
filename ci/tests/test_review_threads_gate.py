@@ -52,6 +52,7 @@ from ci.jobs.scripts.workflow_hooks.review_threads import (
 from ci.defs.job_configs import JobConfigs
 from ci.praktika.gh import GH
 from ci.praktika.result import Result
+from ci.praktika.workflow import Workflow
 
 # The 80-character truncation applied by GH.post_commit_status.
 STATUS_DESCRIPTION_LIMIT = 80
@@ -797,3 +798,139 @@ def test_the_policy_marker_is_printed_only_when_the_gate_blocks(monkeypatch, cap
     with pytest.raises(RuntimeError):
         can_be_merged.check_review_threads()
     assert can_be_merged.POLICY_FAILURE_MARKER not in capsys.readouterr().out
+
+
+def _mergeable_claim_snippet():
+    """The `Mergeable Check` ownership block of `rerun_on_review_threads.yml`,
+    sliced out of the workflow so the test runs the shipped code rather than a
+    copy of it."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/rerun_on_review_threads.yml"
+    ).read_text()
+    start = workflow.index(
+        "            # `Mergeable Check` is the aggregate verdict of the PR workflow."
+    )
+    end = workflow.index('            post_status "$state" "$STATUS_NAME" "$description"')
+    lines = [line[12:] for line in workflow[start:end].splitlines()]
+    return "\n".join(lines)
+
+
+def _run_mergeable_claim(desired_blocked, mergeable, last_pr_conclusion="failure"):
+    """Run that block with the GitHub calls stubbed, and return the list of
+    `<state> <context> <description>` statuses it posted."""
+    statuses = [mergeable] if mergeable else []
+    script = f"""
+set -euo pipefail
+GH_REPO=ClickHouse/ClickHouse
+head_sha={RUN_SHA}
+STATUS_NAME='Review Threads'
+MERGEABLE_CHECK_STATUS_NAME='Mergeable Check'
+unresolved=2
+desired_blocked={"true" if desired_blocked else "false"}
+api_with_retries() {{
+  case "$1" in
+    *commits/*/statuses*) echo {json.dumps(json.dumps(statuses))} | jq "${{@:3}}" ;;
+    *actions/runs*) echo {json.dumps(json.dumps([{"name": "PR", "status": "completed", "conclusion": last_pr_conclusion, "created_at": "2026-09-09T00:00:00Z"}]))} \
+      | jq '{{workflow_runs: .}}' | jq "${{@:3}}" ;;
+    *) echo '{{}}' ;;
+  esac
+}}
+post_status() {{ echo "POSTED $1|$2|$3"; }}
+{_mergeable_claim_snippet()}
+"""
+    result = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=True
+    )
+    return [
+        line.removeprefix("POSTED ")
+        for line in result.stdout.splitlines()
+        if line.startswith("POSTED ")
+    ]
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_mergeable_check_is_claimed_only_when_the_gate_owns_it():
+    """A newly opened review thread blocks the merge through `Review Threads`,
+    but it must not overwrite a `Mergeable Check` that already fails for an
+    unrelated reason: that would hide the real failure, and the clearing path
+    below refuses to green a status whose run did not conclude `success`, so
+    the review-thread text would survive until a manual re-run."""
+    unrelated = {
+        "context": "Mergeable Check",
+        "state": "failure",
+        "description": "Failed: Style check",
+    }
+    green = {"context": "Mergeable Check", "state": "success", "description": "OK"}
+    own = {
+        "context": "Mergeable Check",
+        "state": "failure",
+        "description": "review threads: 1 unresolved review thread(s)",
+    }
+    own_post_hook = {
+        "context": "Mergeable Check",
+        "state": "failure",
+        "description": "Failed: review threads only",
+    }
+
+    # An unrelated failure stays intact.
+    assert _run_mergeable_claim(True, unrelated) == []
+    # A green verdict, a missing one, and this workflow's own markers are the
+    # gate's to claim.
+    expected = "failure|Mergeable Check|review threads: 2 unresolved review thread(s)"
+    assert _run_mergeable_claim(True, green) == [expected]
+    assert _run_mergeable_claim(True, None) == [expected]
+    assert _run_mergeable_claim(True, own) == [expected]
+    assert _run_mergeable_claim(True, own_post_hook) == [expected]
+
+    # The resolving direction is unchanged: only the gate's own markers are
+    # cleared, and the injected one only when the last PR run was green.
+    cleared = "success|Mergeable Check|all review threads resolved"
+    assert _run_mergeable_claim(False, unrelated) == []
+    assert _run_mergeable_claim(False, own, last_pr_conclusion="failure") == []
+    assert _run_mergeable_claim(False, own, last_pr_conclusion="success") == [cleared]
+    assert _run_mergeable_claim(False, own_post_hook) == [cleared]
+
+
+def test_review_thread_gate_never_widens_the_coverage_family(monkeypatch, fake_info):
+    """The gate may only shrink the pipeline. The coverage build is on the
+    limited-pipeline allowlist, so it must still honour the skip that the
+    coverage-family rules would give it in a full run, and it must never gain
+    the `ci-coverage` exemption from the later changed-files pass."""
+    coverage_build = JobConfigs.build_llvm_coverage_job[0].name
+    assert coverage_build in filter_job.REVIEW_THREADS_BUILD_JOBS
+
+    # A tests-only change: no build-digest and no coverage-pipeline changes, so
+    # coverage would be identical to master and the whole family is skipped.
+    fake_info.kv["changed_files"] = ["tests/queries/0_stateless/00001_x.sql"]
+
+    # Limited pipeline (3 unresolved threads, per the fixture).
+    assert filter_job.should_skip_job(coverage_build)[0]
+    # ... and the same in a full run: the gate did not widen anything.
+    fake_info.kv[KV_UNRESOLVED_COUNT] = 0
+    filter_job._pipeline_note_labels = set()
+    assert filter_job.should_skip_job(coverage_build)[0]
+
+    # `ci-no-coverage` keeps the job skipped under the gate too.
+    fake_info.kv[KV_UNRESOLVED_COUNT] = 3
+    fake_info.kv["changed_files"] = ["src/Core/Settings.cpp"]
+    fake_info.pr_labels = [Labels.CI_NO_COVERAGE]
+    filter_job._pipeline_note_labels = set()
+    assert filter_job.should_skip_job(coverage_build)[0]
+
+    # `ci-coverage` runs the job (a full run would too), but the gate must not
+    # hand out `FILTER_HOOK_FORCE_JOB`: exempting the job from the changed-files
+    # pass would run it where a plain limited run does not.
+    fake_info.kv["changed_files"] = ["tests/queries/0_stateless/00001_x.sql"]
+    fake_info.pr_labels = [Labels.CI_COVERAGE]
+    filter_job._pipeline_note_labels = set()
+    skip, reason = filter_job.should_skip_job(coverage_build)
+    assert not skip
+    assert reason != Workflow.FILTER_HOOK_FORCE_JOB
+
+    # Without the gate, the same label forces the job.
+    fake_info.kv[KV_UNRESOLVED_COUNT] = 0
+    filter_job._pipeline_note_labels = set()
+    skip, reason = filter_job.should_skip_job(coverage_build)
+    assert not skip
+    assert reason == Workflow.FILTER_HOOK_FORCE_JOB
