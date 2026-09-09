@@ -1,0 +1,43 @@
+1. Default: no IP inference
+String
+192.168.1.1
+['ip']
+2. IPv4 inference enabled
+IPv4
+192.168.1.1
+['ip']
+3. IPv6 inference enabled
+IPv6
+2001:db8::1
+4. Non-IP strings stay String
+String
+String
+String
+5. Both IPv4 and IPv6 inference
+IPv4	192.168.1.1
+IPv6	2001:db8::1
+6. Typed path takes precedence
+IPv4
+10.0.0.1
+7. IP inference with dates/datetimes disabled
+IPv4
+8. IPv4 literal not inferred as IPv6
+String
+9. Dynamic path IPv4 inference
+IPv4	192.168.1.1
+10. Dynamic path Array(IPv4) inference
+Array(Nullable(IPv4))	['192.168.1.1','10.0.0.1']
+11. CSV IPv4 inference
+c1	Nullable(IPv4)					
+12. CSV IPv6 inference
+c1	Nullable(IPv6)					
+13. TSV IPv4 inference
+c1	Nullable(IPv4)					
+14. Mixed IPv4 and String collapses to String
+ip	Nullable(String)					
+15. Mixed IPv4 and IPv6 collapses to String
+ip	Nullable(String)					
+16. Values format IPv4 inference
+c1	Nullable(IPv4)					
+17. Values format mixed IPv4 and String collapses to String
+c1	Nullable(String)					

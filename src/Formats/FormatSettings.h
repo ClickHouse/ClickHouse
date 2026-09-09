@@ -55,6 +55,8 @@ struct FormatSettings
     bool try_infer_dates = true;
     bool try_infer_datetimes = true;
     bool try_infer_datetimes_only_datetime64 = false;
+    bool try_infer_ipv4 = false;
+    bool try_infer_ipv6 = false;
     bool try_infer_exponent_floats = false;
 
     bool allow_special_serialization_kinds = false;
