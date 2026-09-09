@@ -14,6 +14,7 @@ from ci.jobs.scripts.workflow_hooks.review_threads import (
 )
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
+from ci.praktika.workflow import Workflow
 
 
 def only_docs(changed_files):
@@ -138,6 +139,7 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
     "ci/jobs/scripts/print_uncovered_code.py",
+    "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
@@ -199,6 +201,11 @@ _PIPELINE_NOTES = {
         "Label `ci-macos` runs the Darwin (macOS) `Fast test` job, which is "
         "skipped by default in PRs."
     ),
+    Labels.CI_COVERAGE: (
+        "Label `ci-coverage` forces coverage jobs and the `LLVM Coverage` merge job "
+        "to run even though the change does not affect the build. The "
+        "`excluded_from_llvm` jobs stay skipped: they produce no coverage data."
+    ),
 }
 
 
@@ -249,6 +256,68 @@ def _is_empty_merge_commit(sha):
         return False
     num_parents, num_files = int(out[0]), int(out[1])
     return num_parents >= 2 and num_files == 0
+
+
+def _coverage_family_decision(job_name, notes=True):
+    """Filter decision for the coverage job family, or `None` when the job is
+    not part of it (or the family rules have nothing to say about it).
+
+    Factored out of `should_skip_job` so the review-thread gate can consult the
+    skip half of it before limiting the pipeline: the gate may only shrink the
+    PR surface, so it must not start the coverage family when a full run would
+    have skipped it. Pass `notes=False` to probe the decision without emitting
+    the workflow note for a decision that the caller may discard.
+    """
+    # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
+    # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
+    #
+    # This also fires automatically, without the label, whenever a PR has no build-digest-affecting
+    # changes (i.e. it only touches tests/docs/CI scripts) AND does not touch the coverage pipeline's
+    # own code (`_has_coverage_pipeline_changes`) - a PR fixing a bug in llvm_coverage_job.py, this
+    # hook, or the coverage-relevant parts of functional_tests.py/integration_test_job.py must still
+    # be able to run the jobs it changed, even though it changes no compiled-binary path. Coverage
+    # numbers only move when the compiled binary changes, so an ordinary tests-only PR would produce
+    # coverage identical to master - running any part of the family just burns CI time on profdata that
+    # the (also-skipped) merge job would never consume. Master itself is unaffected (pr_number gate):
+    # its coverage runs must always publish a complete llvm_coverage.info for later PRs to compare against.
+    if (
+        "llvm_coverage" in job_name
+        or "excluded_from_llvm" in job_name
+        or job_name == JobNames.LLVM_COVERAGE
+    ):
+        # The explicit `ci-no-coverage` label wins over everything, including the
+        # `ci-coverage` force label below - an explicit "skip" should never lose
+        # to a leftover force label.
+        if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
+            if notes:
+                _add_pipeline_note(Labels.CI_NO_COVERAGE)
+            return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
+        if (
+            _info_cache.pr_number > 0
+            and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+            and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
+        ):
+            # The `ci-coverage` label overrides only this automatic skip: it lets
+            # a tests-only PR still measure the coverage of the tests it adds.
+            # The `excluded_from_llvm` jobs stay skipped even then - they run on a
+            # plain build and produce no coverage data, and the tests they hold
+            # are covered by the regular (non-coverage) test jobs of the PR.
+            # FILTER_HOOK_FORCE_JOB (rather than a plain neutral answer) also
+            # exempts the job from the later "filter not affected jobs" pass,
+            # which would otherwise drop it again when no changed file matches
+            # its digest_config (e.g. a docs-only PR).
+            if Labels.CI_COVERAGE in _info_cache.pr_labels:
+                if "excluded_from_llvm" in job_name:
+                    return (
+                        True,
+                        f"Skipped: '{Labels.CI_COVERAGE}' forces only the coverage jobs; this job produces no coverage data",
+                    )
+                if notes:
+                    _add_pipeline_note(Labels.CI_COVERAGE)
+                return False, Workflow.FILTER_HOOK_FORCE_JOB
+            return True, "Skipped: no build-affecting changes; coverage would be identical to master"
+
+    return None
 
 
 def should_skip_job(job_name):
@@ -326,6 +395,13 @@ def should_skip_job(job_name):
     # it into a smaller pipeline: it must retain the builds, preliminary jobs,
     # and `Code Review` needed to validate the gate and trigger its re-run.
     if limited_by_review_threads:
+        # The gate may only shrink the pipeline, never widen it: the allowlisted
+        # coverage build is as expensive as any other build, so it must keep the
+        # skip a full run would give it. Only the skip half of the decision is
+        # honoured - the `ci-coverage` force must not reach past the gate.
+        coverage_decision = _coverage_family_decision(job_name)
+        if coverage_decision is not None and coverage_decision[0]:
+            return coverage_decision
         return False, ""
 
     if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
@@ -438,34 +514,9 @@ def should_skip_job(job_name):
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
         )
 
-    # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
-    # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
-    #
-    # This also fires automatically, without the label, whenever a PR has no build-digest-affecting
-    # changes (i.e. it only touches tests/docs/CI scripts) AND does not touch the coverage pipeline's
-    # own code (`_has_coverage_pipeline_changes`) - a PR fixing a bug in llvm_coverage_job.py, this
-    # hook, or the coverage-relevant parts of functional_tests.py/integration_test_job.py must still
-    # be able to run the jobs it changed, even though it changes no compiled-binary path. Coverage
-    # numbers only move when the compiled binary changes, so an ordinary tests-only PR would produce
-    # coverage identical to master - running any part of the family just burns CI time on profdata that
-    # the (also-skipped) merge job would never consume. Master itself is unaffected (pr_number gate):
-    # its coverage runs must always publish a complete llvm_coverage.info for later PRs to compare against.
-    if (
-        "llvm_coverage" in job_name
-        or "excluded_from_llvm" in job_name
-        or job_name == JobNames.LLVM_COVERAGE
-    ) and (
-        Labels.CI_NO_COVERAGE in _info_cache.pr_labels
-        or (
-            _info_cache.pr_number > 0
-            and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
-            and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
-        )
-    ):
-        if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
-            _add_pipeline_note(Labels.CI_NO_COVERAGE)
-            return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
-        return True, "Skipped: no build-affecting changes; coverage would be identical to master"
+    coverage_decision = _coverage_family_decision(job_name)
+    if coverage_decision is not None:
+        return coverage_decision
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
@@ -569,20 +620,21 @@ def should_skip_merge_queue_job(job_name):
     """Config-time filter for the `MergeQueueCI` workflow.
 
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
-    `amd_binary` build, and the stateless flaky check). Only the flaky check is
-    conditional: it reruns the PR's new/changed stateless tests as a drift guard,
-    so a PR that changes no stateless tests has nothing for it to do. Filter it
-    out here, at config time, so such a PR does not schedule the runner, restore
-    `CH_AMD_BINARY`, and enter the test container only to exit `SKIPPED`. This is
-    the merge-queue counterpart to the `flaky` branch of `should_skip_job`, kept
-    deliberately minimal so it cannot skip the build/style/fast-test jobs the
-    queue always needs. The skip condition matches the in-job selection in
-    `functional_tests.py` (both rely on `Targeting.get_changed_tests`), so the
-    early exit and the config-time skip never disagree. `get_changed_tests`
-    resolves data fixtures (a `.parquet`/`.tsv` under `tests/queries/0_stateless/`,
-    even one nested in a subdirectory) back to the tests that consume them, so a
-    fixture-only PR still reruns the affected test surface instead of being
-    skipped here as "no changed tests".
+    `amd_binary` build, the stateless flaky check, and the docs examples). Only
+    the flaky check is conditional: it reruns the PR's new/changed stateless
+    tests as a drift guard, so a PR that changes no stateless tests has nothing
+    for it to do. Filter it out here, at config time, so such a PR does not
+    schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
+    only to exit `SKIPPED`. This is the merge-queue counterpart to the `flaky`
+    branch of `should_skip_job`, kept deliberately minimal so it cannot skip the
+    build/style/fast-test/docs-examples jobs the queue always needs. The skip
+    condition matches the in-job selection in `functional_tests.py` (both rely
+    on `Targeting.get_changed_tests`), so the early exit and the config-time
+    skip never disagree. `get_changed_tests` resolves data fixtures (a
+    `.parquet`/`.tsv` under `tests/queries/0_stateless/`, even one nested in a
+    subdirectory) back to the tests that consume them, so a fixture-only PR
+    still reruns the affected test surface instead of being skipped here as
+    "no changed tests".
     """
     global _info_cache
     if _info_cache is None:
