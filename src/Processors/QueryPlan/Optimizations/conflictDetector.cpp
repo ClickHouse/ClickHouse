@@ -259,6 +259,9 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
         desc.nel = nel;
         desc.kind = b.kind;
         desc.strictness = b.strictness;
+        /// The predicate references at most one input side (a one-sided predicate, or none at all
+        /// for a cross product), so the required sets alone cannot orient the operator.
+        desc.degenerate = ((nel & b_left) == 0) || ((nel & b_right) == 0);
         desc.freely_reorderable = isFreelyReorderable(b.category);
         desc.rules = std::move(rules);
 

@@ -70,6 +70,10 @@ struct ConflictOperator
     UInt32 nel = 0;            /// ON-clause relations, used to locate the operator at a split boundary
     JoinKind kind = JoinKind::Inner;
     JoinStrictness strictness = JoinStrictness::All;
+    /// True when the ON predicate references relations on at most one input side (a one-sided
+    /// predicate, or none at all for a cross product). Then the required sets cannot orient the
+    /// operator, so the validity test checks each input subtree lands on its own side instead.
+    bool degenerate = false;
     /// True for plain inner/cross/comma joins (comm + assoc among themselves): they impose no join
     /// kind. False for outer/semi/anti/full joins, which pin orientation and fix the kind.
     bool freely_reorderable = true;
