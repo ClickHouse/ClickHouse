@@ -829,13 +829,12 @@ void IcebergMetadata::createInitial(
     if (catalog_manages_location)
     {
         DataLake::TableMetadata existing_table;
+        /// Returning for `IF NOT EXISTS` would report a table this statement did not create, and `AS SELECT`
+        /// would then fill the one the race winner created. `TableAlreadyExistsInCatalogException` is what
+        /// turns the lost race into the `IF NOT EXISTS` no-op, as on every other catalog-backed path here.
         if (catalog->tryGetTableMetadata(namespace_name, table_name, existing_table))
-        {
-            if (if_not_exists)
-                return;
-            throw Exception(
-                ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists in the catalog", namespace_name, table_name);
-        }
+            throw DataLake::TableAlreadyExistsInCatalogException(
+                "Table {}.{} already exists in the catalog", namespace_name, table_name);
     }
     else
     {
