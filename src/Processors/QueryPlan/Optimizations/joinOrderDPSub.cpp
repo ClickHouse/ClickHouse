@@ -375,9 +375,8 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
         if (dpsub_data.edge_pinned[i] && (dpsub_data.edge_pin_mask[i] & ~joined))
             continue;
 
-        /// Works much like Extended Eligibility List (EEL) in case of outerjoins:
-        /// encoding relations that must be present for the predicate to be applicable (in `pin` mask)
-        /// For innerjoins its just the sources of the predicate, i.e., NEL, here pin is empty.
+        /// For an outer join the `pin` mask encodes relations that must be present for the predicate
+        /// to be applicable; for an inner join it is just the predicate's source relations (pin empty).
         /// For a single-table conjunct of an outer join's ON
         /// clause (e.g. `t2.value = 'x'` in `... LEFT JOIN t3 ON t2.id = t3.id AND t2.value = 'x'`),
         /// `sources` is only `{t2}` but the pin is `{t3}`: the predicate belongs to the ON condition of
