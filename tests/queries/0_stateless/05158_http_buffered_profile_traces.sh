@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-msan, no-parallel
-# The sampling query profiler is disabled under MSan. The overflow case needs
-# timely delivery through the shared collector to fill this query's bounded queue.
+# The sampling query profiler is disabled under MSan. The overflow failpoint
+# affects all trace queues on the server.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -31,6 +31,16 @@ settings = {
     "output_format_parallel_formatting": 0,
     "http_response_buffer_size": 0,
 }
+
+
+def control(query):
+    options = dict(urllib.parse.parse_qsl(base_url.query))
+    options.update(framing_output_format="None", send_profile_traces=0)
+    url = urllib.parse.urlunsplit(base_url._replace(query=urllib.parse.urlencode(options)))
+    request = urllib.request.Request(url, data=query.encode())
+    with urllib.request.urlopen(request, timeout=30) as response:
+        assert response.status == 200, response.status
+        return response.read().decode().strip()
 
 
 def run(query, buffering="http_wait_end_of_query", sql_framing=False, overrides=None, error=False):
@@ -92,18 +102,23 @@ print("legacy buffering and SQL framing retain early trace samples")
 require_early_sleep_samples(run("INSERT INTO FUNCTION null('n UInt64') SELECT number + sleepEachRow(0.01) FROM numbers(40)"))
 print("buffered queries without results retain samples before final progress")
 
-# Each array allocates at least 65536 bytes. Pace the one-row blocks so the
-# collector can deliver the samples to the bounded queue, where losses are counted.
-samples = run(
-    "SELECT range(toUInt64(8192 + number % 2 + sleepEachRow(0.0001))) FROM numbers(5000) FORMAT Null",
-    overrides={
-        "query_profiler_real_time_period_ns": 0,
-        "memory_profiler_sample_probability": 1,
-        "memory_profiler_sample_min_allocation_size": 65536,
-        "max_untracked_memory": 0,
-    },
-)
+# Force the existing queue-overflow branch with a small sampled workload.
+# A fully buffered response can contain only loss status and its terminal packet.
+try:
+    control("SYSTEM ENABLE FAILPOINT profile_traces_queue_overflow")
+    samples = run(
+        "SELECT range(number + 8192) FROM numbers(8) FORMAT Null",
+        overrides={
+            "query_profiler_real_time_period_ns": 0,
+            "memory_profiler_sample_probability": 1,
+            "memory_profiler_sample_min_allocation_size": 65536,
+            "max_untracked_memory": 0,
+        },
+    )
+finally:
+    control("SYSTEM DISABLE FAILPOINT profile_traces_queue_overflow")
+assert control("SELECT enabled FROM system.fail_points WHERE name = 'profile_traces_queue_overflow'") == "0"
 assert sum(int(sample["size"]) for sample in samples if sample["trace_type"] == "Dropped") > 0, "queue overflow was not reported"
-assert 0 < sum(sample["trace_type"] not in {"Dropped", "Incomplete"} for sample in samples) <= 8192
+assert all(sample["trace_type"] == "Dropped" and not sample["trace"] and not sample["symbols"] for sample in samples), samples
 print("buffered trace overflow is reported with bounded batches")
 PY

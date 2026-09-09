@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-tsan, no-asan, no-msan, no-ubsan, no-fasttest, no-debug, no-llvm-coverage, no-parallel
 # These builds do not provide the jemalloc profiler used by this test, as in 03594.
-# This test flushes the shared `system.trace_log`; concurrent profilers extend that global barrier.
+# Keep other profilers from delaying the query-specific `system.trace_log` witnesses.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -47,9 +47,11 @@ def native_arguments(options):
 
 def wait_for_jemalloc_samples(query):
     deadline = time.monotonic() + 20
+    table_exists = False
     while time.monotonic() < deadline:
-        run(client + ["--query", "SYSTEM FLUSH LOGS trace_log"])
-        if run(client + ["--query", query]).stdout.strip() == "1":
+        if not table_exists:
+            table_exists = run(client + ["--query", "EXISTS TABLE system.trace_log"]).stdout.strip() == "1"
+        if table_exists and run(client + ["--query", query]).stdout.strip() == "1":
             return
         time.sleep(0.1)
     raise AssertionError("no actual jemalloc allocation callback appeared in trace_log within 20 seconds")
