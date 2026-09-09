@@ -3877,29 +3877,29 @@ struct FramingQueues
     InternalProfileTracesQueuePtr profile_traces_queue;
 };
 
-/// Attach or detach the logs and profile-events queues on the current thread (the thread group of
+/// Attach or detach the logs, profile-events and profile-traces queues on the current thread (the thread group of
 /// the query inherits them) so they match the effective settings: a framing format requested over
-/// HTTP, plus `send_logs_level` / `send_profile_events`. The queues are owned by `queues` here (the
+/// HTTP, plus `send_logs_level` / `send_profile_events` / `send_profile_traces`. The queues are owned by `queues` here (the
 /// thread group keeps only a weak reference), so dropping one detaches it and stops the capture.
 ///
 /// This is idempotent and is called twice, because the settings that govern framing are only final
 /// after the query's own `SETTINGS` clause has been applied inside `executeQueryImpl`:
-///  - before the query is interpreted, so the logs and profile events emitted during parsing,
+///  - before the query is interpreted, so the logs, profile events and traces emitted during parsing,
 ///    planning and analysis are captured (matching the native protocol) when framing is requested
 ///    from the session or the URL;
 ///  - after `executeQueryImpl`, to reconcile the queues with the effective settings - so a framing
-///    format (or `send_logs_level` / `send_profile_events`) enabled only by the query's `SETTINGS`
+///    format (or `send_logs_level` / `send_profile_events` / `send_profile_traces`) enabled only by the query's `SETTINGS`
 ///    clause gets its queues, and the inverse override (framing or the queues disabled by the query)
 ///    drops them instead of capturing packets that nobody drains.
 ///
 /// The queues are wired into the framing format later, once it is created (the framing format only
 /// becomes known after the output format's header is available). Anything a query enables only through
-/// its own `SETTINGS` clause - a framing format, `send_logs_level`, or `send_profile_events` - is not
+/// its own `SETTINGS` clause - a framing format, `send_logs_level`, `send_profile_events`, or `send_profile_traces` - is not
 /// known before parsing, so the corresponding queues start capturing only from query execution onwards.
-/// The parse / plan / analysis phase logs and profile events are captured only when the setting comes
+/// The parse / plan / analysis phase logs, profile events and traces are captured only when the setting comes
 /// from the session or the URL. In particular, a query that fails during analysis (before pipeline
 /// execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its
-/// `SETTINGS` clause delivers just the framed `exception` packet, not the analysis-phase logs.
+/// `SETTINGS` clause does not deliver the analysis-phase logs.
 ///
 /// `send_logs_source_regexp` has the same late-discovery caveat: the queue filters by source when a log
 /// entry is enqueued (`InternalTextLogsQueue::isNeeded`), so a regexp set only in the query's own
@@ -4169,8 +4169,8 @@ void executeQuery(
     String format_name;
     OutputFormatPtr output_format;
 
-    /// If a framing format is requested, attach its logs and profile-events queues to the current
-    /// thread before the query is interpreted, so the logs emitted during parsing, planning and
+    /// If a framing format is requested, attach its logs, profile-events and profile-traces queues to the current
+    /// thread before the query is interpreted, so the metadata emitted during parsing, planning and
     /// analysis are captured too (they are wired into the framing format once it is created below).
     /// The queues are reconciled with the effective settings again after `executeQueryImpl` has
     /// applied the query's own `SETTINGS` clause (see `syncFramingQueuesWithSettings`).
@@ -4194,7 +4194,7 @@ void executeQuery(
         {
             /// `executeQueryImpl` may have applied the query's `SETTINGS` clause before throwing, so
             /// reconcile the queues with the effective settings before framing the exception, so the
-            /// accumulated `log` / `profile_events` packets match the effective framing settings.
+            /// accumulated `log` / `profile_events` / `profile_traces` packets match the effective framing settings.
             syncFramingQueuesWithSettings(context, framing_queues);
 
             try
@@ -4202,10 +4202,10 @@ void executeQuery(
                 const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
                 format_name = resolveOutputFormatName(context, ast_query_with_output);
 
-                /// The exception stream carries only the `exception` packet (always JSON), so the framing
+                /// The exception stream carries only auxiliary JSON packets, so the framing
                 /// is created for the exception even when the output format cannot be embedded as text or
                 /// defers totals/extremes (`for_exception`), which the normal data path rejects. The queues
-                /// attached before the query are wired in as well, so any `log` / `profile_events` packets
+                /// attached before the query are wired in as well, so any `log` / `profile_events` / `profile_traces` packets
                 /// accumulated during parsing and planning are still drained on `finalize`.
                 auto framing = createFramingFormatIfApplicable(context, ostr, format_name, output_format_settings, /*carries_no_payload=*/ true);
                 if (framing)
@@ -4291,7 +4291,7 @@ void executeQuery(
     result_details.timezone = DateLUT::instance().getTimeZone();
 
     /// The query's own `SETTINGS` clause (applied inside `executeQueryImpl`) may enable or disable
-    /// framing / logs / profile events differently from the session or URL defaults that
+    /// framing / logs / profile events / profile traces differently from the session or URL defaults that
     /// `syncFramingQueuesWithSettings` saw before parsing. Reconcile the queues with the effective
     /// settings, now that they are final, before the framing format is created and the pipeline is
     /// executed - so the queues match the framing decision and no queue captures packets nobody drains.
@@ -4342,12 +4342,12 @@ void executeQuery(
     auto & pipeline = streams.pipeline;
     bool pulling_pipeline = pipeline.pulling();
 
-    /// A framing format also multiplexes the auxiliary packets (progress, logs, profile events) for
+    /// A framing format also multiplexes the auxiliary packets (progress, logs, profile events, profile traces) for
     /// HTTP queries that produce no result stream - a successful `INSERT`, a DDL query, or any other
-    /// query without output. This matches the native protocol, which streams progress, logs and
-    /// profile events for such queries too, and keeps `framing_output_format` consistent: without it
+    /// query without output. This matches the native protocol, which streams progress, logs,
+    /// profile events and traces for such queries too, and keeps `framing_output_format` consistent: without it
     /// the setting would be a silent no-op for these queries - the response would not switch to the
-    /// framing content type, no packets would be written, and the logs / profile-events queues
+    /// framing content type, no packets would be written, and the logs / profile-events / profile-traces queues
     /// attached by `syncFramingQueuesWithSettings` would accumulate unread until query teardown.
     ///
     /// The payload carrier is a `Null` output format, because there is no data to format; only the
@@ -4372,7 +4372,7 @@ void executeQuery(
         output_format->deferFramingFinalize();
 
         /// Route progress to the framing format so `progress` packets are emitted during execution
-        /// (relevant for a long-running `INSERT`); the logs and profile events accumulated in the
+        /// (relevant for a long-running `INSERT`); the logs, profile events and traces accumulated in the
         /// queues are drained when the framing format is finalized after the query-finish logging.
         auto previous_progress_callback = context->getProgressCallback();
         pipeline.setProgressCallback([captured_output_format = output_format, previous_progress_callback] (const Progress & progress)
@@ -4560,11 +4560,11 @@ void executeQuery(
 
             /// The framing format's finalization was deferred (see `deferFramingFinalize`), so that the
             /// trailing server logs and profile events - emitted by the query-finish logging in
-            /// `onFinish` - are included in the stream, like the native protocol does. The order is:
+            /// `onFinish` - and the remaining profile traces are included in the stream. The order is:
             ///   1. flush the progress (so the `X-ClickHouse-Summary` HTTP header is correct) and
             ///      stash the final counters in the framing format (see below),
             ///   2. `onFinish` (inside `finishExecutedQuery`) emits the trailing logs into the queue,
-            ///   3. finalize the framing format: it drains those logs and profile events, and then
+            ///   3. finalize the framing format: it drains those logs, profile events and traces, and then
             ///      writes the final `progress` packet, so it is really the last packet of a
             ///      successful stream,
             ///   4. run the HTTP `query_finish_callback`, which closes the response stream.
@@ -4575,12 +4575,12 @@ void executeQuery(
                 /// Forward the final progress flush (`result_rows` / `result_bytes` / `memory_usage`)
                 /// to the framing format too, so the framed stream ends with a `progress` packet
                 /// carrying the final counters, like the native protocol does and as
-                /// `docs/en/interfaces/framing-formats.md` documents. These counters are known only
+                /// `docs/concepts/features/interfaces/framing-formats.mdx` documents. These counters are known only
                 /// after the query finished, so no earlier `progress` packet carries them.
                 ///
                 /// `writeFinalProgress` hands them to the framing format, which writes the packet at
                 /// the very end of its (deferred, see above) finalization - after the trailing logs
-                /// and profile events emitted by `onFinish` and `logPeakMemoryUsage` below. Writing
+                /// and profile events emitted by `onFinish` and `logPeakMemoryUsage` below and the remaining profile traces. Writing
                 /// the packet here directly would order it before that trailing drain, and the stream
                 /// would not actually end with `progress`. It works uniformly for both paths: for a
                 /// pulling query the output format was finalized by the pipeline (its data is already

@@ -25,7 +25,7 @@ namespace DB
   * value. Base64 has no line breaks, so one packet is always exactly one `data` field and arbitrary
   * bytes - including the output of binary formats such as `Native` or `RowBinary` - survive the text
   * transport byte-exactly. The `Content-Type` carries a `payload=base64` parameter to say so; the
-  * auxiliary JSON packets (progress, logs, profile events, exceptions) are never encoded.
+  * auxiliary JSON packets (`progress`, `log`, `profile_events`, `profile_traces`, `exception`) are never encoded.
   */
 class FramingFormatEventStream final : public IFramingFormat
 {

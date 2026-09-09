@@ -1234,10 +1234,10 @@ void HTTPHandler::processQuery(
                 String framing_name = framing ? framing->getName() : "";
 
                 /// The buffered output is discarded on an exception, so the framing format is recreated
-                /// below from `framing_name` alone. Carry over the log and profile-events queues that
+                /// below from `framing_name` alone. Carry over the log, profile-events and profile-traces queues that
                 /// were attached during parsing and planning (the `framing` object goes out of scope
                 /// before this writer runs, so the queues are captured by value here) - otherwise the
-                /// framed exception response would drop the `log` / `profile_events` packets that the
+                /// framed exception response would drop the `log` / `profile_events` / `profile_traces` packets that the
                 /// streaming path and the documentation promise.
                 std::shared_ptr<InternalTextLogsQueue> framing_logs_queue = framing ? framing->getLogsQueue() : nullptr;
                 InternalProfileEventsQueuePtr framing_profile_events_queue = framing ? framing->getProfileEventsQueue() : nullptr;
@@ -1262,7 +1262,7 @@ void HTTPHandler::processQuery(
                     if (!framing_name.empty())
                     {
                         /// All the output buffered so far is discarded, so the framing format is created
-                        /// anew, and the response consists of the auxiliary packets (logs, profile events)
+                        /// anew, and the response consists of the auxiliary packets (logs, profile events, profile traces)
                         /// accumulated so far followed by a single exception packet.
                         auto framing_for_exception = createFramingFormat(
                             framing_name, buf, format_settings ? *format_settings : getFormatSettings(context_), {.is_http = true});
@@ -1397,7 +1397,7 @@ try
     /// (pushing the delayed results, finalizing the compression, closing the response stream) and
     /// a failure of the framed exception delivery itself: when `handle_exception_in_output_format`
     /// throws while writing the terminal `exception` packet (for example while draining the `log`
-    /// / `profile_events` queues) after `data` packets were already streamed, the escaped
+    /// / `profile_events` / `profile_traces` queues) after `data` packets were already streamed, the escaped
     /// exception lands here with the packet stream unterminated and `exception_is_written` still
     /// false. In both cases some (or all) of the framed stream is already on the wire. The same
     /// applies when framed packets are merely buffered: even before `response.sent()`, bytes

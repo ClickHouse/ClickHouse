@@ -25,7 +25,7 @@ enum class FramedPacketKind : uint8_t
 };
 
 /** A framing format multiplexes different parts of the query response in a single stream:
-  * chunks of data, totals and extremes, progress packets, profile events (metrics), server logs,
+  * chunks of data, totals and extremes, progress packets, profile events (metrics), profile traces, server logs,
   * and exceptions - everything that the native protocol supports. This allows rich data exchange
   * in the HTTP protocol.
   *
@@ -44,7 +44,7 @@ enum class FramedPacketKind : uint8_t
   * exactly the unframed output, and the `totals` and `extremes` packets carry additional rows that
   * the unframed output does not contain.
   *
-  * Auxiliary packets (progress, logs, profile events, exceptions) are represented as JSON.
+  * Auxiliary packets (`progress`, `log`, `profile_events`, `profile_traces`, `exception`) are represented as JSON.
   *
   * The framing format is selected by the query setting `framing_output_format`. It applies to the
   * HTTP protocol, but may apply in other protocols as well in the future.
@@ -77,7 +77,7 @@ public:
 
     /// Called after the output format has written a portion of the given kind into the payload
     /// buffer. Wraps everything accumulated since the previous call into a packet
-    /// (does nothing if the payload buffer is empty). Also pumps pending logs and profile events.
+    /// (does nothing if the payload buffer is empty). Also pumps pending logs, profile events and traces.
     void onPayload(FramedPacketKind kind);
 
     /// Called before the output format starts writing a `totals` / `extremes` portion into the
@@ -91,7 +91,7 @@ public:
     void beginPayload(FramedPacketKind kind) { pending_payload_kind = kind; }
 
     /// Called on query progress, possibly from another thread than `onPayload`
-    /// (but the calls are serialized by IOutputFormat). Also pumps pending logs and profile events.
+    /// (but the calls are serialized by IOutputFormat). Also pumps pending logs, profile events and traces.
     void onProgress(const Progress & progress);
 
     /// Remember an exception to be written as the last packet on `finalize`.
@@ -105,8 +105,8 @@ public:
     /// Remember the final progress (with the final counters: `result_rows`, `result_bytes`,
     /// `memory_usage`, known only after the query finished) to be written as the last `progress`
     /// packet on `finalize` - after the trailing logs and profile events emitted by the
-    /// query-finish logging are drained, so that a successful stream really ends with it, as
-    /// `docs/en/interfaces/framing-formats.md` documents. Writing it eagerly would order it
+    /// query-finish logging and the remaining profile traces are drained, so that a successful stream ends with it, as
+    /// `docs/concepts/features/interfaces/framing-formats.mdx` documents. Writing it eagerly would order it
     /// before that trailing drain. The passed value is accumulated, so passing deltas is fine.
     void setFinalProgress(const Progress & progress);
 
@@ -221,8 +221,8 @@ private:
     /// well-formed-looking duplicate after the truncated packet and corrupt the stream. Failing closed
     /// lets the error terminate the already-broken stream instead.
     ///
-    /// Deliberately NOT set around the non-emitting work between packet writes (draining the log and
-    /// profile-events queues and building their blocks): a throw there leaves no partial packet on the
+    /// Deliberately NOT set around the non-emitting work between packet writes (draining the log,
+    /// profile-events and profile-traces queues and building their blocks): a throw there leaves no partial packet on the
     /// wire, so the recovery re-entry of `finalize` must still deliver the terminal framed `exception`
     /// packet instead of failing closed.
     bool writing = false;

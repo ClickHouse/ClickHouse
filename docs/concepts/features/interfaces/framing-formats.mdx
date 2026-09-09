@@ -6,7 +6,7 @@ title: 'Framing formats'
 doc_type: 'reference'
 ---
 
-A framing format multiplexes different response parts of the query in a single stream: chunks of data, totals and extremes, progress packets, profile events (metrics), and server logs - everything that the native protocol supports. This allows rich data exchange in the HTTP protocol.
+A framing format multiplexes different response parts of the query in a single stream: chunks of data, totals and extremes, progress packets, profile events (metrics), profile traces (sampled stacks), and server logs - everything that the native protocol supports. This allows rich data exchange in the HTTP protocol.
 
 Framing formats are independent of [output formats](/reference/formats): they encapsulate bytes produced by any output format, by separating and potentially encoding these chunks of bytes. The concatenation of the payloads of all `data`, `totals`, and `extremes` packets is exactly what the output format would have produced without framing. Auxiliary packets (progress, logs, profile events, profile traces, exceptions) are represented as JSON.
 
@@ -20,7 +20,7 @@ A successful stream ends with a final `progress` packet carrying the final count
 
 Because this tail of the stream is written after the `QueryFinish` entry of `system.query_log` is recorded, the network-send profile events of the query (`NetworkSendBytes`, `NetworkSendElapsedMicroseconds`) do not include sending the trailing packets and closing the response - nor, when the response is buffered (`http_response_buffer_size` or `wait_end_of_query`), sending the buffered response body, which is transmitted only after the query has finished. This matches the native protocol, which sends its trailing logs, profile events, and profile traces after the query log entry as well.
 
-Anything a query enables only through its own `SETTINGS` clause - a framing format, `send_logs_level`, `send_profile_events`, or `send_profile_traces` - is not known until the query has been parsed, so the corresponding logs, profile events, and profile traces are captured only from query execution onwards. The logs, profile events, and profile traces of the parse, plan, and analysis phase are captured only when the setting comes from the session or the URL. In particular, a query that fails during analysis (before pipeline execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its `SETTINGS` clause delivers just the `exception` packet, not the analysis-phase logs. Set `send_logs_level` on the session or the URL to capture those.
+Anything a query enables only through its own `SETTINGS` clause - a framing format, `send_logs_level`, `send_profile_events`, or `send_profile_traces` - is not known until the query has been parsed, so the corresponding logs, profile events, and profile traces are captured only from query execution onwards. The logs, profile events, and profile traces of the parse, plan, and analysis phase are captured only when the setting comes from the session or the URL. In particular, a query that fails during analysis (before pipeline execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its `SETTINGS` clause does not deliver the analysis-phase logs. Set `send_logs_level` on the session or the URL to capture those.
 
 The same late-discovery caveat applies to `send_logs_source_regexp`: the log queue filters entries by source at the moment each entry is captured, so a regexp set only in the query's own `SETTINGS` clause takes effect from query execution onwards. The `log` packets of the parse, plan, and analysis phase are filtered by the session or URL value of the setting - they are unfiltered when it is not set there - so they may include sources that do not match the query-level regexp. Conversely, entries dropped by a narrower session or URL regexp are gone and are not recovered by a broader query-level one. Set `send_logs_source_regexp` on the session or the URL to filter the whole query lifecycle.
 
@@ -41,7 +41,7 @@ A framing format is applied to queries that produce no result stream as well - a
 
 ## None {#framing-format-none}
 
-The default. Transparently routes everything applicable (data, totals, extremes, progress) to the output format, and ignores everything that is not applicable (metrics, logs). So everything works as it is by default, including formats that represent progress themselves, such as `JSONEachRowWithProgress`.
+The default. Transparently routes everything applicable (data, totals, extremes, progress) to the output format, and ignores everything that is not applicable (metrics, profile traces, logs). So everything works as it is by default, including formats that represent progress themselves, such as `JSONEachRowWithProgress`.
 
 ## EventStream {#framing-format-eventstream}
 
@@ -110,7 +110,7 @@ With `JSONEachPacketBase64`, the same `data` packet looks like:
 | `profile_traces` | An array of sampled stack traces as JSON: `host_name`, `query_id`, `trace_type`, `thread_id`, `event_time_microseconds`, `trace`, `symbols`, `size`. |
 | `exception`      | The exception message as JSON.                                                                                   |
 
-Unlike the `data`, `totals`, and `extremes` payloads (see the byte-exactness notes above), the string fields of the auxiliary packets (`query_id`, `text`, and `source` of `log`, `name` of `profile_events`, and the `exception` message) have no base64 escape hatch, and some of them (for example `query_id`, which is taken from the query) can hold arbitrary bytes. These fields are always sanitized to valid UTF-8, replacing invalid sequences with the replacement character (`U+FFFD`), so the auxiliary packets are always valid JSON.
+Unlike the `data`, `totals`, and `extremes` payloads (see the byte-exactness notes above), the string fields of the auxiliary packets (`query_id`, `text`, and `source` of `log`, `name` of `profile_events`, `host_name`, `query_id`, `trace_type`, and `symbols` of `profile_traces`, and the `exception` message) have no base64 escape hatch, and some of them (for example `query_id`, which is taken from the query) can hold arbitrary bytes. These fields are always sanitized to valid UTF-8, replacing invalid sequences with the replacement character (`U+FFFD`), so the auxiliary packets are always valid JSON.
 
 Processing of multiple queries at once is not implemented yet, but the design allows it: every packet can be extended with the information about the query index along multiple queries.
 
