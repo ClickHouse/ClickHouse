@@ -1,0 +1,7 @@
+add_subdirectory (Foundation)
+add_subdirectory (JSON)
+add_subdirectory (Net)
+add_subdirectory (NetSSL_OpenSSL)
+add_subdirectory (Redis)
+add_subdirectory (Util)
+add_subdirectory (XML)

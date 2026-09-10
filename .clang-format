@@ -1,0 +1,102 @@
+BasedOnStyle: WebKit
+Language: Cpp
+AlignAfterOpenBracket: AlwaysBreak
+BreakBeforeBraces: Custom
+BraceWrapping:
+    AfterClass: true
+    AfterControlStatement: true
+    AfterEnum: true
+    AfterFunction: true
+    AfterNamespace: true
+    AfterStruct: true
+    AfterUnion: true
+    BeforeCatch: true
+    BeforeElse: true
+    BeforeLambdaBody: true
+    IndentBraces: false
+BreakConstructorInitializersBeforeComma: false
+Cpp11BracedListStyle: true
+ColumnLimit: 140
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ExperimentalAutoDetectBinPacking: true
+UseTab: Never
+TabWidth: 4
+Standard: Cpp11
+PointerAlignment: Middle
+MaxEmptyLinesToKeep: 2
+KeepEmptyLinesAtTheStartOfBlocks: false
+AllowShortFunctionsOnASingleLine: InlineOnly
+AlwaysBreakTemplateDeclarations: true
+IndentCaseLabels: true
+SpaceAfterTemplateKeyword: true
+SpaceBeforeCpp11BracedList: false
+SortIncludes: true
+IndentPPDirectives: AfterHash
+IncludeCategories:
+  - Regex: '^<[a-z_]+>'
+    Priority: 1
+  - Regex: '^<[a-z_]+.h>'
+    Priority: 2
+  - Regex: '^["<](common|ext|mysqlxx|daemon|zkutil)/'
+    Priority: 90
+  - Regex: '^["<](DB)/'
+    Priority: 100
+  - Regex: '^["<](Poco)/'
+    Priority: 50
+  - Regex: '^"'
+    Priority: 110
+  - Regex: '/'
+    Priority: 30
+  - Regex: '.*'
+    Priority: 40
+ReflowComments: false
+AlignEscapedNewlinesLeft: false
+AlignEscapedNewlines: DontAlign
+AlignTrailingComments: false
+
+# Not changed:
+AccessModifierOffset: -4
+AlignConsecutiveAssignments: false
+AlignOperands: false
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortBlocksOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBinaryOperators: All
+BreakBeforeTernaryOperators: true
+CommentPragmas: '^ IWYU pragma:'
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
+DerivePointerAlignment: false
+DisableFormat: false
+IndentRequiresClause: false
+IndentWidth: 4
+IndentWrappedFunctionNames: false
+MacroBlockBegin: ''
+MacroBlockEnd: ''
+NamespaceIndentation: None
+ObjCBlockIndentWidth: 4
+ObjCSpaceAfterProperty: true
+ObjCSpaceBeforeProtocolList: true
+PackConstructorInitializers: Never
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyExcessCharacter: 1000000
+PenaltyReturnTypeOnItsOwnLine: 60
+RemoveBracesLLVM: false
+SpaceAfterCStyleCast: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 1
+SpacesInContainerLiterals: true
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
