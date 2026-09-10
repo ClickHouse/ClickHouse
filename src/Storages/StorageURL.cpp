@@ -1111,18 +1111,6 @@ namespace
         Poco::Net::HTTPBasicCredentials credentials;
         const std::optional<FormatSettings> & format_settings;
     };
-
-/// A "Range" header must not reach the wire during schema inference: it would make inference read a
-/// partial-content response. Applied on the already-normalized names (case-insensitive), so a
-/// padded/mixed-case spelling that normalizes to "Range" is caught too. Only the fresh-request
-/// inference path uses this; the read/ATTACH paths keep their existing behaviour so that attaching
-/// a table stored with such a header does not start failing.
-void rejectRangeHeaders(const HTTPHeaderEntries & headers)
-{
-    for (const auto & entry : headers)
-        if (boost::to_lower_copy(entry.name) == "range")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
-}
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromDataImpl(
@@ -1138,11 +1126,8 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// schema inference (StorageURL ctor, StorageURLCluster, TableFunctionURL analysis), so the
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
     /// reach the StorageURL ctor body. checkAndNormalizeHeaders returns the normalized headers, so
-    /// send that normalized copy — the normalized names are what reach the wire. Ban "Range" on the
-    /// normalized names (a padded spelling normalizes to "Range") so schema inference never reads a
-    /// partial-content response.
+    /// send that normalized copy — the normalized names are what reach the wire.
     const auto headers_to_check = context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
-    rejectRangeHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
