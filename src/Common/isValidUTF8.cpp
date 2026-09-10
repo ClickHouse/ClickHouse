@@ -71,6 +71,14 @@ namespace UTF8
 
 UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
 {
+#if USE_SIMDUTF
+    /// simdutf validates in 64-byte blocks and pads a short tail into a full one, so at and below one
+    /// block it does a whole block's work whatever the input size.
+    static constexpr UInt64 simdutf_min_len = 64;
+    if (len >= simdutf_min_len)
+        return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
+#endif
+
     /// A byte with the high bit clear is a complete code point on its own, and UTF-8 is
     /// self-synchronising at code point boundaries, so dropping a leading run of them cannot change
     /// the verdict for the rest.
@@ -79,14 +87,6 @@ UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
         data += 8;
         len -= 8;
     }
-
-#if USE_SIMDUTF
-    /// simdutf validates in 64-byte blocks and pads a short tail into a full one, so at and below one
-    /// block it does a whole block's work whatever the input size.
-    static constexpr UInt64 simdutf_min_len = 64;
-    if (len >= simdutf_min_len)
-        return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
-#endif
 
     while (len)
     {

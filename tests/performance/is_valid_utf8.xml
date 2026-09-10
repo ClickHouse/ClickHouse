@@ -1,13 +1,12 @@
-<!-- Sweeps isValidUTF8 across the two lengths the dispatch turns on: 8, the word the ASCII pre-pass
-     consumes, and 64, at and above which simdutf validates the remainder. The crossover rows are
-     multibyte on purpose: the pre-pass consumes a pure-ASCII payload down to fewer than 8 bytes, so an
-     ASCII row can never reach simdutf and cannot bracket the threshold. materialize() keeps the
-     argument out of constant folding, and run_all_queries keeps every length in every run.
-     repeat() can only produce multiples of the code point width, so a length that is not a multiple
-     carries an explicit ASCII tail; every multibyte payload still begins with a non-ASCII byte, so the
-     pre-pass consumes nothing and the remainder equals the length. -->
+<!-- Sweeps isValidUTF8 across the length the dispatch turns on: 64, at and above which simdutf validates
+     the input whatever its content, and below which the scalar loop runs behind an 8-byte-at-a-time
+     ASCII skip. materialize() keeps the argument out of constant folding, and run_all_queries keeps
+     every length in every run. repeat() can only produce multiples of the code point width, so a length
+     that is not a multiple carries an explicit ASCII tail. The mostly-ASCII rows with a non-ASCII tail
+     shorter than 64 bytes are the shape that only reaches simdutf while the ASCII skip stays behind the
+     threshold, so they are what makes a hoisted skip visible in this sweep. -->
 <test run_all_queries="1">
-    <!-- ASCII: the pre-pass against master's byte-at-a-time loop, nothing else. -->
+    <!-- ASCII: the skip against master's byte-at-a-time loop below 64, simdutf on ASCII at and above it. -->
     <query>SELECT isValidUTF8(materialize(repeat('a', 8))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 63))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 64))) FROM numbers(3000000) FORMAT Null</query>
@@ -27,6 +26,11 @@
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32) || 'a')) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 511) || 'a')) FROM numbers(300000) FORMAT Null</query>
+    <!-- A leading ASCII run with a non-ASCII tail shorter than 64 bytes: 64 bytes behind an 8-byte head,
+         and 148 bytes behind a 96-byte head. An ASCII skip placed ahead of the threshold strips both to
+         a sub-64-byte remainder and pays the scalar loop for the tail. -->
+    <query>SELECT isValidUTF8(materialize(repeat('a', 8) || repeat('\xE6\x97\xA5', 18) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 96) || repeat('\xD0\xB0', 26))) FROM numbers(3000000) FORMAT Null</query>
     <!-- Malformed at offset 0: the scalar loop rejects in constant time while simdutf always checks at
          least one block, so this row is a bounded cost that no threshold can improve, never a crossover.
          The alias is required: the folded argument would otherwise become the result column's name, and

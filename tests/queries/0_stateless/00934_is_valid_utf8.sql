@@ -126,11 +126,12 @@ select 0 = isValidUTF8(toFixedString('123456789012345\xf1', 16)) from system.num
 select 0 = isValidUTF8(toFixedString('123456789012345\xc2', 16)) from system.numbers limit 10;
 select 0 = isValidUTF8(toFixedString('\xC2\x7F', 2)) from system.numbers limit 10;
 
--- Lengths around the two boundaries the dispatch introduces: 8, the word the ASCII pre-pass consumes,
--- and 64, at and above which simdutf validates the remainder.
-select n, 1 = isValidUTF8(repeat('a', n)) from (select arrayJoin([0, 1, 7, 8, 9, 63, 64, 65, 71, 72, 73]) as n) order by n;
+-- Lengths around the two boundaries the dispatch introduces: 64, at and above which simdutf validates
+-- the input whatever its content, and 8, the word the ASCII pre-pass consumes below that.
+select n, 1 = isValidUTF8(repeat('a', n)) from (select arrayJoin([0, 1, 7, 8, 9, 63, 64, 65]) as n) order by n;
 
--- A multibyte sequence, well-formed and truncated, straddling each of those boundaries.
+-- A multibyte sequence, well-formed and truncated, at offsets that straddle the 64-byte block simdutf
+-- validates in. Every payload here is longer than 64 bytes, so all of them take that arm.
 select off, 1 = isValidUTF8(repeat('x', off) || '\xE2\x82\xA1' || repeat('y', 100)), 0 = isValidUTF8(repeat('x', off) || '\xE2\x82' || repeat('y', 100)) from (select arrayJoin([0, 7, 8, 9, 15, 16, 55, 62, 63, 64, 65, 71, 72]) as off) order by off;
 
 -- A truncated lead byte immediately after an ASCII run. A pre-pass that ran past the lead byte, or
