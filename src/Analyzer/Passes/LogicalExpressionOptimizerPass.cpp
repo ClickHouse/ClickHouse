@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/setMembershipEquivalence.h>
 #include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
 #include <Formats/FormatFactory.h>
@@ -395,35 +396,6 @@ struct ComparisonFilterInfo
     /// so that the tightened predicate reaches downstream analysis.
     bool modified = false;
 };
-
-/** `IN` matches by set membership while `equals` compares by value, and the two relations disagree on
-  * floating-point NaN and signed zero: `nan = nan` is 0 while `nan IN (nan)` is 1, and `-0.0 = 0.0` is 1
-  * while `-0.0 IN (0.0)` is 0. Folding such a comparison into `IN`/`NOT IN` would silently change the
-  * result, so it has to stay a comparison.
-  *
-  * The constant is compared in the domain of the expression, so an integer or a string zero reaches it as
-  * `+0.0` as well; only a constant that is provably a non-zero number is folded.
-  */
-static bool comparisonWithConstantMatchesSetMembership(const DataTypePtr & expression_type, const Field & constant_value)
-{
-    if (!isFloat(removeNullable(removeLowCardinality(expression_type))))
-        return true;
-
-    switch (constant_value.getType())
-    {
-        case Field::Types::Float64:
-        {
-            const Float64 value = constant_value.safeGet<Float64>();
-            return !isNaN(value) && value != 0.0;
-        }
-        case Field::Types::UInt64:
-            return constant_value.safeGet<UInt64>() != 0;
-        case Field::Types::Int64:
-            return constant_value.safeGet<Int64>() != 0;
-        default:
-            return false;
-    }
-}
 
 /// A `Bool` column constant may be stored as `Types::Bool` (strict conversion) or as an integer
 /// Field (boundary folding); unify so that map lookups agree with `accurateEquals`/`accurateLess`.
