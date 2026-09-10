@@ -1135,6 +1135,13 @@ def node_with_database_collections(cluster):
         user="root",
         nothrow=True,
     )
+    # A SQL-created collection outlives hiding the config file, so a test that leaves one behind
+    # makes every later arm find the collection it needs missing.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/lib/clickhouse/named_collections/*.sql"],
+        user="root",
+        nothrow=True,
+    )
     node.restart_clickhouse()
     for name in ("db_over_s3", "db_over_remote_secure", "db_over_mysql"):
         node.query(f"DROP DATABASE IF EXISTS {name}")
@@ -1230,7 +1237,9 @@ def test_startup_skipped_database_recovers_from_sql(node_with_database_collectio
         "CREATE NAMED COLLECTION db_collection_s3 AS "
         "url = 'http://localhost:11111/test/', access_key_id = 'key', secret_access_key = 'secret'"
     )
-    node.restart_clickhouse()
+    # Recovery needs no restart, which is what the skip message promises. The restart path is
+    # covered by test_startup_skips_database_with_missing_collection.
+    node.query("ATTACH DATABASE db_over_s3")
 
     assert "1" == node.query(
         "SELECT count() FROM system.databases WHERE name = 'db_over_s3'"

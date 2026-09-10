@@ -207,7 +207,9 @@ static bool loadDatabaseAtStartup(
         tryLogCurrentException(
             log,
             fmt::format(
-                "Skipping database {}, it will be absent until the server is restarted", backQuoteIfNeed(database)));
+                "Skipping database {0}, it will be absent until the named collection it references is recreated, "
+                "after which ATTACH DATABASE {0} (or a server restart) brings it back",
+                backQuoteIfNeed(database)));
         return false;
     }
 }
