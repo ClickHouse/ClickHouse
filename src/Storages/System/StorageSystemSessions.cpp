@@ -151,7 +151,7 @@ void StorageSystemSessions::fillData(MutableColumns & res_columns, ContextPtr co
 
         res_columns[i++]->insert(entry->client_info.interface);
         res_columns[i++]->insert(entry->client_info.http_user_agent);
-        res_columns[i++]->insert(entry->client_info.client_hostname);
+        res_columns[i++]->insert(entry->client_info.getClientHostName());
         res_columns[i++]->insert(entry->client_info.client_name);
         res_columns[i++]->insert(entry->client_info.client_tcp_protocol_version);
         res_columns[i++]->insert(entry->client_info.client_version_major);

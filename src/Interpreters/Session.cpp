@@ -18,6 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 #include <Core/UUID.h>
 #include <Common/config_version.h>
 #include <Interpreters/SessionTracker.h>
@@ -871,7 +872,11 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
             entry.profiles = profile_info->getProfileNames();
         SettingsChanges changes = settings.changes();
         for (const auto & change : changes)
-            entry.settings.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+        {
+            String value = Settings::valueToStringUtil(change.name, change.value);
+            CoreSettings::maskSettingValue(change.name, change.value, value);
+            entry.settings.emplace_back(change.name, value);
+        }
         entry.quotas = access->getQuotaUsages();
 
         entry.client_info = getClientInfo();
