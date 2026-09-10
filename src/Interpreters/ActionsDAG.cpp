@@ -867,10 +867,16 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
     return false;
 }
 
+static bool isPlannerOnlyFilterNode(const ActionsDAG::Node & node)
+{
+    return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+        && isPlannerOnlyFilterFunction(*node.function_base);
+}
+
 bool ActionsDAG::hasPlannerOnlyFilters() const
 {
     for (const auto & node : nodes)
-        if (node.type == ActionType::FUNCTION && node.function_base && isPlannerOnlyFilterFunction(*node.function_base))
+        if (isPlannerOnlyFilterNode(node))
             return true;
 
     return false;
@@ -3086,6 +3092,12 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
                 /// query is drawn once per source row when it is evaluated below it, instead of once per
                 /// expanded row. Keep such an expression on the side of the `ARRAY JOIN` where it was written.
                 if (isNonDeterministicOrStateful(*cur.node))
+                    depend_on_array_join = true;
+
+                /// A planner-only filter wrapper is only meaningful as a conjunct of the filter step that owns
+                /// it, where `resolvePlannerOnlyFilters` promotes or drops it. Below the `ARRAY JOIN` it is an
+                /// ordinary column of the step below, which the resolver never visits.
+                if (isPlannerOnlyFilterNode(*cur.node))
                     depend_on_array_join = true;
 
                 for (const auto * child : cur.node->children)

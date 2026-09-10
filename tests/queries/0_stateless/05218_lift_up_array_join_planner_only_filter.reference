@@ -1,0 +1,14 @@
+-- ARRAY JOIN inside a decorrelated subquery --
+2
+-- LEFT ARRAY JOIN inside a decorrelated subquery --
+2
+-- control: same rows with the lift-up disabled (the marker was never moved) --
+2
+-- control: same rows with the derivation disabled (no marker exists) --
+2
+-- control: non-nullable keys derive no NOT NULL filter --
+2
+-- liveness: the lift-up computes the derived isNotNull below the ARRAY JOIN --
+1
+-- liveness control: with the lift-up disabled it is not computed there --
+0
