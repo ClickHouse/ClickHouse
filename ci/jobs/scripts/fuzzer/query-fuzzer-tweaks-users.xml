@@ -106,7 +106,6 @@
             <allow_nondeterministic_optimize_skip_unused_shards>1</allow_nondeterministic_optimize_skip_unused_shards>
             <allow_not_comparable_types_in_comparison_functions>1</allow_not_comparable_types_in_comparison_functions>
             <allow_not_comparable_types_in_order_by>1</allow_not_comparable_types_in_order_by>
-            <allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>
             <allow_settings_after_format_in_insert>1</allow_settings_after_format_in_insert>
             <allow_suspicious_codecs>1</allow_suspicious_codecs>
             <allow_suspicious_fixed_string_types>1</allow_suspicious_fixed_string_types>
@@ -125,7 +124,6 @@
             <enable_lightweight_delete>1</enable_lightweight_delete>
             <enable_lightweight_update>1</enable_lightweight_update>
             <enable_materialized_cte>1</enable_materialized_cte>
-            <enable_nullable_tuple_type>1</enable_nullable_tuple_type>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
             <enable_quantized_codec>1</enable_quantized_codec>
