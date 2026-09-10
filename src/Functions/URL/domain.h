@@ -130,7 +130,11 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '.':
             if (has_open_bracket)
                 continue; /// part of a mixed IPv6/IPv4 tail, e.g. "::ffff:192.0.2.128"; parseIPv6Whole validates it below
-            if (has_at_symbol || colon_pos == nullptr)
+            /// Once colon_pos is set (whether or not '@' has been seen), a dot afterward is past
+            /// the host, in what would be the port - it must not count as a dot within the host,
+            /// e.g. the '.' in "user@foo:80.bar" must not make checkAndReturnHost think "foo" has
+            /// a valid dot of its own.
+            if (colon_pos == nullptr)
                 dot_pos = pos;
             break;
         case ':':
