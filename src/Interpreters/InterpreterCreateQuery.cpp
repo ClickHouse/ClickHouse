@@ -2584,6 +2584,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         res = table_function->execute(table_function_ast, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true, /*is_insert_query=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
 
+        /// A table engine picks the comment up from the arguments the storage factory passes to it,
+        /// while a table function does not receive it at all, so apply it here: otherwise the comment
+        /// would be stored in the metadata but missing from `system.tables`.
+        if (create.comment)
+            res->setInMemoryMetadataComment(create.comment->as<ASTLiteral &>().value.safeGet<String>());
+
         /// The table is permanent, so it must hold its named collection (if any) the same way a table
         /// engine does: `DROP NAMED COLLECTION` is blocked while the table exists.
         if (const auto collection_name = table_function->getUsedNamedCollectionName(); !collection_name.empty())
