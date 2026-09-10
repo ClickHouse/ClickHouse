@@ -18,8 +18,10 @@ SETTINGS allow_nullable_key = 1;
 
 INSERT INTO tab SELECT number, intDiv(number, 4096) FROM numbers(10000);
 
--- This query would previously crash with LOGICAL_ERROR
--- because toUInt128(0) constant wasn't wrapped with __bitWrapperFunc
+-- This query would previously throw a LOGICAL_ERROR
+-- because toUInt128(0) constant wasn't wrapped with __bitWrapperFunc.
+-- A wide integer has no boolean reading, so the hint states nothing and no granule is skipped:
+-- the row is the proof that the scan happened rather than being pruned away.
 SELECT DISTINCT materialize(toNullable(toUInt256(1))) FROM tab WHERE indexHint(indexHint(toUInt128(0)));
 SELECT count() FROM tab WHERE indexHint(toUInt256(1));
 SELECT count() FROM tab WHERE indexHint(indexHint(toInt64(1)));

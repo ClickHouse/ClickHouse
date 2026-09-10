@@ -69,7 +69,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 控制在使用 FINAL 修饰符执行查询时是否使用跳过索引。
 
-跳过索引可能会排除包含最新数据的行 (粒度) ，从而导致带有 FINAL 修饰符的查询结果不正确。启用此设置后，即使使用 FINAL 修饰符，也会应用跳过索引，这可能提升性能，但也有遗漏最近更新的风险。此设置应与 use&#95;skip&#95;indexes&#95;if&#95;final&#95;exact&#95;mode 设置同时启用 (默认已启用) 。
+跳过索引可能会排除包含最新数据的行 (粒度) ，从而导致带有 FINAL 修饰符的查询结果不正确。启用此设置后，即使使用 `FINAL` 修饰符，也会应用跳过索引，这可能提升性能。结果是否正确仍取决于 `use_skip_indexes_if_final_exact_mode` 设置；该设置默认启用，并会扫描与跳过索引返回的范围重叠的额外 parts。仅当该设置被禁用时，才存在遗漏最近更新的风险。
 
 可能的值：
 
