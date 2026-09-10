@@ -71,8 +71,8 @@ struct MergeTreePartition
 };
 
 /// Resolves the partition key that a part's stored partition value must be rendered with, reusing the
-/// table's adjusted key across the parts it is asked about. A patch part carries a generated
-/// `__patchPartitionID` key instead, which has no `modulo` and is therefore already its own adjusted key.
+/// table's adjusted key across the parts it is asked about. The returned reference is valid until the
+/// next `get`. A patch part carries a generated `__patchPartitionID` key, already its own adjusted key.
 class PartitionKeySamples
 {
 public:
