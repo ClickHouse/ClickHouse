@@ -18,9 +18,9 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///
 /// CREATE TABLE ts ENGINE = TimeSeries()
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRICS [db].table3
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRIC FAMILIES [db].table3
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree
 /// -OR-
 /// CREATE TABLE ts ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
@@ -63,11 +63,11 @@ public:
     /// Whether this table has a target of the given kind (the RecentSamples target is optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 
-    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and Metrics.
+    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and MetricFamilies.
     /// A concrete table can have no RecentSamples target (see hasTarget).
     static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
     }
 
     void readImpl(

@@ -18,13 +18,15 @@ class StorageTimeSeries;
 ///   0 - Tables created before the `version` setting was introduced (including "prealpha" tables
 ///       and tables without the recent samples table).
 ///   1 - The `version` setting was introduced.
+///   2 - The "metrics" target table was renamed to "metric families": the inner table is named
+///       `.inner_id.metricfamilies.<uuid>` instead of `.inner_id.metrics.<uuid>`, and the same name is used in backups.
 namespace TimeSeriesVersion
 {
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 1;
+    constexpr UInt64 LATEST = 2;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -38,6 +40,10 @@ namespace TimeSeriesVersion
     /// and `timeSeriesSelector` table functions, the `promql` dialect, and the Prometheus HTTP query API).
     /// The PromQL layer may support fewer versions than the table engine itself.
     constexpr UInt64 MIN_SUPPORTED_BY_PROMQL = 0;
+
+    /// The first version whose "metric families" target is named "metricfamilies" in the names of inner tables
+    /// and in backups. The earlier versions name it "metrics".
+    constexpr UInt64 FIRST_WITH_METRIC_FAMILIES_NAME = 2;
 
     static_assert(MIN_SUPPORTED <= MIN_WRITABLE);
     static_assert(MIN_WRITABLE <= LATEST);

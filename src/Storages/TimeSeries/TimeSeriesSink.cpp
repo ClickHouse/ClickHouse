@@ -179,8 +179,8 @@ namespace
         }
     }
 
-    /// Fills columns metric_family_name, type, unit, help for the "metrics" table.
-    void fillMetricsColumns(
+    /// Fills columns metric_family_name, type, unit, help for the "metric families" table.
+    void fillMetricFamiliesColumns(
         const IColumn & metric_family_column,
         const IColumn & type_column,
         const IColumn & unit_column,
@@ -436,7 +436,7 @@ TimeSeriesSink::TimeSeriesSink(
         || is_insert_column(TimeSeriesColumnNames::Tags)
         || is_insert_column(TimeSeriesColumnNames::TimeSeries);
 
-    insert_metrics = is_insert_column(TimeSeriesColumnNames::MetricFamily)
+    insert_metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily)
         || is_insert_column(TimeSeriesColumnNames::Type)
         || is_insert_column(TimeSeriesColumnNames::Unit)
         || is_insert_column(TimeSeriesColumnNames::Help);
@@ -444,8 +444,8 @@ TimeSeriesSink::TimeSeriesSink(
     if (insert_tags_and_samples)
         initTagsAndSamplesPipelines();
 
-    if (insert_metrics)
-        initMetricsPipeline();
+    if (insert_metric_families)
+        initMetricFamiliesPipeline();
 }
 
 
@@ -459,8 +459,8 @@ void TimeSeriesSink::consume(Chunk & chunk)
     if (insert_tags_and_samples)
         consumeTagsAndSamples(block);
 
-    if (insert_metrics)
-        consumeMetrics(block);
+    if (insert_metric_families)
+        consumeMetricFamilies(block);
 }
 
 
@@ -760,33 +760,33 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 }
 
 
-void TimeSeriesSink::initMetricsPipeline()
+void TimeSeriesSink::initMetricFamiliesPipeline()
 {
-    /// It's important to use here for `metrics_header`
-    /// the same data types as function consumeMetrics() uses to push blocks.
+    /// It's important to use here for `metric_families_header`
+    /// the same data types as function consumeMetricFamilies() uses to push blocks.
     /// There is a conversion step in the target pipelines, so we don't have to always
     /// match the data types of the columns in the "tags" or "samples" tables.
 
     const Block & header = getHeader();
 
-    Block metrics_header;
-    metrics_header.insert(ColumnWithTypeAndName{
+    Block metric_families_header;
+    metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::MetricFamilyName});
 
-    metrics_header.insert(ColumnWithTypeAndName{
+    metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
 
-    metrics_header.insert(ColumnWithTypeAndName{
+    metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Unit).type, TimeSeriesColumnNames::Unit});
 
-    metrics_header.insert(ColumnWithTypeAndName{
+    metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Help).type, TimeSeriesColumnNames::Help});
 
-    metrics_pipeline = createTargetPipeline(ViewTarget::Metrics, metrics_header);
+    metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header);
 }
 
 
-void TimeSeriesSink::consumeMetrics(const Block & block)
+void TimeSeriesSink::consumeMetricFamilies(const Block & block)
 {
     /// Step 1. Extract columns from the input block.
     const auto & metric_family_col = block.getByName(TimeSeriesColumnNames::MetricFamily);
@@ -810,13 +810,13 @@ void TimeSeriesSink::consumeMetrics(const Block & block)
         return;
     }
 
-    /// Step 2. Build columns for the metrics block, skipping rows with empty metric_family.
+    /// Step 2. Build columns for the metric families block, skipping rows with empty metric_family.
     auto new_metric_family_column = metric_family_col.type->createColumn();
     auto new_type_column = type_col.type->createColumn();
     auto new_unit_column = unit_col.type->createColumn();
     auto new_help_column = help_col.type->createColumn();
 
-    fillMetricsColumns(
+    fillMetricFamiliesColumns(
         *metric_family_col.column,
         *type_col.column, *unit_col.column, *help_col.column,
         *new_metric_family_column,
@@ -825,14 +825,14 @@ void TimeSeriesSink::consumeMetrics(const Block & block)
     /// We've already checked that at least one non-empty `metric_family` is present.
     chassert(!new_metric_family_column->empty());
 
-    /// Step 3. Assemble the block and push it to the "metrics" table.
-    Block metrics_block;
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::MetricFamilyName});
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_type_column), type_col.type, TimeSeriesColumnNames::Type});
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_help_column), help_col.type, TimeSeriesColumnNames::Help});
+    /// Step 3. Assemble the block and push it to the "metric families" table.
+    Block metric_families_block;
+    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::MetricFamilyName});
+    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_type_column), type_col.type, TimeSeriesColumnNames::Type});
+    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
+    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_help_column), help_col.type, TimeSeriesColumnNames::Help});
 
-    metrics_pipeline->push(std::move(metrics_block));
+    metric_families_pipeline->push(std::move(metric_families_block));
 }
 
 
@@ -844,8 +844,8 @@ void TimeSeriesSink::onFinish()
         samples_pipeline->executor->finish();
     if (recent_samples_pipeline)
         recent_samples_pipeline->executor->finish();
-    if (metrics_pipeline)
-        metrics_pipeline->executor->finish();
+    if (metric_families_pipeline)
+        metric_families_pipeline->executor->finish();
 }
 
 }

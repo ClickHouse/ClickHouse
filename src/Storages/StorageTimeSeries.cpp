@@ -35,7 +35,6 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
-#include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
 
@@ -156,7 +155,8 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
                 create_query.getTargetInnerEngine(target.kind)
                     ? create_query.getTargetInnerEngine(target.kind)->ptr()
                     : ASTPtr{});
-            createTimeSeriesInnerTable(target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, local_context);
+            createTimeSeriesInnerTable(
+                target.kind, target.table_id.uuid, *inner_columns, inner_engine, table_id, getTimeSeriesSettingVersion(create_query), local_context);
         }
     }
 
@@ -315,7 +315,7 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
 
     /// For inner targets in non-Atomic databases, `target.table_id` is empty and we look up the inner table by its constructed name.
     StorageID time_series_table_id = getStorageID();
-    StorageID inner_table_id{time_series_table_id.getDatabaseName(), getTimeSeriesInnerTableName(target_kind, time_series_table_id)};
+    StorageID inner_table_id{time_series_table_id.getDatabaseName(), getTimeSeriesInnerTableName(target_kind, time_series_table_id, getVersion())};
 
     if (auto res = lookup(inner_table_id))
         return res;
@@ -657,7 +657,7 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
                 continue;
 
             auto inner_table_id = inner_table->getStorageID();
-            auto new_inner_table_name = getTimeSeriesInnerTableName(target_kind, new_table_id);
+            auto new_inner_table_name = getTimeSeriesInnerTableName(target_kind, new_table_id, getVersion());
 
             if (DatabaseCatalog::instance().isTableExist(StorageID{new_table_id.database_name, new_inner_table_name}, getContext()))
                 throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {} already exists",
@@ -692,9 +692,8 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
         if (isInnerTable(target_kind))
         {
             auto table = getTargetTable(target_kind, backup_entries_collector.getContext());
-            String kind_str{magic_enum::enum_name(target_kind)};
-            boost::algorithm::to_lower(kind_str);
-            table->backupData(backup_entries_collector, fs::path{data_path_in_backup} / kind_str, {});
+            String target_data_path = fs::path{data_path_in_backup} / getTimeSeriesTargetKindName(target_kind, getVersion());
+            table->backupData(backup_entries_collector, target_data_path, {});
         }
     }
 }
@@ -712,9 +711,7 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
         if (isInnerTable(target_kind))
         {
             auto table = getTargetTable(target_kind, restorer.getContext());
-            String kind_str{magic_enum::enum_name(target_kind)};
-            boost::algorithm::to_lower(kind_str);
-            String target_data_path = fs::path{data_path_in_backup} / kind_str;
+            String target_data_path = fs::path{data_path_in_backup} / getTimeSeriesTargetKindName(target_kind, getVersion());
             /// Support legacy backups where the samples folder was named "data" instead of "samples".
             if (target_kind == ViewTarget::Samples && !restorer.getBackup()->hasFiles(target_data_path))
                 target_data_path = fs::path{data_path_in_backup} / "data";
@@ -900,11 +897,11 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
 [RECENT SAMPLES db.recent_samples_table_name | [RECENT SAMPLES INNER COLUMNS (...)] [RECENT SAMPLES INNER ENGINE engine(arguments)]]
 [TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
-[METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
+[METRIC FAMILIES db.metric_families_table_name | [METRIC FAMILIES INNER COLUMNS (...)] [METRIC FAMILIES INNER ENGINE engine(arguments)]]
 ```
 
 :::note
-The keyword `SAMPLES` has an alias `DATA` which is kept for backwards compatibility.
+The keyword `SAMPLES` has an alias `DATA`, and the keyword `METRIC FAMILIES` has an alias `METRICS`, both are kept for backwards compatibility.
 :::
 
 ## Usage {#usage}
@@ -979,7 +976,7 @@ If both forms are used in the same `CREATE TABLE` statement, the declared types 
 A `TimeSeries` table doesn't have its own data, everything is stored in its target tables.
 This is similar to how a [materialized view](/reference/statements/create/view#materialized-view) works,
 with the difference that a materialized view has one target table
-whereas a `TimeSeries` table has three mandatory target tables named [samples](#samples-table), [tags](#tags-table), and [metrics](#metrics-table),
+whereas a `TimeSeries` table has three mandatory target tables named [samples](#samples-table), [tags](#tags-table), and [metric families](#metric-families-table),
 and an optional [recent samples](#recent-samples-table) target table which is enabled by default
 (see the [recent_samples_ttl_seconds](#settings) setting).
 
@@ -1034,11 +1031,12 @@ The _tags_ table must have columns:
 | `min_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Minimum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 | `max_time` | [ ] | `Nullable(DateTime64(3))` | `DateTime64(X)` or `Nullable(DateTime64(X))` | Maximum timestamp of time series with that `id`. The column is created if [store_min_time_and_max_time](#settings) is `true` |
 
-### Metrics table {#metrics-table}
+### Metric families table {#metric-families-table}
 
-The _metrics_ table contains some information about metrics been collected, the types of those metrics and their descriptions.
+The _metric families_ table contains some information about the metric families been collected, the types of those metric families and their descriptions.
+A metric family is a group of metrics with the same name (the `__name__` tag) and the same type, for example a histogram is a metric family which consists of multiple metrics.
 
-The _metrics_ table must have columns:
+The _metric families_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
@@ -1094,14 +1092,14 @@ TAGS INNER COLUMNS
     `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
 )
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
-METRICS INNER COLUMNS
+METRIC FAMILIES INNER COLUMNS
 (
     `metric_family_name` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
-METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
 So the columns were generated automatically and also there are four inner target tables with their own column definitions
@@ -1111,7 +1109,7 @@ Also the latest schema version was pinned into the `version` setting (see [Schem
 
 Inner target tables have names like `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
-`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 and each target table has its own set of columns:
 
 ```sql
@@ -1156,7 +1154,7 @@ SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```
 
 ```sql
-CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+CREATE TABLE default.`.inner_id.metricfamilies.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `metric_family_name` String,
     `type` LowCardinality(String),
@@ -1262,7 +1260,7 @@ By default inner target tables use the following table engines:
 the [recent_samples_ttl_seconds](#settings) setting and with `ttl_only_drop_parts` enabled, so expired parts are dropped as a whole;
 - the [tags](#tags-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`;
-- the [metrics](#metrics-table) table uses [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
+- the [metric families](#metric-families-table) table uses [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates.
 
 The engine family of the generated inner tables follows the `default_table_engine` query-level setting:
@@ -1282,7 +1280,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES ENGINE=ReplicatedMergeTree
 RECENT SAMPLES ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
-METRICS ENGINE=ReplicatedReplacingMergeTree
+METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 ```
 
 The [tags](#tags-table) table keeps the tag columns (and the `tags` Map) outside its sorting key,
@@ -1308,16 +1306,16 @@ ORDER BY (id, timestamp);
 
 CREATE TABLE tags_for_my_table ...
 
-CREATE TABLE metrics_for_my_table ...
+CREATE TABLE metric_families_for_my_table ...
 
-CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
+CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRIC FAMILIES metric_families_for_my_table;
 ```
 
 An external table can also be used as the [recent samples](#recent-samples-table) target (the `RECENT SAMPLES my_recent_samples_table` clause).
 Such a table must have the same columns as an external samples table, and it must retain at least
 [recent_samples_ttl_seconds](#settings) seconds of data, which is the user's responsibility.
 
-The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
+The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metric families table](#metric-families-table) for the type constraints). Type mismatches are reported at `CREATE` time.
 
 The id-generator expression for an external tags target is resolved at INSERT time in the following order: the [`id_generator`](#settings) setting (if set), then the `DEFAULT` declared on the external table's `id` column (if any), then the canonical generator derived from the `id` type. The setting therefore overrides whatever `DEFAULT` is declared on the external table — see [The `id` column](#id-column) for details.
 
@@ -1356,14 +1354,14 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `version` | UInt64 | 1 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 2 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 1) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 2) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version. `CREATE TABLE ... AS other_table` doesn't copy the version of the other table, see [Creating a table AS existing table](#create-as).
@@ -1379,12 +1377,20 @@ the `promql` dialect, and the Prometheus HTTP query API):
 - If the version is too old to write into, `INSERT` queries and the Prometheus remote-write protocol are rejected, while `SELECT` queries still work.
 - If the version is too old for the server at all, every query over the table (except `SHOW CREATE TABLE`, `DETACH` and `DROP`) is rejected.
 
+Version history:
+
+| Version | Changes |
+|---|---|
+| 0 | Tables created before the `version` setting was introduced |
+| 1 | The `version` setting was introduced |
+| 2 | The `metrics` target table was renamed to `metric families`: the inner table is named `.inner_id.metricfamilies.<uuid>` instead of `.inner_id.metrics.<uuid>` |
+
 # Functions {#functions}
 
 Here is a list of functions supporting a `TimeSeries` table as an argument:
 - [timeSeriesSamples](/reference/functions/table-functions/timeSeriesSamples)
 - [timeSeriesTags](/reference/functions/table-functions/timeSeriesTags)
-- [timeSeriesMetrics](/reference/functions/table-functions/timeSeriesMetrics)
+- [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetricFamilies)
 )DOCS_MD",
         .syntax = "ENGINE = TimeSeries()"});
 }

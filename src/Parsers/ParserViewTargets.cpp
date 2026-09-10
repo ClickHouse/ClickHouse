@@ -67,7 +67,7 @@ namespace
         if (!res || !res->getInnerEngine(kind))
         {
             /// Skip optional INNER before ENGINE.
-            /// We support both syntaxes: `TAGS/DATA/METRICS ENGINE` and `TAGS/DATA/METRICS INNER ENGINE`.
+            /// We support both syntaxes: `SAMPLES/TAGS/METRIC FAMILIES ENGINE` and `SAMPLES/TAGS/METRIC FAMILIES INNER ENGINE`.
             ParserKeyword{Keyword::INNER}.ignore(pos, expected);
 
             if (ParserStorage{ParserStorage::TABLE_ENGINE}.parse(pos, ast, expected))
@@ -133,8 +133,9 @@ bool ParserViewTargets::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
                 }
 
-                case ViewTarget::Metrics:
+                case ViewTarget::MetricFamilies:
                 {
+                    parsed |= tryParseViewTarget(kind, Keyword::METRIC_FAMILIES, pos, expected, res);
                     parsed |= tryParseViewTarget(kind, Keyword::METRICS, pos, expected, res);
                     break;
                 }

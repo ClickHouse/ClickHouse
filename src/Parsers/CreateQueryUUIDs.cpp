@@ -47,9 +47,10 @@ namespace
         {
             return ViewTarget::Tags;
         }
-        else if (str == "metrics")
+        /// "Metrics" is the old name of the `MetricFamilies` kind, it can be found in DDL log entries written by older servers.
+        else if ((str == "metrics") || (str == "Metrics"))
         {
-            return ViewTarget::Metrics;
+            return ViewTarget::MetricFamilies;
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
@@ -109,7 +110,7 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
             {
                 generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
-                generate_target_uuid(ViewTarget::Metrics);
+                generate_target_uuid(ViewTarget::MetricFamilies);
 
                 bool recent_samples_enabled = getTimeSeriesSettingRecentSamplesTTL(query) != 0;
                 if (for_restore && !hasExplicitTimeSeriesSettingRecentSamplesTTL(query))
