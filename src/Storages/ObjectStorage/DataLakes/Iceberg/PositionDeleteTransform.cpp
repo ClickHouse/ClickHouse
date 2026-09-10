@@ -22,7 +22,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDeletionVectorReader.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 #include <Storages/ObjectStorage/DataLakes/DeletionVectorTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
@@ -63,7 +62,11 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
-    const bool can_read_deletion_vectors = context->getSettingsRef()[Setting::allow_iceberg_deletion_vectors].value;
+    if (iceberg_object_info->info.deletion_vector.has_value()
+        && !context->getSettingsRef()[Setting::allow_iceberg_deletion_vectors].value)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Iceberg v3 deletion vectors are not enabled. Set allow_iceberg_deletion_vectors = 1.");
 
     /// Create filter on the data object to get interested rows
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
@@ -74,15 +77,6 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
-        if (position_deletes_object.isDeletionVector())
-        {
-            if (!can_read_deletion_vectors)
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Iceberg v3 deletion vectors are not enabled. Set allow_iceberg_deletion_vectors = 1.");
-            continue;
-        }
-
         if (position_deletes_object.reference_data_file_path.has_value()
             && position_deletes_object.reference_data_file_path != iceberg_data_path)
         {
@@ -201,15 +195,12 @@ void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 
 void IcebergBitmapPositionDeleteTransform::initialize()
 {
-    for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
+    if (const auto & deletion_vector_object = iceberg_object_info->info.deletion_vector)
     {
-        if (!position_deletes_object.isDeletionVector())
-            continue;
-
         auto deletion_vector = readIcebergDeletionVector(
-            position_deletes_object.file_path,
-            position_deletes_object.content_offset.value(),
-            position_deletes_object.content_size_in_bytes.value(),
+            deletion_vector_object->file_path,
+            deletion_vector_object->content_offset,
+            deletion_vector_object->content_size_in_bytes,
             object_storage,
             context,
             log);
@@ -237,15 +228,12 @@ void IcebergBitmapPositionDeleteTransform::initialize()
 
 void IcebergStreamingPositionDeleteTransform::initialize()
 {
-    for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
+    if (const auto & deletion_vector_object = iceberg_object_info->info.deletion_vector)
     {
-        if (!position_deletes_object.isDeletionVector())
-            continue;
-
         auto deletion_vector = readIcebergDeletionVector(
-            position_deletes_object.file_path,
-            position_deletes_object.content_offset.value(),
-            position_deletes_object.content_size_in_bytes.value(),
+            deletion_vector_object->file_path,
+            deletion_vector_object->content_offset,
+            deletion_vector_object->content_size_in_bytes,
             object_storage,
             context,
             log);

@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/DeletionVectorObject.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/EqualityDeleteObject.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
@@ -29,18 +30,15 @@ struct IcebergObjectSerializableInfo
     String manifest_file;
     String partition_id;
     std::vector<Iceberg::PositionDeleteObject> position_deletes_objects;
+    /// A deletion vector replaces all position delete files, so when present `position_deletes_objects` is empty.
+    std::optional<Iceberg::DeletionVectorObject> deletion_vector;
     std::vector<Iceberg::EqualityDeleteObject> equality_deletes_objects;
     std::optional<Int64> record_count;
     std::optional<Int64> file_size_in_bytes;
     std::optional<UInt64> first_row_id;
     std::vector<std::pair<String, Field>> identity_partition_columns;
 
-    bool hasDeletionVector() const
-    {
-         /// A deletion vector replaces all position delete files and blocks later ones,
-        /// so when present it is the only entry.
-        return position_deletes_objects.size() == 1 && position_deletes_objects.front().isDeletionVector();
-    }
+    bool hasPositionDeletes() const { return deletion_vector.has_value() || !position_deletes_objects.empty(); }
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);

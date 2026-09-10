@@ -69,6 +69,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           /* manifest_file */ data_manifest_file_entry_->manifest_file_path,
           /* partition_id */ Iceberg::computePartitionId(data_manifest_file_entry_->parsed_entry->partition_key_value),
           /* position_deletes_objects */ {},
+          /* deletion_vector */ std::nullopt,
           /* equality_deletes_objects */ {},
           data_manifest_file_entry_->parsed_entry->record_count,
           data_manifest_file_entry_->parsed_entry->file_size_in_bytes,
@@ -120,24 +121,19 @@ void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFi
             || !position_delete_object->parsed_entry->content_size_in_bytes.has_value())
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Iceberg deletion vector does not have content offset or size");
 
-        if (info.hasDeletionVector())
+        if (info.deletion_vector.has_value())
             throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Multiple deletion vectors apply to the same Iceberg data file");
 
         info.position_deletes_objects.clear();
-
-        info.position_deletes_objects.emplace_back(
+        info.deletion_vector = Iceberg::DeletionVectorObject{
             resolved_storage_path,
-            position_delete_object->parsed_entry->file_format,
-            position_delete_object->parsed_entry->referenced_data_file_path->serialize(),
-            position_delete_object->sequence_number,
-            Iceberg::PositionDeleteObjectKind::DeletionVector,
-            position_delete_object->parsed_entry->content_offset,
-            position_delete_object->parsed_entry->content_size_in_bytes);
+            *position_delete_object->parsed_entry->content_offset,
+            *position_delete_object->parsed_entry->content_size_in_bytes};
         return;
     }
 
     /// Ignore position delete files replaced by an existing deletion vector.
-    if (info.hasDeletionVector())
+    if (info.deletion_vector.has_value())
         return;
 
     info.position_deletes_objects.emplace_back(
@@ -168,12 +164,6 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
         writeVarUInt(position_deletes_objects.size(), out);
         for (const auto & pos_delete_obj : position_deletes_objects)
         {
-            if (pos_delete_obj.isDeletionVector() && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS)
-                throw Exception(
-                    ErrorCodes::UNKNOWN_PROTOCOL,
-                    "Iceberg deletion vector serialization is supported since protocol version {}, got: {}",
-                    DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS,
-                    protocol_version);
             writeStringBinary(pos_delete_obj.file_path, out);
             writeStringBinary(pos_delete_obj.file_format, out);
             if (pos_delete_obj.reference_data_file_path.has_value())
@@ -185,29 +175,29 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
             {
                 writeVarUInt(0, out);
             }
-            if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS)
-            {
-                writeVarUInt(static_cast<UInt8>(pos_delete_obj.kind), out);
-                if (pos_delete_obj.content_offset.has_value())
-                {
-                    writeVarUInt(1, out);
-                    writeVarInt(*pos_delete_obj.content_offset, out);
-                }
-                else
-                {
-                    writeVarUInt(0, out);
-                }
-                if (pos_delete_obj.content_size_in_bytes.has_value())
-                {
-                    writeVarUInt(1, out);
-                    writeVarInt(*pos_delete_obj.content_size_in_bytes, out);
-                }
-                else
-                {
-                    writeVarUInt(0, out);
-                }
-            }
         }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS)
+    {
+        if (deletion_vector.has_value())
+        {
+            writeVarUInt(1, out);
+            writeStringBinary(deletion_vector->file_path, out);
+            writeVarInt(deletion_vector->content_offset, out);
+            writeVarInt(deletion_vector->content_size_in_bytes, out);
+        }
+        else
+        {
+            writeVarUInt(0, out);
+        }
+    }
+    else if (deletion_vector.has_value())
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Iceberg deletion vector serialization is supported since protocol version {}, got: {}",
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS,
+            protocol_version);
     }
     {
         writeVarUInt(equality_deletes_objects.size(), out);
@@ -305,30 +295,23 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
                 readStringBinary(reference_path, in);
                 pos_delete_obj.reference_data_file_path = reference_path;
             }
-            if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS)
-            {
-                UInt64 kind = 0;
-                readVarUInt(kind, in);
-                pos_delete_obj.kind = static_cast<Iceberg::PositionDeleteObjectKind>(kind);
-
-                size_t has_content_offset = 0;
-                readVarUInt(has_content_offset, in);
-                if (has_content_offset)
-                {
-                    Int64 value = 0;
-                    readVarInt(value, in);
-                    pos_delete_obj.content_offset = value;
-                }
-
-                size_t has_content_size = 0;
-                readVarUInt(has_content_size, in);
-                if (has_content_size)
-                {
-                    Int64 value = 0;
-                    readVarInt(value, in);
-                    pos_delete_obj.content_size_in_bytes = value;
-                }
-            }
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_DELETION_VECTORS)
+    {
+        size_t has_deletion_vector = 0;
+        readVarUInt(has_deletion_vector, in);
+        if (has_deletion_vector)
+        {
+            Iceberg::DeletionVectorObject value;
+            readStringBinary(value.file_path, in);
+            readVarInt(value.content_offset, in);
+            readVarInt(value.content_size_in_bytes, in);
+            deletion_vector = std::move(value);
+        }
+        else
+        {
+            deletion_vector = std::nullopt;
         }
     }
     {
