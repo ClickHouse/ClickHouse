@@ -16,8 +16,7 @@ SETTINGS
     merge_max_block_size = 1024,
     vertical_merge_algorithm_min_rows_to_activate = 1000000000,
     index_granularity = 1,
-    merge_with_ttl_timeout = 0,
-    max_number_of_merges_with_ttl_in_pool = 0;
+    merge_with_ttl_timeout = 0;
 
 SYSTEM STOP MERGES t_ttl_skip_untouched_blocks;
 
@@ -29,8 +28,8 @@ INSERT INTO t_ttl_skip_untouched_blocks
 SELECT now() - INTERVAL 1 HOUR, number + 1536, 'expired' FROM numbers(1536)
 SETTINGS max_threads = 1, max_insert_threads = 1;
 
-SYSTEM START MERGES t_ttl_skip_untouched_blocks;
 OPTIMIZE TABLE t_ttl_skip_untouched_blocks FINAL SETTINGS optimize_throw_if_noop = 1;
+SYSTEM START MERGES t_ttl_skip_untouched_blocks;
 
 SELECT count(), countIf(value = ''), countIf(value = 'live') FROM t_ttl_skip_untouched_blocks;
 
