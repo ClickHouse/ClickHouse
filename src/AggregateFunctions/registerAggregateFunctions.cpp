@@ -104,6 +104,8 @@ void registerAggregateFunctionMergedJSONPatch(AggregateFunctionFactory & factory
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeSeriesHistogramSumOverGroup(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeSeriesHistogramAvgOverGroup(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeSeriesTopKMasks(AggregateFunctionFactory & factory);
 
 class AggregateFunctionCombinatorFactory;
@@ -222,6 +224,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionLast2Samples(factory);
         registerAggregateFunctionTimeseries(factory);
         registerAggregateFunctionTimeseriesGroupArray(factory);
+        registerAggregateFunctionTimeSeriesHistogramSumOverGroup(factory);
+        registerAggregateFunctionTimeSeriesHistogramAvgOverGroup(factory);
         registerAggregateFunctionTimeSeriesTopKMasks(factory);
 
         registerWindowFunctions(factory);

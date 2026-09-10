@@ -7,6 +7,8 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTViewTargets.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 
@@ -121,6 +123,13 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 }
                 if (recent_samples_enabled)
                     generate_target_uuid(ViewTarget::RecentSamples);
+
+                /// The "histograms" target is optional: an explicit HISTOGRAMS clause or the `store_native_histograms`
+                /// setting enables it. The setting is checked here too because an ON CLUSTER initiator generates
+                /// the UUIDs before normalizeTimeSeriesDefinition() materializes the setting into the target.
+                if ((query.targets && query.targets->tryGetTarget(ViewTarget::Histograms))
+                    || getTimeSeriesSettingStoreNativeHistograms(query))
+                    generate_target_uuid(ViewTarget::Histograms);
             }
         }
     }
