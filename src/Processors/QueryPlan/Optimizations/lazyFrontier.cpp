@@ -15,8 +15,11 @@ Placement LazyFrontier::at(const ActionsDAG::Node * node) const
 
 bool LazyFrontier::defersAnything() const
 {
-    return std::ranges::any_of(
-        placement, [](const auto & entry) { return entry.second.above != Placement::Above::No; });
+    return std::ranges::any_of(placement, [](const auto & entry)
+    {
+        const auto above = entry.second.above;
+        return above == Placement::Above::LazyRead || above == Placement::Above::Recomputed;
+    });
 }
 
 namespace
@@ -78,20 +81,16 @@ private:
     static void markComputedBelow(const ActionsDAG::NodeRawConstPtrs & roots, LazyFrontier & candidate)
     {
         for (const auto * node : findReachableNodes(roots))
-        {
-            auto & below = candidate.placement[node].below;
-            if (below == Placement::Below::No)
-                below = Placement::Below::Computed;
-        }
+            candidate.placement[node].computed_below = true;
     }
 
     void placeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
     {
         const auto placed = candidate.at(node);
-        if (placed.below == Placement::Below::ComputedAndCrossing || placed.above != Placement::Above::No)
+        if (placed.above != Placement::Above::No)
             return;
 
-        if (placed.below == Placement::Below::Computed)
+        if (placed.computed_below)
         {
             /// The main branch hands this one over regardless, so there is nothing to weigh up.
             if (free_to_cross.contains(node))
@@ -162,7 +161,7 @@ private:
     static void cross(const ActionsDAG::Node * node, LazyFrontier & candidate)
     {
         markComputedBelow({node}, candidate);
-        candidate.placement[node].below = Placement::Below::ComputedAndCrossing;
+        candidate.placement[node].above = Placement::Above::Crossing;
     }
 
     static size_t countLazyReads(const LazyFrontier & candidate)
