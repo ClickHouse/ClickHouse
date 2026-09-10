@@ -34,6 +34,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -46,6 +47,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -535,6 +537,50 @@ static void reorderNamedTupleValueToDestinationOrder(Field & value, DataTypePtr 
     src_type = std::make_shared<DataTypeTuple>(reordered_types, dst_names);
 }
 
+/// The interpreted `VALUES` path converts a `Field` with `convertFieldToType`, which matches tuple
+/// elements positionally and therefore cannot reject a conversion that drops source fields. Mirror
+/// the guard of `createTupleWrapper` (used by `INSERT ... SELECT`) for named tuples here: when both
+/// sides are explicitly named and their names overlap only partially, the conversion would silently
+/// lose the source fields that have no destination counterpart. Nested named tuples are checked too,
+/// following the same by-name matching as `reorderNamedTupleValueToDestinationOrder`.
+/// Named tuples with disjoint name sets are converted positionally and lose nothing, as in `CAST`.
+static void checkNamedTupleConversionDoesNotLoseFields(const DataTypePtr & src_type, const IDataType & dst_type)
+{
+    const auto * src_tuple_type = typeid_cast<const DataTypeTuple *>(src_type.get());
+    const auto * dst_tuple_type = typeid_cast<const DataTypeTuple *>(&dst_type);
+    if (!src_tuple_type || !dst_tuple_type || !src_tuple_type->hasExplicitNames() || !dst_tuple_type->hasExplicitNames())
+        return;
+
+    const auto & src_names = src_tuple_type->getElementNames();
+    const auto & dst_names = dst_tuple_type->getElementNames();
+
+    std::unordered_map<std::string_view, size_t> src_positions;
+    for (size_t i = 0; i < src_names.size(); ++i)
+        src_positions[src_names[i]] = i;
+
+    size_t common_names_count = 0;
+    for (const auto & dst_name : dst_names)
+        common_names_count += src_positions.contains(dst_name);
+
+    /// Disjoint name sets: positional conversion, nothing is lost.
+    if (common_names_count == 0)
+        return;
+
+    if (common_names_count < src_names.size())
+        throw Exception(
+            ErrorCodes::CANNOT_CONVERT_TYPE,
+            "Some fields from source tuple are lost when casting {} to {} (allow_named_tuple_conversion_with_extra_source_fields "
+            "is disabled)",
+            src_type->getName(),
+            dst_type.getName());
+
+    const auto & src_element_types = src_tuple_type->getElements();
+    const auto & dst_element_types = dst_tuple_type->getElements();
+    for (size_t i = 0; i < dst_names.size(); ++i)
+        checkNamedTupleConversionDoesNotLoseFields(src_element_types[src_positions[dst_names[i]]], *dst_element_types[i]);
+}
+
+
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
     const Block & header = getPort().getHeader();
@@ -738,6 +784,9 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// fills defaults against the right destination elements (e.g. `tuple('b', 'a')(NULL, NULL)` into
     /// `Tuple(a UInt8, b String)` must default `a` to `0` and `b` to `''`, not the other way round).
     reorderNamedTupleValueToDestinationOrder(expression_value, value_raw.second, type);
+
+    if (!settings[Setting::allow_named_tuple_conversion_with_extra_source_fields])
+        checkNamedTupleConversionDoesNotLoseFields(value_raw.second, type);
 
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
