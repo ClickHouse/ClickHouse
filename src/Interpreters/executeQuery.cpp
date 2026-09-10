@@ -100,7 +100,6 @@
 #include <Common/Licensing/LicenseChecker.h>
 #endif
 #include <Core/BaseSettings.h>
-#include <Core/Joins.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
@@ -725,7 +724,7 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
         result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }
 
-    if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
+    if (auto plan_profiler = context->getPlanProfiler())
         plan_profiler->render(&query_pipeline);
 
     /// Reset pipeline before fetching profile counters
@@ -742,8 +741,8 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 
 static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
 {
-    if (auto plan_profiler = context->getPlanProfiler(); plan_profiler && plan_profiler->hasQueryPlan())
-        elem.query_plan = plan_profiler->getPlanJSON();
+    if (auto plan_profiler = context->getPlanProfiler())
+        elem.query_plan = plan_profiler->render();
 }
 
 static void logQueryFinishImpl(
@@ -3086,21 +3085,11 @@ static BlockIO executeQueryImpl(
                     context->setQueryMetadataCache(query_metadata_cache);
                 }
 
-                /// Has to happen before the interpreter exists. Every join reads the analyze mode
-                /// off the context while the planner builds it and bakes it into its TableJoin --
-                /// HashJoin only allocates the counters at all if the mode is on -- and the
-                /// interpreter plans on a copy of this context, so setting it afterwards reaches
-                /// nothing. Without this the plan stored for a query with a join carries its I/O
-                /// and timings but none of the join's own metrics, which is what EXPLAIN ANALYZE
-                /// shows by default.
-                ///
-                /// `Derived` rather than `Exact`: it is the mode EXPLAIN ANALYZE uses unless asked
-                /// for matched rows, and it counts per probed block instead of per row.
+                /// Has to happen before the interpreter exists: the interpreter plans on a copy
+                /// of this context, and what enabling the profiler switches on has to be in force
+                /// while the planner runs.
                 if (QueryPlanProfiler::canEnableProfiler(context, out_ast, internal))
-                {
                     context->enablePlanProfiler();
-                    context->setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
-                }
 
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));

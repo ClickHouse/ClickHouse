@@ -55,13 +55,13 @@ String toJSONString(JSONBuilder::ItemPtr item)
 
 }
 
-void QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
+QueryPlan & QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
 {
-    plan_captured = true;
     query_plan.emplace(std::move(plan_));
     pretty_names.emplace(
         QueryPlanFormat::buildPrettyNamesPerPlan(*query_plan)
     );
+    return *query_plan;
 }
 
 bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal)
@@ -101,18 +101,15 @@ void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
     pipeline.setStepWallClockRegistry(std::move(registry));
 }
 
-void QueryPlanProfiler::render(const QueryPipeline * pipeline)
+const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
 {
     /// Rendering twice would throw away the version that has the statistics, and the second call
     /// would have no plan left to read anyway.
     if (plan_json)
-        return;
+        return *plan_json;
 
     if (!canRender())
-    {
-        plan_json.emplace();
-        return;
-    }
+        return plan_json.emplace();
 
     /// Rendering runs on the query-finish path, which BlockIO::onFinish calls without a guard,
     /// after the client has already received the result. An exception here would fail a query that
@@ -171,5 +168,7 @@ void QueryPlanProfiler::render(const QueryPipeline * pipeline)
     }
 
     releasePlan();
+
+    return *plan_json;
 }
 }

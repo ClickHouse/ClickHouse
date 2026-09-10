@@ -22,51 +22,36 @@ public:
     /// not merely those that asked for one.
     static bool canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal);
 
-    void setQueryPlan(QueryPlan plan_);
+    /// Takes ownership of the plan and returns it, so that the caller can go on building the
+    /// pipeline from the copy the profiler will render -- the two must be the same object, because
+    /// the pretty names built here are keyed by plan pointer.
+    QueryPlan & setQueryPlan(QueryPlan plan_);
 
-    QueryPlan & getQueryPlan()
-    {
-        chassert(query_plan.has_value());
-        return query_plan.value();
-    }
-
-    /// Whether a plan was captured for this query, which stays true after the plan itself has been
-    /// released. Callers use it to decide whether there is anything to render or to log, and both
-    /// of those outlive the plan.
-    bool hasQueryPlan() const { return plan_captured; }
-
-    /// Serializes the plan as JSON and keeps the result, so that a later getPlanJSON returns it.
-    /// With a pipeline the plan carries per-step runtime statistics, and the call must happen
-    /// while the pipeline is alive: StepStatsStorage reads the processors, and their reports are
-    /// only reachable before the pipeline is reset. Pass nullptr to render without statistics.
-    /// Everything the rendering allocates, the statistics included, happens under a memory-tracker
-    /// blocker, and no exception escapes.
-    void render(const QueryPipeline * pipeline);
-
-    /// The plan as JSON, for `system.query_log.query_plan`. Prefers the version produced at
-    /// pipeline-finalize time, which carries per-step statistics; queries that never reached that
-    /// point (failures during or before execution) are rendered here without them.
+    /// The plan as JSON, for `system.query_log.query_plan`.
+    ///
+    /// One shot, and not repeatable: the first call serializes the plan and then releases it, so
+    /// every later call can only hand back the same string. There is no re-rendering it with
+    /// better inputs afterwards, because by then there is no plan left to render. Whatever the
+    /// first call produces is what the `system.query_log` row will carry.
+    ///
+    /// That makes *when* it is first called the whole of the contract. Pass the pipeline to
+    /// include per-step runtime statistics, and do it while the pipeline is still alive:
+    /// StepStatsStorage reads the processors, whose reports are unreachable once the pipeline has
+    /// been reset. So the first call belongs at pipeline-finalize time, even though nothing reads
+    /// the result until the query is logged much later -- call it any earlier, or without the
+    /// pipeline, and the statistics are lost for this query. Queries that fail during or before
+    /// execution never reach that point, and for them a plan without statistics is the right
+    /// answer rather than a mistake.
+    ///
     /// Always either valid JSON or empty, never a bare diagnostic string: the caller writes it
-    /// into a JSON column, which parses what it is given.
-    const String & getPlanJSON()
-    {
-        if (!plan_json)
-            render(/*pipeline=*/ nullptr);
-        return *plan_json;
-    }
+    /// into a JSON column, which parses what it is given. Empty also covers the queries that failed
+    /// before a plan was ever captured, so callers need not ask whether there is one.
+    ///
+    /// Everything this allocates, the statistics included, happens under a memory-tracker blocker,
+    /// and no exception escapes.
+    const String & render(const QueryPipeline * pipeline = nullptr);
 
     size_t getMaxDescriptionLength() const { return max_description_length; }
-
-    /// Drops the captured plan. A QueryPlan owns a QueryPlanResourceHolder -- storages, table
-    /// locks, contexts -- so holding one after the query has finished keeps a table from being
-    /// dropped: `DROP TABLE` waits for the last storage reference under
-    /// `database_atomic_wait_for_drop_and_detach_synchronously`, which the stateless tests set.
-    /// Nothing needs the plan once it has been serialized.
-    void releasePlan()
-    {
-        query_plan.reset();
-        pretty_names.reset();
-    }
 
     /// Instruments the pipeline so per-step timings are collected, by attaching a
     /// StepWallClockRegistry built from the captured plan. Without it the per-processor stopwatch
@@ -76,9 +61,19 @@ public:
 
 private:
 
+    /// Drops the captured plan, which render does as soon as it has serialized it. A QueryPlan owns
+    /// a QueryPlanResourceHolder -- storages, table locks, contexts -- so holding one after the
+    /// query has finished keeps a table from being dropped: `DROP TABLE` waits for the last storage
+    /// reference under `database_atomic_wait_for_drop_and_detach_synchronously`, which the
+    /// stateless tests set.
+    void releasePlan()
+    {
+        query_plan.reset();
+        pretty_names.reset();
+    }
+
     bool canRender() const { return query_plan && query_plan->isInitialized() && pretty_names.has_value(); }
 
-    bool plan_captured = false;
     const size_t max_description_length;
     std::optional<QueryPlan> query_plan;
     std::optional<PrettyNamesPerPlan> pretty_names;

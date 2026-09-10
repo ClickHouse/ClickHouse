@@ -9053,6 +9053,16 @@ void Context::enablePlanProfiler()
 {
     query_plan_profiler = std::make_shared<QueryPlanProfiler>(
         getSettingsRef()[Setting::query_plan_max_step_description_length]);
+
+    /// Not separable from enabling the profiler, and so not left to the caller to remember. Every
+    /// join reads the analyze mode off the context while the planner builds it and bakes it into
+    /// its TableJoin -- HashJoin only allocates the counters at all if the mode is on at
+    /// construction -- so a plan captured without it carries a join's I/O and timings but none of
+    /// the join's own metrics, which is what EXPLAIN ANALYZE shows by default.
+    ///
+    /// `Derived` rather than `Exact`: it is the mode EXPLAIN ANALYZE uses unless asked for matched
+    /// rows, and it counts per probed block instead of per row.
+    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
 }
 
 QueryPlanProfilerPtr Context::getPlanProfiler() const
