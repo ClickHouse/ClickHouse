@@ -1216,6 +1216,8 @@ The state prefix value is `1` for this String fallback. The other values denote 
 07 7B 22 61 22 3A 31 7D      String: 7 bytes {"a":1}
 ```
 
+When ClickHouse decodes these text values, it uses the current parser setting and session timezone. Immutable `JSON` serializations can be shared; each active parse leases its own parser and extraction tree from the format settings. Parsing resources are created on the first text value and retained with those settings. This does not change the version marker or the bytes on the wire.
+
 The value is emitted as its compact JSON text — `{"a":1}`, with the integer left as an integer. The text is just a `String` value, so the client receives the JSON for opaque transit but does not recover the individual paths and their ClickHouse types; faithful per-path typing requires the Tier 2 encoding below.
 
 #### Variant(T1, T2, ...) {#variant}

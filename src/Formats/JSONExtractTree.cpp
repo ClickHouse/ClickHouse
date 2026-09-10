@@ -2548,78 +2548,91 @@ private:
 
 }
 
-template <typename JSONParser>
-std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message)
+namespace
+{
+
+/// Validation uses the same dispatch and recursion without allocating nodes or their caches.
+template <bool validate_only, typename Node, typename... Args>
+std::unique_ptr<Node> makeJSONExtractNode(Args &&... args)
+{
+    if constexpr (validate_only)
+        return nullptr;
+    else
+        return std::make_unique<Node>(std::forward<Args>(args)...);
+}
+
+template <typename JSONParser, bool validate_only>
+std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTreeImpl(const DataTypePtr & type, const char * source_for_exception_message)
 {
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
-            return std::make_unique<NumericNode<JSONParser, UInt8>>(isBool(type));
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt8>>(isBool(type));
         case TypeIndex::UInt16:
-            return std::make_unique<NumericNode<JSONParser, UInt16>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt16>>();
         case TypeIndex::UInt32:
-            return std::make_unique<NumericNode<JSONParser, UInt32>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt32>>();
         case TypeIndex::UInt64:
-            return std::make_unique<NumericNode<JSONParser, UInt64>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt64>>();
         case TypeIndex::UInt128:
-            return std::make_unique<NumericNode<JSONParser, UInt128>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt128>>();
         case TypeIndex::UInt256:
-            return std::make_unique<NumericNode<JSONParser, UInt256>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt256>>();
         case TypeIndex::Int8:
-            return std::make_unique<NumericNode<JSONParser, Int8>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int8>>();
         case TypeIndex::Int16:
-            return std::make_unique<NumericNode<JSONParser, Int16>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int16>>();
         case TypeIndex::Int32:
-            return std::make_unique<NumericNode<JSONParser, Int32>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int32>>();
         case TypeIndex::Int64:
-            return std::make_unique<NumericNode<JSONParser, Int64>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int64>>();
         case TypeIndex::Int128:
-            return std::make_unique<NumericNode<JSONParser, Int128>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int128>>();
         case TypeIndex::Int256:
-            return std::make_unique<NumericNode<JSONParser, Int256>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int256>>();
         case TypeIndex::Float32:
-            return std::make_unique<NumericNode<JSONParser, Float32>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Float32>>();
         case TypeIndex::Float64:
-            return std::make_unique<NumericNode<JSONParser, Float64>>();
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Float64>>();
         case TypeIndex::String:
-            return std::make_unique<StringNode<JSONParser>>();
+            return makeJSONExtractNode<validate_only, StringNode<JSONParser>>();
         case TypeIndex::FixedString:
-            return std::make_unique<FixedStringNode<JSONParser>>(assert_cast<const DataTypeFixedString &>(*type).getN());
+            return makeJSONExtractNode<validate_only, FixedStringNode<JSONParser>>(assert_cast<const DataTypeFixedString &>(*type).getN());
         case TypeIndex::UUID:
-            return std::make_unique<UUIDNode<JSONParser>>();
+            return makeJSONExtractNode<validate_only, UUIDNode<JSONParser>>();
         case TypeIndex::IPv4:
-            return std::make_unique<IPv4Node<JSONParser>>();
+            return makeJSONExtractNode<validate_only, IPv4Node<JSONParser>>();
         case TypeIndex::IPv6:
-            return std::make_unique<IPv6Node<JSONParser>>();
+            return makeJSONExtractNode<validate_only, IPv6Node<JSONParser>>();
         case TypeIndex::Date:;
-            return std::make_unique<DateNode<JSONParser, DayNum, UInt16>>();
+            return makeJSONExtractNode<validate_only, DateNode<JSONParser, DayNum, UInt16>>();
         case TypeIndex::Date32:
-            return std::make_unique<DateNode<JSONParser, ExtendedDayNum, Int32>>();
+            return makeJSONExtractNode<validate_only, DateNode<JSONParser, ExtendedDayNum, Int32>>();
         case TypeIndex::DateTime:
-            return std::make_unique<DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
+            return makeJSONExtractNode<validate_only, DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
         case TypeIndex::DateTime64:
-            return std::make_unique<DateTime64Node<JSONParser>>(assert_cast<const DataTypeDateTime64 &>(*type));
+            return makeJSONExtractNode<validate_only, DateTime64Node<JSONParser>>(assert_cast<const DataTypeDateTime64 &>(*type));
         case TypeIndex::Time:
-            return std::make_unique<TimeNode<JSONParser>>(assert_cast<const DataTypeTime &>(*type));
+            return makeJSONExtractNode<validate_only, TimeNode<JSONParser>>(assert_cast<const DataTypeTime &>(*type));
         case TypeIndex::Time64:
-            return std::make_unique<Time64Node<JSONParser>>(assert_cast<const DataTypeTime64 &>(*type));
+            return makeJSONExtractNode<validate_only, Time64Node<JSONParser>>(assert_cast<const DataTypeTime64 &>(*type));
         case TypeIndex::Decimal32:
-            return std::make_unique<DecimalNode<JSONParser, Decimal32>>(type);
+            return makeJSONExtractNode<validate_only, DecimalNode<JSONParser, Decimal32>>(type);
         case TypeIndex::Decimal64:
-            return std::make_unique<DecimalNode<JSONParser, Decimal64>>(type);
+            return makeJSONExtractNode<validate_only, DecimalNode<JSONParser, Decimal64>>(type);
         case TypeIndex::Decimal128:
-            return std::make_unique<DecimalNode<JSONParser, Decimal128>>(type);
+            return makeJSONExtractNode<validate_only, DecimalNode<JSONParser, Decimal128>>(type);
         case TypeIndex::Decimal256:
-            return std::make_unique<DecimalNode<JSONParser, Decimal256>>(type);
+            return makeJSONExtractNode<validate_only, DecimalNode<JSONParser, Decimal256>>(type);
         case TypeIndex::Enum8:
         {
             const auto & enum_type = assert_cast<const DataTypeEnum8 &>(*type);
-            return std::make_unique<EnumNode<JSONParser, Int8>>(enum_type.getValues(), enum_type.getDefaultValue());
+            return makeJSONExtractNode<validate_only, EnumNode<JSONParser, Int8>>(enum_type.getValues(), enum_type.getDefaultValue());
         }
         case TypeIndex::Enum16:
         {
             const auto & enum_type = assert_cast<const DataTypeEnum16 &>(*type);
-            return std::make_unique<EnumNode<JSONParser, Int16>>(enum_type.getValues(), enum_type.getDefaultValue());
+            return makeJSONExtractNode<validate_only, EnumNode<JSONParser, Int16>>(enum_type.getValues(), enum_type.getDefaultValue());
         }
         case TypeIndex::LowCardinality:
         {
@@ -2631,48 +2644,55 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
             switch (dictionary_type->getTypeId())
             {
                 case TypeIndex::UInt8:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, isBool(type));
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, isBool(type));
                 case TypeIndex::UInt16:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt16>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt16>>(is_nullable);
                 case TypeIndex::UInt32:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt32>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt32>>(is_nullable);
                 case TypeIndex::UInt64:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt64>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt64>>(is_nullable);
                 case TypeIndex::Int8:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Int8>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Int8>>(is_nullable);
                 case TypeIndex::Int16:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Int16>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Int16>>(is_nullable);
                 case TypeIndex::Int32:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Int32>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Int32>>(is_nullable);
                 case TypeIndex::Int64:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Int64>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Int64>>(is_nullable);
                 case TypeIndex::Float32:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Float32>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Float32>>(is_nullable);
                 case TypeIndex::Float64:
-                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Float64>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Float64>>(is_nullable);
                 case TypeIndex::String:
-                    return std::make_unique<LowCardinalityStringNode<JSONParser>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityStringNode<JSONParser>>(is_nullable);
                 case TypeIndex::FixedString:
-                    return std::make_unique<LowCardinalityFixedStringNode<JSONParser>>(is_nullable, assert_cast<const DataTypeFixedString &>(*dictionary_type).getN());
+                    return makeJSONExtractNode<validate_only, LowCardinalityFixedStringNode<JSONParser>>(is_nullable, assert_cast<const DataTypeFixedString &>(*dictionary_type).getN());
                 case TypeIndex::UUID:
-                    return std::make_unique<LowCardinalityUUIDNode<JSONParser>>(is_nullable);
+                    return makeJSONExtractNode<validate_only, LowCardinalityUUIDNode<JSONParser>>(is_nullable);
                 default:
-                    return std::make_unique<LowCardinalityNode<JSONParser>>(is_nullable, buildJSONExtractTree<JSONParser>(dictionary_type, source_for_exception_message));
+                    return makeJSONExtractNode<validate_only, LowCardinalityNode<JSONParser>>(is_nullable, buildJSONExtractTreeImpl<JSONParser, validate_only>(dictionary_type, source_for_exception_message));
             }
         }
         case TypeIndex::Nullable:
-            return std::make_unique<NullableNode<JSONParser>>(buildJSONExtractTree<JSONParser>(assert_cast<const DataTypeNullable &>(*type).getNestedType(), source_for_exception_message));
+            return makeJSONExtractNode<validate_only, NullableNode<JSONParser>>(buildJSONExtractTreeImpl<JSONParser, validate_only>(assert_cast<const DataTypeNullable &>(*type).getNestedType(), source_for_exception_message));
         case TypeIndex::Array:
-            return std::make_unique<ArrayNode<JSONParser>>(buildJSONExtractTree<JSONParser>(assert_cast<const DataTypeArray &>(*type).getNestedType(), source_for_exception_message));
+            return makeJSONExtractNode<validate_only, ArrayNode<JSONParser>>(buildJSONExtractTreeImpl<JSONParser, validate_only>(assert_cast<const DataTypeArray &>(*type).getNestedType(), source_for_exception_message));
         case TypeIndex::Tuple:
         {
             const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
             const auto & tuple_elements = tuple.getElements();
             std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> elements;
-            elements.reserve(tuple_elements.size());
+            if constexpr (!validate_only)
+                elements.reserve(tuple_elements.size());
             for (const auto & tuple_element : tuple_elements)
-                elements.emplace_back(buildJSONExtractTree<JSONParser>(tuple_element, source_for_exception_message));
-            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
+            {
+                auto node = buildJSONExtractTreeImpl<JSONParser, validate_only>(tuple_element, source_for_exception_message);
+                if constexpr (!validate_only)
+                    elements.emplace_back(std::move(node));
+            }
+            if constexpr (validate_only)
+                return nullptr;
+            return makeJSONExtractNode<validate_only, TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
         }
         case TypeIndex::Map:
         {
@@ -2686,33 +2706,47 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                     type->getName());
 
             const auto & value_type = map_type.getValueType();
-            return std::make_unique<MapNode<JSONParser>>(buildJSONExtractTree<JSONParser>(value_type, source_for_exception_message));
+            return makeJSONExtractNode<validate_only, MapNode<JSONParser>>(buildJSONExtractTreeImpl<JSONParser, validate_only>(value_type, source_for_exception_message));
         }
         case TypeIndex::Variant:
         {
             const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
             const auto & variants = variant_type.getVariants();
             std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> variant_nodes;
-            variant_nodes.reserve(variants.size());
+            if constexpr (!validate_only)
+                variant_nodes.reserve(variants.size());
             for (const auto & variant : variants)
-                variant_nodes.push_back(buildJSONExtractTree<JSONParser>(variant, source_for_exception_message));
-            return std::make_unique<VariantNode<JSONParser>>(std::move(variant_nodes), SerializationVariant::getVariantsDeserializeTextOrder(variants));
+            {
+                auto node = buildJSONExtractTreeImpl<JSONParser, validate_only>(variant, source_for_exception_message);
+                if constexpr (!validate_only)
+                    variant_nodes.push_back(std::move(node));
+            }
+            if constexpr (validate_only)
+                return nullptr;
+            return makeJSONExtractNode<validate_only, VariantNode<JSONParser>>(std::move(variant_nodes), SerializationVariant::getVariantsDeserializeTextOrder(variants));
         }
         case TypeIndex::Dynamic:
-            return std::make_unique<DynamicNode<JSONParser>>();
+            return makeJSONExtractNode<validate_only, DynamicNode<JSONParser>>();
         case TypeIndex::Object:
         {
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
             const auto & typed_paths = object_type.getTypedPaths();
             std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
-            typed_path_nodes.reserve(typed_paths.size());
+            if constexpr (!validate_only)
+                typed_path_nodes.reserve(typed_paths.size());
             for (const auto & [path, path_type] : typed_paths)
-                typed_path_nodes[path] = buildJSONExtractTree<JSONParser>(path_type, source_for_exception_message);
+            {
+                auto node = buildJSONExtractTreeImpl<JSONParser, validate_only>(path_type, source_for_exception_message);
+                if constexpr (!validate_only)
+                    typed_path_nodes[path] = std::move(node);
+            }
+            if constexpr (validate_only)
+                return nullptr;
 
             switch (object_type.getSchemaFormat())
             {
                 case DataTypeObject::SchemaFormat::JSON:
-                    return std::make_unique<ObjectJSONNode<JSONParser>>(
+                    return makeJSONExtractNode<validate_only, ObjectJSONNode<JSONParser>>(
                         typed_paths,
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
@@ -2727,6 +2761,25 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                 source_for_exception_message,
                 type->getName());
     }
+}
+
+}
+
+template <typename JSONParser>
+std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message)
+{
+    return buildJSONExtractTreeImpl<JSONParser, false>(type, source_for_exception_message);
+}
+
+void validateJSONType(const DataTypePtr & type, const char * source_for_exception_message)
+{
+#if USE_SIMDJSON
+    buildJSONExtractTreeImpl<SimdJSONParser, true>(type, source_for_exception_message);
+#elif USE_RAPIDJSON
+    buildJSONExtractTreeImpl<RapidJSONParser, true>(type, source_for_exception_message);
+#else
+    buildJSONExtractTreeImpl<DummyJSONParser, true>(type, source_for_exception_message);
+#endif
 }
 
 #if USE_SIMDJSON

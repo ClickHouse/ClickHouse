@@ -347,26 +347,6 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VariantAlternativesCollapsingIsAnEr
         setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt), DB::Exception);
 }
 
-/// `DataTypeObject` does not traverse typed `JSON` paths when assigning aggregate-state versions.
-/// This parses a type declaration that `JSON` serialization subsequently rejects, and protects that
-/// traversal boundary; it does not describe a `Native` wire-format exception. Binary type encoding
-/// does contain an explicit aggregate-state version field.
-GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderJSONTypedPathIsNotAssigned)
-{
-    tryRegisterAggregateFunctions();
-
-    DataTypePtr json = DataTypeFactory::instance().get(
-        "JSON(x AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
-
-    DataTypePtr assigned = json;
-    setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
-
-    ASSERT_EQ(assigned.get(), json.get());
-
-    const auto & source_paths = typeid_cast<const DataTypeObject &>(*json).getTypedPaths();
-    ASSERT_EQ(asAgg(source_paths.at("x")).getVersion(), 1u);
-}
-
 /// Concurrent setVersionToAggregateFunctions calls over the SAME shared type object.
 /// Before the fix each call wrote the shared object's mutable `version`, producing the
 /// arm_tsan data race. After the fix nothing shared is mutated, so this is race-free

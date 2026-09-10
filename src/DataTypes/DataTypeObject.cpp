@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
@@ -14,7 +13,6 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <Interpreters/castColumn.h>
-#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
@@ -27,29 +25,11 @@
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Formats/JSONExtractTree.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
-#include "config.h"
-
-#if USE_SIMDJSON
-#  include <Common/JSONParsers/SimdJSONParser.h>
-#endif
-#if USE_RAPIDJSON
-#  include <Common/JSONParsers/RapidJSONParser.h>
-#else
-#  include <Common/JSONParsers/DummyJSONParser.h>
-#endif
-
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_simdjson;
-}
-
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_AST_STRUCTURE;
@@ -85,6 +65,7 @@ DataTypeObject::DataTypeObject(
 
     for (const auto & [typed_path, type] : typed_paths)
     {
+        validateJSONType(type, "JSON serialization");
         for (const auto & path_to_skip : paths_to_skip)
         {
             if (typed_path.starts_with(path_to_skip))
@@ -141,53 +122,44 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
 {
+    const bool is_default = settings == SerializationInfoSettings{};
+    {
+        std::lock_guard lock(serializations_mutex);
+        if (is_default && default_serialization)
+            return default_serialization;
+        if (!is_default && nondefault_serialization && nondefault_serialization_settings == settings)
+            return nondefault_serialization;
+    }
+
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
-        typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types ? type->getSerialization(settings) : type->getDefaultSerialization();
+        typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types
+            ? type->getSerialization(settings) : type->getDefaultSerialization();
 
-    SerializationPtr dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
-        ? getDynamicType()->getSerialization(settings)
-        : getDynamicType()->getDefaultSerialization();
+    auto dynamic_type = getDynamicType();
+    auto dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
+        ? dynamic_type->getSerialization(settings) : dynamic_type->getDefaultSerialization();
 
-    switch (schema_format)
+    auto serialization = SerializationJSON::create(
+        typed_paths, typed_paths_serializations, paths_to_skip, path_regexps_to_skip,
+        dynamic_type, dynamic_serialization, max_dynamic_paths, settings);
+    if (!serialization->supportsPooling())
+        return serialization;
+
+    std::lock_guard lock(serializations_mutex);
+    if (is_default)
     {
-        case SchemaFormat::JSON:
-#if USE_SIMDJSON
-            auto context = CurrentThread::tryGetQueryContext();
-            if (!context)
-                context = Context::getGlobalContextInstance();
-            if (context->getSettingsRef()[Setting::allow_simdjson])
-                return SerializationJSON<SimdJSONParser>::create(
-                    typed_paths,
-                    typed_paths_serializations,
-                    paths_to_skip,
-                    path_regexps_to_skip,
-                    getDynamicType(),
-                    dynamic_serialization,
-                    buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
-#endif
-
-#if USE_RAPIDJSON
-            return SerializationJSON<RapidJSONParser>::create(
-                typed_paths,
-                typed_paths_serializations,
-                paths_to_skip,
-                path_regexps_to_skip,
-                getDynamicType(),
-                dynamic_serialization,
-                buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
-#else
-            return SerializationJSON<DummyJSONParser>::create(
-                typed_paths,
-                typed_paths_serializations,
-                paths_to_skip,
-                path_regexps_to_skip,
-                getDynamicType(),
-                dynamic_serialization,
-                buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
-#endif
+        if (!default_serialization)
+            default_serialization = std::move(serialization);
+        return default_serialization;
     }
+    if (!nondefault_serialization || nondefault_serialization_settings != settings)
+    {
+        nondefault_serialization = std::move(serialization);
+        nondefault_serialization_settings = settings;
+    }
+    return nondefault_serialization;
 }
 
 String DataTypeObject::getSchemaFormatString() const
@@ -410,13 +382,6 @@ PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_nam
     return {String(subcolumn_name.substr(0, pos)), std::move(type_hint), std::move(remaining)};
 }
 
-String getSubcolumnAfterPath(const PathAndSubcolumn & split, const DataTypePtr & path_type)
-{
-    if (!split.type_hint.empty() && removeJSONTypeParameters(split.type_hint) == removeJSONTypeParameters(path_type->getName()))
-        return split.remaining;
-    return split.fullSubcolumn();
-}
-
 /// Prefixed subcolumn in JSON path always looks like "<prefix>`some`.path.path"
 /// (e.g. "^`some`.path" for sub-object, "@`some`.path" for combined).
 /// We back-quote the first path element after the prefix so we can distinguish
@@ -538,26 +503,6 @@ ColumnPtr extractCombinedColumn(
     return merged;
 }
 
-DataTypePtr buildSubObjectType(
-    const String & prefix,
-    const std::unordered_map<String, DataTypePtr> & typed_paths,
-    const DataTypeObject::SchemaFormat & schema_format,
-    const std::unordered_set<String> & paths_to_skip,
-    const std::vector<String> & path_regexps_to_skip,
-    size_t max_dynamic_paths,
-    size_t max_dynamic_types)
-{
-    std::unordered_map<String, DataTypePtr> typed_sub_paths;
-    for (const auto & [path, type] : typed_paths)
-    {
-        if (path.starts_with(prefix))
-            typed_sub_paths[path.substr(prefix.size())] = type;
-    }
-
-    return std::make_shared<DataTypeObject>(
-        schema_format, std::move(typed_sub_paths), paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
-}
-
 /// Builds the sub-object type and serialization for a given path prefix.
 /// Returns a pair of (sub_object_type, sub_object_serialization), shared between
 /// the sub-object subcolumn (^) and the combined subcolumn (@) branches.
@@ -573,94 +518,22 @@ std::pair<DataTypePtr, SerializationPtr> buildSubObjectTypeAndSerialization(
     const DataTypePtr & dynamic_type,
     const SerializationPtr & dynamic_serialization)
 {
+    std::unordered_map<String, DataTypePtr> typed_sub_paths;
     std::unordered_map<String, SerializationPtr> typed_sub_paths_serializations;
-    for (const auto & [path, _] : typed_paths)
+    for (const auto & [path, type] : typed_paths)
     {
         if (path.starts_with(prefix))
+        {
+            typed_sub_paths[path.substr(prefix.size())] = type;
             typed_sub_paths_serializations[path] = all_typed_paths_serializations.at(path);
+        }
     }
 
-    auto sub_object_type = buildSubObjectType(
-        prefix, typed_paths, schema_format, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
+    auto sub_object_type = std::make_shared<DataTypeObject>(schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
     auto sub_object_serialization = SerializationSubObject::create(prefix, typed_sub_paths_serializations, dynamic_type, dynamic_serialization);
     return {std::move(sub_object_type), std::move(sub_object_serialization)};
 }
 
-}
-
-std::optional<DataTypePtr> DataTypeObject::tryGetSubcolumnTypeWithoutSerialization(std::string_view subcolumn_name) const
-{
-    /// A custom serialization can expose a different set of subcolumns than the type itself.
-    if (getCustomSerialization())
-        return std::nullopt;
-
-    /// A type hint at the beginning is handled by an outer dynamic type. It is not a JSON path.
-    if (subcolumn_name.starts_with(":`"))
-        return DataTypePtr{};
-
-    auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
-
-    auto resolve_remaining_subcolumn = [](const DataTypePtr & type, const String & remaining) -> DataTypePtr
-    {
-        if (remaining.empty())
-            return type;
-        return type->tryGetSubcolumnType(remaining);
-    };
-
-    DataTypePtr typed_prefix_type;
-    size_t typed_prefix_size = 0;
-    size_t num_typed_prefixes = 0;
-    for (const auto & [typed_prefix, _] : Nested::getAllColumnAndSubcolumnPairs(split.path))
-    {
-        auto it = typed_paths.find(String(typed_prefix));
-        if (it == typed_paths.end())
-            continue;
-
-        typed_prefix_type = it->second;
-        typed_prefix_size = typed_prefix.size();
-        ++num_typed_prefixes;
-    }
-
-    if (auto it = typed_paths.find(split.path); it != typed_paths.end())
-    {
-        /// A typed ancestor can expose the same name as one of its static subcolumns.
-        /// Let serialization enumeration preserve its first-exact-match precedence.
-        if (num_typed_prefixes != 0)
-            return std::nullopt;
-
-        return std::optional<DataTypePtr>{resolve_remaining_subcolumn(it->second, getSubcolumnAfterPath(split, it->second))};
-    }
-
-    /// Multiple typed prefixes can expose colliding static and dynamic subcolumns.
-    /// Preserve serialization enumeration order for those uncommon declarations.
-    if (num_typed_prefixes > 1)
-        return std::nullopt;
-
-    if (num_typed_prefixes == 1)
-    {
-        String remaining(subcolumn_name.substr(typed_prefix_size + 1));
-        if (auto type = resolve_remaining_subcolumn(typed_prefix_type, remaining))
-            return type;
-    }
-
-    if (subcolumn_name == SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION)
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-
-    if (auto sub_object_subcolumn = tryGetPrefixedSubcolumn(subcolumn_name, SUB_OBJECT_SUBCOLUMN_PREFIX))
-    {
-        const String prefix = *sub_object_subcolumn + ".";
-        return buildSubObjectType(
-            prefix, typed_paths, schema_format, paths_to_skip, path_regexps_to_skip, max_dynamic_paths, max_dynamic_types);
-    }
-
-    if (auto combined_subcolumn = tryGetPrefixedSubcolumn(subcolumn_name, COMBINED_SUBCOLUMN_PREFIX))
-    {
-        if (auto it = typed_paths.find(*combined_subcolumn); it != typed_paths.end())
-            return it->second;
-        return getDynamicType();
-    }
-
-    return std::optional<DataTypePtr>{resolve_remaining_subcolumn(getDynamicType(), split.fullSubcolumn())};
 }
 
 std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
@@ -794,7 +667,12 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     std::unique_ptr<SubstreamData> res;
     if (auto it = typed_paths.find(path); it != typed_paths.end())
     {
-        path_subcolumn = getSubcolumnAfterPath(split, it->second);
+        /// If there is a type hint subcolumn and it matches the typed path's type
+        /// (after normalizing JSON parameters), the hint is redundant — strip it.
+        if (!split.type_hint.empty() && removeJSONTypeParameters(split.type_hint) == removeJSONTypeParameters(it->second->getName()))
+            path_subcolumn = split.remaining;
+        else
+            path_subcolumn = split.fullSubcolumn();
 
         res = std::make_unique<SubstreamData>(typed_paths_serializations.at(path));
         res->type = it->second;

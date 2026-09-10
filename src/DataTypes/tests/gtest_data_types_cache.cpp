@@ -8,6 +8,9 @@
 #include <Common/tests/gtest_global_context.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesCache.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Formats/FormatSettings.h>
+#include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
 
 using namespace DB;
@@ -86,7 +89,7 @@ TEST(DataTypesCache, InvalidatedOnQueryContextChange)
     }
 }
 
-TEST(DataTypesCache, PoolsNonPoolableSerializationsWithinOneQuery)
+TEST(DataTypesCache, PoolsJSONSerializationsWithinOneQuery)
 {
     ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
@@ -94,22 +97,17 @@ TEST(DataTypesCache, PoolsNonPoolableSerializationsWithinOneQuery)
     auto query_context = makeQueryContext("data_types_cache_test_non_poolable_same_query", "UTC");
     auto query_scope = QueryScope::create(query_context);
 
-    /// SerializationJSON has supportsPooling() == false (it holds mutable per-use state in
-    /// its extraction tree, see the comment in SerializationJSON::create), but its contract
-    /// only forbids reuse *across queries*: within one query, on one thread, pooling one
-    /// instance across many lookups (and hence many rows) is the same trusted pattern
-    /// ColumnDynamic's per-column serialization_cache already relies on.
     auto first_type = getDataTypesCache().getType("JSON");
     auto second_type = getDataTypesCache().getType("JSON");
     ASSERT_EQ(first_type.get(), second_type.get());
 
     auto first_serialization = getDataTypesCache().getSerialization("JSON");
     auto second_serialization = getDataTypesCache().getSerialization("JSON");
-    ASSERT_FALSE(first_serialization->supportsPooling());
+    ASSERT_TRUE(first_serialization->supportsPooling());
     ASSERT_EQ(first_serialization.get(), second_serialization.get());
 }
 
-TEST(DataTypesCache, InvalidatesNonPoolableSerializationsAcrossQueries)
+TEST(DataTypesCache, InvalidatesTypesAcrossQueriesAndSharesJSONSerializations)
 {
     ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
@@ -119,19 +117,20 @@ TEST(DataTypesCache, InvalidatesNonPoolableSerializationsAcrossQueries)
     /// and an unrelated later allocation could reuse the same address, making the comparison
     /// below pass even when invalidation was actually broken.
     SerializationPtr first_serialization;
+    DataTypePtr first_type;
     {
         auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_1", "UTC");
         auto query_scope = QueryScope::create(query_context);
+        first_type = getDataTypesCache().getType("JSON");
         first_serialization = getDataTypesCache().getSerialization("JSON");
     }
 
-    /// A new query on the same thread must not be served the previous query's pooled
-    /// SerializationJSON instance: pooling supportsPooling() == false serializations is
-    /// only safe because the cache is cleared on every query-context change.
+    /// Type entries are query-local even when their immutable serializations can be shared.
     {
         auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_2", "UTC");
         auto query_scope = QueryScope::create(query_context);
-        ASSERT_NE(getDataTypesCache().getSerialization("JSON").get(), first_serialization.get());
+        ASSERT_NE(getDataTypesCache().getType("JSON"), first_type);
+        ASSERT_EQ(getDataTypesCache().getSerialization("JSON"), first_serialization);
     }
 }
 
@@ -153,4 +152,51 @@ TEST(DataTypesCache, InvalidatedOnSessionTimezoneChangeWithinOneContext)
     client_context->setSetting("session_timezone", String("Europe/Amsterdam"));
 
     ASSERT_EQ(cachedDateTimeTimezone(), "Europe/Amsterdam");
+}
+
+TEST(DataTypesCache, JSONTypedTimezonesRemainDistinct)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+    SerializationPtr first;
+    {
+        auto context = makeQueryContext("json_typed_timezone_1", "Asia/Tokyo");
+        auto scope = QueryScope::create(context);
+        first = getDataTypesCache().getSerialization("JSON(d DateTime, n Array(DateTime64(3)))");
+    }
+    {
+        auto context = makeQueryContext("json_typed_timezone_2", "Europe/Amsterdam");
+        auto scope = QueryScope::create(context);
+        EXPECT_NE(first, getDataTypesCache().getSerialization("JSON(d DateTime, n Array(DateTime64(3)))"));
+    }
+}
+
+TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+    auto context = makeQueryContext("json_client_settings", "UTC");
+    auto scope = QueryScope::create(context);
+    auto type = DataTypeFactory::instance().get("JSON");
+    auto serialization = type->getDefaultSerialization();
+    FormatSettings settings;
+    settings.try_infer_datetimes = true;
+    settings.try_infer_dates = false;
+
+    for (bool simdjson : {false, true})
+    {
+        context->setSetting("allow_simdjson", simdjson);
+        for (const auto & session_timezone : {"UTC", "Asia/Tokyo", "UTC"})
+        {
+            context->setSetting("session_timezone", String(session_timezone));
+            for (size_t row = 0; row < 2; ++row)
+            {
+                auto column = type->createColumn();
+                ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
+                serialization->deserializeWholeText(*column, input, settings);
+                auto dates = type->getSubcolumn("d.:`DateTime`", column->getPtr());
+                EXPECT_EQ((*dates)[0].safeGet<UInt64>(), String(session_timezone) == "UTC" ? 1704110400 : 1704078000);
+            }
+        }
+    }
 }

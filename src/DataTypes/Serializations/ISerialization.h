@@ -759,7 +759,7 @@ public:
 
     /// Returns true if this serialization supports pooling (caching by hash).
     /// Returns false if the serialization or any of its nested serializations
-    /// cannot be cached (e.g. SerializationJSON which contains mutable state).
+    /// cannot be cached because it contains mutable state.
     virtual bool supportsPooling() const { return true; }
 
     /// Returns the hash that uniquely identifies this serialization object.

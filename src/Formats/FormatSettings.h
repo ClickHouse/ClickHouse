@@ -4,9 +4,13 @@
 #include <Core/Names.h>
 #include <base/types.h>
 #include <base/unit.h>
+#include <memory>
 
 namespace DB
 {
+
+struct JSONParsingState;
+std::shared_ptr<JSONParsingState> createJSONParsingState();
 
 /**
   * Various tweaks for input/output formats. Text serialization/deserialization
@@ -21,6 +25,10 @@ namespace DB
   */
 struct FormatSettings
 {
+    /// Copies share parsing resources; independent settings own separate pools.
+    /// Parsers and extraction trees are allocated only when decoding JSON text.
+    std::shared_ptr<JSONParsingState> json_parsing_state = createJSONParsingState();
+
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;

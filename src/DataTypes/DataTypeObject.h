@@ -3,6 +3,8 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
+#include <mutex>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 
@@ -87,13 +89,15 @@ public:
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();
 
-protected:
-    std::optional<DataTypePtr> tryGetSubcolumnTypeWithoutSerialization(std::string_view subcolumn_name) const override;
-
 private:
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
+
+    mutable std::mutex serializations_mutex;
+    mutable SerializationPtr default_serialization;
+    mutable SerializationPtr nondefault_serialization;
+    mutable SerializationInfoSettings nondefault_serialization_settings;
 
     SchemaFormat schema_format;
     /// Set of paths with types that were specified in type declaration.

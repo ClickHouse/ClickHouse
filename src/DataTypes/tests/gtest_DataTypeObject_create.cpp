@@ -222,7 +222,7 @@ TEST(DataTypeObject, CreateJSONWithValidAST)
     ASSERT_NE(type_default, nullptr);
 }
 
-TEST(DataTypeObject, TypeOnlySubcolumnLookup)
+TEST(DataTypeObject, SubcolumnLookup)
 {
     auto type = DataTypeFactory::instance().get(
         "JSON("
@@ -260,7 +260,7 @@ TEST(DataTypeObject, TypeOnlySubcolumnLookup)
         expectSubcolumnType(object, subcolumn, expected_name);
 }
 
-TEST(DataTypeObject, TypeOnlySubcolumnLookupPreservesSerializationPrecedence)
+TEST(DataTypeObject, SubcolumnLookupPreservesSerializationPrecedence)
 {
     auto & factory = DataTypeFactory::instance();
 
@@ -285,7 +285,7 @@ TEST(DataTypeObject, TypeOnlySubcolumnLookupPreservesSerializationPrecedence)
     expectSubcolumnType(*prefixed_name_collision, "^`obj`.x", "UInt8");
 }
 
-TEST(DataTypeObject, TypeOnlySubcolumnLookupUsesCanonicalPathNames)
+TEST(DataTypeObject, SubcolumnLookupUsesCanonicalPathNames)
 {
     auto nested_type = DataTypeFactory::instance().get("JSON(x UInt8)");
     auto object = std::make_shared<DataTypeObject>(
@@ -303,7 +303,7 @@ TEST(DataTypeObject, TypeOnlySubcolumnLookupUsesCanonicalPathNames)
     expectSubcolumnType(*object, "spaced path.x", "UInt8");
 }
 
-TEST(DataTypeObject, TypeOnlySubcolumnLookupDefersToCustomSerialization)
+TEST(DataTypeObject, SubcolumnLookupDefersToCustomSerialization)
 {
     auto object = std::make_shared<DataTypeObject>(
         DataTypeObject::SchemaFormat::JSON,
@@ -312,4 +312,12 @@ TEST(DataTypeObject, TypeOnlySubcolumnLookupDefersToCustomSerialization)
     object->setCustomization(std::make_unique<DataTypeCustomDesc>(DataTypeCustomNamePtr{}, std::move(serialization)));
 
     expectSubcolumnType(*object, "a", "UInt8");
+}
+
+TEST(DataTypeObject, SubcolumnsThroughContainers)
+{
+    auto & factory = DataTypeFactory::instance();
+    expectSubcolumnType(*factory.get("Array(JSON(x UInt8))"), "x", "Array(UInt8)");
+    expectSubcolumnType(*factory.get("Tuple(j JSON(x UInt8))"), "j.x", "UInt8");
+    expectSubcolumnType(*factory.get("Dynamic"), "JSON.x", "Dynamic");
 }
