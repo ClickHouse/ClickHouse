@@ -81,7 +81,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool allow_statistics;
     extern const SettingsBool validate_mutation_query;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -1283,14 +1282,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_STATISTICS)
         {
             /// `allow_statistics` gates the DDL: whether statistics may be declared on a table. Only
-            /// the submitting session's value is meaningful for that, and it is checked here, during
-            /// validation. Checking it again while the mutation runs asks the background context, which
-            /// reads the server-default profile rather than the session that submitted the statement,
-            /// so a mutation accepted with a session opt-in failed forever and wedged the table's
-            /// mutation queue. Background merges materialize the declared statistics regardless of the
-            /// setting anyway, so refusing the explicit verb at execution time protects nothing.
-            if (dry_run && !context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// the submitting session's value is meaningful for that, so the gate lives at submission
+            /// time - `checkStatisticsMutationsAreAllowed` in `InterpreterAlterQuery`. Checking it here
+            /// asked the background context that executes the mutation, which reads the server-default
+            /// profile rather than the session that submitted the statement, so a mutation accepted
+            /// with a session opt-in failed forever and wedged the table's mutation queue.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
             /// if we execute `ALTER TABLE ... MATERIALIZE STATISTICS ALL`, we materalize all the statistics in this table.
@@ -1345,10 +1341,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::DROP_STATISTICS)
         {
-            /// See MATERIALIZE_STATISTICS above: validated with the submitting session's value, and not
-            /// re-checked under the background context that executes the mutation.
-            if (dry_run && !context->getSettingsRef()[Setting::allow_statistics])
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
+            /// See MATERIALIZE_STATISTICS above: gated at submission time, not under the background
+            /// context that executes the mutation.
 
             mutation_kind.set(MutationKind::MUTATE_INDEX_STATISTICS_PROJECTION);
 
