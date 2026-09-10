@@ -62,6 +62,9 @@ negated hint	0
 negated hint	3
 negated hint	501
 negated hint forces pk	3
+negated hint numbers	0
+negated hint numbers	3
+negated hint numbers limit	3
 negated hint twice	1000
 indexed no boolean	3
 indexed no boolean	3

@@ -137,6 +137,17 @@ SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 SELECT 'negated hint forces pk', count() FROM t_index_hint
 WHERE NOT indexHint(id) OR (id >= 1 AND id <= 3)
 SETTINGS force_primary_key = 1;
+-- The same inversion push-down serves readers with no granules: `numbers()` builds a key condition
+-- over `number`, and a blank range set there means no rows at all, with no row-level filter left to
+-- correct it.
+SELECT 'negated hint numbers', count() FROM numbers(10) WHERE NOT indexHint('x');
+SELECT 'negated hint numbers', count() FROM numbers(10) WHERE NOT indexHint('x') OR number < 3;
+-- Ranges extracted there are also taken as exact, which is what lets `LIMIT` stop an endless source.
+-- The row limit is the assertion: three rows are read when the range set is exact, a whole block
+-- otherwise.
+SELECT 'negated hint numbers limit', count() FROM (
+    SELECT number FROM system.numbers WHERE NOT indexHint('x') OR number < 3 LIMIT 5)
+SETTINGS max_rows_to_read = 100;
 -- Two inversions cancel before any leaf, so this hint keeps its condition and every row matches.
 SELECT 'negated hint twice', count() FROM t_index_hint WHERE NOT NOT indexHint('x') OR (id >= 1 AND id <= 3);
 
