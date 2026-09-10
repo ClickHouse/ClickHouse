@@ -1299,6 +1299,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     }
 
     // These will be added after request signing
+    normalizeHeaderNames(headers);
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);

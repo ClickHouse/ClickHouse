@@ -92,4 +92,23 @@ TEST(GCSHeaderTranslation, RecognisesTheSameNamesComingBack)
     EXPECT_FALSE(DB::S3::translateHeaderNameFromGCS("x-goog-meta-").has_value());
 }
 
+/// A mixed-case name would otherwise be classified as an ordinary header by both `x-amz-` checks,
+/// attached to the request after signing, and never reach the rename.
+TEST(GCSHeaderTranslation, NormalizesHeaderNames)
+{
+    DB::HTTPHeaderEntries headers{
+        {"X-Amz-Meta-Owner", "analytics"},
+        {"X-AMZ-STORAGE-CLASS", "GLACIER"},
+        {"Custom-Auth-Token", "KeepTheValue"},
+    };
+
+    DB::S3::normalizeHeaderNames(headers);
+
+    EXPECT_EQ(headers[0].name, "x-amz-meta-owner");
+    EXPECT_EQ(headers[1].name, "x-amz-storage-class");
+    EXPECT_EQ(headers[2].name, "custom-auth-token");
+    /// Values are untouched.
+    EXPECT_EQ(headers[2].value, "KeepTheValue");
+}
+
 #endif
