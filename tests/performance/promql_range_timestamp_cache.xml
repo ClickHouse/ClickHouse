@@ -6,7 +6,7 @@
 
     <!--
         Benchmarks the Prometheus HTTP range-response writer with an extreme,
-        fully populated evaluation grid. Every series has the same 1024
+        fully populated evaluation grid. Every series has the same 256
         evaluation timestamps, so each timestamp is reused across 16384
         series while the value formatting stays constant.
 
