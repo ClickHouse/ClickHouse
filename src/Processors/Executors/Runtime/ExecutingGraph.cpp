@@ -4,8 +4,10 @@
 #include <Processors/StepWallClock.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <QueryPipeline/printPipeline.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
-#include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemorySpillScheduler.h>
@@ -16,7 +18,6 @@
 #include <stack>
 #include <unordered_map>
 #include <unordered_set>
-#include <ranges>
 
 namespace DB
 {
@@ -66,7 +67,7 @@ ExecutingGraph::Node & ExecutingGraph::addNode(Processors::iterator processor_it
     return new_node;
 }
 
-std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> ExecutingGraph::removeNode(ProcessorPtr processor)
+ExecutingGraph::Node * ExecutingGraph::getNodeToRemove(const ProcessorPtr & processor) const
 {
     auto node_it = processors_map.find(processor.get());
     if (node_it == processors_map.end())
@@ -79,15 +80,14 @@ std::pair<const ExecutingGraph::Node *, std::unordered_set<const void *>> Execut
     if (node->last_processor_status.value() != IProcessor::Status::Finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
 
-    std::unordered_set<const void *> removed_edges;
-    removed_edges.insert_range(node->direct_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
-    removed_edges.insert_range(node->back_edges | std::views::transform([](const auto & edge) { return edge.update_info.id; }));
+    return node;
+}
 
-    processors_map.erase(node_it);
-    processors->erase(node->processor_iter);
-    nodes.erase(node->self_iter);
-
-    return {node, std::move(removed_edges)};
+void ExecutingGraph::removeNode(Node & node)
+{
+    processors_map.erase(node.processor());
+    processors->erase(node.processor_iter);
+    nodes.erase(node.self_iter);
 }
 
 ExecutingGraph::Node & ExecutingGraph::addNode(ProcessorPtr processor)
@@ -147,56 +147,20 @@ ExecutingGraph::NewEdges ExecutingGraph::addEdges(Node & node)
     return result;
 }
 
-std::unordered_set<const void *> ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<const Node *> & removed_nodes)
+void ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<Node *> & removed_nodes)
 {
-    std::unordered_set<const void *> removed_edge_ids;
+    auto is_removed_edge = [&](const Edge & edge) { return removed_nodes.contains(edge.to); };
+    auto is_removed_id = [&](void * id) { return is_removed_edge(*static_cast<const Edge *>(id)); };
 
-    for (auto it = node.back_edges.begin(); it != node.back_edges.end();)
-    {
-        if (removed_nodes.contains(it->to))
-        {
-            removed_edge_ids.insert(it->update_info.id);
-            it = node.back_edges.erase(it);
-        }
-        else
-            it = std::next(it);
-    }
-
-    for (auto it = node.direct_edges.begin(); it != node.direct_edges.end();)
-    {
-        if (removed_nodes.contains(it->to))
-        {
-            removed_edge_ids.insert(it->update_info.id);
-            it = node.direct_edges.erase(it);
-        }
-        else
-            it = std::next(it);
-    }
-
-    /// We need to remove cached updates for removed edges. This updates now contain stale pointers.
-    if (!removed_edge_ids.empty())
-    {
-        auto is_stale = [&](void * id) { return removed_edge_ids.contains(id); };
-        std::erase_if(node.post_updated_input_ports, is_stale);
-        std::erase_if(node.post_updated_output_ports, is_stale);
-    }
-
-    return removed_edge_ids;
+    std::erase_if(node.post_updated_input_ports, is_removed_id);
+    std::erase_if(node.post_updated_output_ports, is_removed_id);
+    std::erase_if(node.back_edges, is_removed_edge);
+    std::erase_if(node.direct_edges, is_removed_edge);
 }
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container::devector<Node *> & stack, Node & cur_node)
 {
-    IProcessor::PipelineUpdate update;
-
-    try
-    {
-        update = cur_node.processor()->updatePipeline();
-    }
-    catch (...)
-    {
-        cur_node.exception = std::current_exception();
-        return UpdateNodeStatus::Exception;
-    }
+    IProcessor::PipelineUpdate update = cur_node.processor()->updatePipeline();
 
     IProcessor::CancelReason cancel_reason_if_cancelled = IProcessor::CancelReason::NotCancelled;
     {
@@ -274,50 +238,41 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
     if (cancel_reason_if_cancelled != IProcessor::CancelReason::NotCancelled && cancel_reason_if_cancelled != IProcessor::CancelReason::PartialResult)
         return UpdateNodeStatus::Cancelled;
 
+    /// Add itself back to be prepared again.
+    stack.push_front(&cur_node);
+
     return UpdateNodeStatus::Done;
 }
 
-ExecutingGraph::RemoveGroupResult ExecutingGraph::removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction)
+void ExecutingGraph::removePendingGroup(PendingRemovalGroup & group, Processors & delayed_destruction)
 {
-    RemoveGroupResult result;
+    std::unordered_set<Node *> removed_nodes;
+    removed_nodes.reserve(group.processors.size());
+    for (const auto & removed_proc : group.processors)
+        removed_nodes.insert(getNodeToRemove(removed_proc));
 
     {
         std::lock_guard guard(processors_mutex);
 
-        for (const auto & removed_proc : group.processors)
-        {
-            auto [removed_node, removed_edges] = removeNode(removed_proc);
-            result.removed_nodes.insert(removed_node);
-            result.removed_edges.insert_range(removed_edges);
-        }
+        for (auto * node : removed_nodes)
+            removeNode(*node);
     }
 
     for (const auto & removed_proc : group.processors)
         removed_processors.erase(removed_proc);
 
     for (auto & node : nodes)
-        result.removed_edges.insert_range(removeAffectedEdges(node, result.removed_nodes));
+        removeAffectedEdges(node, removed_nodes);
 
     /// Removed processors can hold the last strong reference to data.
     /// It is too expensive to destroy them under the nodes mutex.
     delayed_destruction.splice(delayed_destruction.end(), group.processors);
-
-    return result;
 }
 
-ExecutingGraph::RemoveGroupResult ExecutingGraph::removeReadyGroups(Processors & delayed_destruction)
+void ExecutingGraph::removeReadyGroups(Processors & delayed_destruction)
 {
-    std::unique_lock lock(nodes_mutex);
-
-    RemoveGroupResult result;
     while (auto group = findGroupReadyForRemoval())
-    {
-        auto group_result = removePendingGroup(*group, delayed_destruction);
-        result.removed_nodes.insert_range(group_result.removed_nodes);
-        result.removed_edges.insert_range(group_result.removed_edges);
-    }
-
-    return result;
+        removePendingGroup(*group, delayed_destruction);
 }
 
 std::shared_ptr<ExecutingGraph::PendingRemovalGroup> ExecutingGraph::findGroupReadyForRemoval()
@@ -367,6 +322,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
     Processors delayed_destruction;
     boost::container::devector<Edge *> updated_edges;
     boost::container::devector<Node *> updated_processors;
+    std::vector<Node *> pending_expansion;
     updated_processors.push_back(start_node);
 
     std::shared_lock read_lock(nodes_mutex);
@@ -420,53 +376,37 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                 stack_top_lock.emplace(node.status_mutex);
 
             {
-#ifndef NDEBUG
-                Stopwatch watch;
-#endif
-
                 std::unique_lock<std::mutex> lock(std::move(*stack_top_lock));
 
-                try
+                auto & processor = *node.processor();
+                const auto last_status = node.last_processor_status;
+                IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
+                node.last_processor_status = status;
+                if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
+                    CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
+
+                if (profile_processors)
                 {
-                    auto & processor = *node.processor();
-                    const auto last_status = node.last_processor_status;
-                    IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
-                    node.last_processor_status = status;
-                    if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
-                        CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
-
-                    if (profile_processors)
+                    /// NeedData
+                    if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
                     {
-                        /// NeedData
-                        if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
-                        {
-                            processor.input_wait_watch.restart();
-                        }
-                        else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
-                        {
-                            processor.input_wait_elapsed_ns += processor.input_wait_watch.elapsedNanoseconds();
-                        }
+                        processor.input_wait_watch.restart();
+                    }
+                    else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
+                    {
+                        processor.input_wait_elapsed_ns += processor.input_wait_watch.elapsedNanoseconds();
+                    }
 
-                        /// PortFull
-                        if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
-                        {
-                            processor.output_wait_watch.restart();
-                        }
-                        else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
-                        {
-                            processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
-                        }
+                    /// PortFull
+                    if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
+                    {
+                        processor.output_wait_watch.restart();
+                    }
+                    else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
+                    {
+                        processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
                     }
                 }
-                catch (...)
-                {
-                    node.exception = std::current_exception();
-                    return UpdateNodeStatus::Exception;
-                }
-
-#ifndef NDEBUG
-                node.preparation_time_ns += watch.elapsed();
-#endif
 
                 node.updated_input_ports.clear();
                 node.updated_output_ports.clear();
@@ -500,6 +440,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                     case IProcessor::Status::UpdatePipeline:
                     {
                         need_update_pipeline = true;
+                        pending_expansion.push_back(current);
                         break;
                     }
                 }
@@ -532,56 +473,74 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                     node.post_updated_output_ports.clear();
                 }
             }
+        }
 
-            if (need_update_pipeline)
-            {
-                // We do not need to upgrade lock atomically, so we can safely release shared_lock and acquire unique_lock
-                read_lock.unlock();
-
-                UpdateNodeStatus update_status = [&]()
-                {
-                    std::unique_lock lock(nodes_mutex);
-                    return updatePipeline(updated_processors, node);
-                }();
-
-                if (update_status != UpdateNodeStatus::Done)
-                {
-                    /// updatePipeline has already queued its removals, but this thread is leaving the graph forever.
-                    removeReadyGroups(delayed_destruction);
-                    return update_status;
-                }
-
-                /// Add itself back to be prepared again.
-                updated_processors.push_front(current);
-
-                read_lock.lock();
-            }
-
+        if (updated_processors.empty() && updated_edges.empty())
+        {
             /// The peek under the shared lock is only a hint.
-            if (!removed_processors.empty() && findGroupReadyForRemoval())
+            const bool has_ready_removal = !removed_processors.empty() && findGroupReadyForRemoval();
+            if (pending_expansion.empty() && !has_ready_removal)
+                break;
+
+            // We do not need to upgrade lock atomically, so we can safely release shared_lock and acquire unique_lock
+            read_lock.unlock();
             {
-                read_lock.unlock();
+                std::unique_lock write_lock(nodes_mutex);
 
-                RemoveGroupResult remove_result = removeReadyGroups(delayed_destruction);
-
-                if (!remove_result.removed_edges.empty())
+                for (auto * node : pending_expansion)
                 {
-                    auto removed_range = std::ranges::remove_if(updated_edges, [&](const void * edge) { return remove_result.removed_edges.contains(edge); });
-                    updated_edges.erase(removed_range.begin(), removed_range.end());
+                    UpdateNodeStatus update_status = updatePipeline(updated_processors, *node);
+                    if (update_status != UpdateNodeStatus::Done)
+                    {
+                        /// updatePipeline has already queued its removals, but this thread is leaving the graph forever.
+                        removeReadyGroups(delayed_destruction);
+                        return update_status;
+                    }
                 }
+                pending_expansion.clear();
 
-                if (!remove_result.removed_nodes.empty())
-                {
-                    auto removed_range = std::ranges::remove_if(updated_processors, [&](const Node * node_ptr) { return remove_result.removed_nodes.contains(node_ptr); });
-                    updated_processors.erase(removed_range.begin(), removed_range.end());
-                }
-
-                read_lock.lock();
+                removeReadyGroups(delayed_destruction);
             }
+            read_lock.lock();
         }
     }
 
     return UpdateNodeStatus::Done;
+}
+
+const Processors & ExecutingGraph::getProcessors() const
+{
+    return *processors;
+}
+
+bool ExecutingGraph::isAllFinished() const
+{
+    for (const auto & node : nodes)
+        if (node.status != ExecStatus::Finished)
+            return false;
+
+    return true;
+}
+
+String ExecutingGraph::dump() const
+{
+    std::vector<std::optional<IProcessor::Status>> statuses;
+    statuses.reserve(nodes.size());
+
+    for (const auto & node : nodes)
+    {
+        WriteBufferFromOwnString buffer;
+        buffer << "(" << node.processor()->getNumExecutedJobs() << " jobs)";
+        node.processor()->setDescription(buffer.str());
+
+        statuses.emplace_back(node.last_processor_status);
+    }
+
+    WriteBufferFromOwnString out;
+    printPipeline(*processors, statuses, out);
+    out.finalize();
+
+    return out.str();
 }
 
 void ExecutingGraph::cancel(IProcessor::CancelReason reason)

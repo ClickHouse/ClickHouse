@@ -23,9 +23,9 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Defines.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Core/SettingsQuirks.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -213,6 +213,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
