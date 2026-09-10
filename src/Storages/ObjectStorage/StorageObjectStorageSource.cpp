@@ -1292,15 +1292,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             ReadSettings read_settings = context_->getReadSettings();
-            /// A random-access format only reads at arbitrary offsets while it is allowed to seek.
-            /// With `input_format_allow_seeks = 0` it reads the object sequentially from the start
-            /// instead, so the from-start read-ahead is exactly what it consumes and must not be
-            /// gated off: the hint follows the setting, not just the format's capability.
-            const bool seekable_read = format_settings
-                ? format_settings->seekable_read
-                : context_->getSettingsRef()[Setting::input_format_allow_seeks];
-            read_settings.remote_fs_settings.random_access
-                = seekable_read && FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name);
+            read_settings.remote_fs_settings.random_access = formatReadsRandomAccess(format_name, context_, format_settings);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
                 read_settings, !headers_requested);
@@ -1725,6 +1717,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
     return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
+}
+
+bool formatReadsRandomAccess(
+    const String & format_name,
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings)
+{
+    const bool seekable_read
+        = format_settings ? format_settings->seekable_read : context->getSettingsRef()[Setting::input_format_allow_seeks];
+    return seekable_read && FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(

@@ -85,10 +85,10 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         if (boost::to_lower_copy(format) != "parquet")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Position deletes are supported only for parquet format");
 
-        /// Parquet is a random-access format (reads the footer at the tail first), so hint the
-        /// object-storage read buffer to skip the generic from-start prefetch that it would drop.
+        /// Parquet reads the footer at the tail first, so hint the object-storage read buffer to
+        /// skip the generic from-start prefetch that it would drop, unless seeks are disabled.
         auto read_settings = context->getReadSettings();
-        read_settings.remote_fs_settings.random_access = true;
+        read_settings.remote_fs_settings.random_access = formatReadsRandomAccess(format, context);
 
         Block initial_header;
         {

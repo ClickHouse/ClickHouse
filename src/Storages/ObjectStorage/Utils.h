@@ -32,6 +32,16 @@ void validateSupportedColumns(
 /// An empty column name has no identifier to render it with, so it cannot survive analysis.
 void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name);
 
+/// Whether reading `format_name` will actually seek instead of consuming the object from the start.
+/// A random-access format reads the footer at the tail first, but only while it is allowed to seek:
+/// with `input_format_allow_seeks = 0` it reads sequentially from the start instead, and then the
+/// generic from-start read-ahead is exactly what it consumes and must not be gated off. The hint
+/// therefore follows the setting, not just the format's capability.
+bool formatReadsRandomAccess(
+    const String & format_name,
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
+
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     RelativePathWithMetadata & object_info,
     const ObjectStoragePtr & object_storage,
