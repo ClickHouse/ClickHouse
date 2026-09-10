@@ -297,9 +297,16 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     current_resolved_address.reset();
     setDescription();
 
-    /// The socket error may already name the endpoint that was dialled; do not repeat the same text.
-    const auto endpoint_already_named
-        = [this](const String & message) { return message.contains(getDescription(/*with_extra*/ true)); };
+    /// The socket error names the dialled address in its canonical form (IPv6 literals are bracketed).
+    /// Suppress the duplicate only when the configured host is that very address, not a name resolving to it.
+    const auto endpoint_already_named = [this](const String & message)
+    {
+        if (!current_resolved_address || port != current_resolved_address->port())
+            return false;
+        const auto address = current_resolved_address->host().toString();
+        return (host == address || host == "[" + address + "]")
+            && message.contains(current_resolved_address->toString());
+    };
 
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
     try
