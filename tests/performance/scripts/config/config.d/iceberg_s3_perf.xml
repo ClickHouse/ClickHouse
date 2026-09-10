@@ -1,0 +1,21 @@
+<!-- S3 endpoint for the iceberg_suite_s3_* performance tests.
+
+     The performance job runs one private MinIO daemon per measured server
+     (LEFT on 127.0.0.1:11110, RIGHT on 127.0.0.1:11120 - clear of the servers'
+     own ports 9001/19001/8123/18123/9181/19181), each seeded byte-identically,
+     so the write tests cannot interfere across the LEFT/RIGHT comparison.
+
+     The port below is a placeholder for the LEFT instance: the Configure stage
+     rewrites each server's copy of this file to its own instance (see
+     write_minio_endpoint_overrides in ci/jobs/performance_tests.py). This is
+     the only per-server config delta, analogous to the per-server tcp/http
+     ports overridden on the server command line. -->
+<clickhouse>
+    <named_collections>
+        <iceberg_s3_perf>
+            <url>http://127.0.0.1:11110/perf/</url>
+            <access_key_id>clickhouse</access_key_id>
+            <secret_access_key>clickhouse</secret_access_key>
+        </iceberg_s3_perf>
+    </named_collections>
+</clickhouse>

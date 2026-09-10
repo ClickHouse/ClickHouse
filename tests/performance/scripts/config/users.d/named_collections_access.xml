@@ -1,0 +1,12 @@
+<!-- The iceberg_suite_s3_* performance tests reference the `iceberg_s3_perf`
+     named collection (config.d/iceberg_s3_perf.xml). Users defined in users.xml
+     get no named-collection privileges by default, so grant them to `default`
+     the same way the stateless suite does in
+     tests/config/users.d/access_management.xml. -->
+<clickhouse>
+    <users>
+        <default>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>

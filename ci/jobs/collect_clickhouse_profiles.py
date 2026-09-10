@@ -387,7 +387,13 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
                               `perf.py`, so individual queries return quickly.
     """
     test_files = sorted(
-        f for f in os.listdir(f"{repo_path}/tests/performance/") if f.endswith(".xml")
+        f
+        for f in os.listdir(f"{repo_path}/tests/performance/")
+        # `iceberg_suite_s3_*` tests read the per-server MinIO S3 endpoints that the
+        # performance job provisions (ci/jobs/scripts/perf/minio_service.py).
+        # Profile collection runs no MinIO, so these tests cannot work here - skip
+        # them by their name prefix.
+        if f.endswith(".xml") and not f.startswith("iceberg_suite_s3_")
     )
     print(
         f"Running up to {len(test_files)} performance tests "
