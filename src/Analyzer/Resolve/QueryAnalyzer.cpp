@@ -1566,15 +1566,17 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                     && identifier_lookup.isExpressionLookup()
                     && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
 
-                auto * saved_ambiguous_join_tree_identifier = scope.ambiguous_join_tree_identifier;
-                scope.ambiguous_join_tree_identifier = alias_can_take_over ? &ambiguous_in_join_tree : nullptr;
-                SCOPE_EXIT({ scope.ambiguous_join_tree_identifier = saved_ambiguous_join_tree_identifier; });
-
-                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
-
-                /// Ambiguity in a nested JOIN leaves the other side's column as the only candidate; it must not win.
-                if (ambiguous_in_join_tree)
-                    resolve_result = {};
+                if (alias_can_take_over)
+                {
+                    auto tolerant_lookup = identifier_lookup;
+                    tolerant_lookup.allow_ambiguous_join_tree_identifier = true;
+                    resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(tolerant_lookup, scope);
+                    ambiguous_in_join_tree = resolve_result.ambiguous_in_join_tree;
+                }
+                else
+                {
+                    resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+                }
             }
 
             if (can_check_aliases && !resolve_result.resolved_identifier)
@@ -1584,12 +1586,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
             /// No alias took over: resolve from the join tree again to throw the original `AMBIGUOUS_IDENTIFIER`.
             if (ambiguous_in_join_tree && !resolve_result.resolved_identifier)
-            {
-                auto * saved_ambiguous_join_tree_identifier = scope.ambiguous_join_tree_identifier;
-                scope.ambiguous_join_tree_identifier = nullptr;
-                SCOPE_EXIT({ scope.ambiguous_join_tree_identifier = saved_ambiguous_join_tree_identifier; });
                 resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
-            }
         }
         else
         {
