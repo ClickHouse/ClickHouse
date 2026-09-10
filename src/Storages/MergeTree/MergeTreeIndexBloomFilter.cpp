@@ -1222,8 +1222,17 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
               *
               * We cannot skip keys that does not exist in map if comparison is with default type value because
               * that way we skip necessary granules where the map key does not exist.
+              *
+              * `getDefault` returns the empty `Field` for `FixedString`, while a missing key
+              * materializes as `N` zero bytes, so the raw default is not the value the comparison
+              * sees. Test the constant against the materialized default the way the `IN` path
+              * above does, and keep the raw default for the types whose two forms coincide.
               */
-            if (value_field == value_type->getDefault())
+            auto default_column = value_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+            Field materialized_default;
+            default_column->get(0, materialized_default);
+
+            if (value_field == materialized_default || value_field == value_type->getDefault())
                 return false;
 
             size_t position = 0;

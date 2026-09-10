@@ -65,7 +65,37 @@ SELECT 'same-type subquery set over a map still prunes';
 SELECT count() FROM t_bf_map_str WHERE m['k'] IN (SELECT 'nosuch');
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_map_str WHERE m['k'] IN (SELECT 'nosuch')) WHERE explain LIKE '%Granules: 0/%';
 
+SELECT 'absent map key with a FixedString value';
+-- `arrayElement` returns the value type's materialized default for a missing key, and for
+-- `FixedString(3)` that default is three zero bytes rather than the empty `Field`. The index has to
+-- decline for such a constant, otherwise both map arms prune the granules where the key is absent.
+DROP TABLE IF EXISTS t_bf_map_absent_values;
+CREATE TABLE t_bf_map_absent_values (m Map(String, FixedString(3)), INDEX bf mapValues(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_absent_values VALUES (map('k', 'abc')), (map('other', 'xyz')), (map());
+OPTIMIZE TABLE t_bf_map_absent_values FINAL;
+
+SELECT count() FROM t_bf_map_absent_values WHERE m['absent'] = toFixedString('', 3);
+SELECT count() FROM t_bf_map_absent_values WHERE m['absent'] = toFixedString('', 3) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_absent_values WHERE m['absent'] = '';
+SELECT count() FROM t_bf_map_absent_values WHERE m['absent'] = '' SETTINGS use_skip_indexes = 0;
+
+DROP TABLE IF EXISTS t_bf_map_absent_keys;
+CREATE TABLE t_bf_map_absent_keys (m Map(String, FixedString(3)), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_absent_keys VALUES (map('k', 'abc')), (map('other', 'xyz')), (map());
+OPTIMIZE TABLE t_bf_map_absent_keys FINAL;
+
+SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('', 3);
+SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('', 3) SETTINGS use_skip_indexes = 0;
+
+SELECT 'a non-default FixedString constant still prunes';
+SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('abc', 3);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_map_absent_keys WHERE m['absent'] = toFixedString('abc', 3)) WHERE explain LIKE '%Granules: 0/%';
+
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;
 DROP TABLE t_bf_map_str;
 DROP TABLE t_bf_map_set_source;
+DROP TABLE t_bf_map_absent_values;
+DROP TABLE t_bf_map_absent_keys;

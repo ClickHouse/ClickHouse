@@ -26,3 +26,13 @@ map value from a subquery set
 same-type subquery set over a map still prunes
 0
 1
+absent map key with a FixedString value
+3
+3
+3
+3
+3
+3
+a non-default FixedString constant still prunes
+0
+1
