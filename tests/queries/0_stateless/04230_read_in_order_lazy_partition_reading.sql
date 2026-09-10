@@ -173,7 +173,7 @@ FROM
          AND log_comment = '04230_test_4_disabled'
          AND type = 'QueryFinish'
      ORDER BY event_time_microseconds DESC LIMIT 1) b;
- 
+
  -- ------------------------------------------------------------------
  -- Test 5: Correctness -- LIMIT spanning 2 partitions returns rows
  -- from both partitions in correct order.
@@ -185,13 +185,13 @@ FROM
  )
  ORDER BY val DESC
  LIMIT 5;
- 
+
  -- ------------------------------------------------------------------
  -- Test 6: Correctness -- ASC and DESC results must be correct.
  -- ------------------------------------------------------------------
  SELECT 'test 6 correctness ASC:';
  SELECT time, val FROM t_lazy_simple ORDER BY time ASC LIMIT 5;
- 
+
  SELECT 'test 6 correctness DESC:';
  SELECT time, val FROM t_lazy_simple ORDER BY time DESC LIMIT 5;
 
