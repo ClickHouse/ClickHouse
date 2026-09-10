@@ -1,12 +1,20 @@
 #include <gtest/gtest.h>
+#include <Common/Exception.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Common/tests/gtest_global_context.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int UNKNOWN_PROTOCOL;
+}
 
 namespace
 {
@@ -38,6 +46,18 @@ namespace
         }
     private:
         std::list<ObjectInfoPtr> objects;
+    };
+
+    class TestArchiveObjectInfo : public ObjectInfo
+    {
+    public:
+        explicit TestArchiveObjectInfo(RelativePathWithMetadata path)
+            : ObjectInfo(std::move(path))
+        {
+        }
+
+        bool isArchive() const override { return true; }
+        std::string getPathToArchive() const override { return getPath(); }
     };
 
     // Make path like '/path/file0'
@@ -297,6 +317,38 @@ TEST(ObjectInfo, IdentifierWithoutFileBucketInfoKeepsReadSourceIndex)
     ASSERT_EQ(object_info.getIdentifier(/*include_file_bucket_info=*/ false), "7:dir/file.parquet");
 }
 
+TEST(ClusterFunctionReadTaskResponse, RejectsOldProtocolForURLArchiveTask)
+{
+    auto archive = std::make_shared<TestArchiveObjectInfo>(RelativePathWithMetadata{"/path/archive.zip", 0});
+    auto context = DB::Context::createCopy(::getContext().context);
+    ClusterFunctionReadTaskResponse response(archive, context);
+    ASSERT_TRUE(response.is_url_archive_task);
+
+    String rejected_serialized;
+    WriteBufferFromString rejected_out(rejected_serialized);
+    try
+    {
+        response.serialize(rejected_out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS - 1);
+        FAIL() << "Expected UNKNOWN_PROTOCOL";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_PROTOCOL);
+        EXPECT_NE(e.message().find("cannot process distributed `urlCluster` archive tasks"), String::npos);
+    }
+
+    String supported_serialized;
+    WriteBufferFromString supported_out(supported_serialized);
+    response.serialize(supported_out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS);
+    supported_out.finalize();
+
+    ReadBufferFromString supported_in(supported_serialized);
+    ClusterFunctionReadTaskResponse deserialized;
+    deserialized.deserialize(supported_in);
+    ASSERT_EQ(deserialized.path, response.path);
+    ASSERT_EQ(deserialized.read_source_index, response.read_source_index);
+}
+
 TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
 {
     ClusterFunctionReadTaskResponse response;
@@ -305,7 +357,7 @@ TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
 
     String serialized;
     WriteBufferFromString out(serialized);
-    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS - 1);
     out.finalize();
 
     ReadBufferFromString in(serialized);

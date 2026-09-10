@@ -50,7 +50,11 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_COMP
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX = 8;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS = 9;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING = 10;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING;
+/// URL archive tasks require workers to reconstruct Web object-storage archive reads while
+/// preserving the URL shard identity. Older workers treat the task as a plain URL path and can
+/// silently produce incomplete or duplicated results, so initiators must fail instead of downgrading.
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS = 11;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 

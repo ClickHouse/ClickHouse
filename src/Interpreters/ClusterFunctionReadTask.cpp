@@ -44,6 +44,7 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
     read_source_index = object->relative_path_with_metadata.read_source_index;
+    is_url_archive_task = object->isArchive() && read_source_index.has_value();
     file_bucket_info = object->file_bucket_info;
 }
 
@@ -84,6 +85,17 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
 {
     auto protocol_version
         = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
+
+    if (is_url_archive_task && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker cluster-function protocol version {} cannot process distributed `urlCluster` archive tasks "
+            "(minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS);
+    }
+
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 
