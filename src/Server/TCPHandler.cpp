@@ -1170,8 +1170,7 @@ void TCPHandler::runImpl()
 
                 if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 {
-                    if (query_state->profile_traces_queue)
-                        query_state->profile_traces_queue->cancel();
+                    cancelProfileTracesQueue(*query_state);
                     sendEndOfStream(*query_state);
                     out->sync();
                 }
@@ -1966,6 +1965,16 @@ void TCPHandler::sendInsertProfileEvents(QueryState & state)
     sendProfileEvents(state);
 }
 
+void TCPHandler::cancelProfileTracesQueue(QueryState & state)
+{
+    if (!state.profile_traces_queue)
+        return;
+
+    state.profile_traces_queue->cancel();
+    CurrentThread::attachInternalProfileTracesQueue(nullptr);
+    state.profile_traces_queue.reset();
+}
+
 void TCPHandler::updateProfileTracesQueue(QueryState & state) const
 {
     const bool enabled = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_PROFILE_TRACES
@@ -1977,9 +1986,7 @@ void TCPHandler::updateProfileTracesQueue(QueryState & state) const
     }
     else if (!enabled && state.profile_traces_queue)
     {
-        state.profile_traces_queue->cancel();
-        CurrentThread::attachInternalProfileTracesQueue(nullptr);
-        state.profile_traces_queue.reset();
+        cancelProfileTracesQueue(state);
     }
 }
 
@@ -1990,7 +1997,7 @@ void TCPHandler::sendPendingProfileTraces(QueryState & state, bool finish)
 
     if (!state.query_context->getSettingsRef()[Setting::send_profile_traces])
     {
-        state.profile_traces_queue->cancel();
+        cancelProfileTracesQueue(state);
         return;
     }
 
@@ -2001,7 +2008,7 @@ void TCPHandler::sendPendingProfileTraces(QueryState & state, bool finish)
         /// An early exception or detached completion must reach the client before `skipData`.
         /// Neither a trace batch nor a loss-status packet is safe to send in this phase.
         if (finish)
-            state.profile_traces_queue->cancel();
+            cancelProfileTracesQueue(state);
         return;
     }
 

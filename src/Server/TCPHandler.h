@@ -360,6 +360,7 @@ private:
     void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
+    static void cancelProfileTracesQueue(QueryState & state);
     void updateProfileTracesQueue(QueryState & state) const;
     void sendPendingProfileTraces(QueryState & state, bool finish = false) TSA_REQUIRES(callback_mutex);
     void sendProfileTraces(QueryState & state, const Block & block) TSA_REQUIRES(callback_mutex);
