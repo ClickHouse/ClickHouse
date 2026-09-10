@@ -534,15 +534,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
         && modified_client_info.initial_user == modified_client_info.current_user)
     {
-        const auto & access_control = context->getAccessControl();
-        Strings current_role_names;
-        for (const auto & role_id : context->getCurrentRoles())
-        {
-            /// tryReadName: skip a concurrently-dropped role (its policies already target nobody).
-            if (auto name = access_control.tryReadName(role_id))
-                current_role_names.push_back(*name);
-        }
-        modified_client_info.current_roles = std::move(current_role_names);
+        /// A concurrently-dropped role is skipped (its policies already target nobody).
+        modified_client_info.current_roles = *context->getRoleNamesCachedPerQuery(context->getCurrentRoles());
     }
 
     if (extension)
@@ -556,13 +549,10 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         boost::container::flat_set<String> granted_roles;
         if (user)
         {
-            const auto & access_control = context->getAccessControl();
-            for (const auto & e : user->granted_roles.getElements())
-            {
-                // `tryReadNames` instead of `readNames` because the original user might have a dropped role.
-                auto names = access_control.tryReadNames(e.ids);
-                granted_roles.insert(names.begin(), names.end());
-            }
+            /// The original user might have a dropped role, it is skipped.
+            const auto & granted_role_ids = user->granted_roles.getGranted();
+            auto names = context->getRoleNamesCachedPerQuery(std::vector<UUID>(granted_role_ids.begin(), granted_role_ids.end()));
+            granted_roles.insert(names->begin(), names->end());
         }
         local_granted_roles.insert(local_granted_roles.end(), granted_roles.begin(), granted_roles.end());
     }

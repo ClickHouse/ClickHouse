@@ -203,6 +203,7 @@ class AsyncLoader;
 class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
+struct RoleNamesCache;
 struct ICgroupsReader;
 class WasmModuleManager;
 
@@ -584,6 +585,8 @@ protected:
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.
     mutable std::shared_ptr<AsyncReadCounters> async_read_counters;
+    /// Caches role-id-to-name resolution per query so distributed connections resolve once, not per shard.
+    std::shared_ptr<RoleNamesCache> role_names_cache;
 
     /// TODO: maybe replace with temporary tables?
     StoragePtr view_source;                 /// Temporary StorageValues used to generate alias columns for materialized views
@@ -2023,6 +2026,9 @@ public:
 #endif
 
     std::shared_ptr<AsyncReadCounters> getAsyncReadCounters() const;
+
+    /// Resolve role IDs to names (dropped roles are skipped), caching the result for the lifetime of the query.
+    std::shared_ptr<const Strings> getRoleNamesCachedPerQuery(const std::vector<UUID> & role_ids) const;
 
     ThreadPool & getThreadPoolWriter() const;
 

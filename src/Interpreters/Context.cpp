@@ -481,6 +481,14 @@ namespace ErrorCodes
     extern const int UNKNOWN_READ_METHOD;
 }
 
+struct RoleNamesCache
+{
+    std::mutex mutex;
+    /// A query needs at most a few distinct lists (granted roles, current roles),
+    /// so a linear scan is fine.
+    std::vector<std::pair<std::vector<UUID>, std::shared_ptr<const Strings>>> entries TSA_GUARDED_BY(mutex);
+};
+
 /// Per-query deviations from the server-level distributed cache switches. The background and buffer
 /// contexts are built once at startup, so a value coming from their profile would pin them for the
 /// lifetime of the server - which is exactly what makes the switch unobservable for merges,
@@ -1449,6 +1457,7 @@ ContextData::ContextData(const ContextData &o) :
     query_factories_info(o.query_factories_info),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
+    role_names_cache(o.role_names_cache),
     view_source(o.view_source),
     /// `table_function_results` is copied in the body under `o.table_function_results_mutex`
     /// to avoid a data race with `Context::executeTableFunction` and other writers
@@ -3970,6 +3979,7 @@ void Context::makeQueryContext()
     /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
+    role_names_cache = std::make_shared<RoleNamesCache>();
     runtime_filter_lookup = createRuntimeFilterLookup();
 
     /// A context that becomes a query context without going through a client-facing handshake -
@@ -8862,6 +8872,30 @@ WriteSettings Context::getWriteSettings() const
 std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 {
     return async_read_counters;
+}
+
+std::shared_ptr<const Strings> Context::getRoleNamesCachedPerQuery(const std::vector<UUID> & role_ids) const
+{
+    if (role_ids.empty())
+    {
+        static const auto no_names = std::make_shared<const Strings>();
+        return no_names;
+    }
+
+    auto resolve = [&]
+    {
+        return std::make_shared<const Strings>(getAccessControl().tryReadNames(role_ids));
+    };
+
+    /// A context not derived from a query context (e.g. a background task) has no cache.
+    if (!role_names_cache)
+        return resolve();
+
+    std::lock_guard lock(role_names_cache->mutex);
+    for (const auto & [ids, names] : role_names_cache->entries)
+        if (ids == role_ids)
+            return names;
+    return role_names_cache->entries.emplace_back(role_ids, resolve()).second;
 }
 
 bool Context::canUseTaskBasedParallelReplicas() const
