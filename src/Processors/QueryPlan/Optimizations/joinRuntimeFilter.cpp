@@ -1,30 +1,30 @@
 #include <memory>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <Core/Settings.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/tuple.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashTablesStatistics.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <fmt/format.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/Settings.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <Common/logger_useful.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Functions/tuple.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -137,68 +137,6 @@ static const ActionsDAG::Node & createRuntimeFilterCondition(
 
     auto filter_function = FunctionFactory::instance().get("__applyFilter", /*context*/ nullptr);
     return actions_dag.addFunction(filter_function, {&filter_label_node, filter_argument}, {});
-}
-
-static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
-    ActionsDAG & filter_dag,
-    QueryPlan::Node *& build_filter_node,
-    QueryPlan::Nodes & nodes,
-    JoinStepLogical & join_step,
-    const RuntimeFilterId & id,
-    const ColumnWithTypeAndName & join_key_probe_side,
-    const ColumnWithTypeAndName & join_key_build_side,
-    const DataTypePtr & common_type,
-    const QueryPlanOptimizationSettings & optimization_settings,
-    bool check_left_does_not_contain,
-    std::optional<UInt64> distinct_keys_hint,
-    bool distinct_keys_hint_matches_filter_key)
-{
-    LOG_TRACE(
-        getLogger("joinRuntimeFilter"),
-        "Runtime filter '{}' will be built from `{}` and applied to `{}`",
-        id.name,
-        join_key_build_side.name,
-        join_key_probe_side.name);
-
-    /// Add filter lookup to the probe subtree.
-    const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
-
-    /// Add building filter to the build subtree of join.
-    QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
-    new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
-        build_filter_node->step->getOutputHeader(),
-        join_key_build_side.name,
-        common_type,
-        id.name,
-        id.key,
-        optimization_settings.join_runtime_filter_exact_values_limit,
-        optimization_settings.join_runtime_bloom_filter_bytes,
-        optimization_settings.join_runtime_bloom_filter_hash_functions,
-        optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
-        optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
-        optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-        /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
-        /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
-        distinct_keys_hint,
-        distinct_keys_hint_matches_filter_key);
-    new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
-    new_build_filter_node->children = {build_filter_node};
-    build_filter_node = new_build_filter_node;
-
-    /// Record a descriptor so `HashJoin` can replace the `Set`/`BloomFilter` above with a
-    /// `SharedFixedHashTableRuntimeFilter` when its build side ends up as a `FixedHashMap`;
-    /// otherwise the `Set`/`BloomFilter` stays active. Carry the rendezvous key (`id.key`),
-    /// NOT the stable display name: the filter is registered in the lookup under that key, so
-    /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key. Also
-    /// carry `common_type`, because it is the type used both by the probe-side cast before
-    /// `__applyFilter` and by `BuildRuntimeFilterStep`.
-    if (join_step.getJoinSettings().join_runtime_filter_from_fixed_hash_table && !check_left_does_not_contain)
-    {
-        join_step.getJoinOperator().shared_runtime_filter_descriptors.push_back(
-            SharedRuntimeFilterDescriptor{id.key, join_key_build_side.name, common_type});
-    }
-
-    return filter_condition;
 }
 
 static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
@@ -463,24 +401,17 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 
         if (!join_key_build_side.type->equals(*join_key_probe_side.type))
         {
-            auto common_type = tryGetLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type});
-            if (!common_type)
+            try
             {
-                /// The keys still can be joined by the values that they have in common, see
-                /// `JoinCommon::tryGetCommonSubtypeForJoinKeys`, but a runtime filter cannot be built this way:
-                /// the values that are out of the common range become NULL, and for `NOT IN` that would
-                /// filter out the rows that have to be preserved. Give up on the filter, it is only an optimization.
-                /// If the JOIN itself cannot be performed, it will report this type mismatch on its own.
-                ///
-                /// The types compared here are always the ORIGINAL key types: the subtype fallback rewrites the
-                /// keys to `accurateCastOrNull` in `JoinStepLogical::predicateOperandsToCommonType`, which runs
-                /// from `addJoinPredicatesToTableJoin` while the logical step is converted to a physical one —
-                /// that is, after every query plan optimization pass, including this one. So the rewrite can
-                /// never hide the mismatch from this check, and a fallback JOIN never keeps a runtime filter
-                /// (`04669_join_key_no_supertype` asserts this for `LEFT ANTI`, where it would change results).
-                return false;
+                common_types.push_back(getLeastSupertype(DataTypes{join_key_build_side.type, join_key_probe_side.type}));
             }
-            common_types.push_back(std::move(common_type));
+            catch (Exception & ex)
+            {
+                ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+                    join_key_probe_side.name, join_key_probe_side.type->getName(),
+                    join_key_build_side.name, join_key_build_side.type->getName());
+                throw;
+            }
         }
         else
         {
@@ -537,8 +468,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                 /*allow_to_use_not_exact_filter_=*/false,
                 /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
-                distinct_keys_hint,
-                /*distinct_keys_hint_matches_filter_key_=*/true);
+                distinct_keys_hint);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -572,27 +502,55 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         for (size_t i = 0; i < join_keys_build_side.size(); ++i)
         {
             auto id = make_id(i);
+            const String filter_name = id.name;
 
             const auto & join_key_build_side = join_keys_build_side[i];
             const auto & join_key_probe_side = join_keys_probe_side[i];
             const auto & common_type = common_types[i];
 
-            const auto & filter_condition = addJoinKeyRuntimeFilter(
-                filter_dag,
-                build_filter_node,
-                nodes,
-                *join_step,
-                id,
-                join_key_probe_side,
-                join_key_build_side,
-                common_type,
-                optimization_settings,
-                check_left_does_not_contain,
-                distinct_keys_hint,
-                /*distinct_keys_hint_matches_filter_key=*/join_keys_build_side.size() == 1);
-            all_filter_conditions.push_back(
-                check_left_does_not_contain ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
-                                            : &filter_condition);
+            LOG_TRACE(getLogger("joinRuntimeFilter"), "Runtime filter '{}' will be built from `{}` and applied to `{}`",
+                filter_name, join_key_build_side.name, join_key_probe_side.name);
+
+            /// Add filter lookup to the probe subtree
+            const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
+            all_filter_conditions.push_back(check_left_does_not_contain
+                ? addNullBypassForAntiJoin(filter_dag, &filter_condition, {join_key_probe_side})
+                : &filter_condition);
+
+            /// Add building filter to the build subtree of join
+            {
+                QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
+                new_build_filter_node->step = std::make_unique<BuildRuntimeFilterStep>(
+                    build_filter_node->step->getOutputHeader(),
+                    join_key_build_side.name,
+                    common_type,
+                    filter_name,
+                    id.key,
+                    optimization_settings.join_runtime_filter_exact_values_limit,
+                    optimization_settings.join_runtime_bloom_filter_bytes,
+                    optimization_settings.join_runtime_bloom_filter_hash_functions,
+                    optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+                    optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+                    optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
+                    /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
+                    distinct_keys_hint);
+                new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
+                new_build_filter_node->children = {build_filter_node};
+
+                build_filter_node = new_build_filter_node;
+            }
+
+            /// Record a descriptor so HashJoin can replace the Set/BloomFilter above with a
+            /// SharedFixedHashTableRuntimeFilter when its build side ends up as a FixedHashMap;
+            /// otherwise the Set/BloomFilter stays as fallback. Carry the rendezvous key (`id.key`),
+            /// NOT the stable display name: the filter is registered in the lookup under that key, so
+            /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key.
+            if (join_step->getJoinSettings().join_runtime_filter_from_fixed_hash_table
+                && !check_left_does_not_contain)
+            {
+                join_step->getJoinOperator().shared_runtime_filter_descriptors.emplace_back(id.key, join_key_build_side.name);
+            }
         }
 
         if (all_filter_conditions.size() == 1)

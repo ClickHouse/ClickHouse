@@ -346,14 +346,14 @@ class SourceFromQueryPipeline : public ISource
 {
 public:
     explicit SourceFromQueryPipeline(QueryPipeline & pipeline_)
-        : ISource(std::make_shared<const Block>(pipeline_.getSharedHeader()->cloneEmpty()))
+        : ISource(pipeline_.getSharedHeader())
         , executor(pipeline_)
     {
         pipeline_.setConcurrencyControl(false);
     }
 
     explicit SourceFromQueryPipeline(BlockIO io)
-        : ISource(std::make_shared<const Block>(io.pipeline.getSharedHeader()->cloneEmpty()))
+        : ISource(io.pipeline.getSharedHeader())
         , io_holder(std::move(io))
         , executor(io_holder->pipeline)
     {

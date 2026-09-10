@@ -34,7 +34,6 @@
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
@@ -132,25 +131,11 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    /// The types below are read from the TimeSeries table, so reaching them requires what describing that
-    /// table requires.
-    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
-
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
-    /// Only the id column of the tags target is read below, and the rows this function returns come from a
-    /// query it generates, which authorizes that target per column. Checked before the lookup, because
-    /// looking a name up reports whether that target exists, which is its metadata and not the parent's.
-    if (auto configured_tags_target_id = time_series_storage->tryGetConfiguredExternalTargetTableID(ViewTarget::Tags, context);
-        !configured_tags_target_id.empty())
-        checkAccessToTimeSeriesTargetTableID(
-            configured_tags_target_id, context, AccessType::SHOW_COLUMNS, TimeSeriesColumnNames::ID);
-
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
-    checkAccessToTimeSeriesTargetTable(tags_target, context, AccessType::SHOW_COLUMNS, TimeSeriesColumnNames::ID);
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
@@ -385,11 +370,11 @@ namespace
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
         conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
-        /// For a whole-metric selector over a metric-clustered id layout one more condition is
-        /// added: indexHint(<raw id column> >= tuple(hash(metric_name), min) AND <raw id column>
-        /// <= tuple(hash(metric_name), max)). `indexHint` keeps it out of the row-level filter, so
-        /// its only purpose is to give the primary-key index analysis a continuous key range
-        /// instead of the large set (see readImpl).
+        /// For a whole-metric selector over a metric-clustered id layout two more conditions are
+        /// added: <raw id column> >= tuple(hash(metric_name), min) AND <raw id column> <= tuple(
+        /// hash(metric_name), max). They are a superset of the `id IN <set>` condition above, so
+        /// the returned rows do not change; their purpose is to give the primary-key index
+        /// analysis a continuous key range instead of the large set (see readImpl).
         for (auto & condition : whole_metric_id_range_conditions)
             conditions.push_back(std::move(condition));
 
@@ -549,11 +534,6 @@ namespace
     /// series id. The supported types are the ones `TimeSeriesIDGenerator` can generate hashes for.
     std::optional<std::pair<ASTPtr, ASTPtr>> makeMinMaxLiteralsForIDComponent(const IDataType & type)
     {
-        /// A LowCardinality component has the value space of its dictionary type: the range bounds
-        /// are the dictionary type's bounds (constants have no dictionary encoding of their own).
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&type))
-            return makeMinMaxLiteralsForIDComponent(*low_cardinality_type->getDictionaryType());
-
         WhichDataType which(type);
 
         if (which.isUInt64())
@@ -786,21 +766,15 @@ namespace
                 std::vector<String>{data_table_id.database_name, data_table_id.table_name, TimeSeriesColumnNames::ID});
         };
 
-        ASTs range_conditions;
-        range_conditions.push_back(makeASTFunction(
+        ASTs conditions;
+        conditions.push_back(makeASTFunction(
             "greaterOrEquals",
             make_qualified_id(),
             makeASTFunction("tuple", first_component->clone(), std::move(min_max_second_component->first))));
-        range_conditions.push_back(makeASTFunction(
+        conditions.push_back(makeASTFunction(
             "lessOrEquals",
             make_qualified_id(),
             makeASTFunction("tuple", std::move(first_component), std::move(min_max_second_component->second))));
-
-        /// Wrapped in `indexHint` so the range reaches index analysis but is not evaluated per row:
-        /// the `id IN <set>` condition the caller keeps is the exact filter, and on this path every
-        /// id of that set is inside the range (that is what the probe establishes).
-        ASTs conditions;
-        conditions.push_back(makeASTFunction("indexHint", makeASTForLogicalAnd(std::move(range_conditions))));
         return conditions;
     }
 }
@@ -836,17 +810,7 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    /// Authorized here rather than where this storage is created, so that a persistent table built over this
-    /// table function is authorized on every read, with the reader's own grants. Before the table is
-    /// resolved, so that an unauthorized reader learns nothing about it.
-    checkAccessToTimeSeriesTable(config.time_series_storage_id, context, AccessType::SELECT);
-
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
-
-    /// The resolved storage names itself, and that is the table the rows below are read from.
-    checkAccessToTimeSeriesTable(time_series_storage->getStorageID(), context, AccessType::SELECT);
-
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
@@ -907,15 +871,7 @@ void StorageTimeSeriesSelector::readImpl(
         context,
         log);
 
-    auto modified_context = Context::createCopy(context);
-    ContextPtr interpreter_context = modified_context;
-
-    if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read"))
-        modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read", UInt64{4 * 1024 * 1024});
-
-    if (!context->getSettingsRef().isChanged("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem"))
-        modified_context->setSetting("merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem", UInt64{4 * 1024 * 1024});
-
+    ContextPtr interpreter_context = context;
     if (!whole_metric_id_range_conditions.empty())
     {
         /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering
@@ -926,7 +882,9 @@ void StorageTimeSeriesSelector::readImpl(
         /// the same granules through the cheap continuous-range path. Setting
         /// `use_index_for_in_with_subqueries_max_values = 1` makes the set unusable for index
         /// analysis without affecting the row-level filter.
+        auto modified_context = Context::createCopy(context);
         modified_context->setSetting("use_index_for_in_with_subqueries_max_values", UInt64{1});
+        interpreter_context = modified_context;
         LOG_DEBUG(log, "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
                   quoteString(config.selector.toString()));
     }

@@ -6,7 +6,6 @@
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
-#include <Common/saturatedDuration.h>
 
 #include <Core/Settings.h>
 
@@ -152,11 +151,7 @@ private:
             started = true;
 
             String data_file_path = storage->table_path + "data.bin";
-            /// `allow_different_codecs = true`: the data file is append-only, so blocks written by
-            /// different inserts may use different codecs - in particular after a server upgrade that
-            /// changes the default compression codec (e.g. `LZ4` -> `ZSTD`). Each compressed block is
-            /// self-describing (the codec method byte is in its header), so a mixed-codec stream is valid.
-            data_in.emplace(storage->disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)), /* allow_different_codecs = */ true);
+            data_in.emplace(storage->disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
 
             /// Limit reads to the file size that was snapshotted under the read lock.
             /// The file may have grown since (due to concurrent inserts after lock release),
@@ -375,19 +370,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr local_context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return saturatedSeconds(lock_timeout);
-}
-
-size_t StorageStripeLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
-{
-    const auto lock_timeout = getLockTimeout(local_context);
-    loadIndices(lock_timeout);
-
-    ReadLock lock{rwlock, lock_timeout};
-    if (!lock)
-        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-
-    return std::min(num_streams, std::max(1uz, indices.blocks.size()));
+    return std::chrono::seconds{lock_timeout};
 }
 
 VirtualColumnsDescription StorageStripeLog::createVirtuals()
@@ -526,9 +509,7 @@ void StorageStripeLog::loadIndices(const WriteLock & lock /* already locked excl
 
     if (disk->existsFile(index_file_path))
     {
-        /// `allow_different_codecs = true`: the index file is append-only and may mix codecs across
-        /// inserts (e.g. after a server upgrade that changes the default compression codec).
-        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)), /* allow_different_codecs = */ true);
+        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, getContext()->getReadSettings().adjustBufferSize(4096)));
         indices.read(index_in);
     }
 
@@ -742,9 +723,7 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
                 throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", index_path_in_backup);
 
             auto index_in = backup->readFile(index_path_in_backup);
-            /// `allow_different_codecs = true`: the backed-up index may mix codecs across inserts
-            /// (e.g. if it was written across a server upgrade that changed the default codec).
-            CompressedReadBuffer index_compressed_in{*index_in, /* allow_different_codecs = */ true};
+            CompressedReadBuffer index_compressed_in{*index_in};
             extra_indices.read(index_compressed_in);
 
             /// Adjust the offsets.

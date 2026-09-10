@@ -69,30 +69,15 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
-
-    /// The engine of the TimeSeries table, the name of its target and that target's own engine are read
-    /// below, so reaching them requires what describing those two tables requires. The target's engine
-    /// also selects the source privilege this table function is checked against.
-    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
-    auto target_table = getAuthorizedTargetTable(context, AccessType::SHOW_COLUMNS);
-    target_table_type_name = target_table->getName();
+    target_table_type_name = getTargetTable(context)->getName();
 }
 
 
 template <ViewTarget::Kind target_kind>
-StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getAuthorizedTargetTable(const ContextPtr & context, AccessType access_type) const
+StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const ContextPtr & context) const
 {
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-
-    /// Before the lookup, because looking a name up reports whether it exists, and that is the target's
-    /// metadata rather than the TimeSeries table's.
-    if (auto configured_target_table_id = time_series_storage->tryGetConfiguredExternalTargetTableID(target_kind, context);
-        !configured_target_table_id.empty())
-        checkAccessToTimeSeriesTargetTableID(configured_target_table_id, context, access_type);
-
-    auto target_table = time_series_storage->getTargetTable(target_kind, context);
-    checkAccessToTimeSeriesTargetTable(target_table, context, access_type);
-    return target_table;
+    return time_series_storage->getTargetTable(target_kind, context);
 }
 
 
@@ -102,22 +87,15 @@ StoragePtr TableFunctionTimeSeriesTarget<target_kind>::executeImpl(
         ContextPtr context,
         const String & /* table_name */,
         ColumnsDescription /* cached_columns */,
-        bool is_insert_query) const
+        bool /* is_insert_query */) const
 {
-    /// Both tables, because the equivalent direct operation on the TimeSeries table authorizes both:
-    /// the TimeSeries table the user named, and the target table its rows actually come from.
-    const auto access_type = is_insert_query ? AccessType::INSERT : AccessType::SELECT;
-    checkAccessToTimeSeriesTable(time_series_storage_id, context, access_type);
-    return getAuthorizedTargetTable(context, access_type);
+    return getTargetTable(context);
 }
 
 template <ViewTarget::Kind target_kind>
 ColumnsDescription TableFunctionTimeSeriesTarget<target_kind>::getActualTableStructure(ContextPtr context, bool /* is_insert_query */) const
 {
-    /// Resolving a table structure is a read operation whatever the direction of the enclosing query.
-    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
-    auto target_table = getAuthorizedTargetTable(context, AccessType::SHOW_COLUMNS);
-    auto metadata_snapshot = target_table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = getTargetTable(context)->getInMemoryMetadataPtr(context, false);
     return metadata_snapshot->columns;
 }
 
@@ -286,18 +264,16 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
 | Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `pi`, `absent` |
+| Other | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
-
-**Note**: `ts_of_min_over_time` and `ts_of_max_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -309,11 +285,13 @@ Unary operators `+` and `-`.
 
 ### Aggregation Operators {#aggregation-operators}
 
-`sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
 ### Not yet supported {#not-yet-supported}
 
-- Range functions `predict_linear`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Aggregation operator `count_values`
+- Range functions `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Function `absent`
 
 ## Example {#example}
 
@@ -363,18 +341,16 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `sum_over_time`, `avg_over_time`, `count_over_time`, `max_over_time`, `min_over_time`, `ts_of_max_over_time`, `ts_of_min_over_time`, `deriv`, `changes`, `resets` |
+| Range | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets` |
 | Math | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `pi`, `absent` |
+| Other | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
-
-**Note**: `ts_of_min_over_time` and `ts_of_max_over_time` are experimental functions in Prometheus (enabled there with `--enable-feature=promql-experimental-functions`); ClickHouse evaluates them without requiring that flag.
 
 ### Operators {#operators}
 
@@ -386,11 +362,13 @@ Unary operators `+` and `-`.
 
 ### Aggregation Operators {#aggregation-operators}
 
-`sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — with optional `by()` or `without()` modifiers.
 
 ### Not yet supported {#not-yet-supported}
 
-- Range functions `predict_linear`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Aggregation operator `count_values`
+- Range functions `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Function `absent`
 
 ## Example {#example}
 

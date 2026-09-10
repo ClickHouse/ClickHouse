@@ -34,12 +34,10 @@
 #if ENABLE_DISTRIBUTED_CACHE
 #    include <Disks/IO/WriteBufferFromDistributedCache.h>
 #endif
-#include <base/sanitizer_defs.h>
 #include <base/sort.h>
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
-#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
@@ -66,15 +64,6 @@ namespace fs = std::filesystem;
 
 #include <fmt/ranges.h>
 
-namespace
-{
-#if defined(MEMORY_SANITIZER)
-constexpr UInt64 default_global_profiler_period_ns = 0;
-#else
-constexpr UInt64 default_global_profiler_period_ns = 10000000000;
-#endif
-}
-
 
 namespace CurrentMetrics
 {
@@ -93,7 +82,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -130,7 +118,7 @@ namespace
 
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. ClickHouse versions 26.7 and later support only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
+    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. This version supports only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -194,17 +182,6 @@ A value of `0` means unlimited.
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_size, 100, R"(
 Maximum total number of threads to use for parsing input.
-)", 0) \
-    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_size, 100, R"(
-Maximum total number of threads to use for decoding Iceberg data manifest files.
-
-The pool is separate from the IO pool on purpose: a decode task can block until the query consumes the entries it has produced, while the delete manifest decode waits for its tasks on the IO pool before any entry is consumed - sharing one pool could deadlock.
-)", 0) \
-    DECLARE(UInt64, max_iceberg_manifest_decode_thread_pool_free_size, 0, R"(
-Maximum number of idle standby threads to keep in the thread pool for decoding Iceberg data manifest files.
-)", 0) \
-    DECLARE(UInt64, iceberg_manifest_decode_thread_pool_queue_size, 10000, R"(
-The maximum number of jobs that can be scheduled on the thread pool for decoding Iceberg data manifest files.
 )", 0) \
     DECLARE(UInt64, max_format_parsing_thread_pool_free_size, 0, R"(
 Maximum number of idle standby threads to keep in the thread pool for parsing input.
@@ -549,13 +526,9 @@ A value of `0` means "never". The default value corresponds to 1 day.
 )", 0) \
     DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
-    DECLARE(UInt64, database_catalog_shutdown_table_concurrency, 0, R"(The size of the threadpool used for shutting down tables when the server is stopping. Zero means the number of threads is equal to the number of cores.)", 0) \
     \
     \
     DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_memory_pressure_elevated_level_pct, DEFAULT_MEMORY_PRESSURE_ELEVATED_PCT, R"(Memory-pressure threshold, as a percent of a memory tracker's hard limit, at which the experimental `ReaderExecutor` enters the `Elevated` memory-pressure level and starts shrinking its read window. The thresholds are applied to three scopes independently - the server total (`max_server_memory_usage`), the user (`max_memory_usage_for_user`) and the query (`max_memory_usage`) - and a reader takes the highest of the three, so one query near its own limit shrinks its window even while the server is idle. A scope with no hard limit contributes nothing. Must be in `[1, 100]` and satisfy `elevated <= high <= critical`; an out-of-range or out-of-order triple is rejected at startup and on `SYSTEM RELOAD CONFIG`. Zero is rejected because an `elevated` of 0 would put every scope at `Elevated`, including one with no hard limit.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_memory_pressure_high_level_pct, DEFAULT_MEMORY_PRESSURE_HIGH_PCT, R"(Memory-pressure threshold at which the experimental `ReaderExecutor` enters the `High` memory-pressure level. See `reader_executor_memory_pressure_elevated_level_pct` for the scopes, range and ordering rules.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_memory_pressure_critical_level_pct, DEFAULT_MEMORY_PRESSURE_CRITICAL_PCT, R"(Memory-pressure threshold at which the experimental `ReaderExecutor` enters the `Critical` memory-pressure level, its most aggressive read-window reduction. See `reader_executor_memory_pressure_elevated_level_pct` for the scopes, range and ordering rules.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
 Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
@@ -1231,8 +1204,8 @@ The replica name in ZooKeeper.
     DECLARE(UInt64, storage_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for storage connections (replication, distributed queries). If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_rcvbuf, 0, R"(The size of the SO_RCVBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the receive buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
     DECLARE(UInt64, http_connections_sndbuf, 0, R"(The size of the SO_SNDBUF option for general HTTP connections. If set to a value greater than 0, overrides the kernel TCP autotuning for the send buffer. 0 = kernel default (autotuning). Note: changing this setting back to 0 restores autotuning only for newly created connections; existing pooled connections retain fixed buffer sizes until they are recreated.)", 0) \
-    DECLARE(UInt64, global_profiler_real_time_period_ns, default_global_profiler_period_ns, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
-    DECLARE(UInt64, global_profiler_cpu_time_period_ns, default_global_profiler_period_ns, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling. Defaults to 0 in MemorySanitizer builds, where the sampling profiler is disabled.)", 0) \
+    DECLARE(UInt64, global_profiler_real_time_period_ns, 10000000000, R"(Period for real clock timer of global profiler (in nanoseconds). Set 0 value to turn off the real clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
+    DECLARE(UInt64, global_profiler_cpu_time_period_ns, 10000000000, R"(Period for CPU clock timer of global profiler (in nanoseconds). Set 0 value to turn off the CPU clock global profiler. Recommended value is at least 10000000 (100 times a second) for single queries or 1000000000 (once a second) for cluster-wide profiling.)", 0) \
     DECLARE(Bool, enable_azure_sdk_logging, false, R"(Enables logging from Azure sdk)", 0) \
     DECLARE(Bool, s3queue_disable_streaming, false, "Disable streaming in S3Queue even if the table is created and there are attached materiaized views", 0) \
     DECLARE(Bool, message_queue_disable_insertion, false, "Disable insertion from message queue engines (Kafka, RabbitMQ, NATS) into attached materialized views", 0) \
@@ -1401,6 +1374,7 @@ Threads for cleanup of shared merge tree snapshot cleaner threads. Only availabl
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
 Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
 )", 0) \
+    DECLARE(String, license_file, "", "License file contents for ClickHouse Enterprise Edition", 0) \
     DECLARE(String, license_public_key_for_testing, "", "Licensing demo key, for CI use only", 0) \
     DECLARE(Bool, show_license_expiration_warnings, true, "Show the warning about the upcoming license expiration in system.warnings", 0) \
     DECLARE(NonZeroUInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
@@ -1584,11 +1558,10 @@ If enabled, every ZooKeeper request must have a component name set via `Coordina
 )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_experimental_webassembly_udf, false, R"(Enable experimental support for WebAssembly UDFs)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_silk_runtime, false, R"(Enable experimental support for the silk fiber runtime: initialize the silk fiber scheduler at server startup, so that subsystems supporting it can run their jobs on fibers)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_executable_udf_drivers, false, R"(Enable experimental support for drivers for executable user-defined functions, declared via `user_defined_executable_function_drivers_config`. A driver turns a user code snippet supplied in `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` into a runnable executable UDF.)", EXPERIMENTAL) \
     DECLARE(Bool, enable_webterminal, true, R"(Enable the web terminal interface at the `/webterminal` HTTP endpoint. Provides an interactive `clickhouse-client` session in the browser via WebSocket. When `false`, requests to `/webterminal` return HTTP status `403 Forbidden`.)", 0) \
     DECLARE(String, webterminal_allowed_origins, "", R"(Comma-separated list of full origins (scheme + host + optional port) allowed to open `/webterminal` WebSocket sessions. When empty, the same-origin policy is enforced strictly (Origin must match the request scheme, host, and port). Set this for deployments behind a TLS-terminating reverse proxy where `request.isSecure()` is `false` even though the browser uses `https`. Example: `https://example.com,https://app.example.com:8443`.)", 0) \
-    DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. The only supported value is 'wasmtime'.", EXPERIMENTAL) \
+    DECLARE(String, webassembly_udf_engine, "wasmtime", "The engine used to execute WebAssembly UDFs. Supported values are 'wasmtime' and 'wasmedge'.", EXPERIMENTAL) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user). The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(Bool, allow_experimental_webterminal, true, R"(Former (experimental) name of `enable_webterminal`. Still honored for backward compatibility when `enable_webterminal` is not set. The setting is deprecated.)", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
@@ -1902,7 +1875,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
     DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \
     DECLARE(String, openssl_server_certificate_file, "", R"(Path to the client/server certificate file in PEM format. You can omit it if `<privateKeyFile>` contains the certificate.)", 0, "openSSL.server.certificateFile") \
-    DECLARE(String, openssl_server_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). The CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`; new connections are verified against the reloaded certificates.)", 0, "openSSL.server.caConfig") \
+    DECLARE(String, openssl_server_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).)", 0, "openSSL.server.caConfig") \
     DECLARE(String, openssl_server_verification_mode, "relaxed", R"(The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `<none>`, `<relaxed>`, `<strict>`, `<once>`.)", 0, "openSSL.server.verificationMode") \
     DECLARE(UInt64, openssl_server_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.server.verificationDepth") \
     DECLARE(Bool, openssl_server_load_default_ca_file, true, R"(Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.server.loadDefaultCAFile") \
@@ -1922,7 +1895,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, openssl_server_prefer_server_ciphers, false, R"(Client-preferred server ciphers.)", 0, "openSSL.server.preferServerCiphers") \
     DECLARE(String, openssl_client_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.client.privateKeyFile") \
     DECLARE(String, openssl_client_certificate_file, "", R"(Path to the client/server certificate file in PEM format. You can omit it if `<privateKeyFile>` contains the certificate.)", 0, "openSSL.client.certificateFile") \
-    DECLARE(String, openssl_client_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/). The CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`; new connections are verified against the reloaded certificates.)", 0, "openSSL.client.caConfig") \
+    DECLARE(String, openssl_client_ca_config, "", R"(Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://docs.openssl.org/3.0/man3/SSL_CTX_load_verify_locations/).)", 0, "openSSL.client.caConfig") \
     DECLARE(String, openssl_client_verification_mode, "relaxed", R"(The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `<none>`, `<relaxed>`, `<strict>`, `<once>`.)", 0, "openSSL.client.verificationMode") \
     DECLARE(UInt64, openssl_client_verification_depth, 9, R"(The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.)", 0, "openSSL.client.verificationDepth") \
     DECLARE(Bool, openssl_client_load_default_ca_file, true, R"(Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).)", 0, "openSSL.client.loadDefaultCAFile") \
@@ -1960,26 +1933,7 @@ DECLARE_SETTINGS_TRAITS_WITH_PATH(ServerSettingsTraits, LIST_OF_SERVER_SETTINGS_
 struct ServerSettingsImpl : public BaseSettings<ServerSettingsTraits>
 {
     void loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config);
-    void set(std::string_view name, const Field & value) override;
 };
-
-void ServerSettingsImpl::set(std::string_view name, const Field & value)
-{
-#if defined(MEMORY_SANITIZER)
-    if (name == "global_profiler_real_time_period_ns" || name == "global_profiler_cpu_time_period_ns")
-    {
-        if (BaseSettings::castValueUtil(name, value).safeGet<UInt64>() != 0)
-        {
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "The server setting `{}` is not supported in a MemorySanitizer build",
-                name);
-        }
-    }
-#endif
-
-    BaseSettings::set(name, value);
-}
 
 void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
@@ -2165,6 +2119,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "dictionary",
         "lemmatizers",
         "synonyms_extensions",
+        "catboost_lib_path",
         "path_to_regions_hierarchy_file",
         "path_to_regions_names_files",
 
@@ -2287,11 +2242,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "odbc_bridge",
         "jdbc_bridge",
 
-        /// The license text. Read directly from the config by the enterprise build and deliberately not
-        /// declared as a server setting: a `ServerSettings` entry is returned verbatim by
-        /// `system.server_settings` and by `getServerSetting`, and no user needs to read the license.
-        "license_file",
-
         /// Sections used in private builds (shared catalog, distributed cache, stateless workers, cloud readiness)
         "shared_database_catalog",
         "shared_merge_tree",
@@ -2378,8 +2328,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// (e.g., cloud installations carrying historical settings). Kept here so
         /// that upgrading installations don't fail to start due to leftover keys.
         "format_alter_operations_with_parentheses",
-        /// The CatBoost integration is removed, but a leftover `catboost_lib_path` must not prevent the server from starting.
-        "catboost_lib_path",
 
         /// Background pool settings (legacy, moved to merge_tree section)
         "background_processing_pool_thread_sleep_seconds",
@@ -2423,9 +2371,6 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// SSL and security
         "ssh",
         "ssh_server",
-
-        /// Silk fiber runtime
-        "silk",
 
         /// Testing
         "_functional_tests_helper_database_replicated_replace_args_macros",
@@ -3555,24 +3500,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 {
     using ChangeableWithoutRestart = ServerSettings::ChangeableWithoutRestart;
 
-    const MemoryPressureThresholds memory_pressure_thresholds = getMemoryPressureThresholds();
-
     ChangeableSettingsMap changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
             {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
             {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
-
-            /// Report the live thresholds, not the values captured at startup. One snapshot for all
-            /// three rows: reading three times could straddle a reload and report thresholds that were
-            /// never published, such as an out-of-order one.
-            {"reader_executor_memory_pressure_elevated_level_pct",
-             {std::to_string(memory_pressure_thresholds.elevated_pct), ChangeableWithoutRestart::Yes}},
-            {"reader_executor_memory_pressure_high_level_pct",
-             {std::to_string(memory_pressure_thresholds.high_pct), ChangeableWithoutRestart::Yes}},
-            {"reader_executor_memory_pressure_critical_level_pct",
-             {std::to_string(memory_pressure_thresholds.critical_pct), ChangeableWithoutRestart::Yes}},
 
             /// Named collections metadata storage is initialized once, so use its effective startup type.
             {"named_collections_storage_type",
@@ -3644,6 +3577,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
+            {"license_file", {context->getLicenseFile(), ChangeableWithoutRestart::Yes}},
             {"show_license_expiration_warnings", {std::to_string(context->getShowLicenseExpirationWarnings()), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
@@ -3711,12 +3645,6 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"format_parsing_thread_pool_queue_size",
              {getFormatParsingThreadPool().isInitialized() ? std::to_string(getFormatParsingThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_iceberg_manifest_decode_thread_pool_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"max_iceberg_manifest_decode_thread_pool_free_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
-            {"iceberg_manifest_decode_thread_pool_queue_size",
-             {getIcebergManifestDecodeThreadPool().isInitialized() ? std::to_string(getIcebergManifestDecodeThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
 
             {"abort_on_logical_error", {std::to_string(DB::abort_on_logical_error), ChangeableWithoutRestart::Yes}},
 
