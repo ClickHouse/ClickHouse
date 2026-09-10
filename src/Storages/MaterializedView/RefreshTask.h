@@ -88,6 +88,10 @@ public:
         std::string last_attempt_replica;
         std::string last_attempt_error;
         bool last_attempt_succeeded = false;
+        /// Whether the last started attempt was an out-of-schedule refresh (`SYSTEM REFRESH VIEW`)
+        /// rather than a scheduled one. Kept in the znode so that `SYSTEM WAIT VIEW` on a stopped
+        /// view reports a failed hand-requested refresh on every replica, not just the one that ran it.
+        bool last_attempt_out_of_schedule = false;
         /// If an attempt is in progress, this contains error from the previous attempt.
         /// Useful if we keep retrying and failing, and each attempt takes a while - we want to see an error message
         /// without having to catch the brief time window between attempts.
@@ -323,8 +327,6 @@ private:
         std::optional<String> unexpected_error;
         /// Decremented when the refresh starts.
         UInt64 out_of_schedule_refreshes_requested = 0;
-        /// Whether the last completed attempt was an out-of-schedule refresh (SYSTEM REFRESH VIEW).
-        bool last_refresh_was_out_of_schedule = false;
 
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.

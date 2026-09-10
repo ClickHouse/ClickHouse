@@ -701,7 +701,7 @@ void RefreshTask::wait(const ContextPtr & context)
     else if (!znode.last_attempt_succeeded
         && znode.last_attempt_time.time_since_epoch().count() != 0
         && znode.last_attempt_error != "cancelled"
-        && (!disabled || scheduling.last_refresh_was_out_of_schedule))
+        && (!disabled || znode.last_attempt_out_of_schedule))
     {
         throw Exception(ErrorCodes::REFRESH_FAILED, "Refresh failed{}: {}",
             coordination.coordinated ? " (on replica " + znode.last_attempt_replica + ")" : "",
@@ -1293,7 +1293,7 @@ void RefreshTask::executeRefresh()
     znode.last_attempt_time = end_time_seconds;
     znode.last_attempt_error = error_message;
     znode.refresh_running = false;
-    scheduling.last_refresh_was_out_of_schedule = execution.out_of_schedule;
+    znode.last_attempt_out_of_schedule = execution.out_of_schedule;
     if (new_table_uuid.has_value())
     {
         znode.last_attempt_succeeded = true;
@@ -2134,6 +2134,8 @@ String RefreshTask::CoordinationZnode::toString() const
     last_success_dependencies.writeText(out);
     out << "\n";
 
+    out << "last_attempt_out_of_schedule: " << last_attempt_out_of_schedule << "\n";
+
     return out.str();
 }
 
@@ -2223,6 +2225,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
 
     optional_field("last_success_end_time_ns", last_success_end_time);
     optional_field("last_success_dependencies", last_success_dependencies);
+    optional_field("last_attempt_out_of_schedule", last_attempt_out_of_schedule);
 
     if (!next_field_name.empty())
     {
