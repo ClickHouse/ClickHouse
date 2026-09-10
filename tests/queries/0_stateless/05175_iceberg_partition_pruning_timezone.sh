@@ -3,15 +3,18 @@
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 #
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/119173:
-# an Iceberg partition value is the UTC floor of the stored instant, but the pruner rebuilt the
-# partition key with `toRelativeDayNum`/`toRelativeHourNum`, which floor in the timezone of the
-# source column. Iceberg `timestamp` maps to a zone-less `DateTime64(6)`, so that timezone is the
-# session's or the server's: under a non-UTC one the pruner derived a shifted partition value and
-# silently skipped files that hold matching rows, with no error and no log line.
+# an Iceberg partition value is the UTC floor of the stored instant, but the pruner derives the value
+# it compares against in a timezone that need not be UTC. Iceberg `timestamp` maps to a zone-less
+# `DateTime64(6)`, so the zone comes from the query or from whatever froze the column type. Under a
+# non-UTC one the pruner derives a shifted partition value and silently skips files that hold
+# matching rows, with no error and no log line. `use_iceberg_partition_pruning` is on by default.
 #
-# The same query is asked in three shapes, because they do not share one partition key: the table as
-# just created in this server, the same directory through the table function, and the same table
-# after DETACH/ATTACH. All three must agree with the unpruned count.
+# The same query is asked in three shapes, which are measured to disagree: the table as just created
+# in this server, the same directory through the table function, and the same table after
+# DETACH/ATTACH. Each arm that can lose a row is paired with the same query at
+# `use_iceberg_partition_pruning = 0`: that control returns 1, so the row is present in the file and
+# only pruning removes it. Without the control an arm cannot tell a pruning bug from a predicate
+# that names the wrong instant.
 #
 # Every statement pins `session_timezone`, because the test runner randomizes that setting.
 
