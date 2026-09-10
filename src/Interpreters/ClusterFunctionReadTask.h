@@ -21,8 +21,8 @@ struct ClusterFunctionReadTaskResponse
     String path;
     std::optional<size_t> read_source_index;
     /// Initiator-only capability marker. It is not serialized; `serialize` uses it to reject workers
-    /// whose cluster-function protocol predates distributed URL archive tasks.
-    bool is_url_archive_task = false;
+    /// whose cluster-function protocol predates distributed Web object-storage URL tasks.
+    bool is_web_url_task = false;
     FileBucketInfoPtr file_bucket_info;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;

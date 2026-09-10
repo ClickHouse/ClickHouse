@@ -48,18 +48,6 @@ namespace
         std::list<ObjectInfoPtr> objects;
     };
 
-    class TestArchiveObjectInfo : public ObjectInfo
-    {
-    public:
-        explicit TestArchiveObjectInfo(RelativePathWithMetadata path)
-            : ObjectInfo(std::move(path))
-        {
-        }
-
-        bool isArchive() const override { return true; }
-        std::string getPathToArchive() const override { return getPath(); }
-    };
-
     // Make path like '/path/file0'
     std::string makePath(size_t file_num)
     {
@@ -317,29 +305,29 @@ TEST(ObjectInfo, IdentifierWithoutFileBucketInfoKeepsReadSourceIndex)
     ASSERT_EQ(object_info.getIdentifier(/*include_file_bucket_info=*/ false), "7:dir/file.parquet");
 }
 
-TEST(ClusterFunctionReadTaskResponse, RejectsOldProtocolForURLArchiveTask)
+TEST(ClusterFunctionReadTaskResponse, RejectsOldProtocolForWebURLTask)
 {
-    auto archive = std::make_shared<TestArchiveObjectInfo>(RelativePathWithMetadata{"/path/archive.zip", 0});
+    auto object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{"/path/part.tsv", 0});
     auto context = DB::Context::createCopy(::getContext().context);
-    ClusterFunctionReadTaskResponse response(archive, context);
-    ASSERT_TRUE(response.is_url_archive_task);
+    ClusterFunctionReadTaskResponse response(object, context);
+    ASSERT_TRUE(response.is_web_url_task);
 
     String rejected_serialized;
     WriteBufferFromString rejected_out(rejected_serialized);
     try
     {
-        response.serialize(rejected_out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS - 1);
+        response.serialize(rejected_out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS - 1);
         FAIL() << "Expected UNKNOWN_PROTOCOL";
     }
     catch (const DB::Exception & e)
     {
         EXPECT_EQ(e.code(), DB::ErrorCodes::UNKNOWN_PROTOCOL);
-        EXPECT_NE(e.message().find("cannot process distributed `urlCluster` archive tasks"), String::npos);
+        EXPECT_NE(e.message().find("cannot process distributed Web `urlCluster` tasks"), String::npos);
     }
 
     String supported_serialized;
     WriteBufferFromString supported_out(supported_serialized);
-    response.serialize(supported_out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS);
+    response.serialize(supported_out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS);
     supported_out.finalize();
 
     ReadBufferFromString supported_in(supported_serialized);
@@ -357,7 +345,7 @@ TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
 
     String serialized;
     WriteBufferFromString out(serialized);
-    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_URL_ARCHIVE_TASKS - 1);
+    response.serialize(out, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS - 1);
     out.finalize();
 
     ReadBufferFromString in(serialized);
