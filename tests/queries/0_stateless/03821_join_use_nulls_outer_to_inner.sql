@@ -21,6 +21,7 @@ SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 0;
 SET join_use_nulls = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1;
+SET query_plan_derive_not_null_filters_from_joins = 1; -- CI may inject False; the conversions asserted below are driven by these derived filters
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET enable_join_runtime_filters = 0;

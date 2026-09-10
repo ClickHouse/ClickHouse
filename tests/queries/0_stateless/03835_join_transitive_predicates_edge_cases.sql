@@ -262,7 +262,10 @@ SELECT explain FROM (
     EXPLAIN actions = 1
     SELECT count() FROM nlc1, nu2, nlc3 WHERE nlc1.x = nu2.x AND nu2.x = nlc3.x
     SETTINGS query_plan_optimize_join_order_algorithm = 'greedy',
-             query_plan_join_swap_table = 'false'
+             query_plan_join_swap_table = 'false',
+             -- Unlike 14a and 14c these tables declare no statistics, so pin the reader too: CI randomizes
+             -- `auto_statistics_types`, which supplies some anyway and costs a different order for greedy.
+             use_statistics = 0
 ) WHERE explain LIKE '%Clauses%';
 
 DROP TABLE nlc1; DROP TABLE nu2; DROP TABLE nlc3;
