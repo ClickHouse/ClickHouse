@@ -832,14 +832,13 @@ private:
     /// how far it landed from the budget, keeping the largest candidate known to fit and the
     /// smallest known to overflow, so the bracket shrinks on every step.
     ///
-    /// `rows_hint` carries the count the previous batch fitted, so the walk over one block pays
-    /// the bootstrap once rather than per batch. It lives for a single block: a hint is a row
-    /// count, and a row count only means something for rows of a known width, so a count fitted
-    /// by a narrow block would have the next block materialize that many wide rows before any
-    /// measurement of those rows justified it. Every candidate a probe builds is therefore
-    /// derived from a measurement of the block it belongs to.
+    /// Every candidate is bounded by rows already measured: the walk starts at one row and grows
+    /// by a bounded factor per probe. Nothing is carried over from a previous batch or block,
+    /// because a row count only means something for rows of a known width - a count fitted by
+    /// narrow rows would have the next batch materialize that many wide rows before any
+    /// measurement justified it, recreating the oversized call the split exists to avoid.
     size_t chooseBatchRows(
-        const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t remaining, size_t budget, size_t & rows_hint) const
+        const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t remaining, size_t budget) const
     {
         /// A function without arguments is handed no input buffer, so no size bounds its calls.
         if (arguments.empty())
@@ -849,14 +848,19 @@ private:
         /// more serializations than the few rows it could still gain.
         static constexpr double good_enough_fill = 0.75;
         static constexpr size_t max_probes = 16;
+        /// A probe may only ask for this many times the rows the previous probe measured. The
+        /// rescaled count is an extrapolation from a prefix, and a prefix of narrow rows says
+        /// nothing about wider rows later in the block, so growth is paid for by rows already
+        /// materialized. Reaching any batch size still costs a logarithmic number of probes.
+        static constexpr size_t max_growth_per_probe = 4;
 
-        /// Probe upwards from a single row when nothing is known yet, rather than downwards from
-        /// the whole block. A probe serializes the candidate, and for a wire that does not carry
-        /// constness a `ColumnConst` argument is materialized to do it, so a first probe of the
-        /// whole block would expand exactly the input the splitting exists to rescue. Measuring
-        /// one row over-states the marginal cost, because it carries the whole per-batch state,
-        /// so the rescaled candidate is an undershoot that later probes grow into.
-        size_t candidate = std::clamp(rows_hint == 0 ? static_cast<size_t>(1) : rows_hint, static_cast<size_t>(1), remaining);
+        /// Probe upwards from a single row, rather than downwards from the whole block. A probe
+        /// serializes the candidate, and for a wire that does not carry constness a `ColumnConst`
+        /// argument is materialized to do it, so a first probe of the whole block would expand
+        /// exactly the input the splitting exists to rescue. Measuring one row over-states the
+        /// marginal cost, because it carries the whole per-batch state, so the rescaled candidate
+        /// is an undershoot that later probes grow into.
+        size_t candidate = 1;
         size_t largest_fitting = 0;
         size_t smallest_overflowing = remaining + 1;
 
@@ -885,15 +889,15 @@ private:
             size_t next = measured == 0
                 ? remaining
                 : static_cast<size_t>(static_cast<double>(candidate) * static_cast<double>(budget) / static_cast<double>(measured));
+            if (next > candidate)
+                next = std::min(next, candidate * max_growth_per_probe);
             next = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
             if (next == candidate)
                 break;
             candidate = next;
         }
 
-        const size_t chosen = std::max<size_t>(largest_fitting, 1);
-        rows_hint = chosen;
-        return chosen;
+        return std::max<size_t>(largest_fitting, 1);
     }
 
     void appendBatchResult(MutableColumnPtr & result_column, MutableColumnPtr batch_column) const
@@ -956,9 +960,8 @@ private:
             /// Take the rows a call can hold, measure the call, and start the next one where
             /// it ended. A stride derived from an average row size cannot bound a skewed block:
             /// one huge row among many tiny ones would still share a call with its neighbours.
-            size_t rows_hint = 0;
             while (batch_start < input_rows_count)
-                flush_batch(batch_start + chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget, rows_hint));
+                flush_batch(batch_start + chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget));
         }
         else if (fixed_block_size > 0)
         {
