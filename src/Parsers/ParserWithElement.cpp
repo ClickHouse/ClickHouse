@@ -260,6 +260,75 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 - **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 
+## Parameterized Common Table Expressions {#parameterized-common-table-expressions}
+
+A Common Table Expression whose body contains query parameters is a template: it is not a table expression
+on its own, and every reference to it must supply the parameter values, in the same syntax used to call a
+[parameterized view](/sql-reference/statements/create/view#parameterized-view).
+
+The placeholders in the body are not substituted from the query parameters when the query is parsed - they
+are kept until a reference expands them.
+
+### Syntax {#parameterized-common-table-expressions-syntax}
+
+```sql
+WITH <identifier> AS (SELECT ... {<parameter name>:<parameter type>} ...)
+SELECT ... FROM <identifier>(<parameter name> = <value>[, ...])
+```
+
+### Examples {#parameterized-common-table-expressions-examples}
+
+```sql
+WITH t AS (SELECT {v:String} AS value) SELECT * FROM t(v = 'Hello, world!');
+```
+
+```response
+┌─value─────────┐
+│ Hello, world! │
+└───────────────┘
+```
+
+The same Common Table Expression can be referenced more than once with different values:
+
+```sql
+WITH t AS (SELECT {a:UInt32} + {b:UInt32} AS result)
+SELECT x.result + y.result AS total
+FROM t(a = 1, b = 2) AS x, t(a = 10, b = 20) AS y;
+```
+
+```response
+┌─total─┐
+│    33 │
+└───────┘
+```
+
+A parameterized Common Table Expression is visible in child subqueries, like an ordinary one:
+
+```sql
+WITH t AS (SELECT {v:String} AS value) SELECT * FROM (SELECT * FROM t(v = 'Hello, world!'));
+```
+
+A value supplied by the reference wins over a query parameter of the same name, and a query parameter
+supplies only the parameters the reference left out:
+
+```sql
+SET param_greeting = 'Hello', param_subject = 'world';
+WITH t AS (SELECT concat({greeting:String}, ', ', {subject:String}) AS value)
+SELECT * FROM t(subject = 'ClickHouse');
+```
+
+```response
+┌─value─────────────┐
+│ Hello, ClickHouse │
+└───────────────────┘
+```
+
+### Restrictions {#parameterized-cte-restrictions}
+
+- **Analyzer required**: parameterized Common Table Expressions only work with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled (`enable_analyzer = 1`).
+- **Every reference must supply arguments**: the body is a template, so a reference written without an argument list does not resolve to it.
+- **No recursion**: a reference to a parameterized Common Table Expression from inside its own body does not expand it, the same way recursion is prevented for an ordinary Common Table Expression.
+
 ## Common Scalar Expressions {#common-scalar-expressions}
 
 ClickHouse allows you to declare aliases to arbitrary scalar expressions in the `WITH` clause.

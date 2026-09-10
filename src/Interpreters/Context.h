@@ -726,6 +726,13 @@ protected:
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
 
+    /// Bodies of the parameterized common table expressions visible in the scope this context belongs to,
+    /// kept as ASTs because their `ASTQueryParameter` placeholders are only substituted when the CTE is
+    /// invoked. Written by `QueryTreeBuilder` for the query node that declares them, read by
+    /// `QueryAnalyzer` when it expands an invocation. Every nested query node copies its parent's context,
+    /// so an inner scope inherits the outer declarations and shadows them by declaring its own.
+    std::unordered_map<String, ASTPtr> parameterized_cte_asts;
+
     IHostContextPtr host_context;  /// Arbitrary object that may used to attach some host specific information to query context,
                                    /// when using ClickHouse as a library in some project. For example, it may contain host
                                    /// logger, some query identification information, profiling guards, etc. This field is
@@ -1955,6 +1962,10 @@ public:
 
     /// Overrides values of existing parameters.
     void addQueryParameters(const NameToNameMap & parameters);
+
+    /// Bodies of parameterized common table expressions declared in this scope, see the member declaration.
+    void setParameterizedCTE(const String & name, ASTPtr body);
+    ASTPtr tryGetParameterizedCTE(const String & name) const;
 
 
     IHostContextPtr & getHostContext();

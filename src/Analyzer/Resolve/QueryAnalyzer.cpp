@@ -62,6 +62,7 @@
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
 #include <Interpreters/JoinUtils.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/convertColumnToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
@@ -4688,6 +4689,66 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                     }
                 }
             }
+        }
+
+        /** A parameterized common table expression is invoked with the same syntax as a parameterized
+          * view, so it is parsed as a table function and lands here. Its body was left as an AST by
+          * `QueryTreeBuilder` because it still carries the `ASTQueryParameter` placeholders that this
+          * invocation supplies - see `Context::tryGetParameterizedCTE`. The lookup goes through the
+          * context rather than through `scope.cte_name_to_query_node`, so a CTE declared by an enclosing
+          * query stays visible here exactly as it is for an ordinary reference: every nested query node
+          * copies its parent's context, and an inner declaration of the same name shadows the outer one.
+          *
+          * A CTE shadows a table or a view of the same name, so this runs before the parameterized view
+          * lookup below.
+          */
+        if (auto parameterized_cte_ast = scope_context->tryGetParameterizedCTE(table_function_name);
+            parameterized_cte_ast && !parameterized_ctes_in_resolve_process.contains(table_function_name))
+        {
+            /// The invocation wins; the query parameters fill in only what the invocation did not supply.
+            auto parameters = scope_context->getQueryParameters();
+            for (const auto & [parameter_name, parameter_value] : view_params)
+                parameters[parameter_name] = parameter_value;
+
+            /// Substitute into a copy: the same CTE can be invoked again with different arguments.
+            auto substituted_cte_ast = parameterized_cte_ast->clone();
+            ReplaceQueryParameterVisitor(parameters).visit(substituted_cte_ast);
+
+            auto cte_node = buildQueryTree(substituted_cte_ast, scope_context);
+
+            if (auto * cte_query_node = cte_node->as<QueryNode>())
+                cte_query_node->setIsSubquery(true);
+            else
+                cte_node->as<UnionNode &>().setIsSubquery(true);
+
+            /// Without an explicit alias the CTE name qualifies the columns, as it does for `FROM t`.
+            const auto & table_function_alias = table_function_node->getAlias();
+            cte_node->setAlias(table_function_alias.empty() ? table_function_name : table_function_alias);
+
+            /// The node is tracked only when it came from the join tree; a nested table function argument
+            /// was never registered, and registering its replacement would leave a dangling entry behind.
+            const bool was_in_resolve_process = scope.table_expressions_in_resolve_process.erase(table_function_node.get()) > 0;
+
+            /// `resolveQueryJoinTreeNode` entered this function on the table function node and initializes
+            /// the table expression as soon as it returns, so the subquery has to be resolved here. This
+            /// mirrors the ordinary CTE path: a child scope one subquery deeper, guarded against a
+            /// reference to the CTE from inside its own body.
+            IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(cte_node, &scope /*parent_scope*/);
+            subquery_scope.subquery_depth = scope.subquery_depth + 1;
+
+            parameterized_ctes_in_resolve_process.insert(table_function_name);
+
+            if (cte_node->getNodeType() == QueryTreeNodeType::QUERY)
+                resolveQuery(cte_node, subquery_scope);
+            else
+                resolveUnion(cte_node, subquery_scope);
+
+            parameterized_ctes_in_resolve_process.erase(table_function_name);
+
+            table_function_node = cte_node;
+            if (was_in_resolve_process)
+                scope.table_expressions_in_resolve_process.insert(table_function_node.get());
+            return;
         }
 
         auto context = scope_context->getQueryContext();

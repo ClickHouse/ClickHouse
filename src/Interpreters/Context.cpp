@@ -1474,6 +1474,7 @@ ContextData::ContextData(const ContextData &o) :
     runtime_filter_lookup(o.runtime_filter_lookup),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
+    parameterized_cte_asts(o.parameterized_cte_asts),
     host_context(o.host_context),
     metadata_transaction(o.metadata_transaction),
     merge_tree_transaction(o.merge_tree_transaction),
@@ -7969,6 +7970,21 @@ void Context::setQueryParameter(const String & name, const String & value)
     if (!query_parameters.emplace(name, value).second)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
 }
+
+void Context::setParameterizedCTE(const String & name, ASTPtr body)
+{
+    parameterized_cte_asts[name] = std::move(body);
+}
+
+
+ASTPtr Context::tryGetParameterizedCTE(const String & name) const
+{
+    auto it = parameterized_cte_asts.find(name);
+    if (it == parameterized_cte_asts.end())
+        return nullptr;
+    return it->second;
+}
+
 
 void Context::addQueryParameters(const NameToNameMap & parameters)
 {
