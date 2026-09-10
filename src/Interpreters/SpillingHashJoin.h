@@ -109,6 +109,10 @@ public:
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(size_t matched_right_rows) override;
 
+    bool canSpillToDisk() const override { return true; }
+    size_t getSpillableBytes() const override;
+    void requestSpill() override;
+
     /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
     /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
     /// fixed hash map, publishing the shared runtime filter).
@@ -130,7 +134,9 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
-    void switchToGraceHashJoin();
+    /// `spill_immediately` is for the memory-pressure path: the new GraceHashJoin repartitions as it
+    /// takes the data over, instead of holding all of it in bucket 0 until the next spill request.
+    void switchToGraceHashJoin(bool spill_immediately = false);
     void tryConvertSlots();
 
     LoggerPtr log;
