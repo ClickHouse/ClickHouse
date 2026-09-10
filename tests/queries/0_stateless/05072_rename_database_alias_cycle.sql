@@ -51,8 +51,9 @@ RENAME DATABASE db_05072_ok TO db_05072_ok_renamed;
 SELECT count() FROM db_05072_ok_renamed.t;
 
 DROP DATABASE db_05072_from;
-DROP DATABASE db_05072_keep;
+-- `db_05072_cross.d` depends on `db_05072_keep.u`, so the dependent database goes first.
 DROP DATABASE db_05072_cross;
+DROP DATABASE db_05072_keep;
 DROP DATABASE db_05072_pair;
 DROP DATABASE db_05072_ok_renamed;
 DROP VIEW v_05072;
