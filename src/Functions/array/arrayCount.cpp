@@ -1,6 +1,8 @@
 #include <Columns/ColumnsNumber.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Interpreters/Context.h>
 
 #include <Functions/array/FunctionArrayMapped.h>
 
@@ -12,9 +14,18 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace Setting
+{
+    extern const SettingsBool array_count_legacy_uint32_result;
+}
+
 /** arrayCount(x1,...,xn -> expression, array1,...,arrayn) - for how many elements of the array the expression is true.
   * An overload of the form f(array) is available, which works in the same way as f(x -> x, array).
   */
+/// `legacy_constness`: before version 26.9, a predicate folding to a constant false produced a constant
+/// result column, while every other predicate produced a full one. The compatibility setting restores
+/// that as well, so that the legacy mode reproduces the old contract of `arrayCount` completely.
+template <typename ResultType, bool legacy_constness>
 struct ArrayCountImpl
 {
     static bool needBoolean() { return true; }
@@ -23,7 +34,10 @@ struct ArrayCountImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & /*expression_return*/, const DataTypePtr & /*array_element*/)
     {
-        return std::make_shared<DataTypeUInt32>();
+        /// UInt64, and not UInt32: an array can contain more than 2^32 elements, and the count of the
+        /// matching ones has to be exact for such an array as well. UInt32 is kept only behind the
+        /// `array_count_legacy_uint32_result` compatibility setting.
+        return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
     static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
@@ -40,36 +54,44 @@ struct ArrayCountImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const IColumn::Offsets & offsets = array.getOffsets();
-                auto out_column = ColumnUInt32::create(offsets.size());
-                ColumnUInt32::Container & out_counts = out_column->getData();
+                auto out_column = ColumnVector<ResultType>::create(offsets.size());
+                typename ColumnVector<ResultType>::Container & out_counts = out_column->getData();
 
                 size_t pos = 0;
                 for (size_t i = 0; i < offsets.size(); ++i)
                 {
-                    out_counts[i] = static_cast<UInt32>(offsets[i] - pos);
+                    out_counts[i] = static_cast<ResultType>(offsets[i] - pos);
                     pos = offsets[i];
                 }
 
                 return out_column;
             }
-            return DataTypeUInt32().createColumnConst(array.size(), 0u);
+            if constexpr (legacy_constness)
+                return DataTypeNumber<ResultType>().createColumnConst(array.size(), static_cast<ResultType>(0));
+
+            /// A full column of zeros, and not a constant one: `arrayCount` must return a column of the
+            /// same constness for a constant and for a non-constant predicate, otherwise the result of
+            /// `arrayCount` becomes observably different (`isConstant`) depending on the predicate, and
+            /// the rewrite of `length(arrayFilter(...))` to `arrayCount(...)` would change the constness.
+            /// Constant folding for a constant array argument is done by the function wrapper anyway.
+            return ColumnVector<ResultType>::create(array.size(), ResultType(0));
         }
 
         const IColumn::Filter & filter = column_filter->getData();
         const IColumn::Offsets & offsets = array.getOffsets();
-        auto out_column = ColumnUInt32::create(offsets.size());
-        ColumnUInt32::Container & out_counts = out_column->getData();
+        auto out_column = ColumnVector<ResultType>::create(offsets.size());
+        typename ColumnVector<ResultType>::Container & out_counts = out_column->getData();
 
         size_t pos = 0;
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            size_t count = 0;
+            ResultType count = 0;
             for (; pos < offsets[i]; ++pos)
             {
                 if (filter[pos])
                     ++count;
             }
-            out_counts[i] = static_cast<UInt32>(count);
+            out_counts[i] = count;
         }
 
         return out_column;
@@ -77,7 +99,20 @@ struct ArrayCountImpl
 };
 
 struct NameArrayCount { static constexpr auto name = "arrayCount"; };
-using FunctionArrayCount = FunctionArrayMapped<ArrayCountImpl, NameArrayCount>;
+
+/// Chooses the implementation by the `array_count_legacy_uint32_result` compatibility setting:
+/// `UInt64` (exact for arrays of any size) by default, `UInt32` with the pre-26.9 result constness otherwise.
+struct ArrayCountFunctionChooser
+{
+    static constexpr auto name = NameArrayCount::name;
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (context->getSettingsRef()[Setting::array_count_legacy_uint32_result])
+            return std::make_shared<FunctionArrayMapped<ArrayCountImpl<UInt32, true>, NameArrayCount>>();
+        return std::make_shared<FunctionArrayMapped<ArrayCountImpl<UInt64, false>, NameArrayCount>>();
+    }
+};
 
 REGISTER_FUNCTION(ArrayCount)
 {
@@ -86,21 +121,27 @@ Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns t
 If `func` is not specified, it returns the number of non-zero elements in the array.
 
 `arrayCount` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
+
+:::note Use setting `array_count_legacy_uint32_result` to return `UInt32`
+Version 26.9 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
+To retain the previous behavior, set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.
+
+During a rolling upgrade of a cluster, a distributed query initiated by a not-yet-upgraded server does not forward this setting, so type-sensitive expressions evaluated locally on already-upgraded shards (for example, `byteSize(arrayCount(...))`) observe `UInt64` there. To keep such queries fully unchanged until the whole cluster is upgraded, set `array_count_legacy_uint32_result = 1` on the upgraded servers for the users under which shard-side queries execute, and remove it after the upgrade is complete. Which user that is depends on the cluster configuration: with an interserver `secret` configured, the shard runs the query as the initiator's current user; otherwise it is the user from the cluster definition or from the `remote` table function (`default` unless specified). The simplest robust approach is to enable the setting for all users of the upgraded servers.
+:::
     )";
     FunctionDocumentation::Syntax syntax = "arrayCount([func, ] arr1, ...)";
     FunctionDocumentation::Arguments arguments = {
         {"func", "Optional. Function to apply to each element of the array(s).", {"Lambda function"}},
         {"arr1, ..., arrN", "N arrays.", {"Array(T)"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array.", {"UInt32"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of elements for which `func` returns true. Otherwise, returns the number of non-zero elements in the array.", {"UInt64"}};
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT arrayCount(x -> (x % 2), groupArray(number)) FROM numbers(10)", "5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, example, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayCount>(documentation);
+    factory.registerFunction<ArrayCountFunctionChooser>(documentation);
 }
 
 }
-
 
