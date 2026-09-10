@@ -14,18 +14,24 @@ namespace DB
 
 class TaskScheduler
 {
+    struct alignas(128) AsyncState
+    {
+        Poller & poller;
+        std::atomic<size_t> tasks_count = 0;
+    };
+
     struct alignas(128) GlobalState
     {
         std::mutex mutex;
         WorkStealingQueue queue;
-        std::atomic<size_t> queue_size = 0;
+        std::atomic<size_t> tasks_count = 0;
     };
 
     struct alignas(128) LocalState
     {
         std::mutex mutex;
         WorkStealingQueue queue;
-        std::atomic<size_t> queue_size = 0;
+        std::atomic<size_t> tasks_count = 0;
 
         std::optional<Task> next;
         size_t next_streak = 0;
@@ -55,7 +61,7 @@ public:
     size_t total() const;
 
 private:
-    Poller & poller;
+    AsyncState async;
     GlobalState global;
     LocalStates local;
 };
