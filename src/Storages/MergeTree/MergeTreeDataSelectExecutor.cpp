@@ -819,12 +819,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// Disable statistics-based pruning when:
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
-    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data).
+    ///    `hasAlterMutations` covers a pending `ALTER MODIFY COLUMN`, which is a `READ_COLUMN` alter
+    ///    mutation rather than a data mutation: a read already returns the converted values while the
+    ///    statistics still describe the values as they were written, so pruning a part against them
+    ///    drops rows the query has to see. The neighbouring gate for the top-k minmax index
+    ///    (`partHasStaleTopKIndex`) checks the same three flags.
     /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
     ///    the on-the-fly mutations above) no longer describe the values the query sees.
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        || (mutations_snapshot
+            && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+                || mutations_snapshot->hasPatchParts()))
         || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context)))
     {
         return parts;
