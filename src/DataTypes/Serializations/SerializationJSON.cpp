@@ -407,7 +407,10 @@ void SerializationJSON::deserializeObject(IColumn & column, std::string_view obj
     };
 #if USE_SIMDJSON
     if (context->getSettingsRef()[Setting::allow_simdjson])
-        return deserialize(state->simdjson);
+    {
+        deserialize(state->simdjson);
+        return;
+    }
 #endif
 #if USE_RAPIDJSON
     deserialize(state->rapidjson);

@@ -151,9 +151,9 @@ TEST(SerializationJSON, ParsingSettingsOwnResources)
     std::weak_ptr<const IDataType> weak_type;
     auto settings = std::make_unique<FormatSettings>();
     {
-        FormatSettings independent;
-        EXPECT_NE(settings->json_parsing_state, independent.json_parsing_state);
-        FormatSettings copy = *settings;
+        FormatSettings copy;
+        EXPECT_NE(settings->json_parsing_state, copy.json_parsing_state);
+        copy = *settings;
         EXPECT_EQ(settings->json_parsing_state, copy.json_parsing_state);
         auto type = DataTypeFactory::instance().get("JSON(x UInt64)");
         auto serialization = type->getDefaultSerialization();
@@ -200,6 +200,7 @@ TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
 
                 WriteBufferFromOwnString output;
                 FormatSettings binary_settings = settings;
+                EXPECT_EQ(binary_settings.json_parsing_state, settings.json_parsing_state);
                 binary_settings.binary.write_json_as_string = true;
                 binary_settings.binary.read_json_as_string = true;
                 serialization->serializeBinary(*column, 0, output, binary_settings);
