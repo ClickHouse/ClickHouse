@@ -293,13 +293,14 @@ private:
     /// Shard identification for the OpenTelemetry span covering this executor.
     ShardScope shard_scope;
 
-    /// Span covering the whole fragment execution on the synchronous path (no read context fiber)
-    std::unique_ptr<OpenTelemetry::Span> sync_fragment_span;
-    /// Captured when the span is created: the thread finishing the span may have no tracing context of its own.
-    std::weak_ptr<OpenTelemetrySpanLog> sync_fragment_span_log;
-    /// Set once the fragment span has an outcome. Written by the reading thread and read by the
-    /// cancelling thread, so it shares the lock that already serializes those two.
-    bool fragment_outcome_recorded TSA_GUARDED_BY(was_cancelled_mutex) = false;
+    /// Span covering the whole fragment execution: establishing the connections, sending the query
+    /// and reading the data until `EndOfStream`, an exception or a cancel. Owned and finished by the
+    /// executor on both the synchronous and the asynchronous path; the read context fiber runs inside it.
+    std::unique_ptr<OpenTelemetry::Span> fragment_span TSA_GUARDED_BY(was_cancelled_mutex);
+    /// The context the fragment runs in: the query trace with `fragment_span` as the current span.
+    /// Seeds the read context fiber, and carries the span log for finishing the span from a thread
+    /// without a tracing context of its own.
+    OpenTelemetry::TracingContextOnThread fragment_trace_context TSA_GUARDED_BY(was_cancelled_mutex);
 
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
@@ -406,7 +407,7 @@ private:
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
     /// `reason` goes to the log
-    void tryCancel(const char * reason, std::string_view span_cancel_reason) TSA_REQUIRES(was_cancelled_mutex);
+    void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
 
     /// Returns true if query was sent
     bool isQueryPending() const;
@@ -424,14 +425,22 @@ private:
     /// covering it (the read context fiber span or the synchronous-path fragment span).
     OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
 
-    /// Add an attribute to whichever span covers the fragment. No-op when the fragment is not traced.
-    void addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept;
+    /// Open the fragment span, if the query is traced and the span is not open yet.
+    void openFragmentSpan() TSA_REQUIRES(was_cancelled_mutex);
 
-    /// Record the fragment's outcome on whichever span covers it.
+    /// Add an attribute to the fragment span. No-op when the fragment is not traced.
+    void addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Finish the fragment span with its outcome and write it to the span log. The first outcome wins,
+    /// later calls are no-ops: OK only for a fragment that delivered its full result (`EndOfStream`),
+    /// ERROR for a genuine failure, UNSET plus an explaining attribute otherwise.
     void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept TSA_REQUIRES(was_cancelled_mutex);
 
-    /// Tag the fragment span as cancelled by the initiator: `clickhouse.cancelled = 1` and`clickhouse.cancel_reason = reason`.
-    void markFragmentCancelled(std::string_view reason) noexcept TSA_REQUIRES(was_cancelled_mutex);
+    /// Finish the span of a fragment cancelled by the initiator: UNSET, tagged `clickhouse.cancelled = 1`
+    /// and `clickhouse.cancel_reason = reason`, where the reason is `limit` (the initiator needs no more
+    /// data, e.g. `LIMIT` satisfied), `initiator` (`KILL QUERY`, or a failure elsewhere in the pipeline)
+    /// or `destroyed` (the executor was torn down before the fragment finished).
+    void finishFragmentSpanCancelled(std::string_view reason) noexcept TSA_REQUIRES(was_cancelled_mutex);
 
     /// Record a shard failure tolerated by `skip_unavailable_shards`
     void finishFragmentSpanForSkippedShard(String status_message) noexcept TSA_REQUIRES(was_cancelled_mutex);

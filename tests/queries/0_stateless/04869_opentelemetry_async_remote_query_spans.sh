@@ -7,11 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Trace context propagation for a distributed SELECT must not depend on
 # async_query_sending_for_remote. The query to the remote node is sent from inside the
-# RemoteQueryExecutorReadContext fiber (span `RemoteQueryExecutor::execute`), which starts with an empty fiber-local tracing
+# RemoteQueryExecutorReadContext fiber, which starts with an empty fiber-local tracing
 # context; it used to lose the trace there: no CLIENT span was created and
 # client_trace_context was not overridden, so the remote SERVER spans did not parent
-# under the initiator. Now AsyncTaskExecutor seeds the fiber with the tracing context
-# of the thread that created it and covers each task execution with one span.
+# under the initiator. Now the fiber runs inside the executor's fragment span
+# (`RemoteQueryExecutor::execute`): AsyncTaskExecutor seeds it with that span's tracing
+# context, so the CLIENT span and the remote subtree nest under the fragment span.
 
 function poll_spans
 {

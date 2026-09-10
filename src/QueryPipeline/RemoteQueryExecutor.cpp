@@ -350,14 +350,6 @@ RemoteQueryExecutor::RemoteQueryExecutor(
 
 RemoteQueryExecutor::~RemoteQueryExecutor()
 {
-    /// Backstop for the fragment span: an executor destroyed without reaching `EndOfStream`, a
-    /// failure or a cancel is a fragment cancelled by teardown, so it is tagged as such and left UNSET.
-    {
-        LockAndBlocker lock(was_cancelled_mutex);
-        markFragmentCancelled("destroyed");
-        finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
-    }
-
     /// We should finish establishing connections to disconnect it later,
     /// so these connections won't be in the out-of-sync state.
     if (read_context && !established)
@@ -378,6 +370,11 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         }
         catch (...)
         {
+            /// A cancel that fails is this fragment's failure.
+            {
+                LockAndBlocker lock(was_cancelled_mutex);
+                finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            }
             tryLogCurrentException(log);
         }
     }
@@ -397,6 +394,13 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
         {
             tryLogCurrentException(log);
         }
+    }
+
+    /// Backstop for the fragment span: an executor destroyed without reaching `EndOfStream`, a
+    /// failure or a cancel is a fragment cancelled by teardown. No-op when the span is finished.
+    {
+        LockAndBlocker lock(was_cancelled_mutex);
+        finishFragmentSpanCancelled("destroyed");
     }
 }
 
@@ -478,57 +482,66 @@ OpenTelemetry::SpanAttributes RemoteQueryExecutor::getFragmentSpanAttributes() c
     return attributes;
 }
 
+void RemoteQueryExecutor::openFragmentSpan()
+{
+    const auto & trace_context = OpenTelemetry::CurrentContext();
+    if (fragment_span || !trace_context.isTraceEnabled())
+        return;
+
+    fragment_span = std::make_unique<OpenTelemetry::Span>(OpenTelemetry::Span{
+        .trace_id = trace_context.trace_id,
+        .span_id = OpenTelemetry::TracingContext::generateSpanId(),
+        .parent_span_id = trace_context.span_id,
+        .operation_name = "RemoteQueryExecutor::execute",
+        .start_time_us = static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()),
+        .kind = OpenTelemetry::SpanKind::INTERNAL,
+        .attributes = getFragmentSpanAttributes(),
+    });
+
+    /// The read context fiber is seeded with this context, so the spans it opens (e.g. the CLIENT
+    /// span of the send) nest under the fragment span. It also keeps the span log reachable from a
+    /// thread without a tracing context of its own, e.g. the one running `KILL QUERY`.
+    fragment_trace_context = trace_context;
+    fragment_trace_context.span_id = fragment_span->span_id;
+}
+
 void RemoteQueryExecutor::addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
 {
-    /// Both targets check on their own whether the span is traced.
-    if (sync_fragment_span)
-        sync_fragment_span->addAttribute(std::move(attribute));
-    else if (read_context)
-        read_context->addSpanAttribute(std::move(attribute));
+    if (fragment_span)
+        fragment_span->addAttribute(std::move(attribute));
 }
 
 void RemoteQueryExecutor::finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message) noexcept
 {
-    if (sync_fragment_span)
+    /// The first outcome wins: a finished span is gone, so the later backstops find nothing to do.
+    if (!fragment_span)
+        return;
+
+    /// The span is detached from the ambient context, so it is timestamped and written to the log by hand.
+    auto span = std::move(fragment_span);
+    span->finish_time_us = static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+    span->status_code = status;
+    span->status_message = std::move(status_message);
+
+    try
     {
-        fragment_outcome_recorded = true;
-
-        /// The span is detached from the ambient context, so it is timestamped and written to the log by hand.
-        auto span = std::move(sync_fragment_span);
-        span->finish_time_us = static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count());
-        span->status_code = status;
-        span->status_message = std::move(status_message);
-
-        try
-        {
-            if (auto span_log = sync_fragment_span_log.lock())
-                span_log->add([&](OpenTelemetrySpanLogElement & element) { element.span = *span; });
-        }
-        catch (...) /// Ok: noexcept, the span is dropped but the query must not be affected.
-        {
-            tryLogCurrentException(log);
-        }
+        if (auto span_log = fragment_trace_context.span_log.lock())
+            span_log->add([&](OpenTelemetrySpanLogElement & element) { element.span = *span; });
     }
-    else if (read_context)
+    catch (...) /// Ok: noexcept, the span is dropped but the query must not be affected.
     {
-        /// UNSET is ignored by the read context: it only closes the detached span above, the
-        /// fiber span is logged when the fiber exits with whatever was buffered on it.
-        if (status != OpenTelemetry::SpanStatus::UNSET)
-            fragment_outcome_recorded = true;
-        read_context->setSpanStatus(status, std::move(status_message));
+        tryLogCurrentException(log);
     }
 }
 
-void RemoteQueryExecutor::markFragmentCancelled(std::string_view reason) noexcept
+void RemoteQueryExecutor::finishFragmentSpanCancelled(std::string_view reason) noexcept
 {
-    /// A fragment whose outcome is already recorded (`EndOfStream`, a failure or an earlier cancel) keeps it.
-    if (fragment_outcome_recorded)
-        return;
-    fragment_outcome_recorded = true;
-
+    /// Neither a success nor a failure: the status stays UNSET and the attributes say why.
     addFragmentSpanAttribute({"clickhouse.cancelled", 1});
     addFragmentSpanAttribute({"clickhouse.cancel_reason", reason});
+    finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
 }
 
 void RemoteQueryExecutor::finishFragmentSpanForSkippedShard(String status_message) noexcept
@@ -542,7 +555,6 @@ void RemoteQueryExecutor::finishFragmentSpanForUnavailableReplica() noexcept
 {
     /// Nothing was delivered and nothing failed: the coordinator reassigns this replica's work.
     addFragmentSpanAttribute({"clickhouse.replica_unavailable", 1});
-    fragment_outcome_recorded = true;
     finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
 }
 
@@ -578,26 +590,14 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     if (sent_query || was_cancelled)
         return;
 
-    /// Syncronous path: Open a span here and keep it alive in a member until `EndOfStream.
-    if (!read_context && OpenTelemetry::CurrentContext().isTraceEnabled())
-    {
-        const auto & trace_context = OpenTelemetry::CurrentContext();
-        sync_fragment_span = std::make_unique<OpenTelemetry::Span>(OpenTelemetry::Span{
-            .trace_id = trace_context.trace_id,
-            .span_id = OpenTelemetry::TracingContext::generateSpanId(),
-            .parent_span_id = trace_context.span_id,
-            .operation_name = "RemoteQueryExecutor::execute",
-            .start_time_us = static_cast<UInt64>(std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count()),
-            .kind = OpenTelemetry::SpanKind::INTERNAL,
-            .attributes = getFragmentSpanAttributes(),
-        });
-        sync_fragment_span_log = trace_context.span_log;
-    }
+    /// On the asynchronous sending path the fragment span is already open and this code runs inside
+    /// it (in the read context fiber); on the synchronous path it is opened here.
+    openFragmentSpan();
 
-    /// On the synchronous path the fragment span is a detached object; make it the current
-    /// parent for the send so the CLIENT span descends from the fragment span.
-    OpenTelemetry::ParentSpanGuard fragment_parent_guard(sync_fragment_span ? sync_fragment_span->span_id : 0);
+    /// Make the fragment span the current parent for the send, so the CLIENT span descends from it.
+    /// Inside the fiber this already holds; on the synchronous path the thread's context still
+    /// points at the query span.
+    OpenTelemetry::ParentSpanGuard fragment_parent_guard(fragment_span ? fragment_span->span_id : 0);
 
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
@@ -735,15 +735,19 @@ int RemoteQueryExecutor::sendQueryAsync()
 
     if (!read_context)
     {
-        /// The query was not sent yet, so the synchronous-path span cannot exist: the fiber
-        /// span of the read context is the only fragment span.
-        chassert(!sync_fragment_span);
-        read_context = std::make_unique<ReadContext>(
-            *this,
-            /*suspend_when_query_sent*/ true,
-            read_packet_type_separately,
-            OpenTelemetry::CurrentContext().isTraceEnabled() ? getFragmentSpanAttributes()
-                                                             : OpenTelemetry::SpanAttributes{});
+        /// The fragment span is opened before the read context: its fiber runs inside the span.
+        openFragmentSpan();
+        try
+        {
+            read_context = std::make_unique<ReadContext>(
+                *this, /*suspend_when_query_sent*/ true, read_packet_type_separately, fragment_trace_context);
+        }
+        catch (...)
+        {
+            /// Failing to build the read context is this fragment's failure.
+            finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+            throw;
+        }
     }
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
@@ -751,7 +755,17 @@ int RemoteQueryExecutor::sendQueryAsync()
     if (read_context->isQuerySent())
         return -1;
 
-    read_context->resume();
+    try
+    {
+        read_context->resume();
+    }
+    catch (...)
+    {
+        /// A failure inside the fiber while establishing the connections or sending the query
+        /// (rethrown here on the consumer thread) is this fragment's failure.
+        finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
+        throw;
+    }
 
     if (read_context->isQuerySent())
         return -1;
@@ -850,59 +864,19 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        /// When the query was sent synchronously (async_query_sending_for_remote = 0), sendQueryUnlocked already opened the fragment span.
-        /// Hand it over to the read context: the fiber span continues it with the same start time and attributes.
-        OpenTelemetry::SpanAttributes initial_span_attributes;
-        UInt64 initial_span_start_time_us = 0;
-        UInt64 initial_span_id = 0;
-        if (OpenTelemetry::CurrentContext().isTraceEnabled())
-        {
-            if (sync_fragment_span)
-            {
-                /// Copy, not move: the detached span must stay intact until the read context owns the fragment,
-                /// otherwise a failure to construct it below would lose the span while its children already exist.
-                initial_span_attributes = sync_fragment_span->attributes;
-                initial_span_start_time_us = sync_fragment_span->start_time_us;
-                /// The CLIENT span sent during the synchronous send already references this id
-                /// as its parent; the fiber span must keep it, or the remote subtree is orphaned.
-                initial_span_id = sync_fragment_span->span_id;
-            }
-            else
-            {
-                initial_span_attributes = getFragmentSpanAttributes();
-                /// The query was already sent, so `stage` is final here (any fallback downgrade
-                /// happened during the send) and the attribute can be captured directly.
-                initial_span_attributes.emplace_back("clickhouse.processed_stage", QueryProcessingStage::toString(stage));
-            }
-        }
-        else
-        {
-            /// No tracing context on this thread, so the fiber cannot continue the span.
-            /// The span covers only the send, not the fragment's outcome, so it is neither OK nor ERROR.
-            addFragmentSpanAttribute({"clickhouse.span_truncated", 1});
-            finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
-        }
-
+        /// The query was sent synchronously (async_query_sending_for_remote = 0), so the fragment
+        /// span is already open: the read context fiber runs inside it.
         try
         {
             read_context = std::make_unique<ReadContext>(
-                *this,
-                /*suspend_when_query_sent*/ false,
-                read_packet_type_separately,
-                std::move(initial_span_attributes),
-                initial_span_start_time_us,
-                initial_span_id);
+                *this, /*suspend_when_query_sent*/ false, read_packet_type_separately, fragment_trace_context);
         }
         catch (...)
         {
-            /// Failing to build the read context is this fragment's failure, and the detached span is still ours to finish.
+            /// Failing to build the read context is this fragment's failure.
             finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
             throw;
         }
-
-        /// The fiber span now continues the fragment: drop the detached one so it is not finished twice.
-        sync_fragment_span.reset();
-        sync_fragment_span_log = {};
     }
 
     try
@@ -1188,9 +1162,10 @@ void RemoteQueryExecutor::finish()
         throw;
     }
 
-    /// The executor is done with the fragment: close the detached synchronous-path span. A full
-    /// delivery was already recorded as OK at `EndOfStream`, so the span stays UNSET.
-    finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
+    /// The executor is done with the fragment. A full delivery was already recorded as OK at
+    /// `EndOfStream` (and a failure as ERROR), so a span still open here belongs to a fragment the
+    /// initiator stopped reading from before its end, e.g. once a `LIMIT` was satisfied.
+    finishFragmentSpanCancelled("limit");
 }
 
 void RemoteQueryExecutor::finishUnlocked()
@@ -1211,9 +1186,6 @@ void RemoteQueryExecutor::finishUnlocked()
         /// never becomes true.
         if (!sent_query)
         {
-            /// The fragment never ran because the initiator needed no data from it.
-            markFragmentCancelled("limit");
-
             /// Also mark the executor cancelled, not just finished. `RemoteSource::work()` may
             /// already be queued for execution (its `prepare()` ran before the output port was
             /// closed), and both `sendQuery` and `sendQueryAsync` gate only on `was_cancelled` -
@@ -1254,7 +1226,7 @@ void RemoteQueryExecutor::finishUnlocked()
       */
 
     /// Send the request to abort the execution of the request, if not already sent.
-    tryCancel("Cancelling query because enough data has been read", "limit");
+    tryCancel("Cancelling query because enough data has been read");
 
     /// If connections weren't created yet, query wasn't sent or was already finished, nothing to do.
     if (!connections || !sent_query || finished)
@@ -1366,7 +1338,7 @@ void RemoteQueryExecutor::cancelUnlocked()
 
     try
     {
-        tryCancel("Cancelling query", "initiator");
+        tryCancel("Cancelling query");
     }
     catch (...)
     {
@@ -1375,8 +1347,7 @@ void RemoteQueryExecutor::cancelUnlocked()
         finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
         throw;
     }
-    /// Closes the detached synchronous-path span; the fiber span was logged by the cancel itself.
-    finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
+    finishFragmentSpanCancelled("initiator");
 }
 
 void RemoteQueryExecutor::sendScalars()
@@ -1457,15 +1428,12 @@ void RemoteQueryExecutor::sendExternalTables()
     connections->sendExternalTablesData(external_tables_data);
 }
 
-void RemoteQueryExecutor::tryCancel(const char * reason, std::string_view span_cancel_reason)
+void RemoteQueryExecutor::tryCancel(const char * reason)
 {
     if (was_cancelled)
         return;
 
     was_cancelled = true;
-
-    /// The fragment ends without its full result, which is neither a success nor a failure.
-    markFragmentCancelled(span_cancel_reason);
 
     /// A parallel-replicas follower that has not announced yet is still planning, and the only packet
     /// it owes us is the announcement itself - which is worthless once we are cancelling, because it

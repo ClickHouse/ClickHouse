@@ -205,17 +205,12 @@ struct TracingContextHolder
     {
     }
 
-    /// Initialize a tracing context on a child thread based on the context from the parent thread.
-    /// A non-zero _initial_span_id makes the root span adopt that id instead of generating one,
-    /// so that spans which already reference it as their parent stay attached to the trace tree.
-    TracingContextHolder(std::string_view _operation_name,
-        const TracingContextOnThread & _parent_thread_trace_context,
-        UInt64 _initial_span_id = 0)
+    /// Initialize a tracing context on a child thread based on the context from the parent thread
+    TracingContextHolder(std::string_view _operation_name, const TracingContextOnThread & _parent_thread_trace_context)
         : TracingContextHolder(_operation_name,
             _parent_thread_trace_context,
             nullptr,
-            _parent_thread_trace_context.span_log,
-            _initial_span_id)
+            _parent_thread_trace_context.span_log)
     {
     }
 
@@ -234,8 +229,7 @@ struct TracingContextHolder
     TracingContextHolder(std::string_view _operation_name,
         TracingContext _parent_trace_context,
         const Settings* settings_ptr,
-        const std::weak_ptr<OpenTelemetrySpanLog> & _log,
-        UInt64 _initial_span_id = 0);
+        const std::weak_ptr<OpenTelemetrySpanLog> & _log);
 
     ~TracingContextHolder();
 
@@ -284,6 +278,21 @@ struct ParentSpanGuard
 private:
     UInt64 old_span_id = 0;
     bool active = false;
+};
+
+/// Runs the enclosed scope inside a tracing context owned elsewhere, e.g. inside a span that the
+/// caller opened and will finish itself: installs `context` as the current context for the scope
+/// and restores the previous one on exit. Unlike `TracingContextHolder`, opens and logs no span.
+struct TracingContextGuard
+{
+    explicit TracingContextGuard(const TracingContextOnThread & context);
+    ~TracingContextGuard();
+
+    TracingContextGuard(const TracingContextGuard &) = delete;
+    TracingContextGuard & operator=(const TracingContextGuard &) = delete;
+
+private:
+    TracingContextOnThread previous;
 };
 
 }
