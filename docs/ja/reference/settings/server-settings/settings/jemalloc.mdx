@@ -24,6 +24,12 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />生成する jemalloc のバックグラウンドスレッドの最大数です。0 に設定すると、jemalloc のデフォルト値が使用されます
 
+<div id="jemalloc_merge_tree_arenas">
+  ## jemalloc_merge_tree_arenas
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" changeable_without_restart="No" />長期間保持される MergeTree のパート単位およびテーブル単位のメタデータ用に確保する専用 jemalloc アリーナの数。`0` は専用アリーナを無効にします (メタデータではデフォルトの CPU ごとのアリーナが使用されます) 。`1` は単一の共有アリーナを使用します。`N > 1` は `N` 個のアリーナからなるプールを作成し、CPU ごとに割り当てを振り分けます。多数のコアを持つマシンでは、これにより単一アリーナのロックによってメタデータの割り当てが直列化されることを回避できます。上限はプロセスが実行可能な CPU 数 (アフィニティマスク) となるため、大きな値 (またはコア数) を指定すると、許可された CPU ごとに 1 つのアリーナが作成されます。起動時に適用されます。
+
 <div id="jemalloc_profiler_sampling_rate">
   ## jemalloc_profiler_sampling_rate
 </div>

@@ -1,52 +1,73 @@
 ---
 slug: /use-cases/AI/MCP/claude-desktop
-sidebarTitle: '集成 Claude Desktop'
-title: '在 Claude Desktop 中使用 ClickHouse MCP 服务器'
-description: '本指南介绍如何为 Claude Desktop 设置 ClickHouse MCP 服务器。'
-keywords: ['AI', 'Librechat', 'MCP']
+sidebarTitle: '设置 ClickHouse MCP 服务器'
+title: '设置 ClickHouse MCP 服务器'
+description: '将 ClickHouse MCP 服务器连接到 Claude Code、Claude Desktop、Codex、ChatGPT、Cursor 或 Windsurf。'
+keywords: ['AI', 'ClickHouse', 'MCP', 'Claude', 'Codex', 'ChatGPT']
 show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
+[ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse)可让兼容的 AI 助手浏览数据库、查看表，并对 ClickHouse 运行 SQL 查询。
+本指南将使用 `uv` 配置本地 `stdio` 服务器，并将其连接到主流 MCP 客户端。
 
-> 本指南介绍如何使用 uv 为 Claude Desktop 配置 ClickHouse MCP 服务器，
-> 并将其连接到 ClickHouse 示例数据集。
+该服务器默认只允许执行只读查询。
+请使用仅授予助手所需权限的专用 ClickHouse 用户，切勿使用 default 或管理用户。
+
+以下步骤以 Claude Desktop 为例演示设置过程。
+本指南涵盖的其他客户端同样适用这些 ClickHouse 连接信息。
 
 <Frame>
-  <iframe src="https://www.youtube.com/embed/y9biAm_Fkqw?si=9PP3-1Y1fvX8xy7q" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  <iframe src="https://www.youtube.com/embed/y9biAm_Fkqw?si=9PP3-1Y1fvX8xy7q" title="使用 Claude Desktop 设置 ClickHouse MCP 服务器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-<Steps>
-  <Step title="安装 uv" id="install-uv">
-    要按照本指南进行操作，你需要先安装 [uv](https://docs.astral.sh/uv/)。
-    如果你不想使用 uv，则需要更新 MCP 服务器配置，改用其他包管理器。
-  </Step>
+<div id="prerequisites">
+  ## 前置条件
+</div>
 
-  <Step title="下载 Claude Desktop" id="download-claude-desktop">
-    你还需要安装 Claude Desktop 应用，可以从 [Claude Desktop 网站](https://claude.ai/desktop) 下载。
-  </Step>
+开始前：
 
-  <Step title="配置 ClickHouse MCP 服务器" id="configure-clickhouse-mcp-server">
-    安装好 Claude Desktop 后，就可以开始配置 [ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 了。
-    这可以通过 [Claude Desktop 配置文件](https://claude.ai/docs/configuration) 完成。
+1. [安装 `uv`](https://docs.astral.sh/uv/getting-started/installation/)。
+2. 安装要使用的 MCP 客户端。
+3. 获取 ClickHouse 服务的主机名、用户名和密码。
 
-    要找到该文件，请先进入设置页面 (`Cmd+,` 在 Mac 上)，然后点击左侧菜单中的 `Developer` 选项卡。
-    随后你会看到如下界面，需要点击 `Edit config` 按钮：
+以下示例使用了这些占位符值：
 
-    <Image img="/images/use-cases/AI_ML/MCP/claude-desktop-config.webp" alt="Claude Desktop 配置" size="md" />
+| 环境变量                  | 值                          |
+| --------------------- | -------------------------- |
+| `CLICKHOUSE_HOST`     | `your-clickhouse-host`     |
+| `CLICKHOUSE_USER`     | `your-clickhouse-user`     |
+| `CLICKHOUSE_PASSWORD` | `your-clickhouse-password` |
 
-    这会打开包含配置文件 (`claude_desktop_config.json`) 的目录。
-    第一次打开该文件时，其中很可能只有以下内容：
+请将其替换为实际的连接信息。
+对于 ClickHouse Cloud 服务，server 默认在端口 `8443` 上使用 HTTPS。
+对于使用纯 HTTP 的自管理服务，还需设置 `CLICKHOUSE_SECURE=false`，并在必要时设置 `CLICKHOUSE_PORT=8123`。
 
-    ```json
-    {
-      "mcpServers": {}
-    }
+<div id="configure-mcp-client">
+  ## 配置你的 MCP 客户端
+</div>
+
+<Tabs>
+  <Tab title="Claude Code" icon="/images/logo-claudecode-color.svg">
+    在终端中运行以下命令：
+
+    ```bash
+    claude mcp add \
+      --transport stdio \
+      --env CLICKHOUSE_HOST=your-clickhouse-host \
+      --env CLICKHOUSE_USER=your-clickhouse-user \
+      --env CLICKHOUSE_PASSWORD=your-clickhouse-password \
+      --scope user \
+      mcp-clickhouse -- \
+      uv run --with mcp-clickhouse --python 3.10 mcp-clickhouse
     ```
 
-    `mcpServers` 字典以 MCP 服务器名称为键，以配置选项字典为值。
-    例如，连接到 ClickHouse Playground 的 ClickHouse MCP 服务器配置如下：
+    运行 `claude mcp list` 验证连接，或在 Claude Code 中输入 `/mcp` 查看服务器及其工具。
+  </Tab>
+
+  <Tab title="Claude Desktop" icon="/images/logo-claude.svg">
+    在 Claude Desktop 中，打开 **设置**，选择 **开发者**，然后选择 **Edit config**。
+    在 `claude_desktop_config.json` 中添加以下服务器：
 
     ```json
     {
@@ -62,51 +83,133 @@ import { Image } from "/snippets/zh/components/Image.jsx";
             "mcp-clickhouse"
           ],
           "env": {
-            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
-            "CLICKHOUSE_PORT": "8443",
-            "CLICKHOUSE_USER": "demo",
-            "CLICKHOUSE_PASSWORD": "",
-            "CLICKHOUSE_SECURE": "true",
-            "CLICKHOUSE_VERIFY": "true",
-            "CLICKHOUSE_CONNECT_TIMEOUT": "30",
-            "CLICKHOUSE_SEND_RECEIVE_TIMEOUT": "30"
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
           }
         }
       }
     }
     ```
 
-    更新配置后，你需要重启 Claude Desktop，更改才会生效。
+    保存文件并重启 Claude Desktop。
+    在聊天输入框中打开 **Connectors**，确认 `mcp-clickhouse` 是否可用。
+  </Tab>
 
-    <Warning>
-      根据你安装 `uv` 的方式不同，重启 Claude Desktop 时可能会看到以下错误：
+  <Tab title="Codex" icon="/images/logo-codex.svg">
+    通过 Codex 命令行客户端添加服务器：
 
-      ```text
-      MCP mcp-clickhouse: spawn uv ENOENT
-      ```
+    ```bash
+    codex mcp add mcp-clickhouse \
+      --env CLICKHOUSE_HOST=your-clickhouse-host \
+      --env CLICKHOUSE_USER=your-clickhouse-user \
+      --env CLICKHOUSE_PASSWORD=your-clickhouse-password \
+      -- uv run --with mcp-clickhouse --python 3.10 mcp-clickhouse
+    ```
 
-      如果出现这种情况，你需要将 `command` 更新为 `uv` 的完整路径。例如，如果你是通过 Cargo 安装的，路径可能是 `/Users/<username>/.cargo/bin/uv`
-    </Warning>
-  </Step>
+    运行 `codex mcp list` 验证连接，或在 Codex 终端 UI 中输入 `/mcp`。
+    Codex CLI、Codex IDE 扩展和 ChatGPT 桌面应用共用 `~/.codex/config.toml` 中的 MCP 配置。
+  </Tab>
 
-  <Step title="使用 ClickHouse MCP 服务器" id="using-clickhouse-mcp-server">
-    重启 Claude Desktop 后，点击 `Search and tools` 图标即可找到 ClickHouse MCP 服务器：
+  <Tab title="ChatGPT" icon="/images/logo-codex.svg">
+    ChatGPT 桌面应用会为其 Codex 主机配置本地 MCP 服务器。
+    此配置会与 Codex 命令行客户端和 Codex IDE 扩展共享。
 
-    <Image img="/images/use-cases/AI_ML/MCP/find-mcp-servers.webp" alt="查找 MCP 服务器" size="md" />
+    在 ChatGPT 桌面应用中：
 
-    <br />
+    1. 打开 **设置**，然后选择 **MCP 服务器**。
+    2. 选择 **添加服务器**，然后选择 **STDIO**。
+    3. 将名称设为 `mcp-clickhouse`，命令设为 `uv`。
+    4. 按顺序添加 `run`、`--with`、`mcp-clickhouse`、`--python`、`3.10` 和 `mcp-clickhouse` 作为参数。
+    5. 添加 `CLICKHOUSE_HOST`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD`，并填入你的连接信息。
+    6. 保存服务器并重启应用。
 
-    然后，你可以选择禁用全部工具或其中部分工具。
+    应用重启后，打开 Codex，并在输入框中输入 `/mcp` 以查看已连接的服务器。
 
-    现在，我们已经可以向 Claude 提问，并让它调用 ClickHouse MCP 服务器。
-    例如，我们可以问它 `What's the most interesting dataset in the SQL playground?`。
+    <Note>
+      这些步骤会在 ChatGPT 桌面应用中为 Codex 配置本地 `stdio` 服务器。
+      ChatGPT Web 则使用由插件提供的远程 MCP 工具。
+      如需在 ChatGPT Web 中使用 ClickHouse 工具，请参阅 [ClickHouse Cloud 中的远程 MCP 服务器](/zh/products/cloud/features/ai-ml/remote-mcp)。
+    </Note>
+  </Tab>
 
-    Claude 在首次调用 MCP 服务器中的每个工具时，都会要求你确认是否允许使用：
+  <Tab title="游标" icon="/images/logo-cursor.webp">
+    将以下服务器添加到当前项目的 `.cursor/mcp.json` 文件中，或添加到全局 Cursor MCP 配置中：
 
-    <Image img="/images/use-cases/AI_ML/MCP/mcp-permission.webp" alt="授予使用 list_databases 工具的权限" size="md" />
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
+          }
+        }
+      }
+    }
+    ```
 
-    下面是部分对话内容，其中包含一些对 ClickHouse MCP 服务器的工具调用：
+    重新启动 Cursor，然后打开其 MCP 设置，确认服务器已启用。
+  </Tab>
 
-    <Image img="/images/use-cases/AI_ML/MCP/claude-conversation.webp" alt="Claude 对话" size="md" />
-  </Step>
-</Steps>
+  <Tab title="Windsurf" icon="/images/logo-windsurf.svg">
+    将以下服务器配置添加到 `~/.codeium/windsurf/mcp_config.json`：
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "your-clickhouse-host",
+            "CLICKHOUSE_USER": "your-clickhouse-user",
+            "CLICKHOUSE_PASSWORD": "your-clickhouse-password"
+          }
+        }
+      }
+    }
+    ```
+
+    重新加载 Windsurf，然后打开其 MCP 设置，确认服务器已启用。
+  </Tab>
+</Tabs>
+
+<div id="verify-connection">
+  ## 验证连接
+</div>
+
+客户端报告已连接到 `mcp-clickhouse` 后，向其询问：
+
+```text
+List the databases available in ClickHouse, then show me the tables in one of them.
+```
+
+客户端可能会要求您批准首次调用工具。
+授予访问权限前，请审核每个请求。
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+如果客户端提示无法找到 `uv`，请将命令或配置中的 `uv` 替换为其绝对路径。
+在 macOS 或 Linux 上运行 `which uv`，或在 Windows 上运行 `where uv`，即可找到该路径。
+
+有关其他连接设置、可选的 chDB 支持、HTTP 传输和身份验证，请参阅 [`mcp-clickhouse` README](https://github.com/ClickHouse/mcp-clickhouse)。

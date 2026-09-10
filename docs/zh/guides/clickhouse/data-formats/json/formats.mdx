@@ -11,7 +11,7 @@ doc_type: 'guide'
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
 LIMIT 5
 ```
 
@@ -45,7 +45,7 @@ LIMIT 5
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONAsObject)
 LIMIT 5
 ```
 
@@ -72,7 +72,7 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONAsObject)
 LIMIT 5;
 
 SELECT *
@@ -93,7 +93,7 @@ LIMIT 2;
 
 ```sql
 SELECT count()
-FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONEachRow')
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', NOSIGN, 'JSONEachRow')
 ```
 
 ```response
@@ -110,7 +110,7 @@ You can specify the structure manually: (in file/uri bluesky/file_0001.json.gz).
 
 ```sql
 SELECT count()
-FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONAsObject')
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', NOSIGN, 'JSONAsObject')
 ```
 
 ```response
@@ -225,7 +225,7 @@ SELECT * FROM sometable;
   ### 指定父对象的键值
 </div>
 
-假设我们还想将父对象键中的值保存到表中。在这种情况下，我们可以使用[以下选项](/zh/reference/settings/formats#format_json_object_each_row_column_for_object_name)来指定用于保存键值的列名：
+假设我们还想将父对象键中的值保存到表中。在这种情况下，我们可以使用[以下选项](/zh/reference/settings/formats/format#format_json_object_each_row_column_for_object_name)来指定用于保存键值的列名：
 
 ```sql
 SET format_json_object_each_row_column_for_object_name = 'id'
@@ -401,7 +401,7 @@ LIMIT 1
   ## 访问嵌套 JSON 对象
 </div>
 
-启用[以下设置选项](/zh/reference/settings/formats#input_format_import_nested_json)后，我们就可以引用[嵌套 JSON 键](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json)：
+启用[以下设置选项](/zh/reference/settings/formats/input-format#input_format_import_nested_json)后，我们就可以引用[嵌套 JSON 键](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json)：
 
 ```sql
 SET input_format_import_nested_json = 1
@@ -454,7 +454,7 @@ SELECT * FROM shorttable
 └───────────────────────────┴──────┘
 ```
 
-ClickHouse 在导入时会忽略未知列。可通过 [input&#95;format&#95;skip&#95;unknown&#95;fields](/zh/reference/settings/formats#input_format_skip_unknown_fields) 设置项禁用此行为：
+ClickHouse 在导入时会忽略未知列。可通过 [input&#95;format&#95;skip&#95;unknown&#95;fields](/zh/reference/settings/formats/input-format#input_format_skip_unknown_fields) 设置项禁用此行为：
 
 ```sql
 SET input_format_skip_unknown_fields = 0;

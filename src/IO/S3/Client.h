@@ -85,12 +85,12 @@ public:
 private:
     ClientCacheRegistry() = default;
 
-    void pruneExpiredCachesLocked() TSA_REQUIRES(cache_by_key_mutex);
+    void pruneUnusedCachesLocked() TSA_REQUIRES(cache_by_key_mutex);
 
     std::mutex clients_mutex;
     UnorderedMapWithMemoryTracking<ClientCache *, std::pair<std::weak_ptr<ClientCache>, size_t>> client_caches TSA_GUARDED_BY(clients_mutex);
     std::mutex cache_by_key_mutex;
-    UnorderedMapWithMemoryTracking<UInt128, std::weak_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
+    UnorderedMapWithMemoryTracking<UInt128, std::shared_ptr<ClientCache>, UInt128Hash> cache_by_endpoint_bucket TSA_GUARDED_BY(cache_by_key_mutex);
 };
 
 bool isS3ExpressEndpoint(const std::string & endpoint);
@@ -234,12 +234,16 @@ public:
 
     bool isS3ExpressBucket() const { return client_settings.is_s3express_bucket; }
 
+    bool isChecksumDisabled() const { return client_settings.disable_checksum; }
+
     bool isClientForDisk() const
     {
         return client_configuration.for_disk_s3;
     }
 
     ProviderType getProviderType() const { return provider_type; }
+
+    bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
     std::string getGCSOAuthToken() const;
 
