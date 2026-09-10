@@ -45,7 +45,8 @@ void deleteFilesFromS3(
     BlobStorageLogWriterPtr blob_storage_log = nullptr,
     const Strings & local_paths_for_blob_storage_log = {},
     const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log = {},
-    std::optional<ProfileEvents::Event> profile_event = std::nullopt);
+    std::optional<ProfileEvents::Event> profile_event = std::nullopt,
+    Strings * successful_keys = nullptr);
 
 }
 
