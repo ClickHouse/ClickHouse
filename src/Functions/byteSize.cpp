@@ -46,7 +46,10 @@ public:
         UInt64 constant_size = 0;
         for (size_t arg_num = 0; arg_num < num_args; ++arg_num)
         {
-            if (arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            /// Sparse columns have representation-dependent per-row overhead,
+            /// even when their logical type has a fixed-size representation.
+            if (!arguments[arg_num].column->isSparse()
+                && arguments[arg_num].type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             {
                 constant_size += arguments[arg_num].type->getSizeOfValueInMemory();
             }
