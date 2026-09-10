@@ -26,10 +26,28 @@ wait_for_mutations() {
     echo "the mutations of $1 did not finish"
 }
 
+count_mutations() {
+    ${CLICKHOUSE_CLIENT} -q "
+        SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = '$1'"
+}
+
+# `system.mutations` of a replicated table is refreshed by the queue-updating task, so a mutation
+# submitted with `alter_sync = 0` is not there the moment the `ALTER` returns.
 newest_mutation_scope() {
+    local table=$1
+    local previous_count=$2
+
+    for _ in {1..600}
+    do
+        if [[ "$(count_mutations "$table")" -gt "$previous_count" ]]; then
+            break
+        fi
+        sleep 0.2
+    done
+
     ${CLICKHOUSE_CLIENT} -q "
         SELECT arraySort(\`block_numbers.partition_id\`) FROM system.mutations
-        WHERE database = currentDatabase() AND table = '$1'
+        WHERE database = currentDatabase() AND table = '$table'
         ORDER BY mutation_id DESC LIMIT 1"
 }
 
@@ -58,11 +76,13 @@ FROM system.parts WHERE database = currentDatabase() AND table = 't_pruning_empt
 SYSTEM STOP REPLICATION QUEUES t_pruning_empty_r1;
 INSERT INTO t_pruning_empty_r2 SELECT 2, 1000000 + number FROM numbers(30);
 
-ALTER TABLE t_pruning_empty_r1 DELETE WHERE p = 2 SETTINGS alter_sync = 0;
 "
 
+mutations_before=$(count_mutations t_pruning_empty_r1)
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_pruning_empty_r1 DELETE WHERE p = 2 SETTINGS alter_sync = 0"
+
 echo -n 'the mutation is scoped to the partition '
-newest_mutation_scope t_pruning_empty_r1
+newest_mutation_scope t_pruning_empty_r1 "$mutations_before"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START REPLICATION QUEUES t_pruning_empty_r1; SYSTEM SYNC REPLICA t_pruning_empty_r1"
 wait_for_mutations t_pruning_empty_r1
@@ -82,10 +102,12 @@ PARTITION BY p ORDER BY x SETTINGS remove_empty_parts = 0;
 INSERT INTO t_pruning_scope SELECT 1, number FROM numbers(10);
 INSERT INTO t_pruning_scope SELECT 2, number FROM numbers(10);
 ALTER TABLE t_pruning_scope DELETE WHERE p = 2 SETTINGS mutations_sync = 2;
-ALTER TABLE t_pruning_scope DELETE WHERE p = 1 SETTINGS alter_sync = 0;
 "
 
-newest_mutation_scope t_pruning_scope
+mutations_before=$(count_mutations t_pruning_scope)
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_pruning_scope DELETE WHERE p = 1 SETTINGS alter_sync = 0"
+
+newest_mutation_scope t_pruning_scope "$mutations_before"
 wait_for_mutations t_pruning_scope
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_pruning_scope"
 
