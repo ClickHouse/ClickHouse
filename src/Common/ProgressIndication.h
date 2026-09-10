@@ -30,6 +30,11 @@ struct ThreadEventData
     /// bytes, and ClickHouse's own network traffic (`NetworkReceiveBytes`/`NetworkSendBytes`).
     UInt64 io_bytes = 0;
 
+    /// Bytes of `io_bytes` the server spent on the progress reporting itself (Progress,
+    /// ProfileEvents and Logs packets); subtracted, so that an idle or stalled query does not
+    /// show the meter's own traffic as query IO.
+    UInt64 protocol_service_bytes = 0;
+
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
 };
@@ -107,8 +112,8 @@ public:
 
 private:
     double getCPUUsage();
-    /// IO (disk + object storage + network) rate in bytes per second
-    /// (0 when the server does not report the underlying counters).
+    /// IO (disk + object storage + network) rate in bytes per second, without the native
+    /// protocol's own service packets (0 when the server does not report the underlying counters).
     double getIORate();
 
     UInt64 getElapsedNanoseconds() const;

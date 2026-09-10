@@ -70,7 +70,9 @@ void ProgressIndication::updateThreadEventData(HostToTimesMap & new_hosts_data)
     for (auto & new_host : new_hosts_data)
     {
         total_cpu_ns += us_to_ns * new_host.second.time();
-        total_io_bytes += new_host.second.io_bytes;
+        const UInt64 host_io_bytes = new_host.second.io_bytes;
+        const UInt64 host_service_bytes = new_host.second.protocol_service_bytes;
+        total_io_bytes += host_io_bytes > host_service_bytes ? host_io_bytes - host_service_bytes : 0;
         hosts_data[new_host.first] = new_host.second;
     }
     double now_ns = static_cast<double>(getElapsedNanoseconds());
