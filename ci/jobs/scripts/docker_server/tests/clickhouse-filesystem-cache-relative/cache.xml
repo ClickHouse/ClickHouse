@@ -1,0 +1,8 @@
+<clickhouse>
+    <filesystem_caches>
+        <docker_relative_cache>
+            <max_size>10000000</max_size>
+            <path>docker_relative_cache</path>
+        </docker_relative_cache>
+    </filesystem_caches>
+</clickhouse>

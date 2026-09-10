@@ -45,7 +45,7 @@ public:
     UInt64 getHash() const;
 
     /// Compressed bytes from uncompressed source to dest. Dest should preallocate memory
-    UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
+    virtual UInt32 compress(const char * source, UInt32 source_size, char * dest) const;
 
     /// Decompress bytes from compressed source to dest. Dest should preallocate memory;
     UInt32 decompress(const char * source, UInt32 source_size, char * dest) const;
@@ -101,10 +101,6 @@ public:
 
     virtual bool isLossyCompression() const { return false; }
 
-    /// It is a codec available only for evaluation purposes and not meant to be used in production.
-    /// It will not be allowed to use unless the user will turn off the safety switch.
-    virtual bool isExperimental() const { return false; }
-
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 
@@ -115,7 +111,8 @@ protected:
     /// This is used for fuzz testing
     friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
-    /// Return size of compressed data without header
+    /// Upper bound on the compressed data size without the header. While compressing, a codec may temporarily write more bytes
+    /// into `dest` than its final result, so the bound covers those writes too and may exceed the actual compressed size.
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
     /// Actually compress data without header

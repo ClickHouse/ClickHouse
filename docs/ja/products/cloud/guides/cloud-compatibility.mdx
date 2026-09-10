@@ -7,6 +7,8 @@ keywords: ['ClickHouse Cloud', '互換性']
 doc_type: 'guide'
 ---
 
+import CloudUnsupportedFeatures from '/snippets/ja/_cloud_unsupported_features.mdx';
+
 このガイドでは、ClickHouse Cloud の機能面および運用面で想定される違いの概要を説明します。ClickHouse Cloud はオープンソース版の ClickHouse をベースにしていますが、アーキテクチャや実装にはいくつか違いがある場合があります。背景情報として、[ClickHouse Cloud をどのように構築したか](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year)を紹介するこちらのブログも、興味深く参考になるでしょう。
 
 <div id="clickhouse-cloud-architecture">
@@ -48,7 +50,7 @@ ClickHouse Cloud は、[SharedMergeTree](/ja/products/cloud/features/infrastruct
 
 `Replicated*` エンジンも、同じ対応先の `Shared*` エンジンに変換されます。この置き換えは `SHOW CREATE TABLE` で確認でき、ステートメントで通常のバリアントを指定していても、`Shared*` エンジンとして表示されます。
 
-以下のエンジンもサポートされており、そのまま使用されます:
+以下のテーブルエンジンもサポートされており、そのまま使用されます。サポートされている `MySQL` テーブルエンジンは、サポートされていない `MySQL` データベースエンジンとは異なります。
 
 * URL
 * View
@@ -57,6 +59,7 @@ ClickHouse Cloud は、[SharedMergeTree](/ja/products/cloud/features/infrastruct
 * Null
 * Buffer
 * Memory
+* `IcebergS3` および `IcebergAzure`
 * Deltalake
 * Hudi
 * MySQL
@@ -66,6 +69,8 @@ ClickHouse Cloud は、[SharedMergeTree](/ja/products/cloud/features/infrastruct
 * PostgreSQL
 * S3
 * Kafka
+
+実験的な `PaimonS3` および `PaimonAzure` テーブルエンジンは、一部の ClickHouse Cloud サービスで有効にできます。利用可否についてはサポートにお問い合わせください。
 
 <div id="interfaces">
   ### インターフェイス
@@ -85,6 +90,8 @@ Dictionaries は、ClickHouse におけるルックアップを高速化する�
 
 クラウド内でのクラスター間通信、および外部のセルフマネージド ClickHouse クラスターとの通信向けに、フェデレーテッド ClickHouse クエリをサポートしています。現在、ClickHouse Cloud では、以下のインテグレーションエンジンを使用したフェデレーテッドクエリをサポートしています。
 
+* `IcebergS3` および `IcebergAzure`
+* `PaimonS3` および `PaimonAzure` (実験的。利用可否についてはサポートにお問い合わせください)
 * Deltalake
 * Hudi
 * MySQL
@@ -128,7 +135,7 @@ ClickHouse Cloud のユーザー定義関数は、[パブリックベータ](/ja
   ### 名前付きコレクション
 </div>
 
-[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) は現在、ClickHouse Cloud ではサポートされていません。
+DDL で作成された[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)は、一部の ClickHouse Cloud サービスで有効にできます。利用可否についてはサポートにお問い合わせください。ClickHouse Cloud ではユーザーがサーバー設定ファイルを変更できないため、設定ファイルで定義された名前付きコレクションは利用できません。
 
 <div id="operational-defaults-and-considerations">
   ## 運用上のデフォルト設定と考慮事項
@@ -151,9 +158,7 @@ MergeTree テーブルにおける `max_parts_in_total` 設定のデフォルト
 </div>
 
 同時実行数を増やすため、このサーバー設定をデフォルトの `100` から `1000` に引き上げています。
-これにより、各ティアのサービスで実行できる同時クエリ数は `レプリカ数 * 1,000` になります。
-単一レプリカに制限される Basic tier のサービスでは同時クエリ数は `1000`、Scale と Enterprise では、
-設定したレプリカ数に応じて `1000+` になります。
+これにより、サービスで実行できる同時クエリ数は `レプリカ数 * 1,000` になります。単一レプリカのサービスでは、ティアにかかわらず最大 `1000` の同時クエリがサポートされます。Scale および Enterprise tier の複数レプリカのサービスでは、レプリカごとに最大 `1000` の同時クエリがサポートされます。
 
 <div id="max_table_size_to_drop-1000000000000">
   #### `max_table_size_to_drop: 1,000,000,000,000`
@@ -172,6 +177,12 @@ ClickHouse Cloud は変動するワークロードに対応できるよう調整
 </div>
 
 ClickHouse service の作成時に、デフォルトのデータベースと、そのデータベースに対して広範な権限を持つ default user が作成されます。この初期ユーザーは、追加のユーザーを作成し、そのデータベースに対する権限を付与できます。これに加えて、Kerberos、LDAP、または SSL X.509 証明書認証を使用して、データベース内で以下のセキュリティ機能を有効にすることは、現時点ではサポートされていません。
+
+<div id="list-of-unsupported-features">
+  ## サポート対象外の機能一覧
+</div>
+
+<CloudUnsupportedFeatures />
 
 <div id="roadmap">
   ## ロードマップ

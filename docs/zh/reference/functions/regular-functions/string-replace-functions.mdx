@@ -80,7 +80,7 @@ SELECT format('{} {}', 'Hello', 'World')
 
 引入版本：v24.9.0
 
-从基于 1 的位置 `offset` 开始，用另一个字符串 `replace` 替换字符串 `input` 的一部分。
+从索引 `offset` 开始，用另一个字符串 `replace` 替换字符串 `input` 的一部分。
 
 **语法**
 
@@ -108,9 +108,9 @@ SELECT overlay('My father is from Mexico.', 'mother', 4) AS res;
 ```
 
 ```response title=Response
-┌─res──────────────────────┐
-│ My mother is from Mexico.│
-└──────────────────────────┘
+┌─res───────────────────────┐
+│ My mother is from Mexico. │
+└───────────────────────────┘
 ```
 
 **按长度替换**
@@ -120,9 +120,9 @@ SELECT overlay('My father is from Mexico.', 'dad', 4, 6) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────┐
-│ My dad is from Mexico.│
-└───────────────────────┘
+┌─res────────────────────┐
+│ My dad is from Mexico. │
+└────────────────────────┘
 ```
 
 <div id="overlayUTF8">
@@ -161,9 +161,9 @@ SELECT overlayUTF8('Mein Vater ist aus Österreich.', 'der Türkei', 20) AS res;
 ```
 
 ```response title=Response
-┌─res───────────────────────────┐
-│ Mein Vater ist aus der Türkei.│
-└───────────────────────────────┘
+┌─res────────────────────────────┐
+│ Mein Vater ist aus der Türkei. │
+└────────────────────────────────┘
 ```
 
 <div id="printf">
@@ -355,13 +355,13 @@ replaceRegexpAll(haystack, pattern, replacement)
 **将所有字符替换为其双倍形式**
 
 ```sql title=Query
-SELECT replaceRegexpAll('Hello123', '.', '\\\\0\\\\0') AS res
+SELECT replaceRegexpAll('Hello123', '.', '\\0\\0') AS res
 ```
 
 ```response title=Response
-┌─res──────────────────┐
-│ HHeelllloo112233     │
-└──────────────────────┘
+┌─res──────────────┐
+│ HHeelllloo112233 │
+└──────────────────┘
 ```
 
 **空子串替换示例**
@@ -409,28 +409,22 @@ replaceRegexpOne(haystack, pattern, replacement)
 **将 ISO 日期转换为美式格式**
 
 ```sql title=Query
-SELECT DISTINCT
-    EventDate,
-    replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
-FROM test.hits
-LIMIT 7
-FORMAT TabSeparated
+SELECT replaceRegexpOne(d, '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
+FROM values('d String', '2014-03-17', '2014-03-18', '2014-03-19')
 ```
 
 ```response title=Response
-2014-03-17      03/17/2014
-2014-03-18      03/18/2014
-2014-03-19      03/19/2014
-2014-03-20      03/20/2014
-2014-03-21      03/21/2014
-2014-03-22      03/22/2014
-2014-03-23      03/23/2014
+┌─res────────┐
+│ 03/17/2014 │
+│ 03/18/2014 │
+│ 03/19/2014 │
+└────────────┘
 ```
 
 **将字符串复制十次**
 
 ```sql title=Query
-SELECT replaceRegexpOne('Hello, World!', '.*', '\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0') AS res
+SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
 ```response title=Response

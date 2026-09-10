@@ -19,13 +19,10 @@ set (CLICKHOUSE_DISKS_SOURCES
     CommandHelp.cpp
     CommandTouch.cpp
     CommandGetCurrentDiskAndPath.cpp
+    CommandPackedIO.cpp
     CommandDiskUsage.cpp
     CommandWordCount.cpp
     Utils.cpp)
-
-if (CLICKHOUSE_CLOUD)
-  set (CLICKHOUSE_DISKS_SOURCES ${CLICKHOUSE_DISKS_SOURCES} CommandPackedIO.cpp)
-endif ()
 
 set (CLICKHOUSE_DISKS_LINK
     PRIVATE

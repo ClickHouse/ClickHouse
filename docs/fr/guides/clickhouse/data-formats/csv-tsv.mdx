@@ -79,7 +79,7 @@ Dans ce cas, ClickHouse ignore la première ligne lors de l’importation des do
   ### Fichiers CSV avec des délimiteurs personnalisés
 </div>
 
-Si le fichier CSV utilise un délimiteur autre qu’une virgule, vous pouvez utiliser l’option [format&#95;csv&#95;delimiter](/fr/reference/settings/formats#format_csv_delimiter) pour définir le symbole correspondant :
+Si le fichier CSV utilise un délimiteur autre qu’une virgule, vous pouvez utiliser l’option [format&#95;csv&#95;delimiter](/fr/reference/settings/formats/format-csv#format_csv_delimiter) pour définir le symbole correspondant :
 
 ```sql
 SET format_csv_delimiter = ';'
@@ -91,7 +91,7 @@ Désormais, lors de l’importation depuis un fichier CSV, le symbole `;` sera u
   ### Ignorer des lignes dans un fichier CSV
 </div>
 
-Il peut parfois être nécessaire d’ignorer un certain nombre de lignes lors de l’importation de données depuis un fichier CSV. Cela peut se faire à l’aide de l’option [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/fr/reference/settings/formats#input_format_csv_skip_first_lines) :
+Il peut parfois être nécessaire d’ignorer un certain nombre de lignes lors de l’importation de données depuis un fichier CSV. Cela peut se faire à l’aide de l’option [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/fr/reference/settings/formats/input-format#input_format_csv_skip_first_lines) :
 
 ```sql
 SET input_format_csv_skip_first_lines = 10
@@ -119,7 +119,7 @@ Le [fichier](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_smal
   ### Traitement des valeurs NULL dans les fichiers CSV
 </div>
 
-Les valeurs NULL peuvent être encodées différemment selon l’application qui a généré le fichier. Par défaut, ClickHouse utilise `\N` comme valeur NULL dans les fichiers CSV. Mais il est possible de modifier ce comportement à l’aide de l’option [format&#95;csv&#95;null&#95;representation](/fr/reference/settings/formats#format_tsv_null_representation).
+Les valeurs NULL peuvent être encodées différemment selon l’application qui a généré le fichier. Par défaut, ClickHouse utilise `\N` comme valeur NULL dans les fichiers CSV. Mais il est possible de modifier ce comportement à l’aide de l’option [format&#95;csv&#95;null&#95;representation](/fr/reference/settings/formats/format-csv#format_csv_null_representation).
 
 Supposons que nous ayons le fichier CSV suivant :
 
@@ -174,7 +174,7 @@ Le format de données séparées par des tabulations est couramment utilisé com
 clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
 ```
 
-Il existe également un format [TabSeparatedWithNames](/fr/reference/formats/TabSeparated/TabSeparatedWithNames) qui permet de travailler avec des fichiers TSV avec en-têtes. Et, comme pour le CSV, il est possible d’ignorer les X premières lignes à l’aide de l’option [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/fr/reference/settings/formats#input_format_tsv_skip_first_lines).
+Il existe également un format [TabSeparatedWithNames](/fr/reference/formats/TabSeparated/TabSeparatedWithNames) qui permet de travailler avec des fichiers TSV avec en-têtes. Et, comme pour le CSV, il est possible d’ignorer les X premières lignes à l’aide de l’option [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/fr/reference/settings/formats/input-format#input_format_tsv_skip_first_lines).
 
 <div id="raw-tsv">
   ### TSV brut
@@ -244,7 +244,7 @@ Notez qu’il n’a fallu à ClickHouse qu’**~1** seconde pour écrire 36 M de
   ### Exportation au format CSV avec des délimiteurs personnalisés
 </div>
 
-Si nous voulons utiliser des délimiteurs autres que la virgule, nous pouvons utiliser l&#39;option de paramètre [format&#95;csv&#95;delimiter](/fr/reference/settings/formats#format_csv_delimiter) :
+Si nous voulons utiliser des délimiteurs autres que la virgule, nous pouvons utiliser l&#39;option de paramètre [format&#95;csv&#95;delimiter](/fr/reference/settings/formats/format-csv#format_csv_delimiter) :
 
 ```sql
 SET format_csv_delimiter = '|'
@@ -271,7 +271,7 @@ FORMAT CSV
   ### Exportation d’un CSV pour Windows
 </div>
 
-Si vous souhaitez qu’un fichier CSV fonctionne correctement dans un environnement Windows, vous devriez envisager d’activer l’option [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/fr/reference/settings/formats#output_format_csv_crlf_end_of_line). Cela utilisera `\r\n` comme saut de ligne au lieu de `\n` :
+Si vous souhaitez qu’un fichier CSV fonctionne correctement dans un environnement Windows, vous devriez envisager d’activer l’option [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/fr/reference/settings/formats/output-format#output_format_csv_crlf_end_of_line). Cela utilisera `\r\n` comme saut de ligne au lieu de `\n` :
 
 ```sql
 SET output_format_csv_crlf_end_of_line = 1;

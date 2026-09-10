@@ -1,7 +1,8 @@
 ---
 sidebarTitle: '프로젝션 소개'
+searchable: true
 title: '첫 번째 프로젝션 만들기'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['실시간 분석', '데이터 웨어하우징']
 products: ['Cloud']
 description: 'ClickHouse에서 프로젝션을 사용해 동일한 테이블 내에 정렬된 데이터 사본을 추가로 저장하고, 프라이머리 키(primary key)에 포함되지 않은 컬럼도 빠르게 조회하는 방법을 알아봅니다.'
 ---
@@ -42,9 +43,7 @@ MergeTree 퀵스타트에서는 테이블이 `(postcode, addr1, addr2)` 기준�
 이 과정을 마치면 프로젝션을 추가하고 구체화하는 방법, ClickHouse가 이를 자동으로 선택하는 방식, 그리고 materialized view보다 프로젝션이 더 적합한 경우를 이해하게 됩니다.
 
 <Steps titleSize="h3">
-  <Step>
-    ### 프로젝션이 필요한 이유 이해하기
-
+  <Step title="프로젝션이 필요한 이유 이해하기" id="understand-why-you-need-a-projection">
     `uk_price_paid` 테이블은 `(postcode, addr1, addr2)` 기준으로 정렬되어 있습니다. 즉, `postcode`, `addr1`, `addr2`로 필터링할 때 ClickHouse는 큰 데이터 블록을 건너뛸 수 있지만, `town`으로 필터링하는 쿼리는 3천만 행 전체를 모두 스캔해야 합니다.
 
     **프로젝션**은 *같은 테이블 내부에* (일부 또는 전체) 컬럼의 추가 정렬 복사본을 저장합니다. 테이블을 쿼리할 때 쿼리 최적화기는 프로젝션을 읽는 편이 기본 데이터보다 더 적은 그래뉼에 접근하는지 자동으로 확인하고, 그렇다면 이를 투명하게 사용합니다.
@@ -58,9 +57,7 @@ MergeTree 퀵스타트에서는 테이블이 `(postcode, addr1, addr2)` 기준�
     자세한 내용은 [프로젝션 참고 문서](/ko/reference/statements/alter/projection)를 참조하십시오.
   </Step>
 
-  <Step>
-    ### 테이블에 프로젝션 추가하기
-
+  <Step title="테이블에 프로젝션 추가하기" id="add-a-projection-to-your-table">
     `uk_price_paid`에 `town`, `date`, `price`, `type`을 `(town, date)` 기준으로 정렬된 상태로 저장하는 프로젝션을 정의합니다:
 
     ```sql
@@ -83,9 +80,7 @@ MergeTree 퀵스타트에서는 테이블이 `(postcode, addr1, addr2)` 기준�
     출력 결과에서 `PROJECTION uk_price_paid_by_town` 블록을 확인할 수 있어야 합니다.
   </Step>
 
-  <Step>
-    ### 기존 데이터에 대해 프로젝션 구체화하기
-
+  <Step title="기존 데이터에 대해 프로젝션 구체화하기" id="materialize-the-projection-for-existing-data">
     materialized view와 마찬가지로, 새로 추가한 프로젝션은 이후 삽입되는 데이터에만 적용됩니다. 테이블에 이미 있는 3천만 행으로 이를 채우려면 명시적으로 구체화하십시오:
 
     ```sql
@@ -121,9 +116,7 @@ MergeTree 퀵스타트에서는 테이블이 `(postcode, addr1, addr2)` 기준�
     ```
   </Step>
 
-  <Step>
-    ### 테이블(table)을 쿼리하고 projection이 자동으로 사용되는지 확인하기
-
+  <Step title="테이블(table)을 쿌리하고 projection이 자동으로 사용되는지 확인하기" id="query-the-table-and-observe-automatic-projection-usage">
     이제 `town`으로 필터링하는 쿼리를 실행하세요. 지금까지 계속 쿼리해 온 **같은 테이블**에서 실행합니다:
 
     ```sql
@@ -170,15 +163,11 @@ MergeTree 퀵스타트에서는 테이블이 `(postcode, addr1, addr2)` 기준�
     이렇게 하면 테이블 전체를 스캔하게 되므로 읽은 행 수의 차이를 확인할 수 있습니다.
   </Step>
 
-  <Step>
-    ### 프로젝션과 materialized view 비교
-
+  <Step title="프로젝션과 materialized view 비교" id="compare-projections-to-materialized-views">
     프로젝션과 materialized view는 모두 같은 문제, 즉 서로 다른 액세스 패턴에서 더 빠른 읽기를 제공하는 문제를 해결하지만, 각기 다른 트레이드오프가 있습니다. 요약하면, 동일한 데이터에 대해 다른 정렬 순서만 필요할 때는 프로젝션이 가장 적합합니다. 반면 데이터를 변환하거나 집계하거나 다른 스키마(schema)로 보내야 할 때는 materialized view가 더 유연합니다. 자세한 비교는 [Materialized views versus projections](/ko/concepts/features/projections/materialized-views-versus-projections)를 참조하십시오.
   </Step>
 
-  <Step>
-    ### 스토리지 오버헤드 확인
-
+  <Step title="스토리지 오버헤드 확인" id="observe-the-storage-overhead">
     프로젝션은 동일한 테이블 내에 선택한 컬럼의 사본을 한 벌 더 저장하므로 디스크 사용량이 증가합니다. `system.parts`를 쿼리하여 `uk_price_paid`의 전체 크기(이제 프로젝션 데이터가 포함됨)를 확인하세요:
 
     ```sql
@@ -211,7 +200,9 @@ MergeTree 퀵스타트에서는 테이블이 `(postcode, addr1, addr2)` 기준�
   </Step>
 </Steps>
 
-## 다음 단계
+<div id="next-steps">
+  ## 다음 단계
+</div>
 
 이 빠른 시작에서는 `uk_price_paid`에 `(town, date)` 기준으로 정렬된 데이터를 저장하는 프로젝션을 추가해, 별도의 테이블을 만들지 않고도 town 기준으로 빠르게 조회할 수 있도록 했습니다. 또한 프로젝션은 쿼리 최적화기가 자동으로 선택하고, 뮤테이션과 동기화된 상태를 유지하며, 디스크 공간을 사용하는 대신 읽기 성능을 높인다는 점을 배웠습니다.
 

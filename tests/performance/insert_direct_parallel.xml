@@ -1,0 +1,45 @@
+<test>
+    <!--
+        Measure the writing side of a plain INSERT (data streamed into the
+        server, not INSERT SELECT) with max_insert_threads > 1.
+
+        Before the "Support max_insert_threads for plain INSERTs" change,
+        max_insert_threads had no effect on such inserts: the whole pipeline
+        (squashing + writing the parts) ran in a single thread. This benchmark
+        makes the write side expensive on purpose (a compound sort key plus
+        ZSTD codecs) so the parallelization of the sinks is visible.
+
+        This is a shell-script query (type="shell"): it is run with bash and
+        timed end to end, once per server, so the reference (LEFT) and the
+        patched (RIGHT) binary are measured each on their own. It is fully
+        self-contained via clickhouse-local (CREATE + INSERT; the table lives
+        in a throwaway temporary directory that is removed when the process
+        exits, so no explicit DROP is needed).
+
+        The data is produced by a first clickhouse-local as `Native` (cheap to
+        produce and to parse) and piped into a second clickhouse-local that does
+        the direct INSERT, so what is measured is the insert's write side, not
+        format parsing. The memory-based thread clamp is disabled so that
+        max_insert_threads engages deterministically regardless of the machine.
+    -->
+    <query type="shell"><![CDATA[
+        SETTINGS="--max_threads=8 --max_insert_threads=8 --max_threads_min_free_memory_per_thread=0 --max_insert_threads_min_free_memory_per_thread=0"
+        $CLICKHOUSE_LOCAL $SETTINGS --query "
+            SELECT number AS id, rand(1) % 1000000 AS val1, rand(2) % 1000000 AS val2,
+                   concat('item_', toString(rand(3) % 100000)) AS name, rand(4) / 1000.0 AS amount,
+                   toDateTime('2020-01-01 00:00:00') + (rand(5) % 100000000) AS ts
+            FROM numbers(10000000) FORMAT Native" \
+        | $CLICKHOUSE_LOCAL $SETTINGS --query "
+            CREATE TABLE t
+            (
+                id UInt64 CODEC(ZSTD(3)),
+                val1 UInt32 CODEC(ZSTD(3)),
+                val2 UInt32 CODEC(ZSTD(3)),
+                name String CODEC(ZSTD(3)),
+                amount Float64 CODEC(ZSTD(3)),
+                ts DateTime CODEC(ZSTD(3))
+            )
+            ENGINE = MergeTree ORDER BY (val1, val2, name);
+            INSERT INTO t FORMAT Native"
+    ]]></query>
+</test>

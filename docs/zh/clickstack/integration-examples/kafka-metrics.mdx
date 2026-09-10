@@ -35,9 +35,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 * OpenTelemetry JMX Metric Gatherer JAR (下载说明见下文)
 
 <Steps>
-  <Step>
-    #### 获取 ClickStack API key
-
+  <Step title="获取 ClickStack API key" id="get-api-key">
     JMX Metric Gatherer 会将数据发送到 ClickStack 的 OTLP 端点，而该端点需要身份验证。
 
     1. 在你的 ClickStack URL 中打开 HyperDX (例如 `http://localhost:8080`)
@@ -54,9 +52,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 下载 OpenTelemetry JMX 指标收集器
-
+  <Step title="下载 OpenTelemetry JMX 指标收集器" id="download-jmx">
     下载 JMX 指标收集器 JAR：
 
     ```bash
@@ -65,9 +61,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 验证 Kafka JMX 是否已启用
-
+  <Step title="验证 Kafka JMX 是否已启用" id="verify-jmx">
     确保已在 Kafka 消息代理上启用 JMX。对于 Docker 部署：
 
     ```yaml
@@ -77,7 +71,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... 其他 Kafka 配置
+          # ... other Kafka configuration
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -96,9 +90,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 使用 Docker Compose 部署 JMX Metric Gatherer
-
+  <Step title="使用 Docker Compose 部署 JMX Metric Gatherer" id="deploy-jmx">
     本示例展示了一个包含 Kafka、JMX Metric Gatherer 和 ClickStack 的完整配置。请调整服务名称和端点，使其与现有部署保持一致：
 
     ```yaml
@@ -176,9 +168,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * `10000` - 采集间隔 (毫秒，10 秒)
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证指标
-
+  <Step title="在 HyperDX 中验证指标" id="verify-metrics">
     登录 HyperDX，确认指标正在持续写入：
 
     1. 进入 Chart Explorer
@@ -196,10 +186,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     要产生一些活动并填充更多指标：
 
     ```bash
-    # 创建测试 topic
+    # Create a test topic
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # 发送测试消息
+    # Send test messages
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -213,12 +203,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   ## 演示数据集
 </div>
 
-对于希望在配置生产系统之前先测试 Kafka Metrics 集成的用户，我们提供了一个预先生成的演示数据集，其中包含逼真的 Kafka 指标变化模式。
+对于希望在配置生产系统之前先测试 Kafka 指标 集成的用户，我们提供了一个预先生成的演示数据集，其中包含逼真的 Kafka 指标变化模式。
 
 <Steps>
-  <Step>
-    #### 下载样本指标数据集
-
+  <Step title="下载样本指标数据集" id="download-sample">
     下载预先生成的指标文件 (29 小时的 Kafka 指标，包含逼真的变化模式) ：
 
     ```bash
@@ -240,9 +228,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * **20:00-22:00：晚间回落** - 流量快速下降至夜间水平
   </Step>
 
-  <Step>
-    #### 启动 ClickStack
-
+  <Step title="启动 ClickStack" id="start-clickstack">
     启动一个 ClickStack 实例：
 
     ```bash
@@ -252,9 +238,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 将指标加载到 ClickStack 中
-
+  <Step title="将指标加载到 ClickStack 中" id="load-metrics">
     将这些指标直接加载到 ClickHouse：
 
     ```bash
@@ -268,10 +252,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step>
-    #### 在 HyperDX 中验证指标
-
-    加载完成后，查看这些指标最快的方式是使用预构建仪表盘。
+  <Step title="在 HyperDX 中验证指标" id="verify-demo-metrics">
+    加载完成后，查看这些指标最快的方式是使用预置仪表盘。
 
     继续前往 [仪表盘与可视化](#dashboards) 部分，导入仪表盘，一次查看所有 Kafka 指标。
 
@@ -290,13 +272,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 为帮助你快速开始使用 ClickStack 监控 Kafka，我们提供了 Kafka 指标所需的关键可视化内容。
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  <Step title="下载仪表盘配置" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">下载仪表盘配置文件</TrackedLink>。
   </Step>
 
-  <Step>
-    #### 导入预置仪表盘
-
+  <Step title="导入预置仪表盘" id="import-dashboard">
     1. 打开 HyperDX，进入“仪表盘”部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
@@ -307,9 +287,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="完成导入对话框" />
   </Step>
 
-  <Step>
-    #### 查看仪表盘
-
+  <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建完成后，所有可视化都将预先配置好：
 
     <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Kafka 指标仪表盘" />
@@ -432,11 +410,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * 通过添加具有唯一 `kafka.broker.id` 资源属性的额外 JMX Metric Gatherer 实例，监控多个 Kafka 消息代理
 
 <div id="going-to-production">
-  ## 用于生产环境
+  ## 投入生产环境
 </div>
 
 本指南将指标直接从 JMX Metric Gatherer 发送到 ClickStack 的 OTLP 端点，这种方式很适合测试和小规模部署。
 
-对于生产环境，建议将您自己的 OpenTelemetry Collector 以 agent 形式部署，用于接收来自 JMX Exporter 的指标并将其转发到 ClickStack。这样可以提供批次处理能力、弹性以及集中式配置管理。
+对于生产环境，请将您自己的 OpenTelemetry Collector 作为 agent 进行部署，用于接收来自 JMX Exporter 的指标并将其转发到 ClickStack。这样可以实现批处理、增强弹性，并集中管理配置。
 
-有关生产环境的部署模式和 collector 配置示例，请参见 [使用 OpenTelemetry 摄取](/zh/clickstack/ingesting-data/opentelemetry)。
+有关生产环境的部署模式和 collector 配置示例，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。

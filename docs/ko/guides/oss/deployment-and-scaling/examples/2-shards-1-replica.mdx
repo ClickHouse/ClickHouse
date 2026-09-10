@@ -38,9 +38,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 * 사용 중인 환경에 Docker가 설치되어 있습니다
 
 <Steps>
-  <Step>
-    ## 디렉터리 구조 및 테스트 환경 설정
-
+  <Step title="디렉터리 구조 및 테스트 환경 설정" id="set-up">
     <ExampleFiles />
 
     이 튜토리얼에서는 [Docker compose](https://docs.docker.com/compose/)를 사용하여 ClickHouse 클러스터를 구성합니다. 이 설정은 별도의 로컬 머신, 가상 머신 또는 클라우드 인스턴스 환경에서도 동작하도록 수정할 수 있습니다.
@@ -51,12 +49,12 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     mkdir cluster_2S_1R
     cd cluster_2S_1R
 
-    # clickhouse-keeper 디렉토리 생성
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # clickhouse-server 디렉토리 생성
+    # Create clickhouse-server directories
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -162,12 +160,10 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## ClickHouse 노드 구성
-
+  <Step title="ClickHouse 노드 구성" id="configure-clickhouse-servers">
     ### 서버 설정
 
-    이제 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`에 위치한 각 빈 설정 파일 `config.xml`을 수정하십시오. 아래에 강조 표시된 줄은 각 노드에 맞게 수정해야 합니다:
+    이제 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`에 있는 각 빈 설정 파일 `config.xml`을 수정하십시오. 아래에 강조된 줄은 각 노드에 맞게 변경해야 합니다:
 
     ```xml highlight={9,54-57}
     <clickhouse replace="true">
@@ -386,9 +382,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## ClickHouse Keeper 구성
-
+  <Step title="ClickHouse Keeper 구성" id="configure-clickhouse-keeper-nodes">
     ### Keeper 설정
 
     <KeeperConfig />
@@ -404,9 +398,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## 설정 확인
-
+  <Step title="설정 확인" id="test-the-setup">
     로컬 머신에서 Docker가 실행 중인지 확인하십시오.
     `cluster_2S_1R` 디렉터리의 루트에서 `docker-compose up` 명령으로 클러스터를 시작하십시오:
 
@@ -431,7 +423,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     쿼리를 실행하십시오. 첫 번째 노드에 연결하는 명령은 다음과 같습니다:
 
     ```bash
-    # 임의의 노드에 연결
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -484,9 +476,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     다음 단계에서는 클러스터에 테이블을 생성합니다.
   </Step>
 
-  <Step>
-    ## 데이터베이스 생성
-
+  <Step title="데이터베이스 생성" id="creating-a-database">
     이제 클러스터가 올바르게 설정되어 실행 중임을 확인했으므로,
     [영국 부동산 가격](/ko/get-started/sample-datasets/uk-price-paid)
     예시 데이터셋 튜토리얼에서 사용한 것과 동일한 테이블을 다시 생성합니다. 이 데이터셋은
@@ -542,9 +532,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 클러스터에 테이블 생성
-
+  <Step title="클러스터에 테이블 생성" id="creating-a-table">
     이제 데이터베이스가 생성되었으므로 테이블(table)을 생성합니다.
     호스트 클라이언트 어느 곳에서든 다음 쿼리를 실행하세요:
 
@@ -622,13 +610,13 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     이제 `clickhouse-01` 또는 `clickhouse-02`에서 다음 쿼리를 실행하십시오:
 
     ```sql
-    -- clickhouse-01에서 실행
+    -- from clickhouse-01
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Clicky McClickface │
     --   └────┴────────────────────┘
 
-    --clickhouse-02에서 실행
+    --from clickhouse-02
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Alexey Milovidov   │
@@ -645,9 +633,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 테이블 엔진을 사용해 생성합니다. 어떻게 작동하는지 살펴보겠습니다.
   </Step>
 
-  <Step>
-    ## 분산 테이블 생성
-
+  <Step title="분산 테이블 생성" id="create-distributed-table">
     다음 쿼리를 사용하여 분산 테이블을 생성하세요:
 
     ```sql
@@ -683,9 +669,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 분산 테이블에 데이터 삽입
-
+  <Step title="분산 테이블에 데이터 삽입" id="inserting-data-into-distributed-table">
     이제 호스트 중 하나에 연결하여 데이터를 삽입하십시오:
 
     ```sql
@@ -735,26 +719,26 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌──count()─┐
-    1. │ 30212555 │ -- 3,021만
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
     ```
 
     두 호스트 중 어느 쪽에서든 다음 쿼리를 실행하면 데이터가 세그먼트 전반에 걸쳐 거의 균등하게 분산되어 있음을 확인할 수 있습니다(어느 세그먼트에 삽입할지는 `rand()`로 결정되므로 실행 결과는 다를 수 있습니다):
 
     ```sql
-    -- clickhouse-01에서
+    -- from clickhouse-01
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15107353 │ -- 1,511만
+    -- 1. │ 15107353 │ -- 15.11 million
     --    └──────────┘
 
-    -- clickhouse-02에서
+    --from clickhouse-02
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15105202 │ -- 1,511만
+    -- 1. │ 15105202 │ -- 15.11 million
     --    └──────────┘
     ```
 

@@ -1,12 +1,14 @@
 #include <Processors/Transforms/LimitByTransform.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
-#include <Columns/ColumnsCommon.h>
 #include <Core/Block.h>
 #include <Core/SortCursor.h>
 #include <DataTypes/IDataType.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -19,6 +21,16 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char limit_by_sorted_stream_transform_pause[];
+extern const char limit_by_transform_pause[];
+extern const char limit_by_sorted_stream_transform_after_loop_pause[];
+extern const char limit_by_transform_after_loop_pause[];
+extern const char limit_by_sorted_stream_transform_mid_loop_pause[];
+extern const char limit_by_transform_mid_loop_pause[];
 }
 
 namespace
@@ -95,96 +107,6 @@ ChunkRowRange shrinkRunToLimitWindow(
     return {run_start_row + offset_rows_in_run, rows_kept_from_run};
 }
 
-/// Materialize chunk-local `slices` from one source `Columns` into `chunk` and
-/// return the output row count. `slices` must be non-empty, ordered by `start`,
-/// non-overlapping, and each slice must stay within `[0, source_row_count)`.
-/// Reuse the whole chunk when possible; otherwise prefer a single `cut` for
-/// contiguous rows and fall back to mask-based `filter`.
-UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const std::vector<ChunkRowRange> & slices)
-{
-    UInt64 output_row_count = 0;
-    for (const auto & slice : slices)
-        output_row_count += slice.length;
-
-    chassert(!slices.empty());
-    chassert(output_row_count <= source_row_count);
-#ifndef NDEBUG
-    {
-        for (const auto & column : source_columns)
-            chassert(column->size() == source_row_count);
-
-        UInt64 previous_slice_end = 0;
-        for (const auto & slice : slices)
-        {
-            chassert(slice.length > 0);
-            chassert(slice.start >= previous_slice_end);
-            chassert(slice.start + slice.length <= source_row_count);
-            previous_slice_end = slice.start + slice.length;
-        }
-    }
-#endif
-
-    const UInt64 first_slice_start = slices.front().start;
-    const UInt64 last_slice_end = slices.back().start + slices.back().length;
-
-    if (slices.size() == 1)
-    {
-        const auto & slice = slices.front();
-
-        /// A single slice keeps the whole chunk, so reuse the source columns.
-        if (slice.length == source_row_count)
-        {
-            chassert(slice.start == 0);
-            chunk.setColumns(std::move(source_columns), slice.length);
-            return output_row_count;
-        }
-
-        Columns output_columns;
-        output_columns.reserve(source_columns.size());
-        for (const auto & column : source_columns)
-            output_columns.push_back(column->cut(slice.start, slice.length));
-        chunk.setColumns(std::move(output_columns), slice.length);
-        return output_row_count;
-    }
-
-    if (output_row_count == source_row_count)
-    {
-        /// All rows survived, but as multiple slices. Reuse the source columns.
-        chunk.setColumns(std::move(source_columns), output_row_count);
-        return output_row_count;
-    }
-
-    /// Because `slices` are ordered and non-overlapping, if the span from the
-    /// first slice start to the last slice end has the same length as the sum
-    /// of slice lengths, then the slices have no gaps and form one segment.
-    if (last_slice_end - first_slice_start == output_row_count)
-    {
-        Columns output_columns;
-        output_columns.reserve(source_columns.size());
-        for (const auto & column : source_columns)
-            output_columns.push_back(column->cut(first_slice_start, output_row_count));
-        chunk.setColumns(std::move(output_columns), output_row_count);
-        return output_row_count;
-    }
-
-    /// Kept rows are sparse within the chunk, so build one mask and `filter`.
-    IColumn::Filter mask(source_row_count, 0);
-    for (const auto & slice : slices)
-        std::fill_n(mask.begin() + slice.start, slice.length, UInt8{1});
-
-    Columns output_columns;
-    output_columns.reserve(source_columns.size());
-
-    chassert(countBytesInFilter(mask) == output_row_count);
-
-    /// For `ColumnConst`, `filter` would work too, but it would scan the mask
-    /// again to count selected rows. We already know `output_row_count`, so use `cut`.
-    for (const auto & column : source_columns)
-        output_columns.push_back(isColumnConst(*column) ? column->cut(0, output_row_count) : column->filter(mask, output_row_count));
-    chunk.setColumns(std::move(output_columns), output_row_count);
-    return output_row_count;
-}
-
 }
 
 
@@ -220,15 +142,39 @@ void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, si
     group_counts[group_idx] = group_rows_seen_before_run + run_row_count;
 }
 
+/// LimitBy stores a group index in the cell's mapped slot, so it cannot use a set method. `chooseMethod`
+/// never returns one here; this overload exists only because the dispatch macro is generated over every
+/// `AggregatedDataVariants::Type`, including the set ones that `GROUP BY` without aggregates uses.
 template <typename Method>
+requires SetAggregationMethod<Method>
+void LimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, UInt64)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "LimitByTransform does not support void-mapped aggregation methods");
+}
+
+template <typename Method>
+requires MapAggregationMethod<Method>
 void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count)
 {
     typename Method::State state(grouping_key_columns, data.key_sizes, hash_method_context);
 
     UInt64 current_run_start_row = 0;
     size_t current_run_group_idx = 0;
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
+
     for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
     {
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
+            stopReading();
+            return;
+        }
+
+        if (row_idx == 5)
+            FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
+
         auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
         size_t row_group_idx = 0;
         if (key_emplace_result.isInserted()) /// New grouping key
@@ -273,6 +219,12 @@ void LimitByTransform::transform(Chunk & chunk)
 
     auto chunk_columns = chunk.detachColumns();
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     /// `filterNonConstKeys` removed all grouping keys, so every row in this chunk
     /// belongs to one logical group and can be processed as one run.
     if (data.type == AggregatedDataVariants::Type::without_key)
@@ -307,6 +259,15 @@ void LimitByTransform::transform(Chunk & chunk)
             case AggregatedDataVariants::Type::without_key:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AggregatedDataVariants type in LimitByTransform::transform");
         }
+    }
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_after_loop_pause);
+
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("LimitByTransform"), "Cancelled after processing chunk");
+        stopReading();
+        return;
     }
 
     /// No row from this chunk survived `LIMIT BY`.
@@ -384,6 +345,12 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
 
     auto chunk_columns = chunk.detachColumns();
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     Columns normalized_grouping_key_columns;
     normalized_grouping_key_columns.reserve(grouping_key_positions.size());
     for (size_t position : grouping_key_positions)
@@ -401,8 +368,22 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
     /// Segment the sorted chunk into maximal runs of rows that share one grouping key. Each run is
     /// one group.
     UInt64 current_run_start_row = 0;
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_pause);
+
+    size_t run_count = 0;
     while (current_run_start_row < row_count)
     {
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled during row processing");
+            stopReading();
+            return;
+        }
+
+        if (run_count == 5)
+            FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_mid_loop_pause);
+
         const UInt64 run_end = getEqualRangeEndAssumeSorted(normalized_grouping_key_columns, current_run_start_row, row_count, 1);
         processRun(current_run_start_row, run_end - current_run_start_row);
 
@@ -410,12 +391,22 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         if (run_end != row_count)
             current_group_rows_seen = 0;
         current_run_start_row = run_end;
+        ++run_count;
     }
 
     /// Save the last grouping key so the next chunk can detect whether its first
     /// row continues the same group or starts a new one. With no non-constant grouping
     /// keys this is a no-op (nothing to remember).
     rememberLastGroupingKey(normalized_grouping_key_columns, row_count - 1);
+
+    FailPointInjection::pauseFailPoint(FailPoints::limit_by_sorted_stream_transform_after_loop_pause);
+
+    if (isCancelled())
+    {
+        LOG_TEST(getLogger("LimitBySortedStreamTransform"), "Cancelled after processing runs");
+        stopReading();
+        return;
+    }
 
     /// No row from this chunk survived.
     if (output_slices.empty())

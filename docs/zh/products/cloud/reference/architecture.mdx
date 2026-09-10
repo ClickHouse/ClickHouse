@@ -70,6 +70,6 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 并发限制
 </div>
 
-您的 ClickHouse Cloud 服务对每秒查询数 (QPS) 没有限制。不过，每个副本的并发查询上限为 1000。QPS 最终取决于查询的平均执行时间以及服务中的副本数量。
+您的 ClickHouse Cloud 服务对每秒查询数 (QPS) 没有限制。不过，每个副本的并发查询上限为 1000。QPS 最终取决于平均查询执行时间以及服务中的副本数量。
 
-相比自管理 ClickHouse 实例或其他数据库/数据仓库，ClickHouse Cloud 的一大优势是，您可以通过[添加更多副本 (横向扩缩容) ](/zh/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)轻松提升并发能力。
+与自管理 ClickHouse 实例或其他数据库/数据仓库相比，ClickHouse Cloud 的一大优势在于，您可以通过[添加更多副本 (横向扩缩容) ](/zh/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)轻松提升并发能力。
