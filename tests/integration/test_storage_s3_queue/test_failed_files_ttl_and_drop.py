@@ -822,6 +822,10 @@ def test_drop_failed_files_privilege(started_cluster):
     cluster. The table, the user and its grants therefore exist on both replicas of
     `cluster`; the user and grants are created `ON CLUSTER` so they reach both.
 
+    The user is also granted `CLUSTER`, which every ON CLUSTER statement needs on its own. Without
+    it the ON CLUSTER denial below is produced by the missing `CLUSTER` grant rather than by this
+    feature's gate, and the ON CLUSTER allow branch is unreachable.
+
     Access control only. Whether the drop does the right thing to `/failed` on either
     replica is `test_drop_failed_files_on_cluster_concurrent`'s subject, not this one's.
     """
@@ -857,19 +861,35 @@ def test_drop_failed_files_privilege(started_cluster):
     node.query(
         f"GRANT SHOW TABLES ON default.{table_name} TO {user_name} ON CLUSTER cluster"
     )
+    # `access_control_improvements.on_cluster_queries_require_cluster_grant` defaults to true, so
+    # running *any* ON CLUSTER statement needs `CLUSTER` on top of whatever the statement itself
+    # requires. Granted here, before the denial assertions, so that the only privilege still missing
+    # below is the S3Queue one - otherwise the ON CLUSTER denial says nothing about this feature's
+    # gate, and the ON CLUSTER allow branch cannot be reached at all.
+    node.query(f"GRANT CLUSTER ON *.* TO {user_name} ON CLUSTER cluster")
 
     direct_query = f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}"
     on_cluster_query = (
         f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name} ON CLUSTER cluster"
     )
 
+    # The denials below are matched on the name of the missing grant, not just on `ACCESS_DENIED`.
+    # Any missing privilege produces `ACCESS_DENIED`, so the weaker check passes whether or not this
+    # feature has a gate of its own - it did exactly that here while `CLUSTER` was the privilege
+    # actually missing. Naming the grant is what ties the denial to this statement.
+    required_grant = f"SYSTEM DROP S3QUEUE FAILED FILES ON default.{table_name}"
+
     # 1. Denied without the privilege, direct form.
-    assert "ACCESS_DENIED" in node.query_and_get_error(direct_query, user=user_name)
+    direct_error = node.query_and_get_error(direct_query, user=user_name)
+    assert "ACCESS_DENIED" in direct_error, direct_error
+    assert required_grant in direct_error, direct_error
 
     # 2. Denied without the privilege, ON CLUSTER form. This exercises
     #    getRequiredAccessForDDLOnCluster(), a separate path from the
     #    checkAccess() call inside the interpreter.
-    assert "ACCESS_DENIED" in node.query_and_get_error(on_cluster_query, user=user_name)
+    on_cluster_error = node.query_and_get_error(on_cluster_query, user=user_name)
+    assert "ACCESS_DENIED" in on_cluster_error, on_cluster_error
+    assert required_grant in on_cluster_error, on_cluster_error
 
     # 3. Grant exactly the new privilege, table-scoped.
     node.query(
@@ -898,9 +918,13 @@ def test_drop_failed_files_privilege(started_cluster):
         additional_settings={"keeper_path": f"/clickhouse/test_{other_table_name}"},
     )
     node.query(f"GRANT SHOW TABLES ON default.{other_table_name} TO {user_name}")
-    assert "ACCESS_DENIED" in node.query_and_get_error(
+    other_error = node.query_and_get_error(
         f"SYSTEM DROP S3QUEUE FAILED FILES default.{other_table_name}", user=user_name
     )
+    assert "ACCESS_DENIED" in other_error, other_error
+    assert (
+        f"SYSTEM DROP S3QUEUE FAILED FILES ON default.{other_table_name}" in other_error
+    ), other_error
 
     # Cleanup. The user and `table_name` exist on both replicas, so they are dropped
     # ON CLUSTER too; `other_table_name` was only ever created on `node`.
