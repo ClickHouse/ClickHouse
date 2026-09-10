@@ -43,9 +43,9 @@ The private preview supports `SELECT` queries only. Workers do not execute `INSE
 
 ## How it works {#how-it-works}
 
-1. You send an eligible `SELECT` query to your ClickHouse Cloud service requesting a specific number of workers. Your endpoint, authentication, and RBAC configuration do not change.
-2. Your cluster will then connect to the pool and request the specified number of workers.
-3. The workers will be leased for a duration of at least 60 seconds if the query last for longer, the lease will be automatically renewed.
+1. You send an eligible `SELECT` query to your ClickHouse Cloud service requesting a specific number of workers. Your endpoint, authentication, and RBAC configuration do not change
+2. Your cluster will then connect to the pool and request the specified number of workers
+3. The workers will be leased for a duration of at least 60 seconds if the query last for longer, the lease will be automatically renewed
 4. The workers receive the query and execute it
 5. The response is then sent back to your client
 6. The workers are wiped. 
