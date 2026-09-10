@@ -192,6 +192,16 @@ struct ConsecutiveKeyGetterForJoin
     static_assert(FindResult::has_offset);
     static_assert(!std::is_same_v<Mapped, void>);
 
+    enum class CacheState
+    {
+        Disabled,
+        Sampling,
+        Enabled,
+    };
+
+    static constexpr size_t probe_cache_sample_size = 8;
+    static constexpr size_t probe_cache_min_equal_rows = probe_cache_sample_size - 1;
+
     BaseMethod base;
     ColumnsHashing::FixedSizeKeySlices key_slices;
 
@@ -200,6 +210,9 @@ struct ConsecutiveKeyGetterForJoin
     Mapped * cached_mapped = nullptr;
     size_t cached_offset = 0;
     bool cached_found = false;
+    CacheState cache_state = CacheState::Disabled;
+    size_t sample_rows = 0;
+    size_t sample_equal_rows = 0;
 
     ConsecutiveKeyGetterForJoin(
         const ColumnRawPtrs & key_columns,
@@ -207,6 +220,15 @@ struct ConsecutiveKeyGetterForJoin
         const ColumnsHashing::HashMethodContextPtr & context)
         : base(key_columns, key_sizes, context), key_slices(key_columns)
     {
+        cache_state = key_slices.isUsable() ? CacheState::Sampling : CacheState::Disabled;
+    }
+
+    ALWAYS_INLINE void recordSample(bool equal)
+    {
+        ++sample_rows;
+        sample_equal_rows += equal;
+        if (sample_rows == probe_cache_sample_size)
+            cache_state = sample_equal_rows >= probe_cache_min_equal_rows ? CacheState::Enabled : CacheState::Disabled;
     }
 
     ALWAYS_INLINE auto getKeyHolder(size_t row, Arena & pool) const
@@ -229,17 +251,24 @@ struct ConsecutiveKeyGetterForJoin
     template <typename Data>
     ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
     {
-        if (key_slices.isUsable() && last_row != no_last_row && key_slices.rowsEqual(row, last_row))
+        if (cache_state == CacheState::Disabled)
+            return base.findKey(data, row, pool);
+
+        if (last_row != no_last_row && key_slices.rowsEqual(row, last_row))
+        {
+            if (cache_state == CacheState::Sampling)
+                recordSample(true);
             return FindResult(cached_mapped, cached_found, cached_offset);
+        }
 
         auto result = base.findKey(data, row, pool);
-        if (key_slices.isUsable())
-        {
-            last_row = row;
-            cached_found = result.isFound();
-            cached_mapped = cached_found ? &result.getMapped() : nullptr;
-            cached_offset = cached_found ? result.getOffset() : 0;
-        }
+        last_row = row;
+        cached_found = result.isFound();
+        cached_mapped = cached_found ? &result.getMapped() : nullptr;
+        cached_offset = cached_found ? result.getOffset() : 0;
+
+        if (cache_state == CacheState::Sampling)
+            recordSample(false);
         return result;
     }
 };
