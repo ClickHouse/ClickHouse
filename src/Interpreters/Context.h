@@ -2130,10 +2130,14 @@ private:
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
-    /// Checks the constrained settings that moved without the request assigning them: a value
-    /// `compatibility` derived, one it stopped deriving, one a post-processor moved. Only the state after
-    /// the change tells what they are, so the caller has to apply the change before calling this.
-    void checkSettingsMovedWithoutBeingAssignedWithLock(const Settings & settings_before, SettingSource source) const;
+    /// Checks the constrained settings the request did not assign: a value `compatibility` derived, one it
+    /// stopped deriving, one a post-processor moved, and one a profile the request selects constrains
+    /// without moving. Only the state after the change tells what they are, so the caller has to apply the
+    /// change before calling this, and to pass the constraints that were in force before it.
+    void checkSettingsMovedWithoutBeingAssignedWithLock(
+        const Settings & settings_before,
+        const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & profiles_before,
+        SettingSource source) const;
 
     /// Performs the resets on `target`, which is either the live settings or a copy the caller checks
     /// before committing to them. One routine for both, so the value checked is the value applied.

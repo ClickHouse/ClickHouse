@@ -91,11 +91,15 @@ public:
     /// `after_reset` holds the values the resets land on, which the caller obtains by performing them.
     void checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const;
 
-    /// Checks the constrained values that moved without anything assigning them - one `compatibility`
-    /// derived, one it stopped deriving. No other check ever sees those, because nobody asked for them.
-    /// Only values that differ from `settings_before` are checked: what the request did not move is not
-    /// the request's to answer for.
-    void checkMovedValues(const Settings & current_settings, const Settings & settings_before, SettingSource source) const;
+    /// Checks the constrained values that no one assigned - one `compatibility` derived, one it stopped
+    /// deriving. No other check ever sees those, because nobody asked for them. A value that moved is
+    /// checked in full; one that stayed where it was only has to be a value these constraints allow, and
+    /// only when this request installed them over it (`constraints_before` is null when nothing was).
+    void checkMovedValues(
+        const Settings & current_settings,
+        const Settings & settings_before,
+        const SettingsConstraints * constraints_before,
+        SettingSource source) const;
 
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
@@ -153,11 +157,20 @@ private:
             , setting_name_resolver(std::move(setting_name_resolver_))
         {}
 
+        /// Which restrictions a check applies. `CONST` and the source restrictions answer who may write
+        /// the setting, so they only apply to a value something wrote.
+        enum RestrictionsToCheck
+        {
+            ALL_RESTRICTIONS,
+            ALLOWED_VALUES_ONLY,
+        };
+
         // Perform checking
         bool check(SettingChange & change,
                    const Field & new_value,
                    ReactionOnViolation reaction,
-                   SettingSource source) const;
+                   SettingSource source,
+                   RestrictionsToCheck restrictions = ALL_RESTRICTIONS) const;
     };
 
     struct StringHash
@@ -182,6 +195,11 @@ private:
         bool ignore_unchanged_settings = false) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
+
+    /// Whether this request is what put `name` under the values `constraint` allows: nothing constrained
+    /// them before it, or something constrained them differently.
+    static bool allowedValuesArrivedWithRequest(
+        const String & name, const Constraint & constraint, const SettingsConstraints * constraints_before);
 
     Checker getChecker(const Settings & current_settings, std::string_view setting_name) const;
 

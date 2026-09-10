@@ -3624,7 +3624,7 @@ void Context::applySettingsChangesAndResets(const SettingsChanges & changes, con
         applySettingsChangesWithLock(changes, lock);
         checkSettingsConstraintsForSettingsResetWithLock(names_to_reset, source, lock);
         resetSettingsToDefaultValueWithLock(names_to_reset, lock);
-        checkSettingsMovedWithoutBeingAssignedWithLock(settings_before, source);
+        checkSettingsMovedWithoutBeingAssignedWithLock(settings_before, profiles_before, source);
     }
     catch (...)
     {
@@ -3757,12 +3757,16 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
     resetSettingsToDefaultValueWithLock(names, lock);
 }
 
-void Context::checkSettingsMovedWithoutBeingAssignedWithLock(const Settings & settings_before, SettingSource source) const
+void Context::checkSettingsMovedWithoutBeingAssignedWithLock(
+    const Settings & settings_before,
+    const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & profiles_before,
+    SettingSource source) const
 {
     const auto constraints_and_profiles = getSettingsConstraintsAndCurrentProfilesWithLock();
     if (constraints_and_profiles->constraints.empty())
         return;
-    constraints_and_profiles->constraints.checkMovedValues(*settings, settings_before, source);
+    constraints_and_profiles->constraints.checkMovedValues(
+        *settings, settings_before, profiles_before ? &profiles_before->constraints : nullptr, source);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const

@@ -90,3 +90,21 @@ a compatibility that moves a setting back onto its declared default is checked a
 SETTING_CONSTRAINT_VIOLATION
 0
 26.7
+a profile switch is refused when its constraint forbids a value compatibility already derived
+0
+SETTING_CONSTRAINT_VIOLATION
+0
+0
+and the same pre-armed switch carried by the URL is refused too
+SETTING_CONSTRAINT_VIOLATION
+a switch between two profiles that derive the same value is judged by the constraint that arrives
+0
+SETTING_CONSTRAINT_VIOLATION
+0
+1	0
+control: a profile that forbids writing a derived value is still selectable
+0
+SETTING_CONSTRAINT_VIOLATION
+control: a profile that forbids a value nothing derived is still selectable
+1
+1

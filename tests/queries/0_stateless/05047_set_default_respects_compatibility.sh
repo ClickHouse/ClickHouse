@@ -29,6 +29,8 @@ USER_LOGIN="u_login_05047_${CLICKHOUSE_DATABASE}"
 USER_MT="u_mt_05047_${CLICKHOUSE_DATABASE}"
 USER_MAX="u_max_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_MIN="p_min_05047_${CLICKHOUSE_DATABASE}"
+PROFILE_ERA_MAX="p_era_max_05047_${CLICKHOUSE_DATABASE}"
+PROFILE_WRIT="p_writ_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_CONST="p_const_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_STREAM="p_stream_05047_${CLICKHOUSE_DATABASE}"
 PROFILE_LOGIN="p_login_05047_${CLICKHOUSE_DATABASE}"
@@ -43,7 +45,7 @@ read_setting() { ${CLICKHOUSE_CURL} -sS "$1" -d "SELECT value FROM system.settin
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t1_05047, ${CLICKHOUSE_DATABASE}.t2_05047"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}, ${USER_MT}, ${USER_MAX}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}, ${PROFILE_MAX}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE IF EXISTS ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}, ${PROFILE_MAX}, ${PROFILE_ERA_MAX}, ${PROFILE_WRIT}"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MIN} SETTINGS ${Q} = 1 MIN 1"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_CONST} SETTINGS compatibility = '26.7' CONST"
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_STREAM} SETTINGS ${R} MIN 1"
@@ -58,6 +60,11 @@ ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MT} SETTINGS PROFILE '${PROFILE_MT}'
 # opposite polarity to every constraint above.
 ${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_MAX} SETTINGS ${Q} MAX 0"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER ${USER_MAX} SETTINGS PROFILE '${PROFILE_MAX}'"
+# Two profiles that carry the same `compatibility` as the arms below already have in force, so switching
+# to one of them derives nothing: what arrives is the constraint alone. One allows the derived value and
+# forbids writing it, the other allows the opposite value only.
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_ERA_MAX} SETTINGS compatibility = '26.7', ${Q} MAX 0"
+${CLICKHOUSE_CLIENT} -q "CREATE SETTINGS PROFILE ${PROFILE_WRIT} SETTINGS compatibility = '26.7', ${Q} CONST"
 
 echo 'the probe values differ from their declared defaults under compatibility 26.7'
 # If any of the three 26.8 history rows is ever dropped, this fails loudly instead of leaving the arms
@@ -311,5 +318,52 @@ ${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.8'" 2>&1 | grep -o 'SETT
 read_setting "$U" "${Q}"
 read_setting "$U" "compatibility"
 
+echo 'a profile switch is refused when its constraint forbids a value compatibility already derived'
+# The value the profile derives is the one the session already has, so the switch moves nothing and what
+# it installs is the constraint alone. The value under it is still what this request put there. The reads
+# show the refusal left neither the derived value nor the profile in place.
+U=$(session_url a23)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+read_setting "$U" "${Q}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET profile = '${PROFILE_LOGIN}'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SELECT has(currentProfiles(), '${PROFILE_LOGIN}')"
+
+echo 'and the same pre-armed switch carried by the URL is refused too'
+U=$(session_url a24)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "$(session_url a24)&profile=${PROFILE_LOGIN}" -d "SELECT 1" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+
+echo 'a switch between two profiles that derive the same value is judged by the constraint that arrives'
+# Both profiles carry the same `compatibility`, so the value is the same before and after the switch and
+# only what is allowed changes. The first switch is accepted, which is what makes the second one a test of
+# the constraint replacing it rather than of the derivation.
+U=$(session_url a25)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET profile = '${PROFILE_ERA_MAX}'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET profile = '${PROFILE_LOGIN}'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SELECT has(currentProfiles(), '${PROFILE_ERA_MAX}'), has(currentProfiles(), '${PROFILE_LOGIN}')"
+
+echo 'control: a profile that forbids writing a derived value is still selectable'
+# What arrives here restricts who may write the setting, and nothing wrote it. Refusing this makes a
+# profile that carries a `CONST` unselectable, so the check on a value that stayed where it was has to
+# read the constraint`s values and not its writability. The assignment shows the `CONST` did take effect.
+U=$(session_url a26)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET compatibility = '26.7'"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET profile = '${PROFILE_WRIT}'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SET ${Q} = 1" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+
+echo 'control: a profile that forbids a value nothing derived is still selectable'
+# The value under the arriving constraint is the one the setting holds when nothing has been assigned to
+# it, and a profile is applied without checking it at login. A switch answers for what it derives, not for
+# what it finds. The read at the end shows the switch took effect, so the acceptance is not the profile
+# being dropped on the way.
+U=$(session_url a27)
+${CLICKHOUSE_CURL} -sS "$U" -d "SET profile = '${PROFILE_MAX}'" 2>&1 | grep -o 'SETTING_CONSTRAINT_VIOLATION' | head -1
+read_setting "$U" "${Q}"
+${CLICKHOUSE_CURL} -sS "$U" -d "SELECT has(currentProfiles(), '${PROFILE_MAX}')"
+
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${USER_MIN}, ${USER_CONST}, ${USER_STREAM}, ${USER_LOGIN}, ${USER_MT}, ${USER_MAX}"
-${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}, ${PROFILE_MAX}"
+${CLICKHOUSE_CLIENT} -q "DROP PROFILE ${PROFILE_MIN}, ${PROFILE_CONST}, ${PROFILE_STREAM}, ${PROFILE_LOGIN}, ${PROFILE_MT}, ${PROFILE_MAX}, ${PROFILE_ERA_MAX}, ${PROFILE_WRIT}"
