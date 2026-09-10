@@ -2,6 +2,7 @@
 -- for every literal that does not fit the narrowest native width of a `Decimal`.
 
 SET enable_analyzer = 0;
+SET optimize_arithmetic_operations_in_aggregate_functions = 1;
 
 DROP TABLE IF EXISTS t_aggregate_arithmetic_decimal_old;
 CREATE TABLE t_aggregate_arithmetic_decimal_old (a Decimal(5, 4)) ENGINE = MergeTree ORDER BY a;
