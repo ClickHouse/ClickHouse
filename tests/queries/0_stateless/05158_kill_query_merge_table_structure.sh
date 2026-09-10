@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
 # Tag no-fasttest: the two deterministic 10-second waits below, plus the 4-second sleep, are most of
-# a test that runs in about 40 seconds, which is a large share of the fast test per-test timeout.
+# a test that runs in about 30 seconds, which is a large share of the fast test per-test timeout.
 # Tag no-parallel: this test WAITS on a process-global PAUSEABLE failpoint, so a concurrent
 # instance pausing or resuming the same channel would break the synchronisation.
 
@@ -38,7 +38,7 @@ function cleanup()
 trap cleanup EXIT
 
 # Structure inference reads metadata only, so these tables deliberately hold no data: one row of the
-# branching type occupies about 8000 stream files, which would dominate the test's cost for no coverage.
+# branching type writes 5117 streams in a wide part and would cover nothing extra.
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS deep0;
     DROP TABLE IF EXISTS unary0;
