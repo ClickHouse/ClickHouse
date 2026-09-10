@@ -90,6 +90,8 @@ namespace Setting
     extern const SettingsFloat shrink_over_allocated_columns_min_waste_ratio;
     extern const SettingsUInt64 shrink_over_allocated_columns_min_waste_bytes;
     extern const SettingsString insert_deduplication_token;
+    extern const SettingsString insert_expected_table_engine;
+    extern const SettingsMap insert_expected_column_types;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
@@ -122,6 +124,8 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
+    extern const int INCOMPATIBLE_SCHEMA;
+    extern const int UNEXPECTED_TABLE_ENGINE;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int LOGICAL_ERROR;
 }
@@ -1244,6 +1248,57 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 }
 
 
+namespace
+{
+
+/// What an INSERT may require of the table it names: an engine and column types, each refused when it differs.
+void checkAndConsumeInsertExpectations(
+    const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, const ContextMutablePtr & context)
+{
+    const auto & settings = context->getSettingsRef();
+    const String expected_engine = settings[Setting::insert_expected_table_engine].value;
+    const auto & expected_types = settings[Setting::insert_expected_column_types].value;
+    if (expected_engine.empty() && expected_types.empty())
+        return;
+
+    if (!expected_engine.empty() && table->getName() != expected_engine)
+        throw Exception(
+            ErrorCodes::UNEXPECTED_TABLE_ENGINE,
+            "Table {} has engine {} while the INSERT expects {} (insert_expected_table_engine)",
+            table->getStorageID().getNameForLogs(),
+            table->getName(),
+            expected_engine);
+
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & expected_type : expected_types)
+    {
+        const auto & name_and_type = expected_type.safeGet<Tuple>();
+        const auto & name = name_and_type.at(0).safeGet<String>();
+        const auto & type = name_and_type.at(1).safeGet<String>();
+        const auto * column = columns.tryGet(name);
+        if (!column)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares no column `{}`, which the INSERT expects as {} (insert_expected_column_types)",
+                table->getStorageID().getNameForLogs(),
+                name,
+                type);
+        if (column->type->getName() != type)
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_SCHEMA,
+                "Table {} declares column `{}` as {} while the INSERT expects {} (insert_expected_column_types)",
+                table->getStorageID().getNameForLogs(),
+                name,
+                column->type->getName(),
+                type);
+    }
+
+    context->setSetting("insert_expected_table_engine", String{});
+    context->setSetting("insert_expected_column_types", Field{Map{}});
+}
+
+}
+
 BlockIO InterpreterInsertQuery::execute()
 {
     auto context = getContext();
@@ -1299,6 +1354,11 @@ BlockIO InterpreterInsertQuery::execute()
     /// background flush for asynchronous inserts, so the check has to be repeated here.
     if (!query.table_function)
         table->checkInsertIsAllowed(context);
+
+    /// The table named is checked and the requirements consumed: the writes it makes on its own, into inner tables
+    /// or views, are its own. A Distributed table forwards them instead, for each shard's insert to check its table.
+    if (table->getName() != "Distributed")
+        checkAndConsumeInsertExpectations(table, metadata_snapshot, context);
 
     if (!allow_materialized)
     {

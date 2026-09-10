@@ -102,6 +102,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_derive_not_null_filters_from_joins", false, true, "New setting to derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
             {"query_plan_allow_derived_not_null_filters_execution", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be executed."},
             {"query_plan_max_selectivity_for_not_null_filters_execution", 0.7, 0.7, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be executed."}
+            {"insert_expected_table_engine", "", "", "New setting: an INSERT is refused unless the table it names has this engine; a Distributed table forwards it to its shards. Remote write over a Distributed table sets it to TimeSeries."},
+            {"insert_expected_column_types", "", "", "New setting: an INSERT is refused unless the table it names declares these columns with exactly these types; a Distributed table forwards it to its shards. Remote write over a Distributed table sets it to the time_series type the table declares."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {

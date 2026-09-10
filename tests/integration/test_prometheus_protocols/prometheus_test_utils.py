@@ -429,3 +429,45 @@ def value_close_to(value1, value2, eps):
         return math.isinf(value2) and (value1 > 0) == (value2 > 0)
     else:
         return math.isnan(value2)
+
+
+def error_code(node, name):
+    """The numeric code of a ClickHouse error, looked up on the server: no test names a magic number."""
+    return node.query(
+        f"SELECT DISTINCT code FROM system.errors WHERE name = '{name}'",
+        settings={"system_events_show_zero_values": 1},
+    ).strip()
+
+
+def keyed_result(data):
+    """Keys the series of a result by their labels: an instant result comes back in no defined
+    order, so both answers are keyed before they are compared."""
+    keyed = {
+        tuple(sorted(series["metric"].items())): (
+            series["value"] if "value" in series else series["values"]
+        )
+        for series in data["result"]
+    }
+    assert len(keyed) == len(data["result"]), f"Duplicate label sets in {data}"
+    return data["resultType"], keyed
+
+
+def get_error_from_query_endpoint(
+    host, port, prefix, endpoint, query, start, end, step, params=None
+):
+    """The error of the instant ("query", evaluated at `end`) or the range endpoint under `prefix`."""
+    if endpoint == "query":
+        return execute_query_via_http_api(
+            host, port, f"{prefix}/query", query, end, params=params, expect_error=True
+        )
+    return execute_range_query_via_http_api(
+        host,
+        port,
+        f"{prefix}/query_range",
+        query,
+        start,
+        end,
+        step,
+        params=params,
+        expect_error=True,
+    )

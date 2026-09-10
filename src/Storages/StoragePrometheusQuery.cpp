@@ -1,5 +1,6 @@
 #include <Storages/StoragePrometheusQuery.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Common/logger_useful.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
@@ -14,11 +15,13 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -105,8 +108,17 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    /// Grant before existence: a caller without SELECT must not tell a hidden table from a
+    /// missing one, and the evaluation reads it through queries not attributed to this name.
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
+    auto time_series_storage = DatabaseCatalog::instance().getTable(time_series_storage_id, context);
+    auto distributed_target = resolvePrometheusQueryTarget(*time_series_storage);
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (!distributed_target)
+        checkTimeSeriesVersionSupportedByPromQL(*storagePtrToTimeSeries(time_series_storage));
+
+    /// A Distributed table created `AS <TimeSeries table>` declares the same `time_series` column,
+    /// so the data types are taken from the target's own metadata in both cases.
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -114,6 +126,16 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
     PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), timestamp_scale};
+
+    /// Applied only when the query actually reads the table: '1 + 2' has no selector, so
+    /// wrapper-only settings must not refuse it.
+    if (distributed_target && prometheusQueryReadsTimeSeries(promql_query))
+    {
+        /// Grant before existence: this table function's own CREATE TEMPORARY TABLE is enforced when it
+        /// executes, which is after the check below would have reported on the shard-local targets.
+        context->checkAccess(AccessType::CREATE_TEMPORARY_TABLE);
+        checkPrometheusQueryDistributedRead(*time_series_storage, context);
+    }
 
     PrometheusQueryEvaluationMode mode = {};
     DateTime64 start_time;
@@ -147,6 +169,13 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
+    if (distributed_target)
+    {
+        evaluation_settings.cluster_name = std::move(distributed_target->cluster_name);
+        evaluation_settings.remote_time_series_storage_id = std::move(distributed_target->remote_time_series_storage_id);
+        evaluation_settings.skip_unavailable_shards = distributed_target->skip_unavailable_shards;
+        evaluation_settings.skip_unavailable_shards_mode = std::move(distributed_target->skip_unavailable_shards_mode);
+    }
     evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);
     evaluation_settings.mode = mode;
@@ -188,8 +217,10 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+    /// The shard-local tables' versions are checked by the selector on each shard.
+    if (config.evaluation_settings.cluster_name.empty())
+        checkTimeSeriesVersionSupportedByPromQL(
+            *storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context)));
 
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
@@ -203,6 +234,13 @@ void StoragePrometheusQuery::readImpl(
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+
+    /// A shard that is this server itself is always read in-process, as the shard-target check assumes.
+    if (!config.evaluation_settings.cluster_name.empty())
+    {
+        query_context->setSetting("prefer_localhost_replica", true);
+        query_context->setSetting("enable_parallel_replicas", false);
+    }
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

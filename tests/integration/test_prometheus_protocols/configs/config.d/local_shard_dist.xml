@@ -1,0 +1,39 @@
+<clickhouse>
+    <remote_servers>
+        <!-- One shard, no <default_database>: local on this node (Cluster::Address::is_local), so the sink and
+             the read rewrite run it in-process on the caller's context instead of over the connection. -->
+        <local_shard_dist>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </local_shard_dist>
+        <!-- The same local replica twice: a shard that parallel replicas could spread over. -->
+        <local_shard_two_replicas>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </local_shard_two_replicas>
+        <!-- The same local replica under credentials of its own, holding no grant at all: a shard that is
+             this server itself is checked, read and written in-process on the caller's context, never as them. -->
+        <local_shard_restricted>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <user>prom_cluster_nobody</user>
+                    <password></password>
+                </replica>
+            </shard>
+        </local_shard_restricted>
+    </remote_servers>
+</clickhouse>

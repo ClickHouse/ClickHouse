@@ -1,0 +1,47 @@
+<clickhouse>
+    <prometheus>
+        <port>9093</port>
+        <handlers>
+            <!-- The shard-local TimeSeries table is in the caller's database, and a table of
+                 another engine answers to the same name in the cluster user's default database. -->
+            <local_write>
+                <url>/local/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>metrics.prom_local</table>
+                </handler>
+            </local_write>
+            <local_api>
+                <url_prefix>/local_api</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>metrics.prom_local</table>
+                </handler>
+            </local_api>
+            <!-- The same two databases the other way round: healthy in the cluster user's default
+                 database, wrong engine under the name the sink reaches. -->
+            <swap_write>
+                <url>/swap/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prom_swap</table>
+                </handler>
+            </swap_write>
+            <!-- The local shard again, over a cluster entry whose credentials hold no grant at all. -->
+            <restricted_write>
+                <url>/restricted/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>metrics.prom_restricted</table>
+                </handler>
+            </restricted_write>
+            <restricted_api>
+                <url_prefix>/restricted_api</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>metrics.prom_restricted</table>
+                </handler>
+            </restricted_api>
+        </handlers>
+    </prometheus>
+</clickhouse>

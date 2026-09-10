@@ -1,0 +1,50 @@
+<clickhouse>
+    <prometheus>
+        <port>9093</port>
+        <handlers>
+            <!-- The whole Prometheus HTTP API served against a Distributed wrapper over the
+                 per-shard TimeSeries tables. -->
+            <dist_api>
+                <url_prefix>/dist</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_dist</table>
+                </handler>
+            </dist_api>
+            <!-- The oracle: the same endpoints against one local TimeSeries table holding the
+                 union of the shard data. -->
+            <local_api>
+                <url_prefix>/local</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_all</table>
+                </handler>
+            </local_api>
+            <!-- A target whose engine is neither TimeSeries nor Distributed: used to check that
+                 the engine error never reaches a caller without the SELECT grant. -->
+            <bad_engine_api>
+                <url_prefix>/bad_engine</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.mt_not_ts</table>
+                </handler>
+            </bad_engine_api>
+            <!-- The same shards behind a wrapper declaring another `time_series` type. -->
+            <coarse_api>
+                <url_prefix>/coarse</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                    <table>default.ts_coarse</table>
+                </handler>
+            </coarse_api>
+            <!-- Neither database nor table is set here, so both come from the 'database' and
+                 'table' query parameters. -->
+            <dynamic_api>
+                <url_prefix>/dynamic</url_prefix>
+                <handler>
+                    <type>api_v1</type>
+                </handler>
+            </dynamic_api>
+        </handlers>
+    </prometheus>
+</clickhouse>
