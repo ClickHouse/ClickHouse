@@ -1,0 +1,67 @@
+---
+title: 'Présentation du connecteur'
+sidebarTitle: 'Vue d’ensemble'
+description: 'Observabilité et assistance pour les clusters ClickHouse dans les environnements que vous exploitez, sans accès permanent'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+doc_type: 'guide'
+---
+
+<Note>
+  Le ClickHouse Connector est en private preview. Pour demander l’accès, contactez l’équipe en charge de votre compte ClickHouse.
+</Note>
+
+<div id="what-the-connector-does">
+  ## Fonctionnement du connecteur
+</div>
+
+ClickHouse Connector est un composant que vous déployez dans votre environnement, aux côtés des clusters ClickHouse que vous exploitez. Il offre à ClickHouse la visibilité nécessaire pour surveiller ces clusters et la possibilité de vous assister lorsque vous demandez de l&#39;aide, sans lui accorder d&#39;accès permanent à votre environnement. Le connecteur est fourni sous la forme d&#39;un unique binaire nommé `clicklink`, qui contient à la fois les démons du connecteur et les outils en ligne de commande `clicklink clctl` que vous utilisez pour les installer et les exploiter.
+
+Le connecteur comporte deux composants :
+
+* **Le scraper** collecte des métriques à partir d&#39;une liste d&#39;autorisation de tables système ClickHouse, ainsi que des métadonnées d&#39;infrastructure et des informations sur l&#39;état de santé, puis les envoie à ClickHouse Cloud.
+* **Le troubleshooter** permet aux ingénieurs du support ClickHouse d&#39;exécuter des diagnostics en lecture seule, mais uniquement pendant une [session de support](/fr/products/bring-your-own-cloud/connector/support-sessions) que vous activez et pouvez interrompre à tout moment.
+
+Toutes les connexions établies par le connecteur sont sortantes. ClickHouse Cloud n&#39;initie jamais de connexion vers votre environnement ; la page [architecture](/fr/products/bring-your-own-cloud/connector/architecture) répertorie chaque connexion, son protocole et son mode d&#39;authentification.
+
+<div id="when-to-use-it">
+  ## Quand l’utiliser
+</div>
+
+Déployez le connecteur lorsque ClickHouse surveille ou prend en charge des clusters ClickHouse exécutés dans votre environnement et que votre politique de sécurité impose que :
+
+* Tous les accès proviennent de l’intérieur de votre périmètre, sans connectivité entrante.
+* L’accès au support est limité dans le temps, activé par vous et révocable à tout moment.
+* Tout ce que ClickHouse lit est en lecture seule : l’accès aux tables ClickHouse en permanence, ainsi qu’aux métadonnées de charge de travail et aux journaux limités à l’espace de noms pendant une session que vous avez activée. Chaque commande exécutée lors d’une session de support est enregistrée dans un journal d’audit dont vous êtes propriétaire.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+Lors de l’onboarding, ClickHouse fournit le point de terminaison de votre connecteur ainsi qu’un jeton d’inscription à usage unique. Exécutez `clicklink clctl init --enroll` une seule fois, depuis un poste de travail disposant d’un accès kubeconfig pour une installation Kubernetes, ou directement sur l’hôte pour une installation sur une VM Linux. Cette unique exécution utilise le jeton, crée des utilisateurs ClickHouse dédiés en lecture seule pour chaque composant, obtient un certificat client mTLS, déploie et démarre les démons, puis vérifie leur état de santé.
+
+Par la suite, le scraper lit périodiquement les tables système figurant dans la liste d’autorisation et envoie les métriques, les métadonnées et l’état de santé au point de terminaison de votre connecteur via TLS avec authentification mutuelle. Le troubleshooter reste inactif : il maintient un canal de commande sortant, mais ce canal ne transmet rien tant que vous n’activez pas une session de support. Le certificat mTLS se renouvelle automatiquement, sans aucune intervention de votre part.
+
+<div id="requirements-at-a-glance">
+  ## Prérequis en un coup d’œil
+</div>
+
+* **Une cible de déploiement.** Tout cluster Kubernetes conforme (installé à l’aide du chart Helm) ou tout hôte Linux avec systemd, amd64 ou arm64.
+* **Un accès réseau sortant sur le port 443** vers le point de terminaison de votre connecteur et son point de terminaison d’inscription, ainsi que vers `releases.clicklink.clickhouse.com` et ECR Public lors de l’installation. Il s’agit du chemin standard ; des alternatives en environnement isolé et avec miroir existent pour chaque étape. Consultez la section [d’onboarding](/fr/products/bring-your-own-cloud/connector/onboarding).
+* **Un écouteur natif ClickHouse accessible.** Le connecteur communique avec chaque cluster via le protocole natif ; sur Kubernetes, il détecte automatiquement le mode sécurisé (9440) ou en clair (9000).
+* **Un jeton d’inscription.** ClickHouse fournit le point de terminaison de votre connecteur et un jeton d’inscription à usage unique lors de l’onboarding.
+* **Un accès administrateur à ClickHouse pendant la configuration.** Le provisionnement initial crée les utilisateurs en lecture seule du connecteur. Un mot de passe administrateur, s’il est défini, est demandé une seule fois et n’est jamais stocké.
+* **Un accès administrateur à un serveur d’API Kubernetes pendant le provisionnement**, pour les deux cibles d’installation : les bundles d’accès sont associés aux ServiceAccounts Kubernetes. Consultez la section [d’onboarding](/fr/products/bring-your-own-cloud/connector/onboarding).
+
+Consultez la section [d’onboarding](/fr/products/bring-your-own-cloud/connector/onboarding) pour la procédure complète des deux cibles d’installation.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* [Onboarding](/fr/products/bring-your-own-cloud/connector/onboarding) : installez et enregistrez le connecteur sur Kubernetes ou une VM Linux.
+* [Architecture](/fr/products/bring-your-own-cloud/connector/architecture) : composants, connexions, cycle de vie des certificats et données qui quittent votre environnement.
+* [Sessions de support](/fr/products/bring-your-own-cloud/connector/support-sessions) : activation, définition du périmètre, audit et révocation de l’accès au support.
+* [Configuration](/fr/products/bring-your-own-cloud/connector/configuration) et [opérations](/fr/products/bring-your-own-cloud/connector/operations) : réglages, mises à niveau et tâches d’exploitation courante.
+* [FAQ](/fr/products/bring-your-own-cloud/connector/reference/faq) : questions fréquentes, y compris sur la sortie de données et la révocation.
+
+Le connecteur est destiné aux environnements que vous exploitez vous-même. Si vous préférez que ClickHouse exploite les clusters de votre compte cloud, optez pour le modèle de déploiement [BYOC](/fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview) ; consultez la page [architecture BYOC](/fr/products/bring-your-own-cloud/overview/architecture) pour connaître les différences entre les deux.

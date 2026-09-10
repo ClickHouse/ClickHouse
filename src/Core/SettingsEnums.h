@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -324,6 +325,7 @@ enum class Dialect : uint8_t
     promql,
     polyglot,
     clickhouse_json,
+    trino,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -394,6 +396,7 @@ enum class ObjectStorageQueueMode : uint8_t
 {
     ORDERED,
     UNORDERED,
+    EXCLUSIVE,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueMode)
@@ -452,6 +455,8 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
+DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
+
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
@@ -466,6 +471,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     PAIMON_REST,
     S3_TABLES,
     ICEBERG_DELTA_SHARING,
+    ICEBERG_HORIZON,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)

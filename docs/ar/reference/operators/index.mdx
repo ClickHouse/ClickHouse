@@ -116,6 +116,32 @@ doc_type: 'مرجع'
 
 `a ILIKE b` – هي الدالة `ilike(a, b)`.
 
+<div id="match-function">
+  ### دالة match
+</div>
+
+`a REGEXP b` – دالة `match(a, b)`.
+
+`a ~ b` – دالة `match(a, b)` (مطابقة باستخدام تعبير نمطي على نمط PostgreSQL).
+
+<div id="notmatch-function">
+  ### دالة notMatch
+</div>
+
+`a !~ b` – الدالة `notMatch(a, b)` (تتحقق من أن `a` لا يتطابق مع التعبير النمطي `b`).
+
+<div id="matchcaseinsensitive-function">
+  ### دالة matchCaseInsensitive
+</div>
+
+`a ~* b` – الدالة `matchCaseInsensitive(a, b)` (مطابقة تعبير نمطي غير حساسة لحالة الأحرف).
+
+<div id="notmatchcaseinsensitive-function">
+  ### دالة notMatchCaseInsensitive
+</div>
+
+`a !~* b` – دالة `notMatchCaseInsensitive(a, b)` (تتحقق من أن `a` لا يطابق التعبير النمطي `b` بغض النظر عن حالة الأحرف).
+
 <div id="between-function">
   ### دالة BETWEEN
 </div>

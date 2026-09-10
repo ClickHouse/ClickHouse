@@ -22,7 +22,7 @@ private:
     AggregateFunctionPtr function;
     DataTypes argument_types;
     Array parameters;
-    mutable std::optional<size_t> version;
+    std::optional<size_t> version;
 
     String getNameImpl(bool with_version) const;
 
@@ -62,6 +62,12 @@ public:
     /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
     static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
 
+    /// True if `state_type_name` denotes a state with the same binary representation as (function, version).
+    /// The names can differ: the aggregate function factory strips LowCardinality from the argument types,
+    /// while the declared type keeps it, so `AggregateFunction(argMax, LowCardinality(String), DateTime)`
+    /// and `AggregateFunction(argMax, String, DateTime)` describe the very same state.
+    static bool nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version);
+
     /// Same as equals() but ignores the state variant (Aggregation vs Window).
     bool equalsIgnoringVariant(const IDataType & rhs) const;
 
@@ -77,23 +83,13 @@ public:
 
     bool isVersioned() const;
 
-    /// Version is not empty only if it was parsed from AST or implicitly cast to 0 or version according
-    /// to server revision.
-    /// It is ok to have an empty version value here - then for serialization a default (latest)
-    /// version is used.
-    /// Prefer `setVersionToAggregateFunctions`: this modifies the type in place, and a type object is
-    /// typically shared, so pinning a version here is visible to everyone else holding the same type.
-    void setVersion(size_t version_, bool if_empty) const
-    {
-        if (version && if_empty)
-            return;
-
-        version = version_;
-    }
-
-    void updateVersionFromRevision(size_t revision, bool if_empty) const;
-
-    /// Whether the version was pinned explicitly, as opposed to falling back to the default (latest) one.
+    /// The version is set once, at construction: parsed from AST, decoded from the binary type
+    /// encoding, or chosen by `setVersionToAggregateFunctions`, which replaces the type rather than
+    /// modifying it. There is deliberately no setter: a type object is typically shared - notably
+    /// with the table metadata a block was read from - so pinning a version in place would be
+    /// visible to everyone else holding the same type, and racy against them reading it.
+    ///
+    /// Whether the version was pinned explicitly, as opposed to falling back to the default one.
     bool hasExplicitVersion() const { return version.has_value(); }
 };
 
