@@ -264,8 +264,20 @@ ASTPtr tryParseQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool skip_insignificant)
+    bool skip_insignificant,
+    ParserDiagnostics * diagnostics)
 {
+    /// The caller owns `diagnostics` and may reuse it across queries, so start from a clean slate:
+    /// everything the parse fills in is an output, and only the knobs the caller set - highlighting
+    /// and the literal token map - are kept.
+    if (diagnostics)
+    {
+        diagnostics->expected.variants.clear();
+        diagnostics->expected.max_parsed_pos = nullptr;
+        diagnostics->expected.highlights.clear();
+        diagnostics->error_token = Token{};
+    }
+
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
@@ -288,6 +300,9 @@ ASTPtr tryParseQuery(
         /// bare `Empty query` gives nothing to look for in that case.
         if (!query_description.empty())
             out_error_message += " (" + query_description + ")";
+
+        if (diagnostics)
+            diagnostics->error_token = *token_iterator;
 
         // Advance the position, so that we can use this parser for stream parsing
         // even in presence of such queries.
@@ -312,7 +327,10 @@ ASTPtr tryParseQuery(
         return std::max(iter->end, min_end);
     };
 
-    Expected expected;
+    /// The parse reports into the caller's `Expected` when one is supplied (it may have
+    /// highlighting enabled, and it carries the expected-token variants back to the caller).
+    Expected local_expected;
+    Expected & expected = diagnostics ? diagnostics->expected : local_expected;
 
     /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
       * But there are certain cases when invalid tokens are permitted:
@@ -333,6 +351,24 @@ ASTPtr tryParseQuery(
                 // Capture max() BEFORE current_statement_end, which walks fresh tokens
                 // and would otherwise inflate the max-visited position.
                 _out_query_end = token_iterator.max().end;
+                if (diagnostics)
+                    diagnostics->error_token = *lookahead;
+
+                /// A caller that asked for highlighting expects them for the prefix that is fine even
+                /// when the query as a whole is not - an editor keeps coloring while the user types -
+                /// and only a parse produces them, so the shortcut cannot skip it. The result of that
+                /// parse is thrown away: the lexical error below is the better message, and it is the
+                /// one this position has always reported. What the shortcut existed to avoid is paid
+                /// here instead, which is why only a caller that asked for highlighting pays it: the
+                /// parse of an obviously erroneous query can backtrack up to `max_parser_backtracks`
+                /// and, on reaching it, report by throwing rather than by returning.
+                if (diagnostics && diagnostics->expected.enable_highlighting)
+                {
+                    ASTPtr discarded;
+                    IParser::Pos highlighting_iterator(token_iterator);
+                    parser.parse(highlighting_iterator, discarded, expected);
+                }
+
                 out_error_message = getLexicalErrorMessage(
                     query_begin, current_statement_end(lookahead->end), *lookahead, hilite, query_description);
                 return nullptr;
@@ -364,6 +400,8 @@ ASTPtr tryParseQuery(
     /// Lexical error
     if (last_token.isError())
     {
+        if (diagnostics)
+            diagnostics->error_token = last_token;
         out_error_message = getLexicalErrorMessage(
             query_begin, current_statement_end(last_token.end), last_token, hilite, query_description);
         return nullptr;
@@ -392,6 +430,8 @@ ASTPtr tryParseQuery(
 
         if (!scoped_parens.empty())
         {
+            if (diagnostics)
+                diagnostics->error_token = scoped_parens[0];
             out_error_message = getUnmatchedParenthesesErrorMessage(
                 query_begin, statement_end, scoped_parens, hilite, query_description);
             return nullptr;
@@ -406,6 +446,8 @@ ASTPtr tryParseQuery(
     if (!parse_res)
     {
         /// Generic parse error.
+        if (diagnostics)
+            diagnostics->error_token = last_token;
         out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
         return nullptr;
@@ -415,6 +457,8 @@ ASTPtr tryParseQuery(
     if (!token_iterator->isEnd()
         && token_iterator->type != TokenType::Semicolon)
     {
+        if (diagnostics)
+            diagnostics->error_token = last_token;
         expected.add(last_token.begin, "end of query");
         out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
@@ -432,6 +476,8 @@ ASTPtr tryParseQuery(
     if (!allow_multi_statements
         && !token_iterator->isEnd())
     {
+        if (diagnostics)
+            diagnostics->error_token = last_token;
         out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
             last_token, {}, hilite,
             (query_description.empty() ? std::string() : std::string(". "))
