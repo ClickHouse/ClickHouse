@@ -55,9 +55,9 @@ public:
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
     /// True when a NULL argument makes `result_type` NULL. The default implementation for Nulls
-    /// guarantees this, so it is the default answer; functions that handle NULLs themselves but
-    /// still propagate them (`CAST`, `toNullable`, ...) override it to say so.
-    virtual bool isNullPropagating(const DataTypePtr & /*result_type*/) const { return useDefaultImplementationForNulls(); }
+    /// guarantees this only when `result_type` can hold a NULL. Functions that handle NULLs
+    /// themselves but still propagate them (`CAST`, `toNullable`, ...) override this.
+    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
@@ -594,7 +594,7 @@ public:
     /** True when a NULL argument makes `result_type` NULL. See `IExecutableFunction::isNullPropagating`:
       * override this when the function handles NULLs itself but still propagates them.
       */
-    virtual bool isNullPropagating(const DataTypePtr & /*result_type*/) const { return useDefaultImplementationForNulls(); }
+    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
