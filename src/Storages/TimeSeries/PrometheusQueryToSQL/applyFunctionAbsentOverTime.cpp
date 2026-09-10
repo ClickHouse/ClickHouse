@@ -25,20 +25,15 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-/// Peels off `Offset` and `Subquery` wrappers and returns the underlying instant selector
-/// (the one embedded in a `RangeSelector`, or a bare `InstantSelector` reached through a
-/// subquery) if there is one, so we can derive labels from its matchers.
-/// Returns nullptr if the argument is not backed by a selector (e.g.
-/// `absent_over_time(sum(nonexistent)[5m:])`), in which case the produced sample has no labels.
+/// Peels off `Offset` wrappers and returns the underlying instant selector if the argument is a bare
+/// selector, so we can derive labels from its matchers.
+/// Returns nullptr for anything else, in which case the produced sample has no labels. In particular a
+/// subquery never infers labels, even a selector-backed one like `absent_over_time(nonexistent[5m:1m])`:
+/// Prometheus's createLabelsForAbsentFunction() only looks at a vector selector or a matrix selector.
 const PrometheusQueryTree::InstantSelector * peelToInstantSelector(const Node * node)
 {
-    while (node->node_type == NodeType::Offset || node->node_type == NodeType::Subquery)
-    {
-        if (node->node_type == NodeType::Offset)
-            node = static_cast<const PrometheusQueryTree::Offset *>(node)->getExpression();
-        else
-            node = static_cast<const PrometheusQueryTree::Subquery *>(node)->getExpression();
-    }
+    while (node->node_type == NodeType::Offset)
+        node = static_cast<const PrometheusQueryTree::Offset *>(node)->getExpression();
 
     if (node->node_type == NodeType::RangeSelector)
         return static_cast<const PrometheusQueryTree::RangeSelector *>(node)->getInstantSelector();

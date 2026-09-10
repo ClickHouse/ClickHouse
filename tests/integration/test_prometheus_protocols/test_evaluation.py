@@ -1181,6 +1181,15 @@ def test_phase3_functions_over_time():
         ],
     )
 
+    # absent_over_time never infers labels from a subquery, even a selector-backed one:
+    # Prometheus derives them from a vector/matrix selector only, so job="api" is not copied.
+    do_query_test(
+        'absent_over_time(nonexistent_metric_name{job="api"}[45s:15s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "1"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 1]],
+    )
+
     # quantile_over_time with interpolation: at 150 the window holds {1,1,3,4} -> 2,
     # at 165 it holds {3,4} -> 3.5.
     do_query_test(

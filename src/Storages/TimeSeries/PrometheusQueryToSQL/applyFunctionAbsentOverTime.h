@@ -19,8 +19,8 @@ inline bool isFunctionAbsentOverTime(std::string_view function_name)
 /// `absent_over_time(v range-vector)` returns an empty vector if the range vector `v` has any
 /// elements, and a 1-element vector with the value 1 if `v` has no elements. The labels of the
 /// produced sample are derived from the input selector's matchers using the same "smart" label
-/// derivation logic as `absent()`. If the input is not a bare selector (e.g. a subquery like
-/// `absent_over_time(sum(nonexistent)[5m:])`), the produced sample has no labels (i.e. `{}`).
+/// derivation logic as `absent()`. If the input is not a bare (range) selector - in particular for any
+/// subquery, e.g. `absent_over_time(nonexistent[5m:1m])` - the produced sample has no labels (i.e. `{}`).
 SQLQueryPiece applyFunctionAbsentOverTime(const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

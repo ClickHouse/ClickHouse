@@ -87,6 +87,10 @@ echo "-- absent_over_time(up{instance=\"nohost\"}[5m]): no series matches, so th
 echo "-- carries the equality-matcher label instance=\"nohost\"."
 promql_client -q 'absent_over_time(up{instance="nohost"}[5m])'
 
+echo "-- absent_over_time(nonexistent_metric{instance=\"host1\"}[5m:1m]): a subquery never infers labels,"
+echo "-- so the synthetic series is unlabeled (Prometheus infers them from selectors only)."
+promql_client -q 'absent_over_time(nonexistent_metric{instance="host1"}[5m:1m])'
+
 echo "-- quantile_over_time(0.5, up[3m]): median of the in-range samples."
 echo "-- host1 = 20 (median of 10,20,30), host2 = 15 (median of 5,15,25), host3 = 100."
 promql_client -q "quantile_over_time(0.5, up[3m])" | sort
