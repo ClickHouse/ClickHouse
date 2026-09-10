@@ -38,7 +38,8 @@ struct ColumnWithTypeAndName;
 class ArrowIPCBlockInputFormat final : public IInputFormat
 {
 public:
-    ArrowIPCBlockInputFormat(ReadBuffer & in_, SharedHeader header_, bool stream_, const FormatSettings & format_settings_);
+    ArrowIPCBlockInputFormat(
+        ReadBuffer & in_, SharedHeader header_, bool stream_, size_t max_block_size_, const FormatSettings & format_settings_);
     ~ArrowIPCBlockInputFormat() override;
 
     String getName() const override { return "ArrowIPCBlockInputFormat"; }
@@ -58,21 +59,24 @@ private:
     void prepareStreamReader();
     void prepareFileReader();
     void collectDictionaryFields(const ArrowIPC::ArrowFields & fields);
-    /// Fills `reachable_dictionary_ids` with the Arrow dictionary ids referenced by the requested top-level
-    /// fields (per `requested_top_level_fields`), so the reader skips the DictionaryBatch bodies of
-    /// dictionaries used only by unrequested columns. Requires `arrow_schema` and the requested-fields set.
-    void computeReachableDictionaryIds();
+    /// Decodes the values of one `DictionaryBatch` with `batch_decoder` and registers them in `dictionaries`
+    /// under the batch's id, once for each position of a field encoding that dictionary (`dictionary_uses`).
+    /// `body_length` is the message's declared body length, already validated by the caller.
+    void decodeDictionaryBatch(
+        ArrowIPC::RecordBatchDecoder & batch_decoder, const ArrowIPC::flatbuf::DictionaryBatch & dict_batch, Int64 body_length);
     Chunk buildChunk(ArrowIPC::RecordBatchDecoder::DecodedColumns & decoded, size_t num_rows);
     /// Reinterprets the raw bytes of decoded fixed_size_binary / binary leaves as UUID / IPv6 / big integer
     /// in place when the requested header type asks for it (recursing through Nullable/Array/Tuple/Map), so
     /// the raw 16/32 bytes are reinterpreted rather than text-parsed by the subsequent cast.
-    static void reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type);
+    void reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type) const;
     /// Parses the WKB/WKT binary values of a decoded (possibly Nullable) String column into a geo column.
     static ColumnPtr decodeGeoColumn(const ColumnPtr & source, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing);
-    Chunk readStream();
-    Chunk readFile();
+    bool readStreamBatch();
+    bool readFileBatch();
+    Chunk generateChunkFromBatch();
 
     const bool stream;
+    const size_t max_block_size;
 
     std::optional<ArrowIPC::MessageReader> message_reader;
     std::optional<ArrowIPC::ArrowSchema> arrow_schema;
@@ -85,21 +89,25 @@ private:
     UnorderedMapWithMemoryTracking<Int64, ArrowIPC::ArrowField> dictionary_value_fields;
     std::unique_ptr<ArrowIPC::RecordBatchDecoder> decoder;
     /// Top-level Arrow field names the requested header needs (normalized for case-insensitive matching).
-    /// The decoder skips every other column so a SELECT of a subset of columns does not decode — or fail
-    /// on — the unrequested ones. Empty until `prepareReader` runs.
+    /// Values are decoded only for these fields; root row counts are validated for every field.
+    /// The set is populated by `prepareReader`.
     UnorderedSetWithMemoryTracking<String> requested_top_level_fields;
     /// Each requested column's target ClickHouse type, keyed by its normalized name (including dotted
     /// subcolumn names like `t.d`). Passed to the decoder for the recursive `date32` numeric type hint: a
     /// `date32` mapped (at any nesting) to a numeric target is read as the raw `Int32` day number without
     /// the `Date32` range check, matching the Apache Arrow library reader's numeric type-hint behavior.
     UnorderedMapWithMemoryTracking<String, DataTypePtr> requested_field_target_types;
-    /// Arrow dictionary ids referenced by the requested top-level fields (computed by
-    /// `computeReachableDictionaryIds`). A DictionaryBatch whose id is not here belongs only to unrequested
-    /// columns and its body is skipped rather than decoded, so a subset read does not pay for — or fail on —
-    /// an unrequested column's dictionary.
-    UnorderedSetWithMemoryTracking<Int64> reachable_dictionary_ids;
+    /// For each Arrow dictionary id the requested columns reference, the positions of the fields encoding it
+    /// with the requested type hint each resolves there (see `RecordBatchDecoder::collectDictionaryUses`),
+    /// computed from the requested header before any dictionary batch is decoded. A DictionaryBatch whose id
+    /// is not here belongs only to unrequested columns and its body is skipped rather than decoded, so a
+    /// subset read does not pay for — or fail on — an unrequested column's dictionary.
+    UnorderedMapWithMemoryTracking<Int64, ArrowIPC::DictionaryUses> dictionary_uses;
     bool prepared = false;
     PODArray<char> body_buffer;
+    ArrowIPC::RecordBatchDecoder::DecodedColumns decoded_batch;
+    size_t batch_rows = 0;
+    size_t batch_offset = 0;
 
     /// File format: random access to record batches via the footer.
     SeekableReadBuffer * seekable = nullptr;
