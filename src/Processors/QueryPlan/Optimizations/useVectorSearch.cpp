@@ -243,6 +243,9 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
             "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
             "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
 
+    if (n == 0)
+        return no_layers_updated;
+
     /// All set for 2nd pass. Keep the selected filter strategy with the vector-search
     /// parameters because the decision whether an in-traversal row filter can actually
     /// be built is part-local and happens later in MergeTree index analysis.
