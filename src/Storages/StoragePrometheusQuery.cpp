@@ -109,7 +109,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+        time_series_metadata->columns.get(TimeSeriesColumnNames::Samples).type);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 

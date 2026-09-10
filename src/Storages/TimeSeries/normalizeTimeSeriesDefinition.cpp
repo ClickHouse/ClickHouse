@@ -135,8 +135,9 @@ namespace
     }
 
     /// Reads the declaration of the outer columns.
-    /// If the `time_series` column is found and it is declared with type `Array(Tuple(timestamp_type, scalar_type))`,
+    /// If the `samples` column is found and it is declared with type `Array(Tuple(timestamp_type, scalar_type))`,
     /// the function extracts `timestamp_type` and `scalar_type`.
+    /// The old name `time_series` of this column is accepted too, the column is regenerated under the new name afterwards.
     void readTypesFromOuterColumns(
         const ASTCreateQuery & query,
         DataTypePtr & timestamp_type, String & timestamp_src,
@@ -151,7 +152,7 @@ namespace
             auto column_declaration = boost::static_pointer_cast<ASTColumnDeclaration>(column);
             const auto & name = column_declaration->name;
 
-            if (name == TimeSeriesColumnNames::TimeSeries && column_declaration->getType())
+            if ((name == TimeSeriesColumnNames::Samples || name == TimeSeriesColumnNames::TimeSeries) && column_declaration->getType())
             {
                 auto column_type = DataTypeFactory::instance().get(column_declaration->getType());
                 const auto * array_type = typeid_cast<const DataTypeArray *>(column_type.get());
@@ -159,10 +160,10 @@ namespace
                 if (!tuple_type || (tuple_type->getElements().size() != 2))
                     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
                         "{}: Column `{}` must have type Array(Tuple(timestamp, value)), got {}",
-                        table_id.getNameForLogs(), TimeSeriesColumnNames::TimeSeries, column_type->getName());
+                        table_id.getNameForLogs(), name, column_type->getName());
 
                 const auto & elems = tuple_type->getElements();
-                String source = "outer column `time_series`";
+                String source = fmt::format("outer column `{}`", name);
                 setOrCheckDataType(timestamp_type, timestamp_src, elems[0], source, "timestamp", table_id);
                 setOrCheckDataType(scalar_type, scalar_src, elems[1], source, "scalar", table_id);
             }
@@ -1079,7 +1080,7 @@ namespace
     }
 
     /// Converts a prealpha CREATE query: generates `INNER COLUMNS` for inner targets and
-    /// replaces outer columns with a single `time_series` column carrying the resolved types.
+    /// replaces outer columns with a single `samples` column carrying the resolved types.
     /// Function normalizeTimeSeriesDefinition() will rebuild the full list of the outer columns afterwards.
     void convertPrealphaDefinition(ASTCreateQuery & create_query)
     {
@@ -1248,14 +1249,14 @@ namespace
             create_query.setTargetInnerColumns(inner_table_kind, result);
         }
 
-        /// Replace the prealpha flat outer columns with a single `time_series` column.
-        auto time_series_decl = make_intrusive<ASTColumnDeclaration>();
-        time_series_decl->name = TimeSeriesColumnNames::TimeSeries;
-        time_series_decl->setType(dataTypeToAST(std::make_shared<DataTypeArray>(
+        /// Replace the prealpha flat outer columns with a single `samples` column.
+        auto samples_decl = make_intrusive<ASTColumnDeclaration>();
+        samples_decl->name = TimeSeriesColumnNames::Samples;
+        samples_decl->setType(dataTypeToAST(std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type}))));
 
         auto new_outer_list = make_intrusive<ASTExpressionList>();
-        new_outer_list->children.push_back(std::move(time_series_decl));
+        new_outer_list->children.push_back(std::move(samples_decl));
 
         auto new_outer_columns = make_intrusive<ASTColumns>();
         new_outer_columns->set(new_outer_columns->columns, new_outer_list);
@@ -1798,7 +1799,7 @@ namespace
         add_column(TimeSeriesColumnNames::Tags,
                    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()));
 
-        add_column(TimeSeriesColumnNames::TimeSeries,
+        add_column(TimeSeriesColumnNames::Samples,
             std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_type, scalar_type})));
 
         add_column(TimeSeriesColumnNames::MetricFamily, std::make_shared<DataTypeString>());

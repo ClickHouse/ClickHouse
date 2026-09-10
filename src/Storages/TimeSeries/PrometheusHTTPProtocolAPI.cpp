@@ -200,7 +200,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
-        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::Samples).type);
     UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
 
     if (!params.lookback_delta_param.empty())
@@ -459,7 +459,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
-    const auto & time_series_column = result_block.getByName(TimeSeriesColumnNames::TimeSeries).column;
+    const auto & time_series_column = result_block.getByName(TimeSeriesColumnNames::Samples).column;
     const auto & array_column = typeid_cast<const ColumnArray &>(*time_series_column);
     const auto & offsets = array_column.getOffsets();
     const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
@@ -468,7 +468,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
     auto timestamp_data_type
         = typeid_cast<const DataTypeTuple &>(
-              *typeid_cast<const DataTypeArray &>(*result_block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+              *typeid_cast<const DataTypeArray &>(*result_block.getByName(TimeSeriesColumnNames::Samples).type).getNestedType())
               .getElement(0);
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
@@ -519,7 +519,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     const String & end_param)
 {
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
+    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::Samples).type).first;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
     /// The optional `start` and `end` parameters are parsed the same way as on the query endpoints.

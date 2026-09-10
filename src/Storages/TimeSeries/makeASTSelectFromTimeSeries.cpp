@@ -189,19 +189,19 @@ namespace
         return requested_tags;
     }
 
-    /// Builds the `arrayZip(groupArray(timestamp), groupArray(value)) AS time_series` expression used by
+    /// Builds the `arrayZip(groupArray(timestamp), groupArray(value)) AS samples` expression used by
     /// the samples-side branches. Both `groupArray` states are filled by the same aggregation in the same
     /// row order, so element i of both arrays comes from the same sample.
     /// This form is used instead of `groupArray(tuple(timestamp, value))` because `arrayZip` makes tuples
     /// without element names regardless of the `enable_named_columns_in_function_tuple` setting (which
-    /// would give `tuple` named elements, mismatching the declared type of the `time_series` column),
+    /// would give `tuple` named elements, mismatching the declared type of the `samples` column),
     /// and because `groupArray` over a plain column is faster than over tuples.
     ASTPtr makeGroupArrayOfSamples()
     {
         auto array_zip = makeASTFunction("arrayZip",
             makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)),
             makeASTFunction("groupArray", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
-        array_zip->setAlias(TimeSeriesColumnNames::TimeSeries);
+        array_zip->setAlias(TimeSeriesColumnNames::Samples);
         return array_zip;
     }
 
@@ -336,7 +336,7 @@ namespace
 
     /// Builds a subquery to read from the "samples" table:
     /// (
-    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS time_series
+    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS samples
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
@@ -426,8 +426,8 @@ namespace
             select_list->children.push_back(makeExpressionForOuterMetricName());
         if (requested_columns.contains(TimeSeriesColumnNames::Tags))
             select_list->children.push_back(makeExpressionForOuterTags(requested_tags, columns_by_tags));
-        if (requested_columns.contains(TimeSeriesColumnNames::TimeSeries))
-            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries));
+        if (requested_columns.contains(TimeSeriesColumnNames::Samples))
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples));
         if (requested_columns.contains(TimeSeriesColumnNames::MetricFamily))
         {
             auto metric_family = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName);
@@ -515,10 +515,10 @@ namespace
     }
 
     /// Builds a query reading only from the "samples" table:
-    /// SELECT time_series
+    /// SELECT samples
     /// FROM
     /// (
-    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS time_series
+    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS samples
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
@@ -530,10 +530,10 @@ namespace
         auto select_query = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
 
-        if (requested_columns.contains(TimeSeriesColumnNames::TimeSeries))
-            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries));
+        if (requested_columns.contains(TimeSeriesColumnNames::Samples))
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Samples));
 
-        /// This branch is only taken when `time_series` is requested (see makeASTSelectFromTimeSeries).
+        /// This branch is only taken when `samples` is requested (see makeASTSelectFromTimeSeries).
         chassert(!select_list->children.empty());
 
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
@@ -629,12 +629,12 @@ namespace
     /// Builds a query reading from multiple target tables. For example, when all the columns are requested:
     /// SELECT toString(ifNull(metric_name, '')) AS metric_name,
     ///        timeSeriesTagsToMap(tags, '__name__', metric_name) AS tags,
-    ///        time_series,
+    ///        samples,
     ///        metric_family_name AS metric_family,
     ///        type, unit, help
     /// FROM
     /// (
-    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS time_series
+    ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS samples
     ///     FROM <samples>
     ///     GROUP BY id
     /// ) AS __samples
@@ -695,7 +695,7 @@ ASTPtr makeASTSelectFromTimeSeries(
     const SelectQueryInfo & query_info,
     const ContextPtr & context)
 {
-    bool need_samples = requested_columns.contains(TimeSeriesColumnNames::TimeSeries);
+    bool need_samples = requested_columns.contains(TimeSeriesColumnNames::Samples);
 
     bool need_tags = requested_columns.contains(TimeSeriesColumnNames::MetricName)
                   || requested_columns.contains(TimeSeriesColumnNames::Tags);

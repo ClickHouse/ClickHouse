@@ -32,7 +32,7 @@ DROP TABLE IF EXISTS ts_prune;
 -- range conditions must still resolve).
 CREATE TABLE ts_clustered ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID));
 
-INSERT INTO ts_clustered (metric_name, tags, time_series) VALUES
+INSERT INTO ts_clustered (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.), (toDateTime64(200, 3), 2.), (toDateTime64(300, 3), 3.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.), (toDateTime64(250, 3), 20.)]),
     ('foo', map(), [(toDateTime64(100, 3), 5.)]),
@@ -98,7 +98,7 @@ SELECT '-- single-component id layout: no metric clustering, no id range, same r
 
 CREATE TABLE ts_plain ENGINE = TimeSeries TAGS INNER COLUMNS (id UUID);
 
-INSERT INTO ts_plain (metric_name, tags, time_series) VALUES
+INSERT INTO ts_plain (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.), (toDateTime64(200, 3), 2.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 
@@ -112,7 +112,7 @@ SELECT '-- custom id generator: no structural guarantee, no id range, same resul
 CREATE TABLE ts_custom_gen ENGINE = TimeSeries
 TAGS INNER COLUMNS (id Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(tags), reinterpretAsUUID(sipHash128(metric_name, tags))));
 
-INSERT INTO ts_custom_gen (metric_name, tags, time_series) VALUES
+INSERT INTO ts_custom_gen (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 
@@ -126,13 +126,13 @@ SELECT '-- id_generator changed after ingestion: old series ids are outside the 
 CREATE TABLE ts_altered_gen ENGINE = TimeSeries
 TAGS INNER COLUMNS (id Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(tags), reinterpretAsUUID(sipHash128(metric_name, tags))));
 
-INSERT INTO ts_altered_gen (metric_name, tags, time_series) VALUES
+INSERT INTO ts_altered_gen (metric_name, tags, samples) VALUES
     ('foo', map('env', 'old'), [(toDateTime64(100, 3), 1.)]);
 
 -- The setting overrides the column DEFAULT, so new inserts get canonical (metric-clustered) ids.
 ALTER TABLE ts_altered_gen MODIFY SETTING id_generator = 'tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(tags)))';
 
-INSERT INTO ts_altered_gen (metric_name, tags, time_series) VALUES
+INSERT INTO ts_altered_gen (metric_name, tags, samples) VALUES
     ('foo', map('env', 'new'), [(toDateTime64(200, 3), 2.)]);
 
 -- Both the old-generator and the new-generator series must be returned.
@@ -145,7 +145,7 @@ SELECT '-- Tuple(UInt64, UInt64) id layout: the range is emitted with the max-UI
 
 CREATE TABLE ts_u64 ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UInt64));
 
-INSERT INTO ts_u64 (metric_name, tags, time_series) VALUES
+INSERT INTO ts_u64 (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 

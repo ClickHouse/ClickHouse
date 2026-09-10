@@ -56,7 +56,7 @@ ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, con
                         DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()}))});
             columns.add(
                 ColumnDescription{
-                    ColumnNames::TimeSeries,
+                    ColumnNames::Samples,
                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{timestamp_data_type, scalar_data_type}))});
             return columns;
         }

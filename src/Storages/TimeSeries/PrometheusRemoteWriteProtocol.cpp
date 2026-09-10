@@ -98,9 +98,9 @@ Block makeTimeSeriesBlock(
     tags_offsets->reserve(num_rows);
 
     const auto time_series_type
-        = typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(TimeSeriesColumnNames::TimeSeries).type);
+        = typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(TimeSeriesColumnNames::Samples).type);
     if (!time_series_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", TimeSeriesColumnNames::TimeSeries);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", TimeSeriesColumnNames::Samples);
     auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_type);
     auto timestamps = timestamp_type->createColumn();
     auto values = value_type->createColumn();
@@ -163,7 +163,7 @@ Block makeTimeSeriesBlock(
     Block block;
     block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
     block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
-    block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, TimeSeriesColumnNames::TimeSeries});
+    block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, TimeSeriesColumnNames::Samples});
     return block;
 }
 

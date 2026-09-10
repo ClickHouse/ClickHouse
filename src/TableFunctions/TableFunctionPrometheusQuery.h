@@ -10,7 +10,7 @@ namespace DB
 
 /// Table functions prometheusQuery('mydb', 'my_ts_table', 'promql_query', evaluation_time) evaluates a prometheus query.
 /// Depending on the type of the specified prometheus query this table function returns either columns (tags, timestamp, values) or
-/// (tags, time_series) or (scalar) or (string).
+/// (tags, samples) or (scalar) or (string).
 /// Time series table can be specified either as two arguments 'mydb', 'my_ts_table', or one argument mydb.my_ts_table, or just 'my_ts_table'.
 /// Table functions prometheusQueryRange('mydb', 'my_ts_table', 'promql_query', start_time, end_time, step) evaluates a prometheus query
 /// over a range of evaluation times.

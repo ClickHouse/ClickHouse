@@ -27,7 +27,7 @@ SETTINGS index_granularity = 32768, min_bytes_for_wide_part = 0, min_rows_for_wi
 
 CREATE TABLE prometheus ENGINE = TimeSeries SAMPLES samples_table TAGS tags_table;
 
-INSERT INTO prometheus (metric_name, tags, time_series) VALUES ('m', map('host', 'h1'), [(toDateTime64(0, 3), 0)]);
+INSERT INTO prometheus (metric_name, tags, samples) VALUES ('m', map('host', 'h1'), [(toDateTime64(0, 3), 0)]);
 INSERT INTO samples_table SELECT (SELECT id FROM tags_table LIMIT 1), toDateTime64(number, 3), number FROM numbers(720000);
 ALTER TABLE tags_table UPDATE max_time = toDateTime64(720000, 3) WHERE 1 SETTINGS mutations_sync = 2;
 OPTIMIZE TABLE samples_table FINAL;
