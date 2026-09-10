@@ -1,5 +1,6 @@
 #pragma once
 
+#include <future>
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
@@ -7,14 +8,15 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
-#include <future>
-#include <Common/callOnce.h>
-#include <Storages/IStorage_fwd.h>
+#include <mutex>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
 #include <Interpreters/StorageID.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Core/ColumnsWithTypeAndName.h>
+#include <Storages/IStorage_fwd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/callOnce.h>
 
 namespace DB
 {
@@ -186,6 +188,7 @@ public:
     /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
     void replaceSetAndKey(SetAndKeyPtr set);
     SetAndKeyPtr detachSetAndKey();
+    const SetAndKeyPtr & getSetAndKey() const { return set_and_key; }
 
     SetPtr get() const override;
     DataTypes getTypes() const override;
@@ -231,9 +234,29 @@ private:
     /// The set can never be built once that happened, so `build` rethrows this instead of returning a null
     /// plan, which its callers would silently take for "nothing left to build".
     std::exception_ptr in_place_build_failure;
+
+    /// Serializes `buildOrderedSetInplace`; see the rationale at its lock site.
+    std::mutex inplace_build_mutex;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+
+/// Hashes a `FutureSet::Hash` for the unordered containers keyed by it. Declared here rather than
+/// inside `PreparedSets` so `BuiltSetsByHash` below can use it too; `PreparedSets::Hashing` aliases it.
+struct FutureSetHashing
+{
+    UInt64 operator()(const FutureSet::Hash & key) const { return key.low64 ^ key.high64; }
+};
+
+/// Sets that some earlier plan build already filled, keyed by `FutureSet::getHash`. A second plan
+/// build of the same query (automatic parallel replicas builds one to decide whether replicas pay
+/// off) can adopt them instead of re-running the subqueries: `FutureSetFromSubquery::build` and
+/// `buildOrderedSetInplace` both return early once the set is created.
+struct BuiltSetsByHash
+{
+    UnorderedMapWithMemoryTracking<FutureSet::Hash, SetAndKeyPtr, FutureSetHashing> sets;
+};
+using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 /// Container for all the sets used in query.
 class PreparedSets
@@ -241,10 +264,7 @@ class PreparedSets
 public:
 
     using Hash = CityHash_v1_0_2::uint128;
-    struct Hashing
-    {
-        UInt64 operator()(const Hash & key) const { return key.low64 ^ key.high64; }
-    };
+    using Hashing = FutureSetHashing;
 
     using SetsFromTuple = std::unordered_map<Hash, std::vector<FutureSetFromTuplePtr>, Hashing>;
     using SetsFromStorage = std::unordered_map<Hash, FutureSetFromStoragePtr, Hashing>;
