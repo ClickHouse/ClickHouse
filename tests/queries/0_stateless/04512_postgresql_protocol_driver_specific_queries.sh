@@ -50,15 +50,15 @@ for unsupported in "LISTEN some_channel" "NOTIFY some_channel"; do
     fi
 done
 
-# A no-op driver command must not silently swallow a trailing statement when both arrive in a
-# single simple-query packet (e.g. `RESET ALL; SELECT 1`). Such a packet must fall through to the
-# normal multi-statement splitter instead of being acknowledged as a bare `RESET`; here that means
-# it surfaces an error rather than silently succeeding.
-if psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align \
-        -c "RESET ALL; SELECT 1 AS trailing_query" 2>&1 | grep -qi error; then
-    echo "multi-statement packet not silently accepted"
+# A no-op driver command must not swallow a trailing statement when both arrive in a single
+# simple-query packet (e.g. `RESET ALL; SELECT 1`). The packet is split into statements and each
+# gets its own dispatch, so the trailing query must still return its result, as in PostgreSQL.
+multi_statement_result=$(psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align \
+        --tuples-only -c "RESET ALL; SELECT 20260828 AS trailing_query" 2>&1)
+if [ "$(echo "${multi_statement_result}" | tail -n 1)" = "20260828" ]; then
+    echo "multi-statement packet executes the trailing query"
 else
-    echo "UNEXPECTED: multi-statement packet silently accepted"
+    echo "UNEXPECTED: ${multi_statement_result}"
 fi
 
 # The no-op handling covers only the exact PostgreSQL command forms; a malformed variant must not be

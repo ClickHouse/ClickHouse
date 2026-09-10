@@ -16,7 +16,12 @@ namespace DB
 /// Convert a PostgreSQL type (as returned by `format_type`, e.g. "integer", "numeric(10,2)", "text[]")
 /// to a ClickHouse data type. `recheck_array` is called when an array's dimensions could not be
 /// determined from `dimensions` and have to be rechecked separately.
-DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> recheck_array, bool is_nullable = false, uint16_t dimensions = 0);
+DataTypePtr convertPostgreSQLDataType(
+    String & type,
+    std::function<void()> recheck_array,
+    bool is_nullable = false,
+    uint16_t dimensions = 0,
+    bool is_array_element_nullable = false);
 
 struct PostgreSQLTableStructure
 {

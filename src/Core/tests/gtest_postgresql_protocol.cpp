@@ -266,7 +266,10 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
         Messaging::BindQuery msg;
         EXPECT_NO_THROW(msg.deserialize(in));
         ASSERT_EQ(msg.parameters.size(), 1u);
-        EXPECT_EQ(msg.parameters[0], "hi");
+        /// A value is present, and the four-character string `NULL` would be an ordinary value too:
+        /// protocol NULL is `std::nullopt`, never a sentinel string.
+        ASSERT_TRUE(msg.parameters[0].has_value());
+        EXPECT_EQ(*msg.parameters[0], "hi");
     }
 }
 
@@ -743,11 +746,14 @@ TEST(PostgreSQLProtocol, BindSnapshotsStatementForPortalContract)
         manager.attachBindQuery(std::move(msg));
     };
 
-    /// Redefining the prepared statement after Bind does not affect the portal.
+    /// Redefining the prepared statement after Bind does not affect the portal. PostgreSQL requires a
+    /// named statement to be closed before another one is parsed under the same name (a second `Parse`
+    /// is `42P05`), so the redefinition goes through the `Close` that a client has to send first.
     {
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         addStatement(manager, "s", "SELECT 1");
         bind(manager, "s");
+        manager.tryDeleteStatement("s"); /// Close('S', 's')
         addStatement(manager, "s", "SELECT 2"); /// Parse s AS SELECT 2
         EXPECT_EQ(manager.getStatmentFromBind(), "SELECT 1");
     }
