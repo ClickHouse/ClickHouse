@@ -9,6 +9,7 @@
 #include <city.h>
 #include <Core/Settings.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PredicateStatisticsLog.h>
@@ -179,6 +180,41 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
+    /// Determine the condition under which PREWHERE-filtered granules can be recorded in the query
+    /// condition cache. A deterministic PREWHERE condition is cached under its own hash. A condition
+    /// that is non-deterministic only because of folded current-time constants (e.g.
+    /// `time >= now() - INTERVAL 10 DAY`) is cached under the hash of the deterministic condition
+    /// derived by rounding the constants onto a time grid (issue #115504). Since this is a write
+    /// side, the rounding must *strengthen* the condition: "PREWHERE matched no rows of this granule"
+    /// then implies "the derived condition matches no rows of this granule". The consult side in
+    /// MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache probes the weakened variant.
+    if (prewhere_info && reader_settings.use_query_condition_cache)
+    {
+        for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
+        {
+            if (output->result_name == prewhere_info->prewhere_column_name)
+            {
+                if (VirtualColumnUtils::isDeterministic(output))
+                {
+                    prewhere_condition_for_query_condition_cache.emplace(output->getHash(), prewhere_info->prewhere_actions.getNames()[0]);
+                }
+                else if (reader_settings.use_query_condition_cache_for_time_conditions)
+                {
+                    if (auto derived = deriveDeterministicTimeCondition(
+                            output,
+                            TimeConditionRounding::Strengthen,
+                            reader_settings.query_condition_cache_time_condition_grid_factor,
+                            time(nullptr),
+                            /// The PREWHERE write path does not partition the key by the TopK plan,
+                            /// so a `__topKFilter` in PREWHERE must keep suppressing the write.
+                            /*allow_top_k_filter=*/false))
+                        prewhere_condition_for_query_condition_cache.emplace(derived->hash, derived->condition);
+                }
+                break;
+            }
+        }
+    }
+
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
         LOG_TEST(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
@@ -416,38 +452,28 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 /// only on the query PREWHERE hash, so a mark hidden by a row policy must not be attributed
                 /// to the PREWHERE predicate (a later query without the policy would skip rows it should see).
                 if (reader_settings.use_query_condition_cache && task && prewhere_info
+                    && prewhere_condition_for_query_condition_cache
                     && !task->readersChainCanSkipMarksBeforePrewhere()
                     && !task->appliesMutationsBeforePrewhere()
                     && !row_level_filter
                     /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
                     && task->getInfo().data_part_info->getDataPart())
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
-                    {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
+                    auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                    const auto & data_part_info = task->getInfo().data_part_info;
 
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            const auto & data_part_info = task->getInfo().data_part_info;
-
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
-                            query_condition_cache->write(
-                                /// QueryConditionCache is a coordinator feature; concrete part present here.
-                                data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
-                                output->getHash(),
-                                prewhere_info->prewhere_actions.getNames()[0],
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
-
-                            break;
-                        }
-                    }
+                    String part_name = data_part_info->isProjectionPart()
+                        ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
+                        : data_part_info->getPartName();
+                    query_condition_cache->write(
+                        /// QueryConditionCache is a coordinator feature; concrete part present here.
+                        data_part_info->getDataPart()->storage.getStorageID().uuid,
+                        part_name,
+                        prewhere_condition_for_query_condition_cache->first,
+                        prewhere_condition_for_query_condition_cache->second,
+                        task->getPrewhereUnmatchedMarks(),
+                        data_part_info->getIndexGranularity().getMarksCount(),
+                        data_part_info->getIndexGranularity().hasFinalMark());
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());

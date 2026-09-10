@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <boost/functional/hash.hpp>
@@ -96,25 +97,56 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (outputs.size() != 1)
         return;
 
-    /// Issues #81506 and #84508.
+    /// Non-deterministic conditions must not be cached under their own hash (issues #81506 and #84508).
+    /// However, for conditions that are non-deterministic only because of folded current-time constants
+    /// (e.g. `time >= now() - INTERVAL 10 DAY`), a deterministic condition can be derived by rounding
+    /// the constants onto a time grid (issue #115504). Since this is the write side, the rounding must
+    /// *strengthen* the condition: "the WHERE filter matched no rows of this granule" then implies
+    /// "the derived condition matches no rows of this granule", so the entry stored under the derived
+    /// hash is sound. The read side (filterPartsByQueryConditionCache) probes the weakened variant;
+    /// the two coincide for grid-aligned constants and are one grid cell apart otherwise.
+    std::optional<DeterministicTimeCondition> derived;
     for (const auto * output : outputs)
     {
         if (!isDeterministicAllowingTopKFilter(output))
-            return;
+        {
+            if (optimization_settings.use_query_condition_cache_for_time_conditions)
+                derived = deriveDeterministicTimeCondition(
+                    output,
+                    TimeConditionRounding::Strengthen,
+                    optimization_settings.query_condition_cache_time_condition_grid_factor,
+                    time(nullptr),
+                    /*allow_top_k_filter=*/true);
+            if (!derived)
+                return;
+        }
     }
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            /// Only tag the storage WHERE filter, not one carrying e.g. `__applyFilter`.
+            /// Only tag the storage WHERE filter, not one carrying e.g. `__applyFilter`. The step's
+            /// filter corresponds to the DAG output whose hash we store, so it must be deterministic
+            /// or coarsenable in the same way (a pushed-down runtime filter, for example, is neither).
             const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
-            if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
+            if (!filter_node)
                 return;
+            if (!isDeterministicAllowingTopKFilter(filter_node))
+            {
+                if (!derived
+                    || !deriveDeterministicTimeCondition(
+                        filter_node,
+                        TimeConditionRounding::Strengthen,
+                        optimization_settings.query_condition_cache_time_condition_grid_factor,
+                        time(nullptr),
+                        /*allow_top_k_filter=*/true))
+                    return;
+            }
 
             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-            size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
+            size_t condition_hash = derived ? derived->hash : filter_actions_dag->getOutputs()[0]->getHash();
 
             /// `ORDER BY ... LIMIT N` may drop granules during reading, so the result of the WHERE
             /// filter is no longer "applies to every granule of every part" — it applies only to
@@ -125,7 +157,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             if (const auto & top_k_filter_info = read_from_merge_tree->getTopKFilterInfo())
                 boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
-            String condition = filter_actions_dag->getNames()[0];
+            String condition = derived ? derived->condition : filter_actions_dag->getNames()[0];
             filter_step->setConditionForQueryConditionCache(condition_hash, condition);
             return;
         }

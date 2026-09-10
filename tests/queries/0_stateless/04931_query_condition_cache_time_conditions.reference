@@ -1,0 +1,4 @@
+aligned, PREWHERE: 1 1
+aligned, WHERE: 1 1
+non-aligned, entries cached: 1
+disabled, entries cached: 0
