@@ -33,7 +33,6 @@
 
 #include <algorithm>
 #include <stack>
-#include <functional>
 #include <string>
 #include <unordered_map>
 #include <base/sort.h>
@@ -977,8 +976,9 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                     tryFoldFunctionToConstant(*node, arguments, all_const, /*best_effort=*/true);
                 }
 
-                /// Constant folding.
-                if (allow_constant_folding && !node->children.empty() && node->column)
+                /// Constant folding. A lambda that captures nothing has no children, but its folded value is a
+                /// constant like any other, and a FUNCTION node left behind would cross plan steps as a column.
+                if (allow_constant_folding && node->column && (!node->children.empty() || WhichDataType(node->result_type).isFunction()))
                 {
                     node->type = ActionsDAG::ActionType::COLUMN;
                     node->children.clear();
@@ -2817,31 +2817,6 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
         }
     }
 
-    /// The copy of a child in the second part; a child that stays in the first part is either recomputed (a constant,
-    /// or a lambda, which is not a column and cannot cross as one) or becomes a new input.
-    std::function<Node *(const Node *)> childInSecond = [&](const Node * child) -> Node *
-    {
-        auto & child_data = data[child];
-        if (child_data.to_second)
-            return child_data.to_second;
-        if (child->type == ActionType::COLUMN || WhichDataType(child->result_type).isFunction())
-        {
-            auto & copy = second_nodes.emplace_back(*child);
-            child_data.to_second = &copy;
-            for (auto & captured : copy.children)
-                captured = childInSecond(captured);
-            return &copy;
-        }
-        Node input_node;
-        input_node.type = ActionType::INPUT;
-        input_node.result_type = child->result_type;
-        input_node.result_name = child->result_name;
-        child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
-        if (child->type != ActionType::INPUT)
-            new_inputs.push_back(child);
-        return child_data.to_second;
-    };
-
     /// DFS. Move nodes to one of the DAGs.
     for (const auto & node : nodes)
     {
@@ -2882,7 +2857,32 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
                     /// Replace children to newly created nodes.
                     for (auto & child : copy.children)
-                        child = childInSecond(child);
+                    {
+                        auto & child_data = data[child];
+
+                        /// If children is not created, it may be from split part.
+                        if (!child_data.to_second)
+                        {
+                            if (child->type == ActionType::COLUMN) /// Just create new node for COLUMN action.
+                            {
+                                child_data.to_second = &second_nodes.emplace_back(*child);
+                            }
+                            else
+                            {
+                                /// Node from first part is added as new input.
+                                Node input_node;
+                                input_node.type = ActionType::INPUT;
+                                input_node.result_type = child->result_type;
+                                input_node.result_name = child->result_name;
+                                child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
+
+                                if (child->type != ActionType::INPUT)
+                                    new_inputs.push_back(child);
+                            }
+                        }
+
+                        child = child_data.to_second;
+                    }
                 }
                 else
                 {

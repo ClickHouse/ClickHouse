@@ -30,8 +30,6 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     auto split_actions = expression.splitActionsBeforeArrayJoin(array_join_columns);
 
-    /// A node the upper part recomputes for itself (a lambda) is left behind unused; don't count it as progress.
-    split_actions.first.removeUnusedActions(/*allow_remove_inputs=*/false, /*allow_constant_folding=*/false);
     /// No actions can be moved before ARRAY JOIN.
     if (split_actions.first.trivial())
         return 0;
