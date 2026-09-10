@@ -113,6 +113,21 @@ public:
         return nested ? ask(*nested) : Answer{};
     }
 
+    /// `system.tables` reads these on every table, so an unloaded one answers the `IStorage` default.
+    /// A command that needs the real answer resolves the table first.
+    bool isDataLake() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isDataLake(); }); }
+    bool isObjectStorage() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isObjectStorage(); }); }
+    bool isExternalDatabase() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isExternalDatabase(); }); }
+    bool isMessageQueue() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isMessageQueue(); }); }
+    bool isStreamingStorage() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isStreamingStorage(); }); }
+    bool supportsPartitionBy() const override { return answerIfLoaded([](const IStorage & storage) { return storage.supportsPartitionBy(); }); }
+
+    bool prefersLargeBlocks() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->prefersLargeBlocks() : IStorage::prefersLargeBlocks();
+    }
+
     /// `system.tables` reads these, so answering must not load the table. While the storage does not
     /// exist they are answered from the `CREATE` query, like `getName`, or reported as unknown.
     StoragePolicyPtr getStoragePolicy() const override

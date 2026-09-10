@@ -2640,7 +2640,7 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     const bool can_views = access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name);
     const bool can_streaming = access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name);
 
-    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    auto storage = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     const bool is_streaming = storage && storage->isStreamingStorage();
     const auto * mv = storage ? dynamic_cast<const StorageMaterializedView *>(storage.get()) : nullptr;
     const bool is_refreshable_view = mv && mv->isRefreshable();
