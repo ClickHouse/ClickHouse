@@ -3,11 +3,21 @@
 #include <Core/Field.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
+#include <cstdint>
 #include <limits>
 #include <optional>
 
 namespace DB
 {
+
+/// The standard-precision result types of the date rounding functions, which a `Date32` argument is
+/// narrowed into by a plain cast. `Date32` and `DateTime64` results are wide enough for the whole
+/// `Date32` domain, so they have no entry here.
+enum class DateRoundingResultFamily : uint8_t
+{
+    Date,     /// `UInt16` day numbers, the result of the week-and-above units
+    DateTime  /// `UInt32` seconds, the result of the day-and-below units
+};
 
 /** `toStartOfInterval` and `dateTrunc` saturate a `DateTime64` argument into a narrower result type,
   * but a `Date32` argument is still narrowed by a plain cast: the day-and-below units store a negative
@@ -22,12 +32,15 @@ namespace DB
   * unrepresentable constant is rejected by the dedicated guards in `applyFunctionChainToColumn`, while
   * it stops `applyMonotonicFunctionsChainToRange` from mapping a key range through a wrapping rounding.
   *
-  * Returns whether a `Date32` range is small enough that no standard-precision result type wraps. The
-  * narrowest of them is `DateTime`, whose `UInt32` seconds run out inside 2106; `Date` reaches 2149,
-  * and using the narrower window for both is conservative. An unbounded or unrecognized bound cannot
-  * be proven to fit.
+  * Returns whether a `Date32` range is small enough that the given result family does not wrap. The
+  * upper bound is the last day the result can hold: 2149-06-06 for `Date`, and a day inside 2106 for
+  * `DateTime`, whose `UInt32` seconds run out earlier. The lower bound is the first Monday at or after
+  * the epoch, because a week-aligned rounding of an earlier day reaches back before the epoch - for
+  * example `toStartOfInterval(toDate32('1970-01-01'), INTERVAL 1 WEEK)` rounds down to 1969-12-29 and
+  * the unsigned result wraps it to 2149-06-04. An unbounded or unrecognized bound cannot be proven to
+  * fit.
   */
-inline bool date32RangeFitsStandardPrecisionResult(const Field & left, const Field & right)
+inline bool date32RangeFitsRoundingResult(DateRoundingResultFamily family, const Field & left, const Field & right)
 {
     auto day_number = [](const Field & bound) -> std::optional<Int64>
     {
@@ -37,11 +50,15 @@ inline bool date32RangeFitsStandardPrecisionResult(const Field & left, const Fie
         return {};
     };
 
-    static constexpr Int64 max_day_number = std::numeric_limits<UInt32>::max() / 86'400;
+    /// 1970-01-01 was a Thursday, so the week alignment of the rounding starts on 1970-01-05.
+    static constexpr Int64 min_day_number = 4;
+    const Int64 max_day_number = family == DateRoundingResultFamily::Date
+        ? Int64{std::numeric_limits<UInt16>::max()}
+        : Int64{std::numeric_limits<UInt32>::max()} / 86'400;
 
     const auto left_day = day_number(left);
     const auto right_day = day_number(right);
-    return left_day && right_day && *left_day >= 0 && *right_day <= max_day_number;
+    return left_day && right_day && *left_day >= min_day_number && *right_day <= max_day_number;
 }
 
 }

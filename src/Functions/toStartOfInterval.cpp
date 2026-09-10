@@ -66,12 +66,16 @@ class FunctionToStartOfInterval final : public IFunction
 {
 private:
     ToStartOfIntervalOverload overload;
+    /// The result family that a `Date32` argument is narrowed into, if the result narrows at all.
+    std::optional<DateRoundingResultFamily> narrowing_result_family;
 
 public:
     static constexpr auto name = "toStartOfInterval";
 
-    explicit FunctionToStartOfInterval(ToStartOfIntervalOverload overload_)
+    FunctionToStartOfInterval(
+        ToStartOfIntervalOverload overload_, std::optional<DateRoundingResultFamily> narrowing_result_family_)
         : overload(overload_)
+        , narrowing_result_family(narrowing_result_family_)
     {
     }
 
@@ -87,9 +91,12 @@ public:
     bool hasInformationAboutMonotonicity() const override { return true; }
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        /// A `Date32` argument outside the standard-precision result range is still narrowed by a
-        /// plain cast, and a wrapping rounding is not monotonic.
-        if (WhichDataType(type).isDate32() && !date32RangeFitsStandardPrecisionResult(left, right))
+        /// A `Date32` argument outside the range of a narrower result type is still narrowed by a
+        /// plain cast, and a wrapping rounding is not monotonic. With
+        /// `enable_extended_results_for_datetime_functions` or with the `origin` overload the result
+        /// is `Date32`/`DateTime64` instead, which holds the whole `Date32` domain, so nothing wraps.
+        if (narrowing_result_family && WhichDataType(type).isDate32()
+            && !date32RangeFitsRoundingResult(*narrowing_result_family, left, right))
             return {.is_always_monotonic_where_defined = true};
 
         return { .is_monotonic = true, .is_always_monotonic = true };
@@ -634,7 +641,13 @@ public:
         if (args.size() >= 3 && isDateOrDate32OrDateTimeOrDateTime64(args[2].type))
             overload = ToStartOfIntervalOverload::Origin;
 
-        auto function = std::make_shared<FunctionToStartOfInterval>(overload);
+        std::optional<DateRoundingResultFamily> narrowing_result_family;
+        if (isDate(return_type))
+            narrowing_result_family = DateRoundingResultFamily::Date;
+        else if (isDateTime(return_type))
+            narrowing_result_family = DateRoundingResultFamily::DateTime;
+
+        auto function = std::make_shared<FunctionToStartOfInterval>(overload, narrowing_result_family);
 
         DataTypes data_types(arguments.size());
         for (size_t i = 0; i < arguments.size(); ++i)

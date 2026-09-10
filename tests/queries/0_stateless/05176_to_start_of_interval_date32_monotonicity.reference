@@ -13,3 +13,25 @@ the index is still used when the whole range fits the result type
 a DateTime64 argument saturates and stays monotonic
 1
 1
+a Date result keeps the index up to its own 2149-06-06 limit, not the narrower DateTime one
+17
+17
+17
+17
+a widened result holds the whole Date32 domain and stays monotonic
+3
+3
+3
+3
+3
+3
+3
+3
+a week rounding just after the epoch reaches back before it and wraps as well
+2149-06-04
+4
+4
+4
+4
+6
+6
