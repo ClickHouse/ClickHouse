@@ -36,7 +36,7 @@ For small size classes the slab columns (`slab_size`, `nonfull_slabs` and the `w
 
 - `availregs` — Alias for `nregs * curslabs`.
 - `util` — Alias for `curregs / availregs`.
-- `waste` — Alias for `greatest(curslabs * slab_size - curregs * size, 0)`.
+- `waste` — Alias for `greatest((curslabs * slab_size) - (curregs * size), 0)`.
 
 ## Example {#example}
 
