@@ -20,7 +20,7 @@ public:
     }
 
     String getName() const override;
-    DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt) const override;
+    DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
     const DataTypes & getElements() const { return elems; }
     const Names & getNames() const { return names; }
 };

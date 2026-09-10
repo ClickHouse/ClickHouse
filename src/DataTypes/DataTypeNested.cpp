@@ -32,7 +32,7 @@ String DataTypeNestedCustomName::getName() const
     return s.str();
 }
 
-DataTypeCustomDescPtr DataTypeNestedCustomName::rederiveFor(const DataTypePtr & rebuilt) const
+DataTypeCustomDescPtr DataTypeNestedCustomName::rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn &) const
 {
     /// `Nested` semantics - `isNested`, subcolumn resolution, the printed name - all key off this
     /// custom name, so it has to follow the rebuilt `Array(Tuple(...))` rather than be dropped.

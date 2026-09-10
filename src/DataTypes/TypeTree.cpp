@@ -63,7 +63,8 @@ DataTypePtr rewriteTypeTree(const DataTypePtr & type, const TypeTreeRewriteFn & 
             /// nothing to ask, and can only be preserved by keeping the whole subtree.
             DataTypeCustomDescPtr rederived;
             if (const auto * custom_name = type->getCustomName())
-                rederived = custom_name->rederiveFor(rebuilt);
+                rederived = custom_name->rederiveFor(
+                    rebuilt, [&](const DataTypePtr & nested) { return rewriteTypeTree(nested, callback, policy); });
 
             /// A re-derivation that drops the custom serialization would have the column read back with
             /// a different one, so it does not count as having followed the rewrite either.
