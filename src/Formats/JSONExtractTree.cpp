@@ -2567,7 +2567,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTreeImpl(const 
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt8>>(isBool(type));
+            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt8>>(!validate_only && isBool(type));
         case TypeIndex::UInt16:
             return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt16>>();
         case TypeIndex::UInt32:
@@ -2644,7 +2644,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTreeImpl(const 
             switch (dictionary_type->getTypeId())
             {
                 case TypeIndex::UInt8:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, isBool(type));
+                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, !validate_only && isBool(type));
                 case TypeIndex::UInt16:
                     return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt16>>(is_nullable);
                 case TypeIndex::UInt32:

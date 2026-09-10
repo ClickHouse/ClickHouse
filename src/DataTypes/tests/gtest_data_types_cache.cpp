@@ -94,7 +94,7 @@ TEST(DataTypesCache, PoolsJSONSerializationsWithinOneQuery)
     ResetCurrentThreadGuard reset_current_thread;
     ThreadStatus thread_status;
 
-    auto query_context = makeQueryContext("data_types_cache_test_non_poolable_same_query", "UTC");
+    auto query_context = makeQueryContext("data_types_cache_test_json_same_query", "UTC");
     auto query_scope = QueryScope::create(query_context);
 
     auto first_type = getDataTypesCache().getType("JSON");
@@ -119,7 +119,7 @@ TEST(DataTypesCache, InvalidatesTypesAcrossQueriesAndSharesJSONSerializations)
     SerializationPtr first_serialization;
     DataTypePtr first_type;
     {
-        auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_1", "UTC");
+        auto query_context = makeQueryContext("data_types_cache_test_json_query_1", "UTC");
         auto query_scope = QueryScope::create(query_context);
         first_type = getDataTypesCache().getType("JSON");
         first_serialization = getDataTypesCache().getSerialization("JSON");
@@ -127,7 +127,7 @@ TEST(DataTypesCache, InvalidatesTypesAcrossQueriesAndSharesJSONSerializations)
 
     /// Type entries are query-local even when their immutable serializations can be shared.
     {
-        auto query_context = makeQueryContext("data_types_cache_test_non_poolable_query_2", "UTC");
+        auto query_context = makeQueryContext("data_types_cache_test_json_query_2", "UTC");
         auto query_scope = QueryScope::create(query_context);
         ASSERT_NE(getDataTypesCache().getType("JSON"), first_type);
         ASSERT_EQ(getDataTypesCache().getSerialization("JSON"), first_serialization);

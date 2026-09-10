@@ -101,13 +101,13 @@
         ENGINE = MergeTree PARTITION BY part ORDER BY tuple()
         SETTINGS min_bytes_for_wide_part = '100G'
     </create_query>
-    <fill_query>INSERT INTO json_subcolumn_nested SELECT number, ['{"x":42,"target":1}'] FROM numbers(96)</fill_query>
+    <fill_query>INSERT INTO json_subcolumn_nested SELECT number, ['{{"x":42,"target":1}}'] FROM numbers(96)</fill_query>
     <query>SELECT json.x, json.target FROM json_subcolumn_nested FORMAT Null</query>
     <query>SELECT json.x, json.target FROM json_subcolumn_nested WHERE part = 42 FORMAT Null</query>
     <create_query>CREATE TABLE json_serialization_ingestion_wide AS json_subcolumn_type_lookup ENGINE = Null</create_query>
     <create_query>CREATE TABLE json_serialization_ingestion_narrow (json JSON(x UInt64)) ENGINE = Null</create_query>
-    <query>INSERT INTO json_serialization_ingestion_wide SELECT 0, concat('{"p000":', toString(number), ',"target":42}') FROM numbers(100000)</query>
-    <query>INSERT INTO json_serialization_ingestion_narrow SELECT concat('{"x":', toString(number), ',"target":42}') FROM numbers(100000)</query>
+    <query>INSERT INTO json_serialization_ingestion_wide SELECT 0, concat('{{"p000":', toString(number), ',"target":42}}') FROM numbers(100000)</query>
+    <query>INSERT INTO json_serialization_ingestion_narrow SELECT concat('{{"x":', toString(number), ',"target":42}}') FROM numbers(100000)</query>
     <drop_query>DROP TABLE IF EXISTS json_serialization_ingestion_wide</drop_query>
     <drop_query>DROP TABLE IF EXISTS json_serialization_ingestion_narrow</drop_query>
     <drop_query>DROP TABLE IF EXISTS json_subcolumn_nested</drop_query>
