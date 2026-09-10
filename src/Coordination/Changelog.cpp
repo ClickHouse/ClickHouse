@@ -1201,7 +1201,7 @@ void validateReadAheadSettings(const ReadAheadSettings & settings)
 }
 
 LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, ReadAheadSettings readahead_settings_, KeeperContextPtr keeper_context_)
-    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold)
+    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold, log_settings.latest_logs_cache_entry_count_threshold)
     , keeper_context(std::move(keeper_context_))
     , log(getLogger("Changelog"))
     , readahead_settings(std::move(readahead_settings_))
@@ -1213,8 +1213,9 @@ LogEntryStorage::~LogEntryStorage()
     shutdown();
 }
 
-LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_)
+LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_, size_t count_threshold_)
     : size_threshold(size_threshold_)
+    , count_threshold(count_threshold_)
 {}
 
 void LogEntryStorage::InMemoryCache::updateStatsWithNewEntry(uint64_t index, size_t entry_bytes)
@@ -1331,7 +1332,7 @@ void LogEntryStorage::InMemoryCache::clear()
 
 bool LogEntryStorage::InMemoryCache::hasUnlimitedSpace() const
 {
-    return size_threshold == 0;
+    return size_threshold == 0 && count_threshold == 0;
 }
 
 bool LogEntryStorage::InMemoryCache::empty() const
@@ -1349,7 +1350,13 @@ bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t entry_bytes) const
     if (hasUnlimitedSpace() || empty())
         return true;
 
-    return cache_size + entry_bytes <= size_threshold;
+    if (size_threshold != 0 && cache_size + entry_bytes > size_threshold)
+        return false;
+
+    if (count_threshold != 0 && numberOfEntries() + 1 > count_threshold)
+        return false;
+
+    return true;
 }
 
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
@@ -1741,11 +1748,15 @@ void LogEntryStorage::refreshCache()
 
     const auto latest_log_cache_over_size_threshold = [&]
     {
-        return latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
+        return latest_logs_cache.size_threshold != 0 && latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
     };
 
+    const auto latest_log_cache_over_count_threshold = [&]
+    {
+        return latest_logs_cache.count_threshold != 0 && latest_logs_cache.numberOfEntries() > latest_logs_cache.count_threshold;
+    };
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
-           && latest_log_cache_over_size_threshold())
+           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()))
         latest_logs_cache.popOldestEntry();
 }
 

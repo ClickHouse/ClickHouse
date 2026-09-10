@@ -198,6 +198,7 @@ struct LogFileSettings
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
+    uint64_t latest_logs_cache_entry_count_threshold = 0;
     /// 0 = automatically use the number of CPU cores (resolved by Changelog's constructor).
     uint64_t startup_read_max_streams = 0;
     uint64_t startup_read_buffer_size = 8 * 1024 * 1024;
@@ -292,9 +293,10 @@ struct ReadAheadReader;
   * an LRU/SLRU-style cache would not help.
   *
   * The latest logs cache holds the most recent logs in memory (unflushed tail plus a flushed
-  * suffix), bounded by latest_logs_cache_size_threshold, which is charged in `cachedLogEntryBytes`,
-  * that is resident bytes rather than payload bytes; once persisted, its location is recorded
-  * (logs_location) and the entry may be evicted.
+  * suffix), bounded by latest_logs_cache_entry_count_threshold and by
+  * latest_logs_cache_size_threshold, which is charged in `cachedLogEntryBytes`, that is resident
+  * bytes rather than payload bytes; once persisted, its location is recorded (logs_location) and the
+  * entry may be evicted.
   *
   * Replication is served by per-peer read-ahead readers (peer_readers): each follower gets a
   * dedicated reader decoding entries ahead of the requested range.
@@ -391,7 +393,7 @@ struct LogEntryStorage
     /// Test-only: whether the commit reader currently exists.
     bool hasCommitReaderForTests() const;
 
-    /// True when latest_logs_cache has no size threshold (retains the whole live log, never evicts).
+    /// True when latest_logs_cache has no size or entry-count threshold (retains the whole live log, never evicts).
     bool isUnlimitedCacheMode() const { return latest_logs_cache.hasUnlimitedSpace(); }
 
     void addLocation(uint64_t index, uint64_t term, int32_t value_type, const LogEntryPtr & log_entry, LogLocation log_location);
@@ -407,7 +409,7 @@ private:
 
     struct InMemoryCache
     {
-        explicit InMemoryCache(size_t size_threshold_);
+        explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
 
         void addEntry(uint64_t index, LogEntryPtr log_entry);
 
@@ -437,6 +439,7 @@ private:
         size_t max_index_in_cache = 0;
 
         const size_t size_threshold;
+        const size_t count_threshold;
     };
 
     InMemoryCache latest_logs_cache;
