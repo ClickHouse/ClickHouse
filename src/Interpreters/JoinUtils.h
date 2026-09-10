@@ -90,8 +90,13 @@ private:
   * can hold are `[0, 9223372036854775807]`, and all of them fit into `UInt64`.
   *
   * The result is never Nullable or LowCardinality. Returns nullptr if there is no such type.
+  *
+  * `force_support_conversion` keeps a Tuple element that is Nullable on one side only, so that a whole
+  * key column can be converted to the result, which is what the merged `USING` column needs. A key
+  * conversion target must have no Nullable element at all, see `removeNullableInsideTuple`.
   */
-DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type);
+DataTypePtr tryGetCommonSubtypeForJoinKeys(
+    const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion = false);
 
 /** Removes the `Nullable` wrappers of the elements of a Tuple, recursively. Returns other types unchanged.
   *
