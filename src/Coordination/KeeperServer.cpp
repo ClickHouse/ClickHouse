@@ -149,7 +149,9 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     if (config.has(root_ca_file_property))
         params.caLocation = config.getString(root_ca_file_property);
 
-    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
+    /// Unlike `Poco::Net::SSLManager`, the default CA certificates are not trusted unless `loadDefaultCAFile` is set.
+    constexpr bool load_default_cas_default = false;
+    params.loadDefaultCAs = config.getBool(load_default_ca_file_property, load_default_cas_default);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
 
     const String cipher_list_property = config_prefix + "cipherList";
@@ -197,7 +199,7 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
 
         /// Try to register with CertificateReloader for hot-reload support.
         /// If registration fails, fall back to static certificate loading.
-        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix))
+        if (!CertificateReloader::instance().registerAdditionalContext(ssl_ctx, config_prefix, load_default_cas_default))
         {
             /// For passphrase-protected keys, load certificates manually
             if (certificate_data)
