@@ -1180,10 +1180,10 @@ static void stripInitiatorOnlySettingsFromQueryText(ASTInsertQuery & query)
     /// `default_settings`), pruning emptied clauses.
     if (query.select)
     {
-        ClusterProxy::stripInitiatorOnlySettingsFromQuery(query.select);
+        ClusterProxy::prepareSecondaryQueryAST(query.select);
         if (auto * union_query = query.select->as<ASTSelectWithUnionQuery>(); union_query && union_query->list_of_selects)
             for (const auto & arm : union_query->list_of_selects->children)
-                ClusterProxy::stripInitiatorOnlySettingsFromQuery(arm);
+                ClusterProxy::prepareSecondaryQueryAST(arm);
     }
 
     if (!query.settings_ast)

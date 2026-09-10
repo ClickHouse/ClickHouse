@@ -232,3 +232,60 @@ def test_backup_restore_invalid_query_setting(peer_name, operation, clause, rest
         timeout=30,
     )
     assert "CANNOT_PARSE_BOOL" in error
+
+
+def stored_select(table):
+    definition = current.query(f"SHOW CREATE TABLE {table}", settings=SETTINGS, timeout=30)
+    return definition.split("AS SELECT", 1)[1]
+
+
+@pytest.mark.parametrize("kind", ["VIEW", "MATERIALIZED VIEW"])
+@pytest.mark.parametrize("index,value", enumerate(["1", "0", "DEFAULT"]))
+def test_stored_view_query_settings(kind, index, value):
+    prefix = f"stored_profile_{'mv' if kind == 'MATERIALIZED VIEW' else 'view'}_{index}"
+    local_name, cluster_name = prefix + "_local", prefix + "_cluster"
+    engine = " ENGINE=Memory" if kind == "MATERIALIZED VIEW" else ""
+    select = f"SELECT x FROM default.source SETTINGS send_profile_traces={value}"
+    try:
+        current.query(f"CREATE {kind} {local_name}{engine} AS {select}", settings=SETTINGS, timeout=30)
+        coordinator.query(f"CREATE {kind} {cluster_name} ON CLUSTER current_cluster{engine} AS {select}", settings=SETTINGS, timeout=30)
+        local_select = stored_select(local_name)
+        assert f"send_profile_traces = {value}" in local_select
+        assert stored_select(cluster_name) == local_select
+    finally:
+        current.query(f"DROP TABLE IF EXISTS {cluster_name} SYNC; DROP TABLE IF EXISTS {local_name} SYNC", settings=SETTINGS, timeout=30)
+
+
+@pytest.mark.parametrize("index,value", enumerate(["1", "0", "DEFAULT"]))
+def test_stored_alter_query_settings(index, value):
+    prefix = f"alter_profile_mv_{index}"
+    local_name, cluster_name = prefix + "_local", prefix + "_cluster"
+    alter_settings = dict(SETTINGS, allow_experimental_alter_materialized_view_structure=1)
+    select = f"SELECT x FROM default.source WHERE x > 0 SETTINGS send_profile_traces={value}"
+    try:
+        current.query(f"CREATE MATERIALIZED VIEW {local_name} ENGINE=Memory AS SELECT x FROM default.source", settings=SETTINGS, timeout=30)
+        coordinator.query(
+            f"CREATE MATERIALIZED VIEW {cluster_name} ON CLUSTER current_cluster ENGINE=Memory AS SELECT x FROM default.source",
+            settings=SETTINGS,
+            timeout=30,
+        )
+        current.query(f"ALTER TABLE {local_name} MODIFY QUERY {select}", settings=alter_settings, timeout=30)
+        coordinator.query(f"ALTER TABLE {cluster_name} ON CLUSTER current_cluster MODIFY QUERY {select}", settings=alter_settings, timeout=30)
+        local_select = stored_select(local_name)
+        assert f"send_profile_traces = {value}" in local_select
+        assert stored_select(cluster_name) == local_select
+    finally:
+        current.query(f"DROP TABLE IF EXISTS {cluster_name} SYNC; DROP TABLE IF EXISTS {local_name} SYNC", settings=SETTINGS, timeout=30)
+
+
+def test_create_as_select_profile_setting():
+    table = "profile_ctas"
+    try:
+        coordinator.query(
+            f"CREATE TABLE {table} ON CLUSTER current_cluster ENGINE=Memory AS SELECT x FROM default.source SETTINGS send_profile_traces=1",
+            settings=SETTINGS,
+            timeout=30,
+        )
+        assert current.query(f"SELECT x FROM {table} ORDER BY x", settings=SETTINGS, timeout=30) == "0\n1\n2\n"
+    finally:
+        current.query(f"DROP TABLE IF EXISTS {table} SYNC", settings=SETTINGS, timeout=30)

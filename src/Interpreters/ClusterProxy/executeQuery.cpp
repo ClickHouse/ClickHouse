@@ -317,13 +317,17 @@ bool isInitiatorOnlySettingName(std::string_view name)
 
 void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
 {
-    /// Trace opt-in is negotiated by the settings packet once the transport queue is known.
-    /// Preserve SQL opt-outs, and let the common strip below prune any emptied clauses.
-    stripProfileTraceOptInsFromQuery(query);
-
     /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
     /// the `name = value` (`changes`) and `name = DEFAULT` (`default_settings`) forms.
     removeSettingsFromQuery(query, initiator_only_setting_names);
+}
+
+void prepareSecondaryQueryAST(const ASTPtr & query)
+{
+    /// Trace opt-in is negotiated by the settings packet once the transport queue is known.
+    /// Preserve SQL opt-outs, and let the common strip below prune any emptied clauses.
+    stripProfileTraceOptInsFromQuery(query);
+    stripInitiatorOnlySettingsFromQuery(query);
 }
 
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
@@ -1060,7 +1064,7 @@ void executeQueryWithParallelReplicas(
     /// path, from `QueryNode::settings_changes` materialized by `queryNodeToDistributedSelectQuery`
     /// (`QueryNode::toAST`). The per-replica context packet is stripped in `updateContextForParallelReplicas`.
     auto forwarded_query_ast = query_ast->clone();
-    stripInitiatorOnlySettingsFromQuery(forwarded_query_ast);
+    prepareSecondaryQueryAST(forwarded_query_ast);
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
@@ -1629,7 +1633,7 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// The per-shard context packet is stripped in `updateContextForParallelReplicas`, but the
         /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
         /// (both `changes` and `default_settings`) from it too.
-        stripInitiatorOnlySettingsFromQuery(new_query_ast);
+        prepareSecondaryQueryAST(new_query_ast);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
