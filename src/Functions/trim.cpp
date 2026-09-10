@@ -21,8 +21,8 @@ namespace
 {
 
 /// Membership table for the optional second argument of trim* functions.
-/// Unlike `SearchSymbols` (a SIMD primitive capped at 16 symbols), it supports
-/// a trim character set of any length and looks up each byte in O(1).
+/// Unlike `find_first_symbols` (a SIMD primitive with a compile-time set of at most
+/// 16 symbols), it supports a trim character set of any length and looks up each byte in O(1).
 using TrimCharsTable = std::array<bool, 256>;
 
 class FunctionTrim final : public IFunction
