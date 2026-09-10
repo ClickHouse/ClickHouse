@@ -109,8 +109,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -211,9 +210,8 @@ private:
 
     static DeserializeBinaryBulkStatePtr deserializeStructureStatePrefix(DeserializeBinaryBulkSettings & settings, SubstreamsDeserializeStatesCache * cache);
 
-    /// Deserialize data from ObjectSharedDataStructure stream with specified offset/limit.
+    /// Deserialize data from ObjectSharedDataStructure stream with specified limit.
     static std::shared_ptr<StructureGranules> deserializeStructure(
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStateObjectSharedDataStructure & structure_state,

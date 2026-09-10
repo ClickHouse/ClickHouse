@@ -1,0 +1,11 @@
+<test>
+  <settings>
+    <join_algorithm>parallel_hash</join_algorithm>
+    <query_plan_join_swap_table>0</query_plan_join_swap_table>
+  </settings>
+
+  <query>SELECT count() FROM numbers_mt(1000000) AS l RIGHT JOIN (SELECT if(number % 20 = 0, NULL, number) AS key FROM numbers_mt(20000000)) AS r ON l.number = r.key</query>
+  <query>SELECT count() FROM numbers_mt(1000000) AS l FULL JOIN (SELECT if(number % 20 = 0, NULL, number) AS key FROM numbers_mt(20000000)) AS r ON l.number = r.key</query>
+  <query>SELECT count() FROM numbers_mt(1000000) AS l RIGHT JOIN numbers_mt(20000000) AS r ON l.number = r.number AND r.number % 100 != 0</query>
+  <query>SELECT count() FROM numbers_mt(1000000) AS l RIGHT JOIN (SELECT if(number % 20 = 0, NULL, number) AS key, number AS flag FROM numbers_mt(20000000)) AS r ON l.number = r.key AND r.flag % 100 != 0</query>
+</test>

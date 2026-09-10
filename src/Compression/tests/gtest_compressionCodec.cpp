@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Compression/CompressionFactory.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -14,6 +16,7 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <IO/BufferWithOwnMemory.h>
 
+#include <bit>
 #include <random>
 #include <bitset>
 #include <cmath>
@@ -30,6 +33,12 @@
 
 /// For the expansion of gtest macros.
 #include <gtest/gtest.h>
+
+#if USE_SZ3
+#    include <SZ3/api/sz.hpp>
+#    include <SZ3/lossless/Lossless_zstd.hpp>
+#    include <zstd.h>
+#endif
 
 using namespace DB;
 
@@ -1485,6 +1494,200 @@ TEST(T64Test, TranscodeRawInput)
     }
 }
 
+TEST(T64Test, CompressedBytesMatchPreTransposeRewrite)
+{
+    /// The payloads below are little-endian, and so are the transposes they pin.
+    if constexpr (std::endian::native == std::endian::big)
+        return;
+
+    /// These payloads are the `T64` on-disk format, produced by the scalar transposes. Every
+    /// implementation of either transpose has to keep reproducing them byte for byte, including
+    /// one that changes encode and decode together.
+    constexpr unsigned char bit_u64_nb16[] = {
+        0x93, 0x9A, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x84, 0x07, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE2, 0x96, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x99, 0x99,
+        0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x4B, 0x4B, 0x4B, 0x4B, 0x4B, 0x4B,
+        0x4B, 0x4B, 0x92, 0x6D, 0x92, 0x6D, 0x92, 0x6D, 0x92, 0x6D, 0x1C, 0x8E,
+        0xE3, 0x71, 0x1C, 0x8E, 0xE3, 0x71, 0x4A, 0xA5, 0x56, 0x2B, 0xB5, 0x5A,
+        0xA9, 0xD4, 0xC6, 0x9C, 0x31, 0xE7, 0x8C, 0x39, 0x67, 0xCC, 0x94, 0xD6,
+        0x5A, 0x4A, 0x29, 0xAD, 0xB5, 0x96, 0x18, 0xE7, 0x9C, 0x73, 0xCE, 0x31,
+        0xC6, 0x18, 0x4A, 0xAD, 0xB5, 0xD6, 0x5A, 0x6B, 0xAD, 0xB5, 0x6C, 0x36,
+        0xD9, 0x64, 0x93, 0x4D, 0x36, 0xD9, 0x70, 0x38, 0x1E, 0x87, 0xE3, 0x71,
+        0x38, 0x1E, 0x80, 0x3F, 0xE0, 0x07, 0xFC, 0x81, 0x3F, 0xE0, 0x00, 0xC0,
+        0xFF, 0x07, 0x00, 0xFE, 0x3F, 0x00, 0x00, 0x00, 0x00, 0xF8, 0xFF, 0xFF,
+        0x3F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0xFF,
+    };
+
+    constexpr unsigned char bit_u64_nb20[] = {
+        0x93, 0xBA, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x84, 0x05, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x85, 0x61, 0x0F, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xAA, 0xAA,
+        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0xCC, 0xCC, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0xC6, 0x39,
+        0xC6, 0x39, 0xC6, 0x39, 0xC6, 0x39, 0x3E, 0xF8, 0xC1, 0x07, 0x3E, 0xF8,
+        0xC1, 0x07, 0xFE, 0x07, 0xC0, 0xFF, 0x01, 0xF8, 0x3F, 0x00, 0xFE, 0xFF,
+        0x3F, 0x00, 0x00, 0xF8, 0xFF, 0xFF, 0x54, 0x55, 0x55, 0x55, 0x55, 0xAD,
+        0xAA, 0xAA, 0x98, 0x99, 0x99, 0x99, 0x99, 0x31, 0x33, 0x33, 0xE0, 0xE1,
+        0xE1, 0xE1, 0xE1, 0xC1, 0xC3, 0xC3, 0x00, 0xFE, 0x01, 0xFE, 0x01, 0xFE,
+        0x03, 0xFC, 0x00, 0x00, 0xFE, 0xFF, 0x01, 0x00, 0xFC, 0xFF, 0x00, 0x00,
+        0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF,
+    };
+
+    constexpr unsigned char bit_u64_nb64[] = {
+        0x93, 0x12, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x84, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xD1, 0xAD, 0x47, 0xE1, 0x7A, 0x14,
+        0xAE, 0x47, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0x66, 0x66,
+        0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E,
+        0x1E, 0x1E, 0xFE, 0x01, 0xFE, 0x01, 0xFE, 0x01, 0xFE, 0x01, 0x54, 0x55,
+        0xAB, 0xAA, 0x54, 0x55, 0xAB, 0xAA, 0x32, 0x33, 0x99, 0x99, 0xCD, 0xCC,
+        0x66, 0x66, 0x0E, 0x0F, 0x87, 0x87, 0xC3, 0xC3, 0xE1, 0xE1, 0xFE, 0x00,
+        0x7F, 0x80, 0x3F, 0xC0, 0x1F, 0xE0, 0xFE, 0xFF, 0x00, 0x80, 0xFF, 0x3F,
+        0x00, 0xE0, 0x54, 0x55, 0x55, 0xD5, 0xAA, 0xAA, 0xAA, 0x4A, 0x32, 0x33,
+        0x33, 0xB3, 0x99, 0x99, 0x99, 0xD9, 0x0E, 0x0F, 0x0F, 0x8F, 0x87, 0x87,
+        0x87, 0xC7, 0x54, 0xAA, 0x55, 0x2A, 0xD5, 0x2A, 0xD5, 0x6A, 0x98, 0x33,
+        0x66, 0xCC, 0x19, 0x33, 0xE6, 0x8C, 0x4A, 0x69, 0x2D, 0xA5, 0xB4, 0x96,
+        0x52, 0x5A, 0xC6, 0x18, 0xE3, 0x9C, 0x73, 0x8E, 0x31, 0xC6, 0x3E, 0xF8,
+        0xE0, 0x83, 0x0F, 0x7E, 0xF0, 0xC1, 0xFE, 0x07, 0xE0, 0x7F, 0x00, 0xFE,
+        0x0F, 0xC0, 0x54, 0x55, 0xB5, 0xAA, 0xAA, 0x54, 0x55, 0x95, 0x32, 0x33,
+        0x93, 0x99, 0x99, 0xCD, 0xCC, 0x4C, 0xA4, 0xA5, 0x25, 0x2D, 0x2D, 0x69,
+        0x69, 0x69, 0x92, 0x6C, 0x93, 0x64, 0x9B, 0x24, 0xDB, 0x24, 0x24, 0x49,
+        0xDA, 0xB6, 0x2D, 0x49, 0x92, 0xB6, 0x92, 0x24, 0x49, 0x92, 0x64, 0xDB,
+        0xB6, 0x6D, 0x8E, 0xE3, 0x38, 0x8E, 0xE3, 0x38, 0x8E, 0xE3, 0xD4, 0x4A,
+        0xAD, 0xD4, 0x4A, 0xAD, 0xD4, 0x4A, 0x18, 0x73, 0xCE, 0x18, 0x73, 0xCE,
+        0x18, 0x73, 0x4A, 0x29, 0xA5, 0xB5, 0xD6, 0x5A, 0x4A, 0x29, 0x6C, 0xB2,
+        0xC9, 0x26, 0x9B, 0x6C, 0x93, 0x4D, 0x70, 0x3C, 0x0E, 0xC7, 0xE3, 0x70,
+        0x1C, 0x8E, 0x80, 0x3F, 0xF0, 0x07, 0xFC, 0x80, 0x1F, 0xF0, 0xAA, 0x6A,
+        0x55, 0xAD, 0xAA, 0x55, 0xB5, 0xAA, 0x66, 0xE6, 0xCC, 0x9C, 0x99, 0x33,
+        0x73, 0x66, 0x1E, 0x1E, 0x3C, 0x7C, 0x78, 0xF0, 0xF0, 0xE1, 0xFE, 0x01,
+        0xFC, 0x03, 0xF8, 0x0F, 0xF0, 0x1F, 0x54, 0x55, 0xA9, 0xAA, 0x52, 0x55,
+        0xA5, 0xAA, 0x98, 0x99, 0x31, 0x33, 0x63, 0x66, 0xC6, 0xCC, 0x4A, 0x4B,
+        0x6B, 0x69, 0x29, 0x2D, 0xAD, 0xA5, 0xC6, 0x38, 0xE7, 0x18, 0xE7, 0x1C,
+        0x63, 0x9C, 0x94, 0x52, 0x4A, 0xAD, 0xB5, 0x56, 0x4A, 0x29, 0xB2, 0xC9,
+        0x26, 0x9B, 0x6C, 0x32, 0xD9, 0x64, 0x24, 0x6D, 0x4B, 0xD2, 0xB6, 0xA4,
+        0x6D, 0x49, 0x92, 0x24, 0xD9, 0xB6, 0x6D, 0x92, 0x24, 0xDB, 0x24, 0x49,
+        0x92, 0x24, 0x49, 0xDB, 0xB6, 0x6D, 0x38, 0x8E, 0xE3, 0x38, 0x8E, 0xE3,
+        0x38, 0x8E, 0xC0, 0x0F, 0xFC, 0xC0, 0x0F, 0xFC, 0xC0, 0x0F, 0xAA, 0x5A,
+        0x55, 0xAA, 0x5A, 0x55, 0xAA, 0x5A, 0xCC, 0x6C, 0x66, 0x33, 0x93, 0x99,
+        0xCC, 0x6C, 0x5A, 0xDA, 0xD2, 0x96, 0xB6, 0xB4, 0xA5, 0x25, 0xC6, 0x39,
+        0xCE, 0x71, 0x8E, 0x73, 0x9C, 0xE3, 0x94, 0x52, 0x6B, 0xA5, 0xD4, 0x5A,
+        0x29, 0xB5, 0x18, 0x63, 0x8C, 0x39, 0xE7, 0x9C, 0x31, 0xC6, 0xE0, 0x83,
+        0x0F, 0x3E, 0xF8, 0xE0, 0xC1, 0x07, 0xAA, 0x56, 0xA5, 0x6A, 0x55, 0xAA,
+        0x54, 0xAD, 0xCC, 0x64, 0x36, 0xB3, 0x99, 0xCC, 0x66, 0x36, 0xF0, 0x78,
+        0x38, 0x3C, 0x1E, 0x0F, 0x87, 0xC7, 0xAA, 0xD5, 0x6A, 0x95, 0x4A, 0xA5,
+        0x52, 0xAD, 0xCC, 0x66, 0xB3, 0xD9, 0x6C, 0x36, 0x9B, 0xC9, 0xF0, 0x78,
+        0x3C, 0x1E, 0x8F, 0xC7, 0xE3, 0xF1, 0x00, 0x7F, 0xC0, 0x1F, 0xF0, 0x07,
+        0xFC, 0x01, 0x00, 0x80, 0xFF, 0x1F, 0x00, 0xF8, 0xFF, 0x01, 0x00, 0x00,
+        0x00, 0xE0, 0xFF, 0xFF, 0xFF, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0xFE,
+    };
+
+    constexpr unsigned char byte_u64_nb16[] = {
+        0x93, 0x9A, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x04, 0x07, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE2, 0x96, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x07, 0x6C, 0xD1, 0x36, 0x9B, 0x00, 0x65, 0xCA, 0x2F, 0x94,
+        0xF9, 0x5E, 0xC3, 0x28, 0x8D, 0xF2, 0x57, 0xBC, 0x21, 0x86, 0xEB, 0x50,
+        0xB5, 0x1A, 0x7F, 0xE4, 0x49, 0xAE, 0x13, 0x78, 0xDD, 0x42, 0xA7, 0x0C,
+        0x71, 0xD6, 0x3B, 0xA0, 0x05, 0x6A, 0xCF, 0x34, 0x99, 0xFE, 0x63, 0xC8,
+        0x2D, 0x92, 0xF7, 0x5C, 0xC1, 0x26, 0x8B, 0xF0, 0x55, 0xBA, 0x1F, 0x84,
+        0xE9, 0x4E, 0xB3, 0x18, 0x7D, 0xE2, 0x00, 0x02, 0x04, 0x07, 0x09, 0x0C,
+        0x0E, 0x10, 0x13, 0x15, 0x17, 0x1A, 0x1C, 0x1F, 0x21, 0x23, 0x26, 0x28,
+        0x2B, 0x2D, 0x2F, 0x32, 0x34, 0x37, 0x39, 0x3B, 0x3E, 0x40, 0x43, 0x45,
+        0x47, 0x4A, 0x4C, 0x4F, 0x51, 0x53, 0x56, 0x58, 0x5B, 0x5D, 0x5F, 0x62,
+        0x64, 0x66, 0x69, 0x6B, 0x6E, 0x70, 0x72, 0x75, 0x77, 0x7A, 0x7C, 0x7E,
+        0x81, 0x83, 0x86, 0x88, 0x8A, 0x8D, 0x8F, 0x92, 0x94, 0x96,
+    };
+
+    constexpr unsigned char bit_i64_sign[] = {
+        0x93, 0x9A, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x89, 0xC8, 0xB5,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xA3, 0x4C, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xCC, 0xCC,
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A, 0x5A,
+        0x5A, 0x5A, 0x93, 0x6C, 0x93, 0x6C, 0x93, 0x6C, 0x93, 0x6C, 0x1C, 0x8F,
+        0xE3, 0x70, 0x1C, 0x8F, 0xE3, 0x70, 0x4A, 0xA5, 0x56, 0x2A, 0xB5, 0x5A,
+        0xA9, 0xD5, 0x39, 0x63, 0xCE, 0x19, 0x73, 0xC6, 0x98, 0x33, 0xAD, 0xB5,
+        0x94, 0x52, 0x5A, 0x6B, 0x2D, 0xA5, 0x31, 0xC6, 0x18, 0x63, 0x9C, 0x73,
+        0xCE, 0x39, 0x94, 0x52, 0x4A, 0x29, 0xB5, 0xD6, 0x5A, 0x6B, 0xD9, 0x64,
+        0x93, 0x4D, 0x26, 0x9B, 0x6C, 0xB2, 0x1E, 0x87, 0xE3, 0x71, 0x38, 0x1C,
+        0x8F, 0xC3, 0x1F, 0xF8, 0x03, 0x7E, 0xC0, 0x1F, 0xF0, 0x03, 0x1F, 0x00,
+        0xFC, 0x7F, 0x00, 0xE0, 0xFF, 0x03, 0xE0, 0xFF, 0xFF, 0x7F, 0x00, 0x00,
+        0x00, 0xFC, 0xFF, 0xFF, 0xFF, 0x7F, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    constexpr unsigned char bit_u32_nb16[] = {
+        0x93, 0x9A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x83, 0x07, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE2, 0x96, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x99, 0x99,
+        0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x4B, 0x4B, 0x4B, 0x4B, 0x4B, 0x4B,
+        0x4B, 0x4B, 0x92, 0x6D, 0x92, 0x6D, 0x92, 0x6D, 0x92, 0x6D, 0x1C, 0x8E,
+        0xE3, 0x71, 0x1C, 0x8E, 0xE3, 0x71, 0x4A, 0xA5, 0x56, 0x2B, 0xB5, 0x5A,
+        0xA9, 0xD4, 0xC6, 0x9C, 0x31, 0xE7, 0x8C, 0x39, 0x67, 0xCC, 0x94, 0xD6,
+        0x5A, 0x4A, 0x29, 0xAD, 0xB5, 0x96, 0x18, 0xE7, 0x9C, 0x73, 0xCE, 0x31,
+        0xC6, 0x18, 0x4A, 0xAD, 0xB5, 0xD6, 0x5A, 0x6B, 0xAD, 0xB5, 0x6C, 0x36,
+        0xD9, 0x64, 0x93, 0x4D, 0x36, 0xD9, 0x70, 0x38, 0x1E, 0x87, 0xE3, 0x71,
+        0x38, 0x1E, 0x80, 0x3F, 0xE0, 0x07, 0xFC, 0x81, 0x3F, 0xE0, 0x00, 0xC0,
+        0xFF, 0x07, 0x00, 0xFE, 0x3F, 0x00, 0x00, 0x00, 0x00, 0xF8, 0xFF, 0xFF,
+        0x3F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0xFF,
+    };
+
+    const auto check = [](const char * label, const std::string & codec_spec, const DataTypePtr & type,
+                          const char * values, size_t values_size, const unsigned char * expected, size_t expected_size)
+    {
+        auto codec = makeCodec(codec_spec, type);
+        PODArray<char> encoded(codec->getCompressedReserveSize(static_cast<UInt32>(values_size)));
+        const UInt32 encoded_size = codec->compress(values, static_cast<UInt32>(values_size), encoded.data());
+
+        ASSERT_EQ(encoded_size, expected_size) << label;
+        for (UInt32 i = 0; i < encoded_size; ++i)
+            ASSERT_EQ(static_cast<unsigned char>(encoded[i]), expected[i]) << label << " at byte " << i;
+
+        /// The pinned payload must also still decode to the input on this binary.
+        PODArray<char> decoded(values_size);
+        ASSERT_EQ(codec->decompress(reinterpret_cast<const char *>(expected), static_cast<UInt32>(expected_size),
+                                    decoded.data()), values_size) << label;
+        ASSERT_EQ(memcmp(decoded.data(), values, values_size), 0) << label;
+    };
+
+    std::vector<UInt64> u64_nb16;
+    std::vector<UInt64> u64_nb20;
+    std::vector<UInt64> u64_nb64;
+    std::vector<Int64> i64_sign;
+    std::vector<UInt32> u32_nb16;
+    for (size_t i = 0; i < 64; ++i)
+    {
+        u64_nb16.push_back(i * 613 + 7);
+        u64_nb20.push_back(i * 16000 + 5);
+        u64_nb64.push_back(i * 0x0123456789ABCDEFULL);
+        i64_sign.push_back(static_cast<Int64>(i) * 613 - 19000);
+        u32_nb16.push_back(static_cast<UInt32>(i * 613 + 7));
+    }
+
+    const auto u64 = std::make_shared<DataTypeUInt64>();
+
+    /// `num_bits` = 16: two whole-byte bit-transpose passes, no partial byte.
+    check("bit_u64_nb16", "T64('bit')", u64, reinterpret_cast<const char *>(u64_nb16.data()),
+          u64_nb16.size() * sizeof(UInt64), bit_u64_nb16, std::size(bit_u64_nb16));
+    /// `num_bits` = 20: whole bytes plus a partial trailing byte.
+    check("bit_u64_nb20", "T64('bit')", u64, reinterpret_cast<const char *>(u64_nb20.data()),
+          u64_nb20.size() * sizeof(UInt64), bit_u64_nb20, std::size(bit_u64_nb20));
+    /// `num_bits` = 64: every whole-byte pass.
+    check("bit_u64_nb64", "T64('bit')", u64, reinterpret_cast<const char *>(u64_nb64.data()),
+          u64_nb64.size() * sizeof(UInt64), bit_u64_nb64, std::size(bit_u64_nb64));
+    /// The byte variant transposes bits only for the partial trailing byte.
+    check("byte_u64_nb16", "T64", u64, reinterpret_cast<const char *>(u64_nb16.data()),
+          u64_nb16.size() * sizeof(UInt64), byte_u64_nb16, std::size(byte_u64_nb16));
+    /// Signed values crossing zero take the `sign_bit` path.
+    check("bit_i64_sign", "T64('bit')", std::make_shared<DataTypeInt64>(), reinterpret_cast<const char *>(i64_sign.data()),
+          i64_sign.size() * sizeof(Int64), bit_i64_sign, std::size(bit_i64_sign));
+    /// A width narrower than 64 bits keeps the scalar matrix helpers.
+    check("bit_u32_nb16", "T64('bit')", std::make_shared<DataTypeUInt32>(), reinterpret_cast<const char *>(u32_nb16.data()),
+          u32_nb16.size() * sizeof(UInt32), bit_u32_nb16, std::size(bit_u32_nb16));
+}
+
 TEST(T64Test, DecompressMalformedInputBytesToSkip)
 {
     /// Reproducer for heap-buffer-overflow when `bytes_to_skip > bytes_size`
@@ -1574,6 +1777,316 @@ TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
     auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
+
+#if USE_SZ3
+TEST(SZ3Test, DecompressRejectsOversizedInnerLosslessSize)
+{
+    /// Regression for an unbounded allocation in the SZ3 lossy decompression path. The generic lossy
+    /// decompressor (`ALGO_INTERP` / `ALGO_LORENZO_REG` / `ALGO_INTERP_LORENZO`) inflates an internal buffer
+    /// whose size is read from the (untrusted) compressed payload. A corrupted block whose `config.num`
+    /// matches the trusted output size could still declare an arbitrary inner-buffer size and force a raw
+    /// `malloc` of that size before any validation. The decompressor must reject such a block before it
+    /// allocates the declared size.
+    auto codec = makeCodec("SZ3", std::make_shared<DataTypeFloat64>());
+
+    /// A smooth, highly compressible sequence so SZ3 keeps the lossy (generic) algorithm rather than falling
+    /// back to the bit-exact lossless path; the lossy round-trip below confirms which path was taken.
+    constexpr size_t num_values = 8192;
+    std::vector<Float64> values(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        values[i] = std::sin(static_cast<double>(i) * 0.001) * 100.0;
+
+    const char * source = reinterpret_cast<const char *>(values.data());
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    PODArray<char> encoded(codec->getCompressedReserveSize(source_size));
+    const UInt32 encoded_size = codec->compress(source, source_size, encoded.data());
+    encoded.resize(encoded_size);
+
+    /// Sanity: the unmodified block round-trips, and the result is LOSSY (differs from the input). A lossy
+    /// result proves the block uses the generic interpolation/Lorenzo path - the bit-exact lossless fallback
+    /// would reproduce the input exactly and would exercise a different (already-bounded) decoder.
+    {
+        PODArray<char> decoded(source_size);
+        const UInt32 decoded_size = codec->decompress(encoded.data(), encoded_size, decoded.data());
+        ASSERT_EQ(decoded_size, source_size);
+        ASSERT_NE(0, memcmp(source, decoded.data(), source_size)) << "Expected a lossy (generic-path) SZ3 block";
+    }
+
+    /// The inner lossless buffer size is the 8-byte little-endian prefix of the lossless payload, which sits
+    /// right after the 9-byte compressed-block header, the 1-byte SZ3 float-width byte and the 16-byte SZ3
+    /// stream header.
+    constexpr size_t inner_size_offset = ICompressionCodec::getHeaderSize() + 1 + 16;
+    ASSERT_GT(encoded_size, inner_size_offset + sizeof(size_t));
+
+    const size_t oversized = static_cast<size_t>(1) << 50; /// ~1 PiB, far above any legitimate inner buffer
+    memcpy(encoded.data() + inner_size_offset, &oversized, sizeof(oversized));
+
+    PODArray<char> decoded(source_size);
+    bool rejected_before_allocation = false;
+    try
+    {
+        codec->decompress(encoded.data(), encoded_size, decoded.data());
+    }
+    catch (const Exception & e)
+    {
+        rejected_before_allocation = e.message().contains("exceeds the allowed capacity");
+    }
+    ASSERT_TRUE(rejected_before_allocation)
+        << "Decompression must reject the oversized inner lossless size before allocating it";
+}
+
+namespace
+{
+
+/// An SZ3-encoded ClickHouse block produced by `CompressionCodecSZ3` is laid out as
+///   [ CH codec header: getHeaderSize() bytes ][ 1-byte float width ][ SZ3 stream ]
+/// where the SZ3 stream (see `SZ3/api/sz.hpp`) is
+///   [ magic 4 ][ data version 4 ][ cmpDataSize 8 ][ lossless payload: cmpDataSize bytes ][ config blob ]
+/// and the lossless payload (`SZ3::Lossless_zstd` framing) is
+///   [ decompressed size: 8 bytes ][ zstd frame ].
+/// `SZGenericCompressor` parses the decompressed lossless payload (the "inner buffer") to drive decompression.
+constexpr size_t SZ3_STREAM_HEADER_SIZE = 16;
+
+size_t sz3StreamOffset()
+{
+    return ICompressionCodec::getHeaderSize() + 1; /// CH block header + the 1-byte float-width prefix
+}
+
+/// Decompresses the inner buffer of a valid SZ3 block, so a test can tamper it and feed it back.
+std::vector<unsigned char> sz3ExtractInnerBuffer(const char * encoded)
+{
+    const size_t prefix = sz3StreamOffset();
+    const auto * stream = reinterpret_cast<const unsigned char *>(encoded) + prefix;
+    uint64_t cmp_data_size = 0;
+    memcpy(&cmp_data_size, stream + 8, sizeof(cmp_data_size)); /// skip magic (4) + version (4)
+    const unsigned char * payload = stream + SZ3_STREAM_HEADER_SIZE;
+
+    SZ3::Lossless_zstd lossless;
+    unsigned char * inner = nullptr;
+    size_t inner_size = 0; /// 0 capacity means "allocate, no upper bound" for this trusted, test-built block
+    lossless.decompress(payload, cmp_data_size, inner, inner_size);
+    std::vector<unsigned char> result(inner, inner + inner_size);
+    free(inner);
+    return result;
+}
+
+/// Rebuilds an SZ3 block whose inner buffer is replaced by `inner`, reusing the trailing config blob and the
+/// CH/float-width prefix of `encoded`. `ICompressionCodec::decompress` reads neither a checksum nor the
+/// header's compressed-size field (it takes the size from its argument), so the prefix can be reused verbatim.
+std::vector<char> sz3RebuildBlockWithInner(const char * encoded, UInt32 encoded_size, const std::vector<unsigned char> & inner)
+{
+    const size_t prefix = sz3StreamOffset();
+    const auto * stream = reinterpret_cast<const unsigned char *>(encoded) + prefix;
+    const size_t stream_size = encoded_size - prefix;
+    uint64_t old_cmp_data_size = 0;
+    memcpy(&old_cmp_data_size, stream + 8, sizeof(old_cmp_data_size));
+    const unsigned char * config_blob = stream + SZ3_STREAM_HEADER_SIZE + old_cmp_data_size;
+    const size_t config_blob_size = stream_size - SZ3_STREAM_HEADER_SIZE - old_cmp_data_size;
+
+    SZ3::Lossless_zstd lossless;
+    std::vector<unsigned char> payload(ZSTD_compressBound(inner.size()) + 64 + sizeof(size_t));
+    const size_t new_cmp_data_size = lossless.compress(inner.data(), inner.size(), payload.data(), payload.size());
+
+    std::vector<char> out;
+    const auto * stream_chars = reinterpret_cast<const char *>(stream);
+    out.insert(out.end(), encoded, encoded + prefix); /// CH header + float width (unchanged)
+    out.insert(out.end(), stream_chars, stream_chars + 8); /// magic + version (unchanged)
+    const auto * size_bytes = reinterpret_cast<const char *>(&new_cmp_data_size);
+    out.insert(out.end(), size_bytes, size_bytes + 8); /// updated cmpDataSize
+    const auto * payload_chars = reinterpret_cast<const char *>(payload.data());
+    out.insert(out.end(), payload_chars, payload_chars + new_cmp_data_size);
+    const auto * config_chars = reinterpret_cast<const char *>(config_blob);
+    out.insert(out.end(), config_chars, config_chars + config_blob_size);
+    return out;
+}
+
+}
+
+TEST(SZ3Test, DecompressRejectsTamperedInterpolationDimensions)
+{
+    /// Regression for an out-of-bounds read/write in the SZ3 interpolation decompressor. `ALGO_INTERP` stores
+    /// its own dimensions array inside the (untrusted) compressed payload, separate from the trusted
+    /// `config.dims`. A crafted block can keep `config.num` equal to the trusted output size while declaring
+    /// larger interpolation dimensions, which would make the decompressor iterate past the end of the output
+    /// buffer (and past the decoded quantization vector). The decompressor must reject the mismatch first.
+    auto codec = makeCodec("SZ3('ALGO_INTERP', 'ABS', 0.001)", std::make_shared<DataTypeFloat64>());
+
+    /// A smooth, highly compressible ramp so the forced `ALGO_INTERP` is not downgraded to the plain lossless
+    /// fallback (which happens for poorly compressible data); the config check below confirms the algorithm.
+    constexpr size_t num_values = 8192;
+    std::vector<Float64> values(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        values[i] = static_cast<double>(i) * 0.5;
+
+    const char * source = reinterpret_cast<const char *>(values.data());
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    PODArray<char> encoded(codec->getCompressedReserveSize(source_size));
+    const UInt32 encoded_size = codec->compress(source, source_size, encoded.data());
+    encoded.resize(encoded_size);
+
+    /// Confirm the block actually uses the interpolation algorithm (not the lossless fallback), otherwise the
+    /// inner buffer would not begin with the interpolation dimensions this test tampers with.
+    {
+        SZ3::Config config;
+        SZ_load_config(config, encoded.data() + sz3StreamOffset(), encoded_size - sz3StreamOffset());
+        ASSERT_EQ(config.cmprAlgo, SZ3::ALGO_INTERP) << "Test setup expects a forced ALGO_INTERP block";
+        ASSERT_EQ(config.num, num_values);
+    }
+
+    /// The interpolation decomposition writes its dimensions array first, so it occupies the leading
+    /// `N * sizeof(size_t)` bytes (N == 2: {number of vectors, inner dimension}) of the inner buffer.
+    std::vector<unsigned char> inner = sz3ExtractInnerBuffer(encoded.data());
+    ASSERT_GE(inner.size(), 2 * sizeof(size_t));
+
+    /// Inflate the first stored dimension so the product of the dimensions exceeds the trusted element count.
+    const size_t oversized_dimension = num_values * 2;
+    const size_t inner_dimension = 1;
+    memcpy(inner.data(), &oversized_dimension, sizeof(oversized_dimension));
+    memcpy(inner.data() + sizeof(oversized_dimension), &inner_dimension, sizeof(inner_dimension));
+
+    std::vector<char> tampered = sz3RebuildBlockWithInner(encoded.data(), encoded_size, inner);
+
+    PODArray<char> decoded(source_size);
+    bool rejected_dimensions = false;
+    try
+    {
+        codec->decompress(tampered.data(), static_cast<UInt32>(tampered.size()), decoded.data());
+    }
+    catch (const Exception & e)
+    {
+        rejected_dimensions = e.message().contains("stored dimensions do not match");
+    }
+    ASSERT_TRUE(rejected_dimensions)
+        << "Decompression must reject tampered interpolation dimensions before any out-of-bounds access";
+}
+
+TEST(SZ3Test, DecompressFreesScratchBufferOnTruncatedPayload)
+{
+    /// Regression for a memory leak (and a check that no parse step reads out of bounds) in the SZ3 generic
+    /// decompression path. After the lossless layer allocates the internal scratch buffer, several parsing
+    /// steps run on the (untrusted) decompressed payload and can throw (`decomposition.load`, `encoder.load`,
+    /// the quantization-index count read/check, `encoder.decode`). The scratch buffer must be freed on every
+    /// such path - verified here under ASan/LSan by truncating a valid inner buffer to many lengths and
+    /// feeding each back, so the parser fails at different stages without leaking or crashing.
+    auto codec = makeCodec("SZ3('ALGO_INTERP', 'ABS', 0.001)", std::make_shared<DataTypeFloat64>());
+
+    constexpr size_t num_values = 8192;
+    std::vector<Float64> values(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        values[i] = static_cast<double>(i) * 0.5;
+
+    const char * source = reinterpret_cast<const char *>(values.data());
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    PODArray<char> encoded(codec->getCompressedReserveSize(source_size));
+    const UInt32 encoded_size = codec->compress(source, source_size, encoded.data());
+    encoded.resize(encoded_size);
+
+    const std::vector<unsigned char> inner = sz3ExtractInnerBuffer(encoded.data());
+    ASSERT_GE(inner.size(), 2 * sizeof(size_t));
+
+    /// A 4-byte payload deterministically makes the very first parse step (reading the interpolation
+    /// dimensions) read past the end of the scratch buffer; it must throw rather than crash, and the buffer
+    /// must be freed on that path.
+    {
+        const std::vector<unsigned char> tiny(inner.begin(), inner.begin() + 4);
+        std::vector<char> block = sz3RebuildBlockWithInner(encoded.data(), encoded_size, tiny);
+        PODArray<char> decoded(source_size);
+        ASSERT_THROW(
+            codec->decompress(block.data(), static_cast<UInt32>(block.size()), decoded.data()), Exception);
+    }
+
+    /// Sweep truncation lengths so the parser fails at different stages; each must throw without leaking.
+    bool saw_rejection = false;
+    const size_t step = std::max<size_t>(1, inner.size() / 50);
+    for (size_t len = 0; len < inner.size(); len += step)
+    {
+        const std::vector<unsigned char> truncated(inner.begin(), inner.begin() + len);
+        std::vector<char> block = sz3RebuildBlockWithInner(encoded.data(), encoded_size, truncated);
+        PODArray<char> decoded(source_size);
+        try
+        {
+            codec->decompress(block.data(), static_cast<UInt32>(block.size()), decoded.data());
+        }
+        catch (const Exception &)
+        {
+            saw_rejection = true; /// expected: a truncated payload can not be fully parsed
+        }
+    }
+    ASSERT_TRUE(saw_rejection) << "A truncated SZ3 payload must be rejected, not silently accepted";
+}
+
+TEST(SZ3Test, LorenzoRegSerializesAndDecodesRegressionCoefficients)
+{
+    /// Companion to the SQL test 04604_sz3_codec_lorenzo_reg: a positive signal that this data shape really
+    /// exercises the `ALGO_LORENZO_REG` loaders whose `remaining_length` accounting was fixed
+    /// (`RegressionPredictor::load` and `ComposedPredictor::load` decrement it by the bytes the Huffman
+    /// `decode` consumed, not by the uncompressed index count). A plain round trip could silently pass
+    /// through the bit-exact `ALGO_LOSSLESS` fallback, or through a lossy block in which no block selected
+    /// the regression predictor, and then a regression in the fixed loaders would go unnoticed.
+    auto codec = makeCodec("SZ3('ALGO_LORENZO_REG', 'ABS', 0.01)", std::make_shared<DataTypeFloat64>());
+
+    /// The same data shape as the SQL test: a smooth signal with a linear trend, so the per-block predictor
+    /// selection picks the regression predictor for the blocks.
+    constexpr size_t num_values = 8192;
+    std::vector<Float64> values(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+        values[i] = static_cast<double>(i) * 0.5 + std::sin(static_cast<double>(i) * 0.1);
+
+    const char * source = reinterpret_cast<const char *>(values.data());
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    PODArray<char> encoded(codec->getCompressedReserveSize(source_size));
+    const UInt32 encoded_size = codec->compress(source, source_size, encoded.data());
+    encoded.resize(encoded_size);
+
+    /// The stored config must keep ALGO_LORENZO_REG: SZ3 rewrites `cmprAlgo` to ALGO_LOSSLESS when the
+    /// lossy result does not win over plain zstd, and that path would never reach the fixed loaders.
+    {
+        SZ3::Config config;
+        SZ_load_config(config, encoded.data() + sz3StreamOffset(), encoded_size - sz3StreamOffset());
+        ASSERT_EQ(config.cmprAlgo, SZ3::ALGO_LORENZO_REG) << "Test setup expects an ALGO_LORENZO_REG block";
+        ASSERT_EQ(config.num, num_values);
+    }
+
+    /// The regression-coefficient stream must be non-empty. Its element count is the first field of the
+    /// inner buffer: `BlockwiseDecomposition::save` writes the Lorenzo fallback predictor (nothing), then
+    /// `ComposedPredictor::save` writes each sub-predictor - the Lorenzo predictor (nothing), then the
+    /// regression predictor, which starts with the count of its quantized coefficients. A zero count would
+    /// mean no block selected the regression predictor, and `RegressionPredictor::load` would never run
+    /// the fixed decode.
+    {
+        const std::vector<unsigned char> inner = sz3ExtractInnerBuffer(encoded.data());
+        ASSERT_GE(inner.size(), sizeof(size_t));
+        size_t coeff_count = 0;
+        memcpy(&coeff_count, inner.data(), sizeof(coeff_count));
+        ASSERT_GT(coeff_count, 0u) << "Expected at least one regression-predicted block";
+        /// Every regression-predicted 1-D block stores two quantized coefficients (slope and intercept).
+        ASSERT_EQ(coeff_count % 2, 0u);
+    }
+
+    /// Decompression must decode those coefficients. Before the fix, `RegressionPredictor::load`
+    /// understated `remaining_length` (the uncompressed coefficient count overshoots the Huffman-compressed
+    /// stream size), so the following `encoder.load` rejected the block with "SZ3 Huffman: encoded length
+    /// exceeds compressed buffer" (CORRUPTED_DATA) and the data was unreadable. The round trip must also be
+    /// lossy - within the ABS bound but not bit-exact - proving the quantizer path produced the block.
+    PODArray<char> decoded(source_size);
+    const UInt32 decoded_size = codec->decompress(encoded.data(), encoded_size, decoded.data());
+    ASSERT_EQ(decoded_size, source_size);
+    const auto * decoded_values = reinterpret_cast<const Float64 *>(decoded.data());
+    Float64 max_error = 0.0;
+    size_t changed = 0;
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        max_error = std::max(max_error, std::fabs(values[i] - decoded_values[i]));
+        changed += (values[i] != decoded_values[i]) ? 1 : 0;
+    }
+    ASSERT_LE(max_error, 0.011);
+    ASSERT_GT(changed, 0u) << "Expected a lossy round trip; a bit-exact result means the lossless fallback was used";
+}
+#endif
 
 /// Expects getCompressionCodecForFile to reject the block with the given error code.
 void expectRejectedBlock(ReadBuffer & in, int expected_code, bool skip_to_next_block = true)

@@ -4,6 +4,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/Operators.h>
+#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerRequest.h>
@@ -47,9 +48,9 @@ void KeeperJemallocWebUIHandler::handleRequest(
 
     setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto buf = responseWriteBuffer(request, response);
+    buf.get()->write(html.data(), html.size());
+    buf.get()->finalize();
 }
 
 void KeeperJemallocRedirectHandler::handleRequest(

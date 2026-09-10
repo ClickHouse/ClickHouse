@@ -1,0 +1,4 @@
+<clickhouse>
+    <include_from remove="remove"/>
+    <include_from>/etc/clickhouse-server/config.d/users_new_include_source.xml</include_from>
+</clickhouse>

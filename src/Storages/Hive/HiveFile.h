@@ -8,7 +8,7 @@
 #include <unordered_set>
 
 #include <boost/algorithm/string/join.hpp>
-#include <arrow/adapters/orc/adapter.h>
+#include <orc/OrcFile.hh>
 #include <parquet/arrow/reader.h>
 
 #include <Core/Field.h>
@@ -236,7 +236,7 @@ private:
     std::optional<size_t> getRowsImpl() override;
 
     std::unique_ptr<ReadBufferFromHDFS> in;
-    std::unique_ptr<arrow::adapters::orc::ORCFileReader> reader;
+    std::unique_ptr<orc::Reader> reader;
     std::map<String, size_t> orc_column_positions;
 };
 

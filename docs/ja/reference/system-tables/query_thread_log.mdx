@@ -19,14 +19,14 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 ログ記録を開始するには:
 
-1. [query&#95;thread&#95;log](/ja/reference/settings/server-settings/settings#query_thread_log) セクションでパラメータを設定します。
-2. [log&#95;query&#95;threads](/ja/reference/settings/session-settings#log_query_threads) を 1 に設定します。
+1. [query&#95;thread&#95;log](/ja/reference/settings/server-settings/settings/query#query_thread_log) セクションでパラメータを設定します。
+2. [log&#95;query&#95;threads](/ja/reference/settings/session-settings/log-query#log_query_threads) を 1 に設定します。
 
-データのフラッシュ間隔は、[query&#95;thread&#95;log](/ja/reference/settings/server-settings/settings#query_thread_log) サーバー設定セクションの `flush_interval_milliseconds` パラメータで設定します。フラッシュを強制するには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
+データのフラッシュ間隔は、[query&#95;thread&#95;log](/ja/reference/settings/server-settings/settings/query#query_thread_log) サーバー設定セクションの `flush_interval_milliseconds` パラメータで設定します。フラッシュを強制するには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
 
 ClickHouse はテーブルからデータを自動では削除しません。詳細については、[はじめに](/ja/reference/system-tables/overview#system-tables-introduction) を参照してください。
 
-[log&#95;queries&#95;probability](/ja/reference/settings/session-settings#log_queries_probability)) 設定を使用すると、`query_thread_log` テーブルに記録されるクエリ数を減らせます。
+[log&#95;queries&#95;probability](/ja/reference/settings/session-settings/log-queries#log_queries_probability)) 設定を使用すると、`query_thread_log` テーブルに記録されるクエリ数を減らせます。
 
 <div id="columns">
   ## カラム
@@ -53,37 +53,37 @@ ClickHouse はテーブルからデータを自動では削除しません。詳
 * `current_database` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 現在のデータベース名。
 * `query` ([String](/ja/reference/data-types/string)) — クエリ文字列。
 * `normalized_query_hash` ([UInt64](/ja/reference/data-types/int-uint)) — 正規化されたクエリのハッシュ。定数などは取り除かれています。
-* `is_initial_query` ([UInt8](/ja/reference/data-types/int-uint)) — クエリタイプ。設定可能な値: 1 — クエリはクライアントによって開始された、0 — 分散クエリ実行のために、別のクエリによって開始された。
+* `is_initial_query` ([UInt8](/ja/reference/data-types/int-uint)) — クエリが初期クエリかどうか。設定可能な値: 1 — 初期 (最上位) クエリ、0 — 分散実行用のクエリや内部サブクエリを含む、別のクエリによって開始された子クエリ。
 * `connection_address` ([IPv6](/ja/reference/data-types/ipv6)) — 接続元のクライアント IP アドレス。proxy 経由で接続している場合、これは proxy のアドレスになります。
 * `connection_port` ([UInt16](/ja/reference/data-types/int-uint)) — 接続元のクライアントのポートです。プロキシ経由で接続している場合は、プロキシのポートになります。
 * `user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 現在のクエリを実行したユーザー名。
 * `query_id` ([String](/ja/reference/data-types/string)) — クエリの ID。
 * `address` ([IPv6](/ja/reference/data-types/ipv6)) — クエリの実行元として使用された IP アドレス。プロキシ経由で接続しており、`auth_use_forwarded_address` が設定されている場合、これはプロキシではなくクライアントのアドレスになります。
 * `port` ([UInt16](/ja/reference/data-types/int-uint)) — クエリの実行時に使用されたクライアントのポート。プロキシ経由で接続しており、`auth_use_forwarded_address` が設定されている場合、これはプロキシではなくクライアント側のポートになります。
-* `initial_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 最初のクエリを実行したユーザー名 (分散クエリ実行時) 。
-* `initial_query_id` ([String](/ja/reference/data-types/string)) — 初期クエリの ID (分散クエリ実行時) 。
-* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 親クエリの送信元IPアドレス。
-* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 親クエリの実行に使用されたクライアントポート。
-* `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 初期クエリの実行開始時刻。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — 最初のクエリの実行開始時刻
+* `initial_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 同じクエリチェーン内で初期クエリを実行したユーザー名。
+* `initial_query_id` ([String](/ja/reference/data-types/string)) — 同じクエリチェーン内の初期クエリの ID。
+* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 同じクエリチェーン内の初期クエリの送信元 IP アドレス。
+* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 同じクエリチェーン内の初期クエリの送信元クライアントポート。
+* `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 同じクエリチェーン内の初期クエリの開始時刻。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — 同じクエリチェーン内の初期クエリの開始時刻 (マイクロ秒精度) 。
 * `authenticated_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — セッション内で認証されたユーザー名。
 * `interface` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始元となったインターフェイス。設定可能な値: 1 — TCP、2 — HTTP。
 * `is_secure` ([UInt8](/ja/reference/data-types/int-uint)) — 接続がセキュアかどうかを示すフラグ。
 * `os_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — `clickhouse-client` を実行する OS ユーザー名。
 * `client_hostname` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — `clickhouse-client` または別の TCP クライアントを実行しているクライアントマシンのホスト名。
 * `client_name` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — `clickhouse-client` またはその他の TCP クライアントの名前。
-* `client_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 環境変数から検出された、クライアントを呼び出した AI コーディング agent (例: `claude-code` や `cursor`) 。agent が検出されなかった場合は空です。
+* `client_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 環境変数から検出された、クライアントを呼び出した AI コーディング agent (例: `claude-code`、`cursor`) 。agent が検出されなかった場合は空です。
 * `client_revision` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または他の TCP クライアントのリビジョン。
 * `client_version_major` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCP クライアントのメジャーバージョン。
 * `client_version_minor` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCP クライアントのマイナーバージョン。
 * `client_version_patch` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または別の TCP クライアントのバージョンにおけるパッチ部分です。
 * `script_query_number` ([UInt32](/ja/reference/data-types/int-uint)) — 複数クエリからなるスクリプトにおける連番のクエリ番号。
 * `script_line_number` ([UInt32](/ja/reference/data-types/int-uint)) — 複数クエリを含むスクリプト内で、現在のクエリが開始される行番号。
-* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始に使用された HTTP メソッド。設定可能な値: 0 — クエリは TCP インターフェイス経由で実行された、1 — GET メソッドが使用された。, 2 — POST メソッドが使用された。
+* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始に使用された HTTP メソッド。設定可能な値: 0 - クエリは TCP インターフェイス経由で実行された、1 - GET メソッドが使用された、2 - POST メソッドが使用された、4 - PUT メソッドが使用された、5 - DELETE メソッドが使用された、6 - HEAD メソッドが使用された。
 * `http_user_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — HTTPリクエストで渡されるUser-Agentヘッダー。
 * `http_referer` ([String](/ja/reference/data-types/string)) — HTTPクエリで送信される HTTP ヘッダー `Referer` (クエリを実行したページの絶対アドレスまたは部分的なアドレスを含みます) 。
 * `forwarded_for` ([String](/ja/reference/data-types/string)) — HTTPクエリに含まれるHTTPヘッダー `X-Forwarded-For`。
-* `quota_key` ([String](/ja/reference/data-types/string)) — quotas 設定で指定する「quota key」。
+* `quota_key` ([String](/ja/reference/data-types/string)) — quotas 設定で指定する&#39;quota key&#39;。
 * `distributed_depth` ([UInt64](/ja/reference/data-types/int-uint)) — サーバー間でクエリが転送された回数。
 * `revision` ([UInt32](/ja/reference/data-types/int-uint)) — ClickHouse のリビジョン番号。
 * `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/ja/reference/data-types/map)) — このスレッドのさまざまなメトリクスを計測する `ProfileEvents` です。各イベントの説明は `system.events` テーブルにあります。

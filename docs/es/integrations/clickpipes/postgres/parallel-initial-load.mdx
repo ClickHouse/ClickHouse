@@ -31,7 +31,7 @@ En Postgres, cada fila de una tabla tiene un identificador único llamado CTID. 
   ### Particionamiento lógico
 </div>
 
-El Postgres ClickPipe usa la columna CTID para particionar lógicamente las tablas de origen. Para obtener las particiones, primero realiza un COUNT(*) en la tabla de origen y, a continuación, una consulta con función de ventana para obtener los rangos de CTID de cada partición. Esto permite que el ClickPipe lea la tabla de origen en paralelo, y que cada partición se procese en un hilo independiente.
+El Postgres ClickPipe usa la columna CTID para particionar lógicamente las tablas de origen. Para obtener las particiones, primero realiza un COUNT(*) en la tabla de origen y, a continuación, una consulta de particionado con función de ventana para obtener los rangos de CTID de cada partición. Esto permite que el ClickPipe lea la tabla de origen en paralelo, y que cada partición se procese en un hilo independiente.
 
 Veamos los siguientes parámetros:
 

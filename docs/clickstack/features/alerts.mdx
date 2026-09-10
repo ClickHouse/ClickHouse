@@ -30,15 +30,13 @@ To create a search alert:
 For an alert to be created for a search, the search must be saved. You can either create the alert for an existing saved search or save the search during the alert creation process. In the example below, we assume the search isn't saved.
 
 <Steps>
-<Step>
-#### Open alert creation dialog {#open-dialog}
+<Step title="Open alert creation dialog" id="open-dialog">
 
 Start by entering a [search](/clickstack/features/search) and clicking the `Alerts` button in the top-right corner of the `Search` page.
 
 <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Alerts search view" size="lg"/>
 </Step>
-<Step>
-#### Create the alert {#create-the-alert}
+<Step title="Create the alert" id="create-the-alert">
 
 From the alert creation panel, you can:
 
@@ -74,22 +72,19 @@ To add a dashboard alert:
 Alerts can be created during the chart creation process, when adding a chart to a dashboard, or added to existing charts. In the example below, we assume the chart already exists on the dashboard.
 
 <Steps>
-<Step>
-#### Open the chart edit dialog {#open-chart-dialog}
+<Step title="Open the chart edit dialog" id="open-chart-dialog">
 
 Open the chart's configuration menu and select the alert button. This will show the chart edit dialog.
 
 <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="Edit chart alert" size="lg"/>
 </Step>
-<Step>
-#### Add the alert {#add-chart-alert}
+<Step title="Add the alert" id="add-chart-alert">
 
 Select **Add Alert**.
 
 <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="Add alert to chart" size="lg"/>
 </Step>
-<Step>
-#### Define the alert conditions {#define-alert-conditions}
+<Step title="Define the alert conditions" id="define-alert-conditions">
 
 Define the condition (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), threshold, duration, and webhook. The duration here will also dictate how often the alert is triggered.
 
@@ -200,8 +195,7 @@ Other SQL-based chart types (Table, Pie, Heatmap, etc.) do not support alerts.
 To create an alert on a SQL-based chart:
 
 <Steps>
-<Step>
-#### Create or open a SQL-based chart on a dashboard {#open-sql-chart}
+<Step title="Create or open a SQL-based chart on a dashboard" id="open-sql-chart">
 
 From a saved dashboard, either [create a new chart with the **SQL** chart mode](/clickstack/features/dashboards/sql-visualizations), or open an existing SQL-based chart for editing.
 
@@ -209,8 +203,7 @@ Choose **Line**, **Stacked Bar**, or **Number** as the display type.
 
 <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="Create SQL chart" size="lg"/>
 </Step>
-<Step>
-#### Add the alert {#add-sql-alert}
+<Step title="Add the alert" id="add-sql-alert">
 
 Select **Add Alert** from the alert section of the chart editor. Configure:
 
@@ -227,8 +220,7 @@ Select **Add Alert** from the alert section of the chart editor. Configure:
 Typically, alert queries are executed once per interval. However, if one or more intervals are skipped due to errors or slow queries, the following execution will use a time range that includes the missed intervals. In this case, the query's interval parameters would still be set to the alert's configured period, but the time range parameters would reflect the longer time range.
 </Warning>
 </Step>
-<Step>
-#### Save the dashboard {#save-sql-dashboard}
+<Step title="Save the dashboard" id="save-sql-dashboard">
 
 Save the dashboard to activate the alert. The alert will begin evaluating on the configured interval.
 </Step>

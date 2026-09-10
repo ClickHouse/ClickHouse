@@ -7,7 +7,7 @@ keywords: ['postgres', 'postgresql', 'réplication logique', 'migration', 'click
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
@@ -71,13 +71,45 @@ Choisissez une méthode d&#39;ingestion :
 
 Cliquez sur **Suivant**.
 
-<div id="step-2-export-schema">
-  ## Étape 2 : Exportez le schéma de votre base de données
+<div id="automated-schema-migration">
+  ## Migration automatisée du schéma
 </div>
 
-L’assistant affiche une commande `pg_dump` préremplie avec les informations de connexion de votre base source. Exécutez-la dans un terminal :
+<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="Étape 2 : migration automatisée du schéma avec sélecteur de base de données de destination" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Étape 2 : commande pg_dump pour l’export du schéma" size="lg" border />
+Si vous choisissez cette option, le ClickPipe récupère automatiquement le schéma de votre base de données source et l&#39;applique à votre service Managed Postgres lors de la [phase Setup](/fr/integrations/clickpipes/postgres/lifecycle#setup) du ClickPipe, après sa création.
+
+Cette fonctionnalité suppose une **base de données cible vide**, car elle récupère tous les objets de la base de données source, quelles que soient les tables que vous sélectionnerez ensuite dans l&#39;assistant. Si votre base de données cible contient déjà des données ou si vous souhaitez une configuration plus personnalisée, vous devez choisir le mode [**Manuel**](#manual-schema-migration).
+
+Sélectionnez la base de données de destination dans la liste déroulante ou cliquez sur **Créer une nouvelle base de données** pour en provisionner une.
+
+<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="Boîte de dialogue Créer une base de données Postgres" size="lg" border />
+
+<div id="monitoring">
+  ### Monitoring
+</div>
+
+Vous pouvez suivre l’avancement de la migration de schéma dans la vue détaillée de ClickPipes. Les **journaux** indiquent l’état de la migration de schéma et affichent également les éventuelles erreurs rencontrées.
+
+Ce mode présente les limitations suivantes :
+
+* Les pipes utilisant le tunnel SSH ne peuvent pas recourir à la migration automatisée du schéma. Le schéma doit être [exporté et importé manuellement](#manual-schema-migration).
+
+<div id="manual-schema-migration">
+  ## Migration manuelle du schéma
+</div>
+
+Si votre base de données cible contient déjà des données ou si vous souhaitez une configuration plus personnalisée que l’environnement vierge attendu par le mode automatisé, vous pouvez sélectionner le mode **Manuel**.
+
+<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="Étape 2 : migration manuelle du schéma avec la commande d’exportation pg_dump" size="lg" border />
+
+<div id="step-2-export-schema">
+  ### Exportez le schéma de votre base de données
+</div>
+
+L&#39;assistant affiche une commande `pg_dump` préremplie avec les informations de connexion de votre source. Exécutez-la dans un terminal :
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="Étape 2 : commande pg_dump pour l'export du schéma" size="lg" border />
 
 ```shell
 pg_dump \
@@ -90,19 +122,19 @@ pg_dump \
 
 Cela crée `pg.sql` dans votre répertoire courant.
 
-<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Sortie du terminal après l’exécution de pg_dump" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Sortie du terminal après l'exécution de pg_dump" size="lg" border />
 
 Cliquez sur **Suivant**.
 
 <div id="step-3-import-schema">
-  ## Étape 3 : Importez le schéma dans votre service Managed Postgres
+  ### Importez le schéma dans votre service Managed Postgres
 </div>
 
-Sélectionnez la base de données de destination dans la liste déroulante, ou cliquez sur **Créer une nouvelle base de données** pour en créer une.
+Sélectionnez la base de données de destination dans la liste déroulante, ou cliquez sur **Créer une nouvelle base de données** pour en provisionner une.
 
-L’assistant affiche une commande `psql` pour appliquer le dump du schéma à votre service Managed Postgres. Exécutez-la dans un terminal :
+L&#39;assistant affiche une commande `psql` pour appliquer le dump du schéma à votre service Managed Postgres. Exécutez-la dans un terminal :
 
-<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Étape 3 : commande psql pour l’importation du schéma" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Étape 3 : commande psql pour l'import du schéma" size="lg" border />
 
 ```shell
 psql \
@@ -113,7 +145,7 @@ psql \
   -f pg.sql
 ```
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Sortie du terminal après l’import du schéma avec psql" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Sortie du terminal après l'exécution de l'import du schéma avec psql" size="lg" border />
 
 Cliquez sur **Suivant**.
 
@@ -226,6 +258,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## Étapes suivantes
 </div>
 
-* [Démarrage rapide de Managed Postgres](/fr/products/managed-postgres/quickstart)
-* [Paramètres de connexion de Managed Postgres](/fr/products/managed-postgres/connection)
+* [Guide de démarrage rapide pour Managed Postgres](/fr/products/managed-postgres/quickstart)
+* [Informations de connexion à Managed Postgres](/fr/products/managed-postgres/connection)
 * [FAQ ClickPipes pour Postgres](/fr/integrations/clickpipes/postgres/faq)

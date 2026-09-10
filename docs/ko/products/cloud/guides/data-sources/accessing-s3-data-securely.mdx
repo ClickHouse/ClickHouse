@@ -29,7 +29,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 3. **설정** 탭을 선택하십시오.
 
-4. 페이지 하단에 있는 **Network security information** 섹션으로 스크롤하십시오.
+4. 페이지 하단의 **Network security information** 섹션까지 스크롤하십시오.
 
 5. 아래와 같이 해당 서비스의 **Service role ID (IAM)** 값을 복사하십시오.
 
@@ -167,14 +167,14 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   ## 고급 작업 제어
 </div>
 
-더 엄격한 액세스 제어를 위해 [`aws:SourceVpce` 조건](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint)을 사용하여 버킷 정책이 ClickHouse Cloud의 VPC 엔드포인트에서 시작된 요청만 허용하도록 제한할 수 있습니다. 사용 중인 ClickHouse Cloud 리전의 VPC 엔드포인트를 확인하려면 터미널을 열고 다음을 실행하세요:
+더 엄격한 접근 제어를 위해 [`aws:SourceVpce` 조건](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint)을 사용하여 ClickHouse Cloud의 VPC 엔드포인트에서 들어오는 요청만 허용하도록 버킷 정책을 제한할 수 있습니다. ClickHouse Cloud 리전의 VPC 엔드포인트를 확인하려면 터미널을 열고 다음을 실행하세요:
 
 ```bash
-# <your-region>을 실제 ClickHouse Cloud 리전으로 바꾸세요
+# Replace <your-region> with your ClickHouse Cloud region
 curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
 ```
 
-그런 다음 반환된 엔드포인트를 사용하여 IAM 정책에 거부 규칙을 추가하세요:
+그런 다음, 반환된 엔드포인트를 사용해 IAM 정책에 거부 규칙을 추가하십시오:
 
 ```json
 {
@@ -213,4 +213,4 @@ curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.r
 }
 ```
 
-ClickHouse Cloud 서비스의 엔드포인트에 액세스하는 방법에 대한 자세한 내용은 [Cloud IP Addresses](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 참조하십시오.
+ClickHouse Cloud 서비스의 엔드포인트 액세스에 대한 자세한 내용은 [Cloud IP Addresses](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 참조하십시오.

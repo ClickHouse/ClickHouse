@@ -1,0 +1,17 @@
+before rewrite
+all_1_1_0	x
+all_2_3_1	_block_number
+all_2_3_1	_block_offset
+all_2_3_1	x
+all_4_4_0	x
+
+after rewrite
+all_1_1_0_5	_block_number
+all_1_1_0_5	_block_offset
+all_1_1_0_5	x
+all_2_3_1_5	_block_number
+all_2_3_1_5	_block_offset
+all_2_3_1_5	x
+all_4_4_0_5	_block_number
+all_4_4_0_5	_block_offset
+all_4_4_0_5	x

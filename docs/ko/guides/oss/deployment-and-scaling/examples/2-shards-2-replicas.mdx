@@ -35,9 +35,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 * 시스템에 Docker가 설치되어 있습니다
 
 <Steps>
-  <Step>
-    ## 디렉터리 구조 및 테스트 환경 설정
-
+  <Step title="디렉터리 구조 및 테스트 환경 설정" id="set-up">
     <ExampleFiles />
 
     이 튜토리얼에서는 [Docker compose](https://docs.docker.com/compose/)를 사용해
@@ -50,12 +48,12 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     mkdir cluster_2S_2R
     cd cluster_2S_2R
 
-    # clickhouse-keeper 디렉토리 생성
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # clickhouse-server 디렉토리 생성
+    # Create clickhouse-server directories
     for i in {01..04}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -169,9 +167,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## ClickHouse 노드 구성
-
+  <Step title="ClickHouse 노드 구성" id="configure-clickhouse-servers">
     ### 서버 설정
 
     이제 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`에 위치한 각 빈 설정 파일 `config.xml`을 수정하십시오. 아래에 강조 표시된 줄은 각 노드에 맞게 수정해야 합니다:
@@ -288,11 +284,11 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-       <!-- 클러스터 이름(점이 포함되어서는 안 됩니다) -->
+       <!-- cluster name (should not contain dots) -->
       <cluster_2S_2R>
           <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
           <shard>
-              <!-- 선택 사항입니다. 데이터는 레플리카 중 하나에만 쓸지 여부를 지정합니다. 기본값은 false입니다(모든 레플리카에 데이터를 씁니다). -->
+              <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
               <internal_replication>true</internal_replication>
               <replica>
                   <host>clickhouse-01</host>
@@ -413,9 +409,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## ClickHouse Keeper 구성
-
+  <Step title="ClickHouse Keeper 구성" id="configure-clickhouse-keeper-nodes">
     다음으로 조정 기능에 사용되는 ClickHouse Keeper를 구성합니다.
 
     ### Keeper 설정
@@ -433,9 +427,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## 설정 테스트
-
+  <Step title="설정 테스트" id="test-the-setup">
     로컬 환경에서 docker가 실행 중인지 확인하십시오.
     `cluster_2S_2R` 디렉터리의 루트에서 `docker-compose up` 명령으로 클러스터를 시작하십시오:
 
@@ -462,7 +454,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     쿼리를 실행합니다. 첫 번째 노드에 연결하는 명령은 다음과 같습니다:
 
     ```bash
-    # 임의의 노드에 연결
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -517,9 +509,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     다음 단계에서는 클러스터에 테이블을 생성합니다.
   </Step>
 
-  <Step>
-    ## 데이터베이스 생성
-
+  <Step title="데이터베이스 생성" id="creating-a-database">
     이제 클러스터가 올바르게 설정되어 정상적으로 실행 중임을 확인했으므로,
     [UK property prices](/ko/get-started/sample-datasets/uk-price-paid)
     예시 데이터셋 튜토리얼에서 사용한 것과 동일한 테이블을 다시 생성합니다. 이 테이블은 1995년 이후
@@ -577,9 +567,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 클러스터에 테이블 생성
-
+  <Step title="클러스터에 테이블 생성" id="creating-a-table">
     이제 데이터베이스를 만들었으므로, 다음으로 복제 테이블을 생성합니다.
 
     다음 쿼리를 아무 호스트 클라이언트에서나 실행하십시오.
@@ -648,9 +636,7 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 분산 테이블에 데이터 삽입
-
+  <Step title="분산 테이블에 데이터 삽입" id="inserting-data-using-distributed">
     테이블에 데이터를 삽입할 때는 `ON CLUSTER`를 사용할 수 없습니다. `INSERT`, `UPDATE`,
     `DELETE`와 같은 DML(데이터 조작 언어) 쿼리에는 적용되지 않기 때문입니다. 데이터를 삽입하려면
     [`Distributed`](/ko/reference/engines/table-engines/special/distributed) 테이블 엔진을 사용해야 합니다.
@@ -728,11 +714,11 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 
     ```response
        ┌──count()─┐
-    1. │ 30212555 │ -- 3,021만
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
 
        ┌──count()─┐
-    1. │ 15105983 │ -- 1,511만
+    1. │ 15105983 │ -- 15.11 million
        └──────────┘
     ```
   </Step>
@@ -743,11 +729,11 @@ import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 </div>
 
 2개의 세그먼트와 2개의 레플리카로 구성된 이 클러스터 토폴로지의 장점은 확장성과 장애 허용을 모두 제공한다는 점입니다.
-데이터가 서로 다른 호스트에 분산되어 각 노드별 스토리지 및 I/O 요구량이 줄어들고, 쿼리는 두 세그먼트에 걸쳐 병렬로 처리되므로 성능과 메모리 효율이 향상됩니다.
-특히 각 세그먼트마다 다른 노드에 백업 레플리카가 있으므로, 노드 하나가 손실되더라도 클러스터는 중단 없이 계속 쿼리를 처리할 수 있습니다.
+데이터가 서로 다른 호스트에 분산되므로 각 노드의 스토리지 및 I/O 요구 사항이 줄어들고, 쿼리는 두 세그먼트 전반에서 병렬로 처리되어 성능과 메모리 효율성이 향상됩니다.
+특히 각 세그먼트는 다른 노드에 백업 레플리카를 두고 있으므로, 클러스터는 노드 1개가 손실되더라도 중단 없이 계속 쿼리를 처리할 수 있습니다.
 
-이 클러스터 토폴로지의 주요 단점은 스토리지 오버헤드가 증가한다는 점입니다. 각 세그먼트가 복제되므로 레플리카가 없는 구성과 비교하면 2배의 스토리지 용량이 필요합니다.
-또한 클러스터는 단일 노드 장애는 견딜 수 있지만, 어떤 노드에 장애가 발생했는지와 세그먼트가 어떻게 분산되어 있는지에 따라 두 노드가 동시에 손실되면 클러스터가 작동 불능 상태가 될 수 있습니다.
-이 토폴로지는 가용성과 비용 사이에서 균형을 이루므로, 더 높은 복제 계수에 따른 비용 부담 없이도 일정 수준의 장애 허용이 필요한 프로덕션 환경에 적합합니다.
+이 클러스터 토폴로지의 가장 큰 단점은 스토리지 오버헤드가 증가한다는 점입니다. 각 세그먼트가 복제되므로 레플리카가 없는 구성에 비해 2배의 스토리지 용량이 필요합니다.
+또한 클러스터는 단일 노드 장애는 견딜 수 있지만, 어떤 노드가 장애를 일으켰는지와 세그먼트가 어떻게 분산되어 있는지에 따라 두 노드가 동시에 손실되면 클러스터를 운영할 수 없게 될 수 있습니다.
+이 토폴로지는 가용성과 비용 사이의 균형을 제공하므로, 더 높은 복제 계수에 따른 비용 없이도 일정 수준의 장애 허용이 필요한 프로덕션 환경에 적합합니다.
 
-확장성과 장애 허용을 모두 제공하는 ClickHouse Cloud의 쿼리 처리 방식을 알아보려면 [&quot;병렬 레플리카&quot;](/ko/products/cloud/features/infrastructure/parallel-replicas) 섹션을 참조하십시오.
+확장성과 장애 허용을 모두 제공하는 ClickHouse Cloud의 쿼리 처리 방식에 대해 알아보려면 [&quot;병렬 레플리카&quot;](/ko/products/cloud/features/infrastructure/parallel-replicas) 섹션을 참조하십시오.

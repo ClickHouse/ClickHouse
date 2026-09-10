@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -198,8 +199,14 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf);
 /// It can skip serializing some data types parameters.
 void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & buf);
 
-DataTypePtr decodeDataType(const String & data);
-DataTypePtr decodeDataType(std::string_view data);
-DataTypePtr decodeDataType(ReadBuffer & buf);
+/// Decode a type. max_complexity limits the number of decoded type nodes (0 == unlimited, the default).
+/// Callers reading untrusted input (input formats, and query plans deserialized from a client via
+/// receiveQueryPlan) pass the effective `input_format_binary_max_type_complexity` to guard against malicious
+/// input; callers decoding already-stored server data (columns, shared-data) use the default (unlimited).
+DataTypePtr decodeDataType(ReadBuffer & buf, size_t max_complexity = 0);
+
+/// Resolve the effective input_format_binary_max_type_complexity from a context, to pass to decodeDataType.
+/// Reads the setting once (not per type node), so it does not reintroduce per-value context contention.
+size_t getBinaryTypeDecodingComplexityLimit(const ContextPtr & context);
 
 }

@@ -143,7 +143,7 @@ Pipe StorageSQLite::read(
             column_names,
             storage_snapshot->metadata->getColumns().getOrdinary(),
             IdentifierQuotingStyle::DoubleQuotes,
-            LiteralEscapingStyle::Regular,
+            LiteralEscapingStyle::SQLite,
             "",
             remote_table_or_query.getTableName(),
             context_);
@@ -245,7 +245,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::Regular);
+            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::SQLite);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 1 && maybe_query)
@@ -301,28 +301,28 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM t
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
 ```
 
-Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`sqlite`](/sql-reference/table-functions/sqlite) table function.
+Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`sqlite`](/reference/functions/table-functions/sqlite) table function.
 
 :::note
 The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized before being sent to SQLite. It must therefore be valid ClickHouse SQL. To pass SQLite-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to SQLite verbatim.
 
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from SQLite, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from SQLite, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings/external-table#external_table_strict_query) an outer filter on the columns of the table is rejected with an exception instead of being applied locally, because it cannot be pushed into the passed query. The check covers the top-level `WHERE` predicate and each conjunct of a top-level `AND`. A `PREWHERE` on the columns of this table is not a case for this setting: this table engine do not support `PREWHERE`, and such a query is rejected with `ILLEGAL_PREWHERE` regardless of the setting. With the analyzer (the default), the check runs only where a filter could be pushed down at all: when this table is the only table of the query, on either side of an `INNER JOIN`, or on the preserving side of an outer join (the left side of a `LEFT JOIN`, the right side of a `RIGHT JOIN`). On the non-preserving side of a `LEFT`/`RIGHT JOIN` and on either side of a `FULL JOIN` nothing is pushed down and nothing is checked, so a filter on the columns of this table is applied locally after the join even in strict mode. Where the check runs, a predicate that references other tables joined in the surrounding query is not pushed down and is excluded from the check, whether it references only the joined side or mixes it with this table inside one non-`AND` expression (for example an `OR`); such a predicate keeps its usual ClickHouse evaluation point (`WHERE` after the join, `PREWHERE` before it) and is not rejected. With the old analyzer (`enable_analyzer = 0`) this scoping does not apply: the whole outer filter is checked when this table is the first table of the join tree, including a predicate on the joined side, and a joined right-hand table is not checked.
 :::
 
 ## Data types support {#data-types-support}
 
 When you explicitly specify ClickHouse column types in the table definition, the following ClickHouse types can be parsed from SQLite TEXT columns:
 
-- [Date](../../../sql-reference/data-types/date.md), [Date32](../../../sql-reference/data-types/date32.md)
-- [DateTime](../../../sql-reference/data-types/datetime.md), [DateTime64](../../../sql-reference/data-types/datetime64.md)
-- [UUID](../../../sql-reference/data-types/uuid.md)
-- [Enum8, Enum16](../../../sql-reference/data-types/enum.md)
-- [Decimal32, Decimal64, Decimal128, Decimal256](../../../sql-reference/data-types/decimal.md)
-- [FixedString](../../../sql-reference/data-types/fixedstring.md)
-- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](../../../sql-reference/data-types/int-uint.md))
-- [Float32, Float64](../../../sql-reference/data-types/float.md)
+- [Date](/reference/data-types/date), [Date32](/reference/data-types/date32)
+- [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64)
+- [UUID](/reference/data-types/uuid)
+- [Enum8, Enum16](/reference/data-types/enum)
+- [Decimal32, Decimal64, Decimal128, Decimal256](/reference/data-types/decimal)
+- [FixedString](/reference/data-types/fixedstring)
+- All integer types ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/reference/data-types/int-uint))
+- [Float32, Float64](/reference/data-types/float)
 
-See [SQLite database engine](../../../engines/database-engines/sqlite.md#data_types-support) for the default type mapping.
+See [SQLite database engine](/reference/engines/database-engines/sqlite#data_types-support) for the default type mapping.
 
 ## Usage example {#usage-example}
 
@@ -357,8 +357,8 @@ SELECT * FROM sqlite_db.table2 ORDER BY col1;
 
 **See Also**
 
-- [SQLite](../../../engines/database-engines/sqlite.md) engine
-- [sqlite](../../../sql-reference/table-functions/sqlite.md) table function
+- [SQLite](/reference/engines/database-engines/sqlite) engine
+- [sqlite](/reference/functions/table-functions/sqlite) table function
 )DOCS_MD",
         .syntax = "ENGINE = SQLite('path_to_database_file', 'table')",
         .related = {"MySQL", "PostgreSQL"}});

@@ -4,8 +4,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -24,6 +26,16 @@ static ASTPtr getCompressionCodecDeltaLZ4()
 
 const String RowExistsColumn::name = "_row_exists";
 const DataTypePtr RowExistsColumn::type = std::make_shared<DataTypeUInt8>();
+
+bool isLightweightDeleteAssignment(const ASTAssignment & assignment)
+{
+    if (assignment.column_name != RowExistsColumn::name)
+        return false;
+    /// `DELETE FROM` rewrites to `_row_exists = 0`; only that exact literal is a delete. Any other
+    /// expression (e.g. `_row_exists = 1` to resurrect rows) is a real update of the deletion mask.
+    const auto * literal = assignment.expression()->as<ASTLiteral>();
+    return literal && literal->value == Field(static_cast<UInt64>(0));
+}
 
 const String BlockNumberColumn::name = "_block_number";
 const DataTypePtr BlockNumberColumn::type = std::make_shared<DataTypeUInt64>();

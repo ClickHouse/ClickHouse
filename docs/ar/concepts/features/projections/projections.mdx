@@ -211,10 +211,10 @@ WHERE query_id='<query_id>'
 ```
 
 <div id="using-projections-to-speed-up-UK-price-paid">
-  ### استخدام الإسقاطات لتسريع استعلامات أسعار العقارات المدفوعة في المملكة المتحدة
+  ### استخدام الإسقاط لتسريع استعلامات أسعار العقارات المدفوعة في المملكة المتحدة
 </div>
 
-لتوضيح كيف يمكن استخدام الإسقاطات لتسريع أداء الاستعلامات، دعونا
+لتوضيح كيف يمكن استخدام الإسقاط لتسريع أداء الاستعلامات، دعونا
 نلقِ نظرة على مثال يستخدم مجموعة بيانات من الواقع. في هذا المثال سنستخدم
 الجدول من دليلنا العملي [UK Property Price Paid](/ar/get-started/sample-datasets/uk-price-paid)
 والذي يحتوي على 30.03 مليون صف. هذه المجموعة من البيانات متاحة أيضًا ضمن بيئة
@@ -264,7 +264,7 @@ ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2);
 ```
 
-لنرَ ما إذا كان بإمكاننا تسريع هذا الاستعلام باستخدام projections.
+لنرَ ما إذا كان بإمكاننا تسريع هذا الاستعلام باستخدام الإسقاط.
 
 للحفاظ على الجدول والنتائج الأصليين، سننشئ جدولًا جديدًا وننسخ البيانات باستخدام `INSERT INTO SELECT`:
 
@@ -295,7 +295,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-يُستخدم الإعداد [`mutations_sync`](/ar/reference/settings/session-settings#mutations_sync)
+يُستخدم الإعداد [`mutations_sync`](/ar/reference/settings/session-settings/mutations#mutations_sync)
 لفرض التنفيذ بشكل متزامن.
 
 ننشئ ونملأ الإسقاط `prj_gby_county` — وهو جدول إضافي (مخفي)
@@ -468,7 +468,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-تُظهر الاستعلامات التالية الفرق في الأداء مع الإسقاطات وبدونها. ولتعطيل استخدام الإسقاطات، نستخدم الإعداد [`optimize_use_projections`](/ar/reference/settings/session-settings#optimize_use_projections)، وهو مُمكَّن افتراضيًا.
+تُظهر الاستعلامات التالية الفرق في الأداء مع الإسقاطات وبدونها. ولتعطيل استخدام الإسقاطات، نستخدم الإعداد [`optimize_use_projections`](/ar/reference/settings/session-settings/optimize-use#optimize_use_projections)، وهو مُمكَّن افتراضيًا.
 
 <div id="average-price-projections">
   #### الاستعلام 1. متوسط السعر لكل سنة
@@ -707,6 +707,6 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
   ## محتوى ذو صلة
 </div>
 
-* [مقدمة عملية عن الفهارس الأولية في ClickHouse](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [مقدمة عملية عن الفهارس الأساسية في ClickHouse](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [العروض المادية](/ar/concepts/features/materialized-views/index)
 * [ALTER PROJECTION](/ar/reference/statements/alter/projection)

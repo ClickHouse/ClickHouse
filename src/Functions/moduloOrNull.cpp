@@ -51,8 +51,8 @@ divisor is `0`; for integer arguments it additionally covers the minimal negativ
     )";
     FunctionDocumentation::Syntax syntax = "positiveModuloOrNull(x, y)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "The dividend. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
-        {"x", "The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."}
+        {"x", "The dividend. [`(U)Int*`](/reference/data-types/int-uint)/[`Float32/64`](/reference/data-types/float)."},
+        {"x", "The divisor (modulus). [`(U)Int*`](/reference/data-types/int-uint)/[`Float32/64`](/reference/data-types/float)."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the difference between `x` and the nearest integer not greater than

@@ -22,7 +22,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ## 組み込みの高度なオブザーバビリティダッシュボード
 </div>
 
-<Image img="https://github.com/ClickHouse/ClickHouse/assets/3936029/2bd10011-4a47-4b94-b836-d44557c7fdc1" alt="2023-11-12 午後6時08分58秒のスクリーンショット" size="md" />
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" alt="ネイティブの高度なオブザーバビリティダッシュボード" size="md" />
 
 ClickHouse には組み込みの高度なオブザーバビリティダッシュボード機能があり、`$HOST:$PORT/dashboard` でアクセスできます (ユーザー名とパスワードが必要です) 。このダッシュボードでは、次のメトリクスを確認できます。
 
@@ -54,12 +54,12 @@ ClickHouse は、次のようなハードウェアリソースの状態も独自
 このデータは `system.asynchronous_metric_log` テーブルに収集されます。
 
 <div id="clickhouse-server-metrics">
-  ## ClickHouse server のメトリクス
+  ## ClickHouse サーバー のメトリクス
 </div>
 
-ClickHouse server には、自身の状態を監視するための計測機能が組み込まれています。
+ClickHouse サーバー には、自身の状態を監視するための計測機能が組み込まれています。
 
-サーバーイベントを追跡するには、サーバーログを使用します。設定ファイルの [logger](/ja/reference/settings/server-settings/settings#logger) セクションを参照してください。
+サーバーイベントを追跡するには、サーバーログを使用します。設定ファイルの [logger](/ja/reference/settings/server-settings/settings/other#logger) セクションを参照してください。
 
 ClickHouse が収集するもの:
 
@@ -68,10 +68,10 @@ ClickHouse が収集するもの:
 
 メトリクスは、[system.metrics](/ja/reference/system-tables/metrics)、[system.events](/ja/reference/system-tables/events)、および [system.asynchronous&#95;metrics](/ja/reference/system-tables/asynchronous_metrics) テーブルで確認できます。
 
-ClickHouse は、メトリクスを [Graphite](https://github.com/graphite-project) にエクスポートするよう設定できます。ClickHouse server の設定ファイルにある [Graphite セクション](/ja/reference/settings/server-settings/settings#graphite) を参照してください。メトリクスのエクスポートを設定する前に、公式の [ガイド](https://graphite.readthedocs.io/en/latest/install.html) に従って Graphite をセットアップしておく必要があります。
+ClickHouse は、メトリクスを [Graphite](https://github.com/graphite-project) にエクスポートするよう設定できます。ClickHouse サーバー の設定ファイルにある [Graphite セクション](/ja/reference/settings/server-settings/settings/graphite#graphite) を参照してください。メトリクスのエクスポートを設定する前に、公式の [ガイド](https://graphite.readthedocs.io/en/latest/install.html) に従って Graphite をセットアップしておく必要があります。
 
-ClickHouse は、メトリクスを [Prometheus](https://prometheus.io) にエクスポートするよう設定できます。ClickHouse server の設定ファイルにある [Prometheus セクション](/ja/reference/settings/server-settings/settings#prometheus) を参照してください。メトリクスのエクスポートを設定する前に、公式の [ガイド](https://prometheus.io/docs/prometheus/latest/installation/) に従って Prometheus をセットアップしておく必要があります。
+ClickHouse は、メトリクスを [Prometheus](https://prometheus.io) にエクスポートするよう設定できます。ClickHouse サーバー の設定ファイルにある [Prometheus セクション](/ja/reference/settings/server-settings/settings/other#prometheus) を参照してください。メトリクスのエクスポートを設定する前に、公式の [ガイド](https://prometheus.io/docs/prometheus/latest/installation/) に従って Prometheus をセットアップしておく必要があります。
 
 さらに、HTTP API を介してサーバーの可用性を監視できます。`HTTP GET` リクエストを `/ping` に送信します。サーバーが利用可能な場合は、`200 OK` を返します。
 
-クラスター構成でサーバーを監視するには、[max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ja/reference/settings/session-settings#max_replica_delay_for_distributed_queries) パラメータを設定し、HTTP リソース `/replicas_status` を使用する必要があります。`/replicas_status` へのリクエストは、レプリカが利用可能で、かつ他のレプリカに対して遅延していない場合に `200 OK` を返します。レプリカが遅延している場合は、その差分に関する情報とともに `503 HTTP_SERVICE_UNAVAILABLE` を返します。
+クラスター構成でサーバーを監視するには、[max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ja/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) パラメータを設定し、HTTP リソース `/replicas_status` を使用する必要があります。`/replicas_status` へのリクエストは、レプリカが利用可能で、かつ他のレプリカに対して遅延していない場合に `200 OK` を返します。レプリカが遅延している場合は、その差分に関する情報とともに `503 HTTP_SERVICE_UNAVAILABLE` を返します。

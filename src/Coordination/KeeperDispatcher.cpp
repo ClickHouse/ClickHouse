@@ -5,7 +5,6 @@
 
 #include <Common/ProfiledLocks.h>
 #include <libnuraft/async.hxx>
-#include <base/sleep.h>
 
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -14,6 +13,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/OpenTelemetryTracingContext.h>
 #include <Common/HistogramMetrics.h>
+#include <Common/saturatedWaitDuration.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -21,6 +21,7 @@
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/checkStackSize.h>
+#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
@@ -77,9 +78,12 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds dead_session_check_period_ms;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
     extern const CoordinationSettingsNonZeroUInt64 ttl_gc_batch_size;
+    extern const CoordinationSettingsMilliseconds container_gc_period_ms;
+    extern const CoordinationSettingsNonZeroUInt64 container_gc_batch_size;
+    extern const CoordinationSettingsMilliseconds container_gc_max_never_used_interval_ms;
     extern const CoordinationSettingsUInt64 max_request_queue_size;
     extern const CoordinationSettingsUInt64 max_requests_batch_bytes_size;
-    extern const CoordinationSettingsUInt64 max_requests_batch_size;
+    extern const CoordinationSettingsNonZeroUInt64 max_requests_batch_size;
     extern const CoordinationSettingsUInt64 max_read_batch_bytes_size;
     extern const CoordinationSettingsUInt64 max_read_batch_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
@@ -96,6 +100,11 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
+}
+
+namespace FailPoints
+{
+    extern const char keeper_shutdown_throw_after_flag[];
 }
 
 KeeperDispatcher::KeeperDispatcher()
@@ -127,10 +136,9 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
             if (response.request)
                 response.request->spans.maybeInitialize(KeeperSpan::DispatcherResponsesQueue, response.request->tracing_context.get());
 
-            /// Special new session response.
-            if (response.response->xid != Coordination::WATCH_XID && response.response->getOpNum() == Coordination::OpNum::SessionID)
-                onSessionIDResponse(response.response);
-            else if (dispatcher_old)
+            if (tryRouteSpecialResponse(response))
+                return;
+            if (dispatcher_old)
                 dispatcher_old->onResponse(std::move(response));
             else
                 dispatcher->onResponse(std::move(response));
@@ -152,13 +160,15 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     {
         if (keeper_context->getCoordinationSettings()[CoordinationSetting::use_new_dispatcher])
         {
-            dispatcher = std::make_unique<KeeperRequestDispatcher>(server.get());
+            dispatcher = std::make_unique<KeeperRequestDispatcher>(
+                server.get(), [this](const KeeperResponseForSession & response) { return tryRouteSpecialResponse(response); });
             dispatcher->startupResponseThread();
             new_dispatcher_response_thread_started = true;
         }
         else
         {
-            dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(server.get());
+            dispatcher_old = std::make_unique<KeeperRequestDispatcherOld>(
+                server.get(), [this](const KeeperResponseForSession & response) { return tryRouteSpecialResponse(response); });
         }
 
         LOG_DEBUG(log, "Waiting server to initialize");
@@ -183,7 +193,11 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
         if (new_dispatcher_response_thread_started && dispatcher)
-            dispatcher->shutdown(/*closed_all_connections=*/false);
+        {
+            /// Raft startup failed, so we can't join nuraft's commit thread here.
+            dispatcher->shutdownRequests();
+            dispatcher->drainAndCheckQueues(/*closed_all_connections=*/false);
+        }
 
         throw;
     }
@@ -195,7 +209,13 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     const auto & keeper_coordination_settings = keeper_context->getCoordinationSettings();
     size_t batch_size = keeper_coordination_settings[CoordinationSetting::ttl_gc_batch_size];
     if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
-        ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { garbageCollectorThread(batch_size); });
+        ttl_garbage_collector_thread = ThreadFromGlobalPool([this, batch_size] { ttlGarbageCollectorThread(batch_size); });
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER))
+    {
+        size_t container_batch_size = keeper_coordination_settings[CoordinationSetting::container_gc_batch_size];
+        UInt64 container_max_never_used_ms = keeper_coordination_settings[CoordinationSetting::container_gc_max_never_used_interval_ms].totalMilliseconds();
+        container_garbage_collector_thread = ThreadFromGlobalPool([this, container_batch_size, container_max_never_used_ms] { containerGarbageCollectorThread(container_batch_size, container_max_never_used_ms); });
+    }
 
     update_configuration_thread = reconfigEnabled()
         ? ThreadFromGlobalPool([this] { clusterUpdateThread(); })
@@ -206,17 +226,37 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
 void KeeperDispatcher::shutdown(bool closed_all_connections)
 {
+    shutdownBeforeConnectionsFinish();
+    shutdownAfterConnectionsFinish(closed_all_connections);
+}
+
+void KeeperDispatcher::shutdownBeforeConnectionsFinish()
+{
+    /// Armed once the shutdown is committed to. setShutdownCalled is one-shot, so no later
+    /// shutdown reaches the waiters and they must be completed even if a step below throws.
+    scope_guard fail_session_id_waiters;
+
     try
     {
         {
+            signalShutdown();
+            waitForFourLetterCommands();
+
             if (!keeper_context || !keeper_context->setShutdownCalled())
                 return;
+
+            fail_session_id_waiters = scope_guard([this] { failPendingSessionIDRequests(); });
+
+            fiu_do_on(FailPoints::keeper_shutdown_throw_after_flag,
+                      { throw Exception(ErrorCodes::SYSTEM_ERROR, "Injected shutdown failure"); });
 
             LOG_DEBUG(log, "Shutting down storage dispatcher");
 
             const auto & feature_flags = keeper_context->getFeatureFlags();
             if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL) && ttl_garbage_collector_thread.joinable())
                 ttl_garbage_collector_thread.join();
+            if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER) && container_garbage_collector_thread.joinable())
+                container_garbage_collector_thread.join();
 
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
@@ -232,16 +272,41 @@ void KeeperDispatcher::shutdown(bool closed_all_connections)
 
         if (dispatcher_old)
             dispatcher_old->shutdown();
+        /// Stop accepting requests and close the sessions first: that needs a live raft instance,
+        /// which server->shutdown destroys.
         if (dispatcher)
-            dispatcher->shutdown(closed_all_connections);
+            dispatcher->shutdownRequests();
 
         if (server)
             server->shutdown();
 
+        /// Only now is nuraft's commit thread joined, so no thread can produce responses anymore.
+        /// TCP handlers can still own responses until they finish.
+        ready_to_finish_shutdown.store(true, std::memory_order_release);
+
+        /// On the normal path, run here rather than leaving it to the guard: until the commit
+        /// thread is joined a late commit can still complete a waiter itself.
+        fail_session_id_waiters.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void KeeperDispatcher::shutdownAfterConnectionsFinish(bool closed_all_connections)
+{
+    if (shutdown_finished.exchange(true))
+        return;
+
+    try
+    {
+        if (ready_to_finish_shutdown.load(std::memory_order_acquire) && dispatcher)
+            dispatcher->drainAndCheckQueues(closed_all_connections);
+
         snapshot_s3.shutdown();
 
         CurrentMetrics::set(CurrentMetrics::KeeperAliveConnections, 0);
-
     }
     catch (...)
     {
@@ -277,18 +342,14 @@ void KeeperDispatcher::snapshotThread()
     }
 }
 
-void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
+void KeeperDispatcher::ttlGarbageCollectorThread(size_t batch_size)
 {
     DB::setThreadName(ThreadName::KEEPER_TTL_GARBAGE_COLLECTOR);
 
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     Int32 next_gc_xid = 0;
 
-    while (true)
+    while (!isShuttingDown())
     {
-        if (shutdown_called)
-            return;
-
         try
         {
             if (server->checkInit() && isLeader())
@@ -330,12 +391,109 @@ void KeeperDispatcher::garbageCollectorThread(size_t batch_size)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
-        if (isShuttingDown())
-            return;
-        sleepForMilliseconds(std::chrono::milliseconds(
-            keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds()).count());
+        interruptibleSleep(std::chrono::milliseconds(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds()));
+    }
+}
+
+void KeeperDispatcher::containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms)
+{
+    DB::setThreadName(ThreadName::KEEPER_CONTAINER_GARBAGE_COLLECTOR);
+
+    Int32 next_gc_xid = 0;
+
+    while (!isShuttingDown())
+    {
+        try
+        {
+            if (server->checkInit() && isLeader())
+            {
+                auto paths = server->getContainerCandidatesForGarbageCollector(batch_size, max_never_used_interval_ms);
+                for (auto & [path, version] : paths)
+                {
+                    auto request = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::TryRemove);
+                    auto & rem = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*request);
+                    rem.path = path;
+                    rem.version = version;
+                    rem.try_remove = true;
+                    rem.xid = next_gc_xid++;
+
+                    try
+                    {
+                        if (putRequest(request, keeper_internal_container_garbage_collector_session_id, /*use_xid_64=*/ false))
+                            LOG_TRACE(log, "Container garbage collector: Remove request enqueued, path: {}", path);
+                        else
+                        {
+                            LOG_WARNING(log, "Container garbage collector: putRequest rejected, retry next tick");
+                            break;
+                        }
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(__PRETTY_FUNCTION__);
+                        break;
+                    }
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        interruptibleSleep(std::chrono::milliseconds(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::container_gc_period_ms].totalMilliseconds()));
+    }
+}
+
+void KeeperDispatcher::interruptibleSleep(std::chrono::milliseconds period)
+{
+    std::unique_lock lock(early_shutdown_wait_mutex);
+    early_shutdown_wait_cv.wait_for(lock, saturatedWaitMilliseconds(period.count()), [&] { return shutting_down.load(); });
+}
+
+void KeeperDispatcher::signalShutdown()
+{
+    {
+        std::lock_guard lock(four_letter_command_mutex);
+        if (shutting_down.exchange(true))
+            return; // already called
     }
 
+    {
+        std::lock_guard lock(early_shutdown_wait_mutex);
+    }
+    early_shutdown_wait_cv.notify_all();
+}
+
+void KeeperDispatcher::beginTCPConnectionDrain()
+{
+    tcp_connections_draining.store(true, std::memory_order_release);
+}
+
+bool KeeperDispatcher::tryBeginFourLetterCommand()
+{
+    std::lock_guard lock(four_letter_command_mutex);
+    if (isTCPConnectionDrainStarted() || shutting_down.load(std::memory_order_relaxed))
+        return false;
+
+    ++running_four_letter_commands;
+    return true;
+}
+
+void KeeperDispatcher::finishFourLetterCommand()
+{
+    {
+        std::lock_guard lock(four_letter_command_mutex);
+        chassert(running_four_letter_commands > 0);
+        --running_four_letter_commands;
+    }
+    four_letter_command_cv.notify_all();
+}
+
+void KeeperDispatcher::waitForFourLetterCommands()
+{
+    std::unique_lock lock(four_letter_command_mutex);
+    four_letter_command_cv.wait(lock, [this] { return running_four_letter_commands == 0; });
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64)
@@ -366,17 +524,13 @@ void KeeperDispatcher::registerSession(int64_t session_id, ZooKeeperResponseCall
 
 void KeeperDispatcher::sessionCleanerTask()
 {
-    const auto & shutdown_called = keeper_context->isShutdownCalled();
     /// TODO: Avoid spamming repeated Close requests for all sessions every
     ///       dead_session_check_period_ms if leader is stuck. Maybe keep a set of recently started
     ///       Close requests here, and don't produce a new request if it's been less than e.g.
     ///       operation_timeout_ms (20x longer than dead_session_check_period_ms by default) since
     ///       the previous attempt.
-    while (true)
+    while (!isShuttingDown())
     {
-        if (shutdown_called)
-            return;
-
         try
         {
             /// Only leader node must check dead sessions
@@ -409,8 +563,8 @@ void KeeperDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        auto time_to_sleep = keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds();
-        std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep));
+        interruptibleSleep(std::chrono::milliseconds(
+            keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds()));
     }
 }
 
@@ -420,6 +574,33 @@ void KeeperDispatcher::finishSession(int64_t session_id)
         dispatcher_old->finishSession(session_id);
     else
         dispatcher->finishSession(session_id);
+}
+
+bool KeeperDispatcher::tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept
+{
+    /// A SessionID response carries session_id -1, which has no registered response callback.
+    /// Its waiter is a promise in new_session_id_requests, keyed by internal_id.
+    if (response.response->xid == Coordination::WATCH_XID || response.response->getOpNum() != Coordination::OpNum::SessionID)
+        return false;
+
+    onSessionIDResponse(response.response);
+    return true;
+}
+
+void KeeperDispatcher::failPendingSessionIDRequests() noexcept
+{
+    std::unordered_map<int64_t, std::promise<int64_t>> pending;
+    {
+        std::lock_guard lock(new_session_id_mutex);
+        pending.swap(new_session_id_requests);
+    }
+
+    if (!pending.empty())
+        LOG_INFO(log, "Failing {} pending session ID request(s) because of shutdown", pending.size());
+
+    for (auto & [internal_id, promise] : pending)
+        promise.set_exception(std::make_exception_ptr(
+            zkutil::KeeperException::fromMessage(Coordination::Error::ZSESSIONEXPIRED, "Keeper is shutting down")));
 }
 
 void KeeperDispatcher::onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept
@@ -465,9 +646,19 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
 
     {
         std::lock_guard lock(new_session_id_mutex);
+        if (isShuttingDown())
+            throw Exception(ErrorCodes::ABORTED, "Not issuing new session ID because of shutdown");
+
         auto [it, inserted] = new_session_id_requests.try_emplace(request->internal_id);
         chassert(inserted);
         future = it->second.get_future();
+    }
+
+    if (isShuttingDown())
+    {
+        std::lock_guard lock(new_session_id_mutex);
+        new_session_id_requests.erase(request->internal_id);
+        throw Exception(ErrorCodes::ABORTED, "Not issuing new session ID because of shutdown");
     }
 
     try
@@ -485,7 +676,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
         throw;
     }
 
-    if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)
+    if (future.wait_for(saturatedWaitMilliseconds(session_timeout_ms)) != std::future_status::ready)
     {
         {
             std::lock_guard lock(new_session_id_mutex);
@@ -597,7 +788,7 @@ bool KeeperDispatcher::reconfigEnabled() const
 
 bool KeeperDispatcher::isServerActive() const
 {
-    return checkInit() && hasLeader() && !server->isRecovering();
+    return !isShuttingDown() && checkInit() && hasLeader() && !server->isRecovering();
 }
 
 void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros)
@@ -695,8 +886,8 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
         LOG_DEBUG(log, "Waiting for configuration update {} to be applied, will wait for {} ms", action, max_action_wait_time_ms);
         while (watch.elapsedMilliseconds() < max_action_wait_time_ms)
         {
-            if (keeper_context->isShutdownCalled())
-                throw Exception(ErrorCodes::ABORTED, "Shutdown called, aborting configuration update");
+            if (isShuttingDown() || keeper_context->isShutdownCalled())
+                throw Exception(ErrorCodes::ABORTED, "Shutdown started, aborting configuration update");
 
             if (check_callback(server.get()))
             {
@@ -704,7 +895,7 @@ void KeeperDispatcher::executeClusterUpdateActionAndWaitConfigChange(const Clust
                 return;
             }
 
-            std::this_thread::sleep_for(1000ms);
+            interruptibleSleep(1000ms);
         }
         LOG_INFO(log, "Timeout exceeded waiting for configuration update {} to be applied, attempt {}/{}", action, attempt + 1, retry_count + 1);
     }

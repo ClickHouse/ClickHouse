@@ -11,7 +11,9 @@ Usando o profiler, você pode encontrar as rotinas do código-fonte usadas com m
 Você pode rastrear o tempo de CPU e o tempo de relógio gasto, incluindo o tempo ocioso.
 
 O profiler de consulta é habilitado automaticamente no ClickHouse Cloud.
-A consulta de exemplo a seguir encontra os stack traces mais frequentes de uma consulta analisada pelo profiler, com nomes de funções resolvidos e localizações no código-fonte:
+A consulta de exemplo a seguir encontra os stack traces mais frequentes de uma consulta analisada pelo profiler, com nomes de funções resolvidos e localizações no código-fonte.
+
+Por padrão, o profiler simboliza os stack traces no momento da coleta e armazena os resultados nas colunas `symbols` e `lines` de [`system.trace_log`](/pt-BR/reference/system-tables/trace_log), portanto, os exemplos abaixo leem essas colunas diretamente e não exigem funções de introspecção. A simbolização é controlada pela configuração `symbolize` na seção de configuração do servidor `trace_log` (habilitada por padrão) e é compatível com plataformas ELF (como Linux) e macOS; no FreeBSD, as colunas `symbols` e `lines` estão sempre vazias. Os nomes de funções em `symbols` vêm da tabela de símbolos do binário e estão disponíveis por padrão. As localizações no código-fonte em `lines` são obtidas da melhor forma possível: elas exigem informações de depuração (no macOS, um pacote `.dSYM` ao lado do binário) e, em plataformas ELF, apenas os frames dentro do binário principal do ClickHouse são resolvidos; portanto, as entradas de frames que não podem ser resolvidos (por exemplo, em bibliotecas compartilhadas) ficam vazias. Se a simbolização estiver desabilitada, use as [funções de introspecção](/pt-BR/reference/functions/regular-functions/introspection) `addressToSymbol`, `demangle` e `addressToLine` para resolver os endereços brutos na coluna `trace`. Essas funções estão disponíveis nas mesmas plataformas que a simbolização (plataformas ELF, como Linux, e macOS); no FreeBSD, elas também não são compiladas, portanto, os endereços em `trace` precisam ser resolvidos fora do servidor.
 
 <Tip>
   Substitua o valor de `query_id` pelo ID da consulta que você quer analisar com o profiler.
@@ -26,13 +28,12 @@ A consulta de exemplo a seguir encontra os stack traces mais frequentes de uma c
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM clusterAllReplicas(default, system.trace_log)
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 
@@ -40,27 +41,24 @@ A consulta de exemplo a seguir encontra os stack traces mais frequentes de uma c
     ```sql
     SELECT
         count(),
-        arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+        arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
     FROM system.trace_log
     WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
     GROUP BY trace
     ORDER BY count() DESC
     LIMIT 10
-    SETTINGS allow_introspection_functions = 1
     ```
   </Tab>
 </Tabs>
 
 <div id="self-managed-query-profiler">
-  ## Usando o profiler de consultas em implantações autogerenciadas
+  ## Usando o profiler de consulta em implantações autogerenciadas
 </div>
 
-Em implantações autogerenciadas, para usar o profiler de consultas, siga as etapas abaixo:
+Em implantações autogerenciadas, para usar o profiler de consulta, siga as etapas abaixo:
 
 <Steps>
-  <Step>
-    ### Instale o ClickHouse com informações de depuração
-
+  <Step title="Instale o ClickHouse com informações de depuração" id="debug-info">
     Instale o pacote `clickhouse-common-static-dbg`:
 
     1. Siga as instruções na etapa [&quot;Configurar o repositório Debian&quot;](/pt-BR/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)
@@ -69,14 +67,12 @@ Em implantações autogerenciadas, para usar o profiler de consultas, siga as et
     4. Execute `clickhouse-client`. Os símbolos de depuração de `clickhouse-common-static-dbg` serão carregados automaticamente pelo servidor — você não precisa fazer nada de especial para habilitá-los
   </Step>
 
-  <Step>
-    ### Verifique a configuração do servidor
-
-    Certifique-se de que a seção [`trace_log`](/pt-BR/reference/settings/server-settings/settings#trace_log) do seu [arquivo de configuração do servidor](/pt-BR/concepts/features/configuration/server-config/configuration-files) esteja configurada. Ela vem habilitada por padrão:
+  <Step title="Verifique a configuração do servidor" id="server-config">
+    Certifique-se de que a seção [`trace_log`](/pt-BR/reference/settings/server-settings/settings/other#trace_log) do seu [arquivo de configuração do servidor](/pt-BR/concepts/features/configuration/server-config/configuration-files) esteja configurada. Ela vem habilitada por padrão:
 
     ```xml
-    <!-- Log de rastreamento. Armazena stack traces coletados pelos profilers de consultas.
-         Consulte as configurações query_profiler_real_time_period_ns e query_profiler_cpu_time_period_ns. -->
+    <!-- Trace log. Stores stack traces collected by query profilers.
+         See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
     <trace_log>
         <database>system</database>
         <table>trace_log</table>
@@ -86,21 +82,25 @@ Em implantações autogerenciadas, para usar o profiler de consultas, siga as et
         <max_size_rows>1048576</max_size_rows>
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <!-- Indica se os logs devem ser gravados em disco em caso de falha -->
+        <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
         <symbolize>true</symbolize>
     </trace_log>
     ```
 
     Esta seção configura a tabela de sistema [trace&#95;log](/pt-BR/reference/system-tables/trace_log), que contém os resultados do funcionamento do profiler.
-    Lembre-se de que os dados nessa tabela são válidos apenas enquanto o servidor estiver em execução.
-    Após a reinicialização do servidor, o ClickHouse não limpa a tabela, e todos os endereços de memória virtual armazenados podem se tornar inválidos.
+    A opção `symbolize` (habilitada por padrão) faz com que o ClickHouse resolva cada frame da pilha no momento da coleta e armazene os nomes de função desmangleados e as localizações no código-fonte nas colunas `symbols` e `lines`.
+    Os nomes de função em `symbols` vêm da tabela de símbolos e estão disponíveis por padrão, enquanto as localizações no código-fonte em `lines` exigem informações de depuração (um pacote `.dSYM` no macOS) e, em plataformas ELF, são resolvidas apenas para frames dentro do binário principal do ClickHouse; frames não resolvidos têm entradas vazias em `lines`.
+
+    Observe que os endereços brutos na coluna `trace` são menos estáveis entre reinicializações e upgrades do que as colunas pré-simbolizadas.
+    Em plataformas ELF, exceto no FreeBSD, os frames no binário principal do ClickHouse são armazenados como offsets físicos no arquivo, portanto permanecem resolvíveis entre reinicializações, desde que o binário não seja alterado; no macOS e no FreeBSD, eles são armazenados como endereços virtuais de tempo de execução que podem se tornar inválidos após uma reinicialização.
+    Frames fora do binário principal (por exemplo, em bibliotecas compartilhadas) são sempre armazenados como endereços virtuais de tempo de execução que podem se tornar inválidos após uma reinicialização, e qualquer endereço bruto deixa de ser resolvível após um upgrade do binário, pois o layout do código muda.
+    O ClickHouse não limpa a tabela na reinicialização, portanto endereços brutos desatualizados podem permanecer.
+    Por outro lado, as colunas pré-simbolizadas `symbols` e `lines` permanecem válidas entre reinicializações e upgrades; portanto, prefira-as ao analisar dados históricos.
   </Step>
 
-  <Step>
-    ### Configure os temporizadores do profiler
-
-    Configure as definições [`query_profiler_cpu_time_period_ns`](/pt-BR/reference/settings/session-settings#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/pt-BR/reference/settings/session-settings#query_profiler_real_time_period_ns).
+  <Step title="Configure os temporizadores do profiler" id="configure-profile-timers">
+    Configure as definições [`query_profiler_cpu_time_period_ns`](/pt-BR/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/pt-BR/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
     Ambas as configurações podem ser usadas simultaneamente.
 
     Essas configurações permitem ajustar os temporizadores do profiler.
@@ -111,10 +111,13 @@ Em implantações autogerenciadas, para usar o profiler de consultas, siga as et
     Se você precisar perfilar cada consulta individualmente, use uma frequência de amostragem mais alta.
   </Step>
 
-  <Step>
-    ### Analise a tabela de sistema `trace_log`
+  <Step title={<>Analise a tabela de sistema <code>trace_log</code></>} id="analyze-trace-log-system-table">
+    Para obter um perfil de alguma consulta, você precisa agregar dados da tabela `trace_log`.
+    Você pode agregar os dados por função individual ou pelos stack traces completos.
 
-    Para analisar a tabela de sistema `trace_log`, habilite as funções de introspecção com a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings#allow_introspection_functions):
+    Quando a simbolização está habilitada (o padrão), os nomes de funções desmangleados e as localizações no código-fonte já estão disponíveis nas colunas `symbols` e `lines`, portanto nenhuma configuração adicional é necessária. A simbolização não é compatível com FreeBSD, onde essas colunas estão sempre vazias. As entradas de `lines` podem estar vazias para frames que não têm informações de depuração ou que estão fora do binário principal do ClickHouse (consulte [acima](#server-config)).
+
+    Se a simbolização estiver desabilitada ou se você quiser resolver dinamicamente os endereços brutos na coluna `trace` (por exemplo, para expandir frames inline), habilite as funções de introspecção com a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions):
 
     ```sql
     SET allow_introspection_functions=1
@@ -124,9 +127,7 @@ Em implantações autogerenciadas, para usar o profiler de consultas, siga as et
       Por motivos de segurança, as funções de introspecção vêm desabilitadas por padrão
     </Note>
 
-    Use as `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` e `demangle` [funções de introspecção](/pt-BR/reference/functions/regular-functions/introspection) para obter nomes de funções e suas posições no código do ClickHouse.
-    Para obter um perfil de alguma consulta, você precisa agregar dados da tabela `trace_log`.
-    Você pode agregar os dados por função individual ou pelos stack traces completos.
+    Use as `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` e `demangle` [funções de introspecção](/pt-BR/reference/functions/regular-functions/introspection) para obter nomes de funções e suas posições no código do ClickHouse. Assim como a simbolização, essas funções estão disponíveis em plataformas ELF (como Linux) e macOS, mas não no FreeBSD.
 
     <Tip>
       Se você precisar visualizar informações de `trace_log`, experimente [flamegraph](/pt-BR/integrations/connectors/tools/gui#clickhouse-flamegraph) e [speedscope](https://www.speedscope.app).
@@ -317,15 +318,15 @@ clickhouse client --allow_introspection_functions=1 \
 O trecho de código abaixo:
 
 * Filtra os dados de `trace_log` por um identificador de consulta e pela data atual.
-* Agrupa por stack trace.
-* Usa funções de introspecção para gerar um relatório com:
+* Lê as colunas pré-simbolizadas `symbols` e `lines` para gerar um relatório com:
   * Os nomes dos símbolos e as funções correspondentes no código-fonte.
   * As localizações dessas funções no código-fonte.
+* Agrega pelo stack trace bruto (a coluna `trace`), usando as colunas simbolizadas apenas para exibição, para que stack traces distintos nunca sejam agrupados pela simbolização aproximada.
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
 GROUP BY trace

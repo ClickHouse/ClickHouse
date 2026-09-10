@@ -170,17 +170,17 @@ export const IntegrationGrid = () => {
 
   function getSectionDescription(type) {
     const descriptions = {
-      ClickPipes: "ClickPipes هو محرك تكامل يجعل استيعاب كميات ضخمة من البيانات من مصادر متنوعة بسيطاً كالنقر على بضعة أزرار.",
-      "Data ingestion": "بسّط خطوط أنابيب بياناتك مع ClickHouse! تضمن عمليات التكامل السلسة استيعاباً فعّالاً للبيانات، مما يُحسّن تحليلات الوقت الفعلي.",
-      "Data visualization": "أضِئ قصص بياناتك! تُعزّز تكاملات ClickHouse التصور، مما يجعل الرؤى أكثر وضوحاً وقابلية للتنفيذ.",
-      "SQL client": "تصفّح قواعد بيانات ClickHouse واستعلم عنها باستخدام أدوات وواجهات عميل SQL المألوفة.",
-      "Language client": "برمج في بيئتك المفضّلة! تجعل تكاملات مكتبة العملاء للغات البرمجة في ClickHouse الوصول إلى البيانات سلساً عبر لغات برمجة متعددة.",
-      "AI/ML": "استفد من ClickHouse في أعباء عمل التعلم الآلي والذكاء الاصطناعي باستخدام أدوات وأطر عمل ML المتكاملة.",
-      "Data management": "أدِر بيانات ClickHouse وراقبها وحسّنها باستخدام أدوات إدارة متخصصة.",
-      "Data integration": "ادمج ClickHouse مع البنية التحتية لبياناتك وسير عملك الحاليين.",
-      "Security governance": "طبّق أطر الأمان والحوكمة لبيئة ClickHouse الخاصة بك."
+      ClickPipes: "ClickPipes is an integration engine that makes ingesting massive volumes of data from a diverse set of sources as simple as clicking a few buttons.",
+      "Data ingestion": "Streamline your data pipelines with ClickHouse! Seamless integrations ensure efficient ingestion, optimizing real-time analytics.",
+      "Data visualization": "Illuminate your data stories! ClickHouse integrations enhance visualization, making insights more vivid & actionable.",
+      "SQL client": "Access and query ClickHouse databases using familiar SQL client tools and interfaces.",
+      "Language client": "Code in your comfort zone! ClickHouse's language client integrations make data access fluent across multiple programming languages.",
+      "AI/ML": "Leverage ClickHouse for machine learning and AI workloads with integrated ML tools and frameworks.",
+      "Data management": "Manage, monitor, and optimize your ClickHouse data with specialized management tools.",
+      "Data integration": "Integrate ClickHouse with your existing data infrastructure and workflows.",
+      "Security governance": "Implement security and governance frameworks for your ClickHouse environment."
     }
-    return descriptions[type] || "ادمج ClickHouse مع أدوات وخدمات متخصصة."
+    return descriptions[type] || "Integrate ClickHouse with specialized tools and services."
   }
 
   // Plain render function (not a component) so cards reconcile by key instead of
@@ -272,8 +272,8 @@ export const IntegrationGrid = () => {
       return {
         slug: item.slug.startsWith("/") ? item.slug : `/${item.slug}`,
         docsLink: item.docsLink,
-        integration_logo: item.logo?.url ? `https://staging-cms.clickhouse.com${item.logo.url}` : "",
-        integration_logo_dark: item.logo_dark?.url ? `https://staging-cms.clickhouse.com${item.logo_dark.url}` : undefined,
+        integration_logo: item.logo?.url ? `https://clickhouse.com${item.logo.url}` : "",
+        integration_logo_dark: item.logo_dark?.url ? `https://clickhouse.com${item.logo_dark.url}` : undefined,
         integration_type: integrationTypes,
         integration_title: item.name,
         integration_tier: integrationTier
@@ -328,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("تم إلغاء طلب CMS بسبب انتهاء المهلة، جارٍ استخدام البيانات الاحتياطية")
+              console.log("تم إلغاء طلب CMS بسبب انتهاء المهلة")
             } else {
               console.error("خطأ في تحميل التكاملات من CMS:", cmsErr.message)
             }
@@ -595,7 +595,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #1f1f1f;
+          color: #fff;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;
@@ -617,7 +617,7 @@ export const IntegrationGrid = () => {
             </svg>
             <input
               type="text"
-              placeholder="البحث حسب التكامل"
+              placeholder="Search by integration"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full text-sm border rounded-xl focus:outline-none bg-[#F6F7FA] dark:bg-[#282828] text-black dark:text-white border-gray-300 dark:border-gray-600 focus:border-[#FAFF69]"
@@ -642,7 +642,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              الكل
+              All
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -670,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              جميع المستويات
+              All tiers
             </button>
             {integrationTiers.map((tier) => (
               <button
@@ -693,7 +693,7 @@ export const IntegrationGrid = () => {
         {selectedFilter === "All" ? (
           Array.from(groupedIntegrations.entries())
             .sort(([a], [b]) => {
-              const sortOrder = ["مكتبة العملاء للغات البرمجة", "ClickPipes", "استيعاب البيانات", "تصور البيانات", "AI/ML", "تكامل البيانات", "إدارة البيانات", "حوكمة الأمان", "عميل SQL"]
+              const sortOrder = ["Language client", "ClickPipes", "Data ingestion", "Data visualization", "AI/ML", "Data integration", "Data management", "Security governance", "SQL client"]
 
               const indexA = sortOrder.indexOf(a)
               const indexB = sortOrder.indexOf(b)

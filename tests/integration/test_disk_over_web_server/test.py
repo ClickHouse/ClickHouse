@@ -178,7 +178,7 @@ def test_incorrect_usage(cluster):
     assert "Table is read-only" in result
 
     result = node2.query_and_get_error("OPTIMIZE TABLE test0 FINAL")
-    assert "Table is in readonly mode due to static storage" in result
+    assert "Table is in readonly mode" in result
 
     node2.query("DROP TABLE test0 SYNC")
 

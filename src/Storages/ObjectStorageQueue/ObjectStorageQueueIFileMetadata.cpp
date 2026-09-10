@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Common/FailPoint.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
@@ -21,10 +22,16 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueTrySetProcessingRequests;
     extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
     extern const Event ObjectStorageQueueTrySetProcessingFailed;
+    extern const Event ObjectStorageQueueExclusiveModeProcessingErrors;
 };
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_skip_one_file_in_batch[];
+}
 
 namespace ErrorCodes
 {
@@ -162,13 +169,23 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                 current_exception = getCurrentExceptionMessage(true);
                 file_status->onFailed(current_exception);
             }
-            else
+            else if (!processing_node_path.empty())
                 file_status->onFailed("Unprocessed exception");
+            else if (file_status->state.load() != FileStatus::State::Failed)
+            {
+                LOG_WARNING(log, "File {} will NOT be marked as 'Failed' and will remain in '{}' state.",
+                            path, file_status->state.load());
+                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExclusiveModeProcessingErrors);
+            }
         }
         else
         {
             chassert(file_status->state == FileStatus::State::Failed);
         }
+
+        /// Empty in case of exclusive mode only, where we do not store state in keeper.
+        if (processing_node_path.empty())
+            return;
 
         LOG_TEST(log, "Removing processing node in destructor for file: {} "
                  "(state: {}, exception: {})",
@@ -321,7 +338,13 @@ std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
 ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests, const std::string & processing_id)
 {
     std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
-    if (!processing_lock.try_lock())
+    bool processing_lock_acquired = processing_lock.try_lock();
+
+    /// Test-only: simulate the file being grabbed by another consumer (a processing-lock conflict).
+    /// ONCE, so it skips the first file after being enabled, exercising the batch compaction path.
+    fiu_do_on(FailPoints::object_storage_queue_skip_one_file_in_batch, { processing_lock_acquired = false; });
+
+    if (!processing_lock_acquired)
     {
         /// This is possible in case on the same server
         /// there are more than one S3(Azure)Queue table processing the same keeper path.
@@ -511,6 +534,12 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     });
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
+    debugFinalizeProcessed();
+#endif
+}
+
+void ObjectStorageQueueIFileMetadata::debugFinalizeProcessed()
+{
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
@@ -525,7 +554,6 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
         /// NOTE: we don't check that processed_node_path exists here because the cleanup thread
         /// may have already removed it (e.g. when `s3queue_tracked_files_limit` is reached).
     });
-#endif
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
@@ -538,6 +566,12 @@ void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
     LOG_TRACE(log, "File {} processing was reset for retry (rows: {})", path, file_status->processed_rows.load());
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
+    debugFinalizeResetProcessing();
+#endif
+}
+
+void ObjectStorageQueueIFileMetadata::debugFinalizeResetProcessing()
+{
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
@@ -545,7 +579,6 @@ void ObjectStorageQueueIFileMetadata::finalizeResetProcessing()
             !zk_client->exists(processing_node_path),
             fmt::format("Expected path {} not to exist after reset for {}", processing_node_path, path));
     });
-#endif
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
@@ -558,7 +591,14 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
 
         LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
     });
+
 #ifdef DEBUG_OR_SANITIZER_BUILD
+    debugFinalizeFailed();
+#endif
+}
+
+void ObjectStorageQueueIFileMetadata::debugFinalizeFailed()
+{
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
     {
         auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
@@ -571,7 +611,6 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
             fmt::format("Expected path {} to exist while finalizing {}", failed_node_path, path));
 
     });
-#endif
 }
 
 void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
@@ -581,6 +620,8 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     if (!retriable)
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
+
+        permanently_failed = true;
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
@@ -619,6 +660,8 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     if (node_metadata.retries >= max_loading_retries)
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
+
+        permanently_failed = true;
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));

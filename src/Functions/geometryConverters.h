@@ -32,6 +32,9 @@ namespace ErrorCodes
 /// throwing path. Otherwise a declared-but-absent element count drives a large `reserve` that
 /// `max_memory_usage` does not bound (the default container tracking is non-throwing).
 template <typename Point>
+using MultiPoint = boost::geometry::model::multi_point<Point, std::vector, AllocatorWithMemoryTracking>;
+
+template <typename Point>
 using LineString = boost::geometry::model::linestring<Point, std::vector, AllocatorWithMemoryTracking>;
 
 template <typename Point>
@@ -47,6 +50,7 @@ template <typename Point>
 using MultiPolygon = boost::geometry::model::multi_polygon<Polygon<Point>, std::vector, AllocatorWithMemoryTracking>;
 
 using CartesianPoint = boost::geometry::model::d2::point_xy<Float64>;
+using CartesianMultiPoint = MultiPoint<CartesianPoint>;
 using CartesianLineString = LineString<CartesianPoint>;
 using CartesianMultiLineString = MultiLineString<CartesianPoint>;
 using CartesianRing = Ring<CartesianPoint>;
@@ -55,6 +59,7 @@ using CartesianMultiPolygon = MultiPolygon<CartesianPoint>;
 
 using SphericalPoint = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::degree>>;
 using SphericalPointInRadians = boost::geometry::model::point<Float64, 2, boost::geometry::cs::spherical_equatorial<boost::geometry::radian>>;
+using SphericalMultiPoint = MultiPoint<SphericalPoint>;
 using SphericalLineString = LineString<SphericalPoint>;
 using SphericalMultiLineString = MultiLineString<SphericalPoint>;
 using SphericalRing = Ring<SphericalPoint>;
@@ -99,6 +104,28 @@ struct ColumnToPointsConverter
     }
 };
 
+
+/**
+ * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost multi_point type.
+*/
+template <typename Point>
+struct ColumnToMultiPointsConverter
+{
+    static VectorWithMemoryTracking<MultiPoint<Point>> convert(ColumnPtr col)
+    {
+        const IColumn::Offsets & offsets = typeid_cast<const ColumnArray &>(*col).getOffsets();
+        size_t prev_offset = 0;
+        VectorWithMemoryTracking<MultiPoint<Point>> answer;
+        answer.reserve(offsets.size());
+        auto tmp = ColumnToPointsConverter<Point>::convert(typeid_cast<const ColumnArray &>(*col).getDataPtr());
+        for (size_t offset : offsets)
+        {
+            answer.emplace_back(tmp.begin() + prev_offset, tmp.begin() + offset);
+            prev_offset = offset;
+        }
+        return answer;
+    }
+};
 
 /**
  * Class which converts Column with type Array(Tuple(Float64, Float64)) to a vector of boost linestring type.
@@ -265,6 +292,38 @@ private:
 
     ColumnFloat64::Container & first_container;
     ColumnFloat64::Container & second_container;
+};
+
+/// Serialize Point, MultiPoint as MultiPoint
+template <typename Point>
+class MultiPointSerializer
+{
+public:
+    MultiPointSerializer()
+        : offsets(ColumnUInt64::create())
+    {}
+
+    explicit MultiPointSerializer(size_t n)
+        : offsets(ColumnUInt64::create(n))
+    {}
+
+    void add(const MultiPoint<Point> & multipoint)
+    {
+        size += multipoint.size();
+        offsets->insertValue(size);
+        for (const auto & point : multipoint)
+            point_serializer.add(point);
+    }
+
+    ColumnPtr finalize()
+    {
+        return ColumnArray::create(point_serializer.finalize(), std::move(offsets));
+    }
+
+private:
+    size_t size = 0;
+    PointSerializer<Point> point_serializer;
+    ColumnUInt64::MutablePtr offsets;
 };
 
 /// Serialize Point, LineString as LineString
@@ -468,6 +527,11 @@ static void callOnGeometryDataType(DataTypePtr type, F && f)
     /// There is no Point type, because for most of geometry functions it is useless.
     if (factory.get("Point")->equals(*type))
         return f(ConverterType<ColumnToPointsConverter<Point>>());
+
+    /// We should take the name into consideration to avoid ambiguity.
+    /// Because for example both MultiPoint and Ring are resolved to Array(Tuple(Point)).
+    if (factory.get("MultiPoint")->equals(*type) && type->getCustomName() && type->getCustomName()->getName() == "MultiPoint")
+        return f(ConverterType<ColumnToMultiPointsConverter<Point>>());
 
     /// We should take the name into consideration to avoid ambiguity.
     /// Because for example both Ring and LineString are resolved to Array(Tuple(Point)).

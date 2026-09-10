@@ -31,32 +31,24 @@ doc_type: 'guide'
 </div>
 
 <Steps>
-  <Step>
-    #### 이중 수집 구성
-
+  <Step title="이중 수집 구성" id="configure-dual-ingestion">
     데이터 수집 파이프라인을 설정하여 데이터를 Elastic과 ClickStack으로 동시에 전송합니다.
 
     구성 방법은 현재 사용 중인 수집 에이전트에 따라 달라집니다. [&quot;Migrating Agents&quot;](/ko/clickstack/migration/elastic/migrating-agents)를 참조하십시오.
   </Step>
 
-  <Step>
-    #### 보존 기간 조정
-
+  <Step title="보존 기간 조정" id="adjust-retention-period">
     Elastic의 TTL 설정을 원하는 보존 기간에 맞게 구성합니다. ClickStack [TTL](/ko/clickstack/managing/production#configure-ttl)도 동일한 기간 동안 데이터를 유지하도록 설정합니다.
   </Step>
 
-  <Step>
-    #### 검증 및 비교
-
+  <Step title="검증 및 비교" id="validate-and-compare">
     * 두 시스템에서 모두 쿼리를 실행하여 데이터 일관성을 확인합니다
     * 쿼리 성능과 결과를 비교합니다
     * 대시보드와 알림을 ClickStack으로 마이그레이션합니다. 이 작업은 현재 수동으로 수행해야 합니다.
     * 모든 핵심 대시보드와 알림이 ClickStack에서 예상대로 작동하는지 확인합니다
   </Step>
 
-  <Step>
-    #### 점진적 전환
-
+  <Step title="점진적 전환" id="graudal-transition">
     * 데이터가 Elastic에서 자연스럽게 만료되면서 점차 ClickStack에 더 많이 의존하게 됩니다
     * ClickStack에 대한 신뢰가 확보되면 쿼리와 대시보드를 점진적으로 전환할 수 있습니다
   </Step>
@@ -141,9 +133,7 @@ ClickHouse는 데이터 만료를 관리하기 위해 MergeTree 테이블에서 
 다음 단계에 따라 ClickHouse에서 단일 Elasticsearch 인덱스를 마이그레이션할 수 있습니다.
 
 <Steps>
-  <Step>
-    ### 스키마 마이그레이션
-
+  <Step title="스키마 마이그레이션" id="migrate-scheme">
     Elasticsearch에서 마이그레이션할 인덱스에 대한 테이블을 ClickHouse에 생성하십시오. [Elasticsearch 타입을 ClickHouse](/ko/clickstack/migration/elastic/types) 동등 타입으로 매핑할 수 있습니다. 또는 ClickHouse의 JSON 데이터 타입을 활용하면, 데이터가 삽입될 때 적절한 타입의 컬럼이 동적으로 생성됩니다.
 
     `syslog` 데이터를 포함하는 인덱스에 대한 다음 Elasticsearch 매핑을 확인하십시오.
@@ -578,9 +568,7 @@ ClickHouse는 데이터 만료를 관리하기 위해 MergeTree 테이블에서 
     스키마에서 JSON 타입을 사용하는 방법과 이를 효율적으로 적용하는 방법에 대한 자세한 내용은 [&quot;스키마 설계&quot;](/ko/guides/clickhouse/data-formats/json/schema) 가이드를 참조하십시오.
   </Step>
 
-  <Step>
-    ### `elasticdump` 설치
-
+  <Step title={<><code>elasticdump</code> 설치</>} id="install-elasticdump">
     Elasticsearch에서 데이터를 내보낼 때는 [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump)를 권장합니다. 이 도구를 사용하려면 `node`가 필요하며, Elasticsearch와 ClickHouse 모두에 네트워크 지연이 낮은 머신에 설치해야 합니다. 대부분의 내보내기 작업에는 최소 4코어와 16GB RAM을 갖춘 전용 서버를 권장합니다.
 
     ```shell
@@ -596,19 +584,15 @@ ClickHouse는 데이터 만료를 관리하기 위해 MergeTree 테이블에서 
     가능하다면 네트워크 이그레스를 최소화하고 처리량을 극대화할 수 있도록 ClickHouse, Elasticsearch, `elastic dump`를 모두 동일한 가용 영역 또는 데이터 센터에서 실행하는 것이 좋습니다.
   </Step>
 
-  <Step>
-    ### ClickHouse client 설치
-
+  <Step title="ClickHouse client 설치" id="install-clickhouse-client">
     `elasticdump`가 있는 서버에 [ClickHouse를 설치했는지](/ko/get-started/setup/install) 확인하십시오. **ClickHouse 서버는 시작하지 마십시오.** 이 단계에는 클라이언트만 필요합니다.
   </Step>
 
-  <Step>
-    ### 데이터 스트리밍
-
+  <Step title="데이터 스트리밍" id="stream-data">
     Elasticsearch와 ClickHouse 간에 데이터를 스트리밍하려면 `elasticdump` 명령을 사용해 출력을 clickhouse client로 직접 파이프하세요. 다음 예제에서는 데이터를 잘 구조화된 테이블 `logs_system_syslog`에 삽입합니다.
 
     ```shell
-    # URL 및 자격 증명 내보내기
+    # export url and credentials
     export ELASTICSEARCH_INDEX=.ds-logs-system.syslog-default-2025.06.03-000001
     export ELASTICSEARCH_URL=
     export ELASTICDUMP_INPUT_USERNAME=
@@ -617,7 +601,7 @@ ClickHouse는 데이터 만료를 관리하기 위해 MergeTree 테이블에서 
     export CLICKHOUSE_PASSWORD=
     export CLICKHOUSE_USER=default
 
-    # 실행할 명령 - 필요에 따라 수정하세요
+    # command to run - modify as required
     elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
     clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
     --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
@@ -660,9 +644,7 @@ ClickHouse는 데이터 만료를 관리하기 위해 MergeTree 테이블에서 
     </Info>
   </Step>
 
-  <Step>
-    ### 데이터 변환(선택 사항)
-
+  <Step title="데이터 변환(선택 사항)" id="transform-data">
     위 명령은 Elasticsearch 필드와 ClickHouse 컬럼이 1:1로 매핑된다고 가정합니다. 실제로는 ClickHouse에 삽입하기 전에 Elasticsearch 데이터를 필터링하고 변환해야 하는 경우가 많습니다.
 
     이 작업은 [`input`](/ko/reference/functions/table-functions/input) 테이블 함수를 사용해 수행할 수 있습니다. 이 함수로 stdout에 대해 임의의 `SELECT` 쿼리를 실행할 수 있습니다.

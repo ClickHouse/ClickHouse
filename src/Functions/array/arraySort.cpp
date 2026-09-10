@@ -2,9 +2,12 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/arraySort.h>
+#include <Common/NaNUtils.h>
 #include <Common/iota.h>
+#include <base/extended_types.h>
 
 namespace DB
 {
@@ -82,6 +85,75 @@ struct GenericLess
     }
 };
 
+template <bool positive, typename ColumnType>
+ColumnPtr sortNumericValues(const ColumnType & column, const ColumnArray & array)
+{
+    using T = typename ColumnType::ValueType;
+
+    typename ColumnType::MutablePtr res_nested;
+    if constexpr (is_decimal<T>)
+        res_nested = ColumnType::create(0, column.getScale());
+    else
+        res_nested = ColumnType::create();
+    typename ColumnType::Container & data = res_nested->getData();
+    data.assign(column.getData());
+
+    auto sort_range = [](T * from, T * to)
+    {
+        if constexpr (positive)
+            ::sort(from, to);
+        else
+            ::sort(from, to, std::greater<T>());
+    };
+
+    const ColumnArray::Offsets & offsets = array.getOffsets();
+    T * base = data.data();
+    ColumnArray::Offset current_offset = 0;
+    for (auto next_offset : offsets)
+    {
+        T * begin = base + current_offset;
+        T * end = base + next_offset;
+        if constexpr (is_floating_point<T>)
+        {
+            /// All NaNs go last in both directions, matching the `nan_direction_hint` that the
+            /// generic path passes to `compareAt`.
+            T * nan_begin = std::partition(begin, end, [](T x) { return !isNaN(x); });
+            sort_range(begin, nan_begin);
+        }
+        else
+        {
+            sort_range(begin, end);
+        }
+        current_offset = next_offset;
+    }
+
+    return ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
+}
+
+template <bool positive>
+ColumnPtr trySortNumericValues(const ColumnArray & array)
+{
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define DISPATCH_FOR_NUMERIC_TYPE(TYPE) \
+    if (const auto * column = checkAndGetColumn<ColumnVector<TYPE>>(&array.getData())) \
+        return sortNumericValues<positive>(*column, array);
+#define DISPATCH_FOR_DECIMAL_TYPE(TYPE) \
+    if (const auto * column = checkAndGetColumn<ColumnDecimal<TYPE>>(&array.getData())) \
+        return sortNumericValues<positive>(*column, array);
+// NOLINTEND(bugprone-macro-parentheses)
+
+    FOR_NUMERIC_TYPES(DISPATCH_FOR_NUMERIC_TYPE)
+    DISPATCH_FOR_DECIMAL_TYPE(Decimal32)
+    DISPATCH_FOR_DECIMAL_TYPE(Decimal64)
+    DISPATCH_FOR_DECIMAL_TYPE(Decimal128)
+    DISPATCH_FOR_DECIMAL_TYPE(Decimal256)
+    DISPATCH_FOR_DECIMAL_TYPE(DateTime64)
+#undef DISPATCH_FOR_NUMERIC_TYPE
+#undef DISPATCH_FOR_DECIMAL_TYPE
+
+    return nullptr;
+}
+
 }
 
 template <bool positive, bool is_partial>
@@ -101,6 +173,18 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
                 "Expected fixed arguments to get the limit for partial array sort");
 
         limit_column = fixed_arguments[0].column.get();
+    }
+
+    if constexpr (!is_partial)
+    {
+        /// `mapped` is the array's own data when there is no lambda (and when an identity lambda
+        /// returns its input column unchanged), so sorting a permutation by `mapped` and permuting
+        /// the data is equivalent to sorting the values themselves.
+        if (mapped.get() == &array.getData())
+        {
+            if (ColumnPtr res = trySortNumericValues<positive>(array))
+                return res;
+        }
     }
 
     const ColumnArray::Offsets & offsets = array.getOffsets();
@@ -223,17 +307,17 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
 3. `NaN`
 4. `NULL`
 
-`arraySort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+`arraySort` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
 )";
     FunctionDocumentation::Syntax syntax = "arraySort([f,] arr [, arr1, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {
         {"f(y1[, y2 ... yN])", "The lambda function to apply to elements of array `x`."},
-        {"arr", "An array to be sorted. [`Array(T)`](/sql-reference/data-types/array)"},
+        {"arr", "An array to be sorted. [`Array(T)`](/reference/data-types/array)"},
         {"arr1, ..., arrN", "Optional. N additional arrays, in the case when `f` accepts multiple arguments."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the array `arr` sorted in ascending order if no lambda function is provided, otherwise
-it returns an array sorted according to the logic of the provided lambda function. [`Array(T)`](/sql-reference/data-types/array).
+it returns an array sorted according to the logic of the provided lambda function. [`Array(T)`](/reference/data-types/array).
     )"};
     FunctionDocumentation::Examples examples = {
         {"Example 1", "SELECT arraySort([1, 3, 3, 0]);", "[0,1,3,3]"},
@@ -260,12 +344,12 @@ If the array to sort contains `-Inf`, `NULL`, `NaN`, or `Inf` they will be sorte
 3. `NaN`
 4. `NULL`
 
-`arrayReverseSort` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
+`arrayReverseSort` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
     )";
     syntax = "arrayReverseSort([f,] arr [, arr1, ... ,arrN])";
     returned_value = {R"(
 Returns the array `x` sorted in descending order if no lambda function is provided, otherwise
-it returns an array sorted according to the logic of the provided lambda function, and then reversed. [`Array(T)`](/sql-reference/data-types/array).
+it returns an array sorted according to the logic of the provided lambda function, and then reversed. [`Array(T)`](/reference/data-types/array).
     )"};
     examples = {
         {"Example 1", "SELECT arrayReverseSort((x, y) -> y, [4, 3, 5], ['a', 'b', 'c']) AS res;", "[5,3,4]"},
@@ -294,11 +378,11 @@ Returns an array of the same size as the original array where elements in the ra
 in ascending order. The remaining elements `(limit..N]` are in an unspecified order.
     )"};
     examples = {
-        {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", "[1, 3, 5, 9]"},
-        {"simple_string", "SELECT arrayPartialSort(2, ['expenses', 'lasso', 'embolism', 'gladly'])", "['embolism', 'expenses', 'gladly', 'lasso']"},
-        {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", "[1, 3]"},
-        {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", "[9, 5, 1, 3]"},
-        {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[2, 1, 0]"}
+        {"simple_int", "SELECT arrayPartialSort(2, [5, 9, 1, 3])", "[1,3,5,9]"},
+        {"simple_string", "SELECT arrayPartialSort(2, ['expenses', 'lasso', 'embolism', 'gladly'])", "['embolism','expenses','gladly','lasso']"},
+        {"retain_sorted", "SELECT arrayResize(arrayPartialSort(2, [5, 9, 1, 3]), 2)", "[1,3]"},
+        {"lambda_simple", "SELECT arrayPartialSort((x) -> -x, 2, [5, 9, 1, 3])", "[9,5,1,3]"},
+        {"lambda_complex", "SELECT arrayPartialSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[2,1,0]"}
     };
     introduced_in = {23, 2};
     documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
@@ -318,11 +402,11 @@ Returns an array of the same size as the original array where elements in the ra
 in descending order. The remaining elements `(limit..N]` are in an unspecified order.
     )"};
     examples = {
-        {"simple_int", "SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])", "[9, 5, 1, 3]"},
+        {"simple_int", "SELECT arrayPartialReverseSort(2, [5, 9, 1, 3])", "[9,5,1,3]"},
         {"simple_string", "SELECT arrayPartialReverseSort(2, ['expenses','lasso','embolism','gladly'])", "['lasso','gladly','expenses','embolism']"},
-        {"retain_sorted", "SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)", "[9, 5]"},
-        {"lambda_simple", "SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])", "[1, 3, 5, 9]"},
-        {"lambda_complex", "SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[0, 1, 2]"}
+        {"retain_sorted", "SELECT arrayResize(arrayPartialReverseSort(2, [5, 9, 1, 3]), 2)", "[9,5]"},
+        {"lambda_simple", "SELECT arrayPartialReverseSort((x) -> -x, 2, [5, 9, 1, 3])", "[1,3,5,9]"},
+        {"lambda_complex", "SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res", "[0,1,2]"}
     };
     documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
