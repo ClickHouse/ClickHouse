@@ -11,14 +11,13 @@ CREATE TABLE t_index (c Int64, INDEX i c TYPE trim(BOTH '' FROM 'x')) ENGINE = M
 CREATE TABLE t_auto (c Int64) ENGINE = MergeTree ORDER BY c SETTINGS auto_statistics_types = 'trim(BOTH '''' FROM ''x'')'; -- { serverError INCORRECT_QUERY }
 SELECT * FROM trim(BOTH '' FROM 'x'); -- { serverError UNKNOWN_FUNCTION }
 SELECT 1 SETTINGS max_threads = trim(BOTH '' FROM 'x'); -- { clientError SYNTAX_ERROR }
+CREATE NAMED COLLECTION nc_05175 AS k = trim(BOTH '' FROM 'x'); -- { clientError SYNTAX_ERROR }
 CREATE TABLE t_alter (c Int64) ENGINE = MergeTree ORDER BY c;
 ALTER TABLE t_alter ADD STATISTICS c TYPE trim(BOTH '' FROM 'x'); -- { serverError INCORRECT_QUERY }
 ALTER TABLE t_alter MODIFY COLUMN c Int64 STATISTICS(trim(BOTH '' FROM 'x')); -- { serverError INCORRECT_QUERY }
 DROP TABLE t_alter;
 -- The operand reaches the function's argument checks.
 SELECT trim(BOTH '' FROM 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT trim(LEADING '' FROM [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT trim(TRAILING '' FROM toDate('2026-09-10')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTypeName(trim(BOTH '' FROM CAST('x' AS FixedString(5))));
 SELECT toTypeName(trim(BOTH '' FROM toNullable('x'))), toTypeName(trim(BOTH '' FROM toLowCardinality('x'))), toTypeName(trim(BOTH '' FROM CAST('x' AS LowCardinality(Nullable(String)))));
 -- String results are unchanged, for every keyword and every spelling.

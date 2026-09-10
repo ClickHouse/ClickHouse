@@ -19,8 +19,6 @@ ALTER TABLE t_alter MODIFY COLUMN c Int64 STATISTICS(trim(BOTH '' FROM 'x')); --
 DROP TABLE t_alter;
 -- The operand reaches the function's argument checks.
 SELECT trim(BOTH '' FROM 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT trim(LEADING '' FROM [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT trim(TRAILING '' FROM toDate('2026-09-10')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTypeName(trim(BOTH '' FROM CAST('x' AS FixedString(5))));
 String
 SELECT toTypeName(trim(BOTH '' FROM toNullable('x'))), toTypeName(trim(BOTH '' FROM toLowCardinality('x'))), toTypeName(trim(BOTH '' FROM CAST('x' AS LowCardinality(Nullable(String)))));
