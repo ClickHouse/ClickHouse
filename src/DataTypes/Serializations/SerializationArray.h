@@ -17,6 +17,14 @@ public:
     static SerializationPtr create(const SerializationPtr & nested_);
     bool supportsPooling() const override { return nested->supportsPooling(); }
 
+    /// Whether a resolved subcolumn is really the array sizes, which its name alone cannot tell.
+    /// `Map` sizes are the same substream, so this covers them too.
+    static bool isArraySizesSubcolumn(const SubstreamPath & path);
+
+    /// Same question for a column read request: is `<column>.size0` the outer array sizes, or a
+    /// same-named subcolumn resolved from the data, as in Array(JSON)?
+    static bool isTopLevelArraySizesSubcolumn(const NameAndTypePair & column);
+
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

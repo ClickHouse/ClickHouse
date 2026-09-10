@@ -41,6 +41,7 @@ constexpr auto KEY_STRING_SERIALIZATION_VERSION = "string";
 constexpr auto KEY_NULLABLE_SERIALIZATION_VERSION = "nullable";
 constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
+constexpr auto KEY_SUBSTREAM_NAMING_VERSION = "substream_naming_version";
 constexpr auto KEY_MISSING_COLUMNS = "missing_columns";
 constexpr auto KEY_MISSING_COL_NAME = "name";
 constexpr auto KEY_MISSING_COL_TYPE = "type";
@@ -466,7 +467,8 @@ MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || !missing_columns.empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
+    return !empty() || !missing_columns.empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC
+        || settings.substream_naming_version != MergeTreeSubstreamNamingVersion::BASIC;
 }
 
 bool SerializationInfoByName::isMissingColumn(const String & name) const
@@ -521,6 +523,14 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     {
         writeChar(',', out);
         writeJSONKeyValue(KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES, settings.propagate_types_serialization_versions_to_nested_types, out);
+    }
+
+    /// Its own compatibility knob, so not tied to the info version. Written only when non-default,
+    /// so parts using the legacy naming keep the exact same JSON.
+    if (settings.substream_naming_version != MergeTreeSubstreamNamingVersion::BASIC)
+    {
+        writeChar(',', out);
+        writeJSONKeyValue(KEY_SUBSTREAM_NAMING_VERSION, static_cast<size_t>(settings.substream_naming_version), out);
     }
 
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
@@ -606,6 +616,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     Poco::JSON::Object::Ptr type_versions_obj;
     Poco::JSON::Array::Ptr missing_columns_array;
     bool propagate_types_serialization_versions_to_nested_types = false;
+    MergeTreeSubstreamNamingVersion substream_naming_version = MergeTreeSubstreamNamingVersion::BASIC;
     for (const auto & [key, value] : *object)
     {
         if (key == KEY_VERSION)
@@ -623,6 +634,14 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         else if (key == KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES)
         {
             propagate_types_serialization_versions_to_nested_types = value.extract<bool>();
+        }
+        else if (key == KEY_SUBSTREAM_NAMING_VERSION)
+        {
+            auto naming_value = static_cast<std::underlying_type_t<MergeTreeSubstreamNamingVersion>>(value.convert<size_t>());
+            auto maybe_enum = magic_enum::enum_cast<MergeTreeSubstreamNamingVersion>(naming_value);
+            if (!maybe_enum.has_value())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown substream naming version ({})", naming_value);
+            substream_naming_version = *maybe_enum;
         }
         else if (version >= MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS && key == KEY_MISSING_COLUMNS)
         {
@@ -686,7 +705,8 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         string_serialization_version,
         nullable_serialization_version,
         map_serialization_version,
-        propagate_types_serialization_versions_to_nested_types);
+        propagate_types_serialization_versions_to_nested_types,
+        substream_naming_version);
 
     SerializationInfoByName infos(settings);
     if (columns_array)

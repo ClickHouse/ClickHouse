@@ -2098,7 +2098,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
             {
                 if (path_to_data_file.empty())
                 {
-                    auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                    auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), getStreamFileNameSettings());
                     if (!stream_name)
                         return;
 
@@ -3360,14 +3360,18 @@ std::optional<String> IMergeTreeDataPart::getStreamNameOrHashResolved(const Stri
     return getStreamNameOrHash(stream_name, extension, getDataPartStorage());
 }
 
+ISerialization::StreamFileNameSettings IMergeTreeDataPart::getStreamFileNameSettings() const
+{
+    return ISerialization::StreamFileNameSettings(*storage.getSettings(), &serialization_infos.getSettings());
+}
+
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const String & column_name,
     const ISerialization::SubstreamPath & substream_path,
     const String & extension,
     const Checksums & checksums_,
-    const MergeTreeSettingsPtr & settings)
+    ISerialization::StreamFileNameSettings stream_file_name_settings)
 {
-    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
     auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
     if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, checksums_))
         return result_stream_name;
@@ -3387,9 +3391,8 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const ISerialization::SubstreamPath & substream_path,
     const String & extension,
     const Checksums & checksums_,
-    const MergeTreeSettingsPtr & settings)
+    ISerialization::StreamFileNameSettings stream_file_name_settings)
 {
-    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
     auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
     if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, checksums_))
         return result_stream_name;
@@ -3409,9 +3412,8 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const ISerialization::SubstreamPath & substream_path,
     const String & extension,
     const IDataPartStorage & storage_,
-    const MergeTreeSettingsPtr & settings)
+    ISerialization::StreamFileNameSettings stream_file_name_settings)
 {
-    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
     auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, stream_file_name_settings);
     if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, storage_))
         return result_stream_name;
@@ -3431,9 +3433,8 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const ISerialization::SubstreamPath & substream_path,
     const String & extension,
     const IDataPartStorage & storage_,
-    const MergeTreeSettingsPtr & settings)
+    ISerialization::StreamFileNameSettings stream_file_name_settings)
 {
-    ISerialization::StreamFileNameSettings stream_file_name_settings(*settings);
     auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
     if (auto result_stream_name = getStreamNameOrHash(stream_name, extension, storage_))
         return result_stream_name;

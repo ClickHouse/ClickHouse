@@ -66,8 +66,7 @@ private:
         const MergeTreeDataPartChecksums & checksums,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
-        bool seek_to_mark,
-        ISerialization::SubstreamsCache & cache);
+        bool seek_to_mark);
 
     FileStreams::iterator addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
 
@@ -77,9 +76,7 @@ private:
         IColumn & column,
         size_t from_mark,
         bool continue_reading,
-        size_t max_rows_to_read,
-        ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
+        size_t max_rows_to_read);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(
@@ -87,16 +84,13 @@ private:
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
         size_t from_mark,
-        bool continue_reading,
-        ISerialization::SubstreamsCache & cache);
+        bool continue_reading);
 
     void deserializePrefix(
         const SerializationPtr & serialization,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         DeserializeBinaryBulkStateMap & deserialize_state_map,
-        ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
         ISerialization::StreamCallback prefixes_prefetch_callback);
 
     void deserializePrefixForAllColumns(size_t num_columns, size_t from_mark);
@@ -105,8 +99,10 @@ private:
     using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
     void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
 
-    std::unordered_map<String, ISerialization::SubstreamsCache> caches;
-    std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
+    /// Shared by every column of the read, which is what lets a flattened Nested group meet on its
+    /// offsets stream: without that, the second column would re-read it and advance the stream.
+    ISerialization::SubstreamsCache substreams_cache;
+    ISerialization::SubstreamsDeserializeStatesCache deserialize_states_cache;
     DeserializationPrefixesCache * deserialization_prefixes_cache;
     std::unordered_set<std::string> prefetched_streams;
     ssize_t prefetched_from_mark = -1;

@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationNullableElements.h>
 #include <DataTypes/Serializations/SerializationNullableWithParentNullMap.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -204,7 +205,10 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
             return SerializationNullableWithParentNullMap::create(prev_serialization);
         if (prev_type->lowCardinality())
             return SerializationNullableWithParentNullMap::create(prev_serialization, prev_type);
-        return prev_serialization;
+
+        /// Nothing left can hold the parent's NULLs, so only the path element is reproduced. Kept as the
+        /// branch default so that a type reaching it in the future still resolves its streams correctly.
+        return SerializationNullableElements::create(prev_serialization);
     }
 
     return SerializationNullable::create(prev_serialization);

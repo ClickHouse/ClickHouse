@@ -55,6 +55,7 @@ struct FormatSettings;
 struct NameAndTypePair;
 
 struct MergeTreeSettings;
+struct SerializationInfoSettings;
 
 /** Returns the separator byte that the HiveText output format uses at the given nesting level,
   * following Apache Hive's LazySimpleSerDe separator list: index 0 is the fields delimiter,
@@ -227,7 +228,6 @@ public:
 
             NullableElements,
             NullMap,
-            NullMapHidden,
             SparseNullMap,
 
             TupleElement,
@@ -258,7 +258,7 @@ public:
             DynamicData,
             DynamicStructure,
 
-            ObjectData,
+            ObjectPaths,
             ObjectTypedPath,
             ObjectDynamicPath,
             ObjectSharedData,
@@ -276,6 +276,11 @@ public:
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
             ObjectStructure,
+
+            MapKeyValue,
+            ObjectDistinctPaths,
+            ObjectSubObject,
+            ObjectCombinedPath,
 
             Bucket,
             MapBucketsInfo,
@@ -469,6 +474,13 @@ public:
     {
         InputStreamGetter getter;
         SubstreamPath path;
+
+        /// Column this read belongs to; with `path` it forms the substreams cache key. Left empty for
+        /// caches local to a single deserialization, which have nothing to keep apart.
+        String name_in_storage;
+        /// Must match the table setting: it decides whether the columns of a flattened Nested group
+        /// resolve to one shared offsets stream, and therefore to one cache entry.
+        bool share_nested_offsets = true;
 
         /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
         bool continuous_reading = true;
@@ -688,10 +700,14 @@ public:
     struct StreamFileNameSettings
     {
         StreamFileNameSettings() = default;
-        explicit StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings);
+        /// An existing part's `info_settings` decides the naming scheme; the table setting applies
+        /// only to a part being written now.
+        explicit StreamFileNameSettings(
+            const MergeTreeSettings & merge_tree_settings, const SerializationInfoSettings * info_settings = nullptr);
 
         bool escape_variant_substreams = true;
         bool share_nested_offsets = true;
+        MergeTreeSubstreamNamingVersion substream_naming_version = MergeTreeSubstreamNamingVersion::BASIC;
     };
 
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
@@ -699,16 +715,26 @@ public:
     static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 
-    static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false, size_t initial_array_level = 0);
-    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false, size_t initial_array_level = 0);
+    static String getSubcolumnNameForStream(const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, size_t initial_array_level = 0);
 
-    static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
-    static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
-    static void addElementToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element);
-    static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
+    /// Key of a stream in SubstreamsCache and SubstreamsDeserializeStatesCache: the full stream file
+    /// name, so that one cache can serve the whole read. Streams of different columns cannot collide,
+    /// while a flattened Nested group deliberately meets on the offsets stream it shares.
+    static String getSubstreamsCacheKeyForStream(const String & name_in_storage, const SubstreamPath & path, bool share_nested_offsets);
 
-    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state);
-    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path);
+    /// `settings` supplies the column the key is built from; the overloads without an explicit path use
+    /// `settings.path`, the others are for the few callers that cache a path they built themselves.
+    static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr column, size_t num_read_rows);
+    static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings);
+    static void addElementToSubstreamsCache(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, std::unique_ptr<ISubstreamsCacheElement> && element);
+    static void addElementToSubstreamsCache(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, const SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element);
+    static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings);
+    static ISubstreamsCacheElement * getElementFromSubstreamsCache(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, const SubstreamPath & path);
+
+    static void addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr state);
+    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const DeserializeBinaryBulkSettings & settings);
+    static DeserializeBinaryBulkStatePtr getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const DeserializeBinaryBulkSettings & settings, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 
@@ -716,6 +742,10 @@ public:
     static size_t getArrayLevel(const SubstreamPath & path) { return getArrayLevel(path, path.size()); }
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
+
+    /// True if the last element of the prefix is declared in the type - a Tuple element or a JSON typed
+    /// path - rather than generated by the serialization (`sizeN`, `null`, ...).
+    static bool isDeclaredSubstream(const SubstreamPath & path, size_t prefix_len);
 
     /// Returns true if subcolumn doesn't actually stores any data in column and doesn't require a separate stream
     /// for writing/reading data. For example, it's a null-map subcolumn of Variant type (it's always constructed from discriminators);.

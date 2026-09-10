@@ -228,7 +228,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         size_t num_read_rows = 0;
         ColumnPtr map_column;
         /// Check if we have map column in cache.
-        if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+        if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings))
         {
             std::tie(map_column, num_read_rows) = *cached_column_with_num_read_rows;
         }
@@ -239,7 +239,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_map_column, limit, settings, sub_object_shared_data_state->map_state, cache);
             num_read_rows = mutable_map_column->size();
             map_column = std::move(mutable_map_column);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, map_column, num_read_rows);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings, map_column, num_read_rows);
         }
 
         size_t map_column_offset = map_column->size() - num_read_rows;
@@ -286,7 +286,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().bucket = bucket;
 
             /// Check if we have map column in cache.
-            if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+            if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings))
             {
                 bucket_map_columns[bucket] = cached_column_with_num_read_rows->first;
             }
@@ -296,7 +296,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 auto mutable_bucket_column = DataTypeObject::getTypeOfSharedData()->createColumn();
                 serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket_column, limit, settings, sub_object_shared_data_state->bucket_map_states[bucket], cache);
                 bucket_map_columns[bucket] = std::move(mutable_bucket_column);
-                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, bucket_map_columns[bucket], bucket_map_columns[bucket]->size());
+                addColumnWithNumReadRowsToSubstreamsCache(cache, settings, bucket_map_columns[bucket], bucket_map_columns[bucket]->size());
             }
 
             settings.path.pop_back();

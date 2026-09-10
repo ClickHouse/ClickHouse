@@ -69,7 +69,7 @@ public:
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
-    ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
+    ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return original_requested_columns; }
     size_t numColumnsInResult() const { return getColumns().size(); }
 
     /// Returns column names and types as they are stored on disk (may differ from requested types
@@ -124,9 +124,6 @@ protected:
     /// resolve default expressions for virtual columns.
     ColumnsDescription buildCombinedColumnsForDefaultExpressions() const;
 
-    /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
-    bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
-
     void checkNumberOfColumns(size_t num_columns_to_read) const;
 
     String getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const;
@@ -152,6 +149,9 @@ protected:
 
     MergeTreeReaderSettings settings;
     MergeTreeSettingsPtr storage_settings;
+    /// Use this rather than `storage_settings` to resolve stream file names: the naming scheme is
+    /// recorded per part.
+    ISerialization::StreamFileNameSettings stream_file_name_settings;
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
@@ -204,7 +204,9 @@ private:
     /// Columns that are requested to read.
     NamesAndTypesList original_requested_columns;
 
-    /// The same as above but with converted Arrays to subcolumns of Nested.
+    /// The same as above with the Arrays of a Nested group turned into subcolumns of it. Only
+    /// `fillMissingColumns` needs it, to give a missing Array of a group arrays of the right length
+    /// taken from the offsets of its surviving siblings.
     NamesAndTypesList converted_requested_columns;
 
     /// Fields of virtual columns that were filled in previous stages.

@@ -272,7 +272,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
     settings.path.push_back(settings.use_specialized_prefixes_and_suffixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
 
     DeserializeBinaryBulkStatePtr discriminators_state = nullptr;
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings))
     {
         discriminators_state = cached_state;
     }
@@ -281,7 +281,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
         UInt64 mode = 0;
         readBinaryLittleEndian(mode, *discriminators_stream);
         discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
+        addToSubstreamsDeserializeStatesCache(cache, settings, discriminators_state);
 
         if (settings.release_all_prefixes_streams && settings.release_stream_callback)
             settings.release_stream_callback(settings.path);
@@ -576,7 +576,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         if (cache)
         {
             size_t num_read_discriminators = col.getLocalDiscriminatorsColumn().size() - prev_size;
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsColumn().getPtr(), num_read_discriminators);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings, col.getLocalDiscriminatorsColumn().getPtr(), num_read_discriminators);
         }
     }
     /// It may happen that there is no such stream, in this case just do nothing.

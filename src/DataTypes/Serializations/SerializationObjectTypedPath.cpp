@@ -37,7 +37,7 @@ void SerializationObjectTypedPath::enumerateStreams(
     const DB::ISerialization::StreamCallback & callback,
     const DB::ISerialization::SubstreamData & data) const
 {
-    settings.path.push_back(Substream::ObjectData);
+    settings.path.push_back(Substream::ObjectPaths);
     settings.path.push_back(Substream::ObjectTypedPath);
     settings.path.back().object_path_name = path;
     auto path_data = SubstreamData(nested_serialization)
@@ -65,7 +65,7 @@ void SerializationObjectTypedPath::serializeBinaryBulkStateSuffix(SerializeBinar
 void SerializationObjectTypedPath::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    settings.path.push_back(Substream::ObjectData);
+    settings.path.push_back(Substream::ObjectPaths);
     settings.path.push_back(Substream::ObjectTypedPath);
     settings.path.back().object_path_name = path;
     nested_serialization->deserializeBinaryBulkStatePrefix(settings, state, cache);
@@ -85,7 +85,7 @@ void SerializationObjectTypedPath::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    settings.path.push_back(Substream::ObjectData);
+    settings.path.push_back(Substream::ObjectPaths);
     settings.path.push_back(Substream::ObjectTypedPath);
     settings.path.back().object_path_name = path;
     nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, state, cache);

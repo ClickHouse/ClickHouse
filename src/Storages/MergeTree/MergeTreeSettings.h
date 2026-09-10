@@ -66,6 +66,7 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreePatchPartsVersion) \
     M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \
+    M(CLASS_NAME, MergeTreeSubstreamNamingVersion) \
     M(CLASS_NAME, MergeTreePartMinMaxIndexColumns) \
     M(CLASS_NAME, SearchOrphanedPartsDisks) \
     M(CLASS_NAME, TextIndexPostingListCodec) \

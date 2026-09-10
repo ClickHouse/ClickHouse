@@ -180,7 +180,7 @@ size_t readOrGetCachedSparseOffsets(
     size_t & read_rows)
 {
     settings.path.push_back(ISerialization::Substream::SparseOffsets);
-    const auto * cached_element = ISerialization::getElementFromSubstreamsCache(cache, settings.path);
+    const auto * cached_element = ISerialization::getElementFromSubstreamsCache(cache, settings);
 
     size_t num_read_offsets = 0;
     if (cached_element)
@@ -201,7 +201,7 @@ size_t readOrGetCachedSparseOffsets(
 
         ISerialization::addElementToSubstreamsCache(
             cache,
-            settings.path,
+            settings,
             std::make_unique<SubstreamsCacheSparseOffsetsElement>(offsets_column.getPtr(), old_size, read_rows));
 
         num_read_offsets = offsets_column.size() - old_size;
@@ -363,14 +363,14 @@ void SerializationSparse::deserializeBinaryBulkStatePrefix(
     /// Use Substream::SparseOffsets as the cache key for SparseState,
     /// because this state is also shared by the SparseNullMap substream.
     settings.path.push_back(Substream::SparseOffsets);
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings))
     {
         state = cached_state;
     }
     else
     {
         state = std::make_shared<DeserializeStateSparse>();
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+        addToSubstreamsDeserializeStatesCache(cache, settings, state);
     }
 
     settings.path.back() = Substream::SparseElements;
@@ -595,14 +595,14 @@ void SerializationSparseNullMap::deserializeBinaryBulkStatePrefix(
     /// Use Substream::SparseOffsets as the cache key for SparseState,
     /// because this state is also shared by the Sparse stream.
     settings.path.push_back(Substream::SparseOffsets);
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings))
     {
         state = cached_state;
     }
     else
     {
         state = std::make_shared<DeserializeStateSparse>();
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+        addToSubstreamsDeserializeStatesCache(cache, settings, state);
     }
 }
 

@@ -49,6 +49,11 @@ SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion
     return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
 }
 
+bool SerializationString::isStringSizesSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && (path.back().type == Substream::StringSizes || path.back().type == Substream::InlinedStringSizes);
+}
+
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const String & s = field.safeGet<String>();
@@ -755,7 +760,7 @@ void SerializationString::deserializeBinaryBulkStatePrefix(
         return;
 
     settings.path.push_back(Substream::Regular);
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings))
     {
         state = cached_state;
         auto * string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithoutSizeStream>(state);
@@ -766,7 +771,7 @@ void SerializationString::deserializeBinaryBulkStatePrefix(
         auto string_state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
         string_state->need_string_data = true;
         state = string_state;
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+        addToSubstreamsDeserializeStatesCache(cache, settings, state);
     }
     settings.path.pop_back();
 }
@@ -806,7 +811,7 @@ size_t SerializationString::deserializeStringOffsetsAndGetDataSize(
     /// cache (so the `.size` subcolumn reader can reuse it), then turn them into offsets.
     size_t num_read_rows = 0;
     ColumnPtr size_column;
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings))
     {
         std::tie(size_column, num_read_rows) = *cached_column_with_num_read_rows;
     }
@@ -816,7 +821,7 @@ size_t SerializationString::deserializeStringOffsetsAndGetDataSize(
         SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*mutable_size_column, *size_stream, limit, 0);
         num_read_rows = mutable_size_column->size();
         size_column = std::move(mutable_size_column);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, size_column, num_read_rows);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, size_column, num_read_rows);
     }
     else
     {
@@ -869,7 +874,7 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
 
     /// Nothing is shared across reads, so the rows read equal the growth of the offsets column.
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), string_column.size() - prev_num_rows);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings, column.getPtr(), string_column.size() - prev_num_rows);
     settings.path.pop_back();
 }
 

@@ -31,10 +31,10 @@ public:
             ///     <sorted list of dynamic paths>
             ///     <statistics with number of non-null values for dynamic paths> (only in MergeTree serialization)
             ///     <statistics with number of non-null values for some paths in shared data> (only in MergeTree serialization)
-            /// - ObjectData stream:
+            /// - ObjectPaths stream:
             ///   - ObjectTypedPath stream for each column in typed paths
             ///   - ObjectDynamicPath stream for each column in dynamic paths
-            ///   - ObjectSharedData stream shared data column.
+            /// - ObjectSharedData stream shared data column.
             V1 = 0,
             /// V2 serialization: the same as V1 but without max_dynamic_paths parameter in ObjectStructure stream.
             V2 = 2,
@@ -45,12 +45,12 @@ public:
 
             /// Serializations used only in Native format:
             /// String serialization:
-            ///  - ObjectData stream with single String column containing serialized JSON.
+            ///  - ObjectPaths stream with single String column containing serialized JSON.
             STRING = 1,
             /// FLATTENED serialization:
             /// - ObjectStructure stream:
             ///     <list of all paths stored in Object column (except typed paths)>
-            /// - ObjectData stream:
+            /// - ObjectPaths stream:
             ///   - ObjectTypedPath stream for each column in typed paths
             ///   - ObjectDynamicPath stream for each column in dynamic paths and flattened shared data
             /// This serialization is used in Native format only for easier support for Object type in clients.

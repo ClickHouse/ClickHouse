@@ -301,6 +301,18 @@ When disabled, each Array column gets its own independent offset file, dotted na
 semantics, and a scalar column may coexist with dotted Array columns sharing the same prefix
 (e.g. n UInt32 alongside n.a Array(String)). This setting is immutable after table creation.
 )", 0) \
+    DECLARE(MergeTreeSubstreamNamingVersion, substream_naming_version, "namespaced", R"(
+Naming scheme used for stream file names in Wide parts of MergeTree tables.
+
+Possible values:
+
+- basic — Container substreams (`Array` and `Nullable` elements, `JSON` paths) contribute no component to the file name. A nested user-provided name can therefore collide with an automatically generated one, for example both streams of `Array(Tuple(`size0` UInt64))` compete for `size0`.
+- namespaced — Every container substream opens a namespace in the file name (`arr_elems`, `null_elems`, `object_paths`), which makes the file name injective, so such collisions become impossible.
+
+Each part records the scheme it was written with, so changing this setting affects only new parts and existing parts remain readable.
+
+Servers that predate `namespaced` cannot read a part written with it. Like `serialization_info_version`, this is a forward compatibility knob: keep it at `basic` during a rolling upgrade and switch to `namespaced` once a downgrade is ruled out.
+)", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
 Serialization info version used when writing `serialization.json`.
 This setting is required for compatibility during cluster upgrades.

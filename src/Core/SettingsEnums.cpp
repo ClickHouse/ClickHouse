@@ -453,6 +453,12 @@ IMPLEMENT_SETTING_ENUM(
      {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS}})
 
 IMPLEMENT_SETTING_ENUM(
+    MergeTreeSubstreamNamingVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"basic", MergeTreeSubstreamNamingVersion::BASIC},
+     {"namespaced", MergeTreeSubstreamNamingVersion::NAMESPACED}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeMapBucketsStrategy,
     ErrorCodes::BAD_ARGUMENTS,
     {{"constant", MergeTreeMapBucketsStrategy::CONSTANT},

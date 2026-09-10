@@ -84,7 +84,7 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     size_t parent_num_read_rows = 0;
 
     settings.path.push_back(Substream::NullMap);
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings))
     {
         /// The cached column may contain rows from multiple ranges read into the same result block;
         /// the rows of the current range are at its tail.
@@ -96,7 +96,7 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
         SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*mutable_parent_null_map, *stream, limit, 0);
         parent_null_map = std::move(mutable_parent_null_map);
         parent_num_read_rows = parent_null_map->size();
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, parent_null_map, parent_num_read_rows);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, parent_null_map, parent_num_read_rows);
     }
     settings.path.pop_back();
 

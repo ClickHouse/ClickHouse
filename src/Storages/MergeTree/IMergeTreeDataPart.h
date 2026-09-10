@@ -219,7 +219,6 @@ public:
 
     const NamesAndTypesList & getColumns() const { return shared_part_columns->columns; }
     const ColumnsDescription & getColumnsDescription() const { return *shared_part_columns->columns_description; }
-    const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return *shared_part_columns->columns_description_with_collected_nested; }
     const ColumnsSubstreams & getColumnsSubstreams() const { return *columns_substreams; }
     StorageMetadataPtr getMetadataSnapshot() const;
 
@@ -747,33 +746,37 @@ public:
     /// substream bundled in skp_idx.packed). Mirrors getFileSizeOrZeroResolved.
     std::optional<String> getStreamNameOrHashResolved(const String & name, const String & extension) const;
 
+    /// Resolves stream file names of this part, taking the naming scheme the part recorded when it
+    /// was written rather than the current table setting.
+    ISerialization::StreamFileNameSettings getStreamFileNameSettings() const;
+
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
         const Checksums & checksums_,
-        const MergeTreeSettingsPtr & settings);
+        ISerialization::StreamFileNameSettings stream_file_name_settings);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
         const Checksums & checksums_,
-        const MergeTreeSettingsPtr & settings);
+        ISerialization::StreamFileNameSettings stream_file_name_settings);
 
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
         const IDataPartStorage & storage_,
-        const MergeTreeSettingsPtr & settings);
+        ISerialization::StreamFileNameSettings stream_file_name_settings);
 
     static std::optional<String> getStreamNameForColumn(
         const NameAndTypePair & column,
         const ISerialization::SubstreamPath & substream_path,
         const String & extension,
         const IDataPartStorage & storage_,
-        const MergeTreeSettingsPtr & settings);
+        ISerialization::StreamFileNameSettings stream_file_name_settings);
 
     mutable std::atomic<DataPartRemovalState> removal_state = DataPartRemovalState::NOT_ATTEMPTED;
 

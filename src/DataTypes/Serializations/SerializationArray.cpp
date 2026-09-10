@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -43,6 +44,20 @@ SerializationPtr SerializationArray::create(const SerializationPtr & nested_)
     if (!nested_->supportsPooling())
         return std::shared_ptr<ISerialization>(new SerializationArray(nested_));
     return ISerialization::pooled(getHash(nested_), [&] { return new SerializationArray(nested_); });
+}
+
+bool SerializationArray::isArraySizesSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::ArraySizes;
+}
+
+bool SerializationArray::isTopLevelArraySizesSubcolumn(const NameAndTypePair & column)
+{
+    if (column.getSubcolumnName() != "size0")
+        return false;
+
+    auto info = column.getTypeInStorage()->tryGetSubcolumnInfo(column.getSubcolumnName());
+    return info && isArraySizesSubcolumn(info->substreams_path);
 }
 
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
@@ -389,7 +404,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::SubstreamsCache * cache)
 {
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings))
     {
         auto [cached_column, num_read_rows] = *cached_column_with_num_read_rows;
         insertArraySizesToOffsets(offsets_column, cached_column, cached_column->size() - num_read_rows, cached_column->size());
@@ -424,7 +439,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
 
         /// Add array sizes read from current range into the cache.
         if (cache)
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, arrayOffsetsToSizes(offsets_column), offsets_column.size() - prev_size);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings, arrayOffsetsToSizes(offsets_column), offsets_column.size() - prev_size);
 
         return true;
     }

@@ -64,6 +64,12 @@ enum class MergeTreeMapBucketsStrategy : uint8_t
     LINEAR = 2,
 };
 
+enum class MergeTreeSubstreamNamingVersion : uint8_t
+{
+    BASIC = 0,
+    NAMESPACED = 1,
+};
+
 /// The maximum number of buckets in the shared data of a `JSON` / `Object` column
 /// (`MAP_WITH_BUCKETS` / `ADVANCED` shared-data serialization). Legitimate bucket counts are written
 /// from the small MergeTree settings `object_shared_data_buckets_for_compact_part` /

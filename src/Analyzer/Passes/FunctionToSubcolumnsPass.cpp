@@ -9,8 +9,11 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationString.h>
 
 #include <Storages/IStorage.h>
 
@@ -170,41 +173,42 @@ bool sourceHasColumnCaseInsensitive(const QueryTreeNodePtr & column_source, cons
 /// Sometimes we cannot optimize function to subcolumn because there is no such subcolumn in the table.
 /// For example, for column "a Array(Tuple(b UInt32))" function length(a.b) cannot be replaced to
 /// a.b.size0, because there is no such subcolumn, even though a.b has type Array(UInt32)
-bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subcolumn_name, bool is_regular_subcolumn = true)
+bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subcolumn_name)
 {
     auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
     if (!storage_snapshot)
         return {};
 
-    auto get_options = GetColumnsOptions(GetColumnsOptions::All);
-    if (is_regular_subcolumn)
-        get_options = get_options.withRegularSubcolumns();
-    else
-        get_options = get_options.withSubcolumns();
+    auto get_options = GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns();
     return storage_snapshot->tryGetColumn(get_options, subcolumn_name).has_value();
 }
 
-/// True when the subcolumn is itself Nullable in storage, which the transformers below cannot
-/// handle because they hardcode a non-Nullable result type.
-bool subcolumnIsNullableInStorage(const QueryTreeNodePtr & column_source, const String & subcolumn_name)
+using SubcolumnPredicate = bool (*)(const ISerialization::SubstreamPath &);
+
+/// A rewrite means one specific subcolumn of the column - its array sizes, its null map, its Map
+/// keys - and hardcodes the type that subcolumn has. Two independent things can make
+/// `<column>.<name>` not be it, and neither check catches the other's case:
+///
+///  * subcolumn names are flat, so a Tuple element or a JSON path can claim the name with the same
+///    type: ``Tuple(`a.size` UInt64, `a` String)`` resolves `c.a.size` to the element, and
+///    declaration order decides the winner. Only the substreams path tells them apart.
+///  * an enclosing Nullable wraps the subcolumn without changing which substream it is:
+///    `Nullable(JSON(`a` Array(Int64)))` resolves `c.a.size0` to `Nullable(UInt64)`, while `length`
+///    must give 0 for a NULL row, not NULL. Reachable because `Array` and `Map` cannot be inside
+///    `Nullable`, so `c.a` is exposed as a bare `Array` while its own subcolumns are wrapped.
+bool canOptimizeToExpectedSubcolumn(
+    const QueryTreeNodePtr & column_source, const NameAndTypePair & subcolumn, SubcolumnPredicate is_expected_subcolumn)
 {
     auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
     if (!storage_snapshot)
         return false;
 
-    auto actual = storage_snapshot->tryGetColumn(
-        GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), subcolumn_name);
-    return actual && actual->type->isNullable();
-}
+    auto resolved = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), subcolumn.name);
+    if (!resolved || !resolved->isSubcolumn() || !resolved->type->equals(*subcolumn.type))
+        return false;
 
-/// For Nullable(T) where T has its own "null" subcolumn (e.g. Nullable(JSON)),
-/// col.null refers to the nested type's subcolumn rather than the Nullable null-map,
-/// so optimizations that rewrite isNull/isNotNull/count to use .null do not apply.
-bool nestedTypeHasNullSubcolumn(const DataTypePtr & type)
-{
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-        return nullable_type->getNestedType()->hasSubcolumn("null");
-    return false;
+    auto info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
+    return info && is_expected_subcolumn(info->substreams_path);
 }
 
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
@@ -213,7 +217,8 @@ void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, Colum
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationString::isStringSizesSubcolumn))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -226,7 +231,8 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationString::isStringSizesSubcolumn))
         return;
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -244,7 +250,8 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationArray::isArraySizesSubcolumn))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -258,13 +265,8 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
-        return;
-
-    /// If the .size0 subcolumn is actually Nullable (e.g. when the column type is Nullable(Array(...))),
-    /// skip the optimization. The hardcoded UInt64 type would mismatch the actual Nullable(UInt64),
-    /// causing a type mismatch exception at runtime in ExpressionActions::execute.
-    if (subcolumnIsNullableInStorage(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationArray::isArraySizesSubcolumn))
         return;
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
@@ -315,9 +317,8 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
 
     /// The resulting subcolumn has the map's value type, e.g. `m.key_foo : V` for `Map(K, V)`.
     NameAndTypePair column{ctx.column.name + "." + subcolumn_name, data_type_map.getValueType()};
-    /// Use is_regular_subcolumn=false because key subcolumns are not declared as regular subcolumns
-    /// of the table schema — they are dynamic subcolumns.
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name, false))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationMap::isKeyValueSubcolumn))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -522,7 +523,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto key_type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
 
             NameAndTypePair column{ctx.column.name + ".keys", key_type};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationMap::isKeysSubcolumn))
                 return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -536,7 +538,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto value_type = std::make_shared<DataTypeArray>(data_type_map.getValueType());
 
             NameAndTypePair column{ctx.column.name + ".values", value_type};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationMap::isValuesSubcolumn))
                 return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -549,7 +552,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationMap::isKeysSubcolumn))
                 return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -565,17 +569,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
-                return;
-
-            if (nestedTypeHasNullSubcolumn(ctx.column.type))
-                return;
-
-            /// When the column is inside a Nullable(Tuple(...)), the .null subcolumn/nullmap
-            /// in storage is Nullable(UInt8), not UInt8, because the type system wraps all
-            /// subcolumns of a Nullable(Tuple(...)) with the outer nullability. Using it with
-            /// a hardcoded UInt8 type causes a type mismatch at runtime. Skip the optimization.
-            if (subcolumnIsNullableInStorage(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationNullable::isNullMapSubcolumn))
                 return;
 
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
@@ -597,16 +592,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
-                return;
-
-            if (nestedTypeHasNullSubcolumn(ctx.column.type))
-                return;
-
-            /// For nested Nullable types (e.g. Nullable(Tuple(... Nullable(T) ...))),
-            /// the .null subcolumn in storage is Nullable(UInt8), not UInt8.
-            /// Using it with a hardcoded UInt8 type causes a type mismatch at runtime.
-            if (subcolumnIsNullableInStorage(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationNullable::isNullMapSubcolumn))
                 return;
 
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -618,14 +605,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
-                return;
-
-            if (nestedTypeHasNullSubcolumn(ctx.column.type))
-                return;
-
-            /// Same guard as isNull above: nested Nullable .null subcolumn may itself be Nullable.
-            if (subcolumnIsNullableInStorage(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column, SerializationNullable::isNullMapSubcolumn))
                 return;
 
             auto & function_arguments_nodes = function_node.getArguments().getNodes();

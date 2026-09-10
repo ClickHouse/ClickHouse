@@ -161,6 +161,35 @@ SerializationPtr SerializationMap::create(
     return ISerialization::pooled(getHash(nested_serialization_, serialization_version_), [&] { return new SerializationMap(key_serialization_, value_serialization_, nested_serialization_, serialization_version_); });
 }
 
+namespace
+{
+
+bool isMapNestedTupleElementSubcolumn(const ISerialization::SubstreamPath & path, std::string_view element_name)
+{
+    using Substream = ISerialization::Substream;
+    return path.size() >= 2
+        && path[path.size() - 2].type == Substream::ArrayElements
+        && path.back().type == Substream::TupleElement
+        && path.back().name_of_substream == element_name;
+}
+
+}
+
+bool SerializationMap::isKeysSubcolumn(const SubstreamPath & path)
+{
+    return isMapNestedTupleElementSubcolumn(path, "keys");
+}
+
+bool SerializationMap::isValuesSubcolumn(const SubstreamPath & path)
+{
+    return isMapNestedTupleElementSubcolumn(path, "values");
+}
+
+bool SerializationMap::isKeyValueSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::MapKeyValue;
+}
+
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
     const IColumn & column,
@@ -849,7 +878,7 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
     /// Try to reuse a previously deserialized state from the cache.
     /// This happens when multiple columns share the same buckets info stream
     /// (e.g. keys and values subcolumns of the same Map).
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings))
     {
         state = std::move(cached_state);
     }
@@ -879,7 +908,7 @@ SerializationMap::deserializeBucketsInfoStatePrefix(DeserializeBinaryBulkSetting
 
         state = std::make_shared<DeserializeBinaryBulkStateBucketsInfo>(buckets, statistics);
         /// Add deserialized state to the cache.
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+        addToSubstreamsDeserializeStatesCache(cache, settings, state);
     }
 
     settings.path.pop_back();
@@ -1375,7 +1404,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         size_t prev_size = nested_col.size();
         nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_col, limit, settings, map_state->nested_state, cache);
         /// Cache the whole nested column so key subcolumn reads (map['key'] via SerializationMapKeyValue) reuse it.
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_col.getPtr(), nested_col.size() - prev_size);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, nested_col.getPtr(), nested_col.size() - prev_size);
         return;
     }
 
@@ -1390,7 +1419,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
         IColumn & nested_col = column_map.getNestedColumn();
         size_t prev_size = nested_col.size();
         nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_col, limit, settings, map_state->bucket_nested_states[0], cache);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_col.getPtr(), nested_col.size() - prev_size);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, nested_col.getPtr(), nested_col.size() - prev_size);
 
         settings.path.pop_back();
     }
@@ -1409,7 +1438,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             IColumn & bucket_nested = assert_cast<ColumnMap &>(*mutable_bucket).getNestedColumn();
             nested_serialization->deserializeBinaryBulkWithMultipleStreams(bucket_nested, limit, settings, map_state->bucket_nested_states[bucket], cache);
             /// Put each bucket's nested column into the cache so that a key subcolumn read of the same bucket reuses it.
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, bucket_nested.getPtr(), bucket_nested.size());
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings, bucket_nested.getPtr(), bucket_nested.size());
             map_buckets[bucket] = std::move(mutable_bucket);
             settings.path.pop_back();
         }

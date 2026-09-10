@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ParseError.h>
@@ -29,6 +30,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool escape_variant_subcolumn_filenames;
     extern const MergeTreeSettingsBool share_nested_offsets;
+    extern const MergeTreeSettingsMergeTreeSubstreamNamingVersion substream_naming_version;
 }
 
 namespace ErrorCodes
@@ -176,6 +178,10 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedVariantDiscriminators,
     QuantizedCodes,
     ProductQuantizationCodebook,
+    MapKeyValue,
+    ObjectDistinctPaths,
+    ObjectSubObject,
+    ObjectCombinedPath,
 };
 
 String ISerialization::Substream::toString() const
@@ -282,7 +288,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
         deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);
         size_t num_read_rows = column.size() - prev_size;
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, column.getPtr(), num_read_rows);
         if (settings.update_avg_value_size_hint_callback)
             settings.update_avg_value_size_hint_callback(settings.path, column);
     }
@@ -295,126 +301,7 @@ namespace
 
 using SubstreamIterator = ISerialization::SubstreamPath::const_iterator;
 
-String getNameForSubstreamPath(
-    String stream_name,
-    SubstreamIterator begin,
-    SubstreamIterator end,
-    bool escape_for_file_name,
-    bool encode_sparse_stream,
-    bool escape_variant_substreams,
-    size_t initial_array_level = 0)
-{
-    using Substream = ISerialization::Substream;
-
-    size_t array_level = initial_array_level;
-    for (auto it = begin; it != end; ++it)
-    {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
-            stream_name += ".null";
-        else if (it->type == Substream::ArraySizes)
-            stream_name += ".size" + toString(array_level);
-        else if (it->type == Substream::ArrayElements)
-            ++array_level;
-        else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
-            stream_name += ".size";
-        else if (it->type == Substream::DictionaryKeys)
-            stream_name += ".dict";
-        else if (it->type == Substream::DictionaryKeysPrefix)
-            stream_name += ".dict_prefix";
-        else if (it->type == Substream::SparseElements && encode_sparse_stream)
-            stream_name += ".sparse";
-        else if (it->type == Substream::SparseOffsets)
-            stream_name += ".sparse.idx";
-        else if (it->type == Substream::ReplicatedElements)
-            stream_name += ".repl";
-        else if (it->type == Substream::ReplicatedIndexes)
-            stream_name += ".repl.idx";
-        else if (Substream::named_types.contains(it->type))
-        {
-            auto substream_name = "." + it->name_of_substream;
-
-            /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
-            /// Because nested data may be represented not by Array of Tuple,
-            /// but by separate Array columns with names in a form of a.b,
-            /// and name is encoded as a whole.
-            if (it->type == Substream::TupleElement && escape_for_file_name)
-                stream_name += escapeForFileName(substream_name);
-            else
-                stream_name += substream_name;
-        }
-        else if (it->type == Substream::VariantDiscriminators)
-            stream_name += ".variant_discr";
-        else if (it->type == Substream::VariantDiscriminatorsPrefix)
-            stream_name += ".variant_discr_prefix";
-        else if (it->type == Substream::VariantOffsets)
-            stream_name += ".variant_offsets";
-        else if (it->type == Substream::VariantElement)
-        {
-            if (escape_for_file_name && escape_variant_substreams)
-                stream_name += "." + escapeForFileName(it->variant_element_name);
-            else
-                stream_name += "." + it->variant_element_name;
-        }
-        else if (it->type == Substream::VariantElementNullMap)
-        {
-            if (escape_for_file_name && escape_variant_substreams)
-                stream_name += "." + escapeForFileName(it->variant_element_name) + ".null";
-            else
-                stream_name += "." + it->variant_element_name + ".null";
-        }
-        else if (it->type == SubstreamType::DynamicStructure)
-            stream_name += ".dynamic_structure";
-        else if (it->type == SubstreamType::ObjectStructure)
-            stream_name += ".object_structure";
-        else if (it->type == SubstreamType::ObjectSharedData)
-            stream_name += ".object_shared_data";
-        else if (it->type == SubstreamType::Bucket)
-            stream_name += "." + std::to_string(it->bucket);
-        else if (it->type == SubstreamType::MapBucketsInfo)
-            stream_name += ".buckets_info";
-        else if (it->type == SubstreamType::MapBucketIndexes)
-            stream_name += ".bucket_indexes";
-        else if (it->type == SubstreamType::ObjectSharedDataStructure)
-            stream_name += ".structure";
-        else if (it->type == SubstreamType::ObjectSharedDataStructurePrefix)
-            stream_name += ".structure_prefix";
-        else if (it->type == SubstreamType::ObjectSharedDataStructureSuffix)
-            stream_name += ".structure_suffix";
-        else if (it->type == SubstreamType::ObjectSharedDataSubstreams)
-            stream_name += ".substreams";
-        else if (it->type == SubstreamType::ObjectSharedDataPathsMarks)
-            stream_name += ".paths_marks";
-        else if (it->type == SubstreamType::ObjectSharedDataSubstreamsMarks)
-            stream_name += ".substreams_marks";
-        else if (it->type == SubstreamType::ObjectSharedDataPathsSubstreamsMetadata)
-            stream_name += ".paths_substreams_metadata";
-        else if (it->type == SubstreamType::ObjectSharedDataPathsInfos)
-            stream_name += ".paths_infos";
-        else if (it->type == SubstreamType::ObjectSharedDataData)
-            stream_name += ".data";
-        else if (it->type == SubstreamType::ObjectSharedDataCopy)
-            stream_name += ".copy";
-        else if (it->type == SubstreamType::ObjectSharedDataCopySizes)
-            stream_name += ".sizes";
-        else if (it->type == SubstreamType::ObjectSharedDataCopyPathsIndexes)
-            stream_name += ".paths_indexes";
-        else if (it->type == SubstreamType::ObjectSharedDataCopyValues)
-            stream_name += ".values";
-        else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
-    }
-
-    return stream_name;
-}
-
-}
-
-String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
-{
-    return getFileNameForStream(column.getNameInStorage(), path, settings);
-}
-
-static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
+bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
 {
     /// Arrays of Nested cannot be inside other types.
     /// So it's ok to check only first element of path.
@@ -434,23 +321,193 @@ static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path
     return false;
 }
 
-String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings)
+/// The escaped column name a stream name starts with, or the escaped Nested table name for the
+/// offsets stream that the columns of a flattened Nested group share.
+String getStreamNamePrefix(const String & name_in_storage, const ISerialization::SubstreamPath & path, bool share_nested_offsets)
 {
-    String stream_name;
-    if (settings.share_nested_offsets)
+    if (share_nested_offsets)
     {
         auto nested_storage_name = Nested::extractTableName(name_in_storage);
         if (name_in_storage != nested_storage_name && isPossibleOffsetsOfNested(path))
-            stream_name = escapeForFileName(nested_storage_name);
-        else
-            stream_name = escapeForFileName(name_in_storage);
-    }
-    else
-    {
-        stream_name = escapeForFileName(name_in_storage);
+            return escapeForFileName(nested_storage_name);
     }
 
-    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+    return escapeForFileName(name_in_storage);
+}
+
+/// Flags that differ between the three renderings: file names, subcolumn names and cache keys.
+struct NameRenderingSettings
+{
+    bool escape_for_file_name = false;
+    bool encode_sparse_stream = false;
+    bool escape_variant_substreams = false;
+    bool namespaced = false;
+};
+
+/// Component this substream contributes to the name, empty when it is only a descent into a
+/// container. `array_level` and `nullable_depth` include this substream.
+String getComponentForSubstream(
+    const ISerialization::Substream & substream, const NameRenderingSettings & settings, size_t array_level, size_t nullable_depth)
+{
+    using Substream = ISerialization::Substream;
+
+    const auto type = substream.type;
+
+    if (type == Substream::NullMap || type == Substream::SparseNullMap || type == Substream::NamedNullMap)
+        return nullable_depth == 0 ? ".null" : ".null" + toString(nullable_depth);
+
+    if (type == Substream::ArraySizes || type == Substream::NamedOffsets)
+    {
+        /// `ArrayElements` opens a new namespace right away, so at most one `ArraySizes` occurs per
+        /// namespace and the level number is redundant.
+        return settings.namespaced ? ".size" : ".size" + toString(array_level);
+    }
+
+    if (type == Substream::ArrayElements)
+        return settings.namespaced ? ".arr_elems" : "";
+
+    if (type == Substream::NullableElements)
+        return settings.namespaced ? ".null_elems" : "";
+
+    if (type == Substream::ObjectPaths)
+        return settings.namespaced ? ".object_paths" : "";
+
+    if (type == Substream::StringSizes || type == Substream::InlinedStringSizes)
+        return ".size";
+    if (type == Substream::DictionaryKeys)
+        return ".dict";
+    if (type == Substream::DictionaryKeysPrefix)
+        return ".dict_prefix";
+    if (type == Substream::SparseElements)
+        return settings.encode_sparse_stream ? ".sparse" : "";
+    if (type == Substream::SparseOffsets)
+        return ".sparse.idx";
+    if (type == Substream::ReplicatedElements)
+        return ".repl";
+    if (type == Substream::ReplicatedIndexes)
+        return ".repl.idx";
+
+    if (Substream::named_types.contains(type))
+    {
+        /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
+        /// Because nested data may be represented not by Array of Tuple,
+        /// but by separate Array columns with names in a form of a.b,
+        /// and name is encoded as a whole.
+        /// NAMESPACED uses a uniform separator, which makes the component sequence decodable.
+        if (type == Substream::TupleElement && settings.escape_for_file_name)
+        {
+            if (settings.namespaced)
+                return "." + escapeForFileName(substream.name_of_substream);
+            return escapeForFileName("." + substream.name_of_substream);
+        }
+        return "." + substream.name_of_substream;
+    }
+
+    if (type == Substream::VariantDiscriminators)
+        return ".variant_discr";
+    if (type == Substream::VariantDiscriminatorsPrefix)
+        return ".variant_discr_prefix";
+    if (type == Substream::VariantOffsets)
+        return ".variant_offsets";
+    if (type == Substream::VariantElement || type == Substream::VariantElementNullMap)
+    {
+        auto name = settings.escape_for_file_name && settings.escape_variant_substreams
+            ? "." + escapeForFileName(substream.variant_element_name)
+            : "." + substream.variant_element_name;
+        return type == Substream::VariantElementNullMap ? name + ".null" : name;
+    }
+
+    if (type == SubstreamType::DynamicStructure)
+        return ".dynamic_structure";
+    if (type == SubstreamType::ObjectStructure)
+        return ".object_structure";
+    if (type == SubstreamType::ObjectSharedData)
+        return ".object_shared_data";
+    if (type == SubstreamType::Bucket)
+        return "." + std::to_string(substream.bucket);
+    if (type == SubstreamType::MapBucketsInfo)
+        return ".buckets_info";
+    if (type == SubstreamType::MapBucketIndexes)
+        return ".bucket_indexes";
+    if (type == SubstreamType::ObjectSharedDataStructure)
+        return ".structure";
+    if (type == SubstreamType::ObjectSharedDataStructurePrefix)
+        return ".structure_prefix";
+    if (type == SubstreamType::ObjectSharedDataStructureSuffix)
+        return ".structure_suffix";
+    if (type == SubstreamType::ObjectSharedDataSubstreams)
+        return ".substreams";
+    if (type == SubstreamType::ObjectSharedDataPathsMarks)
+        return ".paths_marks";
+    if (type == SubstreamType::ObjectSharedDataSubstreamsMarks)
+        return ".substreams_marks";
+    if (type == SubstreamType::ObjectSharedDataPathsSubstreamsMetadata)
+        return ".paths_substreams_metadata";
+    if (type == SubstreamType::ObjectSharedDataPathsInfos)
+        return ".paths_infos";
+    if (type == SubstreamType::ObjectSharedDataData)
+        return ".data";
+    if (type == SubstreamType::ObjectSharedDataCopy)
+        return ".copy";
+    if (type == SubstreamType::ObjectSharedDataCopySizes)
+        return ".sizes";
+    if (type == SubstreamType::ObjectSharedDataCopyPathsIndexes)
+        return ".paths_indexes";
+    if (type == SubstreamType::ObjectSharedDataCopyValues)
+        return ".values";
+    if (type == SubstreamType::ObjectTypedPath || type == SubstreamType::ObjectDynamicPath)
+        return "." + (settings.escape_for_file_name ? escapeForFileName(substream.object_path_name) : substream.object_path_name);
+
+    return "";
+}
+
+String getNameForSubstreamPath(
+    String stream_name,
+    SubstreamIterator begin,
+    SubstreamIterator end,
+    const NameRenderingSettings & settings,
+    size_t initial_array_level = 0)
+{
+    using Substream = ISerialization::Substream;
+
+    size_t array_level = initial_array_level;
+    /// Counts `Nullable` levels that no component separates from the null map yet. Under NAMESPACED
+    /// the containers contribute components too, which is why a file name never carries `.nullN`.
+    size_t nullable_depth = 0;
+
+    for (auto it = begin; it != end; ++it)
+    {
+        if (it->type == Substream::ArrayElements)
+            ++array_level;
+        else if (it->type == Substream::NullableElements)
+            ++nullable_depth;
+
+        auto component = getComponentForSubstream(*it, settings, array_level, nullable_depth);
+        if (!component.empty())
+            nullable_depth = 0;
+
+        stream_name += component;
+    }
+
+    return stream_name;
+}
+
+}
+
+String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
+{
+    return getFileNameForStream(column.getNameInStorage(), path, settings);
+}
+
+String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings)
+{
+    return getNameForSubstreamPath(
+        getStreamNamePrefix(name_in_storage, path, settings.share_nested_offsets),
+        path.begin(),
+        path.end(),
+        {.escape_for_file_name = true,
+         .escape_variant_substreams = settings.escape_variant_substreams,
+         .namespaced = settings.substream_naming_version == MergeTreeSubstreamNamingVersion::NAMESPACED});
 }
 
 String ISerialization::getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name)
@@ -471,18 +528,32 @@ String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair &
     return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream, size_t initial_array_level)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path)
 {
-    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream, initial_array_level);
+    return getSubcolumnNameForStream(path, path.size());
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream, size_t initial_array_level)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, size_t initial_array_level)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false, initial_array_level);
+    /// Frozen for compatibility: flat, unescaped and never namespaced.
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, {}, initial_array_level);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
     return subcolumn_name;
+}
+
+String ISerialization::getSubstreamsCacheKeyForStream(const String & name_in_storage, const SubstreamPath & path, bool share_nested_offsets)
+{
+    /// The subcolumn name is not injective (two streams of one column can share it while their files
+    /// differ, e.g. `c.size0` and `c%2Esize0` for Array(Tuple(`size0` UInt64))), so the file name
+    /// rendering is used. The scheme is always NAMESPACED regardless of the part: the key never touches
+    /// disk, and only that form is injective for every type.
+    return getNameForSubstreamPath(
+        getStreamNamePrefix(name_in_storage, path, share_nested_offsets),
+        path.begin(),
+        path.end(),
+        {.escape_for_file_name = true, .encode_sparse_stream = true, .escape_variant_substreams = true, .namespaced = true});
 }
 
 namespace
@@ -500,19 +571,21 @@ struct SubstreamsCacheColumnWithNumReadRowsElement : public ISerialization::ISub
 
 }
 
-void ISerialization::addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows)
+void ISerialization::addColumnWithNumReadRowsToSubstreamsCache(
+    SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, ColumnPtr column, size_t num_read_rows)
 {
     /// The consumers of this cache element insert the last num_read_rows rows of the column into the
     /// result (see insertDataFromCachedColumn), so the column must contain at least that many rows,
     /// otherwise the range arithmetic there would underflow.
     chassert(column);
     chassert(column->size() >= num_read_rows);
-    addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnWithNumReadRowsElement>(column, num_read_rows));
+    addElementToSubstreamsCache(cache, settings, std::make_unique<SubstreamsCacheColumnWithNumReadRowsElement>(column, num_read_rows));
 }
 
-std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
+std::optional<std::pair<ColumnPtr, size_t>>
+ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings)
 {
-    auto * element = getElementFromSubstreamsCache(cache, path);
+    auto * element = getElementFromSubstreamsCache(cache, settings);
     if (!element)
         return std::nullopt;
 
@@ -525,37 +598,63 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
     return std::make_pair(typed_element->column, typed_element->num_read_rows);
 }
 
-void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
+void ISerialization::addElementToSubstreamsCache(
+    ISerialization::SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, std::unique_ptr<ISubstreamsCacheElement> && element)
+{
+    addElementToSubstreamsCache(cache, settings, settings.path, std::move(element));
+}
+
+void ISerialization::addElementToSubstreamsCache(
+    ISerialization::SubstreamsCache * cache,
+    const DeserializeBinaryBulkSettings & settings,
+    const SubstreamPath & path,
+    std::unique_ptr<ISubstreamsCacheElement> && element)
 {
     if (!cache)
         return;
 
-    cache->insert_or_assign(getSubcolumnNameForStream(path, true), std::move(element));
+    cache->insert_or_assign(
+        getSubstreamsCacheKeyForStream(settings.name_in_storage, path, settings.share_nested_offsets), std::move(element));
 }
 
-ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
+ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(
+    ISerialization::SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings)
+{
+    return getElementFromSubstreamsCache(cache, settings, settings.path);
+}
+
+ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(
+    ISerialization::SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, const SubstreamPath & path)
 {
     if (!cache)
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path, true));
+    auto it = cache->find(getSubstreamsCacheKeyForStream(settings.name_in_storage, path, settings.share_nested_offsets));
     return it == cache->end() ? nullptr : it->second.get();
 }
 
-void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
+void ISerialization::addToSubstreamsDeserializeStatesCache(
+    SubstreamsDeserializeStatesCache * cache, const DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr state)
 {
     if (!cache)
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path, true), state);
+    cache->emplace(getSubstreamsCacheKeyForStream(settings.name_in_storage, settings.path, settings.share_nested_offsets), state);
 }
 
-ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
+ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(
+    SubstreamsDeserializeStatesCache * cache, const DeserializeBinaryBulkSettings & settings)
+{
+    return getFromSubstreamsDeserializeStatesCache(cache, settings, settings.path);
+}
+
+ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(
+    SubstreamsDeserializeStatesCache * cache, const DeserializeBinaryBulkSettings & settings, const SubstreamPath & path)
 {
     if (!cache)
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path, true));
+    auto it = cache->find(getSubstreamsCacheKeyForStream(settings.name_in_storage, path, settings.share_nested_offsets));
     return it == cache->end() ? nullptr : it->second;
 }
 
@@ -564,7 +663,6 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     for (const auto & elem : path)
     {
         if (elem.type == Substream::NullMap
-            || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
@@ -711,6 +809,15 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::ProductQuantizationCodebook;
 }
 
+bool ISerialization::isDeclaredSubstream(const SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    auto type = path[prefix_len - 1].type;
+    return type == Substream::TupleElement || type == Substream::ObjectTypedPath;
+}
+
 bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
 {
     if (prefix_len == 0 || prefix_len > path.size())
@@ -740,7 +847,8 @@ bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath 
     for (size_t i = 0; i != prefix_len; ++i)
     {
         if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
-            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
+            || path[i].type == SubstreamType::ObjectPaths || path[i].type == SubstreamType::ObjectSharedData
+            || path[i].type == SubstreamType::ObjectStructure)
             return true;
     }
 
@@ -841,10 +949,14 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
         ostr.str());
 }
 
-ISerialization::StreamFileNameSettings::StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings)
+ISerialization::StreamFileNameSettings::StreamFileNameSettings(
+    const MergeTreeSettings & merge_tree_settings, const SerializationInfoSettings * info_settings)
 {
     escape_variant_substreams = merge_tree_settings[MergeTreeSetting::escape_variant_subcolumn_filenames];
     share_nested_offsets = merge_tree_settings[MergeTreeSetting::share_nested_offsets];
+    substream_naming_version = info_settings
+        ? info_settings->substream_naming_version
+        : merge_tree_settings[MergeTreeSetting::substream_naming_version];
 }
 
 void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath & path, const ISerialization::StreamCallback & callback, ISerialization::Substream substream) const
@@ -856,7 +968,7 @@ void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath &
 
 bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache, const DeserializeBinaryBulkSettings & settings, IColumn & result_column)
 {
-    auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path);
+    auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings);
     if (!cached_column_with_num_read_rows)
         return false;
 

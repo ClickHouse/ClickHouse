@@ -16,7 +16,8 @@ SerializationInfoSettings::SerializationInfoSettings(
     MergeTreeStringSerializationVersion string_serialization_version_,
     MergeTreeNullableSerializationVersion nullable_serialization_version_,
     MergeTreeMapSerializationVersion map_serialization_version_,
-    bool propagate_types_serialization_versions_to_nested_types_)
+    bool propagate_types_serialization_versions_to_nested_types_,
+    MergeTreeSubstreamNamingVersion substream_naming_version_)
     : ratio_of_defaults_for_sparse(ratio_of_defaults_for_sparse_)
     , choose_kind(choose_kind_)
     , compute_exact_num_defaults(compute_exact_num_defaults_)
@@ -25,6 +26,7 @@ SerializationInfoSettings::SerializationInfoSettings(
     , nullable_serialization_version(nullable_serialization_version_)
     , map_serialization_version(map_serialization_version_)
     , propagate_types_serialization_versions_to_nested_types(propagate_types_serialization_versions_to_nested_types_)
+    , substream_naming_version(substream_naming_version_)
 {
     /// New type specialized serialization version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
     /// For older versions, it is automatically defaulted to preserve compatibility.
@@ -82,6 +84,7 @@ void SerializationInfoSettings::updateHash(SipHash & hash) const
     hash.update(static_cast<int>(nullable_serialization_version));
     hash.update(static_cast<int>(map_serialization_version));
     hash.update(propagate_types_serialization_versions_to_nested_types);
+    hash.update(static_cast<int>(substream_naming_version));
 }
 
 SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations(bool with_string_size_stream)
