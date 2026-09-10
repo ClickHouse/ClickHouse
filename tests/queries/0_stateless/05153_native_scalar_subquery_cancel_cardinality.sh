@@ -56,21 +56,23 @@ run_cancelled_scalar()
     wait "$CLIENT_PID" || true
     CLIENT_PID=""
 
-    local cancelled=0
+    local failed_without_partial_result=0
     for _ in {1..100}; do
         $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-        cancelled=$($CLICKHOUSE_CLIENT --query "
-            SELECT count() = 1 AND countIf(exception_code = 735
+        # The server can observe either `Cancel` first (735) or the second scalar row first (125).
+        # Both are valid terminal failures; a successful `QueryFinish` would make this predicate false.
+        failed_without_partial_result=$($CLICKHOUSE_CLIENT --query "
+            SELECT count() = 1 AND countIf(exception_code IN (735, 125)
                 AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')) = 1
             FROM system.query_log WHERE current_database = currentDatabase()
                 AND query_id='$query_id' AND type != 'QueryStart'")
-        if [[ "$cancelled" == 1 ]]; then
+        if [[ "$failed_without_partial_result" == 1 ]]; then
             break
         fi
         sleep 0.1
     done
-    if [[ "$cancelled" != 1 ]]; then
-        echo "Scalar subquery did not report full cancellation: analyzer $analyzer"
+    if [[ "$failed_without_partial_result" != 1 ]]; then
+        echo "Scalar subquery unexpectedly returned a partial result: analyzer $analyzer"
         cat "$CLIENT_ERR"
         return 1
     fi
@@ -89,7 +91,7 @@ run_cancelled_scalar()
 
     rm -f "$CLIENT_ERR"
     CLIENT_ERR=""
-    echo "analyzer $analyzer: cancelled, cardinality preserved"
+    echo "analyzer $analyzer: no partial result, cardinality preserved"
 }
 
 run_cancelled_scalar 0
