@@ -18,7 +18,6 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/StringUtils.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
 
 #include <filesystem>
@@ -346,7 +345,13 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     /// Outside clickhouse-local, do not probe paths outside of user_files: instead of leaking
     /// whether such a file exists through the error message, claim the table and let the `file`
     /// engine report the access error.
-    if (!is_local && !weaklyCanonicalPathStartsWith(path, context_->getUserFilesPath()))
+    ///
+    /// The boundary check must be the same one the delegated `file` storage applies
+    /// (`Context::isUserFilesPath`): on a plain `user_files_path` an admin-managed symlink inside
+    /// the directory is still accepted by the delegate, so resolving the path here would make the
+    /// catalog claim a table (`EXISTS TABLE` answering `1` for a missing file) that the delegate
+    /// resolves and reports as missing only later.
+    if (!is_local && !context_->isUserFilesPath(path))
         return true;
 
     if (!fs::exists(path))

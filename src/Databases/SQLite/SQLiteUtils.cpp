@@ -1,7 +1,6 @@
 #include <Databases/SQLite/SQLiteUtils.h>
 
 #if USE_SQLITE
-#include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <Disks/IVolume.h>
@@ -27,8 +26,10 @@ static void processSQLiteError(const String & message, bool throw_on_error)
     LOG_ERROR(getLogger("SQLiteEngine"), fmt::runtime(message));
 }
 
-static String validateSQLiteDatabasePath(const String & path, const String & user_files_path, bool need_check, bool throw_on_error)
+static String validateSQLiteDatabasePath(const String & path, ContextPtr context, bool need_check, bool throw_on_error)
 {
+    const String user_files_path = context->getUserFilesPath();
+
     String absolute_path;
 
     if (fs::path(path).is_relative())
@@ -36,34 +37,18 @@ static String validateSQLiteDatabasePath(const String & path, const String & use
     else
         absolute_path = fs::absolute(path).lexically_normal();
 
-    if (need_check)
+    /// `Context::isUserFilesPath` applies the boundary check that corresponds to the
+    /// configuration: the resolved-path check when `user_files_policy` is configured, and the
+    /// legacy lexical check on a plain `user_files_path`, where an admin-managed symlink inside
+    /// the directory is an established way to expose an external location. Both forms reject a
+    /// sibling root that merely shares a textual prefix (e.g. allowed
+    /// `/var/lib/clickhouse/user_files` vs input `/var/lib/clickhouse/user_files_evil/db.sqlite`).
+    if (need_check && !context->isUserFilesPath(absolute_path))
     {
-        /// Use a path-aware boundary check that catches both sibling roots sharing a
-        /// textual prefix (e.g. allowed `/var/lib/clickhouse/user_files` vs input
-        /// `/var/lib/clickhouse/user_files_evil/db.sqlite`) and in-root symlinks
-        /// escaping the allowed prefix (e.g. `<user_files>/escape -> /etc` accessed
-        /// as `escape/db.sqlite`).
-        ///
-        /// `fs::weakly_canonical` resolves symlinks for the longest existing prefix
-        /// of the path and lexically appends the rest. We invoke it explicitly so
-        /// the symlink-resolution step is visible at the call site - the security
-        /// property of this check should not depend on subtle library behavior of
-        /// `fs::relative` (which `pathStartsWith` would otherwise call internally).
-        std::error_code ec;
-        const fs::path resolved = fs::weakly_canonical(fs::path(absolute_path), ec);
-        if (ec)
-        {
-            processSQLiteError(fmt::format("Cannot resolve SQLite database path '{}': {}", path, ec.message()), throw_on_error);
-            return "";
-        }
-
-        const fs::path resolved_root = fs::weakly_canonical(fs::path(user_files_path), ec);
-        if (ec || !pathStartsWith(resolved, resolved_root))
-        {
-            processSQLiteError(fmt::format("SQLite database file path '{}' must be inside 'user_files' directory", path), throw_on_error);
-            return "";
-        }
+        processSQLiteError(fmt::format("SQLite database file path '{}' must be inside 'user_files' directory", path), throw_on_error);
+        return "";
     }
+
     return absolute_path;
 }
 
@@ -94,7 +79,7 @@ SQLitePtr openSQLiteDB(const String & path, ContextPtr context, bool throw_on_er
         }
     }
 
-    auto database_path = validateSQLiteDatabasePath(path, context->getUserFilesPath(), need_check, throw_on_error);
+    auto database_path = validateSQLiteDatabasePath(path, context, need_check, throw_on_error);
 
     /// For attach database there is no throw mode.
     if (database_path.empty())
