@@ -9152,7 +9152,7 @@ referred to by the `_time` field and by the default (message) field.
 Unlike VictoriaLogs, which stores every field as a string, the translated queries run
 over the existing table schema. The key contract deviations that follow from this:
 - Text filters (words, phrases, prefixes, regexps) expect `String`-backed columns and do not convert numeric columns to text.
-- Numeric comparison filters compare numeric columns natively (exactly for integer and decimal values). For `String` columns, only plain numeric text is parsed per row; values in the LogsQL number grammar (e.g. `10KiB`, `1h30m`) are not parsed per row.
+- Numeric comparison filters compare numeric columns natively (exactly for integer and decimal values, as long as the compared literal fits `Int128` or `Decimal256(38)`; a wider value, e.g. an integer above 1e38 in a `UInt256` field, is compared with `Float64` precision, and so are the integral bucket steps of `stats by (<field>:<step>)`). For `String` columns, only plain numeric text is parsed per row; values in the LogsQL number grammar (e.g. `10KiB`, `1h30m`) are not parsed per row.
 - The numeric stats functions (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`) parse the numeric value of every field, skipping the values that are not numbers, like VictoriaLogs. The values are `Float64`, so a numeric column is aggregated with `Float64` precision and not exactly.
 - The `math` pipe requires numeric operand columns; `String` columns are not coerced.
 - Query results are returned with the types of the underlying columns, not as strings.
