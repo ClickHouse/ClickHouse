@@ -1,4 +1,5 @@
 import concurrent.futures
+import json
 import logging
 import threading
 import time
@@ -1042,3 +1043,210 @@ def test_drop_failed_files_loser_reconciles_cache(started_cluster):
     # Cleanup
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
+def _drive_loser_branch(started_cluster, table_name, num_failing_files, play_winner):
+    """Put a `SYSTEM DROP S3QUEUE FAILED FILES` on the loser branch and let the caller be the winner.
+
+    Same construction as `test_drop_failed_files_loser_reconciles_cache`: the race is removed
+    entirely rather than raced for, by taking `<keeper_path>/cleanup_lock` with the winner's own
+    marker value before running the command, so `EphemeralNodeHolder::tryCreate` fails and
+    `dropFailedFiles` takes `waitForConcurrentDropToComplete`.
+
+    `play_winner(zk, keeper_path, failed_path, failed_children)` is called while the lock is still
+    held and does whatever the winner under test would have done. The lock is released afterwards.
+
+    Returns the exception the command raised, or `None` if it returned normally.
+    """
+    node = started_cluster.instances["instance"]
+
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,  # fail terminally on the first attempt
+            # Keep the periodic sweep away from /failed, so nothing but the drop command
+            # and this test touches it.
+            "failed_files_ttl_sec": 0,
+            "tracked_files_limit": 0,
+        },
+    )
+
+    invalid_csv = b"not,valid,numbers\n"
+    for i in range(num_failing_files):
+        put_s3_file_content(started_cluster, f"{files_path}/failed_{i}.csv", invalid_csv)
+
+    create_mv(node, table_name, dst_table_name)
+
+    def failed_znodes():
+        result = node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    def wait_for(predicate, timeout_sec=120):
+        """Poll for a state instead of sleeping on a fixed schedule."""
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.5)
+        return False
+
+    assert wait_for(
+        lambda: failed_znodes() >= num_failing_files
+    ), f"expected {num_failing_files} failed znodes, got {failed_znodes()}"
+
+    # Stop consuming before touching Keeper, so nothing re-fails files behind the test's back.
+    node.query(f"DROP TABLE {mv_name}")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def take_cleanup_lock():
+        try:
+            zk.create(cleanup_lock_path, b"manual_drop_failed", ephemeral=True)
+            return True
+        except NodeExistsError:
+            return False
+
+    assert wait_for(
+        take_cleanup_lock, timeout_sec=60
+    ), "could not acquire cleanup_lock for the test"
+
+    drop_result = {}
+
+    def run_drop():
+        try:
+            node.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}")
+        except Exception as e:  # noqa: BLE001 - reported through the caller's assertions
+            drop_result["error"] = e
+
+    drop_thread = threading.Thread(target=run_drop)
+    drop_thread.start()
+    try:
+        waiting_message = (
+            f"{keeper_path}): Another replica is executing "
+            f"SYSTEM DROP S3QUEUE FAILED FILES"
+        )
+        assert wait_for(
+            lambda: node.contains_in_log(waiting_message)
+        ), "drop command did not reach the loser branch"
+
+        play_winner(zk, keeper_path, failed_path, zk.get_children(failed_path))
+        zk.delete(cleanup_lock_path)
+    finally:
+        drop_thread.join(timeout=300)
+
+    assert not drop_thread.is_alive(), "drop command did not return after the lock was released"
+
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+    return drop_result.get("error")
+
+
+def test_drop_failed_files_loser_succeeds_when_new_failures_arrive_during_drop(started_cluster):
+    """A file failing while the winner works must not make the loser reject the winner's cleanup.
+
+    The winner deletes the snapshot of terminal nodes it took when it started, and that is all it
+    is responsible for. The loser used to demand that `/failed` be globally empty instead, so any
+    file failing between the winner's snapshot and the loser's verification made the winner report
+    success while every loser raised `KEEPER_EXCEPTION` - and on a queue that is actively failing
+    files that is the ordinary interleaving, not a rare one.
+
+    Here the winner is played by hand: it deletes its whole snapshot, publishes the success result
+    the real winner publishes before releasing the lock, and only then a new file fails. The loser
+    must accept the winner's own verdict and return normally even though `/failed` is not empty.
+    """
+    num_failing_files = 5
+    table_name = f"test_drop_new_failures_{uuid.uuid4().hex[:8]}"
+
+    def play_winner(zk, keeper_path, failed_path, failed_children):
+        # The winner's snapshot, deleted in full.
+        for child in failed_children:
+            zk.delete(f"{failed_path}/{child}")
+
+        # The winner publishes what it did, while it still holds the lock.
+        zk.create(
+            f"{keeper_path}/last_drop_result",
+            json.dumps(
+                {
+                    "success": True,
+                    "snapshot_size": len(failed_children),
+                    "deleted": len(failed_children),
+                    "error": "",
+                }
+            ).encode(),
+        )
+
+        # A file fails after the winner's snapshot was taken. It is not part of this attempt.
+        zk.create(
+            f"{failed_path}/failed_after_the_snapshot",
+            json.dumps(
+                {
+                    "file_path": "failed_after_the_snapshot.csv",
+                    "last_processed_timestamp": 0,
+                    "last_exception": "failed while the drop was running",
+                    "retries": 0,
+                    "processor_id": "",
+                }
+            ).encode(),
+        )
+
+    error = _drive_loser_branch(
+        started_cluster, table_name, num_failing_files, play_winner
+    )
+
+    assert error is None, f"loser rejected a successful cleanup: {error}"
+
+
+def test_drop_failed_files_reports_partial_failure_to_losers(started_cluster):
+    """A winner that only partly succeeded must say so, and the loser must report the winner's verdict.
+
+    This is the case the emptiness check was originally there to catch, and it still has to work:
+    "lock released" alone never meant "cleanup succeeded". The difference is where the answer comes
+    from - the winner's published result rather than the loser's guess at global state - so the
+    message carries the winner's own numbers instead of a count of whatever happens to remain.
+    """
+    num_failing_files = 5
+    table_name = f"test_drop_partial_{uuid.uuid4().hex[:8]}"
+
+    def play_winner(zk, keeper_path, failed_path, failed_children):
+        # The winner got through part of its snapshot and then hit a Keeper error.
+        deleted = 2
+        for child in failed_children[:deleted]:
+            zk.delete(f"{failed_path}/{child}")
+
+        zk.create(
+            f"{keeper_path}/last_drop_result",
+            json.dumps(
+                {
+                    "success": False,
+                    "snapshot_size": len(failed_children),
+                    "deleted": deleted,
+                    "error": "Failed to remove 1 batch(es) of failed file nodes",
+                }
+            ).encode(),
+        )
+
+    error = _drive_loser_branch(
+        started_cluster, table_name, num_failing_files, play_winner
+    )
+
+    assert error is not None, "loser accepted a cleanup the winner reported as failed"
+    message = str(error)
+    assert "did not complete" in message, message
+    # The winner's own numbers, not a count of what remains in /failed.
+    assert "dropped 2 of the 5" in message, message
+    assert "Failed to remove 1 batch(es)" in message, message

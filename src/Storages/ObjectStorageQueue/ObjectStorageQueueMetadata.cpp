@@ -25,6 +25,10 @@
 #include <Interpreters/DDLTask.h>
 #include <shared_mutex>
 #include <Core/ServerUUID.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Stringifier.h>
 
 
 namespace ProfileEvents
@@ -1768,6 +1772,11 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
 void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path)
 {
     static constexpr const char * LOCK_OPERATION_DROP_FAILED = "manual_drop_failed";
+
+    /// Read the drop-result marker's version before waiting, so a result published by the attempt being
+    /// waited on can be told apart from one left behind by an earlier attempt.
+    const int32_t marker_version_before_wait = getDropResultVersion(zk_client);
+
     /// Lock is held by another process. Check if it's another dropFailedFiles invocation.
     /// When invoked via ON CLUSTER, multiple replicas attempt this concurrently;
     /// if another dropFailedFiles holds the lock, treat it as idempotent success.
@@ -1778,23 +1787,22 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
         std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path);
         if (lock_value == LOCK_OPERATION_DROP_FAILED)
         {
-            /// Another replica is executing the same operation. Wait for it to complete,
-            /// observing its progress via decreasing /failed node count rather than using
-            /// a fixed wall-clock timeout that could be too short for large backlogs.
+            /// Another replica is executing the same operation. Wait for it to complete and take its
+            /// verdict from the result it publishes, rather than from a wall-clock timeout that could be
+            /// too short for large backlogs.
             LOG_INFO(log, "Another replica is executing SYSTEM DROP S3QUEUE FAILED FILES, waiting for completion");
 
-            /// Progress-based wait: poll the lock every 100ms for completion,
-            /// and periodically check /failed node count to detect forward progress.
-            /// If the count is decreasing or changing, the winner is actively working.
-            /// Only timeout if the count is unchanged for an extended period (stall detection).
+            /// Wait for the lock to be released, then read the result the winner published under it.
+            ///
+            /// Liveness is taken from the lock itself, not from the `/failed` node count. The lock is
+            /// ephemeral, so a winner that dies takes it with it on session expiry and the `ZNONODE` path
+            /// below runs; a winner that is alive holds it. The node count cannot tell those apart: it is
+            /// written by every replica that fails a file, so deletions and fresh failures at similar
+            /// rates hold it flat while the winner is working normally - the same false positive that made
+            /// the loser reject a healthy winner's cleanup.
             static constexpr size_t POLL_INTERVAL_MS = 100;
-            static constexpr size_t PROGRESS_CHECK_INTERVAL_MS = 10000;  /// Check /failed count every 10s
-            static constexpr size_t STALL_TIMEOUT_MS = 180000;           /// 3 min without any change = stalled
             static constexpr size_t ABSOLUTE_MAX_WAIT_MS = 1800000;      /// 30 min absolute cap (safety net)
 
-            size_t last_progress_check_iteration = 0;
-            size_t last_failed_node_count = SIZE_MAX;  /// Unknown initially
-            size_t iterations_without_progress = 0;
             const size_t max_total_iterations = ABSOLUTE_MAX_WAIT_MS / POLL_INTERVAL_MS;
 
             for (size_t i = 0; i < max_total_iterations; ++i)
@@ -1810,80 +1818,20 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
                 {
                     if (poll_e.code == Coordination::Error::ZNONODE)
                     {
-                        /// Lock was released. Verify the cleanup actually succeeded by checking
-                        /// that no terminal failed nodes remain (the cleanup only removes terminal
-                        /// nodes, preserving .retriable ones). The winner could have partially
-                        /// failed (e.g., some batches succeeded, later batch threw KEEPER_EXCEPTION),
-                        /// so "lock released" does not guarantee "cleanup succeeded".
+                        /// Lock was released. "Lock released" does not by itself mean "cleanup succeeded"
+                        /// - the winner could have partially failed - so read the result it published.
                         size_t terminal_failed_count = 0;
                         if (verifyCleanupSucceeded(zk_client,
                                 fmt::format("Cleanup lock was released after {}ms, verifying cleanup succeeded", (i + 1) * 100),
-                                terminal_failed_count))
+                                marker_version_before_wait, terminal_failed_count))
                             return;
 
                         throw Exception(ErrorCodes::KEEPER_EXCEPTION,
-                            "Failed file cleanup verification found {} terminal failed nodes remaining in /failed. "
-                            "This may indicate partial failure or new concurrent failures. Please retry the command.",
+                            "The replica holding the cleanup lock published no result and {} terminal failed nodes remain "
+                            "in /failed, so the cleanup cannot be confirmed. Please retry the command.",
                             terminal_failed_count);
                     }
                     /// Other errors during polling are transient - retry on next iteration
-                }
-
-                /// Periodically check if winner is making progress by observing /failed node count
-                if ((i - last_progress_check_iteration) * POLL_INTERVAL_MS >= PROGRESS_CHECK_INTERVAL_MS)
-                {
-                    size_t elapsed_iterations = i - last_progress_check_iteration;
-                    last_progress_check_iteration = i;
-
-                    const std::string failed_path = zookeeper_path / "failed";
-                    Strings failed_nodes;
-                    Coordination::Error code = zk_client->tryGetChildren(failed_path, failed_nodes);
-
-                    if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
-                    {
-                        size_t terminal_count = 0;
-                        for (const auto & node : failed_nodes)
-                            if (!node.ends_with(".retriable"))
-                                ++terminal_count;
-
-                        if (last_failed_node_count != SIZE_MAX)
-                        {
-                            if (terminal_count < last_failed_node_count)
-                            {
-                                /// Progress detected: node count decreased
-                                LOG_TRACE(log, "Winner making progress: {} -> {} terminal failed nodes",
-                                          last_failed_node_count, terminal_count);
-                                iterations_without_progress = 0;
-                            }
-                            else if (terminal_count > last_failed_node_count)
-                            {
-                                /// Count increased: new files failed concurrently while winner is cleaning.
-                                /// The winner is processing a moving target, but it's definitely still active.
-                                /// Reset stall timer - a hung winner wouldn't see new failures being added.
-                                LOG_TRACE(log, "New files failed concurrently: {} -> {} terminal failed nodes. Winner still active.",
-                                          last_failed_node_count, terminal_count);
-                                iterations_without_progress = 0;
-                            }
-                            else
-                            {
-                                /// Count unchanged: no definitive progress signal.
-                                /// Accumulate stall time - if this persists, winner may be hung.
-                                iterations_without_progress += elapsed_iterations;
-
-                                if (iterations_without_progress * POLL_INTERVAL_MS >= STALL_TIMEOUT_MS)
-                                {
-                                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                                        "Winner replica appears stalled: /failed node count has been {} "
-                                        "for {} seconds with no changes. Please retry the command.",
-                                        terminal_count,
-                                        (iterations_without_progress * POLL_INTERVAL_MS) / 1000);
-                                }
-                            }
-                        }
-
-                        last_failed_node_count = terminal_count;
-                    }
-                    /// Transient Keeper errors during progress check are ignored - retry on next check
                 }
 
                 /// Hit absolute safety-net timeout
@@ -1903,14 +1851,15 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
         {
             /// The ephemeral lock node disappeared between our tryCreate and get.
             /// We don't know whose lock it was (manual_drop_failed vs background_cleanup),
-            /// so verify /failed is actually empty before claiming success.
+            /// so ask for a published drop result before claiming success.
             size_t terminal_failed_count = 0;
-            if (verifyCleanupSucceeded(zk_client, "Cleanup lock was released, verifying cleanup succeeded", terminal_failed_count))
+            if (verifyCleanupSucceeded(zk_client, "Cleanup lock was released, verifying cleanup succeeded",
+                    marker_version_before_wait, terminal_failed_count))
                 return;
 
             throw Exception(ErrorCodes::KEEPER_EXCEPTION,
-                "Failed file cleanup verification found {} terminal failed nodes remaining. "
-                "Cannot confirm cleanup succeeded. Please retry the command.",
+                "The replica holding the cleanup lock published no result and {} terminal failed nodes remain, "
+                "so the cleanup cannot be confirmed. Please retry the command.",
                 terminal_failed_count);
         }
 
@@ -1922,9 +1871,74 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
         "Failed file cleanup cannot proceed: another operation is holding the cleanup lock. "
         "Please retry in a moment.");
 }
-bool ObjectStorageQueueMetadata::verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg, size_t & out_terminal_failed_count)
+void ObjectStorageQueueMetadata::publishDropResult(bool success, size_t snapshot_size, size_t deleted, const std::string & error)
+{
+    Poco::JSON::Object json;
+    json.set("success", success);
+    json.set("snapshot_size", snapshot_size);
+    json.set("deleted", deleted);
+    json.set("error", error);
+
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+
+    /// Overwritten in place, so the node stays single and needs no pruning. Keeper bumps its version on
+    /// every set, and that version is the attempt id a waiting replica compares against.
+    getZooKeeper()->createOrUpdate(zookeeper_path / "last_drop_result", oss.str(), zkutil::CreateMode::Persistent);
+}
+
+int32_t ObjectStorageQueueMetadata::getDropResultVersion(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const
+{
+    Coordination::Stat stat;
+    std::string value;
+    if (!zk_client->tryGet(zookeeper_path / "last_drop_result", value, &stat))
+        return -1;
+    return stat.version;
+}
+
+bool ObjectStorageQueueMetadata::verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
+    int32_t marker_version_before_wait, size_t & out_terminal_failed_count)
 {
     LOG_INFO(log, "{}", context_msg);
+
+    out_terminal_failed_count = 0;
+
+    /// The winner publishes what it actually did before releasing the lock, so ask it rather than
+    /// inferring the answer from `/failed`. Inference cannot work here: the winner deletes the snapshot
+    /// of terminal nodes it took when it started and is not responsible for files that fail afterwards,
+    /// while `/failed` has other writers, so "not empty" says nothing about whether the winner succeeded.
+    Coordination::Stat marker_stat;
+    std::string marker_value;
+    if (zk_client->tryGet(zookeeper_path / "last_drop_result", marker_value, &marker_stat)
+        && marker_stat.version > marker_version_before_wait)
+    {
+        Poco::JSON::Parser parser;
+        auto json = parser.parse(marker_value).extract<Poco::JSON::Object::Ptr>();
+        chassert(json);
+
+        const bool success = json->getValue<bool>("success");
+        const size_t snapshot_size = json->getValue<size_t>("snapshot_size");
+        const size_t deleted = json->getValue<size_t>("deleted");
+
+        if (success)
+        {
+            LOG_INFO(log, "Winner replica reported success: dropped {} of {} failed files it had selected",
+                     deleted, snapshot_size);
+            reconcileFailedFilesCache();
+            return true;
+        }
+
+        /// A partial failure is the winner's own verdict, reported with the winner's own numbers.
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+            "Failed file cleanup on the replica holding the lock did not complete: {}. "
+            "It dropped {} of the {} failed files it had selected. Please retry the command.",
+            json->getValue<std::string>("error"), deleted, snapshot_size);
+    }
+
+    /// No result was published during the wait, so the winner died before it could report. Its snapshot is
+    /// unknown to us, and the only statement we can still make is about `/failed` as a whole.
+    LOG_INFO(log, "The replica holding the cleanup lock published no result, falling back to checking /failed");
 
     const std::string failed_path = zookeeper_path / "failed";
     Strings remaining_failed_nodes;
@@ -2093,6 +2107,7 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         /// No failed path exists yet - nothing to drop.
         /// Reconcile cache to clear any stale entries before returning.
         LOG_TRACE(log, "Failed files path does not exist, nothing to drop");
+        publishDropResult(/* success */ true, /* snapshot_size */ 0, /* deleted */ 0, /* error */ "");
         reconcileFailedFilesCache();
         return;
     }
@@ -2105,6 +2120,7 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         /// No failed files to drop (or only .retriable nodes remain).
         /// Reconcile cache to clear any stale entries before returning.
         LOG_TRACE(log, "No failed files to drop");
+        publishDropResult(/* success */ true, /* snapshot_size */ 0, /* deleted */ 0, /* error */ "");
         reconcileFailedFilesCache();
         return;
     }
@@ -2221,8 +2237,16 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         {
             error_msg += fmt::format(" [batch starting at index {} failed with {}]", batch_idx, magic_enum::enum_name(err));
         }
+        /// Published before the throw, and so before the lock is released, so the replicas waiting on this
+        /// one are told the cleanup failed instead of having to guess it from what remains in `/failed`.
+        publishDropResult(/* success */ false, failed_nodes.size(), total_deleted, error_msg);
         throw Exception(ErrorCodes::KEEPER_EXCEPTION, "{}", error_msg);
     }
+
+    /// Published while the lock is still held: this replica deleted every terminal node of the snapshot it
+    /// took when it started, which is all it is responsible for. Files that failed after that snapshot are
+    /// not part of this attempt and must not make it look unsuccessful.
+    publishDropResult(/* success */ true, failed_nodes.size(), total_deleted, /* error */ "");
 
     reconcileFailedFilesCache();
     LOG_INFO(log, "Successfully dropped {} failed files", file_paths.size());
