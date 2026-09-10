@@ -63,6 +63,14 @@ index, 1, UInt16, 0, IN	[1,2,3,5]
 index, 1, UInt16, 0, NOT IN	[4]
 index, 1, UInt16, 1, IN	[1,2,3,5]
 index, 1, UInt16, 1, NOT IN	[4]
+low cardinality, 0	1	1	1	0	1	0
+low cardinality, 0	2	2	0	1	0	1
+low cardinality, 0	3	\N	0	1	0	1
+low cardinality, 0	4	1	1	0	1	0
+low cardinality, 1	1	1	1	0	1	0
+low cardinality, 1	2	2	0	1	0	1
+low cardinality, 1	3	\N	0	1	0	1
+low cardinality, 1	4	1	1	0	1	0
 0	0	1	0
 0	1	1	0
 0	2	1	0
