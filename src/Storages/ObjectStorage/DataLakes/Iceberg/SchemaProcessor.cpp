@@ -735,7 +735,15 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 /// a whitespace-only difference is the same type and needs only a rename, not a cast.
                 if (canonicalizeTypeSpacing(old_type) == canonicalizeTypeSpacing(new_type))
                 {
-                    if (old_json->getValue<String>(f_name) != name)
+                    /// Nullability is carried by the separate `required` key, so equal type strings
+                    /// can still resolve to different types. Only relaxing required to optional is
+                    /// legal evolution; the reverse keeps the plain passthrough.
+                    const bool old_required = old_json->getValue<bool>(f_required);
+                    if (old_required && !required && !old_node->result_type->equals(*type))
+                    {
+                        node = &dag->addCast(*old_node, type, name, nullptr);
+                    }
+                    else if (old_json->getValue<String>(f_name) != name)
                     {
                         node = &dag->addAlias(*old_node, name);
                     }
@@ -899,12 +907,22 @@ std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(P
     return result;
 }
 
+void IcebergSchemaProcessor::updateLastColumnId(Int32 last_column_id_)
+{
+    Int64 current = last_column_id.load();
+    while (last_column_id_ > current && !last_column_id.compare_exchange_weak(current, last_column_id_))
+        ;
+}
+
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);
     if (!schema)
         return nullptr;
-    return createColumnMapper(schema);
+    auto column_mapper = createColumnMapper(schema);
+    if (Int64 known_last_column_id = last_column_id.load(); known_last_column_id >= 0)
+        column_mapper->setLastAssignedFieldId(known_last_column_id);
+    return column_mapper;
 }
 
 ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)

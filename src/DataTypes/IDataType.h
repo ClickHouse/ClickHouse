@@ -7,6 +7,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
+#include <optional>
 
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
@@ -107,6 +108,18 @@ public:
     using SubstreamData = ISerialization::SubstreamData;
     using SubstreamPath = ISerialization::SubstreamPath;
 
+    /// A resolved subcolumn: everything needed to read it, plus the path saying which substream it is.
+    /// The name alone does not, because subcolumn names are flat and several substreams can claim one -
+    /// ``Tuple(`a.size` UInt64, `a` String)`` exposes `a.size` twice. Subcolumns resolved from the data
+    /// rather than from the static enumeration get a synthesized path that identifies them the same way.
+    struct SubcolumnInfo
+    {
+        SubstreamData data;
+        SubstreamPath substreams_path;
+    };
+
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name) const;
+
     using SubcolumnCallback = std::function<void(
         const SubstreamPath &,
         const String &,
@@ -170,7 +183,7 @@ public:
 
     /** Create empty column for corresponding type and serialization.
      */
-    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
@@ -197,6 +210,10 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     void insertManyDefaultsInto(IColumn & column, size_t n) const;
+
+    /// Returns true if insertDefaultInto simply calls column.insertDefault()
+    /// without any type-specific logic (e.g., Enum inserts first enum value instead of zero).
+    virtual bool isDefaultInsertTrivial() const { return true; }
 
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
@@ -331,7 +348,7 @@ public:
 
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicSubcolumns() const;
-    /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
+    /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnInfo can be called.
     virtual bool hasDynamicSubcolumnsData() const { return false; }
 
     /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
@@ -357,13 +374,13 @@ public:
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
 protected:
-    static std::unique_ptr<SubstreamData> getSubcolumnData(
+    static std::unique_ptr<SubcolumnInfo> getSubcolumnInfo(
         std::string_view subcolumn_name,
         const SubstreamData & data,
         size_t initial_array_level,
         bool throw_if_null);
 
-    virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
+    virtual std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(
         std::string_view subcolumn_name,
         const SubstreamData & data,
         size_t initial_array_level,

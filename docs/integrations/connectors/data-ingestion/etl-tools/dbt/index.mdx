@@ -49,6 +49,7 @@ List of supported features:
 - [x] Ephemeral materialization
 - [x] Distributed table materialization (experimental)
 - [x] Distributed incremental materialization (experimental)
+- [x] Dictionary materialization (experimental)
 - [x] Contracts
 - [x] ClickHouse-specific column configurations (Codec, TTL...)
 - [x] ClickHouse-specific table settings (indexes, projections...)
@@ -70,8 +71,6 @@ dbt provides 5 types of materialization. All of them are supported by `dbt-click
 * **materialized view**: The model is built as a materialized view in the database. At ClickHouse this is built as a [materialized view](/reference/statements/create/view#materialized-view).
 
 Additional syntax and clauses define how these models should be updated if their underlying data changes. dbt generally recommends starting with the view materialization until performance becomes a concern. The table materialization provides a query time performance improvement by capturing the results of the model's query as a table at the expense of increased storage. The incremental approach builds on this further to allow subsequent updates to the underlying data to be captured in the target table.
-
-The[ current adapter](https://github.com/silentsokolov/dbt-clickhouse) for ClickHouse supports also support **dictionary**, **distributed table** and **distributed incremental** materializations. The adapter also supports dbt [snapshots](https://docs.getdbt.com/docs/building-a-dbt-project/snapshots#check-strategy) and [seeds](https://docs.getdbt.com/docs/building-a-dbt-project/seeds).
 
 The following are [experimental features](/reference/settings/beta-and-experimental-features) in `dbt-clickhouse`:
 
@@ -144,7 +143,7 @@ Your CD step can be as simple as running `dbt build` against your production Cli
 
 One common strategy is to use [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) jobs, where only the modified models (and their up- and downstream dependencies) are re-deployed. This approach uses artifacts from your production runs (i.e., the [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json)) to reduce the run time of your project and ensure there is no schema drift across environments.
 
-To keep your development environments in sync and avoid running your models against stale deployments, you can use [clone](https://docs.getdbt.com/reference/commands/clone) or even [defer](https://docs.getdbt.com/reference/node-selection/defer).
+To keep your development environments in sync and avoid running your models against stale deployments, you can use [clone](https://docs.getdbt.com/reference/commands/clone) or even [defer](https://docs.getdbt.com/reference/node-selection/defer). On ClickHouse, `dbt clone` copies MergeTree tables using a zero-copy `CLONE` statement — see [Cloning models with dbt clone](#dbt-clone) below for details.
 
 We recommend using a dedicated ClickHouse cluster or service for the testing environment (i.e., a staging environment) to avoid impacting the operation of your production environment. To ensure the testing environment is representative, it's important that you use a subset of your production data, as well as run dbt in a way that prevents schema drift between environments.
 
@@ -154,6 +153,17 @@ We recommend using a dedicated ClickHouse cluster or service for the testing env
 Using a dedicated environment for CI testing also allows you to perform manual testing without impacting your production environment. For example, you may want to point a BI tool to this environment for testing.
 
 For deployment (i.e., the CD step), we recommend using the artifacts from your production deployments to only update the models that have changed. This requires setting up object storage (e.g., S3) as intermediate storage for your dbt artifacts. Once that is set up, you can run a command like `dbt build --select state:modified+ --state path/to/last/deploy/state.json` to selectively rebuild the minimum amount of models needed based on what changed since the last run in production.
+
+#### Cloning models with `dbt clone` {#dbt-clone}
+
+Starting with dbt-clickhouse 1.10.1, the [`dbt clone`](https://docs.getdbt.com/reference/commands/clone) command uses ClickHouse's zero-copy `CREATE OR REPLACE TABLE ... CLONE AS ...` statement to clone models materialized as tables that use a MergeTree-family engine. This creates a copy of the table without duplicating the underlying data parts, making it a fast and cheap way to sync environments — for example, when setting up a development or [Slim CI](https://docs.getdbt.com/best-practices/best-practice-workflows#run-only-modified-models-to-test-changes-slim-ci) environment from production state.
+
+Models that can't be cloned this way fall back to dbt's default behavior of creating a view pointing to the source relation:
+
+- Tables using non-MergeTree engines
+- Distributed materializations
+
+For materialized view models, only the target table is cloned; the materialized view itself is created on top of the cloned table.
 
 ## Troubleshooting common issues {#troubleshooting-common-issues}
 
@@ -169,6 +179,21 @@ If you encounter issues connecting to ClickHouse from dbt, make sure the followi
 ### Understanding long-running operations {#understanding-long-running-operations}
 
 Some operations may take longer than expected due to specific ClickHouse queries. To gain more insight into which queries are taking longer, increase the [log level](https://docs.getdbt.com/reference/global-configs/logs#log-level) to `debug` — this will print the time used by each query. For example, this can be achieved by appending `--log-level debug` to dbt commands.
+
+### Correlating dbt runs with ClickHouse queries {#query-id-tracking}
+
+For server-side detail, starting with dbt-clickhouse 1.10.1, every statement executed by the adapter is assigned its own query ID (a UUID4), which is forwarded to ClickHouse. The ID of a model's main statement is returned in the `adapter_response` of its dbt result, so it's available in dbt artifacts such as [`run_results.json`](https://docs.getdbt.com/reference/artifacts/run-results-json). You can look it up in the [`system.query_log`](/reference/system-tables/query_log) table to inspect that statement's timing and resource usage:
+
+```sql
+SELECT query_id, query, query_duration_ms, read_rows, memory_usage
+FROM system.query_log
+WHERE query_id = '<query_id from run_results.json>'
+  AND type = 'QueryFinish'
+```
+
+Note that a materialization usually runs several statements per model (DDL, inserts, etc.), each with its own query ID; the one in `run_results.json` identifies only the model's main statement. To find every statement behind a run, filter `system.query_log` by the [dbt query comment](https://docs.getdbt.com/reference/project-configs/query-comment) embedded in each query's text instead.
+
+The query ID also enables observability tools that consume dbt artifacts (for example, Elementary) to link dbt model runs to entries in `system.query_log` automatically.
 
 ## Limitations {#limitations}
 

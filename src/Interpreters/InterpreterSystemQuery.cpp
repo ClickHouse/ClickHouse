@@ -9,7 +9,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -98,6 +97,7 @@
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
+#include <Common/formatReadable.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
@@ -811,20 +811,6 @@ BlockIO InterpreterSystemQuery::execute()
             ExternalDictionariesLoader::resetAll();
             break;
         }
-        case Type::RELOAD_MODEL:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
-            bridge_helper->removeModel();
-            break;
-        }
-        case Type::RELOAD_MODELS:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
-            bridge_helper->removeAllModels();
-            break;
-        }
         case Type::RELOAD_FUNCTION:
         {
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_FUNCTION);
@@ -1494,6 +1480,10 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
+    /// The definition comes from metadata stored on this server, not from a user, so it must load the
+    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
+    /// that only a freshly introduced definition needs.
+    create.attach_short_syntax = true;
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
@@ -2884,12 +2874,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNLOAD_DICTIONARY:
         case Type::UNLOAD_DICTIONARIES: {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
-            break;
-        }
-        case Type::RELOAD_MODEL:
-        case Type::RELOAD_MODELS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
         case Type::RELOAD_FUNCTION:

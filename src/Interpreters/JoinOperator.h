@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Joins.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <QueryPipeline/SizeLimits.h>
@@ -9,6 +10,13 @@ namespace DB
 {
 
 struct Settings;
+
+struct SharedRuntimeFilterDescriptor
+{
+    String filter_key;
+    String build_key_name;
+    DataTypePtr common_type;
+};
 
 struct JoinOperator
 {
@@ -29,9 +37,9 @@ struct JoinOperator
     /// For INNER JOINs, residual filter is the same as expression
     std::vector<JoinActionRef> residual_filter = {};
 
-    /// (filter_name, build-side key column name) pairs that HashJoin should publish as
-    /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.
-    std::vector<std::pair<String, String>> shared_runtime_filter_descriptors = {};
+    /// Runtime filters that `HashJoin` should publish as shared `FixedHashMap` runtime filters.
+    /// Set by the `joinRuntimeFilter` optimizer pass.
+    std::vector<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
 
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
@@ -111,9 +119,13 @@ struct JoinSettings
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;
+    bool legacy_join_size_limits_trigger_spilling;
     bool use_hash_table_stats_for_join_reordering;
+    bool enable_hash_join_row_store;
+    Float64 min_rows_ratio_for_hash_join_row_store;
 
     bool enable_join_fixed_hash_table_conversion;
+    bool enable_join_key_only_hash_tables;
     bool join_runtime_filter_from_fixed_hash_table;
 
     /// Which statistics the join must collect for EXPLAIN ANALYZE
