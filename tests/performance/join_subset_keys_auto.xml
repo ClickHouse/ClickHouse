@@ -27,10 +27,12 @@
           high_card NDV = 10_000_000 (near-unique)
           low_card  NDV =  1_000_000 (intDiv(number, 10))
 
-        Plain join on both keys; the query names `query_plan_hash_join_subset_keys_auto`
-        explicitly so it keeps measuring the optimization even against a reference build
-        where the setting is still off. On master / without the
-        setting, both keys go into the hash table (~10M entries). With the setting,
+        Plain join on both keys, with no reference to
+        `query_plan_hash_join_subset_keys_auto` in the query: it is on by default, and
+        naming a setting the reference build does not know makes the query fail there
+        with `UNKNOWN_SETTING`, which drops it out of the comparison and into the
+        report's "Backward-incompatible Queries" table. On a build without the
+        optimization, both keys go into the hash table (~10M entries). With it,
         the join-order optimizer keeps `low_card` as the hash key and evaluates
         `high_card` during the probe. Memory drops ~2x; runtime in the same shape ranges
         from no change to a clear improvement depending on cache pressure.
@@ -44,7 +46,6 @@
     <query>
         SELECT count() FROM jks_perf_left l JOIN jks_perf_right r
             ON l.high_card = r.high_card AND l.low_card = r.low_card
-        SETTINGS query_plan_hash_join_subset_keys_auto = 1
         FORMAT Null
     </query>
 
