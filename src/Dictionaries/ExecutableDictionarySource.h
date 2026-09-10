@@ -20,7 +20,7 @@ public:
     struct Configuration
     {
         std::string command;
-        std::vector<std::string> command_arguments;
+        VectorWithMemoryTracking<std::string> command_arguments;
         std::string update_field;
         UInt64 update_lag;
         /// Implicit key means that the source script will return only values,
@@ -46,9 +46,9 @@ public:
       */
     BlockIO loadUpdatedAll() override;
 
-    BlockIO loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
-    BlockIO loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
     bool isModified() const override;
 

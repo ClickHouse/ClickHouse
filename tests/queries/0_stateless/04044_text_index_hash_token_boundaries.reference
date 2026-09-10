@@ -1,0 +1,8 @@
+Test 1 abc+def:	200
+Test 2 abcd+ef:	200
+Test 3 OR both:	300
+Test 4 AND both:	100
+Test 5 a+bcd:	100
+Test 6 ab+cd:	100
+Test 7 OR boundary:	200
+Test 8 AND boundary:	0

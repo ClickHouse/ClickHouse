@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class PageCacheCell;
+using PageCacheCellPtr = std::shared_ptr<PageCacheCell>;
+
 /** Interface for asynchronous reads from file descriptors.
   * It can abstract Linux AIO, io_uring or normal reads from separate thread pool,
   * and also reads from non-local filesystems.
@@ -47,30 +50,40 @@ public:
         FileDescriptorPtr descriptor;
         size_t offset = 0;
         size_t size = 0;
+        /// If descriptor is a RemoteFSFileDescriptor containing a CachedInMemoryReadBufferFromFile
+        /// then `buf` can be nullptr, and PageCacheCell buffer will be used instead (to avoid
+        /// copying data out of userspace page cache).
         char * buf = nullptr;
         Priority priority;
+        /// Some implementations require ignore < size.
+        /// AsynchronousBoundedReadBuffer may set ignore >= size, so it should only be used with
+        /// implementations that don't require that.
         size_t ignore = 0;
         bool direct_io = false;
     };
 
     struct Result
     {
-        /// The read data is at [buf + offset, buf + size), where `buf` is from Request struct.
+        /// The read data is at [buf + offset, buf + size).
         /// (Notice that `offset` is included in `size`.)
-
-        /// size
+        /// buf is either the buf from Request or inside page_cache_cell's buffer,
+        /// or nullptr if size = 0.
         /// Less than requested amount of data can be returned.
         /// If size is zero - the file has ended.
         /// (for example, EINTR must be handled by implementation automatically)
+        char * buf = nullptr;
         size_t size = 0;
-
-        /// offset
-        /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
 
-        std::unique_ptr<Stopwatch> execution_watch = {};
+        /// File offset corresponding to `buf + size`. Equal to:
+        /// request.offset + request.ignore + (result.size - result.offset)
+        size_t file_offset_of_buffer_end = 0;
 
-        explicit operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
+        /// If not null, `buf` points into it, so this shared_ptr must be kept alive for as long
+        /// as `buf` is in use.
+        PageCacheCellPtr page_cache_cell = {};
+
+        std::unique_ptr<Stopwatch> execution_watch = {};
     };
 
     /// Submit request and obtain a handle. This method don't perform any waits.

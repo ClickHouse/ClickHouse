@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
@@ -54,28 +55,28 @@ enum class FunctionSleepVariant : uint8_t
     PerRow
 };
 
-template <FunctionSleepVariant variant>
-class FunctionSleep : public IFunction
+class FunctionSleep final : public IFunction
 {
 private:
+    const char * function_name;
+    FunctionSleepVariant variant;
     UInt64 max_microseconds;
-    QueryStatusPtr query_status;
 
 public:
-    static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionSleep<variant>>(
-            context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block], context->getProcessListElementSafe());
-    }
-
-    FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)
-        : max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
-        , query_status(query_status_)
+    FunctionSleep(const char * name_, FunctionSleepVariant variant_, UInt64 max_microseconds_)
+        : function_name(name_)
+        , variant(variant_)
+        , max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
     {
     }
 
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, FunctionSleepVariant variant, ContextPtr context)
+    {
+        return std::make_shared<FunctionSleep>(
+            name, variant, context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block]);
+    }
+
+    String getName() const override { return function_name; }
     bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -109,6 +110,12 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool dry_run) const
     {
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+
         const IColumn * col = arguments[0].column.get();
 
         if (!isColumnConst(*col))
@@ -211,7 +218,6 @@ SELECT sleep(2);
 ┌─sleep(2)─┐
 │        0 │
 └──────────┘
-1 row in set. Elapsed: 2.012 sec.
             )"
         },
     };
@@ -219,7 +225,9 @@ SELECT sleep(2);
     FunctionDocumentation::Category category_sleep = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_sleep = {description_sleep, syntax_sleep, arguments_sleep, {}, returned_value_sleep, examples_sleep, introduced_in_sleep, category_sleep};
 
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>(documentation_sleep);
+    factory.registerFunction("sleep",
+        [](ContextPtr ctx){ return FunctionSleep::create("sleep", FunctionSleepVariant::PerBlock, std::move(ctx)); },
+        documentation_sleep);
 
     FunctionDocumentation::Description description_sleepEachRow = R"(
 Pauses the execution of a query for a specified number of seconds for each row in the result set.
@@ -262,7 +270,9 @@ SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
     FunctionDocumentation::Category category_sleepEachRow = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_sleepEachRow = {description_sleepEachRow, syntax_sleepEachRow, arguments_sleepEachRow, {}, returned_value_sleepEachRow, examples_sleepEachRow, introduced_in_sleepEachRow, category_sleepEachRow};
 
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>(documentation_sleepEachRow);
+    factory.registerFunction("sleepEachRow",
+        [](ContextPtr ctx){ return FunctionSleep::create("sleepEachRow", FunctionSleepVariant::PerRow, std::move(ctx)); },
+        documentation_sleepEachRow);
 }
 
 }

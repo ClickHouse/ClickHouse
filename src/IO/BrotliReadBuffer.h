@@ -25,6 +25,7 @@ private:
     std::unique_ptr<BrotliStateWrapper> brotli;
 
     size_t in_available;
+    size_t total_in = 0;
     const uint8_t * in_data;
 
     size_t out_capacity;

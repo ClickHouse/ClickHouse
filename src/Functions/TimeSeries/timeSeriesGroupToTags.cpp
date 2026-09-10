@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesGroupToTags(group) returns Array(Tuple(String, String))
 /// containing the names and values of tags associated with a specified group.
-class FunctionTimeSeriesGroupToTags : public IFunction
+class FunctionTimeSeriesGroupToTags final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesGroupToTags";
@@ -33,6 +33,12 @@ public:
     /// Function timeSeriesGroupToTags returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -72,7 +78,7 @@ REGISTER_FUNCTION(TimeSeriesGroupToTags)
 {
     FunctionDocumentation::Description description = R"(
 Returns the names and values of the tags associated with a specified group.
-See also function [timeSeriesTagsToGroup()](/sql-reference/functions/time-series-functions#timeSeriesTagsToGroup).
+See also function [timeSeriesTagsToGroup()](/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup).
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesGroupToTags(group)";
     FunctionDocumentation::Arguments arguments = {{"group", "A group of tags.", {"UInt64"}}};
@@ -93,9 +99,9 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
        throwIf(same_group != group)
         )",
         R"(
-┌─group─┬─sorted_tags────────────────────────────────────────────────────────┬─same_group─┬─throwIf(notE⋯up, group))─┐
-│     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │          1 │                        0 │
-└───────┴────────────────────────────────────────────────────────────────────┴────────────┴──────────────────────────┘
+┌─group─┬─sorted_tags────────────────────────────────────────────────────────┬─same_group─┬─throwIf(notEquals(same_group, group))─┐
+│     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │          1 │                                     0 │
+└───────┴────────────────────────────────────────────────────────────────────┴────────────┴───────────────────────────────────────┘
         )"
     }
     };

@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log;"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT part_name, event_type, merged_from, mutation_ids \
-    FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' \
+    FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' and table = 'rmt' \
     AND event_type IN ('MutatePart', 'MutatePartStart') \
     ORDER BY event_time_microseconds;
 "
@@ -56,7 +56,7 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log;"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT part_name, event_type, merged_from, mutation_ids \
-    FROM system.part_log WHERE database = '$CLICKHOUSE_DATABASE' and table = 'rmt' \
+    FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' and table = 'rmt' \
     AND event_type IN ('MutatePart', 'MutatePartStart') \
     ORDER BY event_time_microseconds;
 "

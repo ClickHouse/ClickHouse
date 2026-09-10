@@ -1,12 +1,25 @@
 # docker build -t clickhouse/test-base .
 FROM ubuntu:22.04
 
-# ARG for quick switch to a given ubuntu mirror
+# ARG for quick switch to a given ubuntu mirror. Defaults stay canonical so local
+# builds are unchanged; CI passes the in-region AWS mirror on the command line
+# (see ci/praktika/docker.py). amd64 base images use archive.ubuntu.com, arm64
+# uses ports.ubuntu.com, so rewrite both. Sources live in /etc/apt/sources.list
+# on 22.04 and in *.sources (deb822) on 24.04, so rewrite every apt source file.
+# The runners have no IPv6 egress, so force IPv4 to avoid hanging on IPv6 connect
+# attempts (this is a CI-only image, never pulled by end users, so forcing IPv4
+# here is safe). Also retry transient apt failures.
 ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:21.1.5~"
+ARG apt_ports_archive="http://ports.ubuntu.com"
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xargs -0 -r sed -i \
+        -e "s|http://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|https://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
+        -e "s|https://ports.ubuntu.com|$apt_ports_archive|g" \
+    && printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99-clickhouse-ci
+ARG LLVM_APT_VERSION="1:22.1.8~"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=21
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=22
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \
@@ -28,8 +41,9 @@ RUN apt-get update \
         wget \
         iptables \
         iproute2 \
+        gh \
         --yes --no-install-recommends --verbose-versions \
-    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
+    && export LLVM_PUBKEY_HASH="5ffc7c9a9299ce774f81cada703e23ebba5bdfb0345b6c3b667b3ead7aa21c75ef62ccd74f7a8f2aa0cbe158d3068bbe" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
@@ -46,11 +60,12 @@ RUN test -f /usr/bin/llvm-symbolizer-${LLVM_VERSION}
 RUN ln -s /usr/bin/llvm-symbolizer-${LLVM_VERSION} /usr/bin/llvm-symbolizer
 
 # Install LLVM tools for code coverage (llvm-profdata, llvm-cov)
-# Must match LLVM_VERSION used for building (21)
+# Must match LLVM_VERSION used for building (22)
 RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         llvm-${LLVM_VERSION} \
+        lldb-${LLVM_VERSION} \
         make \
         libdatetime-perl \
         libcapture-tiny-perl \
@@ -82,6 +97,7 @@ RUN apt-get update \
         bsdmainutils \
         build-essential \
         git \
+        openssh-client \
         gperf \
         moreutils \
         less \
@@ -93,6 +109,7 @@ RUN apt-get update \
         netbase \
         perl \
         pv \
+        python3-requests \
         ripgrep \
         zstd \
         locales \
@@ -104,6 +121,15 @@ RUN apt-get update \
 # Note, libmpfr6 is also a requirement for gdb
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
+
+# lldb (installed with llvm above) is the native debugger used by
+# clickhouse-test's `print_c_stacktraces` to dump server backtraces.
+# Symlink the versioned binary into /usr/bin so callers can run `lldb`
+# directly, and grant suid so non-root tests can still attach. gdb is kept
+# above for the fuzzer, perf comparison, stress, upgrade, and
+# integration-test harnesses that still drive it directly.
+RUN ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
+    && chmod u+s /usr/lib/llvm-${LLVM_VERSION}/bin/lldb
 
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
   /opt/openssl-fips/openssl.cnf \
@@ -128,8 +154,28 @@ RUN wget -q -O /usr/bin/jeprof.orig https://raw.githubusercontent.com/jemalloc/j
 RUN wget -q -O /usr/bin/flamegraph.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/flamegraph.pl && chmod +x /usr/bin/flamegraph.pl
 RUN wget -q -O /usr/bin/difffolded.pl https://raw.githubusercontent.com/brendangregg/FlameGraph/cd9ee4c4449775a2f867acf31c84b7fe4b132ad5/difffolded.pl && chmod +x /usr/bin/difffolded.pl
 
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F23C5A6CF475977595C89F51BA6932366A755776 \
+    && echo "deb https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/deadsnakes-ppa.list \
+    && printf 'Package: *\nPin: release o=LP-PPA-deadsnakes\nPin-Priority: 100\n' > /etc/apt/preferences.d/deadsnakes \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.13 \
+        python3.13-venv \
+        python3.13-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/* \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13
+
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen en_US.UTF-8
 ENV LC_ALL en_US.UTF-8
 
 ENV TZ=Europe/Amsterdam
 RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
+
+# Make python3.13 the default python3 so CI scripts run with the right interpreter.
+RUN ln -sf /usr/bin/python3.13 /usr/bin/python3
+
+# Set a default USER so that Python's getpass.getuser() doesn't raise OSError
+# when the container is run with --user uid:gid and the UID is not in /etc/passwd.
+# Python 3.13 changed getpass.getuser() to raise OSError instead of KeyError in that case.
+ENV USER=nobody

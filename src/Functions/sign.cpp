@@ -48,7 +48,7 @@ struct SignImpl
 
             if (sign)
             {
-                auto * is_negative = b.CreateICmpSLT(arg, res_zero);
+                auto * is_negative = b.CreateICmpSLT(arg, zero);
                 auto * select_zero = b.CreateSelect(is_zero, res_zero, res_one);
                 return b.CreateSelect(is_negative, res_minus_one, select_zero);
             }

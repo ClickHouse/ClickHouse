@@ -1,0 +1,109 @@
+---
+position: 5
+slug: /clickhouse-operator/guides/scaling
+title: クラスターのスケーリング
+keywords: ['kubernetes', 'スケーリング', 'レプリカ', '分片', 'Keeper', 'クォーラム']
+description: 'ClickHouseのレプリカと分片、Keeperのクォーラムメンバーをスケーリングする方法と、オペレーターが自動的に実行する処理について説明します。'
+doc_type: 'guide'
+---
+
+クラスターをスケーリングするには、カスタムリソース 上でレプリカ数と分片数を編集します。オペレーター は新しいトポロジーに向けて稼働中のクラスターをリコンサイルし、レプリカごとの StatefulSet を作成または削除し、スキーマの整合性を保ち、status 条件 を通じて進捗を示します。
+
+このガイドでは、`ClickHouseCluster` のレプリカと分片をスケーリングする方法、`KeeperCluster` のクォーラムを安全にスケーリングする方法、そしてスケール操作の進行中に確認すべき 条件 について説明します。
+
+<Note>
+  `ClickHouseCluster` では常に Keeper が必要で、必須の `spec.keeperClusterRef` フィールドで参照します。オペレーター はクラスターのサイズに関係なく、これを通じてクラスターを調整します。1 つの分片あたり複数のレプリカを実行するには、データが `ReplicatedMergeTree` テーブルにも保存されている必要があります。レプリケーションによって、2 つ目のレプリカでも同じ行を提供できるようになるためです。
+</Note>
+
+<div id="scaling-replicas">
+  ## レプリカのスケーリング
+</div>
+
+`spec.replicas` は、各分片のレプリカ数を設定します。各レプリカは `<cluster>-clickhouse-<shard>-<replica>` という名前のそれぞれ独立した StatefulSet で実行されるため、`shards: 2` と `replicas: 3` のクラスターでは 6 つの StatefulSet が実行されます。
+
+この数はそのまま増減できます:
+
+```yaml
+spec:
+  replicas: 3   # was 1
+  keeperClusterRef:
+    name: my-keeper
+```
+
+スケールアップ時には、オペレーターがレプリカごとの新しい StatefulSets を作成し、各ポッドが Ready になるのを待ってから、新しいレプリカにスキーマを同期します ([スキーマの自動同期](#automatic-schema-sync) を参照) 。スケールダウン時には、余分な StatefulSets を削除し、削除したレプリカが残した古い replicated-database のレプリカ登録をクリーンアップします。
+
+<div id="scaling-shards">
+  ## 分片のスケーリング
+</div>
+
+`spec.shards` は分片数を設定します。新しい分片を追加するたびに、レプリカごとの StatefulSets 一式が追加されます。また、オペレーターは [分片ごとに 1 つの PodDisruptionBudget](/ja/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) を作成するため、ある分片での中断が別の分片の許容中断数に影響することはありません。
+
+```yaml
+spec:
+  shards: 3   # was 1
+  replicas: 2
+```
+
+各分片はデータのそれぞれ異なる一部を保持しており、オペレーターが分片間で行をコピーしたり移動したりすることはありません。`Distributed` テーブルまたは明示的なルーティング方式によって行の格納先となる分片が決まるため、分片を追加しても、既存の分片にすでに保存されている行に手を加えることなく、新しい書き込みの格納先を増やせます。
+
+<div id="automatic-schema-sync">
+  ## 自動スキーマ同期
+</div>
+
+`spec.settings.enableDatabaseSync` が `true` (デフォルト)  の場合、トポロジーの変化に応じて、オペレーターがスキーマの整合性を維持します。
+
+* **スケールアップ時** — 少なくとも 2 つのレプリカの準備が完了すると、オペレーターは新しく作成されたレプリカへデータベース定義をレプリケートします。これにより、新しいレプリカはクラスター内の他のレプリカと同じ `Replicated` データベースおよびインテグレーションデータベースを持った状態で参加できます。
+* **スケールダウン時** — レプリカが削除される前に、オペレーターは `SYSTEM DROP DATABASE REPLICA` を使用して、各 `Replicated` データベースからそのレプリカの登録を削除します。これにより、縮小後のクラスターが、すでに存在しない `Replicated` データベースのレプリカを待ち続けることを防ぎます。
+
+この動作の対象は `Replicated` データベースとインテグレーションのデータベースエンジンです。テーブルデータは移動されません。行データは `ReplicatedMergeTree` テーブルに保持され、このスキーマ同期とは独立して Keeper 経由でレプリケートされます。準備完了したレプリカが 1 つしかない場合はレプリケート先がないため、オペレーターはこのステップをスキップし、対象がないことをログに記録します。
+
+たとえば、外部ツールがスキーマ伝播を管理している場合は、`enableDatabaseSync: false` を設定してこの動作を無効にします。その場合、オペレーターは `SchemaInSync` 条件に `SchemaSyncDisabled` という reason を報告します。
+
+<div id="scaling-conditions">
+  ## 確認すべき 条件
+</div>
+
+スケール操作の実行中に、カスタムリソースの進捗を確認します:
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+| 条件                   | 理由                     | 意味                                   |
+| -------------------- | ---------------------- | ------------------------------------ |
+| `ClusterSizeAligned` | `UpToDate`             | 稼働中のレプリカ数が要求されたトポロジーと一致している          |
+| `ClusterSizeAligned` | `ScalingUp`            | オペレーターがレプリカを追加している                   |
+| `ClusterSizeAligned` | `ScalingDown`          | オペレーターがレプリカを削除している                   |
+| `SchemaInSync`       | `ReplicasInSync`       | すべてのレプリカ上にデータベースが存在し、古いメタデータが削除されている |
+| `SchemaInSync`       | `DatabasesNotCreated`  | オペレーターは新しいレプリカ上でのデータベース作成をまだ完了していない  |
+| `SchemaInSync`       | `ReplicasNotCleanedUp` | スケールダウンで発生した古いレプリカのメタデータがまだ削除されていない  |
+| `SchemaInSync`       | `SchemaSyncDisabled`   | `enableDatabaseSync` が `false` である   |
+| `Ready`              | `AllShardsReady`       | すべての分片に Ready なレプリカがある               |
+| `Ready`              | `SomeShardsNotReady`   | 少なくとも 1 つの分片に Ready なレプリカがない         |
+
+スケール操作は、`ClusterSizeAligned` が `UpToDate`、`SchemaInSync` が `ReplicasInSync`、`Ready` が `AllShardsReady` をそれぞれ報告した時点で完了します。
+
+<div id="scaling-keeper">
+  ## Keeper のスケーリング
+</div>
+
+`KeeperCluster` は RAFT クォーラムで動作するため、オペレーター はメンバーシップを**一度に 1 レプリカずつ**変更し、クラスターが安定した状態にある場合にのみ実行します。これによりクォーラムが保護されます。`2F+1` のクラスターは `F` 個のメンバーの停止に耐えられるため、3 ノードのクラスターは 1 メンバーが欠けても動作を継続でき、5 ノードのクラスターは 2 メンバーが欠けても動作を継続できます。
+
+```yaml
+spec:
+  replicas: 5   # was 3
+```
+
+スケールアップ時には、オペレーター は未使用の中で最も小さいレプリカ ID をクォーラムに追加します。スケールダウン時には、最も大きい ID を削除します。各ステップでは、次の処理を開始する前にクォーラムが安定するまで待機します。[Keeper PodDisruptionBudget](/ja/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) のデフォルトは `maxUnavailable: replicas/2` で、自発的な中断中もクォーラムを維持できるようになっています。
+
+`ScaleAllowed` 条件は、クォーラムのメンバー構成を現在変更できるかどうかを示します。
+
+| Reason                     | Meaning                                 |
+| -------------------------- | --------------------------------------- |
+| `ReadyToScale`             | クォーラムは安定しており、オペレーター はメンバーを追加または削除できます |
+| `ReplicaHasPendingChanges` | レプリカに保留中の設定変更がまだあります                    |
+| `ReplicaNotReady`          | レプリカの準備ができていないため、メンバー構成の変更は待機します        |
+| `NoQuorum`                 | クラスターにクォーラムがなく、安全にメンバー構成を変更できません        |
+| `WaitingFollowers`         | オペレーター はフォロワーが追いつくのを待っています            |
+
+Keeper は 1 ステップずつスケールし、変更の合間に `ScaleAllowed` が `ReadyToScale` に戻るのを待ってください。一度に複数メンバー分を変更しても、1 回に 1 メンバーずつ行うリコンサイルを省略することはできません。オペレーター はそれでも、クォーラムをステップごとに 1 メンバーずつ進めます。

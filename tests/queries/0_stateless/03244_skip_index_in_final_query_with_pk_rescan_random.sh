@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan, no-asan, no-msan, no-s3-storage
+# Tags: long, no-debug, no-tsan, no-asan, no-msan, no-s3-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,6 +12,7 @@ test_seed=`$CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp(now())"`
 res=`$CLICKHOUSE_CLIENT -mq "
 set enable_analyzer=1;
 set allow_experimental_analyzer=1;
+set max_threads='auto';
 
 DROP TABLE IF EXISTS st;
 CREATE TABLE st (id Int32, v Int32, r Int32, INDEX bfv v TYPE bloom_filter) ENGINE=ReplacingMergeTree ORDER BY (id) SETTINGS index_granularity = 64;

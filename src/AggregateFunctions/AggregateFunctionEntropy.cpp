@@ -130,7 +130,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -175,6 +175,7 @@ AggregateFunctionPtr createAggregateFunctionEntropy(
 
 }
 
+void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -207,7 +208,7 @@ SELECT entropy(vals), entropy(strings) FROM entropy
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
-    factory.registerFunction("entropy", {createAggregateFunctionEntropy, {}, documentation});
+    factory.registerFunction("entropy", {createAggregateFunctionEntropy, documentation, {}});
 }
 
 }

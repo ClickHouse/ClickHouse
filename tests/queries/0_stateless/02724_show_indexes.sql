@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 -- no-parallel: creates a custom database schema and expects to use it exclusively
 -- add_minmax_index_for_numeric_columns=0: Adds more output to SHOW INDEX
 

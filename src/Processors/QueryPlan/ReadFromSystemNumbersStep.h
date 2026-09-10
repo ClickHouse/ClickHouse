@@ -38,7 +38,6 @@ private:
     ExpressionActionsPtr key_expression;
     size_t max_block_size;
     size_t num_streams;
-    UInt64 query_info_limit;
     std::shared_ptr<const StorageLimitsList> storage_limits;
 };
 

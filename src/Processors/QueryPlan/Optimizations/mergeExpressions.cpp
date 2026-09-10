@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
@@ -43,13 +44,26 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         /// We cannot combine actions with arrayJoin and stateful function because we not always can reorder them.
         /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
         /// Such a query will return two zeroes if we combine actions together.
-        if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
+        /// A function that is merely non-deterministic within the query (`rand64`, `generateUUIDv4`,
+        /// ...) has the same problem for the same reason: merged into the child DAG it is computed
+        /// once per source row and the value is then replicated across the rows the `arrayJoin`
+        /// expands, instead of being drawn once per output row.
+        if (child_actions.hasArrayJoin()
+            && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
             return 0;
+
+        /// Propagate the flag from either side: if the child is a discarding step (or any
+        /// step whose inputs must not be stripped), the merged step must keep the same
+        /// invariant, otherwise `removeUnusedColumns` would prune the inherited inputs and
+        /// trigger an infinite loop with re-inserted discarding steps.
+        const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_expr->isInputRemovalPrevented();
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
         expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        if (prevent_input_removal)
+            expr->setPreventInputRemoval();
 
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
@@ -60,10 +74,17 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 
-        if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
+        /// Same as for the expression step above: a stateful or non-deterministic filter must not be
+        /// computed before the `arrayJoin` replicates the rows it applies to.
+        if (child_actions.hasArrayJoin()
+            && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
             return 0;
 
+        const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_filter->isInputRemovalPrevented();
+
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
+
+        merged.deduplicateSubtrees();
 
         auto filter = std::make_unique<FilterStep>(
             child_expr->getInputHeaders().front(),
@@ -71,6 +92,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
         filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        if (prevent_input_removal)
+            filter->setPreventInputRemoval();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -114,12 +137,14 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         const auto & condition = child_actions.addFunction(func_builder_and, {&child_filter_node, &parent_filter_node}, {});
         auto & outputs = child_actions.getOutputs();
         outputs.insert(outputs.begin(), &condition);
+        /// condition name may be changed by deduplicateSubtrees
+        auto condition_name = condition.result_name;
 
-        child_actions.removeUnusedActions(false);
+        child_actions.deduplicateSubtrees();
 
         auto filter = std::make_unique<FilterStep>(child_filter->getInputHeaders().front(),
                                                    std::move(child_actions),
-                                                   condition.result_name,
+                                                   condition_name,
                                                    true);
         filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
 

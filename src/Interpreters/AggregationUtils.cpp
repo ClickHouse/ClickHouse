@@ -13,7 +13,8 @@ namespace ErrorCodes
 OutputBlockColumns prepareOutputBlockColumns(
     const Aggregator::Params & params,
     const Aggregator::AggregateFunctionsPlainPtrs & aggregate_functions,
-    const Block & res_header,
+    const DataTypes & key_types,
+    const DataTypes & aggregate_state_types,
     Arenas & aggregates_pools,
     bool final,
     size_t rows)
@@ -25,7 +26,7 @@ OutputBlockColumns prepareOutputBlockColumns(
 
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = res_header.safeGetByPosition(i).type->createColumn();
+        key_columns[i] = key_types[i]->createColumn();
         key_columns[i]->reserve(rows);
     }
 
@@ -33,8 +34,7 @@ OutputBlockColumns prepareOutputBlockColumns(
     {
         if (!final)
         {
-            const auto & aggregate_column_name = params.aggregates[i].column_name;
-            aggregate_columns[i] = res_header.getByName(aggregate_column_name).type->createColumn();
+            aggregate_columns[i] = aggregate_state_types[i]->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
@@ -83,30 +83,28 @@ OutputBlockColumns prepareOutputBlockColumns(
     };
 }
 
-Block finalizeBlock(const Aggregator::Params & params, const Block & res_header, OutputBlockColumns && out_cols, bool final, size_t rows)
+Chunk finalizeChunk(
+    const Aggregator::Params & params,
+    OutputBlockColumns && out_cols,
+    bool final)
 {
     auto && [key_columns, raw_key_columns, aggregate_columns, final_aggregate_columns, aggregate_columns_data] = out_cols;
 
-    Block res = res_header.cloneEmpty();
+    Columns columns;
+    columns.reserve(params.keys_size + params.aggregates_size);
 
     for (size_t i = 0; i < params.keys_size; ++i)
-        res.getByPosition(i).column = std::move(key_columns[i]);
+        columns.emplace_back(std::move(key_columns[i]));
 
     for (size_t i = 0; i < params.aggregates_size; ++i)
     {
-        const auto & aggregate_column_name = params.aggregates[i].column_name;
         if (final)
-            res.getByName(aggregate_column_name).column = std::move(final_aggregate_columns[i]);
+            columns.emplace_back(std::move(final_aggregate_columns[i]));
         else
-            res.getByName(aggregate_column_name).column = std::move(aggregate_columns[i]);
+            columns.emplace_back(std::move(aggregate_columns[i]));
     }
 
-    /// Change the size of the columns-constants in the block.
-    size_t columns = res_header.columns();
-    for (size_t i = 0; i < columns; ++i)
-        if (isColumnConst(*res.getByPosition(i).column))
-            res.getByPosition(i).column = res.getByPosition(i).column->cut(0, rows);
-
-    return res;
+    size_t rows = columns.empty() ? 0 : columns[0]->size();
+    return Chunk(std::move(columns), rows);
 }
 }

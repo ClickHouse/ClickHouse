@@ -1,9 +1,12 @@
 #pragma once
+
 #include <cstddef>
 #include <type_traits>
+
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -15,17 +18,27 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Core/AccurateComparison.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/castColumn.h>
-
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnDynamic.h>
+#include <DataTypes/DataTypeObject.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool type_json_skip_null_typed_paths;
+}
 
 namespace ErrorCodes
 {
@@ -84,45 +97,20 @@ private:
     using ArrOffset = ColumnArray::Offset;
     using ArrOffsets = ColumnArray::Offsets;
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wsign-compare"
-
-    static constexpr bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i) noexcept
+    static bool compare(const Initial & left, const PaddedPODArray<Result> & right, size_t, size_t i)
     {
-        return left == right[i];
+        return accurate::equalsOp(left, right[i]);
     }
 
-    static constexpr bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
+    static bool compare(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right;
-        }
-        else
-        {
-            return left[i] == right;
-        }
+        return accurate::equalsOp(left[i], right);
     }
 
-    static constexpr bool compare(
-            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j) noexcept
+    static bool compare(
+            const PaddedPODArray<Initial> & left, const PaddedPODArray<Result> & right, size_t i, size_t j)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] == static_cast<Initial>(right[j]);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) == right[j];
-        }
-        else
-        {
-            return left[i] == right[j];
-        }
+        return accurate::equalsOp(left[i], right[j]);
     }
 
     /// LowCardinality
@@ -142,29 +130,17 @@ private:
         return accurateEquals(arr[pos], rhs);
     }
 
-    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
+    static bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        if constexpr (std::is_floating_point_v<Initial> && !std::is_floating_point_v<Result>)
-        {
-            return left[i] >= static_cast<Initial>(right);
-        }
-        else if constexpr (!std::is_floating_point_v<Initial> && std::is_floating_point_v<Result>)
-        {
-            return static_cast<Result>(left[i]) >= right;
-        }
-        else
-        {
-            return left[i] >= right;
-        }
+        return accurate::greaterOrEqualsOp(left[i], right);
     }
 
-    static constexpr bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) noexcept { return left[i] >= right; }
+    static bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) { return left[i] >= right; }
 
-    static constexpr bool lessOrEqual(const Array& arr, const Field& rhs, size_t pos, size_t) noexcept {
+    static bool lessOrEqual(const Array & arr, const Field & rhs, size_t pos, size_t)
+    {
         return accurateLessOrEqual(rhs, arr[pos]);
     }
-
-#pragma clang diagnostic pop
 
 public:
     /** Assuming that the array is sorted, use a binary search */
@@ -490,11 +466,18 @@ public:
 }
 
 template <typename ConcreteAction, typename Name>
-class FunctionArrayIndex : public IFunction
+class FunctionArrayIndex final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayIndex>(); }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionArrayIndex>(context->getSettingsRef()[Setting::type_json_skip_null_typed_paths]);
+    }
+
+    /// The default is for Map adapters that hold this function as a member; JSON is not reachable from them.
+    explicit FunctionArrayIndex(bool skip_null_typed_paths_ = false) : skip_null_typed_paths(skip_null_typed_paths_) {}
 
     /// Get function name.
     String getName() const override { return name; }
@@ -515,14 +498,24 @@ public:
 
         DataTypePtr inner_type;
 
-        /// If map is first argument only has(map_column, key) function is supported
+        const DataTypeObject * object_type = checkAndGetDataType<DataTypeObject>(first_argument_type.get());
         if constexpr (std::is_same_v<ConcreteAction, HasAction>)
         {
-            if (!array_type && !map_type)
+            if (!array_type && !map_type && !object_type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "First argument for function {} must be an array or map. Actual {}",
+                    "First argument for function {} must be an array, map or JSON. Actual {}",
                     getName(),
                     first_argument_type->getName());
+
+            if (object_type)
+            {
+                if (!isStringOrFixedString(second_argument_type))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Second argument for function {} must be String when the first argument is JSON. Actual {}",
+                        getName(), second_argument_type->getName());
+
+                return std::make_shared<DataTypeUInt8>();
+            }
 
             inner_type = map_type ? map_type->getKeyType() : array_type->getNestedType();
         }
@@ -557,6 +550,9 @@ public:
         if (auto res = executeMap(arguments, result_type))
             return res;
 
+        if (auto res = executeObject(arguments, result_type))
+            return res;
+
         if (auto res = executeArrayLowCardinality(arguments))
             return res;
 
@@ -587,6 +583,66 @@ private:
             || getLeastSupertype(DataTypes{inner_type_decayed, arg_decayed});
     }
 
+    /// What a date or time type counts. Two types that count different things are told apart by a
+    /// cast between them, and not by the comparison of the raw numbers they are stored as.
+    enum class DateTimeUnit : uint8_t
+    {
+        NotDateTime,
+        Days,
+        EpochSeconds,
+        TimeOfDay,
+    };
+
+    static DateTimeUnit dateTimeUnitOf(const DataTypePtr & type)
+    {
+        if (isDateOrDate32(type))
+            return DateTimeUnit::Days;
+        if (isDateTimeOrDateTime64(type))
+            return DateTimeUnit::EpochSeconds;
+        if (isTimeOrTime64(type))
+            return DateTimeUnit::TimeOfDay;
+        return DateTimeUnit::NotDateTime;
+    }
+
+    /// A `Date` counts days, a `DateTime` counts seconds since the epoch and a `Time` counts seconds
+    /// within a day, and every comparison below reads both sides as the raw numbers they are stored
+    /// as, where 19723 days is not 1704067200 seconds. So `has` did not find
+    /// `toDateTime('2024-01-01 00:00:00')` in an `Array(Date)` holding that same instant, although
+    /// `equals` -- which brings such a pair to the type the two meet in -- does consider them equal,
+    /// and although the `Array(LowCardinality(Date))` encoding of the same haystack, which resolves
+    /// the needle by a cast, did find it. Bring the pair to that type first, so that what is compared
+    /// here is what `equals` compares, whichever way the haystack is encoded.
+    ColumnPtr executeDifferentDateTimeUnits(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
+    {
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
+        if (!array_type)
+            return nullptr;
+
+        const auto & element_type = array_type->getNestedType();
+        const auto & needle_type = arguments[1].type;
+
+        const auto element_unit = dateTimeUnitOf(removeNullable(element_type));
+        const auto needle_unit = dateTimeUnitOf(removeNullable(needle_type));
+
+        if (element_unit == DateTimeUnit::NotDateTime || needle_unit == DateTimeUnit::NotDateTime
+            || element_unit == needle_unit)
+            return nullptr;
+
+        /// A pair of date or time types always has a common type, which `allowArguments` has already
+        /// required of it: neither side is a native number, so it took the `getLeastSupertype` branch.
+        const auto common_type = getLeastSupertype(DataTypes{element_type, needle_type});
+        const auto common_array_type = std::make_shared<DataTypeArray>(common_type);
+
+        ColumnsWithTypeAndName new_arguments = arguments;
+        new_arguments[0].column = castColumn(arguments[0], common_array_type);
+        new_arguments[0].type = common_array_type;
+        new_arguments[1].column = castColumn(arguments[1], common_type);
+        new_arguments[1].type = common_type;
+
+        return executeArrayImpl(new_arguments, result_type);
+    }
+
     /** If one or both arguments passed to this function are nullable,
       * we create a new column that contains non-nullable arguments:
       *
@@ -602,6 +658,9 @@ private:
       */
     ColumnPtr executeArrayImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
     {
+        if (auto res = executeDifferentDateTimeUnits(arguments, result_type))
+            return res;
+
         const ColumnPtr & ptr = arguments[0].column;
 
         /** The columns here have two general cases, either being Array(T) or Const(Array(T)).
@@ -699,7 +758,7 @@ private:
      * @return {nullptr, null_map_item} if there are four arguments but the third is missing.
      * @return {null_map_data, null_map_item} if there are four arguments.
      */
-    static NullMaps getNullMaps(const ColumnsWithTypeAndName & arguments) noexcept
+    static NullMaps getNullMaps(const ColumnsWithTypeAndName & arguments)
     {
         if (arguments.size() < 3)
             return {nullptr, nullptr};
@@ -808,6 +867,13 @@ private:
      */
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
+        /// The LowCardinality optimization compares dictionary indices instead of actual values.
+        /// This is correct for linear scan (indexOf, has, countEqual) where only equality is checked,
+        /// but incorrect for binary search (indexOfAssumeSorted) where ordering matters --
+        /// dictionary indices are assigned in insertion order, not in sorted order of values.
+        if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            return nullptr;
+
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
 
@@ -827,36 +893,28 @@ private:
 
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
-        auto right = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
+
+        /// A float zero equals two byte-distinct dictionary entries, -0.0 and 0.0, and a single index
+        /// cannot denote both, so leave a zero needle to the path that compares values. The needle
+        /// type is narrowed only so that reading it as a float is total.
+        const auto needle_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+        if (isFloat(removeNullable(target_type)) && (isNumber(needle_type) || isEnum(needle_type))
+            && !right_const->isNullAt(0) && right_const->getDataColumnPtr()->getFloat64(0) == 0.0)
+            return nullptr;
 
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
 
-        if (!right->isNullAt(0))
+        if (!LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
+                *left_lc, right_const->getDataColumnPtr(), arguments[1].type, target_type, index))
         {
-            auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
-            right = castColumn({right, right_type, ""}, target_type);
+            col_result->getData().resize_fill(col_array->size());
 
-            if (right->isNullable())
-                right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
+            if (col_array_const)
+                return ColumnConst::create(std::move(col_result), left_size);
 
-            std::string_view elem = right->getDataAt(0);
-            const auto & left_dict = left_lc->getDictionary();
-
-            if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
-            {
-                index = *maybe_index;
-            }
-            else
-            {
-                col_result->getData().resize_fill(col_array->size());
-
-                if (col_array_const)
-                    return ColumnConst::create(std::move(col_result), left_size);
-
-                return col_result;
-            }
+            return col_result;
         }
 
         Impl::Main<ConcreteAction, true>::vector(
@@ -897,7 +955,212 @@ private:
         arguments_copy[0].type = std::move(array_type);
         arguments_copy[0].name = arguments[0].name;
 
+        /// executeImpl strips LowCardinality before executeArrayImpl, but the Map path bypasses it.
+        /// Strip here too so executeArrayImpl sees a ColumnNullable lookup column and fills null_map_item,
+        /// keeping null-needle semantics identical to the plain array path.
+        for (auto & argument : arguments_copy)
+        {
+            argument.column = recursiveRemoveLowCardinality(argument.column);
+            argument.type = recursiveRemoveLowCardinality(argument.type);
+        }
+
         return executeArrayImpl(arguments_copy, result_type);
+    }
+
+    /**
+     * Helper function to check if a path or its prefix exists in shared data.
+     */
+     static bool hasPathInSharedData(
+        const String & path,
+        const String & prefix,
+        const ColumnString * shared_paths,
+        const ColumnVector<UInt64>::Container & shared_offsets,
+        size_t row)
+    {
+        if (!shared_paths)
+            return false;
+
+        size_t start = shared_offsets[static_cast<ssize_t>(row) - 1];
+        size_t end = shared_offsets[row];
+
+        if (start == end)
+            return false;
+
+        /// Check for exact match
+        size_t pos = ColumnObject::findPathLowerBoundInSharedData(path, *shared_paths, start, end);
+        if (pos < end && shared_paths->getDataAt(pos) == path)
+            return true;
+
+        /// Check for prefix match (path + ".")
+        pos = ColumnObject::findPathLowerBoundInSharedData(prefix, *shared_paths, start, end);
+        if (pos < end && shared_paths->getDataAt(pos).starts_with(prefix))
+            return true;
+
+        return false;
+    }
+
+    /**
+     * Check if a path exists in JSON object for a specific row.
+     * Returns true if the path (or any path with this prefix) exists.
+     */
+    bool hasPathInObjectRow(
+        const ColumnObject & object_column,
+        size_t row,
+        const String & path,
+        const String & prefix,
+        const ColumnString * shared_paths,
+        const ColumnVector<UInt64>::Container & shared_offsets) const
+    {
+        /// First, check for the requested path in typed paths.
+        /// Typed paths are always considered to be present in each row (even if null),
+        /// unless skip_null_typed_paths is enabled.
+        const auto & typed_paths = object_column.getTypedPaths();
+        if (auto it = typed_paths.find(path); it != typed_paths.end() && (!skip_null_typed_paths || !it->second->isNullAt(row)))
+            return true;
+
+        for (const auto & [key, col] : typed_paths)
+        {
+            if (key.starts_with(prefix) && (!skip_null_typed_paths || !col->isNullAt(row)))
+                return true;
+        }
+
+        /// Second, check for the requested path in dynamic paths.
+        /// For dynamic paths, we consider null equivalent to absence of the value.
+        const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
+        if (auto it = dynamic_paths.find(path); it != dynamic_paths.end() && !it->second->isNullAt(row))
+            return true;
+
+        for (const auto & [key, col] : dynamic_paths)
+        {
+            if (key.starts_with(prefix) && !col->isNullAt(row))
+                return true;
+        }
+
+        /// Third, check for the requested path in shared data.
+        return hasPathInSharedData(path, prefix, shared_paths, shared_offsets, row);
+    }
+
+    /**
+     * Execute has() function for JSON/Object type.
+     * Checks if a path exists in the JSON object.
+     *
+     * The function checks three storage tiers in order:
+     * 1. Typed paths - explicitly declared paths that are always present (even if null,
+     *    unless skip_null_typed_paths is enabled)
+     * 2. Dynamic paths - paths inferred at runtime, null means absence
+     * 3. Shared data - overflow storage for rare paths, uses binary search
+     *
+     * Optimizations:
+     * - For constant path: if found in typed paths, returns 1 for all rows immediately
+     * - For constant path: pre-collects relevant columns to avoid repeated lookups
+     * - For non-constant path: uses hasPathInObjectRow() helper with early returns
+     *
+     * @param arguments - [0] JSON column (or const JSON), [1] path column
+     * @return ColumnUInt8 with 1 if path exists, 0 otherwise
+    */
+    ColumnPtr executeObject(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/) const
+    {
+        if constexpr (!std::is_same_v<ConcreteAction, HasAction>)
+            return nullptr;
+
+        const auto * object_type = checkAndGetDataType<DataTypeObject>(arguments[0].type.get());
+        if (!object_type)
+            return nullptr;
+
+        auto non_const_object_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto & object_column = assert_cast<const ColumnObject &>(*non_const_object_column);
+        const auto & path_column = *arguments[1].column;
+        const size_t input_rows_count = object_column.size();
+
+        if (input_rows_count == 0)
+            return ColumnUInt8::create();
+
+        auto res_col = ColumnUInt8::create(input_rows_count);
+        auto & res_data = res_col->getData();
+
+        const auto [shared_paths, shared_values] = object_column.getSharedDataPathsAndValues();
+        const auto & shared_offsets = object_column.getSharedDataOffsets();
+
+        if (isColumnConst(path_column))
+        {
+            const String path(path_column.getDataAt(0));
+            const String prefix = path + ".";
+
+            /// Collect columns that match exact path or prefix.
+            /// These columns need to be checked for non-null values per row.
+            VectorWithMemoryTracking<const IColumn *> relevant_columns;
+
+            const auto & typed_paths = object_column.getTypedPaths();
+            bool found_in_typed = false;
+
+            if (auto it = typed_paths.find(path); it != typed_paths.end())
+            {
+                found_in_typed = true;
+                relevant_columns.push_back(it->second.get());
+            }
+
+            for (const auto & [key, col] : typed_paths)
+            {
+                if (key.starts_with(prefix))
+                {
+                    found_in_typed = true;
+                    relevant_columns.push_back(col.get());
+                }
+            }
+
+            /// Optimization: typed paths are always present, so a match means 1 for all rows.
+            /// With skip_null_typed_paths the typed columns are checked per row instead.
+            if (found_in_typed && !skip_null_typed_paths)
+            {
+                std::fill(res_data.begin(), res_data.end(), 1);
+                return res_col;
+            }
+
+            const auto & dynamic_paths = object_column.getDynamicPathsPtrs();
+
+            if (auto it = dynamic_paths.find(path); it != dynamic_paths.end())
+                relevant_columns.push_back(it->second);
+
+            for (const auto & [key, col] : dynamic_paths)
+            {
+                if (key.starts_with(prefix))
+                    relevant_columns.push_back(col);
+            }
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                bool found = false;
+
+                for (const auto * col : relevant_columns)
+                {
+                    if (!col->isNullAt(i))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                /// Check shared data if not found in typed or dynamic paths
+                if (!found)
+                {
+                    found = hasPathInSharedData(path, prefix, shared_paths, shared_offsets, i);
+                }
+                res_data[i] = found;
+            }
+        }
+        else
+        {
+            /// Non-constant path: check each row individually
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                const String path(path_column.getDataAt(i));
+                const String prefix = path + ".";
+
+                res_data[i] = hasPathInObjectRow(object_column, i, path, prefix, shared_paths, shared_offsets);
+            }
+        }
+
+        return res_col;
     }
 
     static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments)
@@ -979,7 +1242,11 @@ private:
             const auto & value = (*item_arg)[0];
             if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
             {
-                current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
+                if (isColumnNullableOrLowCardinalityNullable(
+                        assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
+                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
+                else
+                    current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
             }
             else
             {
@@ -1091,5 +1358,7 @@ private:
 
         return col_res;
     }
+
+    bool skip_null_typed_paths;
 };
 }

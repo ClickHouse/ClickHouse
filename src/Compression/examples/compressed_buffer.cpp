@@ -8,9 +8,10 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <Examples/clickhouse_examples.h>
 
 
-int main(int, char **)
+int mainEntryExampleCompressedBuffer(int, char **)
 {
     try
     {
@@ -42,7 +43,7 @@ int main(int, char **)
             stopwatch.restart();
             for (size_t i = 0; i < n; ++i)
             {
-                size_t x;
+                size_t x = {};
                 DB::readIntText(x, compressed_buf);
                 compressed_buf.ignore();
 

@@ -1,0 +1,46 @@
+---
+sidebar_label: 'Estuary'
+sidebar_position: 2
+sidebarTitle: 'Estuary'
+slug: /integrations/estuary
+description: 'Передавайте данные из SaaS, баз данных и других источников в ClickHouse с помощью интеграции с Estuary'
+title: 'Подключите Estuary к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'ингестия данных', 'etl', 'конвейер', 'интеграция данных']
+---
+
+import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Estuary](https://estuary.dev/) — это платформа для своевременной обработки данных, которая гибко сочетает данные реального времени и пакетные данные в ETL-конвейерах с простой настройкой. Благодаря безопасности корпоративного класса и гибким вариантам развертывания Estuary обеспечивает надежные потоки данных из SaaS, баз данных и потоковых источников в различные пункты назначения, включая ClickHouse.
+
+Estuary предоставляет два основных способа интеграции с ClickHouse:
+
+* [Напрямую подключиться к базе данных ClickHouse](/ru/integrations/connectors/data-ingestion/community-integrations/estuary-native).
+* [Подключиться через Kafka ClickPipes](/ru/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes).
+
+В обоих случаях Estuary выполняет захват и перемещение данных. Вам не нужно поддерживать собственную экосистему Kafka или другую инфраструктуру.
+
+<div id="choose-integration-type">
+  ## Когда выбирать каждую интеграцию
+</div>
+
+[Прямая материализация в ClickHouse](/ru/integrations/connectors/data-ingestion/community-integrations/estuary-native) от Estuary рекомендуется для большинства сценариев. Она специально разработана для работы с собственным протоколом ClickHouse и поддерживает как самоуправляемые развертывания, так и инстансы ClickHouse Cloud.
+
+Выберите [интеграцию ClickPipe](/ru/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes), если хотите управлять конвейерами через ClickPipes. Она позволяет обрабатывать входящие данные, например сообщения Kafka.
+
+<div id="additional-resources">
+  ## Дополнительные ресурсы
+</div>
+
+Подробнее о настройке интеграции с Estuary см. в документации Estuary:
+
+* [Ознакомьтесь с возможностями Estuary](https://docs.estuary.dev/).
+* См. справочную документацию по [коннектору Estuary для прямой материализации в ClickHouse](https://docs.estuary.dev/reference/Connectors/materialization-connectors/ClickHouse/).
+* См. справочную документацию по [интеграции Kafka ClickPipe от Estuary](https://docs.estuary.dev/reference/Connectors/materialization-connectors/Dekaf/clickhouse/).
+* Список источников, которые можно передавать в ClickHouse через Estuary в потоковом режиме, см. в разделе [capture-коннекторов Estuary](https://docs.estuary.dev/reference/Connectors/capture-connectors/).

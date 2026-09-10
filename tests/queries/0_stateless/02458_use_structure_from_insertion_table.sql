@@ -1,5 +1,7 @@
 -- Tags: no-parallel, no-fasttest
 
+SET optimize_trivial_insert_select = 0;
+
 insert into function file(02458_data.jsonl) select NULL as x, 42 as y settings engine_file_truncate_on_insert=1;
 insert into function file(02458_data.jsoncompacteachrow) select NULL as x, 42 as y settings engine_file_truncate_on_insert=1;
 drop table if exists test;

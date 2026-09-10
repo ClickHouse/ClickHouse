@@ -38,6 +38,7 @@ class IBackgroundOperation
 public:
     virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
     virtual bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual bool scheduleStreamingJob(BackgroundJobsAssignee & /*assignee*/) { return false; }
     virtual Int32 getBiasBackoffSeconds() const { return 0; }
 
     virtual ~IBackgroundOperation() = default;
@@ -54,7 +55,8 @@ public:
     enum class Type : uint8_t
     {
         DataProcessing,
-        Moving
+        Moving,
+        Streaming,
     };
     Type type{Type::DataProcessing};
 
@@ -62,6 +64,10 @@ public:
     void trigger();
     void postpone();
     void finish();
+
+    /// Update the cached storage ID after a table rename,
+    /// so that finish() can correctly find tasks belonging to this storage.
+    void updateStorageID(const StorageID & new_id);
 
     bool scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
     bool scheduleFetchTask(ExecutableTaskPtr fetch_task);

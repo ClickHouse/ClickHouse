@@ -86,6 +86,14 @@ private:
         if (node_type == QueryTreeNodeType::WINDOW)
             return;
 
+        // Table expressions (TABLE, TABLE_FUNCTION) have their own alias namespace
+        // and are handled during join tree resolution, not expression alias collection.
+        // They can be encountered here when a scalar subquery in PREWHERE/QUALIFY/etc.
+        // contains a table function with an alias (e.g., VALUES(...) AS t), because
+        // the visitor recurses into the subquery's children including its join tree.
+        if (node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION)
+            return;
+
         const auto & alias = node->getAlias();
         auto cloned_alias_node = node->clone();
 

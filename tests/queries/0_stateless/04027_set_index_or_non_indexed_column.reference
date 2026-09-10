@@ -1,0 +1,12 @@
+-- { echoOn }
+
+-- Predicate with or(non_indexed, 0): set index should NOT be used.
+SELECT count() FROM t_set_index_or WHERE or(a = 5, 0);
+1
+SELECT count() FROM t_set_index_or WHERE or(a = 5, 0) SETTINGS force_data_skipping_indices='idx_b'; -- { serverError INDEX_NOT_USED }
+-- Predicate on indexed column: set index should be used.
+SELECT count() FROM t_set_index_or WHERE b = 5 SETTINGS force_data_skipping_indices='idx_b';
+100
+-- Indexed column inside or(..., 0): set index should still be used.
+SELECT count() FROM t_set_index_or WHERE or(b = 5, 0) SETTINGS force_data_skipping_indices='idx_b';
+100

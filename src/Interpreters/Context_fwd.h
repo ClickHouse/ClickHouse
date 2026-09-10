@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/Exception.h>
+#include <base/types.h>
 
 #include <map>
 #include <memory>

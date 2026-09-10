@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Core/Field.h>
 
 #include <Parsers/SelectUnionMode.h>
 
@@ -38,7 +37,10 @@ using UnionNodePtr = std::shared_ptr<UnionNode>;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
 
-class UnionNode final : public IQueryTreeNode
+class QueryNode;
+using QueryNodePtr = std::shared_ptr<QueryNode>;
+
+class UnionNode final : public ITableExpressionNode
 {
 public:
     /// Construct union node with context and normalized union mode
@@ -84,6 +86,18 @@ public:
     void setIsCTE(bool is_cte_value)
     {
         is_cte = is_cte_value;
+    }
+
+    /// Returns true if union node is a MATERIALIZED CTE, false otherwise
+    bool isMaterialized() const noexcept
+    {
+        return is_materialized;
+    }
+
+    /// Set union node is MATERIALIZED CTE value
+    void setIsMaterialized(bool is_materialized_value) noexcept
+    {
+        is_materialized = is_materialized_value;
     }
 
     /// Returns true if union node CTE is specified in WITH RECURSIVE, false otherwise
@@ -214,6 +228,7 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
+    bool is_materialized = false;
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;

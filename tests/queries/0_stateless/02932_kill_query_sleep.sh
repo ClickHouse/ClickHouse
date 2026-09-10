@@ -49,4 +49,4 @@ echo "Cancelling query"
 kill_query "$sleep_query_id"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log;"
-$CLICKHOUSE_CLIENT --query "SELECT exception FROM system.query_log WHERE query_id='$sleep_query_id' AND current_database = '$CLICKHOUSE_DATABASE'" | grep -oF "QUERY_WAS_CANCELLED"
+$CLICKHOUSE_CLIENT --query "SELECT exception FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$sleep_query_id' AND current_database = '$CLICKHOUSE_DATABASE'" | grep -oF "QUERY_WAS_CANCELLED"

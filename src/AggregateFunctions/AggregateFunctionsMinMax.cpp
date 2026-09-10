@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -34,13 +35,19 @@ public:
                 this->result_type->getName(),
                 getName());
 
-        if (isDynamic(this->result_type) || isVariant(this->result_type))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                this->result_type->getName(),
-                getName());
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
+                    this->result_type->getName(),
+                    getName(),
+                    getNumericVariantSupertypeHint(type.getPtr()));
+        };
+        check_not_dynamic_or_variant(*this->result_type);
+        this->result_type->forEachChild(check_not_dynamic_or_variant);
     }
 
     String getName() const override
@@ -115,7 +122,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (isMin)
             this->data(place).setIfSmaller(this->data(rhs), arena);
@@ -199,6 +206,7 @@ AggregateFunctionPtr createAggregateFunctionMinMax(
 }
 }
 
+void registerAggregateFunctionsMinMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsMinMax(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description min_description = R"(
@@ -246,7 +254,7 @@ SELECT department, min(revenue) FROM sales GROUP BY department ORDER BY departme
     FunctionDocumentation::Category min_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation min_documentation = {min_description, min_syntax, min_arguments, {}, min_returned_value, min_examples, min_introduced_in, min_category};
 
-    factory.registerFunction("min", {createAggregateFunctionMinMax<true>, {}, min_documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("min", {createAggregateFunctionMinMax<true>, min_documentation}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description max_description = R"(
 Aggregate function that calculates the maximum across a group of values.
@@ -292,9 +300,13 @@ SELECT department, max(revenue) FROM sales GROUP BY department ORDER BY departme
         "Note about non-aggregate maximum",
         R"(
 -- If you need non-aggregate function to choose a maximum of two values, see greatest():
-SELECT greatest(a, b) FROM table;
+SELECT greatest(a, b) FROM values('a Int32, b Int32', (1, 2), (5, 3));
         )",
         R"(
+┌─greatest(a, b)─┐
+│              2 │
+│              5 │
+└────────────────┘
         )"
     }
     };
@@ -302,7 +314,7 @@ SELECT greatest(a, b) FROM table;
     FunctionDocumentation::Category max_category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation max_documentation = {max_description, max_syntax, max_arguments, {}, max_returned_value, max_examples, max_introduced_in, max_category};
 
-    factory.registerFunction("max", {createAggregateFunctionMinMax<false>, {}, max_documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("max", {createAggregateFunctionMinMax<false>, max_documentation}, AggregateFunctionFactory::Case::Insensitive);
 }
 
 }

@@ -16,7 +16,7 @@ def test_writes_multiple_threads(started_cluster_iceberg_with_spark, format_vers
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int32, v String)", format_version, use_version_hint=True)
 
-    instance.query(f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) from system.numbers_mt LIMIT 400", settings={"allow_experimental_insert_into_iceberg": 1, "iceberg_insert_max_rows_in_data_file" : 10, "max_insert_threads": 32, "max_insert_block_size": 10, "max_block_size": 10})
+    instance.query(f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) from system.numbers_mt LIMIT 400", settings={"allow_insert_into_iceberg": 1, "iceberg_insert_max_rows_in_data_file" : 10, "max_insert_threads": 32, "max_insert_block_size": 10, "max_block_size": 10})
     assert instance.query(f"SELECT count() FROM {TABLE_NAME}") == '400\n'
     assert instance.query(f"SELECT sum(x) FROM {TABLE_NAME}") == str(sum(range(400))) + '\n'
 

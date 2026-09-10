@@ -32,11 +32,12 @@ public:
     {
         static constexpr auto assumed_load_latency_ns = 100;
         static constexpr auto just_coefficient = 4;
-        const auto single_iteration_latency = std::max<double>(static_cast<double>(1.0L * static_cast<long double>(watch.elapsedNanoseconds()) / iterations_to_measure), 1.0);
-        return std::clamp<size_t>(
-            static_cast<size_t>(ceil(just_coefficient * assumed_load_latency_ns / single_iteration_latency)),
-            min_look_ahead_value,
-            max_look_ahead_value);
+        static constexpr auto numerator = just_coefficient * assumed_load_latency_ns * iterations_to_measure;
+        size_t elapsed_ns = watch.elapsedNanoseconds();
+        if (unlikely(elapsed_ns == 0))
+            return max_look_ahead_value;
+        size_t look_ahead = (numerator + elapsed_ns - 1) / elapsed_ns;
+        return std::clamp<size_t>(look_ahead, min_look_ahead_value, max_look_ahead_value);
     }
 
     static constexpr size_t getInitialLookAheadValue() { return min_look_ahead_value; }
@@ -50,5 +51,28 @@ private:
 
     Stopwatch watch;
 };
+
+/// `min_bytes_for_prefetch` marks where a hash table whose cells carry an aggregate-state pointer
+/// stops fitting in caches. What decides how many lookups miss is the number of cells - one random
+/// probe each - not how wide they are, so a table of key-only cells has to start prefetching at the
+/// same number of cells, which for it means fewer bytes. Scale the threshold by the ratio of the
+/// cell to its mapped counterpart; for a table that does carry the pointer the ratio is 1.
+/// Both carriers of the threshold go through here: `Aggregator`'s own prefetch gates and the
+/// self-prefetching `HashMethodSerialized`.
+template <typename Data, bool has_mapped>
+size_t minBytesForPrefetch(size_t min_bytes_for_prefetch)
+{
+    if constexpr (has_mapped)
+        return min_bytes_for_prefetch;
+    else
+    {
+        using Cell = typename Data::cell_type;
+        /// The mapped counterpart of this cell is the same cell plus an aligned pointer to the aggregate state.
+        static constexpr size_t alignment = alignof(void *);
+        static constexpr size_t mapped_cell_size = ((sizeof(Cell) + sizeof(void *) + alignment - 1) / alignment) * alignment;
+
+        return min_bytes_for_prefetch * sizeof(Cell) / mapped_cell_size;
+    }
+}
 
 }

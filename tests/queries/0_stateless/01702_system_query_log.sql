@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 
 -- fire all kinds of queries and then check if those are present in the system.query_log
 SET log_comment='system.query_log logging test';
@@ -132,7 +132,7 @@ SELECT 'ACTUAL LOG CONTENT:';
 -- Try to filter out all possible previous junk events by excluding old log entries,
 SELECT query_kind, query FROM system.query_log
 WHERE
-    log_comment LIKE '%system.query_log%' AND type == 'QueryStart' AND event_date >= yesterday()
+    log_comment LIKE '%system.query_log%' AND type == 'QueryStart' AND event_date >= yesterday() AND event_time >= now() - 600
     AND current_database == currentDatabase() AND is_internal = 0
 ORDER BY event_time_microseconds;
 

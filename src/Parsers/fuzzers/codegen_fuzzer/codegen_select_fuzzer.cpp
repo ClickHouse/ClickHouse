@@ -32,7 +32,7 @@ DEFINE_BINARY_PROTO_FUZZER(const Sentence& main)
             std::cerr << ast->formatWithSecretsOneLine();
             std::cerr << std::endl;
         }
-        catch (...) {}
+        catch (...) { /* Ok */ }
 
         input.clear();
     }

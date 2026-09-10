@@ -4,17 +4,24 @@ add_headers_and_sources(clickhouse_dictionaries .)
 
 add_headers_and_sources(clickhouse_dictionaries "${CMAKE_CURRENT_BINARY_DIR}/generated/")
 
+# Libcxx hardening means out-of-bounds checks which causes noticeable degradations for some workflows.
+# TUs where libcxx hardening needs to be disabled are specified here.
+set(LIBCPP_HARDENING_DISABLE_FILES
+    HashedDictionary.cpp
+    HashedArrayDictionary.cpp
+    RangeHashedDictionary.cpp
+)
+set_property(SOURCE ${LIBCPP_HARDENING_DISABLE_FILES}
+    PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
+
 if (OMIT_HEAVY_DEBUG_SYMBOLS)
-    # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
-    set_source_files_properties(
+    set_property(SOURCE
+        ${LIBCPP_HARDENING_DISABLE_FILES}
         FlatDictionary.cpp
-        HashedDictionary.cpp
         SparseHashedDictionary.cpp
-        HashedArrayDictionary.cpp
         CacheDictionary.cpp
-        RangeHashedDictionary.cpp
         DirectDictionary.cpp
-        PROPERTIES COMPILE_FLAGS -g1)
+        APPEND_STRING PROPERTY COMPILE_FLAGS " -g1")
 endif()
 
 extract_into_parent_list(clickhouse_dictionaries_sources dbms_sources

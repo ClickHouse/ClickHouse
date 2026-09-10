@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/checkAggregateStateCanBeFinalized.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
@@ -20,7 +21,7 @@ namespace
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
   * Takes state of aggregate function. Returns result of aggregation (finalized state).
   */
-class FunctionFinalizeAggregation : public IFunction
+class FunctionFinalizeAggregation final : public IFunction
 {
 public:
     static constexpr auto name = "finalizeAggregation";
@@ -56,12 +57,15 @@ public:
         return type->getReturnType();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
         auto column = arguments.at(0).column;
-        if (!typeid_cast<const ColumnAggregateFunction *>(column.get()))
+        const auto * column_aggregate_function = typeid_cast<const ColumnAggregateFunction *>(column.get());
+        if (!column_aggregate_function)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                     arguments.at(0).column->getName(), getName());
+
+        checkAggregateStateCanBeFinalized(*column_aggregate_function, result_type, getName());
 
         /// Column is copied here, because there is no guarantee that we own it.
         auto mut_column = IColumn::mutate(std::move(column));
@@ -73,15 +77,15 @@ public:
 
 REGISTER_FUNCTION(FinalizeAggregation)
 {
-    FunctionDocumentation::Description description_finalizeAggregation = R"(
-Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#-state) combinator).
+    FunctionDocumentation::Description description = R"(
+Given an aggregation state, this function returns the result of aggregation (or the finalized state when using a [-State](/reference/functions/aggregate-functions/combinators#-state) combinator).
 )";
-    FunctionDocumentation::Syntax syntax_finalizeAggregation = "finalizeAggregation(state)";
-    FunctionDocumentation::Arguments arguments_finalizeAggregation = {
+    FunctionDocumentation::Syntax syntax = "finalizeAggregation(state)";
+    FunctionDocumentation::Arguments arguments = {
         {"state", "State of aggregation.", {"AggregateFunction"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_finalizeAggregation = {"Returns the finalized result of aggregation.", {"Any"}};
-    FunctionDocumentation::Examples examples_finalizeAggregation = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the finalized result of aggregation.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -96,6 +100,7 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
     {
         "Combined with initializeAggregation",
         R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -114,11 +119,11 @@ FROM numbers(5);
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_finalizeAggregation = {1, 1};
-    FunctionDocumentation::Category category_finalizeAggregation = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation_finalizeAggregation = {description_finalizeAggregation, syntax_finalizeAggregation, arguments_finalizeAggregation, {}, returned_value_finalizeAggregation, examples_finalizeAggregation, introduced_in_finalizeAggregation, category_finalizeAggregation};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionFinalizeAggregation>(documentation_finalizeAggregation);
+    factory.registerFunction<FunctionFinalizeAggregation>(documentation);
 }
 
 }

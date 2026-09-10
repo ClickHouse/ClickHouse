@@ -21,9 +21,6 @@ RUN apt-get update \
             p7zip-full \
             parallel \
             psmisc \
-            python3 \
-            python3-dev \
-            python3-pip \
             rsync \
             tree \
             tzdata \
@@ -40,7 +37,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 COPY requirements.txt /
-RUN pip3 --no-cache-dir install -r requirements.txt
+RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
 
 
 COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb

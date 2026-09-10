@@ -1,0 +1,7 @@
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <use_xid_64>1</use_xid_64>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>

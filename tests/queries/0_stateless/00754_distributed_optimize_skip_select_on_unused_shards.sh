@@ -17,11 +17,11 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree_00754 VALUES (0, 1, 1);"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO mergetree_00754 VALUES (1, 1, 1);"
 
 # Should fail because second shard is unavailable
-${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM distributed;" 2>&1 \
+${CLICKHOUSE_CLIENT} --optimize_skip_unused_shards 0 --query "SELECT count(*) FROM distributed;" 2>&1 \
 | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
 
 # Should fail without setting `optimize_skip_unused_shards`
-${CLICKHOUSE_CLIENT} --query "SELECT count(*) FROM distributed WHERE a = 0 AND b = 0;" 2>&1 \
+${CLICKHOUSE_CLIENT} --optimize_skip_unused_shards 0 --query "SELECT count(*) FROM distributed WHERE a = 0 AND b = 0;" 2>&1 \
 | grep -F -q "All connection tries failed" && echo 'OK' || echo 'FAIL'
 
 # Should pass now

@@ -6,6 +6,7 @@
 -- Test for UBSan issue in join order optimization when estimated row count overflows UInt64
 -- The issue occurs when converting a very large double to UInt64 in estimateJoinCardinality
 -- https://github.com/ClickHouse/ClickHouse/pull/94704
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS data_03812;
 
@@ -13,6 +14,7 @@ CREATE TABLE data_03812 (key UInt64, value UInt64) ENGINE = MergeTree ORDER BY k
 INSERT INTO data_03812 VALUES (1, 1), (2, 2);
 
 SET max_rows_to_read = 0;
+set ignore_format_null_for_explain = 0;
 
 EXPLAIN PLAN
 SELECT 1

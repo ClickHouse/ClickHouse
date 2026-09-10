@@ -1,0 +1,303 @@
+---
+title: استيراد كائنات مصفوفات JSON والاستعلام عنها في ClickHouse
+description: تعرّف على كيفية استيراد كائنات مصفوفات JSON إلى ClickHouse وإجراء استعلامات متقدمة باستخدام دوال JSON وعمليات المصفوفات.
+date: 2023-03-24
+tags: ['تنسيقات البيانات']
+keywords: ['كائنات مصفوفات JSON']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+كيف أستورد مصفوفات JSON، وكيف يمكنني الاستعلام عن الكائنات الموجودة بداخلها؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+احفظ مصفوفة JSON هذه المكوّنة من سطر واحد في `sample.json`
+
+```
+{"_id":"1","channel":"help","events":[{"eventType":"open","time":"2021-06-18T09:42:39.527Z"},{"eventType":"close","time":"2021-06-18T09:48:05.646Z"}]},{"_id":"2","channel":"help","events":[{"eventType":"open","time":"2021-06-18T09:42:39.535Z"},{"eventType":"edit","time":"2021-06-18T09:42:41.317Z"}]},{"_id":"3","channel":"questions","events":[{"eventType":"close","time":"2021-06-18T09:42:39.543Z"},{"eventType":"create","time":"2021-06-18T09:52:51.299Z"}]},{"_id":"4","channel":"general","events":[{"eventType":"create","time":"2021-06-18T09:42:39.552Z"},{"eventType":"edit","time":"2021-06-18T09:47:29.109Z"}]},{"_id":"5","channel":"general","events":[{"eventType":"edit","time":"2021-06-18T09:42:39.560Z"},{"eventType":"open","time":"2021-06-18T09:42:39.680Z"},{"eventType":"close","time":"2021-06-18T09:42:41.207Z"},{"eventType":"edit","time":"2021-06-18T09:42:43.372Z"},{"eventType":"edit","time":"2021-06-18T09:42:45.642Z"}]}
+```
+
+تحقق من البيانات:
+
+```sql
+clickhousebook.local :) SELECT * FROM file('/path/to/sample.json','JSONEachRow');
+
+SELECT *
+FROM file('/path/to/sample.json', 'JSONEachRow')
+
+Query id: 0bbfa09f-ac7f-4a1e-9227-2961b5ffc2d4
+
+┌─_id─┬─channel───┬─events─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│   1 │ help      │ [{'eventType':'open','time':'2021-06-18T09:42:39.527Z'},{'eventType':'close','time':'2021-06-18T09:48:05.646Z'}]                                                                                                                                           │
+│   2 │ help      │ [{'eventType':'open','time':'2021-06-18T09:42:39.535Z'},{'eventType':'edit','time':'2021-06-18T09:42:41.317Z'}]                                                                                                                                            │
+│   3 │ questions │ [{'eventType':'close','time':'2021-06-18T09:42:39.543Z'},{'eventType':'create','time':'2021-06-18T09:52:51.299Z'}]                                                                                                                                         │
+│   4 │ general   │ [{'eventType':'create','time':'2021-06-18T09:42:39.552Z'},{'eventType':'edit','time':'2021-06-18T09:47:29.109Z'}]                                                                                                                                          │
+│   5 │ general   │ [{'eventType':'edit','time':'2021-06-18T09:42:39.560Z'},{'eventType':'open','time':'2021-06-18T09:42:39.680Z'},{'eventType':'close','time':'2021-06-18T09:42:41.207Z'},{'eventType':'edit','time':'2021-06-18T09:42:43.372Z'},{'eventType':'edit','time':'2021-06-18T09:42:45.642Z'}] │
+└─────┴───────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+أنشئ جدولًا لتلقّي صفوف JSON:
+
+```sql
+clickhousebook.local :) CREATE TABLE IF NOT EXISTS sample_json_objects_array (
+                            `rawJSON` String EPHEMERAL,
+                            `_id` String DEFAULT JSONExtractString(rawJSON, '_id'),
+                            `channel` String DEFAULT JSONExtractString(rawJSON, 'channel'),
+                            `events` Array(JSON) DEFAULT JSONExtractArrayRaw(rawJSON, 'events')
+                        ) ENGINE = MergeTree
+                        ORDER BY
+                            channel
+
+CREATE TABLE IF NOT EXISTS sample_json_objects_array
+(
+    `rawJSON` String EPHEMERAL,
+    `_id` String DEFAULT JSONExtractString(rawJSON, '_id'),
+    `channel` String DEFAULT JSONExtractString(rawJSON, 'channel'),
+    `events` Array(JSON) DEFAULT JSONExtractArrayRaw(rawJSON, 'events')
+)
+ENGINE = MergeTree
+ORDER BY channel
+
+Query id: d02696dd-3f9f-4863-be2a-b2c9a1ae922d
+
+0 rows in set. Elapsed: 0.173 sec. 
+```
+
+أدرِج البيانات:
+
+```
+clickhousebook.local :) INSERT INTO
+                            sample_json_objects_array
+                        SELECT
+                            *
+                        FROM
+                            file(
+                                '/opt/cases/000000/sample_json_objects_arrays.json',
+                                'JSONEachRow'
+                            );
+
+INSERT INTO sample_json_objects_array SELECT *
+FROM file('/opt/cases/000000/sample.json', 'JSONEachRow')
+
+Query id: 60c4beab-3c2c-40c1-9c6f-bbbd7118dde3
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+تحقّق من كيفية تعامل استدلال البيانات مع نوع كائن JSON:
+
+```sql
+clickhousebook.local :) DESCRIBE TABLE sample_json_objects_array SETTINGS describe_extend_object_types = 1;
+
+DESCRIBE TABLE sample_json_objects_array
+SETTINGS describe_extend_object_types = 1
+
+Query id: 302c0c84-1b63-4f60-ad95-d91c0267b0d4
+
+┌─name────┬─type────────────────────────────────────────┬─default_type─┬─default_expression─────────────────────┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ rawJSON │ String                                      │ EPHEMERAL    │ defaultValueOfTypeName('String')       │         │                  │                │
+│ _id     │ String                                      │ DEFAULT      │ JSONExtractString(rawJSON, '_id')      │         │                  │                │
+│ channel │ String                                      │ DEFAULT      │ JSONExtractString(rawJSON, 'channel')  │         │                  │                │
+│ events  │ Array(Tuple(eventType String, time String)) │ DEFAULT      │ JSONExtractArrayRaw(rawJSON, 'events') │         │                  │                │
+└─────────┴─────────────────────────────────────────────┴──────────────┴────────────────────────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+`Events` هي *مصفوفة* من `Tuple`، يحتوي كلٌّ منها على الحقلين *eventType* من النوع `String` و*time* من النوع `String`. هذا النوع الأخير ليس مثاليًا (إذ نفضّل `DateTime` بدلًا منه).
+
+لنلقِ نظرة على البيانات:
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            events.eventType,
+                            events.time
+                        FROM sample_json_objects_array
+                        WHERE has(events.eventType, 'close')
+
+SELECT
+    _id,
+    channel,
+    events.eventType,
+    events.time
+FROM sample_json_objects_array
+WHERE has(events.eventType, 'close')
+
+Query id: 3ddd6843-5206-4f52-971f-1699f0ba1728
+
+┌─_id─┬─channel───┬─events.eventType──────────────────────┬─events.time──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │ ['2021-06-18T09:42:39.560Z','2021-06-18T09:42:39.680Z','2021-06-18T09:42:41.207Z','2021-06-18T09:42:43.372Z','2021-06-18T09:42:45.642Z'] │
+│ 1   │ help      │ ['open','close']                      │ ['2021-06-18T09:42:39.527Z','2021-06-18T09:48:05.646Z']                                                                                  │
+│ 3   │ questions │ ['close','create']                    │ ['2021-06-18T09:42:39.543Z','2021-06-18T09:52:51.299Z']                                                                                  │
+└─────┴───────────┴───────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+3 rows in set. Elapsed: 0.001 sec. 
+```
+
+لننفّذ بعض الاستعلامات:
+
+`_id` و`channel` للأحداث التي تكون فيها قيمة `eventType` هي `close`
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            events.eventType
+                        FROM
+                            sample_json_objects_array
+                        WHERE
+                            has(events.eventType,'close')
+
+SELECT
+    _id,
+    channel,
+    events.eventType
+FROM sample_json_objects_array
+WHERE has(events.eventType, 'close')
+
+Query id: 033a0c56-7bfa-4261-a334-7323bdc40f87
+
+┌─_id─┬─channel───┬─events.eventType──────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │
+│ 1   │ help      │ ['open','close']                      │
+│ 3   │ questions │ ['close','create']                    │
+└─────┴───────────┴───────────────────────────────────────┘
+┌─_id─┬─channel───┬─events.eventType──────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │
+│ 1   │ help      │ ['open','close']                      │
+│ 3   │ questions │ ['close','create']                    │
+└─────┴───────────┴───────────────────────────────────────┘
+
+6 rows in set. Elapsed: 0.001 sec. 
+```
+
+نريد إجراء استعلام على `time`، على سبيل المثال لجميع الأحداث ضمن نطاق زمني محدد، لكننا نلاحظ أنه استورد على أنه `String`:
+
+```sql
+clickhousebook.local :) SELECT toTypeName(events.time) FROM sample_json_objects_array;
+
+SELECT toTypeName(events.time)
+FROM sample_json_objects_array
+
+Query id: 27f07f02-66cd-420d-8623-eeed7d501014
+
+┌─toTypeName(events.time)─┐
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+└─────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+إذًا، لكي نتعامل مع هذه القيم كتواريخ، نحتاج أولًا إلى تحويلها إلى `DateTime`.
+لتحويل مصفوفة، نستخدم الدالة map:
+
+```sql
+clickhousebook.local :) 
+                        SELECT
+                            _id,
+                            channel,
+                            arrayMap(x->parseDateTimeBestEffort(x), events.time)
+                        FROM
+                            sample_json_objects_array
+
+SELECT
+    _id,
+    channel,
+    arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+FROM sample_json_objects_array
+
+Query id: f3c7881e-b41c-4872-9c67-5c25966599a1
+
+┌─_id─┬─channel───┬─arrayMap(lambda(tuple(x), parseDateTimeBestEffort(x)), events.time)─────────────────────────────────────────────┐
+│ 4   │ general   │ ['2021-06-18 11:42:39','2021-06-18 11:47:29']                                                                   │
+│ 5   │ general   │ ['2021-06-18 11:42:39','2021-06-18 11:42:39','2021-06-18 11:42:41','2021-06-18 11:42:43','2021-06-18 11:42:45'] │
+│ 1   │ help      │ ['2021-06-18 11:42:39','2021-06-18 11:48:05']                                                                   │
+│ 2   │ help      │ ['2021-06-18 11:42:39','2021-06-18 11:42:41']                                                                   │
+│ 3   │ questions │ ['2021-06-18 11:42:39','2021-06-18 11:52:51']                                                                   │
+└─────┴───────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec.
+```
+
+يمكننا ملاحظة الاختلافات باستخدام `toTypeName` على كلتا المصفوفتين:
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            toTypeName(events.time) as events_as_strings,
+                            toTypeName(arrayMap(x->parseDateTimeBestEffort(x), events.time)) as events_as_datetime
+                        FROM
+                            sample_json_objects_array
+
+SELECT
+    _id,
+    channel,
+    toTypeName(events.time) AS events_as_strings,
+    toTypeName(arrayMap(x -> parseDateTimeBestEffort(x), events.time)) AS events_as_datetime
+FROM sample_json_objects_array
+
+Query id: 1af54994-b756-472f-88d7-8b5cdca0e54e
+
+┌─_id─┬─channel───┬─events_as_strings─┬─events_as_datetime─┐
+│ 4   │ general   │ Array(String)     │ Array(DateTime)    │
+│ 5   │ general   │ Array(String)     │ Array(DateTime)    │
+│ 1   │ help      │ Array(String)     │ Array(DateTime)    │
+│ 2   │ help      │ Array(String)     │ Array(DateTime)    │
+│ 3   │ questions │ Array(String)     │ Array(DateTime)    │
+└─────┴───────────┴───────────────────┴────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+الآن لنعثر على `id` الخاص بالصفوف التي يقع فيها `time` ضمن فترة زمنية محددة.
+
+نستخدم `arrayCount` للتحقق مما إذا كان عدد العناصر في المصفوفة التي تُرجعها الدالة `map` والمطابقة للشرط `x BETWEEN toDateTime('2021-06-18 11:46:00', 'Europe/Rome') AND toDateTime('2021-06-18 11:50:00', 'Europe/Rome')` أكبر من 0
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+                        FROM
+                            sample_json_objects_array
+                        WHERE
+                            arrayCount(
+                                x -> x BETWEEN toDateTime('2021-06-18 11:46:00', 'Europe/Rome')
+                                AND toDateTime('2021-06-18 11:50:00', 'Europe/Rome'),
+                                arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+                            ) > 0;
+
+SELECT
+    _id,
+    arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+FROM sample_json_objects_array
+WHERE arrayCount(x -> ((x >= toDateTime('2021-06-18 11:46:00', 'Europe/Rome')) AND (x <= toDateTime('2021-06-18 11:50:00', 'Europe/Rome'))), arrayMap(x -> parseDateTimeBestEffort(x), events.time)) > 0
+
+Query id: d4882fc3-9f99-4e87-9f89-47683f10656d
+
+┌─_id─┬─arrayMap(lambda(tuple(x), parseDateTimeBestEffort(x)), events.time)─┐
+│ 4   │ ['2021-06-18 11:42:39','2021-06-18 11:47:29']                       │
+│ 1   │ ['2021-06-18 11:42:39','2021-06-18 11:48:05']                       │
+└─────┴─────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec. 
+```
+
+⚠️
+
+يُرجى تذكّر أنه وقت كتابة هذه المقالة، كان الدعم الحالي لـ JSON تجريبيًا وغير مناسب لبيئات الإنتاج.
+
+يوضح هذا المثال كيفية استيراد JSON بسرعة والبدء في الاستعلام عنه، كما يبيّن المفاضلة بين سهولة الاستخدام، إذ نستورد كائنات JSON بالنوع `JSON` من دون الحاجة إلى تحديد نوع المخطط مسبقًا. وهذا مناسب لاختبار سريع، ولكن عند استخدام البيانات على المدى الطويل، نفضّل في هذا المثال تخزينها باستخدام الأنواع الأنسب. لذلك، بالنسبة إلى الحقل `time`، استخدم `DateTime` بدلًا من `String` لتجنّب أي تحويل بعد الإدخال، كما هو موضح أعلاه. يُرجى الرجوع إلى [الوثائق](/ar/guides/clickhouse/data-formats/json/intro) لمزيد من المعلومات حول كيفية التعامل مع JSON.

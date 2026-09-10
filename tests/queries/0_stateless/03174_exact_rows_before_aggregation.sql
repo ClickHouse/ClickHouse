@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings
 
 set rows_before_aggregation = 1, exact_rows_before_limit = 1, output_format_write_statistics = 0, max_block_size = 100;
 

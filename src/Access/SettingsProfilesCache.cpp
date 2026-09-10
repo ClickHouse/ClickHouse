@@ -2,8 +2,19 @@
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 
+
+namespace ProfileEvents
+{
+    /// NOLINT: not settings; the names contain "Settings" so check-settings-style mistakes them for setting externs.
+    extern const Event SettingsProfileCacheRecalculations; // NOLINT
+    extern const Event SettingsProfileCacheRecalculationMicroseconds; // NOLINT
+}
 
 namespace DB
 {
@@ -23,17 +34,24 @@ void SettingsProfilesCache::ensureAllProfilesRead()
     /// `mutex` is already locked.
     if (all_profiles_read)
         return;
-    all_profiles_read = true;
 
     subscription = access_control.subscribeForChanges<SettingsProfile>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                profileAddedOrChanged(id, typeid_cast<SettingsProfilePtr>(entity));
-            else
-                profileRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    profileAddedOrChanged(change.id, typeid_cast<SettingsProfilePtr>(change.entity));
+                else
+                    profileRemoved(change.id);
+            }
+            mergeSettingsAndConstraintsIfNeeded();
         });
 
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_profiles.clear();
+    profiles_by_name.clear();
     for (const UUID & id : access_control.findAll<SettingsProfile>())
     {
         auto profile = access_control.tryRead<SettingsProfile>(id);
@@ -43,12 +61,15 @@ void SettingsProfilesCache::ensureAllProfilesRead()
             profiles_by_name[profile->getName()] = id;
         }
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_profiles_read = true;
 }
 
 
 void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const SettingsProfilePtr & new_profile)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_profiles.find(profile_id);
     if (it == all_profiles.end())
     {
@@ -64,20 +85,20 @@ void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const
         profiles_by_name[new_profile->getName()] = profile_id;
     }
     profile_infos_cache.clear();
-    mergeSettingsAndConstraints();
+    need_merge_settings_and_constraints = true;
 }
 
 
 void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_profiles.find(profile_id);
     if (it == all_profiles.end())
         return;
     profiles_by_name.erase(it->second->getName());
     all_profiles.erase(it);
     profile_infos_cache.clear();
-    mergeSettingsAndConstraints();
+    need_merge_settings_and_constraints = true;
 }
 
 
@@ -100,9 +121,22 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
 }
 
 
+void SettingsProfilesCache::mergeSettingsAndConstraintsIfNeeded()
+{
+    /// `mutex` is already locked.
+    if (!need_merge_settings_and_constraints)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
+    mergeSettingsAndConstraints();
+    need_merge_settings_and_constraints = false;
+}
+
+
 void SettingsProfilesCache::mergeSettingsAndConstraints()
 {
     /// `mutex` is already locked.
+    ProfileEvents::increment(ProfileEvents::SettingsProfileCacheRecalculations);
+    Stopwatch watch;
     for (auto i = enabled_settings.begin(), e = enabled_settings.end(); i != e;)
     {
         auto enabled = i->second.lock();
@@ -114,6 +148,14 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
             ++i;
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::SettingsProfileCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
+    /// O(enabled sets * profiles), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_DEBUG(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
+    else
+        LOG_TRACE(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
 }
 
 

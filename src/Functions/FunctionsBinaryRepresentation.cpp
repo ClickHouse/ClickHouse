@@ -209,7 +209,7 @@ struct UnbinImpl
 
 /// Encode number or string to string with binary or hexadecimal representation
 template <typename Impl>
-class EncodeToBinaryRepresentation : public IFunction
+class EncodeToBinaryRepresentation final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -586,7 +586,7 @@ public:
 
 /// Decode number or string from string with binary or hexadecimal representation
 template <typename Impl>
-class DecodeFromBinaryRepresentation : public IFunction
+class DecodeFromBinaryRepresentation final : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -596,7 +596,9 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    /// Not injective: decoding is deliberately tolerant. It is case-insensitive, and an incomplete leading
+    /// group is padded, so `unhex('0a')`, `unhex('0A')` and `unhex('a')` all decode to the same byte.
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -790,7 +792,7 @@ For a numeric argument the inverse of hex(N) is not performed by unhex().
             "Basic usage",
             "SELECT unhex('303132'), UNHEX('4D7953514C')",
             R"(
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
             )"
@@ -890,7 +892,7 @@ the result is undefined (no exception is thrown).
             "Basic usage",
             "SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000101001100')",
             R"(
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
+┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
             )"

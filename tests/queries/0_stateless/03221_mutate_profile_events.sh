@@ -25,7 +25,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # So, we may have to retry the flush of logs until all entries are actually flushed.
 for _ in {1..10}; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
-    res=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.part_log WHERE database = currentDatabase() AND table = 't_mutate_profile_events' AND event_type = 'MutatePart'")
+    res=$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_mutate_profile_events' AND event_type = 'MutatePart'")
 
     if [[ $res -eq 4 ]]; then
         break
@@ -46,7 +46,7 @@ ${CLICKHOUSE_CLIENT} --query "
         sum(ProfileEvents['MutationTotalMilliseconds']) > 0,
         sum(ProfileEvents['MutationExecuteMilliseconds']) > 0,
     FROM system.part_log
-    WHERE database = currentDatabase() AND table = 't_mutate_profile_events' AND event_type = 'MutatePart'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_mutate_profile_events' AND event_type = 'MutatePart'
     GROUP BY version ORDER BY version;
 
     DROP TABLE IF EXISTS t_mutate_profile_events;

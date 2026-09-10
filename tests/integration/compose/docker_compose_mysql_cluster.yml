@@ -18,10 +18,17 @@ services:
             --log-error=/mysql/2_error.log
             --general-log=ON
             --general-log-file=/mysql/2_general.log
+            --sha256_password_auto_generate_rsa_keys=OFF
+            --caching_sha2_password_auto_generate_rsa_keys=OFF
+            --sha256_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --sha256_password_public_key_path=/etc/mysql/certs/public_key.pem
+            --caching_sha2_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --caching_sha2_password_public_key_path=/etc/mysql/certs/public_key.pem
         volumes:
             - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
+            - ../helpers/mysql_cert:/etc/mysql/certs
         user: ${MYSQL_CLUSTER_DOCKER_USER}
         cpus: 3
     mysql3:
@@ -43,10 +50,17 @@ services:
             --log-error=/mysql/3_error.log
             --general-log=ON
             --general-log-file=/mysql/3_general.log
+            --sha256_password_auto_generate_rsa_keys=OFF
+            --caching_sha2_password_auto_generate_rsa_keys=OFF
+            --sha256_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --sha256_password_public_key_path=/etc/mysql/certs/public_key.pem
+            --caching_sha2_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --caching_sha2_password_public_key_path=/etc/mysql/certs/public_key.pem
         volumes:
             - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
+            - ../helpers/mysql_cert:/etc/mysql/certs
         user: ${MYSQL_CLUSTER_DOCKER_USER}
         cpus: 3
     mysql4:
@@ -68,9 +82,16 @@ services:
             --log-error=/mysql/4_error.log
             --general-log=ON
             --general-log-file=/mysql/4_general.log
+            --sha256_password_auto_generate_rsa_keys=OFF
+            --caching_sha2_password_auto_generate_rsa_keys=OFF
+            --sha256_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --sha256_password_public_key_path=/etc/mysql/certs/public_key.pem
+            --caching_sha2_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --caching_sha2_password_public_key_path=/etc/mysql/certs/public_key.pem
         volumes:
             - type: ${MYSQL_CLUSTER_LOGS_FS:-tmpfs}
               source: ${MYSQL_CLUSTER_LOGS:-}
               target: /mysql/
+            - ../helpers/mysql_cert:/etc/mysql/certs
         user: ${MYSQL_CLUSTER_DOCKER_USER}
         cpus: 3

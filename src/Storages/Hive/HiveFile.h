@@ -5,9 +5,10 @@
 
 #include <vector>
 #include <memory>
+#include <unordered_set>
 
 #include <boost/algorithm/string/join.hpp>
-#include <arrow/adapters/orc/adapter.h>
+#include <orc/OrcFile.hh>
 #include <parquet/arrow/reader.h>
 
 #include <Core/Field.h>
@@ -107,9 +108,6 @@ public:
     MinMaxIndexPtr getMinMaxIndex() const { return file_minmax_idx; }
     const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return split_minmax_idxes; }
 
-    const std::unordered_set<int> & getSkipSplits() const { return skip_splits; }
-    void setSkipSplits(const std::unordered_set<int> & skip_splits_) { skip_splits = skip_splits_; }
-
     String describeMinMaxIndex(const MinMaxIndexPtr & idx) const
     {
         if (!idx)
@@ -161,8 +159,6 @@ protected:
     std::vector<MinMaxIndexPtr> split_minmax_idxes;
     std::atomic<bool> split_minmax_idxes_loaded{false};
 
-    /// Skip splits for this file after applying minmax index (if any)
-    std::unordered_set<int> skip_splits;
     std::shared_ptr<HiveSettings> storage_settings;
 
     /// IHiveFile would be shared among multi threads, need lock's protection to update min/max indexes.
@@ -171,6 +167,18 @@ protected:
 
 using HiveFilePtr = std::shared_ptr<IHiveFile>;
 using HiveFiles = std::vector<HiveFilePtr>;
+
+/// A hive file paired with the set of splits (Parquet row groups / ORC stripes) to skip when reading
+/// it for the current query. The skip set depends on the query filter, so - unlike the `IHiveFile`
+/// objects, which are shared between concurrent queries through `HiveFilesCache` - it must be kept
+/// per query instead of being stored on the cached file.
+struct HiveFileWithSkipSplits
+{
+    HiveFilePtr file;
+    std::unordered_set<int> skip_splits;
+};
+using HiveFilesWithSkipSplits = std::vector<HiveFileWithSkipSplits>;
+
 using HiveFilesCache = CacheBase<String, IHiveFile>;
 using HiveFilesCachePtr = std::shared_ptr<HiveFilesCache>;
 
@@ -228,7 +236,7 @@ private:
     std::optional<size_t> getRowsImpl() override;
 
     std::unique_ptr<ReadBufferFromHDFS> in;
-    std::unique_ptr<arrow::adapters::orc::ORCFileReader> reader;
+    std::unique_ptr<orc::Reader> reader;
     std::map<String, size_t> orc_column_positions;
 };
 

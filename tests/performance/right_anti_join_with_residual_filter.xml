@@ -1,0 +1,25 @@
+<test>
+    <settings>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    </settings>
+
+    <create_query>CREATE TABLE right ( k UInt64, c1 UInt64, c2 String, c3 Float64 ) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE left ( k UInt64, v UInt64 ) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE right16 ( k UInt16, c1 UInt64, c2 String, c3 Float64 ) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE left16 ( k UInt16, v UInt64 ) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO right SELECT number, number * 2, toString(number), number / 3 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO left SELECT number, number / 2 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO right16 SELECT number % 65536, number * 2, toString(number), number / 3 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO left16 SELECT number, number / 2 FROM numbers(6553)</fill_query>
+
+    <query> SELECT r.c1, r.c2, r.c3 FROM left AS l RIGHT ANTI JOIN right AS r ON r.k = l.k AND l.v >= r.k FORMAT Null</query>
+    <query> SELECT r.c1, r.c2, r.c3 FROM left AS l RIGHT JOIN right AS r ON r.k = l.k AND l.v >= r.k FORMAT Null</query>
+    <query> SELECT r.c1, r.c2, r.c3 FROM left AS l FULL JOIN right AS r ON r.k = l.k AND l.v >= r.k FORMAT Null</query>
+    <query> SELECT r.c1, r.c2, r.c3 FROM left16 AS l RIGHT ANTI JOIN right16 AS r ON r.k = l.k AND l.v >= r.k FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS right16</drop_query>
+    <drop_query>DROP TABLE IF EXISTS left16</drop_query>
+</test>

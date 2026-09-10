@@ -92,14 +92,17 @@ fixed_string	FixedString(3)
 Str: 0	100
 Str: 1	200
 array	Array(UInt64)					
-tuple	Tuple(UInt64, String)					
+tuple.1	UInt64					
+tuple.2	String					
 map	Map(String, UInt64)					
-[0,1]	(0,'0')	{'0':0}
-[1,2]	(1,'1')	{'1':1}
+[0,1]	0	0	{'0':0}
+[1,2]	1	1	{'1':1}
 nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
-nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
-[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
-[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+nested2.1.1	Array(Array(UInt64))					
+nested2.1.2	Map(UInt64, Array(Tuple(UInt64, String)))					
+nested2.2	UInt8					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	[[0],[1],[]]	{0:[(0,'42'),(1,'42')]}	42
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	[[1],[2],[]]	{1:[(1,'42'),(2,'42')]}	42
 JSONCompactEachRowWithNamesAndTypes
 int8	Int8					
 uint8	UInt8					

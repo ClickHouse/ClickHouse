@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-fasttest, no-shared-merge-tree, no-azure-blob-storage
+# Tags: long, zookeeper, no-fasttest, no-shared-merge-tree, no-azure-blob-storage, no-s3-storage
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

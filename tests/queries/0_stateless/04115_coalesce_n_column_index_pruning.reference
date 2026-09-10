@@ -1,0 +1,52 @@
+--- N=3: all columns indexed, equals prunes via each skip index ---
+Granules: 1024/1024
+Skip
+Name: c_idx
+Granules: 1024/1024
+Skip
+Name: b_idx
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+Skip
+Name: <Combined skip indexes>
+Granules: 688/1024
+682
+682
+Granules: 1024/1024
+--- N=3: flipped-argument form (const on the left) ---
+Granules: 1024/1024
+Skip
+Name: c_idx
+Granules: 1024/1024
+Skip
+Name: b_idx
+Granules: 1024/1024
+Skip
+Name: a_idx
+Granules: 1024/1024
+Skip
+Name: <Combined skip indexes>
+Granules: 688/1024
+682
+--- N=3: only middle column indexed, partial pruning still works ---
+Skip
+Name: b_idx
+274
+--- N=3: ordered operators prune and preserve semantics ---
+6826
+6826
+23894
+23894
+7509
+7509
+24576
+24576
+--- N=4: four columns indexed, equals prunes via combined skip indexes ---
+Name: <Combined skip indexes>
+682
+682
+--- N=3: negative operators must not regress ---
+64854
+0

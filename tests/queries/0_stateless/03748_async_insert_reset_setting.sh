@@ -7,7 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SYNC_USER="${CLICKHOUSE_DATABASE}_sync_user"
 ASYNC_USER="${CLICKHOUSE_DATABASE}_async_user"
 
-${CLICKHOUSE_CLIENT} --multiquery <<EOF
+# Pin the busy wait: the test checks which inserts end up asynchronous, not how long they are batched.
+${CLICKHOUSE_CLIENT} --async_insert_use_adaptive_busy_timeout 0 --async_insert_busy_timeout_ms 1 --multiquery <<EOF
 DROP TABLE IF EXISTS source_table, target_table, target_table_remote_sync, target_table_remote_async, async_insert_mv, sync_insert_mv;
 DROP USER IF EXISTS ${SYNC_USER}, ${ASYNC_USER};
 
@@ -60,7 +61,7 @@ INSERT INTO source_table (id, data) SETTINGS async_insert=0 VALUES (7, 'test7'),
 
 SYSTEM FLUSH LOGS query_log;
 SELECT count() FROM system.query_log
-WHERE query_kind = 'Insert' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Insert' AND type = 'QueryFinish'
   AND user IN ('${SYNC_USER}', '${ASYNC_USER}')
 --  AND current_database = currentDatabase() -- to silent strange style check warning
   AND tables = [currentDatabase() || '.target_table']

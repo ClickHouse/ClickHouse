@@ -182,7 +182,12 @@ void WriteBufferFromPocoSocket::nextImpl()
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size)
+    : WriteBufferFromPocoSocket(socket_, buf_size, nullptr)
+{
+}
+
+WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size, char * existing_memory)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory)
     , socket(socket_)
     , peer_address(socket.peerAddress())
     , our_address(socket.address())
@@ -195,6 +200,14 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     : WriteBufferFromPocoSocket(socket_, buf_size)
 {
     write_event = write_event_;
+}
+
+void WriteBufferFromPocoSocket::setAsyncCallback(AsyncCallback async_callback_)
+{
+    if (async_callback_ && !socket.impl()->supportsExternalPolling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot set an async callback on a socket that does not support external polling");
+    async_callback = std::move(async_callback_);
 }
 
 }

@@ -51,5 +51,5 @@ SELECT toTypeName([toTime('00:00:00'), 1]); -- { serverError NO_COMMON_TYPE }
 -- Time64 with Date -> NO_COMMON_TYPE
 SELECT toTypeName([toTime64('00:00:00', 3), toDate('2020-01-01')]); -- { serverError NO_COMMON_TYPE }
 
--- Time64 with DateTime -> NO_COMMON_TYPE
-SELECT toTypeName([toTime64('00:00:00', 3), toDateTime('2020-01-01 00:00:00')]); -- { serverError NO_COMMON_TYPE }
+-- Time64 with DateTime -> DateTime64(3)
+SELECT toTypeName([toTime64('00:00:00', 3), toDateTime('2020-01-01 00:00:00')]);

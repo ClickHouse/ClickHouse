@@ -49,7 +49,7 @@ void TableFunctionDictionary::parseArguments(const ASTPtr & ast_function, Contex
 ColumnsDescription TableFunctionDictionary::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
     const ExternalDictionariesLoader & external_loader = context->getExternalDictionariesLoader();
-    std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context);
+    std::string resolved_name = external_loader.resolveDictionaryName(dictionary_name, context->getCurrentDatabase());
     auto load_result = external_loader.load(resolved_name);
     if (load_result)
     {
@@ -90,9 +90,59 @@ StoragePtr TableFunctionDictionary::executeImpl(
 }
 
 
+void registerTableFunctionDictionary(TableFunctionFactory & factory);
 void registerTableFunctionDictionary(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionDictionary>();
+    factory.registerFunction<TableFunctionDictionary>({.description = R"DOCS_MD(
+Displays the [dictionary](/reference/statements/create/dictionary) data as a ClickHouse table. Works the same way as [Dictionary](/reference/engines/table-engines/special/dictionary) engine.
+
+## Syntax {#syntax}
+
+```sql
+dictionary('dict')
+```
+
+## Arguments {#arguments}
+
+- `dict` — A dictionary name. [String](/reference/data-types/string).
+
+## Returned value {#returned-value}
+
+A ClickHouse table.
+
+## Examples {#examples}
+
+Input table `dictionary_source_table`:
+
+```text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+Create a dictionary:
+
+```sql title="Query"
+CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
+```
+
+```sql title="Query"
+SELECT * FROM dictionary('new_dictionary');
+```
+
+```text title="Response"
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+## Related {#related}
+
+- [Dictionary engine](/reference/engines/table-engines/special/dictionary)
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 
 }

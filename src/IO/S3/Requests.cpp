@@ -2,15 +2,71 @@
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
+#include <IO/S3RequestSettings.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
 
 #include <string_view>
 #include <fmt/format.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+}
+
+namespace DB::S3RequestSetting
+{
+    extern const S3RequestSettingsString upload_checksum_algorithm;
+}
+
 namespace DB::S3
 {
+
+RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
+{
+    /// An explicit setting always wins.
+    const auto & name = request_settings[DB::S3RequestSetting::upload_checksum_algorithm].value;
+    if (!name.empty())
+    {
+        const auto algorithm = tryParse(name);
+        if (!algorithm)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
+                name, supportedAlgorithms());
+
+        /// `MD5` selects the SDK's `Content-MD5` path, which `S3Express` and FIPS reject.
+        if (*algorithm == RequestChecksum::Algorithm::MD5)
+        {
+            if (is_s3express_bucket)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting upload_checksum_algorithm cannot be MD5 for S3Express buckets, "
+                    "which require a flexible checksum; use CRC32 or SHA256");
+            if (OpenSSLInitializer::instance().isFIPSEnabled())
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
+        }
+        return *algorithm;
+    }
+
+    /// No explicit choice: pick a default for the environment.
+    if (is_s3express_bucket)
+        return RequestChecksum::Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
+
+    /// Default to the SDK's `Content-MD5` path. Under FIPS the SDK silently drops it, leaving the upload with no
+    /// checksum header - the pre-flexible-checksum behavior, which is kept as the default because support for
+    /// `x-amz-checksum-*` outside AWS is inconsistent. Set the setting explicitly to attach one.
+    return RequestChecksum::Algorithm::MD5;
+}
 
 Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
 {
@@ -35,7 +91,7 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     replace_with_gcs_header("x-amz-storage-class", "x-goog-storage-class");
 
     /// replace all x-amz-meta- headers
-    std::vector<std::pair<std::string, std::string>> new_meta_headers;
+    VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
         if (it->first.starts_with("x-amz-meta-"))
@@ -167,7 +223,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_)
+void ComposeObjectRequest::SetComponentNames(Strings component_names_)
 {
     component_names = std::move(component_names_);
 }
@@ -178,7 +234,7 @@ void ComposeObjectRequest::SetContentType(Aws::String value)
 }
 
 
-size_t getAttemptFromInfo(const Aws::String & request_info)
+static size_t getAttemptFromInfo(const Aws::String & request_info)
 {
     static auto key = Aws::String("attempt=");
 
@@ -199,13 +255,13 @@ size_t getAttemptFromInfo(const Aws::String & request_info)
     {
         return std::stol(value, nullptr, 10);
     }
-    catch (...)
+    catch (const std::exception &)
     {
         return 1;
     }
 }
 
-String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
 {
     auto it = map.find(key);
     if (it == map.end())
@@ -213,17 +269,17 @@ String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & k
     return it->second;
 }
 
-void setClickhouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
+void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
 {
     request.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
 }
 
-size_t getClickhouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)
+size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)
 {
     return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
 }
 
-size_t getClickhouseAttemptNumber(const Aws::Http::HttpRequest & request)
+size_t getClickHouseAttemptNumber(const Aws::Http::HttpRequest & request)
 {
     return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
 }

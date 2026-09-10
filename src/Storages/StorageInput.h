@@ -1,14 +1,14 @@
 #pragma once
 
 #include <QueryPipeline/Pipe.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 namespace DB
 {
 /** Internal temporary storage for table function input(...)
   */
 
-class StorageInput final : public IStorage
+class StorageInput final : public StorageWithCommonVirtualColumns
 {
     friend class ReadFromInput;
 public:
@@ -16,10 +16,12 @@ public:
 
     String getName() const override { return "Input"; }
 
+    static VirtualColumnsDescription createVirtuals();
+
     /// A table will read from this stream.
     void setPipe(Pipe pipe_);
 
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

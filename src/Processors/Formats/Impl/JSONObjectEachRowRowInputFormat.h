@@ -36,7 +36,7 @@ private:
 };
 
 
-class JSONObjectEachRowSchemaReader : public IRowWithNamesSchemaReader
+class JSONObjectEachRowSchemaReader final : public IRowWithNamesSchemaReader
 {
 public:
     JSONObjectEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

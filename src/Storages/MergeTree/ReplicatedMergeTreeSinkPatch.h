@@ -1,18 +1,21 @@
 #pragma once
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsLock.h>
 
 namespace DB
 {
 
-class ReplicatedMergeTreeSinkPatch : public ReplicatedMergeTreeSink
+class ReplicatedMergeTreeSinkPatch final : public ReplicatedMergeTreeSink
 {
 public:
     ReplicatedMergeTreeSinkPatch(
         StorageReplicatedMergeTree & storage_,
-        StorageMetadataPtr metadata_snapshot_,
+        PatchPartMetadata patch_metadata_,
         LightweightUpdateHolderInKeeper update_holder_,
         ContextPtr context_);
+
+    ~ReplicatedMergeTreeSinkPatch() override;
 
     String getName() const override { return "ReplicatedMergeTreeSinkPatch"; }
 
@@ -22,6 +25,7 @@ private:
     UInt64 getDataVersionInPartition(const String & original_partition_id) const;
 
     LightweightUpdateHolderInKeeper update_holder;
+    PatchPartMetadata patch_metadata;
 };
 
 }

@@ -3,13 +3,17 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/Common/AccessFlags.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/filesystemHelpers.h>
 #include <filesystem>
+#include <Functions/FunctionHelpers.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 
 namespace fs = std::filesystem;
@@ -20,17 +24,31 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int DATABASE_ACCESS_DENIED;
 }
 
+namespace
+{
+
+bool isStringOrNull(const IDataType & type)
+{
+    return isString(type) || type.onlyNull();
+}
+
+}
+
 /// A function to read file as a string.
-class FunctionFile : public IFunction
+class FunctionFile final : public IFunction
 {
 public:
     static constexpr auto name = "file";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFile>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (context && context->getApplicationType() != Context::ApplicationType::LOCAL)
+            context->checkAccess(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE));
+
+        return std::make_shared<FunctionFile>();
+    }
 
     bool isVariadic() const override { return true; }
     String getName() const override { return name; }
@@ -41,25 +59,19 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty() || arguments.size() > 2)
-            throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"path", &isString, nullptr, "String"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"default", &isStringOrNull, nullptr, "String or Null"}
+        };
 
-        if (!isString(arguments[0].type))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is only implemented for type String", getName());
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        if (arguments.size() == 2)
-        {
-            if (arguments[1].type->onlyNull())
-                return makeNullable(std::make_shared<DataTypeString>());
-
-            if (!isString(arguments[1].type))
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} only accepts String or Null as second argument", getName());
-        }
-
-        return std::make_shared<DataTypeString>();
+        auto ret = std::make_shared<DataTypeString>();
+        if (arguments.size() == 2 && arguments[1].type->onlyNull())
+            return makeNullable(ret);
+        return ret;
     }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
@@ -133,7 +145,7 @@ public:
 
             try
             {
-                if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
+                if (need_check && !fileOrSymlinkPathStartsWith(file_path.string(), user_files_absolute_path_string))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
@@ -168,7 +180,7 @@ REGISTER_FUNCTION(File)
 Reads a file as a string and loads the data into the specified column.
 The file content is not interpreted.
 
-Also see the [`file`](../table-functions/file.md) table function.
+Also see the [`file`](/reference/functions/table-functions/file) table function.
         )";
     FunctionDocumentation::Syntax syntax = "file(path[, default])";
     FunctionDocumentation::Arguments arguments = {
@@ -180,9 +192,18 @@ Also see the [`file`](../table-functions/file.md) table function.
         {
             "Insert files into a table",
             R"(
-INSERT INTO table SELECT file('a.txt'), file('b.txt');
+INSERT INTO FUNCTION file('a.txt', 'RawBLOB') SELECT 'Hello' SETTINGS engine_file_truncate_on_insert = 1;
+INSERT INTO FUNCTION file('b.txt', 'RawBLOB') SELECT 'World!' SETTINGS engine_file_truncate_on_insert = 1;
+
+CREATE TABLE data (a String, b String) ENGINE = Memory;
+INSERT INTO data SELECT file('a.txt'), file('b.txt');
+
+SELECT * FROM data;
             )",
             R"(
+┌─a─────┬─b──────┐
+│ Hello │ World! │
+└───────┴────────┘
             )"
         }
     };

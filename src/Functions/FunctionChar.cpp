@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionChar : public IFunction
+class FunctionChar final : public IFunction
 {
 public:
     static constexpr auto name = "char";
@@ -28,7 +28,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 

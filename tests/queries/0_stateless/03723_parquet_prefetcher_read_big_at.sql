@@ -17,7 +17,7 @@ SELECT *
 FROM t_parquet_prefetcher_read_big_at
 ORDER BY a,c
 FORMAT Null
-SETTINGS log_comment = 'test_03723_parquet_prefetcher_read_big_at';
+SETTINGS log_comment = 'test_03723_parquet_prefetcher_read_big_at', use_parquet_metadata_cache = 0;
 -- Ensure that profiling is available for analysis
 SYSTEM FLUSH LOGS query_log;
 -- Check profiling data to visualize what logic has been used
@@ -26,7 +26,7 @@ SELECT
     ProfileEvents['ParquetPrefetcherReadSeekAndRead'],
     ProfileEvents['ParquetPrefetcherReadEntireFile']
 FROM system.query_log
-WHERE type = 'QueryFinish' AND event_date >= yesterday() AND query_kind = 'Select' AND current_database = currentDatabase()
+WHERE type = 'QueryFinish' AND event_date >= yesterday() AND event_time >= now() - 600 AND query_kind = 'Select' AND current_database = currentDatabase()
     AND log_comment = 'test_03723_parquet_prefetcher_read_big_at'
 ORDER BY event_time DESC
 LIMIT 1;

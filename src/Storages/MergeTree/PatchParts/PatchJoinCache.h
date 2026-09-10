@@ -1,10 +1,8 @@
 #pragma once
 #include <future>
-#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/PODArray.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <IO/SharedThreadPools.h>
@@ -39,19 +37,8 @@ struct RangesInPatchParts;
   *  the emplace hint iterator, to make insertion complexity O(1) on average instead of O(log n).
   */
 
-using PatchOffsetsMap = absl::btree_map<
-    UInt64,
-    std::pair<UInt32, UInt32>,
-    std::less<>,
-    AllocatorWithMemoryTracking<std::pair<const UInt64, std::pair<UInt32, UInt32>>>>;
-
-using PatchHashMap = absl::node_hash_map<
-    UInt64,
-    PatchOffsetsMap,
-    HashCRC32<UInt64>,
-    std::equal_to<>,
-    AllocatorWithMemoryTracking<std::pair<const UInt64, PatchOffsetsMap>>>;
-
+using PatchOffsetsMap = absl::btree_map<UInt64, std::pair<UInt32, UInt32>>;
+using PatchHashMap = absl::node_hash_map<UInt64, PatchOffsetsMap, HashCRC32<UInt64>>;
 
 /**  A cache of maps and blocks for applying patch parts in Join mode.
   *  It avoids re-reading the same ranges of patch parts and rebuilding maps multiple times.
@@ -77,6 +64,7 @@ struct PatchJoinCache
 
         UInt64 min_block = std::numeric_limits<UInt64>::max();
         UInt64 max_block = 0;
+        std::exception_ptr error;
         mutable SharedMutex mutex;
 
         void addBlock(Block read_block);
