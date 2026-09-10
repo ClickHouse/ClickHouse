@@ -608,12 +608,24 @@ private:
                              const ZooKeeperRetriesInfo & zookeeper_retries_info);
     bool checkTableStructureAttempt(const String & zookeeper_prefix, const StorageMetadataPtr & metadata_snapshot, int32_t * metadata_version, bool strict_check) const;
 
+    /// Publishes the altered metadata in memory without persisting it. Returns the published metadata.
+    /// Must be called under IStorage::lockForAlter lock.
+    StorageInMemoryMetadata applyMetadataInMemory(
+        const ContextPtr & local_context, const StorageInMemoryMetadata & old_metadata,
+        ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff,
+        int32_t new_metadata_version);
+
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockForAlter() lock.
     void setTableStructure(
         const StorageID & table_id, const ContextPtr & local_context,
         ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff,
         int32_t new_metadata_version);
+
+    /// Adopts this replica's own committed Keeper metadata in memory when the local metadata differs and
+    /// an ALTER_METADATA entry still queued in this replica's queue accounts for the difference. Writes
+    /// nothing: the queue persists it later.
+    void adoptCommittedMetadataFromPendingAlter(const zkutil::ZooKeeperPtr & zookeeper);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
       * If any parts described in ZK are not locally, throw an exception.
