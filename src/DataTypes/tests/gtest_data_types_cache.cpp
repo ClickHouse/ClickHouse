@@ -181,8 +181,6 @@ TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
     ThreadStatus thread_status;
     auto context = makeQueryContext("json_client_settings", "UTC");
     auto scope = QueryScope::create(context);
-    auto type = DataTypeFactory::instance().get("JSON");
-    auto serialization = type->getDefaultSerialization();
     FormatSettings settings;
     settings.try_infer_datetimes = true;
     settings.try_infer_dates = false;
@@ -193,20 +191,56 @@ TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
         {"UTC", 1704110400},
     }};
 
-    for (bool simdjson : {false, true})
+    for (const auto & [schema, path] : {std::pair{"JSON", "d.:`DateTime`"}, std::pair{"JSON(d DateTime)", "d"}})
     {
-        context->setSetting("allow_simdjson", simdjson);
-        for (const auto & [session_timezone, expected_timestamp] : timezones)
+        auto type = DataTypeFactory::instance().get(schema);
+        auto serialization = type->getDefaultSerialization();
+        for (bool simdjson : {false, true})
+        {
+            context->setSetting("allow_simdjson", simdjson);
+            for (const auto & [session_timezone, expected_timestamp] : timezones)
+            {
+                context->setSetting("session_timezone", String(session_timezone));
+                for (size_t row = 0; row < 2; ++row)
+                {
+                    auto column = type->createColumn();
+                    ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
+                    serialization->deserializeWholeText(*column, input, settings);
+                    auto dates = type->getSubcolumn(path, column->getPtr());
+                    EXPECT_EQ((*dates)[0].safeGet<UInt64>(), expected_timestamp);
+                }
+            }
+        }
+    }
+}
+
+TEST(DataTypesCache, PooledJSONParsingIgnoresMetadataTimezone)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+    auto context = makeQueryContext("json_metadata_timezone", "UTC");
+    auto scope = QueryScope::create(context);
+
+    for (bool reverse_order : {false, true})
+    {
+        std::array<DataTypePtr, 2> types;
+        for (size_t i = 0; const auto * session_timezone : {"UTC", "Europe/Amsterdam"})
         {
             context->setSetting("session_timezone", String(session_timezone));
-            for (size_t row = 0; row < 2; ++row)
-            {
-                auto column = type->createColumn();
-                ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
-                serialization->deserializeWholeText(*column, input, settings);
-                auto dates = type->getSubcolumn("d.:`DateTime`", column->getPtr());
-                EXPECT_EQ((*dates)[0].safeGet<UInt64>(), expected_timestamp);
-            }
+            types[i++] = DataTypeFactory::instance().get("JSON(d DateTime)");
+        }
+        if (reverse_order)
+            std::swap(types[0], types[1]);
+        context->setSetting("session_timezone", String("Asia/Tokyo"));
+        auto serialization = types[0]->getDefaultSerialization();
+        ASSERT_EQ(serialization, types[1]->getDefaultSerialization());
+        FormatSettings settings;
+        for (const auto & type : types)
+        {
+            auto column = type->createColumn();
+            ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
+            serialization->deserializeWholeText(*column, input, settings);
+            EXPECT_EQ(type->getSubcolumn("d", column->getPtr())->getUInt(0), 1704078000);
         }
     }
 }

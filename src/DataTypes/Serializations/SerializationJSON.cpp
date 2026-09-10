@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <array>
+#include <base/getThreadId.h>
+#include <Common/CacheLine.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -113,15 +116,46 @@ struct JSONParsingPools
 {
     /// The pool key owns the serialization, so an address cannot be reused for a different schema.
     /// Each backend has its own pool; the timezone also isolates dynamically inferred types.
-    using Key = std::pair<SerializationPtr, const DateLUTImpl *>;
+    struct Lookup
+    {
+        const ISerialization * serialization;
+        std::string_view session_timezone;
+    };
+    struct Key
+    {
+        SerializationPtr serialization;
+        String session_timezone;
+
+        explicit Key(Lookup lookup) : serialization(lookup.serialization->shared_from_this()), session_timezone(lookup.session_timezone)
+        {
+        }
+    };
+    struct Compare
+    {
+        using is_transparent = void;
+        bool operator()(const auto & lhs, const auto & rhs) const
+        {
+            auto * lhs_serialization = std::to_address(lhs.serialization);
+            auto * rhs_serialization = std::to_address(rhs.serialization);
+            if (lhs_serialization != rhs_serialization)
+                return std::less<const ISerialization *>{}(lhs_serialization, rhs_serialization);
+            return std::string_view(lhs.session_timezone) < std::string_view(rhs.session_timezone);
+        }
+    };
+    struct alignas(CH_CACHE_LINE_SIZE) Shard
+    {
 #if USE_SIMDJSON
-    ObjectPoolMap<JSONParserState<SimdJSONParser>, Key> simdjson;
+        ObjectPoolMap<JSONParserState<SimdJSONParser>, Key, Compare> simdjson;
 #endif
 #if USE_RAPIDJSON
-    ObjectPoolMap<JSONParserState<RapidJSONParser>, Key> rapidjson;
+        ObjectPoolMap<JSONParserState<RapidJSONParser>, Key, Compare> rapidjson;
 #else
-    ObjectPoolMap<JSONParserState<DummyJSONParser>, Key> dummy;
+        ObjectPoolMap<JSONParserState<DummyJSONParser>, Key, Compare> dummy;
 #endif
+    };
+
+    /// Spread concurrent parses across pools instead of locking one container on every row.
+    std::array<Shard, 64> shards;
 };
 
 namespace Setting
@@ -371,14 +405,14 @@ void SerializationJSON::deserializeObject(IColumn & column, std::string_view obj
     std::string_view session_timezone_name;
     if (context)
         session_timezone_name = context->getSettingsRef()[Setting::session_timezone].value;
-    const auto & timezone_lut = session_timezone_name.empty()
-        ? DateLUT::serverTimezoneInstance() : DateLUT::instance(session_timezone_name);
+    if (session_timezone_name.empty())
+        session_timezone_name = DateLUT::serverTimezoneInstance().getTimeZone();
 
     auto & holder = *settings.json_parsing_state;
     std::call_once(holder.initialization_flag, [&] { holder.pools = std::make_shared<JSONParsingPools>(); });
-    const auto & state = holder.pools;
-    JSONParsingPools::Key key{shared_from_this(), &timezone_lut};
-    auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingPools::Key> & pool)
+    auto & shard = holder.pools->shards[getThreadId() % holder.pools->shards.size()];
+    JSONParsingPools::Lookup key{this, session_timezone_name};
+    auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingPools::Key, JSONParsingPools::Compare> & pool)
     {
         auto lease = pool.get(key, [&]
         {
@@ -405,14 +439,14 @@ void SerializationJSON::deserializeObject(IColumn & column, std::string_view obj
 #if USE_SIMDJSON
     if (context->getSettingsRef()[Setting::allow_simdjson])
     {
-        deserialize(state->simdjson);
+        deserialize(shard.simdjson);
         return;
     }
 #endif
 #if USE_RAPIDJSON
-    deserialize(state->rapidjson);
+    deserialize(shard.rapidjson);
 #else
-    deserialize(state->dummy);
+    deserialize(shard.dummy);
 #endif
 }
 
