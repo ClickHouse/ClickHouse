@@ -1,9 +1,12 @@
 -- `lock_acquire_timeout` also bounds how long index analysis waits for a thread of the
--- `MergeTreeDataSelectExecutor` pool: `ThreadPoolImpl::scheduleImpl` receives the setting's Int64
--- microsecond value through a `uint64_t` parameter, so a negative timeout arrives as a huge unsigned
--- count. `wait_for` multiplies it by 1'000 to reach nanoseconds, which overflows Int64. Clamping the
--- count keeps the wait well-defined; without the clamp these queries trip UBSan in
--- `contrib/llvm-project/libcxx/include/__chrono/duration.h`.
+-- `MergeTreeDataSelectExecutor` pool: its Int64 microsecond value is passed to
+-- `ThreadPoolImpl::scheduleOrThrow`, which used to take the timeout as a `uint64_t`, so a negative
+-- setting arrived as a huge unsigned count and `wait_for` overflowed Int64 while multiplying it by
+-- 1'000 to reach nanoseconds.
+--
+-- This is an end-to-end check that such a setting reaches index analysis and the query still runs. It
+-- does not saturate the pool, so it does not by itself reach the timed wait: the deterministic coverage
+-- of that branch is in `src/Common/tests/gtest_thread_pool_schedule_timeout.cpp`.
 
 DROP TABLE IF EXISTS t_05060;
 

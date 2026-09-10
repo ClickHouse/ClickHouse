@@ -402,7 +402,7 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 
 template <typename Thread>
 template <typename ReturnType>
-ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<uint64_t> wait_microseconds, bool propagate_opentelemetry_tracing_context)
+ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std::optional<Int64> wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     auto on_error = [&](const std::string & reason)
     {
@@ -469,11 +469,10 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, Priority priority, std:
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set. Even if the value is zero.
         {
             /// The timeout is user-controlled: it comes from settings such as `lock_acquire_timeout`, whose
-            /// Int64 microsecond value reaches this uint64_t parameter unchanged, so a negative setting
-            /// arrives here as a huge unsigned count. `wait_for` turns the duration into nanoseconds
-            /// (x 1'000) on top of `steady_clock::now()`, which overflows for any count of that size.
-            /// Clamping caps such a count at one year, i.e. it keeps behaving as "wait until a thread
-            /// frees up", which is what an out-of-range timeout asks for once its sign is gone.
+            /// Int64 microsecond value can be negative or huge. `wait_for` turns the duration into
+            /// nanoseconds (x 1'000) on top of `steady_clock::now()`, which overflows Int64 for such a
+            /// count. Clamping keeps the wait well-defined: a negative timeout has already expired, so it
+            /// gives up at once, and a count above the cap keeps meaning "wait until a thread frees up".
             if (!job_finished.wait_for(lock, DB::saturatedMicroseconds(*wait_microseconds), pred))
                 return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
         }
@@ -651,13 +650,13 @@ void ThreadPoolImpl<Thread>::scheduleOrThrowOnError(Job job, Priority priority)
 }
 
 template <typename Thread>
-bool ThreadPoolImpl<Thread>::trySchedule(Job job, Priority priority, uint64_t wait_microseconds) noexcept
+bool ThreadPoolImpl<Thread>::trySchedule(Job job, Priority priority, Int64 wait_microseconds) noexcept
 {
     return scheduleImpl<bool>(std::move(job), priority, wait_microseconds);
 }
 
 template <typename Thread>
-void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, uint64_t wait_microseconds, bool propagate_opentelemetry_tracing_context)
+void ThreadPoolImpl<Thread>::scheduleOrThrow(Job job, Priority priority, Int64 wait_microseconds, bool propagate_opentelemetry_tracing_context)
 {
     scheduleImpl<void>(std::move(job), priority, wait_microseconds, propagate_opentelemetry_tracing_context);
 }

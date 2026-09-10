@@ -29,9 +29,9 @@ std::chrono::milliseconds saturatedMilliseconds(T milliseconds)
 
 /// Same clamp for a microsecond-typed timeout, for a wait whose resolution must stay below a
 /// millisecond. wait_for still multiplies microseconds by 1'000 to reach nanoseconds, so the value has
-/// to be capped before it becomes a std::chrono::microseconds. The comparisons are signedness-agnostic,
-/// so an unsigned count that already lost the sign of a negative timeout (a negative Int64 widened to
-/// UInt64) compares above the cap and becomes the one-year bound rather than overflowing.
+/// to be capped before it becomes a std::chrono::microseconds. As with the millisecond clamp, a
+/// negative timeout has already expired and becomes 0. The comparisons are signedness-agnostic, so an
+/// unsigned count is capped at the one-year bound instead of overflowing.
 inline constexpr Int64 MAX_WAIT_TIMEOUT_MICROSECONDS = MAX_WAIT_TIMEOUT_MILLISECONDS * 1000;
 
 template <std::integral T>

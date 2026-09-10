@@ -48,8 +48,8 @@ GTEST_TEST(SaturatedMilliseconds, PassesThroughInRangeValues)
 }
 
 /// saturatedMicroseconds is the microsecond-typed sibling, for waits that must keep sub-millisecond
-/// resolution (the thread pool's `wait_microseconds`, fed by `lock_acquire_timeout`). A negative Int64
-/// microsecond setting reaches the pool widened to UInt64, so the unsigned form must clamp too.
+/// resolution (the thread pool's `wait_microseconds`, fed by `lock_acquire_timeout`). The timeout stays
+/// signed all the way to the pool, so a negative one clamps to zero; an unsigned count must clamp too.
 GTEST_TEST(SaturatedMicroseconds, ClampsHugePositiveToOneYear)
 {
     const auto max = std::chrono::microseconds(MAX_WAIT_TIMEOUT_MICROSECONDS);
@@ -58,12 +58,15 @@ GTEST_TEST(SaturatedMicroseconds, ClampsHugePositiveToOneYear)
     ASSERT_EQ(saturatedMicroseconds(std::numeric_limits<UInt64>::max()), max);
     ASSERT_EQ(saturatedMicroseconds(MAX_WAIT_TIMEOUT_MICROSECONDS + 1), max);
     // -1e17 microseconds (lock_acquire_timeout = -1e11 seconds) widened to UInt64: the exact value that
-    // overflowed the microseconds->nanoseconds conversion inside ThreadPoolImpl::scheduleImpl.
+    // used to overflow the microseconds->nanoseconds conversion inside ThreadPoolImpl::scheduleImpl.
+    // The pool now keeps the timeout signed, so it takes the ClampsNegativeToZero path there, but an
+    // unsigned caller must still be capped rather than overflow.
     ASSERT_EQ(saturatedMicroseconds(static_cast<UInt64>(Int64(-100000000000000000LL))), max);
 }
 
 GTEST_TEST(SaturatedMicroseconds, ClampsNegativeToZero)
 {
+    // This is what a negative `lock_acquire_timeout` now reaches: an already-expired wait.
     ASSERT_EQ(saturatedMicroseconds(Int64(-1)), std::chrono::microseconds(0));
     ASSERT_EQ(saturatedMicroseconds(std::numeric_limits<Int64>::min()), std::chrono::microseconds(0));
     ASSERT_EQ(saturatedMicroseconds(Int64(-100000000000000000LL)), std::chrono::microseconds(0));
