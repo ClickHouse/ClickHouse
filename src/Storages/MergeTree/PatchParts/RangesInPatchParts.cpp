@@ -2,6 +2,8 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
@@ -76,6 +78,17 @@ MarkRanges splitRanges(const MarkRanges & ranges, size_t max_granules_in_range)
     return split_ranges;
 }
 
+/// The index of a patch part holds the key of the first row of each granule, so a key greater than all
+/// of them may still be located in the last granule. Only a final mark, whose index row is the key of
+/// the last row of the part, bounds the last granule from above and can prove that such a key is absent.
+bool isNotFoundInPatchIndex(const PatchPartInfoForReader & patch, UInt64 begin_range, UInt64 end_range, size_t num_index_rows)
+{
+    if (end_range == 0)
+        return true;
+
+    return begin_range == num_index_rows && patch.part->getIndexGranularity().hasFinalMark();
+}
+
 MarkRanges getRangesInPatchPartMerge(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & original_ranges)
 {
     chassert(patch.mode == PatchMode::Merge);
@@ -107,7 +120,7 @@ MarkRanges getRangesInPatchPartMerge(const DataPartPtr & original_part, const Pa
         auto [begin_range, end_range] = getPartNameOffsetRange(
             patch_name_column, patch_offset_data, original_part->name, begin_row, end_row);
 
-        if (begin_range == patch_name_column.size() || end_range == 0)
+        if (isNotFoundInPatchIndex(patch, begin_range, end_range, patch_name_column.size()))
             continue;
 
         if (begin_range != 0)
@@ -140,7 +153,7 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     {
         auto [begin_range, end_range] = getPartNameRange(patch_name_column, source_part_name);
 
-        if (begin_range == patch_name_column.size() || end_range == 0)
+        if (isNotFoundInPatchIndex(patch, begin_range, end_range, patch_name_column.size()))
             continue;
 
         if (begin_range != 0)
@@ -410,7 +423,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
 
     MergeTreeIndexReader reader(
         index_ptr,
-        patch_part,
+        std::make_shared<LoadedMergeTreeDataPartInfoForReader>(patch_part, std::make_shared<AlterConversions>()),
         total_marks_without_final,
         index_mark_ranges,
         mark_cache.get(),

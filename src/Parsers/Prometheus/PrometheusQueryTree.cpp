@@ -2,9 +2,12 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
+#include <base/hex.h>
 #include <fmt/ranges.h>
 
 
@@ -22,23 +25,73 @@ namespace
 {
     using Node = PrometheusQueryTree::Node;
 
+    String quotePromQLString(std::string_view str)
+    {
+        String result;
+        result.reserve(str.size() + 2);
+        result.push_back('"');
+
+        for (size_t i = 0; i < str.size();)
+        {
+            const auto c = static_cast<UInt8>(str[i]);
+
+            if (c >= 0x80)
+            {
+                const size_t sequence_length = UTF8::seqLength(c);
+                if (sequence_length <= str.size() - i
+                    && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data() + i), sequence_length))
+                {
+                    result.append(str.data() + i, sequence_length);
+                    i += sequence_length;
+                    continue;
+                }
+            }
+
+            switch (c)
+            {
+                case '"':
+                case '\\':
+                    result.push_back('\\');
+                    result.push_back(static_cast<char>(c));
+                    break;
+                case '\a': result.append("\\a"); break;
+                case '\b': result.append("\\b"); break;
+                case '\f': result.append("\\f"); break;
+                case '\n': result.append("\\n"); break;
+                case '\r': result.append("\\r"); break;
+                case '\t': result.append("\\t"); break;
+                case '\v': result.append("\\v"); break;
+                default:
+                    if (c < 0x20 || c == 0x7F || c >= 0x80)
+                    {
+                        result.append("\\x");
+                        result += getHexUIntLowercase(c);
+                    }
+                    else
+                    {
+                        result.push_back(static_cast<char>(c));
+                    }
+                    break;
+            }
+
+            ++i;
+        }
+
+        result.push_back('"');
+        return result;
+    }
+
     bool isLegacyLabelName(std::string_view label)
     {
         if (label.empty())
             return false;
 
-        auto is_alpha = [](char c)
-        {
-            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-        };
-        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
-
-        if (!is_alpha(label.front()) && label.front() != '_')
+        if (!isAlphaASCII(label.front()) && label.front() != '_')
             return false;
 
         for (char c : label.substr(1))
         {
-            if (!is_alpha(c) && !is_digit(c) && c != '_')
+            if (!isAlphaNumericASCII(c) && c != '_')
                 return false;
         }
 
@@ -50,18 +103,12 @@ namespace
         if (metric.empty())
             return false;
 
-        auto is_alpha = [](char c)
-        {
-            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-        };
-        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
-
-        if (!is_alpha(metric.front()) && metric.front() != '_' && metric.front() != ':')
+        if (!isAlphaASCII(metric.front()) && metric.front() != '_' && metric.front() != ':')
             return false;
 
         for (char c : metric.substr(1))
         {
-            if (!is_alpha(c) && !is_digit(c) && c != '_' && c != ':')
+            if (!isAlphaNumericASCII(c) && c != '_' && c != ':')
                 return false;
         }
 
@@ -103,12 +150,12 @@ namespace
 
     String formatLabelName(const String & label)
     {
-        return canPrintLabelNameUnquoted(label) ? label : doubleQuoteString(label);
+        return canPrintLabelNameUnquoted(label) ? label : quotePromQLString(label);
     }
 
     String formatMetricName(const String & metric)
     {
-        return canPrintMetricNameUnquoted(metric) ? metric : doubleQuoteString(metric);
+        return canPrintMetricNameUnquoted(metric) ? metric : quotePromQLString(metric);
     }
 
     template <typename NodeType>
@@ -375,14 +422,6 @@ bool PrometheusQueryTree::tryParse(std::string_view promql_query_, UInt32 timest
 }
 
 
-namespace
-{
-    String quotePromQLString(std::string_view str)
-    {
-        return doubleQuoteString(str);
-    }
-}
-
 String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 {
     if (std::isfinite(scalar))
@@ -450,7 +489,7 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
                 && !matcher.label_value.empty();
             if (is_quoted_metric_name)
             {
-                str += doubleQuoteString(matcher.label_value);
+                str += quotePromQLString(matcher.label_value);
             }
             else
             {
@@ -597,7 +636,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += formatLabelName(label);
             need_comma = true;
         }
         str += ") ";
@@ -618,7 +657,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
             {
                 if (need_comma)
                     str += ", ";
-                str += label;
+                str += formatLabelName(label);
                 need_comma = true;
             }
             str += ")";
@@ -691,7 +730,7 @@ String PrometheusQueryTree::AggregationOperator::toString(const PrometheusQueryT
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += formatLabelName(label);
             need_comma = true;
         }
         str += ") ";

@@ -69,7 +69,7 @@ Valores possíveis:
 
 Controla se os skip indexes são usados ao executar uma consulta com o modificador FINAL.
 
-Os skip indexes podem excluir linhas (grânulos) que contêm os dados mais recentes, o que pode levar a resultados incorretos em uma consulta com o modificador FINAL. Quando essa configuração está habilitada, os skip indexes são aplicados mesmo com o modificador FINAL, o que pode melhorar o desempenho, mas com o risco de ignorar atualizações recentes. Essa configuração deve ser habilitada em conjunto com a configuração use&#95;skip&#95;indexes&#95;if&#95;final&#95;exact&#95;mode (o padrão é habilitado).
+Os skip indexes podem excluir linhas (grânulos) que contêm os dados mais recentes, o que pode levar a resultados incorretos em uma consulta com o modificador FINAL. Quando essa configuração está habilitada, os skip indexes são aplicados mesmo com o modificador `FINAL`, o que pode melhorar o desempenho. Os resultados corretos ainda dependem da configuração `use_skip_indexes_if_final_exact_mode`, que é habilitada por padrão e examina as partes adicionais que se sobrepõem aos intervalos retornados pelo skip index. O risco de ignorar atualizações recentes aplica-se apenas se essa configuração estiver desabilitada.
 
 Valores possíveis:
 
