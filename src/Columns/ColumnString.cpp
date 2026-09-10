@@ -210,6 +210,26 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
 
+    /// `filterArraysImpl` sizes the result chars in proportion to the expected share of rows, which is
+    /// far off when the filter correlates with the string length (`s <> ''` keeps every non-empty row,
+    /// so a quarter of the rows hold nearly all the bytes) and the buffer then doubles through
+    /// reallocations that copy everything written so far. One pass over the offsets gives the exact
+    /// size; it is a small fraction of the copy that follows.
+    if (result_size_hint > 0)
+    {
+        const size_t size = offsets.size();
+        const UInt8 * filt_pos = filt.data();
+        UInt64 res_bytes = 0;
+        UInt64 prev_offset = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            const UInt64 offset = offsets[i];
+            res_bytes += filt_pos[i] ? offset - prev_offset : 0;
+            prev_offset = offset;
+        }
+        res_chars.reserve_exact(res_bytes);
+    }
+
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
 
     return res;
