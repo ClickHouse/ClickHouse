@@ -12,7 +12,8 @@ namespace DB
 namespace DB::PrometheusQueryToSQL
 {
 
-/// Returns description of the columns returned by function prometheusQuery() or prometheusQueryRange().
-ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings);
+/// Returns the columns of `prometheusQuery`/`prometheusQueryRange`; with `histogram_result` an instant vector gets
+/// a Nullable `value` plus a `histogram` column, and a range vector gets an extra `histogram_series` column.
+ColumnsDescription getResultColumns(const PrometheusQueryTree & promql_tree, const PrometheusQueryEvaluationSettings & settings, bool histogram_result);
 
 }
