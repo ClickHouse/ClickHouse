@@ -1,0 +1,140 @@
+<test>
+    <!--
+        Measure single-key aggregation when every read block uses the same
+        shared LowCardinality dictionary. The source has 8,190 distinct values,
+        so every dictionary fits within the default per-part limit without
+        relying on server-wide writer settings.
+
+        Each key is inserted once before randomized repetitions. This ensures
+        that the first read block touches the complete dictionary and later
+        blocks can reuse all dictionary-position-to-aggregate-state mappings.
+        Plain integer and String columns provide controls for the same values
+        and row order. String cases cover 6-, 26-, and 56-byte values.
+    -->
+
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <merge_tree_use_deserialization_prefixes_cache>1</merge_tree_use_deserialization_prefixes_cache>
+        <max_memory_usage>20G</max_memory_usage>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>key</name>
+            <values>
+                <value>stack_lc_uint8</value>
+                <value>stack_uint8</value>
+                <value>stack_lc_uint16</value>
+                <value>stack_uint16</value>
+                <value>stack_lc_uint32</value>
+                <value>stack_uint32</value>
+                <value>stack_lc_uint64</value>
+                <value>stack_uint64</value>
+                <value>stack_lc_uint128</value>
+                <value>stack_uint128</value>
+                <value>stack_lc_uint256</value>
+                <value>stack_uint256</value>
+                <value>stack_lc_string_6</value>
+                <value>stack_string_6</value>
+                <value>stack_lc_string_26</value>
+                <value>stack_string_26</value>
+                <value>stack_lc_string_56</value>
+                <value>stack_string_56</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>DROP TABLE IF EXISTS group_by_low_cardinality_shared_dictionary</create_query>
+    <create_query>
+        CREATE TABLE group_by_low_cardinality_shared_dictionary
+        (
+            stack_lc_uint8 LowCardinality(UInt8),
+            stack_uint8 UInt8,
+            stack_lc_uint16 LowCardinality(UInt16),
+            stack_uint16 UInt16,
+            stack_lc_uint32 LowCardinality(UInt32),
+            stack_uint32 UInt32,
+            stack_lc_uint64 LowCardinality(UInt64),
+            stack_uint64 UInt64,
+            stack_lc_uint128 LowCardinality(UInt128),
+            stack_uint128 UInt128,
+            stack_lc_uint256 LowCardinality(UInt256),
+            stack_uint256 UInt256,
+            stack_lc_string_6 LowCardinality(String),
+            stack_string_6 String,
+            stack_lc_string_26 LowCardinality(String),
+            stack_string_26 String,
+            stack_lc_string_56 LowCardinality(String),
+            stack_string_56 String,
+            value UInt64
+        )
+        ENGINE = MergeTree
+        ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO group_by_low_cardinality_shared_dictionary
+        SELECT
+            toUInt8(stack_number) AS stack_lc_uint8,
+            stack_lc_uint8 AS stack_uint8,
+            toUInt16(stack_number) AS stack_lc_uint16,
+            stack_lc_uint16 AS stack_uint16,
+            toUInt32(stack_number) AS stack_lc_uint32,
+            stack_lc_uint32 AS stack_uint32,
+            stack_number AS stack_lc_uint64,
+            stack_number AS stack_uint64,
+            bitOr(
+                bitShiftLeft(toUInt128(cityHash64(stack_number)), 64),
+                toUInt128(stack_number)) AS stack_lc_uint128,
+            stack_lc_uint128 AS stack_uint128,
+            bitOr(
+                bitShiftLeft(toUInt256(cityHash64(stack_number + 1)), 192),
+                bitOr(
+                    bitShiftLeft(toUInt256(cityHash64(stack_number + 2)), 128),
+                    toUInt256(stack_lc_uint128))) AS stack_lc_uint256,
+            stack_lc_uint256 AS stack_uint256,
+            leftPad(toString(stack_number), 6, '0') AS stack_lc_string_6,
+            stack_lc_string_6 AS stack_string_6,
+            leftPad(toString(stack_number), 26, '0') AS stack_lc_string_26,
+            stack_lc_string_26 AS stack_string_26,
+            leftPad(toString(stack_number), 56, '0') AS stack_lc_string_56,
+            stack_lc_string_56 AS stack_string_56,
+            toUInt64(1) AS value
+        FROM
+        (
+            SELECT
+                if(number &lt; 8190, number, intHash64(number) % 8190) AS stack_number
+            FROM numbers(25000000)
+        )
+        SETTINGS
+            max_threads = 1,
+            max_insert_threads = 1,
+            max_block_size = 25000000,
+            max_insert_block_size = 25000000,
+            min_insert_block_size_rows = 25000000,
+            min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <fill_query>
+        SELECT throwIf(
+            count() != 1 OR countIf(part_type = 'Wide') != 1,
+            'Expected one active Wide part')
+        FROM system.parts
+        WHERE database = currentDatabase()
+          AND table = 'group_by_low_cardinality_shared_dictionary'
+          AND active
+    </fill_query>
+
+    <query>
+        SELECT {key}, sum(value)
+        FROM group_by_low_cardinality_shared_dictionary
+        GROUP BY {key}
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            max_block_size = 65536
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS group_by_low_cardinality_shared_dictionary</drop_query>
+</test>
