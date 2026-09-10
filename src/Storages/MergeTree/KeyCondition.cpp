@@ -4640,8 +4640,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
             /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
             /// reverts to reading and filtering those rows, which is correct.
+            /// Require a boolean reading, not merely a numeric type: `WHERE w` is rejected for a
+            /// wide integer or a `BFloat16`, so reading such a key as `key != 0` would prune
+            /// granules that no row-level filter can account for.
             if (!key_type_not_low_cardinality->isNullable()
-                && (isInteger(key_type_not_low_cardinality) || isFloat(key_type_not_low_cardinality)))
+                && key_type_not_low_cardinality->canBeUsedInBooleanContext())
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                 out.range = Range(Field(UInt64(0)));
