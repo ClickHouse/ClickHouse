@@ -144,3 +144,10 @@ select 0 = isValidUTF8(repeat('x', 63) || '\xC2' || repeat('y', 64));
 -- The same boundaries through FixedString, an unpadded caller that arrives by a different path.
 select 1 = isValidUTF8(toFixedString(repeat('a', 63) || '\xE2\x82\xAC' || repeat('a', 64), 130));
 select 0 = isValidUTF8(toFixedString(repeat('x', 15) || '\xC2' || repeat('y', 48), 64));
+
+-- A well-formed multibyte sequence after a leading ASCII run, under 64 bytes, so the ASCII pre-pass
+-- runs and the scalar loop validates what it leaves. A pre-pass whose length stops matching its
+-- cursor rejects these while still accepting a pure-ASCII string of the same length.
+select 1 = isValidUTF8(repeat('a', 8) || '\xD0\xB0');
+select 1 = isValidUTF8(repeat('a', 13) || '\xE6\x97\xA5');
+select 1 = isValidUTF8(repeat('a', 16) || '\xF0\x9F\x98\x80' || 'aa');
