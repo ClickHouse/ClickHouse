@@ -476,7 +476,7 @@
     M(UniqueKeyIndexCacheLookupMicroseconds, "Wall-clock time inside `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` (ClickHouse-side `CacheBase` adapter for the RocksDB block cache).", ValueType::Microseconds) \
     M(UniqueKeyIndexCacheHits, "Number of times an entry has been found in the UNIQUE KEY index cache, so we didn't have to load an SST block.", ValueType::Number) \
     M(UniqueKeyIndexCacheMisses, "Number of times an entry has not been found in the UNIQUE KEY index cache, so we had to load an SST block from disk.", ValueType::Number) \
-    M(UniqueKeySSTWriteMicroseconds, "Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + `WriteBuffer` finalize in `finalizeToStorage` (the SST bytes are streamed straight into the part storage's `WriteBuffer`). Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.", ValueType::Microseconds) \
+    M(UniqueKeySSTWriteMicroseconds, "Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + `WriteBuffer` finalize (+ fsync) in `finish` (the SST bytes are streamed straight into the part storage's `WriteBuffer`). Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.", ValueType::Microseconds) \
     M(UniqueKeyLoadTimeSSTRebuildCount, "Number of UNIQUE KEY parts whose `unique_key_index.sst` was rebuilt at load time after the crash-before-flush window.", ValueType::Number) \
     M(UniqueKeyLoadTimeSSTRebuildMicroseconds, "Total time spent rebuilding `unique_key_index.sst` at load time (sequential read of UK columns + SST write).", ValueType::Microseconds) \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.", ValueType::Number) \
@@ -1182,6 +1182,7 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueRemovedObjects, "Number of objects removed as part of after_processing = delete", ValueType::Number) \
     M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
+    M(ObjectStorageQueueRemoveObjectFailures, "Number of objects that failed to be removed as part of after_processing = delete", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
     M(ObjectStorageQueueBucketLockLostOwnership, "Number of times ownership of a bucket lock was detected as lost in S3(Azure)Queue. Non-zero value indicates too small persistent_processing_node_ttl_seconds or a bug", ValueType::Number) \
     M(ObjectStorageQueueBucketLockRefreshes, "Number of successful bucket lock refreshes in S3(Azure)Queue", ValueType::Number) \
@@ -1189,6 +1190,7 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueProcessedRows, "Number of processed rows in StorageS3(Azure)Queue", ValueType::Number) \
+    M(ObjectStorageQueueExclusiveModeProcessingErrors, "Count of times a file in S3(Azure)Queue didn't finalize state due to a processing error. Only for 'exclusive' mode.", ValueType::Number) \
     \
     M(ObjectStorageListedObjects, "Total objects returned by object storage listing API before any filtering.", ValueType::Number) \
     M(ObjectStorageGlobFilteredObjects, "Objects that did not match the glob or regex pattern and were skipped during listing.", ValueType::Number) \
