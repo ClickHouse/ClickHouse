@@ -48,7 +48,7 @@
             subtractDays(now(), 31 + number % 14),
             number % 10000,
             number,
-            concat(toString(number), repeat('x', 1024))
+            randomPrintableASCII(1000)
         FROM numbers(200000)
         SETTINGS max_threads = 1, max_insert_threads = 1
     </fill_query>
@@ -60,8 +60,8 @@
             subtractDays(now(), 1 + number % 14),
             number % 10000,
             number + 200000,
-            concat(toString(number + 200000), repeat('x', 1024))
-        FROM numbers(200000)
+            randomPrintableASCII(1000)
+        FROM numbers(800000)
         SETTINGS max_threads = 1, max_insert_threads = 1
     </fill_query>
 
