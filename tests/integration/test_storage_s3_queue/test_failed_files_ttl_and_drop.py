@@ -262,7 +262,11 @@ def test_tracked_files_limit_still_caps_the_failed_set(started_cluster):
     files_path = f"{table_name}_data"
 
     tracked_files_limit = 1
-    cleanup_interval_ms = 2000
+    # Deliberately long: the first sweep is scheduled *after* one interval
+    # (`ObjectStorageQueueMetadata::startup` -> `scheduleAfter`), so both files are guaranteed to have
+    # failed before any trimming happens. With a short interval the sweep can run while only the first
+    # file has failed, and the test would then see one node and "pass" without ever having two.
+    cleanup_interval_ms = 30000
 
     create_table(
         started_cluster,
@@ -295,11 +299,24 @@ def test_tracked_files_limit_still_caps_the_failed_set(started_cluster):
         names = result.split("\n") if result else []
         return {name for name in names if not name.endswith(".retriable")}
 
-    # Both files fail, then the sweep trims the set back to the cap. Only the converged state is
-    # asserted: whether the sweep observes one or both failures first is a race, but either way it
-    # cannot leave more than `tracked_files_limit` behind.
-    converged = False
+    # Precondition, and the whole point of the test: the failed set must actually exceed the cap
+    # before the sweep runs. Without this the test passes vacuously - one file failed, the count
+    # already equals the cap, and nothing was ever trimmed.
+    over_cap = False
     for _ in range(60):
+        if len(terminal_failed_znodes()) > tracked_files_limit:
+            over_cap = True
+            break
+        time.sleep(1)
+
+    assert over_cap, (
+        f"Both files should have failed terminally before the first sweep, "
+        f"got {terminal_failed_znodes()}"
+    )
+
+    # Now the sweep trims back to the cap.
+    converged = False
+    for _ in range(90):
         time.sleep(1)
         if len(terminal_failed_znodes()) == tracked_files_limit:
             converged = True
