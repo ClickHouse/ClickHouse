@@ -45,7 +45,7 @@ ReturnType readIntTextInBaseImpl(T & x, ReadBuffer & buf)
     for (; !buf.eof(); ++buf.position())
     {
         char c = *buf.position();
-        char digit = 0;
+        char digit;
         switch (c)
         {
             case '+':

@@ -29,7 +29,7 @@ namespace
 {
 
 /// Throw an exception if the argument is non zero.
-class FunctionThrowIf final : public IFunction
+class FunctionThrowIf : public IFunction
 {
 public:
     static constexpr auto name = "throwIf";

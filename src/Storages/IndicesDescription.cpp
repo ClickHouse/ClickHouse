@@ -94,15 +94,17 @@ IndexDescription IndexDescription::getIndexFromAST(
     if (index_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index must have name in definition.");
 
+    /// Without escaping the name becomes a part of the index file name as is, see `getIndexFileName`.
+    if (!escape_filenames && index_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Skip index name ({}) cannot contain '/' with `escape_index_filenames` disabled", index_definition->name);
+
     auto index_type = index_definition->getType();
     if (!index_type)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TYPE is required for index");
 
     if (index_type->parameters && !index_type->parameters->children.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Index type cannot have parameters");
-
-    if (index_definition->granularity == 0)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index GRANULARITY must be a positive integer");
 
     IndexDescription result;
     result.definition_ast = index_definition->clone();
@@ -273,9 +275,9 @@ ExpressionActionsPtr IndicesDescription::getSingleExpressionForIndices(const Col
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
 }
 
-VectorWithMemoryTracking<String> IndicesDescription::getAllRegisteredNames() const
+Names IndicesDescription::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> result;
+    Names result;
     for (const auto & index : *this)
     {
         result.emplace_back(index.name);

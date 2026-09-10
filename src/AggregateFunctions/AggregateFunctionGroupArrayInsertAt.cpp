@@ -133,7 +133,7 @@ public:
         columns[0]->get(row_num, arr[position]);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         Array & arr_lhs = data(place).value;
         const Array & arr_rhs = data(rhs).value;
@@ -229,7 +229,6 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
 
 }
 
-void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

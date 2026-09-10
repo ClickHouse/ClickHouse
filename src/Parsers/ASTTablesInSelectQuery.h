@@ -52,7 +52,6 @@ struct ASTTableExpression : public IAST
     bool final = false;
     ASTPtr sample_size;
     ASTPtr sample_offset;
-    ASTPtr stream_settings;
 
     /// Column aliases for the table expression (AS t(a, b))
     ASTPtr column_aliases;
@@ -73,9 +72,6 @@ struct ASTTableJoin : public IAST
     JoinLocality locality = JoinLocality::Unspecified;
     JoinStrictness strictness = JoinStrictness::Unspecified;
     JoinKind kind = JoinKind::Inner;
-
-    /// Set for NATURAL JOIN — the USING columns are derived automatically from the common columns.
-    bool is_natural = false;
 
     /// Condition. One of fields is non-nullptr.
     ASTPtr using_expression_list;

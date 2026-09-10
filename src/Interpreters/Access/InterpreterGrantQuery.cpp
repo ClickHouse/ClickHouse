@@ -512,7 +512,6 @@ void InterpreterGrantQuery::updateRoleFromQuery(Role & role, const ASTGrantQuery
     updateFromQuery(role, query);
 }
 
-void registerInterpreterGrantQuery(InterpreterFactory & factory);
 void registerInterpreterGrantQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

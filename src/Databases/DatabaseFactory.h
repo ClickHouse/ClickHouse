@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Access/Common/AccessType.h>
-#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
@@ -52,15 +50,6 @@ public:
         bool supports_arguments = false;
         bool supports_settings = false;
         bool supports_table_overrides = false;
-        /// Whether this database engine accesses external data sources
-        /// (e.g. MySQL, PostgreSQL, S3, DataLakeCatalog).
-        /// Used by restore to skip external databases when
-        /// restore_replace_external_engines_to_null is set.
-        bool is_external = false;
-        /// Source access type used by `addImplicitAccessRights` to bridge
-        /// `READ`/`WRITE ON <SOURCE>` grants to implicit `TABLE_ENGINE` grants.
-        /// Defaults to `std::nullopt` for non-source engines.
-        std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
     };
 
     using CreatorFn = std::function<DatabasePtr(const Arguments & arguments)>;
@@ -69,7 +58,6 @@ public:
     {
         CreatorFn creator_fn;
         EngineFeatures features;
-        Documentation documentation;
     };
 
     DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
@@ -80,18 +68,13 @@ public:
         .supports_arguments = false,
         .supports_settings = false,
         .supports_table_overrides = false,
-        .is_external = false,
-        .source_access_type = std::nullopt,
-    }, Documentation documentation = {});
+    });
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
 
-    /// Returns true if the given database engine accesses external data sources.
-    bool isDatabaseExternal(const String & engine_name) const;
-
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    std::vector<String> getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(database_engines.begin(), database_engines.end(), std::back_inserter(result), getter);
         return result;

@@ -2,7 +2,6 @@
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -71,7 +70,7 @@ void NegativeLimitStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags = 0;
+    UInt8 flags;
     readIntBinary(flags, ctx.in); // reserved, ignored for now
 
     if (flags != 0)
@@ -86,7 +85,6 @@ QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
     return std::make_unique<NegativeLimitStep>(ctx.input_headers.front(), limit_v, offset_v);
 }
 
-void registerNegativeLimitStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("NegativeLimit", NegativeLimitStep::deserialize);

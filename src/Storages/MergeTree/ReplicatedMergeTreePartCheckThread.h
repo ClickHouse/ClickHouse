@@ -33,7 +33,7 @@ struct ReplicatedCheckResult
     CheckResult status;
     Action action = None;
 
-    bool exists_in_zookeeper{};
+    bool exists_in_zookeeper;
     MergeTreeDataPartPtr part;
     time_t recheck_after_seconds = 0;
 };

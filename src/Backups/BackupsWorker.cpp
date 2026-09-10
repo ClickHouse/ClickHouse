@@ -16,7 +16,6 @@
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/getBackupDataFileName.h>
-#include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
@@ -156,7 +155,7 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
-        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = backup_settings.read_from_filesystem_cache;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
         return read_settings;
     }
 
@@ -174,7 +173,7 @@ namespace
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
         read_settings.read_through_distributed_cache = false;
-        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = false;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         return read_settings;
     }
 
@@ -285,8 +284,9 @@ public:
         size_t max_free_threads = 0;
         size_t queue_size = use_queue ? 0 : max_threads;
         auto thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, metric_scheduled_threads, max_threads, max_free_threads, queue_size);
-        it = thread_pools.emplace(thread_pool_id, std::move(thread_pool)).first;
-        return *it->second;
+        auto * thread_pool_ptr = thread_pool.get();
+        thread_pools.emplace(thread_pool_id, std::move(thread_pool));
+        return *thread_pool_ptr;
     }
 
     /// Waits for all threads to finish.
@@ -791,6 +791,13 @@ void BackupsWorker::writeBackupEntries(
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
         auto & entry = backup_entries[index].second;
+
+        if (entry->isFromRemoteFile())
+        {
+            backup->setOriginalEndpointAndNamespaceIfEmpty(entry->getEndpointURI(), entry->getNamespace());
+            continue;
+        }
+
         const auto & file_info = file_infos[index];
 
         /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
@@ -1355,7 +1362,7 @@ void BackupsWorker::maybeSleepForTesting() const
 BackupStatus BackupsWorker::wait(const OperationID & backup_or_restore_id, bool rethrow_exception)
 {
     std::unique_lock lock{infos_mutex};
-    BackupStatus current_status = {};
+    BackupStatus current_status;
     status_changed.wait(lock, [&]
     {
         auto it = infos.find(backup_or_restore_id);
@@ -1397,7 +1404,7 @@ void BackupsWorker::waitAll()
 BackupStatus BackupsWorker::cancel(const BackupOperationID & backup_or_restore_id, bool wait_)
 {
     QueryStatusPtr process_list_element;
-    BackupStatus current_status = {};
+    BackupStatus current_status;
 
     {
         std::unique_lock lock{infos_mutex};

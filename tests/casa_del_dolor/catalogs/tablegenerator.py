@@ -34,11 +34,11 @@ class LakeTableGenerator:
 
     @staticmethod
     def get_next_generator(lake: LakeFormat):
-        if lake == LakeFormat.Iceberg:
-            return IcebergTableGenerator()
-        if lake == LakeFormat.Paimon:
-            return PaimonTableGenerator()
-        return DeltaLakePropertiesGenerator()
+        return (
+            IcebergTableGenerator()
+            if lake == LakeFormat.Iceberg
+            else DeltaLakePropertiesGenerator()
+        )
 
     @abstractmethod
     def generate_table_properties_impl(
@@ -75,144 +75,6 @@ class LakeTableGenerator:
         self, columns: dict[str, SparkColumn], col: sp.DataType
     ) -> str:
         return ""
-
-    # Safe type promotions supported by Iceberg, Delta, and Paimon
-    _TYPE_PROMOTIONS: dict[type, list[str]] = {
-        sp.ByteType: ["SMALLINT", "INT", "BIGINT"],
-        sp.ShortType: ["INT", "BIGINT"],
-        sp.IntegerType: ["BIGINT"],
-        sp.FloatType: ["DOUBLE"],
-    }
-
-    def _pick_type_promotion(self, col_type: sp.DataType) -> typing.Optional[str]:
-        candidates = self._TYPE_PROMOTIONS.get(type(col_type))
-        if candidates:
-            return random.choice(candidates)
-        if isinstance(col_type, sp.DecimalType):
-            new_prec = min(col_type.precision + random.randint(1, 5), 38)
-            new_scale = col_type.scale
-            if new_prec > col_type.precision:
-                return f"DECIMAL({new_prec},{new_scale})"
-        return None
-
-    @staticmethod
-    def _refresh_table_model(spark: SparkSession, table: SparkTable):
-        schema = spark.table(table.get_table_full_path()).schema
-        new_columns = {}
-        for field in schema.fields:
-            generated = (
-                "delta.generationExpression" in field.metadata
-                or "delta.identity.start" in field.metadata
-                or (
-                    field.name in table.columns
-                    and table.columns[field.name].generated
-                )
-            )
-            new_columns[field.name] = SparkColumn(
-                field.name, field.dataType, field.nullable, generated
-            )
-        table.columns = new_columns
-        table.check_constraints.clear()
-
-    def generate_common_alter_statements(
-        self,
-        spark: SparkSession,
-        table: SparkTable,
-    ) -> str:
-        next_operation = random.randint(1, 1000)
-        tpath = table.get_table_full_path()
-
-        if next_operation <= 200:
-            # Set random properties
-            properties = self.generate_table_properties(table)
-            if properties:
-                key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE {tpath} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
-        elif next_operation <= 400:
-            # Unset a property
-            properties = self.generate_table_properties(table)
-            if properties:
-                key = random.choice(list(properties.keys()))
-                return f"ALTER TABLE {tpath} UNSET TBLPROPERTIES ('{key}');"
-        elif next_operation <= 475:
-            # Add a column
-            col_name = f"c_added_{random.randint(1, 1000)}"
-            col_type = self.type_mapper.generate_random_spark_sql_type()
-            stmt = f"ALTER TABLE {tpath} ADD COLUMNS ({col_name} {col_type});"
-            spark.sql(stmt)
-            from pyspark.sql.types import _parse_datatype_string
-
-            table.columns[col_name] = SparkColumn(
-                col_name, _parse_datatype_string(col_type), True, False
-            )
-            return ""
-        elif next_operation <= 550:
-            # Drop a top-level column only; nested drops would require
-            # updating the parent StructType in the in-memory model.
-            cols = list(table.columns.keys())
-            if len(cols) > 1:
-                col = random.choice(cols)
-                stmt = f"ALTER TABLE {tpath} DROP COLUMN {col};"
-                spark.sql(stmt)
-                table.columns.pop(col, None)
-                return ""
-        elif next_operation <= 625:
-            # Rename a column
-            cols = list(table.columns.keys())
-            if cols:
-                old_name = random.choice(cols)
-                new_name = f"c_renamed_{random.randint(1, 1000)}"
-                if new_name not in table.columns:
-                    stmt = (
-                        f"ALTER TABLE {tpath} RENAME COLUMN {old_name} TO {new_name};"
-                    )
-                    spark.sql(stmt)
-                    sc = table.columns.pop(old_name)
-                    sc.column_name = new_name
-                    table.columns[new_name] = sc
-                    return ""
-        elif next_operation <= 700:
-            # Alter column comment
-            flat_cols = list(table.flat_columns().keys())
-            if flat_cols:
-                col = random.choice(flat_cols)
-                from .datagenerator import SOME_STRINGS
-
-                comment = random.choice(SOME_STRINGS).replace("'", "\\'")
-                return f"ALTER TABLE {tpath} ALTER COLUMN {col} COMMENT '{comment}';"
-        elif next_operation <= 775 and self.get_format() != "paimon":
-            # Alter column SET/DROP NOT NULL (not supported by Paimon)
-            cols = list(table.columns.keys())
-            if cols:
-                col_name = random.choice(cols)
-                sc = table.columns[col_name]
-                action = "SET" if sc.nullable else "DROP"
-                spark.sql(
-                    f"ALTER TABLE {tpath} ALTER COLUMN {col_name} {action} NOT NULL;"
-                )
-                sc.nullable = not sc.nullable
-                return ""
-        elif next_operation <= 850:
-            # Widen column type (numeric promotion)
-            cols = list(table.columns.items())
-            random.shuffle(cols)
-            for col_name, sc in cols:
-                new_type_str = self._pick_type_promotion(sc.spark_type)
-                if new_type_str:
-                    stmt = f"ALTER TABLE {tpath} ALTER COLUMN {col_name} TYPE {new_type_str};"
-                    spark.sql(stmt)
-                    from pyspark.sql.types import _parse_datatype_string
-
-                    sc.spark_type = _parse_datatype_string(new_type_str)
-                    return ""
-        return ""
-
-    def generate_alter_table_statements(
-        self,
-        spark: SparkSession,
-        table: SparkTable,
-    ) -> str:
-        return self.generate_common_alter_statements(spark, table)
 
     def random_ordered_columns(self, table: SparkTable, with_asc_desc: bool):
         columns_list = []
@@ -347,6 +209,62 @@ class LakeTableGenerator:
     ) -> str:
         return ""
 
+    def generate_alter_table_statements(
+        self,
+        table: SparkTable,
+    ) -> str:
+        """Generate random ALTER TABLE statements for testing"""
+        next_operation = random.randint(
+            1, 500 if self.get_format() == "delta" else 1000
+        )
+
+        if next_operation <= 250:
+            # Set random properties
+            properties = self.generate_table_properties(table)
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE {table.get_table_full_path()} SET TBLPROPERTIES ('{key}' = '{properties[key]}');"
+        elif next_operation <= 500:
+            # Unset a property
+            properties = self.generate_table_properties(table)
+            if properties:
+                key = random.choice(list(properties.keys()))
+                return f"ALTER TABLE {table.get_table_full_path()} UNSET TBLPROPERTIES ('{key}');"
+        elif next_operation <= 600:
+            # Add or drop partition field
+            partition_clauses = self.add_partition_clauses(table)
+            random.shuffle(partition_clauses)
+            random_subset = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(['ADD', 'DROP'])} PARTITION FIELD {random.choice(list(random_subset))}"
+        elif next_operation <= 700:
+            # Replace partition field
+            partition_clauses = self.add_partition_clauses(table)
+            random.shuffle(partition_clauses)
+            random_subset1 = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            random.shuffle(partition_clauses)
+            random_subset2 = random.sample(
+                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
+            )
+            return f"ALTER TABLE {table.get_table_full_path()} REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
+        elif next_operation <= 800:
+            # Set ORDER BY
+            if random.randint(1, 2) == 1:
+                return f"ALTER TABLE {table.get_table_full_path()} WRITE UNORDERED"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE{random.choice([' LOCALLY', ''])} ORDERED BY {self.random_ordered_columns(table, True)}"
+        elif next_operation <= 900:
+            # Set distribution
+            if random.randint(1, 2) == 1:
+                return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION"
+            return f"ALTER TABLE {table.get_table_full_path()} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table, True)}"
+        elif next_operation <= 1000:
+            # Set identifier fields
+            return f"ALTER TABLE {table.get_table_full_path()} {random.choice(['SET', 'DROP'])} IDENTIFIER FIELDS {self.random_ordered_columns(table, False)}"
+        return ""
+
     @abstractmethod
     def generate_extra_statement(
         self,
@@ -363,61 +281,6 @@ class IcebergTableGenerator(LakeTableGenerator):
 
     def get_format(self) -> str:
         return "iceberg"
-
-    def generate_alter_table_statements(
-        self,
-        spark: SparkSession,
-        table: SparkTable,
-    ) -> str:
-        if random.randint(1, 2) == 1:
-            return self.generate_common_alter_statements(spark, table)
-
-        next_operation = random.randint(1, 12)
-        tpath = table.get_table_full_path()
-
-        if next_operation <= 2:
-            # Add or drop partition field
-            partition_clauses = self.add_partition_clauses(table)
-            random.shuffle(partition_clauses)
-            random_subset = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            return f"ALTER TABLE {tpath} {random.choice(['ADD', 'DROP'])} PARTITION FIELD {random.choice(list(random_subset))}"
-        elif next_operation <= 4:
-            # Replace partition field
-            partition_clauses = self.add_partition_clauses(table)
-            random.shuffle(partition_clauses)
-            random_subset1 = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            random.shuffle(partition_clauses)
-            random_subset2 = random.sample(
-                partition_clauses, k=random.randint(1, min(3, len(partition_clauses)))
-            )
-            return f"ALTER TABLE {tpath} REPLACE PARTITION FIELD {random.choice(list(random_subset1))} WITH {random.choice(list(random_subset2))}"
-        elif next_operation <= 6:
-            # Set ORDER BY
-            if random.randint(1, 2) == 1:
-                return f"ALTER TABLE {tpath} WRITE UNORDERED"
-            return f"ALTER TABLE {tpath} WRITE{random.choice([' LOCALLY', ''])} ORDERED BY {self.random_ordered_columns(table, True)}"
-        elif next_operation <= 8:
-            # Set distribution
-            if random.randint(1, 2) == 1:
-                return f"ALTER TABLE {tpath} WRITE DISTRIBUTED BY PARTITION"
-            return f"ALTER TABLE {tpath} WRITE DISTRIBUTED BY PARTITION LOCALLY ORDERED BY {self.random_ordered_columns(table, True)}"
-        elif next_operation <= 10:
-            # Set identifier fields
-            return f"ALTER TABLE {tpath} {random.choice(['SET', 'DROP'])} IDENTIFIER FIELDS {self.random_ordered_columns(table, False)}"
-        elif next_operation <= 12:
-            # Reorder columns (FIRST / AFTER)
-            cols = list(table.columns.keys())
-            if len(cols) > 1:
-                col = random.choice(cols)
-                if random.randint(1, 2) == 1:
-                    return f"ALTER TABLE {tpath} ALTER COLUMN {col} FIRST;"
-                other = random.choice([c for c in cols if c != col])
-                return f"ALTER TABLE {tpath} ALTER COLUMN {col} AFTER {other};"
-        return ""
 
     def set_basic_properties(self) -> dict[str, str]:
         properties = {}
@@ -698,7 +561,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 ["copy-on-write", "merge-on-read"]
             ),
             "write.metadata.compression-codec": lambda: random.choice(
-                ["gzip", "none"]
+                ["gzip", "zstd", "none"]
             ),
             "write.spark.fanout.enabled": true_false_lambda,
             "write.wap.enabled": true_false_lambda,
@@ -850,7 +713,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             if random.randint(1, 2) == 1:
                 res += f", dry_run => {random.choice(['true', 'false'])}"
             if random.randint(1, 2) == 1:
-                res += f", max_concurrent_deletes => {random.randint(1, 20)}"
+                res += f", max_concurrent_deletes => {random.randint(0, 20)}"
             if random.randint(1, 2) == 1:
                 res += f", prefix_listing => {random.choice(['true', 'false'])}"
             timestamps = self.get_timestamps(spark, table)
@@ -913,7 +776,7 @@ class IcebergTableGenerator(LakeTableGenerator):
             if random.randint(1, 2) == 1:
                 res += f", retain_last => {random.randint(1, 10)}"
             if random.randint(1, 2) == 1:
-                res += f", max_concurrent_deletes => {random.randint(1, 20)}"
+                res += f", max_concurrent_deletes => {random.randint(0, 20)}"
             if random.randint(1, 2) == 1:
                 res += f", clean_expired_metadata => {random.choice(['true', 'false'])}"
             res += ")"
@@ -1164,11 +1027,6 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             "delta.feature.variantType-preview": lambda: random.choice(
                 ["supported", "enabled"]
             ),
-            # Target file size
-            # V2 checkpoint
-            "delta.feature.v2Checkpoint": lambda: random.choice(
-                ["supported", "enabled"]
-            ),
             # Not available on OSS Spark
             # Optimize write
             "spark.databricks.delta.autoCompact.enabled": true_false_lambda,
@@ -1197,56 +1055,21 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             "spark.databricks.delta.stats.skipping": true_false_lambda,
         }
 
-    def generate_alter_table_statements(
-        self,
-        spark: SparkSession,
-        table: SparkTable,
-    ) -> str:
-        if random.randint(1, 4) == 1:
-            tpath = table.get_table_full_path()
-            if table.check_constraints and random.randint(1, 2) == 1:
-                cname = random.choice(list(table.check_constraints.keys()))
-                del table.check_constraints[cname]
-                return f"ALTER TABLE {tpath} DROP CONSTRAINT IF EXISTS {cname};"
-            flat_cols = list(table.flat_columns().keys())
-            if flat_cols:
-                cname = f"chk_{random.randint(1, 10000)}"
-                col = random.choice(flat_cols)
-                expr = random.choice(
-                    [
-                        f"{col} IS NOT NULL",
-                        f"length({col}) > 0",
-                        f"{col} >= 0",
-                        f"{col} <> ''",
-                    ]
-                )
-                table.check_constraints[cname] = expr
-                return f"ALTER TABLE {tpath} ADD CONSTRAINT {cname} CHECK ({expr});"
-        return self.generate_common_alter_statements(spark, table)
-
     def generate_extra_statement(
         self,
         spark: SparkSession,
         table: SparkTable,
     ) -> str:
-        next_option = random.randint(1, 7)
+        next_option = random.randint(1, 4)
 
         if next_option == 1:
             # Vacuum
             return f"VACUUM {table.get_table_full_path()} RETAIN 0 HOURS;"
         if next_option == 2:
             # Optimize
-            res = f"OPTIMIZE {table.get_table_full_path()}"
-            if random.randint(1, 3) == 1:
-                flat_cols = list(table.flat_columns().keys())
-                col = random.choice(flat_cols)
-                res += f" WHERE {col} IS NOT NULL"
-            if random.randint(1, 2) == 1:
-                res += f" ZORDER BY ({self.random_ordered_columns(table, False)})"
-            return res + ";"
+            return f"OPTIMIZE {table.get_table_full_path()}{f' ZORDER BY ({self.random_ordered_columns(table, False)})' if random.randint(1, 2) == 1 else ''};"
         if next_option in (3, 4):
-            # Restore — executed here so we can refresh the in-memory model
-            # afterward (RESTORE can roll back schema-mutating alters).
+            # Restore
             result = spark.sql(
                 f"DESCRIBE HISTORY {table.get_table_full_path()};"
             ).collect()
@@ -1256,198 +1079,8 @@ class DeltaLakePropertiesGenerator(LakeTableGenerator):
             if len(snapshots) > 0 and (
                 len(timestamps) == 0 or random.randint(1, 2) == 1
             ):
-                stmt = f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF {random.choice(snapshots)};"
-            elif len(timestamps) > 0:
-                stmt = f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
-            else:
-                stmt = (
-                    f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"
-                )
-            spark.sql(stmt)
-            self._refresh_table_model(spark, table)
-            return ""
-        if next_option == 5:
-            # Describe history
-            return f"DESCRIBE HISTORY {table.get_table_full_path()};"
-        if next_option == 6:
-            # Describe detail
-            return f"DESCRIBE DETAIL {table.get_table_full_path()};"
-        if next_option == 7:
-            # Generate manifest
-            return f"GENERATE symlink_format_manifest FOR TABLE {table.get_table_full_path()};"
-        return ""
-
-
-class PaimonTableGenerator(LakeTableGenerator):
-
-    def __init__(self):
-        super().__init__()
-
-    def get_format(self) -> str:
-        return "paimon"
-
-    def set_basic_properties(self) -> dict[str, str]:
-        properties = {}
-        out_format = FileFormat.file_to_str(self.write_format)
-        if out_format.lower() not in ("parquet", "orc"):
-            out_format = random.choice(["parquet", "orc"])
-            self.write_format = FileFormat.file_from_str(out_format)
-        properties["file.format"] = out_format
-        return properties
-
-    def add_partition_clauses(self, table: SparkTable) -> list[str]:
-        res = []
-        for k in table.columns.keys():
-            res.append(k)
-        return res
-
-    def add_generated_col(
-        self, columns: dict[str, SparkColumn], col: sp.DataType
-    ) -> str:
-        return ""
-
-    def create_catalog_table(
-        self,
-        catalog_impl,
-        columns: list[dict[str, str]],
-        table: SparkTable,
-    ) -> str:
-        return ""
-
-    def generate_table_properties(
-        self,
-        table: SparkTable,
-    ) -> dict[str, str]:
-        properties = super().generate_table_properties(table)
-        flat_cols = list(table.flat_columns().keys())
-        has_pk = "primary-key" in properties
-        if not has_pk:
-            for key in (
-                "merge-engine",
-                "changelog-producer",
-                "sequence.field",
-                "deletion-vectors.enabled",
-                "deletion-vectors.bitmap64",
-            ):
-                properties.pop(key, None)
-        if (
-            "deletion-vectors.bitmap64" in properties
-            and properties.get("deletion-vectors.enabled") != "true"
-        ):
-            del properties["deletion-vectors.bitmap64"]
-        if "bucket-key" in properties and "bucket" not in properties:
-            del properties["bucket-key"]
-        elif "bucket" in properties and "bucket-key" not in properties:
-            properties["bucket-key"] = random.choice(flat_cols)
-        for min_key, max_key in (
-            ("snapshot.num-retained.min", "snapshot.num-retained.max"),
-            ("compaction.min.file-num", "compaction.max.file-num"),
-            ("num-sorted-run.compaction-trigger", "num-sorted-run.stop-trigger"),
-        ):
-            if min_key in properties and max_key in properties:
-                lo, hi = int(properties[min_key]), int(properties[max_key])
-                if lo > hi:
-                    properties[max_key] = str(lo)
-        return properties
-
-    def generate_table_properties_impl(
-        self,
-        table: SparkTable,
-    ) -> dict[str, Parameter]:
-        flat_cols = list(table.flat_columns().keys())
-        next_properties = {
-            "primary-key": lambda: ",".join(
-                random.sample(flat_cols, k=random.randint(1, min(3, len(flat_cols))))
-            ),
-            "bucket": lambda: str(random.choice([1, 2, 4, 8, 16])),
-            "bucket-key": lambda: random.choice(flat_cols),
-            "changelog-producer": lambda: random.choice(
-                ["none", "input", "full-compaction", "lookup"]
-            ),
-            "merge-engine": lambda: random.choice(
-                ["deduplicate", "partial-update", "first-row", "aggregation"]
-            ),
-            "sequence.field": lambda: random.choice(flat_cols),
-            "metadata.iceberg.storage": lambda: "hadoop-catalog",
-            "metadata.iceberg.format-version": lambda: random.choice(["1", "2", "3"]),
-            "deletion-vectors.enabled": true_false_lambda,
-            "deletion-vectors.bitmap64": true_false_lambda,
-            "compaction.optimization-interval": lambda: random.choice(
-                ["1ms", "1s", "1min", "1h"]
-            ),
-            "snapshot.time-retained": lambda: random.choice(["1s", "1min", "1h", "1d"]),
-            "snapshot.num-retained.min": lambda: str(random.choice([1, 2, 5, 10])),
-            "snapshot.num-retained.max": lambda: str(random.choice([5, 10, 50, 100])),
-            "write-buffer-size": lambda: random.choice(
-                ["64kb", "256kb", "1mb", "64mb", "256mb"]
-            ),
-            "page-size": lambda: random.choice(["4kb", "64kb", "1mb"]),
-            "target-file-size": lambda: random.choice(
-                ["1mb", "32mb", "128mb", "256mb"]
-            ),
-            "compaction.min.file-num": lambda: str(random.choice([3, 5, 10])),
-            "compaction.max.file-num": lambda: str(random.choice([5, 10, 50])),
-            "compaction.early-max.file-num": lambda: str(random.choice([4, 8, 16])),
-            "num-sorted-run.compaction-trigger": lambda: str(random.choice([3, 5, 10])),
-            "num-sorted-run.stop-trigger": lambda: str(random.choice([10, 20, 50])),
-            "write-only": true_false_lambda,
-            "scan.mode": lambda: random.choice(
-                ["default", "latest-full", "latest", "compacted-full"]
-            ),
-            "full-compaction.delta-commits": lambda: str(random.choice([1, 3, 5, 10])),
-            "tag.automatic-creation": lambda: random.choice(
-                ["none", "process-time", "watermark"]
-            ),
-            "tag.creation-period": lambda: random.choice(
-                ["daily", "hourly", "two-hours"]
-            ),
-            "tag.num-retained-max": lambda: str(random.choice([1, 3, 5, 10, 50])),
-            "read-batch-size": lambda: str(random.choice([1024, 4096, 8192, 16384])),
-            "local-sort.max-num-file-handles": lambda: str(
-                random.choice([50, 128, 256, 512])
-            ),
-            "lookup.cache-file-retention": lambda: random.choice(["1h", "6h", "1d"]),
-            "lookup.cache-max-disk-size": lambda: random.choice(
-                ["64mb", "256mb", "1gb", "10gb"]
-            ),
-            "lookup.cache-max-memory-size": lambda: random.choice(
-                ["64mb", "256mb", "1gb"]
-            ),
-        }
-        if self.write_format == FileFormat.ORC:
-            next_properties.update(
-                {
-                    "orc.compress": lambda: random.choice(
-                        ["zlib", "snappy", "zstd", "lz4", "none"]
-                    ),
-                }
-            )
-        elif self.write_format == FileFormat.Parquet:
-            next_properties.update(
-                {
-                    "parquet.compression": lambda: random.choice(
-                        ["snappy", "gzip", "zstd", "lz4", "uncompressed"]
-                    ),
-                }
-            )
-        return next_properties
-
-    def generate_extra_statement(
-        self,
-        spark: SparkSession,
-        table: SparkTable,
-    ) -> str:
-        next_option = random.randint(1, 5)
-
-        if next_option == 1:
-            return f"CALL `{table.catalog_name}`.sys.compact(table => '{table.get_namespace_path()}');"
-        if next_option == 2:
-            return f"CALL `{table.catalog_name}`.sys.expire_snapshots(table => '{table.get_namespace_path()}', retain_max => {random.choice([1, 2, 5, 10])});"
-        if next_option == 3:
-            tag_name = f"tag_{random.randint(1, 1000)}"
-            return f"CALL `{table.catalog_name}`.sys.create_tag(table => '{table.get_namespace_path()}', tag => '{tag_name}');"
-        if next_option == 4:
-            return f"CALL `{table.catalog_name}`.sys.repair(table => '{table.get_namespace_path()}');"
-        if next_option == 5:
-            return f"CALL `{table.catalog_name}`.sys.remove_orphan_files(table => '{table.get_namespace_path()}');"
+                return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF {random.choice(snapshots)};"
+            if len(timestamps) > 0:
+                return f"RESTORE TABLE {table.get_table_full_path()} TO TIMESTAMP AS OF '{random.choice(timestamps)}';"
+            return f"RESTORE TABLE {table.get_table_full_path()} TO VERSION AS OF 1;"
         return ""

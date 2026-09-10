@@ -1,5 +1,4 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <base/sort.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -11,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -97,7 +97,7 @@ struct NodeBase
 
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, buf);
         if (unlikely(size > max_node_size_deserialize))
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large node state size");
@@ -107,7 +107,7 @@ struct NodeBase
         buf.readStrict(node->data(), size);
 
         readBinary(node->event_time, buf);
-        UInt64 ulong_bitset = 0;
+        UInt64 ulong_bitset;
         readBinary(ulong_bitset, buf);
         node->events_bitset = ulong_bitset;
         readBinary(node->can_be_base, buf);
@@ -167,7 +167,7 @@ struct SequenceNextNodeGeneralData
     {
         if (!sorted)
         {
-            ::stableSort(std::begin(value), std::end(value), Comparator{});
+            std::stable_sort(std::begin(value), std::end(value), Comparator{});
             sorted = true;
         }
     }
@@ -254,7 +254,7 @@ public:
         data(place).value.push_back(node, arena);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (data(rhs).value.empty())
             return;
@@ -274,7 +274,7 @@ public:
         using Comparator = typename SequenceNextNodeGeneralData<Node>::Comparator;
 
         if (!data(place).sorted && !data(rhs).sorted)
-            ::stableSort(std::begin(a), std::end(a), Comparator{});
+            std::stable_sort(std::begin(a), std::end(a), Comparator{});
         else
         {
             const auto begin = std::begin(a);
@@ -282,10 +282,10 @@ public:
             const auto end = std::end(a);
 
             if (!data(place).sorted)
-                ::stableSort(begin, middle, Comparator{});
+                std::stable_sort(begin, middle, Comparator{});
 
             if (!data(rhs).sorted)
-                ::stableSort(middle, end, Comparator{});
+                std::stable_sort(middle, end, Comparator{});
 
             std::inplace_merge(begin, middle, end, Comparator{});
         }
@@ -295,32 +295,37 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        /// Temporarily do a const_cast to sort the values. It helps to reduce the computational burden on the initiator node.
-        this->data(const_cast<AggregateDataPtr>(place)).sort();
+        /// serialize() must not mutate the state: it takes a ConstAggregateDataPtr and the same
+        /// state can be shared between rows (a replicated/const aggregate-state column used as a
+        /// GROUP BY key) and serialized concurrently by several pipeline threads. sort() reorders
+        /// the value buffer in place, so sorting the shared buffer directly is a data race. Sort a
+        /// local copy of the node pointers; the values are always written in sorted order.
+        const auto & data_ref = data(place);
+        VectorWithMemoryTracking<Node *> sorted_value(data_ref.value.begin(), data_ref.value.end());
+        if (!data_ref.sorted)
+            std::stable_sort(sorted_value.begin(), sorted_value.end(), typename Data::Comparator{});
 
-        writeBinary(data(place).sorted, buf);
+        writeBinary(true, buf);
 
-        auto & value = data(place).value;
-
-        size_t size = std::min(static_cast<size_t>(events_size + 1), value.size());
+        size_t size = std::min(static_cast<size_t>(events_size + 1), sorted_value.size());
         switch (seq_base_kind)
         {
             case SequenceBase::Head:
                 writeVarUInt(size, buf);
                 for (size_t i = 0; i < size; ++i)
-                    value[i]->write(buf);
+                    sorted_value[i]->write(buf);
                 break;
 
             case SequenceBase::Tail:
                 writeVarUInt(size, buf);
                 for (size_t i = 0; i < size; ++i)
-                    value[value.size() - size + i]->write(buf);
+                    sorted_value[sorted_value.size() - size + i]->write(buf);
                 break;
 
             case SequenceBase::FirstMatch:
             case SequenceBase::LastMatch:
-                writeVarUInt(value.size(), buf);
-                for (auto & node : value)
+                writeVarUInt(sorted_value.size(), buf);
+                for (auto & node : sorted_value)
                     node->write(buf);
                 break;
         }
@@ -330,7 +335,7 @@ public:
     {
         readBinary(data(place).sorted, buf);
 
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, buf);
 
         if (unlikely(size == 0))
@@ -546,7 +551,6 @@ createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & 
 
 }
 
-void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };

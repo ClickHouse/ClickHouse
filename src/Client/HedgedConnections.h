@@ -115,6 +115,8 @@ public:
 
     void sendCancel() override;
 
+    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) override;
+
     Packet drain() override;
 
     std::string dumpAddresses() const override;
@@ -124,8 +126,6 @@ public:
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
     void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
-
-    void setDistributedFanout(size_t total_connections) override { distributed_fanout = total_connections; }
 
     void setAsyncCallback(AsyncCallback async_callback) override;
 
@@ -195,9 +195,6 @@ private:
     /// New replica may not support two-level aggregation due to version incompatibility.
     /// If we didn't disabled it, we need to skip this replica.
     bool disable_two_level_aggregation = false;
-
-    /// Total number of remote connections across all shards in the distributed query.
-    size_t distributed_fanout = 0;
 
     /// We will save replica with last received packet
     /// (except cases when packet type is EndOfStream or Exception)

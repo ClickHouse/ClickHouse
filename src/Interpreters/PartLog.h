@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
@@ -9,6 +10,11 @@
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
 
+
+namespace ProfileEvents
+{
+    class Counters;
+}
 
 namespace DB
 {
@@ -92,8 +98,6 @@ struct PartLogElement
     Strings mutation_ids;
 
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
-
-    std::map<String, UInt64> projections_duration_ms;
 
     static std::string name() { return "PartLog"; }
 

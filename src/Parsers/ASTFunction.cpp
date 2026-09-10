@@ -35,17 +35,6 @@ namespace ErrorCodes
 }
 
 
-boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body)
-{
-    auto tuple = makeASTFunction("tuple");
-    auto & tuple_args = tuple->arguments->children;
-    tuple_args.reserve(param_names.size());
-    for (const auto & param_name : param_names)
-        tuple_args.emplace_back(make_intrusive<ASTIdentifier>(param_name));
-    return makeASTFunction("lambda", std::move(tuple), std::move(body));
-}
-
-
 void ASTFunction::setNoEmptyArgs(bool value)
 {
     flags<ASTFunctionFlags>().no_empty_args = value;
@@ -240,6 +229,30 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 }
 
 
+/// Whether a nested secret map child is a `key = value` argument whose value stays visible when the
+/// map is masked (the non-secret identifiers of `extra_credentials`; `headers` values are all hidden).
+static bool isNonSecretMapChild(const String & map_name, const IAST * arg)
+{
+    if (map_name != "extra_credentials")
+        return false;
+    const auto * equals_func = arg->as<ASTFunction>();
+    if (!equals_func || equals_func->name != "equals" || !equals_func->arguments || equals_func->arguments->children.size() != 2)
+        return false;
+    /// Keep the value visible only when it is a plain literal or identifier; a non-literal value (e.g.
+    /// `role_arn = headers('Authorization' = '...')`) can hide a nested secret and is formatted verbatim
+    /// before the parser rejects it, so fail closed.
+    const auto & value_ast = equals_func->arguments->children[1];
+    if (!value_ast->as<ASTLiteral>() && !value_ast->as<ASTIdentifier>())
+        return false;
+    const auto & key_ast = equals_func->arguments->children[0];
+    if (const auto * key_literal = key_ast->as<ASTLiteral>())
+        return key_literal->value.getType() == Field::Types::String
+            && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_literal->value.safeGet<String>());
+    if (const auto * key_identifier = key_ast->as<ASTIdentifier>())
+        return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->name());
+    return false;
+}
+
 static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame)
 {
     const auto * equals_func = arg->as<ASTFunction>();
@@ -395,22 +408,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 ostr << func_symbol;
 
                 if (inside_parens)
-                {
                     ostr << '(';
-                    /// We have just emitted `(` around the single argument, so suppress the
-                    /// argument's own `parenthesized` parens (which would otherwise duplicate ours).
-                    /// We bypass ASTExpressionList::format here to ensure the flag reaches the
-                    /// argument node directly (the flag is consumed at the first IAST::format call).
-                    FormatStateStacked inner_frame = nested_need_parens;
-                    inner_frame.wrapped_in_parens = true;
-                    arguments->children[0]->format(ostr, settings, state, inner_frame);
-                    ostr << ')';
-                }
-                else
-                {
-                    arguments->format(ostr, settings, state, nested_need_parens);
-                }
+
+                arguments->format(ostr, settings, state, nested_need_parens);
                 written = true;
+
+                if (inside_parens)
+                    ostr << ')';
 
                 if (outside_parens)
                     ostr << ')';
@@ -443,14 +447,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
           * They are needed only if this expression is included in another expression with the operator.
           */
 
-        bool is_like_with_escape = false;
-        if (arguments->children.size() == 3
-            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"))
-        {
-            if (const auto * escape_literal = arguments->children[2]->as<ASTLiteral>())
-                is_like_with_escape = escape_literal->value.getType() == Field::Types::String;
-        }
-        if (!written && (arguments->children.size() == 2 || is_like_with_escape))
+        if (!written && arguments->children.size() == 2)
         {
             static constexpr std::array<FunctionOperatorMapping, 21> operators =
             {{
@@ -487,21 +484,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool need_parens_around_in = frame.need_parens || (is_in_operator && in_function_args);
                 if (need_parens_around_in)
                     ostr << '(';
-                /// Our wrapping `(...)` (either from need_parens_around_in here, or from the
-                /// `parenthesized` flag handled in IAST::format) already isolates this IN from
-                /// the enclosing function-argument list, so descendants must not add another
-                /// layer of parens for the same reason. Clear `current_function` for the
-                /// children so a nested IN sees `in_function_args == false`. Without this, a
-                /// query like `f(1, 2 IN ((3 IN (4, 5)) AS x))` formats as
-                /// `f(1, (2 IN ((3 IN (4, 5)) AS x)))`, the re-parse sets `parenthesized=true`
-                /// on the outer IN (so `IAST::format` emits the outer parens and resets
-                /// `current_function`), and the second format drops the inner `(3 IN (4, 5))`,
-                /// breaking the format-parse-format round-trip check.
-                if (need_parens_around_in)
-                {
-                    nested_need_parens.current_function = nullptr;
-                    nested_dont_need_parens.current_function = nullptr;
-                }
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << it->operator_name;
 
@@ -526,23 +508,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 if (extra_parents_around_in_rhs)
                 {
                     ostr << '(';
-                    /// We have just emitted `(` around the right-hand side, so suppress the
-                    /// child's own `parenthesized` parens (which would otherwise duplicate ours).
-                    FormatStateStacked inner_frame = nested_dont_need_parens;
-                    inner_frame.wrapped_in_parens = true;
-                    arguments->children[1]->format(ostr, settings, state, inner_frame);
+                    arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                     ostr << ')';
                 }
 
                 if (!extra_parents_around_in_rhs)
                     arguments->children[1]->format(ostr, settings, state, nested_need_parens);
-
-                /// LIKE/ILIKE with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
-                if (is_like_with_escape)
-                {
-                    ostr << " ESCAPE ";
-                    arguments->children[2]->format(ostr, settings, state, nested_dont_need_parens);
-                }
 
                 if (need_parens_around_in)
                     ostr << ')';
@@ -628,9 +599,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (left_needs_parens)
                         {
                             nested_need_parens.need_parens = false; /// Don't want duplicate parens
-                            /// We have just emitted `(` around the child, so suppress the
-                            /// child's own `parenthesized` parens (which would otherwise duplicate ours).
-                            nested_need_parens.wrapped_in_parens = true;
                             ostr << '(';
                         }
 
@@ -783,11 +751,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
     /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
     bool has_nulls_action = getNullsAction() != NullsAction::EMPTY;
-    /// A window function must always print its parentheses too: `f() OVER (...)` re-parses with the empty
-    /// `()`, so dropping them (e.g. when `noEmptyArgs()` was set on a no-argument window function parsed in a
-    /// CODEC/engine context) would make the formatting inconsistent across a parse round-trip.
-    bool need_parens
-        = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action || isWindowFunction();
+    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action;
 
     if (need_parens)
         ostr << '(';
@@ -809,15 +773,68 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (!settings.show_secrets)
             {
+                /// An argument with a partially masked replacement (e.g. a presigned S3 URL whose
+                /// credential parameters are hidden but whose host and path are kept).
+                if (auto replaced = secret_arguments.replaced_arguments.find(i); replaced != secret_arguments.replaced_arguments.end())
+                {
+                    ostr << replaced->second;
+                    continue;
+                }
+
+                /// A nested secret map like `headers(..)` / `extra_credentials(..)` has its values
+                /// hidden but its keys kept. Checked before the secret-span branch below because such a
+                /// map can itself fall inside a named span, where it must not be formatted as `key = ...`.
+                const ASTFunction * function = argument->as<ASTFunction>();
+                if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
+                {
+                    /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
+                    ostr << function->name << "(";
+                    for (size_t j = 0; j < function->arguments->children.size(); ++j)
+                    {
+                        if (j != 0)
+                            ostr << ", ";
+                        auto inner_arg = function->arguments->children[j];
+                        /// Known non-secret identifiers keep their values; a child that is not
+                        /// `key = value` cannot be split into a visible key and a hidden value and may
+                        /// be the secret itself, so it fails closed and is hidden whole.
+                        if (isNonSecretMapChild(function->name, inner_arg.get()))
+                            inner_arg->format(ostr, settings, state, nested_dont_need_parens);
+                        else if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
+                            ostr << "'[HIDDEN]'";
+                    }
+                    ostr << ")";
+                    continue;
+                }
+
+                /// An individually masked argument: for the named `key = value` form the key stays
+                /// visible; anything else (a positional secret, or a malformed argument swept in by
+                /// a fail-closed rule) is hidden whole.
+                if (auto masked = secret_arguments.masked_arguments.find(i); masked != secret_arguments.masked_arguments.end())
+                {
+                    const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get());
+                    if (masked->second && func_ast && func_ast->name == "equals" && func_ast->arguments && func_ast->arguments->children.size() == 2)
+                    {
+                        func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
+                        ostr << " = ";
+                    }
+                    ostr << "'[HIDDEN]'";
+                    continue;
+                }
+
                 if (secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count)
                 {
                     if (secret_arguments.are_named)
                     {
-                        if (const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get()))
+                        /// Print `key = ` only for a well-formed `key = value` argument. Anything else
+                        /// swept into the named span (e.g. a positional literal between two named
+                        /// secrets) may itself be the secret, so fail closed: emit only the hidden
+                        /// marker below without echoing the argument.
+                        const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get());
+                        if (func_ast && func_ast->name == "equals" && func_ast->arguments && func_ast->arguments->children.size() == 2)
+                        {
                             func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
-                        else
-                            argument->format(ostr, settings, state, nested_dont_need_parens);
-                        ostr << " = ";
+                            ostr << " = ";
+                        }
                     }
                     if (!secret_arguments.replacement.empty())
                     {
@@ -838,39 +855,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         break; /// All other arguments should also be hidden.
                     continue;
                 }
-
-                const ASTFunction * function = argument->as<ASTFunction>();
-                if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
-                {
-                    /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
-                    ostr << function->name << "(";
-                    for (size_t j = 0; j < function->arguments->children.size(); ++j)
-                    {
-                        if (j != 0)
-                            ostr << ", ";
-                        auto inner_arg = function->arguments->children[j];
-                        if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
-                            inner_arg->format(ostr, settings, state, nested_dont_need_parens);
-                    }
-                    ostr << ")";
-                    continue;
-                }
             }
 
             nested_dont_need_parens.list_element_index = i;
             /// Mark that we're formatting an argument of this function (needed for IN operator parentheses)
             if (arguments->children.size() > 1)
                 nested_dont_need_parens.current_function = this;
-            /// When formatting in function-call form (operators disabled, e.g. `EXPLAIN SYNTAX`),
-            /// the function call's own `(arg1, arg2, ...)` parens already group each argument, so the
-            /// argument's own `parenthesized` flag would emit redundant parens like
-            /// `multiply((plus(1, 2)), 3)` for `(1 + 2) * 3`. Suppress them. We leave the normal
-            /// formatting path (`allow_operators = true`) unchanged so non-`EXPLAIN SYNTAX` queries
-            /// keep round-tripping the user's parens.
-            FormatStateStacked argument_frame = nested_dont_need_parens;
-            if (!frame.allow_operators)
-                argument_frame.wrapped_in_parens = true;
-            argument->format(ostr, settings, state, argument_frame);
+            argument->format(ostr, settings, state, nested_dont_need_parens);
         }
 
     }
