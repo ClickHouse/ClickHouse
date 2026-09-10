@@ -77,13 +77,9 @@ public:
             const bool original_step_was_final
                 = aggregating_step->getFinal(); /// Save whether the original AggregatingStep was final or partial
 
-            /// Merging the results of the replicas is the same as merging the results of the shards of a
-            /// `Distributed` table, so it obeys the same setting. Note that this is not only about the memory:
-            /// the ordinary merging transform returns the two-level buckets in an arbitrary order, which the
-            /// node above cannot merge memory efficiently.
-            /// Grouping sets are not supported by the memory efficient merging, see `MergingAggregatedStep`.
-            const bool memory_efficient_aggregation = optimization_settings.distributed_aggregation_memory_efficient
-                && grouping_sets_params.empty() && !aggregating_step->getOutputHeader()->has("__grouping_set");
+            /// The memory-efficient merge is never used on this branch for parallel replicas: the visitor
+            /// has no access to the optimization settings, so this stays hard-coded as it was before.
+            const bool memory_efficient_aggregation = false;
 
             /// The memory-efficient merge consumes each input as a stream of buckets in ascending
             /// order, so the partial aggregation must produce its result in bucket order.
