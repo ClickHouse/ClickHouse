@@ -357,7 +357,7 @@ static void writeDataFiles(
         /// A data file may be Parquet/ORC/Avro; only the ones that will actually seek to a footer at
         /// the tail should skip the generic from-start prefetch.
         auto read_settings = context->getReadSettings();
-        read_settings.remote_fs_settings.random_access = formatReadsRandomAccess(
+        read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(
             data_file->data_object_info->getFileFormat().value_or(write_format), context);
         auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"), read_settings);
 

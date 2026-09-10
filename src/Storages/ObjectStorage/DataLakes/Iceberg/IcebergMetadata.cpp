@@ -1408,7 +1408,8 @@ void IcebergMetadata::addDeleteTransformers(
             /// Equality deletes may be Parquet/ORC/Avro; only the ones that will actually seek to a
             /// footer at the tail should skip the generic from-start prefetch.
             auto read_settings = local_context->getReadSettings();
-            read_settings.remote_fs_settings.random_access = formatReadsRandomAccess(delete_file.file_format, local_context);
+            read_settings.remote_fs_settings.random_access
+                = FormatFactory::instance().checkIfFormatIsRandomAccessInput(delete_file.file_format, local_context);
             {
                 auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log, read_settings);
                 auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);

@@ -88,7 +88,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         /// Parquet reads the footer at the tail first, so hint the object-storage read buffer to
         /// skip the generic from-start prefetch that it would drop, unless seeks are disabled.
         auto read_settings = context->getReadSettings();
-        read_settings.remote_fs_settings.random_access = formatReadsRandomAccess(format, context);
+        read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format, context);
 
         Block initial_header;
         {

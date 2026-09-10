@@ -531,7 +531,8 @@ struct DeltaLakeMetadataImpl
         auto read_settings = context->getReadSettings();
         /// The checkpoint is a Parquet file: skip the generic from-start prefetch, the reader seeks
         /// to the footer at the tail first, unless seeks are disabled.
-        read_settings.remote_fs_settings.random_access = formatReadsRandomAccess("Parquet", context);
+        read_settings.remote_fs_settings.random_access
+            = FormatFactory::instance().checkIfFormatIsRandomAccessInput("Parquet", context);
         RelativePathWithMetadata object_info(checkpoint_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
         auto format_settings = getFormatSettings(context);

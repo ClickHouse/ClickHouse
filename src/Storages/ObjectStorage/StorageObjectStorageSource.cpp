@@ -208,7 +208,6 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
-    extern const SettingsBool input_format_allow_seeks;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -1292,7 +1291,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             ReadSettings read_settings = context_->getReadSettings();
-            read_settings.remote_fs_settings.random_access = formatReadsRandomAccess(format_name, context_, format_settings);
+            /// A from-start read-ahead is wasted on a reader that seeks straight to a footer at the
+            /// tail, but it is exactly what a reader that cannot seek consumes.
+            read_settings.remote_fs_settings.random_access
+                = FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name, context_, format_settings);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log,
                 read_settings, !headers_requested);
@@ -1717,16 +1719,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 std::future<StorageObjectStorageSource::ReaderHolder> StorageObjectStorageSource::createReaderAsync()
 {
     return create_reader_scheduler([=, this] { return createReader(); }, Priority{});
-}
-
-bool formatReadsRandomAccess(
-    const String & format_name,
-    const ContextPtr & context,
-    const std::optional<FormatSettings> & format_settings)
-{
-    const bool seekable_read
-        = format_settings ? format_settings->seekable_read : context->getSettingsRef()[Setting::input_format_allow_seeks];
-    return seekable_read && FormatFactory::instance().checkIfFormatIsRandomAccessInput(format_name);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
