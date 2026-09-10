@@ -11,7 +11,6 @@
 #include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
-#include <Storages/StorageProxy.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
@@ -31,6 +30,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
