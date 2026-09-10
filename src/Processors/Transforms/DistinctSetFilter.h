@@ -138,7 +138,8 @@ public:
     /// Passing `require_extractable_keys_ = true` guarantees the method choice.
     std::unique_ptr<KeyExtractor> extractKeys() &&;
 
-    /// Initializes the set from normalized input columns on first use, without inserting keys.
+    /// Normalizes input columns and initializes the set on first use, without inserting keys.
+    /// The prepared chunk exposes the materialized column memory needed to estimate filtering copies.
     /// Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
     void prepareForInsert(Chunk & chunk);
 

@@ -437,10 +437,9 @@ void DistinctSetFilter::prepareForInsert(Chunk & chunk)
     chassert(hasKeyColumns());
     chassert(!skip_null_keys);
 
+    materializeChunk(chunk);
     if (data->empty())
     {
-        removeSpecialColumnRepresentations(chunk);
-        convertToFullIfConst(chunk);
         ColumnRawPtrs key_columns;
         key_columns.reserve(key_columns_pos.size());
         for (const auto pos : key_columns_pos)
@@ -457,9 +456,8 @@ size_t DistinctSetFilter::estimateGrowthMemory(size_t additional_keys) const
 
 Chunk DistinctSetFilter::filter(Chunk chunk)
 {
-    /// Convert to full columns, because `SetVariants` for sparse and const columns is not implemented.
-    removeSpecialColumnRepresentations(chunk);
-    convertToFullIfConst(chunk);
+    /// The hash-set methods require materialized columns.
+    materializeChunk(chunk);
 
     const auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();

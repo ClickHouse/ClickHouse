@@ -296,7 +296,9 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
         return;
     }
 
-    /// Filtering can copy the input before spilling, so allow another input-sized allocation.
+    hashing.set.prepareForInsert(input_chunk);
+
+    /// Filtering can copy the normalized input before spilling, so allow another input-sized allocation.
     /// A suppression run needs its columns, a sorted copy, and a permutation. Writing needs the
     /// uncompressed, compressed, and file buffers. Oversized values and codec overhead can exceed
     /// this estimate.
@@ -305,7 +307,6 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
     const size_t spill_headroom_bytes
         = input_chunk.allocatedBytes() + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
-    hashing.set.prepareForInsert(input_chunk);
     if (const auto available = getMostStrictAvailableSystemMemory())
     {
         const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk.getNumRows());
