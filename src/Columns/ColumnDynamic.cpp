@@ -173,6 +173,8 @@ void ColumnDynamic::updateVariantInfoAndExpandVariantColumn(const DataTypePtr & 
 
     /// Clear mappings cache because now with new Variant we will have new mappings.
     variant_mappings_cache.clear();
+    /// Invalidate statistics because they refer to the old set of variants.
+    statistics.reset();
 }
 
 std::vector<ColumnVariant::Discriminator> * ColumnDynamic::combineVariants(const ColumnDynamic::VariantInfo & other_variant_info)
