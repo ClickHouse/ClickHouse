@@ -41,7 +41,7 @@ ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
                  std::make_shared<DataTypeString>(),
                  std::make_shared<DataTypeString>(),
                  std::make_shared<DataTypeString>()},
-             Names{"name", "previous_value", "new_value", "reason", "compatibility_mode"})), "The list of changes in settings which changed the behaviour of ClickHouse."},
+             Names{"name", "previous_value", "new_value", "reason", "compatibility_mode"})), "Setting changes. `compatibility_mode`: `RollbackToOld` permits rollback to `previous_value`; `StartUsingNew` blocks rollback of this and earlier changes to the same setting."},
     };
 }
 

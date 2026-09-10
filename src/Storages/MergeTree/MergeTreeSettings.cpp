@@ -2086,6 +2086,8 @@ Possible values:
 
 - `water_filling`
 - `sainte_lague`
+
+Since ClickHouse 26.8, `compatibility` does not revert the default from `sainte_lague` to `water_filling`; set `water_filling` explicitly to use it.
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
@@ -2853,6 +2855,7 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
 
     ClickHouseVersion version(compatibility_value);
     const auto & settings_changes_history = getMergeTreeSettingsChangesHistory();
+    /// Keep blockers across versions to skip earlier changes to the same setting.
     std::unordered_set<std::string_view> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting

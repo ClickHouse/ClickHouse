@@ -7076,9 +7076,11 @@ Use schema from cache for URL with last modification time validation (for URLs w
 )", 0) \
     \
     DECLARE(String, compatibility, "", R"(
-The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
+The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, with exceptions recorded in the settings changes history.
 
 If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
+
+Changes marked `StartUsingNew` in [`system.settings_changes`](/reference/system-tables/settings_changes) block rollback of that change and all earlier changes to the same setting.
 
 This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
 
@@ -9142,6 +9144,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 
     ClickHouseVersion version(compatibility_value);
     const auto & settings_changes_history = getSettingsChangesHistory();
+    /// Keep blockers across versions to skip earlier changes to the same setting.
     UnorderedSetWithMemoryTracking<std::string_view> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting

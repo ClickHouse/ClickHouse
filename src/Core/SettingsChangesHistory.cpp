@@ -35,10 +35,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// History of settings changes that controls some backward incompatible changes
         /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
         /// in this version. This history contains both changes to existing settings and newly added settings.
-        /// Settings changes is a vector of structs
-        ///     {setting_name, previous_value, new_value, reason}.
-        /// For newly added setting choose the most appropriate previous_value (for example, if new setting
-        /// controls new feature and it's 'true' by default, use 'false' as previous_value).
+        /// Entries are `{setting_name, previous_value, new_value, reason, compatibility_mode = RollbackToOld}`.
+        /// Use `StartUsingNew` for defaults that must bypass `compatibility`, e.g. internal scheduling improvements.
+        /// For a newly added setting choose the most appropriate `previous_value` (for example, if the setting
+        /// controls a new feature and is `true` by default, use `false` as `previous_value`).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
@@ -1361,7 +1361,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
             {"compute_exact_num_defaults_for_sparse_columns", false, true, "Promote to BETA and enable by default: compute the exact per-column `num_defaults` counter during inserts and merges (instead of the sampling estimate), so `optimize_trivial_count_with_sparsity_filter` and sparsity-based pruning can rely on it."},
             {"allow_experimental_adaptive_codec_selection", false, false, "New setting."},
-            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default.", CompatibilityMode::StartUsingNew},
+            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default regardless of `compatibility`.", CompatibilityMode::StartUsingNew},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
         });

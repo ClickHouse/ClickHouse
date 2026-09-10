@@ -18,7 +18,9 @@ namespace SettingsChangesHistory
     {
         enum class CompatibilityMode
         {
+            /// Restore `previous_value` when `compatibility` requests an older version.
             RollbackToOld,
+            /// Block rollback of this change and all earlier changes to the same setting.
             StartUsingNew,
         };
 
