@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <chrono>
 #include <functional>
 #include <future>
@@ -22,6 +23,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
+#include <Interpreters/AdaptiveAggregationChunkInfo.h>
 #include <Interpreters/AdaptiveAggregationExecution.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -29,7 +31,10 @@
 #include <Processors/ISink.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Processors/Transforms/AdaptiveAggregationAdmissionTransform.h>
+#include <Processors/Transforms/AdaptiveAggregatingTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationPartitionTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationCoalescingTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationPublishTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationMergeTransform.h>
 #include <base/scope_guard.h>
 
@@ -38,11 +43,6 @@ using namespace DB;
 namespace DB::FailPoints
 {
 extern const char adaptive_aggregation_before_spill_budget_wait[];
-}
-
-namespace DB::ErrorCodes
-{
-extern const int LOGICAL_ERROR;
 }
 
 namespace ProfileEvents
@@ -90,34 +90,77 @@ AggregatingTransformParamsPtr makeParams(
     return std::make_shared<AggregatingTransformParams>(header, params, /*final_=*/true);
 }
 
-MutableStagedChunkPtr makeStagedChunk()
-{
-    auto chunk = std::make_shared<StagedChunk>();
-    chunk->keys.fixed_key_size = sizeof(UInt64);
-    chunk->keys.routing_hashes.push_back(0);
-    chunk->keys.key_bytes.resize_fill(sizeof(UInt64), 0);
-    chunk->keys.bucket_offsets.fill(1);
-    chunk->keys.bucket_offsets[0] = 0;
-    std::get<StagedChunk::CountPayload>(chunk->payload).multiplicities.push_back(1);
-    return chunk;
-}
 
-Chunk envelope(const SharedHeader & header, StagedChunkPtr chunk)
+struct StagingPipeline
 {
-    Chunk result(header->getColumns(), 0);
-    result.getChunkInfos().add(std::make_shared<StagedChunkInfo>(std::move(chunk), false));
-    return result;
-}
+    std::shared_ptr<AdaptiveAggregationPartitionTransform> partition;
+    std::shared_ptr<AdaptiveAggregationCoalescingTransform> coalescing;
+    std::shared_ptr<AdaptiveAggregationPublishTransform> publisher;
+    std::array<bool, 3> finished{};
 
-/// Manual port driving can stop exactly between pulling an envelope and registering its payload.
-struct Admission
+    StagingPipeline(const AggregatingTransformParamsPtr & params, const AdaptiveAggregationSessionPtr & session)
+        : partition(std::make_shared<AdaptiveAggregationPartitionTransform>(params, session))
+        , coalescing(std::make_shared<AdaptiveAggregationCoalescingTransform>(params, session))
+        , publisher(std::make_shared<AdaptiveAggregationPublishTransform>(params, session))
+    {
+        connect(partition->getOutputPort(), coalescing->getInputs().front());
+        connect(coalescing->getOutputs().front(), publisher->getInputs().front());
+    }
+
+    InputPort & input() { return partition->getInputPort(); }
+    OutputPort & output() { return publisher->getOutputs().front(); }
+
+    void prime()
+    {
+        ASSERT_EQ(publisher->prepare(), IProcessor::Status::NeedData);
+        ASSERT_EQ(coalescing->prepare(), IProcessor::Status::NeedData);
+        ASSERT_EQ(partition->prepare(), IProcessor::Status::NeedData);
+    }
+
+    /// Advance actual processors until the requested port transition, with a bound to expose deadlocks.
+    template <typename Predicate>
+    bool runUntil(Predicate && done)
+    {
+        for (size_t iteration = 0; iteration < 100; ++iteration)
+        {
+            const std::array<IProcessor *, 3> processors{publisher.get(), coalescing.get(), partition.get()};
+            for (size_t i = 0; i < processors.size(); ++i)
+            {
+                if (finished[i])
+                    continue;
+                const auto status = processors[i]->prepare();
+                if (status == IProcessor::Status::Ready)
+                    processors[i]->work();
+                else if (status == IProcessor::Status::Finished)
+                    finished[i] = true;
+            }
+            if (done())
+                return true;
+        }
+        return false;
+    }
+
+    void addTo(Processors & processors)
+    {
+        processors.insert(processors.end(), {partition, coalescing, publisher});
+    }
+
+    void cancel(IProcessor::CancelReason reason = IProcessor::CancelReason::Unknown)
+    {
+        partition->cancel(reason);
+        coalescing->cancel(reason);
+        publisher->cancel(reason);
+    }
+};
+
+struct Publication
 {
-    AdaptiveAggregationAdmissionTransform processor;
+    AdaptiveAggregationPublishTransform processor;
     OutputPort producer;
     InputPort completion;
 
-    Admission(const SharedHeader & header, const AggregatingTransformParamsPtr & params, const AdaptiveAggregationSessionPtr & session)
-        : processor(header, params, session), producer(header), completion(header)
+    Publication(const AggregatingTransformParamsPtr & params, const AdaptiveAggregationSessionPtr & session)
+        : processor(params, session), producer(params->aggregator.getAdaptiveStagedHeader()), completion(Block())
     {
         connect(producer, processor.getInputs().front());
         connect(processor.getOutputs().front(), completion);
@@ -131,9 +174,41 @@ Chunk keyRange(UInt64 begin, size_t rows)
     values.resize(rows);
     for (size_t i = 0; i < rows; ++i)
         values[i] = begin + i;
-    Columns columns;
-    columns.push_back(std::move(column));
-    return Chunk(std::move(columns), rows);
+    return Chunk(Columns{std::move(column)}, rows);
+}
+
+Chunk recordedBlock(const AggregatingTransformParamsPtr & params, size_t rows, bool own_tracker = false)
+{
+    auto chunk = keyRange(0, rows);
+    /// A count-only aggregation records runs with multiplicities, as the frozen kernel does.
+    const bool counts_only = params->aggregator.hasAdaptiveCountPayload();
+    auto misses = std::make_shared<AdaptiveAggregationMissesInfo>(own_tracker);
+    misses->beginRecording(AdaptiveAggregationMissesInfo::KeyBytes::Fixed, sizeof(UInt64), /*constant_key=*/false, counts_only, 0, 0);
+    for (UInt32 row = 0; row < rows; ++row)
+    {
+        if (counts_only)
+            misses->recordCountRun<UInt64, false>(row, 0, 0, UInt64(row), 1);
+        else
+            misses->recordMiss<UInt64, false>(row, 0, 0, UInt64(row));
+    }
+    chunk.getChunkInfos().add(std::move(misses));
+    params->aggregator.extractAdaptiveArguments(chunk, /*key_column=*/nullptr);
+    return chunk;
+}
+
+Chunk partitionedBlock(
+    const AggregatingTransformParamsPtr & params, const AdaptiveAggregationSessionPtr & session, size_t rows = 1)
+{
+    StagedChunkConverter converter;
+    return params->aggregator.partitionAdaptiveBlock(*session, converter, recordedBlock(params, rows));
+}
+
+void acknowledgeBlock(AdaptiveAggregatingTransform & producer, StagingPipeline & staging)
+{
+    ASSERT_EQ(producer.prepare(), IProcessor::Status::PortFull);
+    ASSERT_TRUE(staging.runUntil([&] { return producer.getOutputs().front().canPush(); }));
+    ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
+    producer.work();
 }
 
 class KeySink final : public ISink
@@ -174,24 +249,48 @@ struct BlockExecution
         , execution(adaptive)
         , key_columns(params->params.keys_size)
         , aggregate_columns(params->params.aggregates_size)
+        , staging(params, session)
+        , source(params->aggregator.getAdaptiveArgumentHeader())
+        , completion(Block())
     {
+        connect(source, staging.input());
+        connect(staging.output(), completion);
+        staging.prime();
     }
 
     bool execute(Chunk chunk)
     {
-        const size_t rows = chunk.getNumRows();
-        return params->aggregator.executeOnBlock(
-            chunk.detachColumns(), 0, rows, result, key_columns, aggregate_columns, no_more_keys, &execution);
+        input = std::move(chunk);
+        const bool result_value = params->aggregator.executeOnBlock(
+            input.getColumns(), 0, input.getNumRows(), result, key_columns, aggregate_columns, no_more_keys, &execution);
+        /// Only a forwarded block carries a recording; every other block has finished its checks.
+        if (execution.hasPendingBlock())
+        {
+            input.getChunkInfos().add(std::move(execution.misses));
+            params->aggregator.extractAdaptiveArguments(input, std::move(execution.key_column));
+        }
+        return result_value;
+    }
+
+    void stage(Chunk chunk)
+    {
+        source.push(std::move(chunk));
+        ASSERT_TRUE(staging.runUntil([&] { return source.canPush(); }));
     }
 
     void admit(MemoryTracker & parent)
     {
-        onWorker(parent, [&]
-        {
-            for (const auto & chunk : execution.ready_chunks)
-                params->aggregator.admitStagedChunk(*session, chunk, execution.use_own_memory_tracker);
-            execution.ready_chunks.clear();
-        });
+        onWorker(parent, [&] { stage(std::move(input)); });
+    }
+
+    bool process(Chunk chunk)
+    {
+        if (!execute(std::move(chunk)))
+            return false;
+        if (!execution.hasPendingBlock())
+            return true;
+        stage(std::move(input));
+        return params->aggregator.resumeAdaptiveBlock(execution, result, no_more_keys);
     }
 
     void resume(MemoryTracker & parent)
@@ -202,6 +301,12 @@ struct BlockExecution
         });
     }
 
+    void finish()
+    {
+        source.finish();
+        ASSERT_TRUE(staging.runUntil([&] { return completion.isFinished(); }));
+    }
+
     AggregatingTransformParamsPtr params;
     AdaptiveAggregationSessionPtr session;
     AdaptiveAggregationProducer adaptive;
@@ -210,28 +315,70 @@ struct BlockExecution
     ColumnRawPtrs key_columns;
     Aggregator::AggregateColumns aggregate_columns;
     bool no_more_keys = false;
+    Chunk input;
+    StagingPipeline staging;
+    OutputPort source;
+    InputPort completion;
 };
 
 }
 
+TEST(AdaptiveAggregationPipeline, ProducerForwardsOnlyAggregateArguments)
+{
+    for (const String aggregate : {"", "count", "sum"})
+    {
+        SCOPED_TRACE(aggregate);
+        auto header = makeHeader();
+        auto params = makeParams(header, 0, aggregate);
+        auto many_data = std::make_shared<ManyAggregatedData>(2);
+        many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
+        AdaptiveAggregatingTransform producer(header, params, many_data, 0);
+        OutputPort source(header);
+        InputPort partition(params->aggregator.getAdaptiveArgumentHeader());
+        connect(source, producer.getInputs().front());
+        connect(producer.getOutputs().front(), partition);
+        partition.setNeeded();
+        ASSERT_EQ(producer.prepare(), IProcessor::Status::NeedData);
+        auto chunk = keyRange(0, 8192);
+        auto column = chunk.getColumns().front();
+        source.push(std::move(chunk));
+        ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
+        producer.work();
+        ASSERT_EQ(producer.prepare(), IProcessor::Status::PortFull);
+        chunk = partition.pull(/*set_not_needed=*/true);
+        EXPECT_EQ(chunk.getNumRows(), 8192);
+        if (aggregate == "sum")
+        {
+            ASSERT_EQ(chunk.getNumColumns(), 1);
+            EXPECT_EQ(chunk.getColumns().front().get(), column.get());
+        }
+        else
+        {
+            EXPECT_EQ(chunk.getNumColumns(), 0);
+            EXPECT_EQ(column->use_count(), 1);
+        }
+        const auto misses = chunk.getChunkInfos().get<AdaptiveAggregationMissesInfo>();
+        ASSERT_NE(misses, nullptr);
+        EXPECT_GT(misses->size(), 0);
+        EXPECT_LT(misses->size(), chunk.getNumRows());
+        EXPECT_EQ(producer.prepare(), IProcessor::Status::PortFull);
+    }
+}
+
 TEST(AdaptiveAggregationPipeline, AcknowledgementFollowsIndependentRegistration)
 {
-    auto header = makeHeader();
-    auto params = makeParams(header);
+    auto params = makeParams(makeHeader());
     auto session = std::make_shared<AdaptiveAggregationSession>();
-    Admission first(header, params, session);
-    Admission second(header, params, session);
-
-    /// Admission does not require demand on its completion-only output.
+    Publication first(params, session);
+    Publication second(params, session);
     EXPECT_EQ(first.processor.prepare(), IProcessor::Status::NeedData);
     EXPECT_EQ(second.processor.prepare(), IProcessor::Status::NeedData);
-    first.producer.push(envelope(header, makeStagedChunk()));
+    first.producer.push(partitionedBlock(params, session));
     EXPECT_EQ(first.processor.prepare(), IProcessor::Status::Ready);
     EXPECT_FALSE(first.producer.canPush());
     EXPECT_EQ(session->backlog.undrainedRecords(), 0);
 
-    /// One receiver can register and acknowledge while the other has only pulled its envelope.
-    second.producer.push(envelope(header, makeStagedChunk()));
+    second.producer.push(partitionedBlock(params, session));
     EXPECT_EQ(second.processor.prepare(), IProcessor::Status::Ready);
     second.processor.work();
     EXPECT_FALSE(second.producer.canPush());
@@ -244,7 +391,6 @@ TEST(AdaptiveAggregationPipeline, AcknowledgementFollowsIndependentRegistration)
     first.processor.work();
     EXPECT_FALSE(first.producer.canPush());
     EXPECT_EQ(first.processor.prepare(), IProcessor::Status::NeedData);
-    EXPECT_TRUE(first.producer.canPush());
     EXPECT_EQ(session->backlog.undrainedRecords(), 2);
     EXPECT_FALSE(first.completion.hasData());
     EXPECT_FALSE(second.completion.hasData());
@@ -252,26 +398,19 @@ TEST(AdaptiveAggregationPipeline, AcknowledgementFollowsIndependentRegistration)
     EXPECT_FALSE(second.completion.isFinished());
 }
 
-TEST(AdaptiveAggregationPipeline, AdmissionRequiresStagedChunkInfo)
+TEST(AdaptiveAggregationPipeline, StagingRequiresKeyMetadata)
 {
-    auto header = makeHeader();
-    auto params = makeParams(header);
+    auto params = makeParams(makeHeader());
     auto session = std::make_shared<AdaptiveAggregationSession>();
-    Admission admission(header, params, session);
-    ASSERT_EQ(admission.processor.prepare(), IProcessor::Status::NeedData);
-    admission.producer.push(Chunk(header->getColumns(), 0));
-    ASSERT_EQ(admission.processor.prepare(), IProcessor::Status::Ready);
-    try
-    {
-        admission.processor.work();
-        FAIL() << "Admission accepted a chunk without staged metadata";
-    }
-    catch (const Exception & e)
-    {
-        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
-    }
+    StagedChunkConverter converter;
+    EXPECT_THROW(params->aggregator.partitionAdaptiveBlock(*session, converter, Chunk(Columns{}, 1)), Exception);
+    Publication publication(params, session);
+    ASSERT_EQ(publication.processor.prepare(), IProcessor::Status::NeedData);
+    publication.producer.push(Chunk(Columns{}, 1));
+    ASSERT_EQ(publication.processor.prepare(), IProcessor::Status::Ready);
+    EXPECT_THROW(publication.processor.work(), Exception);
     EXPECT_EQ(session->backlog.undrainedRecords(), 0);
-    EXPECT_FALSE(admission.producer.canPush());
+    EXPECT_FALSE(publication.producer.canPush());
 }
 
 TEST(AdaptiveAggregationPipeline, CompletionWaitsForPulledPayload)
@@ -281,10 +420,10 @@ TEST(AdaptiveAggregationPipeline, CompletionWaitsForPulledPayload)
     auto many_data = std::make_shared<ManyAggregatedData>(2);
     many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
     AdaptiveAggregationMergeTransform merge(params, many_data, 2, 2, nullptr);
-    AdaptiveAggregationAdmissionTransform first(header, params, many_data->adaptive_session);
-    AdaptiveAggregationAdmissionTransform second(header, params, many_data->adaptive_session);
-    OutputPort first_producer(header);
-    OutputPort second_producer(header);
+    AdaptiveAggregationPublishTransform first(params, many_data->adaptive_session);
+    AdaptiveAggregationPublishTransform second(params, many_data->adaptive_session);
+    OutputPort first_producer(params->aggregator.getAdaptiveStagedHeader());
+    OutputPort second_producer(params->aggregator.getAdaptiveStagedHeader());
     InputPort result(header);
     connect(first_producer, first.getInputs().front());
     connect(second_producer, second.getInputs().front());
@@ -295,17 +434,14 @@ TEST(AdaptiveAggregationPipeline, CompletionWaitsForPulledPayload)
 
     EXPECT_EQ(merge.prepare({&merge.getInputs().front(), &merge.getInputs().back()}, {}), IProcessor::Status::NeedData);
     EXPECT_EQ(second.prepare(), IProcessor::Status::NeedData);
-    second_producer.push(envelope(header, makeStagedChunk()));
+    second_producer.push(partitionedBlock(params, many_data->adaptive_session));
     second_producer.finish();
     EXPECT_EQ(second.prepare(), IProcessor::Status::Ready);
     first_producer.finish();
     EXPECT_EQ(first.prepare(), IProcessor::Status::Finished);
     EXPECT_EQ(merge.prepare({&merge.getInputs().front(), &merge.getInputs().back()}, {}), IProcessor::Status::NeedData);
-    EXPECT_EQ(second.prepare(), IProcessor::Status::Ready);
-
     second.work();
     EXPECT_EQ(second.prepare(), IProcessor::Status::Finished);
-    /// The coordinator can finish consumption even without downstream result demand.
     EXPECT_EQ(merge.prepare({&merge.getInputs().front(), &merge.getInputs().back()}, {}), IProcessor::Status::Ready);
     EXPECT_EQ(many_data->adaptive_session->backlog.undrainedRecords(), 1);
 }
@@ -318,26 +454,25 @@ TEST(AdaptiveAggregationPipeline, CancellationReleasesQueuedAndPulledPayloads)
         {
             SCOPED_TRACE(pulled);
             SCOPED_TRACE(cancelled);
-            auto header = makeHeader();
-            auto params = makeParams(header);
+            auto params = makeParams(makeHeader());
             auto session = std::make_shared<AdaptiveAggregationSession>();
-            Admission admission(header, params, session);
-            ASSERT_EQ(admission.processor.prepare(), IProcessor::Status::NeedData);
-            auto chunk = makeStagedChunk();
-            std::weak_ptr<const StagedChunk> weak = chunk;
-            admission.producer.push(envelope(header, std::move(chunk)));
+            Publication publication(params, session);
+            ASSERT_EQ(publication.processor.prepare(), IProcessor::Status::NeedData);
+            auto chunk = partitionedBlock(params, session);
+            std::weak_ptr<const StagedKeysInfo> weak = chunk.getChunkInfos().get<StagedKeysInfo>();
+            publication.producer.push(std::move(chunk));
             if (pulled)
-                ASSERT_EQ(admission.processor.prepare(), IProcessor::Status::Ready);
+                ASSERT_EQ(publication.processor.prepare(), IProcessor::Status::Ready);
             EXPECT_FALSE(weak.expired());
             if (cancelled)
-                admission.processor.cancel();
+                publication.processor.cancel();
             else
-                admission.completion.close();
-            EXPECT_EQ(admission.processor.prepare(), IProcessor::Status::Finished);
+                publication.completion.close();
+            EXPECT_EQ(publication.processor.prepare(), IProcessor::Status::Finished);
             EXPECT_TRUE(weak.expired());
             EXPECT_TRUE(session->cancelled.load());
-            EXPECT_TRUE(admission.producer.isFinished());
-            EXPECT_FALSE(admission.processor.getInputs().front().hasData());
+            EXPECT_TRUE(publication.producer.isFinished());
+            EXPECT_FALSE(publication.processor.getInputs().front().hasData());
             EXPECT_EQ(session->backlog.undrainedRecords(), 0);
         }
     }
@@ -370,13 +505,14 @@ TEST(AdaptiveAggregationPipeline, CompletesAtSingleAndMultipleExecutorThreads)
                 chunks.push_back(keyRange(begin, 8192));
                 chunks.push_back(keyRange(begin + 8192, 140000));
                 auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
-                auto producer = std::make_shared<AggregatingTransform>(
-                    header, params, many_data, producer_index, 2, 2, false, false, nullptr);
-                auto admission = std::make_shared<AdaptiveAggregationAdmissionTransform>(header, params, many_data->adaptive_session);
+                auto producer = std::make_shared<AdaptiveAggregatingTransform>(
+                    header, params, many_data, producer_index);
+                StagingPipeline staging(params, many_data->adaptive_session);
                 connect(source->getPort(), producer->getInputs().front());
-                connect(producer->getOutputs().front(), admission->getInputs().front());
-                connect(admission->getOutputs().front(), *completion++);
-                processors->insert(processors->end(), {source, producer, admission});
+                connect(producer->getOutputs().front(), staging.input());
+                connect(staging.output(), *completion++);
+                processors->insert(processors->end(), {source, producer});
+                staging.addTo(*processors);
             }
             auto sink = std::make_shared<KeySink>(header);
             connect(merge->getOutputs().front(), sink->getPort());
@@ -398,9 +534,9 @@ TEST(AdaptiveAggregationPipeline, CompletionUsesUpdatedPortsAndCountsEachClosure
     auto many_data = std::make_shared<ManyAggregatedData>(3);
     many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>();
     AdaptiveAggregationMergeTransform merge(params, many_data, 3, 3, nullptr);
-    OutputPort first(header);
-    OutputPort second(header);
-    OutputPort third(header);
+    OutputPort first{Block()};
+    OutputPort second{Block()};
+    OutputPort third{Block()};
     InputPort result(header);
     auto input = merge.getInputs().begin();
     auto * first_input = &*input++;
@@ -420,7 +556,7 @@ TEST(AdaptiveAggregationPipeline, CompletionUsesUpdatedPortsAndCountsEachClosure
     EXPECT_EQ(merge.prepare({third_input}, {}), IProcessor::Status::Ready);
 }
 
-TEST(AdaptiveAggregationPipeline, AdmissionCheckpointsPreserveInputAndConversionDecision)
+TEST(AdaptiveAggregationPipeline, AcknowledgementReleasesInputBeforePostBlockChecks)
 {
     MainThreadStatus::getInstance();
     for (const String aggregate : {"", "count", "sum"})
@@ -443,47 +579,67 @@ TEST(AdaptiveAggregationPipeline, AdmissionCheckpointsPreserveInputAndConversion
                 MemoryTrackerSwitcher execution_scope(&parent);
                 BlockExecution block(params);
 
-                /// The first candidate stays buffered; the next one is large enough to pass through.
-                ASSERT_TRUE(block.execute(keyRange(0, 8192)));
+                /// Coalescing buffers the first candidate until a later block triggers pressure.
+                ASSERT_TRUE(block.process(keyRange(0, 8192)));
                 ASSERT_TRUE(block.adaptive.isFrozen());
                 ASSERT_FALSE(block.execution.hasPendingBlock());
-                ASSERT_TRUE(block.execution.ready_chunks.empty());
                 auto input = keyRange(8192, 150000);
                 auto owner = input.getColumns().front();
                 ASSERT_TRUE(block.execute(std::move(input)));
                 ASSERT_TRUE(block.execution.hasPendingBlock());
-                ASSERT_FALSE(block.execution.ready_chunks.empty());
-                EXPECT_EQ(block.execution.use_own_memory_tracker, own_tracker);
-                EXPECT_GT(owner->use_count(), 1);
+                EXPECT_EQ(block.input.getChunkInfos().get<AdaptiveAggregationMissesInfo>()->use_own_memory_tracker, own_tracker);
+                EXPECT_EQ(owner->use_count() > 1, aggregate == "sum");
                 EXPECT_EQ(CurrentThread::getMemoryTracker()->getParent(), &parent);
 
-                /// Pressure arrives during publication, so only the resumed first checkpoint can see it.
+                /// Both the buffered candidate and the current block are published before acknowledgement.
                 constexpr Int64 pressure_bytes = 128 << 20;
                 query_tracker.adjustWithUntrackedMemory(pressure_bytes);
                 SCOPE_EXIT({ query_tracker.adjustWithUntrackedMemory(-pressure_bytes); });
                 block.admit(parent);
+                EXPECT_EQ(owner->use_count(), 1);
+                EXPECT_EQ(block.session->backlog.undrainedRecords(), 154096);
                 block.session->thaw_all.store(thaw);
                 block.resume(parent);
-                ASSERT_TRUE(block.execution.hasPendingBlock());
-                ASSERT_FALSE(block.execution.ready_chunks.empty());
                 EXPECT_EQ(block.adaptive.isBaseline(), thaw);
-                EXPECT_GT(owner->use_count(), 1);
-
-                /// Query memory crosses the two-level threshold during admission. A thawed producer
-                /// using query-wide accounting must retain its earlier decision to stay single-level.
-                query_tracker.adjustWithUntrackedMemory(pressure_bytes);
-                SCOPE_EXIT({ query_tracker.adjustWithUntrackedMemory(-pressure_bytes); });
-                block.admit(parent);
-                ASSERT_GT(getCurrentQueryMemoryUsage(), 192 << 20);
-                block.resume(parent);
                 EXPECT_FALSE(block.execution.hasPendingBlock());
-                EXPECT_EQ(owner->use_count(), 1);
                 EXPECT_FALSE(block.result.isTwoLevel());
                 EXPECT_EQ(block.session->backlog.undrainedRecords(), 0);
                 EXPECT_EQ(block.result.size() + block.session->early_drain_variants->size(), 158192);
                 EXPECT_FALSE(params->aggregator.hasTemporaryData());
             }
         }
+    }
+}
+
+TEST(AdaptiveAggregationPipeline, AllHitBlockFlushesBufferedMissesBeforeAcknowledgement)
+{
+    MainThreadStatus::getInstance();
+    for (const String aggregate : {"", "count", "sum"})
+    {
+        SCOPED_TRACE(aggregate);
+        MemoryTracker query_tracker(nullptr, VariableContext::Process, false);
+        MemoryTrackerSwitcher query_scope(&query_tracker);
+        auto params = makeParams(makeHeader(), 64 << 20, aggregate);
+        BlockExecution block(params);
+        ASSERT_TRUE(block.process(keyRange(0, 8192)));
+        ASSERT_TRUE(block.adaptive.isFrozen());
+        EXPECT_EQ(block.session->backlog.undrainedRecords(), 0);
+
+        /// All rows hit the frozen table, but the preceding block still has buffered misses. Under
+        /// memory pressure the block is forwarded anyway: its empty partitioned chunk must reach the
+        /// coalescer and trigger the pressure flush before the drain.
+        constexpr Int64 pressure_bytes = 128 << 20;
+        query_tracker.adjustWithUntrackedMemory(pressure_bytes);
+        SCOPE_EXIT({ query_tracker.adjustWithUntrackedMemory(-pressure_bytes); });
+        ASSERT_TRUE(block.execute(keyRange(0, 32)));
+        ASSERT_TRUE(block.execution.hasPendingBlock());
+        ASSERT_EQ(block.input.getChunkInfos().get<AdaptiveAggregationMissesInfo>()->size(), 0);
+        block.admit(query_tracker);
+        EXPECT_EQ(block.session->backlog.undrainedRecords(), 4096);
+        block.resume(query_tracker);
+        EXPECT_EQ(block.session->backlog.undrainedRecords(), 0);
+        EXPECT_EQ(block.result.size() + block.session->early_drain_variants->size(), 8192);
+        EXPECT_FALSE(block.execution.hasPendingBlock());
     }
 }
 
@@ -511,7 +667,7 @@ TEST(AdaptiveAggregationPipeline, FrozenConstantMissesPreserveCountsAndArguments
                 learning_keys->insert(key(i));
                 expected.emplace(key(i), aggregate == "max" ? key(i) : Field(UInt64(1)));
             }
-            ASSERT_TRUE(block.execute(Chunk(Columns{std::move(learning_keys)}, 64)));
+            ASSERT_TRUE(block.process(Chunk(Columns{std::move(learning_keys)}, 64)));
             ASSERT_TRUE(block.adaptive.isFrozen());
 
             /// New constant keys must miss the frozen table. Repeated blocks exercise coalescing,
@@ -519,18 +675,14 @@ TEST(AdaptiveAggregationPipeline, FrozenConstantMissesPreserveCountsAndArguments
             for (const size_t rows : {17, 23})
             {
                 auto column = key_type->createColumnConst(rows, key(1000));
-                ASSERT_TRUE(block.execute(Chunk(Columns{std::move(column)}, rows)));
+                ASSERT_TRUE(block.process(Chunk(Columns{std::move(column)}, rows)));
                 ASSERT_FALSE(block.execution.hasPendingBlock());
             }
             expected.emplace(key(1000), aggregate == "max" ? key(1000) : Field(UInt64(aggregate == "count" ? 40 : 1)));
-            params->aggregator.flushPendingChunks(block.execution);
-            ASSERT_FALSE(block.execution.ready_chunks.empty());
+            block.finish();
             /// Count sampling retains both block contributions before coalescing merges their equal keys.
             if (aggregate == "count")
                 EXPECT_EQ(block.session->staged_records, 2);
-            for (const auto & chunk : block.execution.ready_chunks)
-                params->aggregator.admitStagedChunk(*block.session, chunk, block.execution.use_own_memory_tracker);
-            block.execution.ready_chunks.clear();
 
             block.result.convertToTwoLevel();
             for (size_t bucket = 0; bucket < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++bucket)
@@ -548,29 +700,29 @@ TEST(AdaptiveAggregationPipeline, FrozenConstantMissesPreserveCountsAndArguments
     }
 }
 
-TEST(AdaptiveAggregationPipeline, ProducerWaitsForBothAcknowledgementsBeforePressureAndCompletion)
+TEST(AdaptiveAggregationPipeline, ProducerWaitsForEveryPublicationBeforePressureAndCompletion)
 {
     MainThreadStatus::getInstance();
     MemoryTracker query_tracker(nullptr, VariableContext::Process, false);
     MemoryTrackerSwitcher query_scope(&query_tracker);
     auto header = makeHeader();
-    auto params = makeParams(header, 64 << 20);
+    auto params = makeParams(header, 64 << 20, "sum");
     auto many_data = std::make_shared<ManyAggregatedData>(2);
     auto session = std::make_shared<AdaptiveAggregationSession>();
     many_data->adaptive_session = session;
-    AggregatingTransform producer(header, params, many_data, 0, 2, 2, false, false, nullptr);
-    AdaptiveAggregationAdmissionTransform admission(header, params, session);
+    AdaptiveAggregatingTransform producer(header, params, many_data, 0);
+    StagingPipeline staging(params, session);
     OutputPort source(header);
-    InputPort completion(header);
+    InputPort completion{Block()};
     connect(source, producer.getInputs().front());
-    connect(producer.getOutputs().front(), admission.getInputs().front());
-    connect(admission.getOutputs().front(), completion);
-
-    ASSERT_EQ(admission.prepare(), IProcessor::Status::NeedData);
+    connect(producer.getOutputs().front(), staging.input());
+    connect(staging.output(), completion);
+    staging.prime();
     ASSERT_EQ(producer.prepare(), IProcessor::Status::NeedData);
     source.push(keyRange(0, 8192));
     ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
     producer.work();
+    acknowledgeBlock(producer, staging);
     ASSERT_EQ(producer.prepare(), IProcessor::Status::NeedData);
     auto input = keyRange(8192, 150000);
     auto owner = input.getColumns().front();
@@ -582,34 +734,47 @@ TEST(AdaptiveAggregationPipeline, ProducerWaitsForBothAcknowledgementsBeforePres
     constexpr Int64 pressure_bytes = 128 << 20;
     query_tracker.adjustWithUntrackedMemory(pressure_bytes);
     SCOPE_EXIT({ query_tracker.adjustWithUntrackedMemory(-pressure_bytes); });
+    ASSERT_EQ(producer.prepare(), IProcessor::Status::PortFull);
+    EXPECT_GT(owner->use_count(), 1);
+    ASSERT_EQ(staging.partition->prepare(), IProcessor::Status::Ready);
+    onWorker(query_tracker, [&] { staging.partition->work(); });
+    EXPECT_EQ(owner->use_count(), 1);
+    EXPECT_EQ(producer.prepare(), IProcessor::Status::PortFull);
+    ASSERT_EQ(staging.partition->prepare(), IProcessor::Status::PortFull);
+    ASSERT_EQ(staging.coalescing->prepare(), IProcessor::Status::Ready);
+    onWorker(query_tracker, [&] { staging.coalescing->work(); });
+
+    /// A large candidate passes through before the earlier small candidate is flushed under pressure.
     for (const size_t admitted_records : {150000, 154096})
     {
-        SCOPED_TRACE(admitted_records);
-        ASSERT_EQ(producer.prepare(), IProcessor::Status::PortFull);
-        EXPECT_GT(owner->use_count(), 1);
-        EXPECT_FALSE(completion.isFinished());
-        ASSERT_EQ(admission.prepare(), IProcessor::Status::Ready);
+        ASSERT_EQ(staging.coalescing->prepare(), IProcessor::Status::PortFull);
+        ASSERT_EQ(staging.publisher->prepare(), IProcessor::Status::Ready);
         EXPECT_EQ(producer.prepare(), IProcessor::Status::PortFull);
-        onWorker(query_tracker, [&] { admission.work(); });
+        onWorker(query_tracker, [&] { staging.publisher->work(); });
         EXPECT_EQ(session->backlog.undrainedRecords(), admitted_records);
         EXPECT_EQ(producer.prepare(), IProcessor::Status::PortFull);
         EXPECT_FALSE(session->early_drain_variants->hasData());
-        ASSERT_EQ(admission.prepare(), IProcessor::Status::NeedData);
-        ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
-        onWorker(query_tracker, [&] { producer.work(); });
+        EXPECT_FALSE(completion.isFinished());
+        ASSERT_EQ(staging.publisher->prepare(), IProcessor::Status::NeedData);
+        if (admitted_records == 150000)
+        {
+            ASSERT_EQ(staging.coalescing->prepare(), IProcessor::Status::Ready);
+            onWorker(query_tracker, [&] { staging.coalescing->work(); });
+        }
     }
-    EXPECT_EQ(owner->use_count(), 1);
+    ASSERT_EQ(staging.coalescing->prepare(), IProcessor::Status::NeedData);
+    ASSERT_EQ(staging.partition->prepare(), IProcessor::Status::NeedData);
+    ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
+    onWorker(query_tracker, [&] { producer.work(); });
     EXPECT_EQ(session->backlog.undrainedRecords(), 0);
     EXPECT_EQ(session->early_drain_variants->size(), 154096);
-    EXPECT_FALSE(completion.isFinished());
     ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
     producer.work();
     ASSERT_EQ(producer.prepare(), IProcessor::Status::Finished);
-    ASSERT_EQ(admission.prepare(), IProcessor::Status::Finished);
-    EXPECT_TRUE(completion.isFinished());
+    ASSERT_TRUE(staging.runUntil([&] { return completion.isFinished(); }));
 }
 
-TEST(AdaptiveAggregationPipeline, AdmissionUsesThePublishingAllocationContext)
+TEST(AdaptiveAggregationPipeline, StagingUsesThePublishingAllocationContext)
 {
     MainThreadStatus::getInstance();
     for (const bool own_tracker : {false, true})
@@ -623,40 +788,37 @@ TEST(AdaptiveAggregationPipeline, AdmissionUsesThePublishingAllocationContext)
         auto params = std::make_shared<AggregatingTransformParams>(header, aggregation_params, true);
         BlockExecution block(params);
         block.adaptive.standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
-        ASSERT_TRUE(block.execute(keyRange(0, 64)));
-        ASSERT_TRUE(block.execution.use_own_memory_tracker);
+        ASSERT_TRUE(block.process(keyRange(0, 64)));
         ASSERT_FALSE(block.result.isTwoLevel());
-        auto chunk = makeStagedChunk();
+        auto chunk = recordedBlock(params, 8192, own_tracker);
         onWorker(query_tracker, [&]
         {
-            /// The backlog references exceed the conversion threshold regardless of allocation
-            /// headroom. They contribute to the aggregation account only when requested by the producer.
-            for (size_t i = 0; i < 8192; ++i)
-                block.params->aggregator.admitStagedChunk(*block.session, chunk, own_tracker);
+            /// Staging contributes to the aggregation account only when requested by the producer.
+            block.stage(std::move(chunk));
         });
-        ASSERT_TRUE(block.execute(keyRange(0, 0)));
+        ASSERT_TRUE(block.process(keyRange(0, 0)));
         EXPECT_EQ(block.result.isTwoLevel(), own_tracker);
     }
 }
 
-TEST(AdaptiveAggregationPipeline, CancellationReleasesProducerOutboxAndSuspendedInput)
+TEST(AdaptiveAggregationPipeline, CancellationReleasesUnsentAndQueuedInput)
 {
     for (const bool published : {false, true})
     {
         SCOPED_TRACE(published);
         auto header = makeHeader();
-        auto params = makeParams(header);
+        auto params = makeParams(header, 0, "sum");
         auto many_data = std::make_shared<ManyAggregatedData>(2);
         auto session = std::make_shared<AdaptiveAggregationSession>();
         many_data->adaptive_session = session;
-        AggregatingTransform producer(header, params, many_data, 0, 2, 2, false, false, nullptr);
-        AdaptiveAggregationAdmissionTransform admission(header, params, session);
+        AdaptiveAggregatingTransform producer(header, params, many_data, 0);
+        StagingPipeline admission(params, session);
         OutputPort source(header);
-        InputPort completion(header);
+        InputPort completion{Block()};
         connect(source, producer.getInputs().front());
-        connect(producer.getOutputs().front(), admission.getInputs().front());
-        connect(admission.getOutputs().front(), completion);
-        ASSERT_EQ(admission.prepare(), IProcessor::Status::NeedData);
+        connect(producer.getOutputs().front(), admission.input());
+        connect(admission.output(), completion);
+        admission.prime();
         ASSERT_EQ(producer.prepare(), IProcessor::Status::NeedData);
         auto input = keyRange(0, 150000);
         auto owner = input.getColumns().front();
@@ -667,7 +829,7 @@ TEST(AdaptiveAggregationPipeline, CancellationReleasesProducerOutboxAndSuspended
         if (published)
             ASSERT_EQ(producer.prepare(), IProcessor::Status::PortFull);
         completion.close();
-        ASSERT_EQ(admission.prepare(), IProcessor::Status::Finished);
+        ASSERT_TRUE(admission.runUntil([&] { return producer.getOutputs().front().isFinished(); }));
         ASSERT_EQ(producer.prepare(), IProcessor::Status::Finished);
         EXPECT_EQ(owner->use_count(), 1);
         EXPECT_TRUE(source.isFinished());
@@ -684,20 +846,17 @@ TEST(AdaptiveAggregationPipeline, CancellationWakesPressureWorkWaitingForSpillBu
     auto header = makeHeader();
     auto params = makeParams(header, 64 << 20);
     BlockExecution block(params);
-    ASSERT_TRUE(block.execute(keyRange(0, 8192)));
+    ASSERT_TRUE(block.process(keyRange(0, 8192)));
     ASSERT_TRUE(block.execute(keyRange(8192, 700000)));
-    ASSERT_GT(block.execution.ready_chunks.size(), 1);
-    block.admit(query_tracker);
     constexpr Int64 pressure_bytes = 128 << 20;
     query_tracker.adjustWithUntrackedMemory(pressure_bytes);
     SCOPE_EXIT({ query_tracker.adjustWithUntrackedMemory(-pressure_bytes); });
-    block.resume(query_tracker);
-    ASSERT_TRUE(block.execution.hasPendingBlock());
     block.admit(query_tracker);
+    ASSERT_EQ(block.session->backlog.undrainedRecords(), 704096);
 
     AdaptiveAggregationSession::SpillReservation writer;
     ASSERT_TRUE(writer.reserveOrWait(*block.session, pressure_bytes, pressure_bytes));
-    Admission admission(header, params, block.session);
+    Publication admission(params, block.session);
     FailPointInjection::enableFailPoint(FailPoints::adaptive_aggregation_before_spill_budget_wait);
     auto worker = std::async(std::launch::async, [&]
     {
@@ -753,25 +912,26 @@ TEST(AdaptiveAggregationPipeline, FinalAssemblyIncludesLateSpillsAndReadersOwnTe
         auto merge = std::make_unique<AdaptiveAggregationMergeTransform>(params, many_data, 2, 2, nullptr);
         InputPort result(header);
         connect(merge->getOutputs().front(), result);
-        std::vector<std::unique_ptr<AggregatingTransform>> producers;
-        std::vector<std::unique_ptr<AdaptiveAggregationAdmissionTransform>> admissions;
+        std::vector<std::unique_ptr<AdaptiveAggregatingTransform>> producers;
+        std::vector<std::unique_ptr<StagingPipeline>> admissions;
         std::vector<std::unique_ptr<OutputPort>> sources;
         IProcessor::UpdatedInputPorts completion_inputs;
         auto completion = merge->getInputs().begin();
         for (size_t i = 0; i < num_producers; ++i)
         {
-            auto producer = std::make_unique<AggregatingTransform>(header, params, many_data, i, 2, 2, false, false, nullptr);
-            auto admission = std::make_unique<AdaptiveAggregationAdmissionTransform>(header, params, session);
+            auto producer = std::make_unique<AdaptiveAggregatingTransform>(header, params, many_data, i);
+            auto admission = std::make_unique<StagingPipeline>(params, session);
             auto source = std::make_unique<OutputPort>(header);
             connect(*source, producer->getInputs().front());
-            connect(producer->getOutputs().front(), admission->getInputs().front());
-            connect(admission->getOutputs().front(), *completion);
+            connect(producer->getOutputs().front(), admission->input());
+            connect(admission->output(), *completion);
             completion_inputs.push_back(&*completion++);
-            ASSERT_EQ(admission->prepare(), IProcessor::Status::NeedData);
+            admission->prime();
             ASSERT_EQ(producer->prepare(), IProcessor::Status::NeedData);
             source->push(keyRange(i * rows_per_producer, rows_per_producer));
             ASSERT_EQ(producer->prepare(), IProcessor::Status::Ready);
             producer->work();
+            acknowledgeBlock(*producer, *admission);
             ASSERT_EQ(producer->prepare(), IProcessor::Status::NeedData);
             sources.push_back(std::move(source));
             producers.push_back(std::move(producer));
@@ -793,8 +953,9 @@ TEST(AdaptiveAggregationPipeline, FinalAssemblyIncludesLateSpillsAndReadersOwnTe
             sources[i]->finish();
             ASSERT_EQ(producers[i]->prepare(), IProcessor::Status::Ready);
             producers[i]->work();
-            ASSERT_EQ(producers[i]->prepare(), IProcessor::Status::PortFull);
-            ASSERT_EQ(admissions[i]->prepare(), IProcessor::Status::Ready);
+            ASSERT_EQ(producers[i]->prepare(), IProcessor::Status::Finished);
+            ASSERT_TRUE(admissions[i]->runUntil([&] { return admissions[i]->publisher->getInputs().front().hasData(); }));
+            ASSERT_EQ(admissions[i]->publisher->prepare(), IProcessor::Status::Ready);
             if (!late_producer_spill && i + 1 == num_producers)
             {
                 /// Registration of the ninth final flush grows the per-bucket backlog vectors.
@@ -803,15 +964,11 @@ TEST(AdaptiveAggregationPipeline, FinalAssemblyIncludesLateSpillsAndReadersOwnTe
                 pressure_adjustment = external_threshold - 1 - getCurrentQueryMemoryUsage();
                 query_tracker.adjustWithUntrackedMemory(pressure_adjustment);
             }
-            admissions[i]->work();
+            admissions[i]->publisher->work();
             CurrentThread::flushUntrackedMemory();
             if (!late_producer_spill && i + 1 == num_producers)
                 ASSERT_GT(getCurrentQueryMemoryUsage(), external_threshold);
-            ASSERT_EQ(admissions[i]->prepare(), IProcessor::Status::NeedData);
-            ASSERT_EQ(producers[i]->prepare(), IProcessor::Status::Ready);
-            producers[i]->work();
-            ASSERT_EQ(producers[i]->prepare(), IProcessor::Status::Finished);
-            ASSERT_EQ(admissions[i]->prepare(), IProcessor::Status::Finished);
+            ASSERT_TRUE(admissions[i]->runUntil([&] { return completion_inputs[i]->isFinished(); }));
             EXPECT_EQ(merge->prepare({completion_inputs[i]}, {}), i + 1 == num_producers
                 ? IProcessor::Status::Ready : IProcessor::Status::NeedData);
         }
@@ -829,7 +986,7 @@ TEST(AdaptiveAggregationPipeline, FinalAssemblyIncludesLateSpillsAndReadersOwnTe
         disconnect(merge->getOutputs().front(), result);
         auto completion_port = merge->getInputs().begin();
         for (auto & admission : admissions)
-            disconnect(admission->getOutputs().front(), *completion_port++);
+            disconnect(admission->output(), *completion_port++);
         merge.reset();
         ASSERT_GT(tmp_data->currentCompressedSize(), 0);
         auto sink = std::make_shared<KeySink>(header);
@@ -885,7 +1042,7 @@ TEST(AdaptiveAggregationPipeline, PartialResultCompletesExistingAndDeferredSpill
             auto merge = std::make_shared<AdaptiveAggregationMergeTransform>(params, many_data, 2, 2, nullptr);
             for (auto & input : merge->getInputs())
             {
-                auto completion = std::make_shared<NullSource>(header);
+                auto completion = std::make_shared<NullSource>(std::make_shared<const Block>());
                 connect(completion->getPort(), input);
                 processors->push_back(completion);
             }
@@ -924,9 +1081,9 @@ TEST(AdaptiveAggregationPipeline, CancellationReleasesQueuedAndPulledProducerInp
             auto many_data = std::make_shared<ManyAggregatedData>(2);
             auto session = std::make_shared<AdaptiveAggregationSession>();
             many_data->adaptive_session = session;
-            AggregatingTransform producer(header, params, many_data, 0, 2, 2, false, false, nullptr);
+            AdaptiveAggregatingTransform producer(header, params, many_data, 0);
             OutputPort source(header);
-            InputPort admission(header);
+            InputPort admission(params->aggregator.getAdaptiveArgumentHeader());
             connect(source, producer.getInputs().front());
             connect(producer.getOutputs().front(), admission);
             admission.setNeeded();
@@ -960,7 +1117,7 @@ TEST(AdaptiveAggregationPipeline, CancellationReleasesQueuedMergeOutput)
         auto session = std::make_shared<AdaptiveAggregationSession>();
         many_data->adaptive_session = session;
         AdaptiveAggregationMergeTransform merge(params, many_data, 1, 1, nullptr);
-        OutputPort completion(header);
+        OutputPort completion{Block()};
         InputPort result(header);
         connect(completion, merge.getInputs().front());
         connect(merge.getOutputs().front(), result);
@@ -1001,18 +1158,18 @@ TEST(AdaptiveAggregationPipeline, EmptyAndEarlyFinishedProducersBeforeLateEngage
             AdaptiveAggregationMergeTransform merge(params, many_data, 2, 2, nullptr);
             InputPort result(header);
             connect(merge.getOutputs().front(), result);
-            std::vector<std::unique_ptr<AggregatingTransform>> producers;
-            std::vector<std::unique_ptr<AdaptiveAggregationAdmissionTransform>> admissions;
+            std::vector<std::unique_ptr<AdaptiveAggregatingTransform>> producers;
+            std::vector<std::unique_ptr<StagingPipeline>> admissions;
             std::vector<std::unique_ptr<OutputPort>> sources;
             auto completion = merge.getInputs().begin();
             for (size_t i = 0; i < many_data->num_producers; ++i)
             {
-                auto producer = std::make_unique<AggregatingTransform>(header, params, many_data, i, 2, 2, false, false, nullptr);
-                auto admission = std::make_unique<AdaptiveAggregationAdmissionTransform>(header, params, session);
+                auto producer = std::make_unique<AdaptiveAggregatingTransform>(header, params, many_data, i);
+                auto admission = std::make_unique<StagingPipeline>(params, session);
                 auto source = std::make_unique<OutputPort>(header);
                 connect(*source, producer->getInputs().front());
-                connect(producer->getOutputs().front(), admission->getInputs().front());
-                connect(admission->getOutputs().front(), *completion++);
+                connect(producer->getOutputs().front(), admission->input());
+                connect(admission->output(), *completion++);
                 producers.push_back(std::move(producer));
                 admissions.push_back(std::move(admission));
                 sources.push_back(std::move(source));
@@ -1025,7 +1182,7 @@ TEST(AdaptiveAggregationPipeline, EmptyAndEarlyFinishedProducersBeforeLateEngage
                 auto & admission = *admissions[i];
                 auto & source = *sources[i];
                 ASSERT_FALSE(session->initialized.load());
-                ASSERT_EQ(admission.prepare(), IProcessor::Status::NeedData);
+                admission.prime();
                 ASSERT_EQ(producer.prepare(), IProcessor::Status::NeedData);
                 const size_t rows = i == 0 ? 0 : i == 1 ? std::min<size_t>(32, late_rows) : late_rows;
                 if (rows)
@@ -1033,6 +1190,10 @@ TEST(AdaptiveAggregationPipeline, EmptyAndEarlyFinishedProducersBeforeLateEngage
                     source.push(keyRange(i == 2 ? 16 : 0, rows));
                     ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
                     producer.work();
+                    /// Only a block that froze the table and recorded misses is forwarded; a learning
+                    /// producer finishes its block in place.
+                    if (rows > params->params.adaptive_aggregator_freeze_threshold)
+                        acknowledgeBlock(producer, admission);
                     ASSERT_EQ(producer.prepare(), IProcessor::Status::NeedData);
                 }
                 if (partial_result)
@@ -1044,19 +1205,9 @@ TEST(AdaptiveAggregationPipeline, EmptyAndEarlyFinishedProducersBeforeLateEngage
                 source.finish();
                 ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
                 producer.work();
-                if (i == 2 && late_rows == 8192)
-                {
-                    /// The last producer freezes after the others finish. Its buffered rows
-                    /// must be admitted before the coordinator can merge all three tables.
-                    ASSERT_EQ(producer.prepare(), IProcessor::Status::PortFull);
-                    ASSERT_EQ(admission.prepare(), IProcessor::Status::Ready);
-                    admission.work();
-                    ASSERT_EQ(admission.prepare(), IProcessor::Status::NeedData);
-                    ASSERT_EQ(producer.prepare(), IProcessor::Status::Ready);
-                    producer.work();
-                }
                 ASSERT_EQ(producer.prepare(), IProcessor::Status::Finished);
-                ASSERT_EQ(admission.prepare(), IProcessor::Status::Finished);
+                /// Coalescing flushes buffered misses before the coordinator can merge the tables.
+                ASSERT_TRUE(admission.runUntil([&] { return completion->isFinished(); }));
                 EXPECT_EQ(merge.prepare({&*completion}, {}), i == 2 ? IProcessor::Status::Ready : IProcessor::Status::NeedData);
             }
             EXPECT_EQ(session->initialized.load(), late_rows == 8192);
