@@ -218,7 +218,7 @@ struct TimeSlotsImpl
 };
 
 
-class FunctionTimeSlots final : public IFunction
+class FunctionTimeSlots : public IFunction
 {
 public:
     static constexpr auto name = "timeSlots";
@@ -329,7 +329,7 @@ public:
         }
         else
         {
-            chassert(WhichDataType(arguments[0].type).isDateTime64());
+            assert(WhichDataType(arguments[0].type).isDateTime64());
             Decimal64 time_slot_size = Decimal64(1800);
             UInt16 time_slot_scale = 0;
             if (arguments.size() == 3)

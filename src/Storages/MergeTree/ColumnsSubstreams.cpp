@@ -187,14 +187,14 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
     total_substreams = 0;
 
     assertString("columns substreams version: 1\n", buf);
-    size_t num_columns = 0;
+    size_t num_columns;
     DB::readText(num_columns, buf);
     assertString(" columns:\n", buf);
     columns_substreams.reserve(num_columns);
     column_position_to_substream_positions.resize(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
     {
-        size_t num_substreams = 0;
+        size_t num_substreams;
         DB::readText(num_substreams, buf);
         assertString(" substreams for column ", buf);
         String column;

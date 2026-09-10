@@ -14,40 +14,42 @@ namespace ErrorCodes
 }
 
 PackedFilesReader::PackedFilesReader(
-    const DiskPtr & disk, const String & data_file_name, const ReadSettings & read_settings)
-    : index(readIndex(*disk->readFile(data_file_name, read_settings.adjustBufferSize(4096))))
+    DiskPtr disk_, const String & data_file_name_, const ReadSettings & read_settings_)
+    : disk(std::move(disk_)), data_file_name(data_file_name_)
 {
+    auto in = disk->readFile(data_file_name, read_settings_.adjustBufferSize(4096));
+
+    index = readIndex(*in);
 }
 
-PackedFilesReader::PackedFilesReader(PackedFilesIO::Index index_)
-    : index(std::move(index_))
+PackedFilesReader::PackedFilesReader(
+    DiskPtr disk_, const String & data_file_name_, const PackedFilesIO::Index & index_)
+    : disk(std::move(disk_)), data_file_name(data_file_name_), index(index_)
 {
 }
 
 
 PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
 {
-    UInt8 version = 0;
+    UInt8 version;
     readIntBinary(version, in);
 
-    if (version > PackedFilesIO::MAX_VERSION)
+    if (version > PackedFilesIO::VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
             "Unknown format ({}) of packed data", std::to_string(version));
 
     PackedFilesIO::Index index;
-    size_t num_files = 0;
+    size_t num_files;
     readIntBinary(num_files, in);
 
     for (size_t i = 0; i < num_files; ++i)
     {
         String file_name;
-        PackedFilesIO::FileOffset offset{};
+        PackedFilesIO::FileOffset offset;
 
         readStringBinary(file_name, in);
         readIntBinary(offset.offset, in);
         readIntBinary(offset.size, in);
-        if (version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE)
-            readIntBinary(offset.uncompressed_size, in);
 
         if (!index.emplace(file_name, offset).second)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated file: {}", file_name);
@@ -68,18 +70,6 @@ size_t PackedFilesReader::getFileSize(const String & file_name) const
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
 }
 
-std::optional<UInt64> PackedFilesReader::getFileUncompressedSize(const String & file_name) const
-{
-    auto it = index.find(file_name);
-    if (it == index.end())
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
-
-    /// 0 means not recorded (v0).
-    if (it->second.uncompressed_size == 0)
-        return {};
-    return it->second.uncompressed_size;
-}
-
 Names PackedFilesReader::getFileNames() const
 {
     Names res;
@@ -90,15 +80,13 @@ Names PackedFilesReader::getFileNames() const
 
 static ReadSettings patchSettings(ReadSettings settings)
 {
-    settings.local_fs_settings.direct_io_threshold = 0;
-    if (settings.local_fs_settings.method == LocalFSReadMethod::mmap)
-        settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    settings.direct_io_threshold = 0;
+    if (settings.local_fs_method == LocalFSReadMethod::mmap)
+        settings.local_fs_method = LocalFSReadMethod::pread;
     return settings;
 }
 
 std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
-    const DiskPtr & disk,
-    const String & data_file_name,
     const String & file_name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
@@ -107,8 +95,7 @@ std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
     if (it == index.end())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
 
-    const auto offset = it->second.offset;
-    const auto size = it->second.size;
+    const auto & [offset, size] = it->second;
 
     /// ReadBufferFromFileView doesn't support reading with mmap and direct io methods, because
     /// they require special alignment which cannot be achieved while reading archive file.

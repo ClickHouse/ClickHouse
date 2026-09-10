@@ -437,7 +437,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
 
 }
 
-void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsQuantileExactWeighted(AggregateFunctionFactory & factory)
 {
     /// For aggregate functions returning array we cannot return NULL on empty set.

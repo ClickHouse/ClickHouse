@@ -19,7 +19,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <cstring>
 #include <algorithm>
@@ -158,7 +157,7 @@ namespace
 using namespace FunctionsLogicalDetail;
 
 using UInt8Container = ColumnUInt8::Container;
-using UInt8ColumnPtrs = VectorWithMemoryTracking<const ColumnUInt8 *>;
+using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
 MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
@@ -187,7 +186,7 @@ bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res, Func && func)
 
     for (Int64 i = static_cast<Int64>(in.size()) - 1; i >= 0; --i)
     {
-        UInt8 x = 0;
+        UInt8 x;
 
         if (in[i]->onlyNull())
             x = func(Null());
@@ -424,6 +423,15 @@ struct OperationApplier
                 doBatchedApplyAVX512BW<true>(in, result_data.data(), result_data.size());
             return;
         }
+
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            if (!use_result_data_as_input)
+                doBatchedApplyAVX2<false>(in, result_data.data(), result_data.size());
+            while (!in.empty())
+                doBatchedApplyAVX2<true>(in, result_data.data(), result_data.size());
+            return;
+        }
 #endif
         {
             if (!use_result_data_as_input)
@@ -471,6 +479,12 @@ struct OperationApplier
     {
         BATCH_BODY(doBatchedApplyAVX512BW)
     }
+
+    template <bool CarryResult, typename Columns, typename Result>
+    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) X86_64_V3_FUNCTION_SPECIFIC_ATTRIBUTE
+    {
+        BATCH_BODY(doBatchedApplyAVX2)
+    }
 #endif
 
 #undef BATCH_BODY
@@ -489,6 +503,12 @@ struct OperationApplier<Op, OperationApplierImpl, 0>
 #if USE_MULTITARGET_CODE
     template <bool, typename Columns, typename Result>
     static void doBatchedApplyAVX512BW(Columns &, Result &, size_t)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
+    }
+
+    template <bool, typename Columns, typename Result>
+    static void doBatchedApplyAVX2(Columns &, Result &, size_t)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
     }
@@ -531,7 +551,7 @@ using FastApplierImpl =
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
-    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(
     template <typename T, typename Result>
     static void
@@ -553,6 +573,11 @@ struct TypedExecutorInvoker<Op, Type, Types ...>
             if (isArchSupported(TargetArch::x86_64_v4))
             {
                 applyImpl_x86_64_v4<T, Result>(x, *column, result);
+                return;
+            }
+            if (isArchSupported(TargetArch::x86_64_v3))
+            {
+                applyImpl_x86_64_v3<T, Result>(x, *column, result);
                 return;
             }
 #endif
@@ -786,7 +811,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (result_type->isNullable())
         nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
 
-    MaskInfo mask_info{};
+    MaskInfo mask_info;
     for (size_t i = 1; i <= arguments.size(); ++i)
     {
         if (inverted)
@@ -834,7 +859,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         /// arguments, and combine it with the remaining function column arguments, use them as the input of
         /// `exeucteShortCircuit` to calculate the final result.
         ColumnRawPtrs not_short_circuit_args;
-        VectorWithMemoryTracking<size_t> short_circuit_args_index;
+        std::vector<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)

@@ -29,7 +29,7 @@ const ASTSelectWithUnionQuery & TableFunctionView::getSelectQuery() const
     return *create.select;
 }
 
-VectorWithMemoryTracking<size_t> TableFunctionView::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
+std::vector<size_t> TableFunctionView::skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const
 {
     return {0};
 }
@@ -50,9 +50,9 @@ void TableFunctionView::parseArguments(const ASTPtr & ast_function, ContextPtr /
 
 ColumnsDescription TableFunctionView::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    chassert(create.select);
-    chassert(create.children.size() == 1);
-    chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
+    assert(create.select);
+    assert(create.children.size() == 1);
+    assert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
     SharedHeader sample_block;
 

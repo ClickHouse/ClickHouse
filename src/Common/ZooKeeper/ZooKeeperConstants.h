@@ -38,7 +38,6 @@ enum class OpNum : int32_t
     Reconfig = 16,
     CheckWatch = 17,
     RemoveWatch = 18,
-    CreateTTL = 21,
     MultiRead = 22,
     Auth = 100,
     SetWatch = 101,
@@ -53,7 +52,6 @@ enum class OpNum : int32_t
     CheckStat = 504,
     TryRemove = 505,
     FilteredListWithStatsAndData = 506,
-    ListRecursive = 507,
 
     SessionID = 997, /// Special internal request
 };

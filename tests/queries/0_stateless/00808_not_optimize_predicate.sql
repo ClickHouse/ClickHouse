@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET send_logs_level = 'fatal';
 SET convert_query_to_cnf = 0;
 SET allow_deprecated_error_prone_window_functions = 1;

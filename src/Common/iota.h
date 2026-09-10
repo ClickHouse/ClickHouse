@@ -3,8 +3,8 @@
 #include <base/types.h>
 #include <Common/Concepts.h>
 
-/// Replacement for std::iota, optimized via auto-vectorization.
-/// Only defined for containers with contiguous memory.
+/// This is a replacement for std::iota to use dynamic dispatch
+/// Note that is only defined for containers with contiguous memory only
 
 namespace DB
 {

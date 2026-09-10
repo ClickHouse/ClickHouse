@@ -16,7 +16,7 @@ namespace ErrorCodes
 /// Function timeSeriesStoreTags(id, [('tag_name_1', 'tag_value_1'), ...], 'tag_name_2', 'tag_value_2', ...) returns `id`
 /// and stores the mapping between the identifier of a time series and its tags in the query context so that
 /// they can later be extracted by function timeSeriesIdToTags().
-class FunctionTimeSeriesStoreTags final : public IFunction
+class FunctionTimeSeriesStoreTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesStoreTags";
@@ -32,13 +32,6 @@ public:
 
     /// Function timeSeriesStoreTags(id, ...) always returns `id`, so it's deterministic.
     bool isDeterministic() const override { return true; }
-
-    /// Stateful: writes to the per-query tags collector read by timeSeriesIdToGroup() etc.
-    bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the side effect (storing tags in the per-query `ContextTimeSeriesTagsCollector`)
-    /// must run at execution time, not analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
 
     /// This function allows NULLs as a way to specify that some tags don't have values.
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -85,7 +78,7 @@ public:
         if constexpr (id_is_nullable)
         {
             auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<std::optional<IDType>>(name, arguments, 0);
-            VectorWithMemoryTracking<IDType> valid_ids;
+            std::vector<IDType> valid_ids;
             valid_ids.reserve(ids.size());
             for (size_t i = 0; i != ids.size(); ++i)
             {

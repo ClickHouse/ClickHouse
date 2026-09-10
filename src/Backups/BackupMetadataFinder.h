@@ -47,6 +47,7 @@ protected:
         const RestoreSettings & restore_settings_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
+        const ContextPtr & query_context_,
         ThreadPool & thread_pool_);
 
     /// Finds root paths in the backup considering shard/replica configuration.
@@ -113,6 +114,7 @@ protected:
     const RestoreSettings restore_settings;
     BackupPtr backup;
     ContextMutablePtr context;
+    ContextPtr query_context;
     QueryStatusPtr process_list_element;
     LoggerPtr log;
 

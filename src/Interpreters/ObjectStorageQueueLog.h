@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Common/ProfileEvents.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
 
