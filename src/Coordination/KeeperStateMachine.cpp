@@ -1181,6 +1181,21 @@ void KeeperStateMachine::rollbackEntry(uint64_t log_idx, const nuraft::ptr<nuraf
     rollback_ext(nuraft::state_machine::ext_op_params(log_idx, buf, entry));
 }
 
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t, nuraft::buffer &)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStateMachine::pre_commit is not supported, use pre_commit_ext or preCommitEntry");
+}
+
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(uint64_t, nuraft::buffer &)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStateMachine::commit is not supported, use commit_ext or commitEntry");
+}
+
+void KeeperStateMachine::rollback(uint64_t, nuraft::buffer &)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStateMachine::rollback is not supported, use rollback_ext or rollbackEntry");
+}
+
 void KeeperStateMachine::rollback_ext(const nuraft::state_machine::ext_op_params & params)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed
