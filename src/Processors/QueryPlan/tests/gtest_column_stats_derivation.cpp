@@ -324,7 +324,7 @@ TEST(ColumnStatsDerivation, SharedConstantSubexpressionsPropagateBound)
     auto int_type = std::make_shared<DataTypeUInt64>();
     ActionsDAG dag;
     const auto & input = dag.addInput("n", int_type);
-    const auto & one = dag.addColumn({int_type->createColumnConst(1, UInt64(1)), int_type, "one"});
+    const auto & one = dag.addColumn(int_type->createColumnConst(1, UInt64(1)), int_type, "one");
     const ActionsDAG::Node * constant = &dag.addFunction(
         FunctionFactory::instance().get("materialize", getContext().context), {&one}, "constant");
 
@@ -486,12 +486,12 @@ TEST(ColumnStatsDerivation, StringFunctionsDropWidthAndKeepDistinctValueBound)
     auto string_type = std::make_shared<DataTypeString>();
     ActionsDAG dag;
     const auto & input = dag.addInput("s", string_type);
-    const auto & prefix = dag.addColumn({string_type->createColumnConst(1, String(1000, 'x')), string_type, "prefix"});
+    const auto & prefix = dag.addColumn(string_type->createColumnConst(1, String(1000, 'x')), string_type, "prefix");
     const auto & materialized_prefix = dag.addFunction(
         FunctionFactory::instance().get("materialize", getContext().context), {&prefix}, "materialized_prefix");
     addOutputFunction(dag, "concat", {&materialized_prefix, &input}, "prefixed");
     auto int_type = std::make_shared<DataTypeUInt64>();
-    const auto & offset = dag.addColumn({int_type->createColumnConst(1, UInt64(2)), int_type, "offset"});
+    const auto & offset = dag.addColumn(int_type->createColumnConst(1, UInt64(2)), int_type, "offset");
     addOutputFunction(dag, "substring", {&input, &offset}, "suffix");
     addOutputFunction(dag, "materialize", {&input}, "materialized");
 
