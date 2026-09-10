@@ -1,0 +1,6 @@
+while the rename is pending	1	[7,8]	['x','y']
+and through ARRAY JOIN	2
+sizes are unaffected	2
+after it materialized	1	[7,8]	['x','y']
+a pending rename of an ordinary column is unaffected
+1	hello
