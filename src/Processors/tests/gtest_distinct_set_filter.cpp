@@ -4,9 +4,12 @@
 #include <set>
 #include <thread>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -770,5 +773,45 @@ TEST(DistinctSetFilterGrowth, FixedTablesNeedNoGrowthMemory)
         EXPECT_EQ(filter.estimateGrowthMemory(1048576), 0);
         filter.filter(std::move(input));
         EXPECT_EQ(filter.estimateGrowthMemory(1048576), 0);
+    }
+}
+
+TEST(DistinctSetFilterGrowth, PreparationMaterializesEveryInput)
+{
+    constexpr size_t num_rows = 1024;
+    const Block header = {
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "payload")};
+    ColumnPtr constant = ColumnConst::create(makeStringColumn({String(128, 'x')}), num_rows);
+    auto sparse = ColumnSparse::create(ColumnString::create());
+    sparse->insertManyDefaults(num_rows - 1);
+    sparse->insert(Field("last"));
+    const Columns payloads{
+        constant->convertToFullColumnIfConst(),
+        constant,
+        ColumnReplicated::create(makeStringColumn({String(128, 'x')}), ColumnUInt8::create(num_rows, UInt8(0))),
+        std::move(sparse)};
+
+    for (const auto & payload : payloads)
+    {
+        SCOPED_TRACE(payload->getName());
+        for (const bool populated : {false, true})
+        {
+            SCOPED_TRACE(populated);
+            DistinctSetFilter filter(header, {"k"}, SizeLimits{});
+            if (populated)
+                filter.filter(Chunk({makeColumn({0}), makeStringColumn({"first"})}, 1));
+
+            auto keys = ColumnUInt64::create(num_rows);
+            iota(keys->getData().data(), num_rows, UInt64(0));
+            Chunk input(Columns{std::move(keys), payload}, num_rows);
+            filter.prepareForInsert(input);
+
+            ASSERT_TRUE(typeid_cast<const ColumnString *>(input.getColumns()[1].get()));
+            for (size_t row = 0; row < num_rows; ++row)
+                EXPECT_EQ((*input.getColumns()[1])[row], (*payload)[row]);
+            EXPECT_EQ(filter.getTotalRowCount(), populated ? 1 : 0);
+            EXPECT_EQ(filter.filter(std::move(input)).getNumRows(), num_rows - populated);
+        }
     }
 }
