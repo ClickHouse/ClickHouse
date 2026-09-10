@@ -530,7 +530,7 @@ class GH:
         return res
 
     @classmethod
-    def get_output_with_retries(cls, command, verbose=False, strict=False):
+    def get_output_with_retries(cls, command, verbose=False, strict=False, retries=None):
         """Run a read-style ``gh`` command and return its stdout.
 
         Mirrors :meth:`do_command_with_retries` but returns the captured
@@ -551,12 +551,13 @@ class GH:
         """
         if not isinstance(command, str):
             command = shlex.join(command)
+        limit = Settings.MAX_RETRIES_GH if retries is None else retries
         retry_count = 0
         # Counted where the subprocess is invoked, so a non-retryable class that breaks out
         # of the loop still reports the attempt it made. retry_count counts retries taken.
         attempts = 0
         out, err, ret_code = "", "", -1
-        while retry_count < Settings.MAX_RETRIES_GH:
+        while retry_count < limit:
             attempts += 1
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
             if ret_code == 0:
@@ -618,6 +619,7 @@ class GH:
         jq=None,
         paginate=False,
         strict=False,
+        retries=None,
         verbose=False,
     ):
         """Run a REST ``gh api`` call with retries and return its stdout.
@@ -627,6 +629,8 @@ class GH:
         ``fields`` are sent as ``-f`` string params (no typed or ``@file`` forms).
         Returns trimmed stdout ("" for a no-body response such as DELETE);
         ``strict=True`` raises on persistent failure instead of returning "".
+        ``retries=1`` disables retrying, e.g. for a best-effort call whose
+        expected failure (a 404) is not transient.
         """
         argv = ["gh", "api", "-X", method, endpoint]
         for key, value in (fields or {}).items():
@@ -635,7 +639,9 @@ class GH:
             argv += ["--jq", jq]
         if paginate:
             argv.append("--paginate")
-        return cls.get_output_with_retries(argv, verbose=verbose, strict=strict)
+        return cls.get_output_with_retries(
+            argv, verbose=verbose, strict=strict, retries=retries
+        )
 
     @classmethod
     def _gh_graphql_json(cls, query, variables, verbose=False):
