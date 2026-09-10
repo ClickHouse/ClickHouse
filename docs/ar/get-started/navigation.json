@@ -7,7 +7,50 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ar/get-started/index",
-        "ar/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "الأدلة السريعة",
+          "pages": [
+            "ar/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "جميع حالات الاستخدام",
+              "pages": [
+                "ar/get-started/setup/cloud",
+                "ar/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "ar/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "ar/get-started/quickstarts/creating-tables",
+                "ar/get-started/quickstarts/writing-queries",
+                "ar/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "التحليلات في الوقت الفعلي",
+              "pages": [
+                "ar/get-started/quickstarts/create-your-first-materialized-view",
+                "ar/get-started/quickstarts/create-your-first-projection",
+                "ar/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "مستودعات البيانات",
+              "pages": [
+                "ar/get-started/quickstarts/connect-your-iceberg-catalog",
+                "ar/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "أوبزرفابيليتي",
+              "pages": [
+                "ar/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,
