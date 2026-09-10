@@ -133,9 +133,13 @@ for part_type in compact wide; do
         err=$(${CLICKHOUSE_CLIENT} --max_execution_time "${budget}" -q "
                 SELECT count() FROM t_${part_type} WHERE length(JSONAllPaths(j)) > 0" 2>&1 >/dev/null) && continue
         cancelled=$((cancelled + 1))
-        # The reader adds this to the message only when the exception passed through its own
-        # catch-all, i.e. the cancellation really was raised inside the part read.
-        case "$err" in *"while reading"*) in_reader=$((in_reader + 1)); break ;; esac
+        # This text has one emitter in the tree, getMessageForDiagnosticOfBrokenPart, and only the
+        # readers' catch-all calls it, so matching it says the cancellation really was raised inside
+        # the part read. Neither shorter prefix would: 'while reading' also matches the inner
+        # per-column catch of MergeTreeReaderWide::readRows, and 'while reading from part' also
+        # matches IMergeTreeReader's fillMissingColumns, evaluateMissingDefaults and
+        # performRequiredConversions, none of which is the catch that carries the suppression.
+        case "$err" in *"with max_rows_to_read = "*) in_reader=$((in_reader + 1)); break ;; esac
     done
 
     # Guards against a vacuous run: without a cancellation, and without one landing inside the
@@ -145,6 +149,19 @@ for part_type in compact wide; do
 
     ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
 
+    # Both counts take the database name as a substring instead of building the logger name with
+    # concat, because the real name comes from backQuoteIfNeed: a database name needing quoting turns
+    # an equality into 0 rows, which is also what a working guard reads, so the assertion would pass
+    # on any build. Over-counting a foreign table fails loudly, which is the safe direction.
+    #
+    # The first line is what makes the second non-vacuous: the table's other per-table loggers
+    # (ReplicatedMergeTreeQueue, ReplicatedMergeTreeRestartingThread) always log, so a build where
+    # this name shape matches nothing reports it here instead of reading 0 reports and passing.
+    echo "${part_type} part check logger observable: $(${CLICKHOUSE_CLIENT} -q "
+        SELECT count() > 0 FROM system.text_log
+        WHERE position(logger_name, '.t_${part_type} (') > 0
+          AND position(logger_name, currentDatabase()) > 0")"
+
     # 'Enqueueing%' is what makes this an assertion rather than a race. reportBroken only appends to
     # the check thread's queue and wakes it; 'Checking part%' is logged later, from the background
     # thread, so counting only that measures whether the pool got round to running before the flush -
@@ -153,7 +170,8 @@ for part_type in compact wide; do
     # goes through that one line, so it cannot miss a report or count anything else.
     echo "${part_type} part check reports raised: $(${CLICKHOUSE_CLIENT} -q "
         SELECT count() FROM system.text_log
-        WHERE logger_name = concat(currentDatabase(), '.t_${part_type} (ReplicatedMergeTreePartCheckThread)')
+        WHERE endsWith(logger_name, '.t_${part_type} (ReplicatedMergeTreePartCheckThread)')
+          AND position(logger_name, currentDatabase()) > 0
           AND (message LIKE 'Enqueueing%' OR message LIKE 'Checking part%')")"
 
     # The part must also still be readable: a cancelled prefix read must not have detached or

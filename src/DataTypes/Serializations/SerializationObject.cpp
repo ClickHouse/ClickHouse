@@ -780,7 +780,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != paths_size; ++i)
             {
                 String path;
-                readPathNameCancellable(path, *structure_stream, cancellation_checker);
+                readStringBinaryCancellable(path, *structure_stream, cancellation_checker);
                 structure_state->flattened_paths.push_back(std::move(path));
                 cancellation_checker.check();
             }
@@ -806,7 +806,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
             for (size_t i = 0; i != dynamic_paths_size; ++i)
             {
                 String path;
-                readPathNameCancellable(path, *structure_stream, cancellation_checker);
+                readStringBinaryCancellable(path, *structure_stream, cancellation_checker);
                 structure_state->sorted_dynamic_paths->push_back(std::move(path));
                 cancellation_checker.check();
             }
@@ -858,7 +858,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                     String path;
                     for (size_t i = 0; i != size; ++i)
                     {
-                        readPathNameCancellable(path, *structure_stream, cancellation_checker);
+                        readStringBinaryCancellable(path, *structure_stream, cancellation_checker);
                         readVarUInt(statistics.shared_data_paths_statistics[path], *structure_stream);
                         cancellation_checker.check();
                     }

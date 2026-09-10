@@ -906,11 +906,9 @@ void runInFreshThread(std::function<void()> body)
 /// read must stop early instead of consuming the list. Asserting WHERE it stopped is what establishes
 /// that, which "an exception arrived" on its own does not.
 ///
-/// The second cell uses empty names, and it is the one that pins the loop's own checkpoint: for a
-/// zero-length name `readPathNameCancellable`'s chunk loop runs zero iterations, so its per-chunk
-/// checkpoint never fires and only the checkpoint at the end of the loop body can interrupt the read.
-/// (For a non-empty name the two are redundant, which is why the first cell alone cannot pin either.)
-/// Empty path names are a real on-wire shape: a JSON key of "" produces one.
+/// Both cells rest on the checkpoint at the end of the loop body: `readStringBinaryCancellable` checks
+/// between chunks only, so a name that fits in one chunk - every name here - reaches no checkpoint of
+/// its own. Empty path names are a real on-wire shape: a JSON key of "" produces one.
 TEST(ObjectSerialization, PrefixReadObservesCancellation)
 {
     runInFreshThread([]
@@ -969,9 +967,9 @@ TEST(ObjectSerialization, LongPathNameObservesCancellation)
 }
 
 /// A path name whose DECLARED length is far larger than the bytes the stream actually holds. What this
-/// pins is that the name's ALLOCATION is chunked as well as its read: `std::string::resize`
-/// value-initializes, so resizing once to the declared length writes all of it before the loop's first
-/// checkpoint can run, and the declared length is a `VarUInt` the stream chose (capped only at
+/// pins is that the name's VALUE-INITIALIZATION is chunked as well as its read (the buffer is allocated
+/// whole, by `reserve`): `std::string::resize` value-initializes, so resizing once to the declared
+/// length writes all of it before the loop's first checkpoint can run, and the declared length is a `VarUInt` the stream chose (capped only at
 /// `DEFAULT_MAX_STRING_SIZE` = 1 GiB). Measured on this tree, that single `resize` costs 26 ms at
 /// 64 MiB and 400 ms at 1 GiB, against the checkpoint's 10 ms period.
 ///
@@ -998,7 +996,7 @@ TEST(ObjectSerialization, LongPathNameObservesCancellation)
 ///
 /// No cancellation is involved: the read ends in `CANNOT_READ_ALL_DATA` either way, which keeps the
 /// cell about the allocation alone.
-TEST(ObjectSerialization, LargeDeclaredPathNameIsNotAllocatedWhole)
+TEST(ObjectSerialization, LargeDeclaredPathNameIsNotValueInitializedWhole)
 {
 #if !defined(OS_LINUX) && !defined(OS_FREEBSD)
     /// The oracle is the resident set, which only `MemoryStatisticsOS` reports, and that class exists
@@ -1074,7 +1072,7 @@ TEST(ObjectSerialization, LargeDeclaredPathNameIsNotAllocatedWhole)
 
         const size_t resident_growth = peak_resident - resident_before;
 
-        std::cout << "LargeDeclaredPathNameIsNotAllocatedWhole: declared " << declared_name_size
+        std::cout << "LargeDeclaredPathNameIsNotValueInitializedWhole: declared " << declared_name_size
                   << " bytes, supplied " << supplied_name_size << "; peak resident growth "
                   << resident_growth << " bytes, first reached at stream offset " << peak_offset << " of "
                   << bytes.size() << "; " << samples_inside_name_read << " samples taken inside the name read"
@@ -1091,19 +1089,19 @@ TEST(ObjectSerialization, LargeDeclaredPathNameIsNotAllocatedWhole)
         static constexpr size_t max_resident_growth = 8 * 1024 * 1024;
         ASSERT_LT(resident_growth, max_resident_growth)
             << "reading a path name that declares " << declared_name_size << " bytes grew the resident "
-            << "set by " << resident_growth << " bytes, i.e. the declared length was allocated in one "
-            << "step instead of being grown in chunks";
+            << "set by " << resident_growth << " bytes, i.e. the declared length was value-initialized "
+            << "in one step instead of being filled in chunks";
     });
 #endif
 }
 
 /// A path name of exactly one `read_chunk_size` (64 KiB), which is the case that pins WHEN the
-/// checkpoint's throttle is armed. Such a name is consumed in a single step of
-/// `readPathNameCancellable`'s chunk loop, so the read reaches only the FIRST `check()` calls on the
-/// thread - the one after that step and the loop-body one right behind it. The throttle is
-/// thread-local state, so if it were armed lazily BY the first `check()` that call would read ~0
-/// elapsed and skip its own poll, and this read would run to the end of the prefix however long it
-/// took; arming it in the checker's constructor is what makes the first poll happen.
+/// checkpoint's throttle starts running. Such a name is consumed in a single step of
+/// `readStringBinaryCancellable`'s chunk loop, so the read reaches only the FIRST `check()` on the
+/// thread, the loop-body one after that name. The throttle is thread-local state, so if it only started
+/// running when that first `check()` created it, the call would read ~0 elapsed and skip its own poll,
+/// and this read would run to the end of the prefix however long it took; the checker's constructor
+/// touching the throttle is what makes the first poll happen.
 ///
 /// TWO names, because with one the read consumes the whole prefix either way and only the throw
 /// differs, so `served_bytes` could not tell the two behaviours apart. With two, name 1 takes ~32 ms
@@ -1159,10 +1157,8 @@ TEST(ObjectSerialization, PrefixReadObjectStructureObservesCancellation)
         expectObjectStructureCancelledBefore(one_long_name, name_size / 4, [&] { query.cancel(); }, 2 * 4096);
     });
 
-    /// Empty names, which is what isolates the loop's OWN checkpoint here: `readPathNameCancellable`'s
-    /// chunk loop runs zero iterations for a zero-length name, so its per-chunk checkpoint never fires
-    /// and only the checkpoint at the end of the loop body can interrupt the read. For a non-empty name
-    /// the two are redundant, so the cell above cannot pin either on its own.
+    /// Empty names, which leaves the loop's OWN checkpoint as the only one that can fire: for a
+    /// zero-length name `readStringBinaryCancellable`'s chunk loop runs no iterations at all.
     runInFreshThread([]
     {
         ThreadStatus thread_status;

@@ -680,7 +680,7 @@ void SerializationObjectSharedData::deserializeStructureGranulePrefix(
     /// Read list of paths.
     for (size_t i = 0; i != structure_granule.num_paths; ++i)
     {
-        readPathNameCancellable(path, buf, cancellation_checker);
+        readStringBinaryCancellable(path, buf, cancellation_checker);
         if (structure_state.requested_paths.contains(path) || structure_state.requested_paths_subcolumns.contains(path) || structure_state.checkIfPathMatchesAnyRequestedPrefix(path))
             structure_granule.position_to_requested_path[i] = path;
 
@@ -1223,8 +1223,6 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
         {
             std::vector<String> paths;
-            /// Bounds the per-bucket transfers below, which run outside any prefix read.
-            PrefixReadCancellationChecker cancellation_checker;
 
             /// Collect all paths stored in this granule in all buckets.
             for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -1252,14 +1250,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 if (structure_granule.num_rows != rows_offset + limit)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected reading a single granule with {} rows, requested {} rows in Compact part in bucket {}", structure_granule.num_rows, rows_offset + limit, bucket);
 
-                /// Moved, not copied: only safe here, where `structure_granule` is function-local,
-                /// unlike the Wide branch's cached granules.
-                paths.reserve(paths.size() + structure_granule.all_paths.size());
-                for (auto & path : structure_granule.all_paths)
-                {
-                    paths.push_back(std::move(path));
-                    cancellation_checker.check();
-                }
+                paths.insert(paths.end(), structure_granule.all_paths.begin(), structure_granule.all_paths.end());
                 settings.path.pop_back();
 
                 /// Skip deserialization of flattened paths data/marks/substreams/etc if we can.
@@ -1433,19 +1424,8 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     }
                 }
 
-                /// Copied, not moved: these granules can come from the substreams cache shared with
-                /// other columns, so moving would empty another reader's list.
-                PrefixReadCancellationChecker cancellation_checker;
                 for (size_t granule = 0; granule != structure_granules->size(); ++granule)
-                {
-                    const auto & granule_paths = (*structure_granules)[granule].all_paths;
-                    granules_paths[granule].reserve(granules_paths[granule].size() + granule_paths.size());
-                    for (const auto & path : granule_paths)
-                    {
-                        granules_paths[granule].push_back(path);
-                        cancellation_checker.check();
-                    }
-                }
+                    granules_paths[granule].insert(granules_paths[granule].end(), (*structure_granules)[granule].all_paths.begin(), (*structure_granules)[granule].all_paths.end());
 
                 settings.path.pop_back();
             }

@@ -37,15 +37,15 @@ bool isPrefixReadCancelled(std::exception_ptr exception_ptr);
 
 /// Polls query cancellation from inside a structure-prefix read, which the executor cannot interrupt
 /// because it only checks between `work()` calls. Throttles on elapsed time, not on an iteration
-/// count: path lengths span four orders of magnitude, so "every N iterations" is unbounded.
+/// count: name lengths span four orders of magnitude, so "every N iterations" is unbounded.
 ///
 /// Distinct from `DB::CancellationChecker`, the watchdog thread that cancels the `QueryStatus`.
 class PrefixReadCancellationChecker
 {
 public:
-    /// Arms this thread's throttle, then polls once, so an already-pending cancellation is honoured at
-    /// prefix entry rather than after a grace period. Arming here is what lets the FIRST `check` on a
-    /// thread poll; every later construction is a no-op, so the period is not restarted per prefix.
+    /// Polls once unconditionally, so a cancellation already pending at prefix entry is honoured
+    /// without waiting out a period. Touching the throttle starts this thread's clock here rather than
+    /// at the first `check`, and leaves the elapsed period alone, so a later prefix does not restart it.
     PrefixReadCancellationChecker()
     {
         static_cast<void>(throttleState());
@@ -91,12 +91,12 @@ private:
     static constexpr UInt64 check_period_microseconds = 10 * 1000;
 };
 
-/// Chunked `readStringBinary`: a single path length is capped only by `DEFAULT_MAX_STRING_SIZE`, so
-/// both stream-sized halves are chunked - the READ, and the ALLOCATION it fills, since `resize`
-/// value-initializes. Rejects the same inputs as `readStringBinary`, with the same error codes.
-inline void readPathNameCancellable(String & path, ReadBuffer & buf, PrefixReadCancellationChecker & cancellation_checker)
+/// Chunked `readStringBinary`: the READ is chunked, and so is the value-initialization `resize` performs
+/// on each step's bytes. The buffer itself is allocated once, for the declared length, exactly as
+/// `readStringBinary` does. Same accepted inputs, same error codes.
+inline void readStringBinaryCancellable(String & s, ReadBuffer & buf, PrefixReadCancellationChecker & cancellation_checker)
 {
-    /// Not measurable for a normal path name, still prompt for a multi-megabyte one.
+    /// Not measurable for a normal name, still prompt for a multi-megabyte one.
     static constexpr size_t read_chunk_size = 64 * 1024;
 
     size_t size = 0;
@@ -105,23 +105,27 @@ inline void readPathNameCancellable(String & path, ReadBuffer & buf, PrefixReadC
     if (size > DEFAULT_MAX_STRING_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
 
-    /// Reserve first: growing in steps without it would reallocate and recopy on every step.
-    path.clear();
-    path.reserve(size);
+    /// One allocation for the declared length: growing in steps instead relocates the whole buffer each
+    /// time capacity doubles, and a relocation near the end copies half the name uninterruptibly.
+    s.clear();
+    s.reserve(size);
 
     size_t bytes_read = 0;
     while (bytes_read < size)
     {
         const size_t bytes_to_read = std::min(read_chunk_size, size - bytes_read);
-        path.resize(bytes_read + bytes_to_read);
-        const size_t bytes_copied = buf.read(path.data() + bytes_read, bytes_to_read);
+        s.resize(bytes_read + bytes_to_read);
+        const size_t bytes_copied = buf.read(s.data() + bytes_read, bytes_to_read);
         if (bytes_copied != bytes_to_read)
             throw Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Cannot read all data. Bytes read: {}. Bytes expected: {}.", bytes_read + bytes_copied, size);
 
         bytes_read += bytes_copied;
-        cancellation_checker.check();
+        /// Not after the last chunk: every caller polls once per name it reads, so a name that fits in
+        /// one chunk would otherwise read the clock twice.
+        if (bytes_read < size)
+            cancellation_checker.check();
     }
 }
 

@@ -411,7 +411,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 }
                 else
                 {
-                    readPathNameCancellable(data_type_name, *structure_stream, cancellation_checker);
+                    readStringBinaryCancellable(data_type_name, *structure_stream, cancellation_checker);
                     structure_state->flattened_data_types.push_back(getDataTypesCache().getType(data_type_name));
                 }
                 /// Granularity is one type description: decoding a single one is uninterruptible on
@@ -455,7 +455,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 String data_type_name;
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
-                    readPathNameCancellable(data_type_name, *structure_stream, cancellation_checker);
+                    readStringBinaryCancellable(data_type_name, *structure_stream, cancellation_checker);
                     variants.push_back(getDataTypesCache().getType(data_type_name));
                     cancellation_checker.check();
                 }
@@ -491,7 +491,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                     String variant_name;
                     for (size_t i = 0; i != statistics_size; ++i)
                     {
-                        readPathNameCancellable(variant_name, *structure_stream, cancellation_checker);
+                        readStringBinaryCancellable(variant_name, *structure_stream, cancellation_checker);
                         readVarUInt(statistics.shared_variants_statistics[variant_name], *structure_stream);
                         cancellation_checker.check();
                     }
