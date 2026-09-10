@@ -10,6 +10,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueExclusiveFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
 #include <Storages/StorageSnapshot.h>
@@ -101,6 +102,11 @@ namespace
         return mode == ObjectStorageQueueMode::UNORDERED;
     }
 
+    bool isExclusive(ObjectStorageQueueMode mode)
+    {
+        return mode == ObjectStorageQueueMode::EXCLUSIVE;
+    }
+
     UInt128 getMetadataCacheKey(const std::string & path)
     {
         SipHash hash;
@@ -129,7 +135,14 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_name(zookeeper_name_)
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
-    , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
+    , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
+    /// Two independent reasons to sweep `/failed`, and either one on its own is enough: the
+    /// count-based tracked-files limit, and the time-based `failed_files_ttl_sec`. They are separate
+    /// controls, so this is a union rather than a choice between them.
+    , cleanup_failed_files(
+          (!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
+          || (isUnordered(mode) && table_metadata.failed_files_ttl_sec))
+    , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
@@ -166,11 +179,13 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     }
 
     LOG_TRACE(
-        log, "Mode: {}, buckets: {}, processing threads: {}, "
-        "result buckets num: {}, use persistent processing nodes: {}, cleanup processing files: {}",
+        log, "Mode: {}, buckets: {}, processing threads: {}, metadata_cache_size_bytes: {},"
+        "metadata_cache_size_elements: {}, result buckets num: {}, use persistent processing nodes: {}, "
+        "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
-        table_metadata.processing_threads_num.load(), buckets_num,
-        use_persistent_processing_nodes.load(), cleanup_processing_files);
+        table_metadata.processing_threads_num.load(), metadata_cache_size_bytes_,
+        metadata_cache_size_elements_, buckets_num,
+        use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -213,8 +228,11 @@ void ObjectStorageQueueMetadata::startup()
     if (startup_called.exchange(true))
          return;
 
+    /// Union of both guards: master narrowed this to the three flags, which are fixed at construction,
+    /// while `isUnordered(mode)` covers an unordered table whose cleanup settings are only turned on
+    /// later by `ALTER`. Dropping the mode term would leave such a table with no sweep at all.
     if (!cleanup_task
-        && (isUnordered(mode) || cleanup_processing_files))
+        && (isUnordered(mode) || cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
     {
         cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
@@ -275,7 +293,28 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 use_persistent_processing_nodes,
                 zookeeper_name,
                 log);
+        case ObjectStorageQueueMode::EXCLUSIVE:
+            return std::make_shared<ObjectStorageQueueExclusiveFileMetadata>(
+                path,
+                file_status,
+                table_metadata.loading_retries,
+                *metadata_ref_count,
+                *this,
+                zookeeper_name,
+                log);
     }
+}
+
+bool ObjectStorageQueueMetadata::tryAcquireExclusiveProcessing(const std::string & path)
+{
+    std::lock_guard lock(exclusive_processing_paths_mutex);
+    return exclusive_processing_paths.insert(getMetadataCacheKey(path)).second;
+}
+
+void ObjectStorageQueueMetadata::releaseExclusiveProcessing(const std::string & path)
+{
+    std::lock_guard lock(exclusive_processing_paths_mutex);
+    exclusive_processing_paths.erase(getMetadataCacheKey(path));
 }
 
 bool ObjectStorageQueueMetadata::useBucketsForProcessing() const
@@ -551,6 +590,10 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
         LOG_TRACE(log, "Local buckets num: {}", buckets_num);
 
         metadata_paths = ObjectStorageQueueOrderedFileMetadata::getMetadataPaths(buckets_num);
+    }
+    else if (settings[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        metadata_paths = ObjectStorageQueueExclusiveFileMetadata::getMetadataPaths();
     }
     else
     {
@@ -1296,19 +1339,33 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
         cleanupPersistentProcessingNodes();
 
-    const bool cleanup_processed_files = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
-    const bool cleanup_failed_files = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
+    /// Re-derived per run rather than taken from the members: `tracked_files_limit`,
+    /// `tracked_file_ttl_sec` and `failed_files_ttl_sec` are all alterable at runtime, so a decision
+    /// made once at construction would go stale. The members remain the coarse "could this table ever
+    /// need a sweep" answer that `startup` uses.
+    const bool sweep_processed = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
+    /// `/failed` has two independent controls, and each trims by its own criterion: the count-based
+    /// tracked-files limit, and the time-based `failed_files_ttl_sec`. They are deliberately not
+    /// collapsed into one call - neither overrides the other, and a table may have either, both or
+    /// neither. Both passes run under the same cleanup lock this function already holds.
+    const bool sweep_failed_by_limit = !isExclusive(mode) && table_metadata.hasTrackedFilesLimit();
+    const bool sweep_failed_by_ttl = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
 
-    if (cleanup_processed_files || cleanup_failed_files)
+    if (sweep_processed || sweep_failed_by_limit || sweep_failed_by_ttl)
     {
-        if (cleanup_processed_files)
+        if (sweep_processed)
             cleanupTrackedNodes(zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
 
-        if (cleanup_failed_files)
-        {
+        if (sweep_failed_by_limit)
+            cleanupTrackedNodes(zookeeper_path / "failed", "failed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
+
+        if (sweep_failed_by_ttl)
             cleanupTrackedNodes(zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec, 0);
+
+        /// One reconciliation covers both passes: either may have removed terminal nodes, and the
+        /// cache has to stop claiming a file is Failed once its node is gone.
+        if (sweep_failed_by_limit || sweep_failed_by_ttl)
             reconcileFailedFilesCache();
-        }
     }
 
     LOG_TRACE(log, "Node limits check finished");
