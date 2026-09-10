@@ -117,7 +117,16 @@ ExpressionIdentity collectExpressionIdentity(const IDataType & type)
         ExpressionIdentityComponent component;
         if (const auto * with_time_zone = dynamic_cast<const TimezoneMixin *>(&one))
         {
-            component.time_zone = getDateLUTTimeZone(with_time_zone->getTimeZone());
+            /** A type that spells no zone out means the session's, and that is not the zone the type
+              * object happens to carry: `DataTypeFactory` hands out one cached object per type name,
+              * so the zone in it is whichever session first asked for the name, while a date or time
+              * function reads the session's zone when it runs. Read the session's zone here, so that
+              * `toHour(CAST(x, 'Nullable(DateTime)'))` is a different expression in a session with a
+              * different `session_timezone` - it computes different values there.
+              */
+            component.time_zone = with_time_zone->hasExplicitTimeZone()
+                ? getDateLUTTimeZone(with_time_zone->getTimeZone())
+                : getDateLUTTimeZone(DateLUT::instance());
             identity.has_time_zone = true;
         }
         /// The name carries what this walk cannot see: the interior of a declared name, and the
