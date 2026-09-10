@@ -646,32 +646,52 @@ def test_drop_failed_files_privilege(started_cluster):
       - `InterpreterSystemQuery::dropObjectStorageQueueFailedFiles` -> `context->checkAccess(...)`
       - `getRequiredAccessForDDLOnCluster()` for the `ON CLUSTER` form
 
-    The `ON CLUSTER` case is asserted for the denial only. `executeDDLQueryOnCluster`
-    resolves the cluster before checking access, so the cluster has to exist for the
-    denial to be attributable to the privilege rather than to an unknown cluster.
-    Proving the `ON CLUSTER` success path additionally needs a second running replica
-    holding the same table, which this single-node module does not provide.
+    Both branches of each entry point are asserted: denied without the privilege, allowed
+    with it. The `ON CLUSTER` allow branch is the one worth stating explicitly - a
+    `getRequiredAccessForDDLOnCluster()` that asked for the wrong access type or the wrong
+    scope would refuse a correctly-privileged user forever, and a deny-only test would
+    still pass.
+
+    `executeDDLQueryOnCluster` resolves the cluster before checking access, so the cluster
+    has to exist for a denial to be attributable to the privilege rather than to an unknown
+    cluster. The table, the user and its grants therefore exist on both replicas of
+    `cluster`; the user and grants are created `ON CLUSTER` so they reach both.
+
+    Access control only. Whether the drop does the right thing to `/failed` on either
+    replica is `test_drop_failed_files_on_cluster_concurrent`'s subject, not this one's.
     """
     node = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
 
     table_name = f"test_drop_priv_{uuid.uuid4().hex[:8]}"
     user_name = f"user_drop_priv_{uuid.uuid4().hex[:8]}"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
-    create_table(
-        started_cluster,
-        node,
-        table_name,
-        "unordered",
-        files_path,
-        additional_settings={"keeper_path": keeper_path},
-    )
+    # On both replicas, sharing one `keeper_path`: the ON CLUSTER form runs on every
+    # replica of `cluster`, and on one that does not have the table it would fail with
+    # UNKNOWN_TABLE - which says nothing about access control.
+    for replica in (node, node2):
+        create_table(
+            started_cluster,
+            replica,
+            table_name,
+            "unordered",
+            files_path,
+            additional_settings={"keeper_path": keeper_path},
+        )
 
-    node.query(f"CREATE USER {user_name} IDENTIFIED WITH no_password")
+    # `CREATE USER` and `GRANT` are local to the replica that runs them, so both are run
+    # ON CLUSTER: the ON CLUSTER drop is checked against this user on every replica, and
+    # a user known only to `instance` would be denied on `instance2` for the wrong reason.
+    node.query(
+        f"CREATE USER {user_name} ON CLUSTER cluster IDENTIFIED WITH no_password"
+    )
     # The command resolves the table, so the user must be able to see it at all;
     # otherwise a failure could be UNKNOWN_TABLE rather than a privilege denial.
-    node.query(f"GRANT SHOW TABLES ON default.{table_name} TO {user_name}")
+    node.query(
+        f"GRANT SHOW TABLES ON default.{table_name} TO {user_name} ON CLUSTER cluster"
+    )
 
     direct_query = f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}"
     on_cluster_query = (
@@ -688,14 +708,21 @@ def test_drop_failed_files_privilege(started_cluster):
 
     # 3. Grant exactly the new privilege, table-scoped.
     node.query(
-        f"GRANT SYSTEM DROP S3QUEUE FAILED FILES ON default.{table_name} TO {user_name}"
+        f"GRANT SYSTEM DROP S3QUEUE FAILED FILES ON default.{table_name} "
+        f"TO {user_name} ON CLUSTER cluster"
     )
 
     # 4. The direct form now succeeds. query() raises on any error, so reaching the
     #    next statement is itself the assertion.
     node.query(direct_query, user=user_name)
 
-    # 5. The privilege is table-scoped and must not leak to a different table.
+    # 5. The ON CLUSTER form now succeeds too. This is what the denial in step 2 cannot
+    #    establish: `getRequiredAccessForDDLOnCluster()` must not only refuse the
+    #    unprivileged user, it must also admit the privileged one. Same assertion
+    #    mechanism as step 4 - reaching the next statement means no error was raised.
+    node.query(on_cluster_query, user=user_name)
+
+    # 6. The privilege is table-scoped and must not leak to a different table.
     other_table_name = f"test_drop_priv_other_{uuid.uuid4().hex[:8]}"
     create_table(
         started_cluster,
@@ -710,9 +737,10 @@ def test_drop_failed_files_privilege(started_cluster):
         f"SYSTEM DROP S3QUEUE FAILED FILES default.{other_table_name}", user=user_name
     )
 
-    # Cleanup
-    node.query(f"DROP USER {user_name}")
-    node.query(f"DROP TABLE {table_name}")
+    # Cleanup. The user and `table_name` exist on both replicas, so they are dropped
+    # ON CLUSTER too; `other_table_name` was only ever created on `node`.
+    node.query(f"DROP USER {user_name} ON CLUSTER cluster")
+    node.query(f"DROP TABLE {table_name} ON CLUSTER cluster")
     node.query(f"DROP TABLE {other_table_name}")
 
 
