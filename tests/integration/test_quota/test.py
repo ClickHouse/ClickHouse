@@ -1522,14 +1522,14 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 5 quarter MAX queries = 123 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t39446190\\t0\\t123\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t39446190\\t0\\t123\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t123\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t123\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1541,16 +1541,16 @@ def test_dcl_management():
         == "CREATE QUOTA qA FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default\n"
     )
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n"
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\n",
+        "qA\\t\\t.*\\t1800\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t0.5\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n"
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t1800\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t0.5\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n"
-        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t1800\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t0.5\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n"
+        "qA\\t\\t.*\\t39446190\\t\\d+\\t321\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t10\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1558,14 +1558,14 @@ def test_dcl_management():
         "ALTER QUOTA qA FOR INTERVAL 15 MONTH NO LIMITS, FOR RANDOMIZED INTERVAL 16 MONTH TRACKING ONLY, FOR INTERVAL 1800 SECOND NO LIMITS"
     )
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t.*\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\\t0\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qA\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qA\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
@@ -1576,14 +1576,14 @@ def test_dcl_management():
     )
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
     instance.query("SELECT * from test_table")
     # Counters may be 0 if the quota interval boundary is crossed between SELECT and SHOW QUOTA.
     assert re.match(
-        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
+        "qB\\t\\t.*\\t42075936\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t.*\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\\t\\d+\\t\\\\N\n",
         instance.query("SHOW QUOTA"),
     )
 
