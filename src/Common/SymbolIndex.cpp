@@ -107,6 +107,18 @@ namespace
 /// https://stackoverflow.com/questions/32088140/multiple-string-tables-in-elf-object
 
 
+/// The value of a symbol is an address only when the symbol is defined relative to a section. A reserved
+/// section index means the value is a constant instead: for example, the control-flow-integrity type-id
+/// globals `__typeid__*` are absolute symbols whose value is a bit mask.
+bool symbolValueIsAddress(uint16_t section_index)
+{
+    static constexpr uint16_t shn_undef = 0;
+    static constexpr uint16_t shn_abs = 0xfff1;
+    static constexpr uint16_t shn_common = 0xfff2;
+    return section_index != shn_undef && section_index != shn_abs && section_index != shn_common;
+}
+
+
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
 /// https://stackoverflow.com/questions/15779185/list-all-the-functions-symbols-on-the-fly-in-c-code-on-a-linux-architecture
 /// It does not extract all the symbols (but only public - exported and used for dynamic linking),
@@ -235,6 +247,9 @@ void collectSymbolsFromProgramHeaders(
                     if (!sym_name)
                         continue;
 
+                    if (!symbolValueIsAddress(elf_sym[sym_index].shndx))
+                        continue;
+
                     SymbolIndex::Symbol symbol{};
                     symbol.offset_begin = reinterpret_cast<const void *>(
                         elf_sym[sym_index].value);
@@ -294,6 +309,7 @@ void collectSymbolsFromELFSymbolTable(
     {
         if (!symbol_table_entry->name
             || !symbol_table_entry->value
+            || !symbolValueIsAddress(symbol_table_entry->shndx)
             || strings + symbol_table_entry->name >= elf.end())
             continue;
 
