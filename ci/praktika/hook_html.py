@@ -112,14 +112,20 @@ class GitCommit:
 
 class HtmlRunnerHooks:
     @classmethod
-    def _report_summary_exists(cls, workflow_name):
+    def _load_existing_summary(cls, workflow_name):
+        """Return the existing workflow report summary from S3, or None if there
+        is none. Copying it down also primes the local fs copy a later
+        version-0 overwrite path expects."""
         try:
             _ResultS3.copy_result_from_s3_with_version(
                 Result.file_name_static(workflow_name)
             )
-            return True
         except Exception:
-            return False
+            return None
+        try:
+            return Result.from_fs(workflow_name)
+        except Exception:
+            return None
 
     @classmethod
     def push_pending_ci_report(cls, _workflow):
@@ -130,15 +136,33 @@ class HtmlRunnerHooks:
         # duplicate/late Config (e.g. from a restart) must NOT destructively reset
         # a summary that already holds finished jobs' rows — that wipe left
         # succeeded jobs PENDING and got them wrongly marked NOT_FINALIZED (see
-        # REPORT_OWNERSHIP.md). Create the summary once; never reset an existing
-        # one. (GitHub Actions keeps the
-        # version=0 reset — there is no orchestrator there to rebuild rows.)
-        if env.ORCHESTRATOR_OWNS_REPORT and cls._report_summary_exists(_workflow.name):
-            print(
-                "CI report summary already exists - not resetting "
-                "(orchestrator owns the per-job rows)"
-            )
-            return
+        # REPORT_OWNERSHIP.md). Create the summary once *per run*; never reset an
+        # existing one belonging to THIS run. (GitHub Actions keeps the version=0
+        # reset — there is no orchestrator there to rebuild rows.)
+        #
+        # But the report key is PR/<sha>/<workflow>, so a fresh run at the SAME
+        # head (e.g. a check_suite.rerequested that spawns a new orchestrator,
+        # not a resume) would otherwise reuse the previous run's summary
+        # wholesale — its stale start_time/duration and terminal state survive
+        # into the new run and CIDB timing is written from them. So skip the
+        # reset only when the existing summary was created by THIS run
+        # (matching orchestrator_run_id); a different run_id means a stale
+        # same-sha summary that must be refreshed.
+        if env.ORCHESTRATOR_OWNS_REPORT:
+            existing = cls._load_existing_summary(_workflow.name)
+            if existing is not None:
+                existing_run_id = (existing.ext or {}).get("orchestrator_run_id") or ""
+                if existing_run_id and existing_run_id == env.ORCHESTRATOR_RUN_ID:
+                    print(
+                        "CI report summary already exists for this run - not "
+                        "resetting (orchestrator owns the per-job rows)"
+                    )
+                    return
+                print(
+                    "CI report summary exists from a different run "
+                    f"[{existing_run_id or 'unknown'}] at this sha - refreshing "
+                    f"for run [{env.ORCHESTRATOR_RUN_ID}]"
+                )
         results = []
         for job in _workflow.jobs:
             if job.name == Settings.CI_CONFIG_JOB_NAME:
@@ -155,7 +179,7 @@ class HtmlRunnerHooks:
             "commit_sha", env.SHA
         ).add_ext_key_value("commit_message", env.COMMIT_MESSAGE).add_ext_key_value("repo_name", env.REPOSITORY).add_ext_key_value("pr_number", env.PR_NUMBER).add_ext_key_value(
             "run_url", env.RUN_URL
-        ).add_ext_key_value("change_url", env.CHANGE_URL).add_ext_key_value("workflow_name", env.WORKFLOW_NAME).add_ext_key_value("base_branch", env.BASE_BRANCH)
+        ).add_ext_key_value("change_url", env.CHANGE_URL).add_ext_key_value("workflow_name", env.WORKFLOW_NAME).add_ext_key_value("base_branch", env.BASE_BRANCH).add_ext_key_value("orchestrator_run_id", env.ORCHESTRATOR_RUN_ID)
 
         summary_result.dump()
         # Use version 0 for initial workflow report creation (destructive reset)

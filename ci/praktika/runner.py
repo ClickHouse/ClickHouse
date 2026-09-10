@@ -1148,6 +1148,17 @@ class Runner:
                 # has up-to-date storage/compute/pipeline-utilization data. All
                 # three are written as a single workflow-level summary row into
                 # the `attributes` JSON column.
+                # Highest per-job re-run count in the pipeline (0 = no job was
+                # re-run). Marks a usage row whose storage/compute totals reflect
+                # re-run attempts rather than a single clean pass — the
+                # orchestrator stamps each job's re-run count into its result ext.
+                max_rerun_count = max(
+                    (
+                        int((r.ext or {}).get("rerun_count") or 0)
+                        for r in workflow_result.results
+                    ),
+                    default=0,
+                )
                 ci_db.insert_workflow_usage(
                     pipeline_utilization=PipelineUtilization.from_dict(
                         workflow_result.ext.get("pipeline_utilization", {})
@@ -1162,6 +1173,7 @@ class Runner:
                     start_time=workflow_result.start_time,
                     duration_s=workflow_result.update_duration().duration,
                     workflow_status=workflow_result.status,
+                    rerun_count=max_rerun_count,
                 )
 
         if workflow.enable_gh_summary_comment and (

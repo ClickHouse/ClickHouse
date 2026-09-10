@@ -65,6 +65,11 @@ class _Environment(MetaClasses.Serializable):
     # orchestrator/REPORT_OWNERSHIP.md. False for local runs and GitHub Actions,
     # which keep the per-job writers.
     ORCHESTRATOR_OWNS_REPORT: bool = False
+    # The orchestrator run_id (its S3 run prefix) that dispatched this job, or ""
+    # off the native path. The Config job's report-summary create-once guard uses
+    # it to distinguish a duplicate Config attempt within this run from a fresh
+    # run reusing the same PR/sha report key. Set per-job by the orchestrator.
+    ORCHESTRATOR_RUN_ID: str = ""
     name = "environment"
 
     @classmethod

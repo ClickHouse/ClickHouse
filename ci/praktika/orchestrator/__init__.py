@@ -742,8 +742,13 @@ def _orchestrate_resume(event, gh_token=None, ci=True):
     state.clear_stale_cancel()
     # Apply the requested re-run set (from the message) plus any live requests
     # that piled up in S3 (consume-once), then persist the reset state.
-    reset = state.apply_rerun(rerun_jobs)
+    reset, failed = state.apply_rerun(rerun_jobs)
     state.sweep_rerun()
+    if failed:
+        # No S3 request to retain here (these came in the event message), so a
+        # failed reset is dropped for this attempt — surface it. A redelivery or
+        # another click re-drives them.
+        print(f"Resume: run {run_id} could not reset {sorted(failed)}")
     print(f"Resume: run {run_id} re-running {sorted(reset)}")
     # This finalized=false write MUST land before we dispatch: it clears the
     # run's stale finalized=true snapshot, without which every reset job's runner

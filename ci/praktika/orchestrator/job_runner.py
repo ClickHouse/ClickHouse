@@ -216,6 +216,10 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
         # of the workflow report summary — job-side report writers stand down (see
         # orchestrator/REPORT_OWNERSHIP.md). False for local runs.
         "ORCHESTRATOR_OWNS_REPORT": not bool(local_run),
+        # Orchestrator run_id (its S3 run prefix); never inherited from an
+        # upstream job's dump. Lets the Config job's summary guard tell a
+        # duplicate Config attempt from a fresh run reusing the same report key.
+        "ORCHESTRATOR_RUN_ID": str(task.get("run_id") or ""),
     }
 
     carried = task.get("environment")
@@ -267,6 +271,7 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
             LOCAL_RUN=bool(local_run),
             RERUN_COUNT=int(task.get("rerun_count") or 0),
             ORCHESTRATOR_OWNS_REPORT=not bool(local_run),
+            ORCHESTRATOR_RUN_ID=str(task.get("run_id") or ""),
         )
     env.dump()
     return env
@@ -425,6 +430,10 @@ def run_job(task, gh_token=None, local=False):
                 "pr_number": task.get("pr_number"),
                 "head_sha": task.get("head_sha"),
                 "workflow_name": task.get("workflow_name"),
+                # Which re-run attempt produced this result (0 = first run). Lets
+                # a CIDB consumer tell a clean run's usage row from one whose
+                # totals were affected by re-runs.
+                "rerun_count": int(task.get("rerun_count") or 0),
             }
             if env_snapshot is not None:
                 body["environment"] = env_snapshot

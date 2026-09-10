@@ -1137,12 +1137,43 @@ class WorkflowState:
             raise RuntimeError(msg)
         print(f"  [warn] {msg}")
 
+    def _load_job_result_from_s3(self, name):
+        """Read a finished job's serialized Result back from its ``final.json``.
+
+        The snapshot deliberately stores only each job's status/ids (not the
+        full Result — it is rewritten every loop and results can be large), so a
+        resumed orchestrator has no ``js.result`` for jobs that finished in the
+        prior generation. ``publish_report`` recomputes the workflow usage
+        aggregate from ``js.result`` of *every* terminal job and SETs it
+        (``replace_usage=True``); without this, the first re-run completion would
+        overwrite the workflow totals with only the re-run subset. The re-run
+        reuses the same run prefix, so terminal jobs' ``final.json`` are still
+        present. Best-effort — a missing/unreadable one just leaves that job's
+        usage out (no worse than before). Returns the result dict or None.
+        """
+        if self._s3 is None or self.local_mode:
+            return None
+        try:
+            obj = self._s3.get_object(
+                Bucket=self._cancel_s3_bucket, Key=self._final_state_s3_key(name)
+            )
+            payload = json.loads(obj["Body"].read())
+        except Exception:
+            return None
+        result_dict = payload.get("result")
+        return result_dict if isinstance(result_dict, dict) else None
+
     def seed_from_snapshot(self, snap):
         """Rehydrate job statuses / check handles / environment from a snapshot.
 
         Used by the resume path so a fresh orchestrator picks up a finished
         run's terminal state instead of starting every job from PENDING. Jobs
         absent from the snapshot stay PENDING.
+
+        Terminal jobs also get their serialized ``result`` reloaded from
+        ``final.json`` so ``publish_report`` can re-assert their rows and keep
+        the workflow usage aggregate whole across the resume (see
+        ``_load_job_result_from_s3``).
         """
         if not isinstance(snap, dict):
             return
@@ -1163,6 +1194,8 @@ class WorkflowState:
             js.non_blocking = bool(rec.get("non_blocking"))
             js.filter_reason = rec.get("filter_reason")
             js.rerun_count = rec.get("rerun_count", 0) or 0
+            if js.status in _TERMINAL:
+                js.result = self._load_job_result_from_s3(name)
             check_id = rec.get("check_id")
             if check_id and self.can_post_checks:
                 check_name = f"{self.workflow.name} / {name}"
@@ -1172,7 +1205,13 @@ class WorkflowState:
 
     def apply_rerun(self, job_names):
         """Reset the named jobs (and their FAILED/CANCELLED downstream) to
-        PENDING so the loop re-drives them. Returns the set actually reset.
+        PENDING so the loop re-drives them. Returns ``(reset_ok, failed)``:
+        the set actually reset, and the subset we *tried* to reset but could
+        not (``_reset_job`` returned False, e.g. a stale ``final.json`` could
+        not be cleared). ``failed`` lets ``sweep_rerun`` retain the request so
+        it is retried instead of silently consumed. Jobs that are legitimately
+        skipped (already mid-run, or over the re-run cap) are in neither set —
+        consuming their request is correct.
 
         Only failed/cancelled dependents are reset — a re-run is for a failed
         job, whose downstream were cascade-cancelled/failed; dependents that
@@ -1218,7 +1257,10 @@ class WorkflowState:
                     to_reset.add(dep)
                     frontier.append(dep)
         reset_ok = {name for name in to_reset if self._reset_job(name)}
-        return reset_ok
+        # Whatever we meant to reset but couldn't (only reason: _reset_job
+        # returned False) must be retried, not consumed.
+        failed = to_reset - reset_ok
+        return reset_ok, failed
 
     def _reset_job(self, name):
         """Reset a finished job to PENDING for re-run. Returns True on success.
@@ -1305,7 +1347,9 @@ class WorkflowState:
         if not contents:
             return False
         jobs = set()
-        read_keys = []
+        # (key, [jobs]) per request so a request whose jobs couldn't be reset is
+        # retained (retried next sweep) rather than consumed with its peers.
+        key_jobs = []
         for obj in contents:
             key = obj["Key"]
             try:
@@ -1317,12 +1361,19 @@ class WorkflowState:
                 # next sweep, else its jobs are lost without ever being applied.
                 print(f"  [warn] could not read rerun-request {key}: {e}")
                 continue
-            read_keys.append(key)
-            for j in (json.loads(body).get("jobs") or []):
-                jobs.add(j)
-        reset = self.apply_rerun(list(jobs)) if jobs else set()
-        # Consume only the requests we successfully read (and thus applied).
-        for key in read_keys:
+            req_jobs = list(json.loads(body).get("jobs") or [])
+            key_jobs.append((key, req_jobs))
+            jobs.update(req_jobs)
+        reset, failed = self.apply_rerun(list(jobs)) if jobs else (set(), set())
+        # Consume each request we read, EXCEPT one whose jobs we tried but failed
+        # to reset (_reset_job returned False) — retain it so the next sweep
+        # retries. A job legitimately skipped (already mid-run / over the re-run
+        # cap) is not in `failed`, so its request is still consumed.
+        for key, req_jobs in key_jobs:
+            retain = [j for j in req_jobs if j in failed]
+            if retain:
+                print(f"  [rerun] retaining {key}: could not reset {sorted(set(retain))}")
+                continue
             try:
                 self._s3.delete_object(Bucket=self._cancel_s3_bucket, Key=key)
             except Exception:
@@ -1440,6 +1491,15 @@ class WorkflowState:
             non_blocking = False
             result_dict = payload.get("result")
             if isinstance(result_dict, dict):
+                # Stamp the orchestrator-authoritative re-run count into the
+                # result's ext so it rides into the workflow report rows (and,
+                # from there, the CIDB usage row) — marking usage totals that a
+                # re-run has touched.
+                ext = result_dict.get("ext")
+                if not isinstance(ext, dict):
+                    ext = {}
+                    result_dict["ext"] = ext
+                ext["rerun_count"] = js.rerun_count
                 js.result = result_dict
                 try:
                     from copy import deepcopy
@@ -1673,6 +1733,11 @@ class WorkflowState:
             "final_state_s3_key": self._final_state_s3_key(job_state.name),
             "check_run_id": job_state.check.id if job_state.check else None,
             "rerun_count": job_state.rerun_count,
+            # The orchestrator run_id (S3 run prefix). Lets the Config job's
+            # report-summary create-once guard tell a duplicate Config attempt
+            # *within this run* (reuse the summary) from a fresh run reusing the
+            # same PR/sha report key (must refresh the stale summary).
+            "run_id": self._run_id,
             "environment": self._environment,
         }
 
