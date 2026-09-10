@@ -205,7 +205,9 @@ private:
     /// into every alternative. Returns an empty list when the regexp imposes no token requirement.
     std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
     /// Supports '%needle%', 'needle%' and '%needle'. See isInfixPattern for which of them is exact.
-    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
+    /// `allow_arbitrary_patterns` needs a non-nullable value: an exact read of a NULL raises in the fallback (#113332).
+    std::vector<OptimizedRegularExpression>
+    stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 

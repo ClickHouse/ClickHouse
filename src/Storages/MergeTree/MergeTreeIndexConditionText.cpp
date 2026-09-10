@@ -883,17 +883,60 @@ bool isInfixPattern(const String & pattern)
     return pattern.starts_with('%') && pattern.ends_with('%');
 }
 
+/// Escapes the LIKE metacharacters so that `needle` is matched literally.
+String escapeForLikePattern(std::string_view needle)
+{
+    String pattern;
+    pattern.reserve(needle.size());
+
+    for (char c : needle)
+    {
+        if (c == '%' || c == '_' || c == '\\')
+            pattern += '\\';
+        pattern += c;
+    }
+
+    return pattern;
 }
 
-std::vector<OptimizedRegularExpression>
-MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
-{
-    /// Handles '%value%', 'value%' and '%value' with an alphanumeric needle; rejects anything more complex.
+}
 
+/// Returns one pattern, or nothing when the pattern is not eligible for a dictionary scan.
+std::vector<OptimizedRegularExpression>
+MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const
+{
     const String value = preprocessor->processConstant(field.safeGet<String>());
     if (value.empty())
         return {};
 
+    const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
+
+    auto compile_pattern = [&](const String & pattern)
+    {
+        std::vector<OptimizedRegularExpression> patterns;
+        if (case_insensitive)
+            patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+        else
+            patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+        return patterns;
+    };
+
+    /// Special case: the array tokenizer does not split a value, so a token is the whole value.
+    if (allow_arbitrary_patterns && tokenizer->getType() == ITokenizer::Type::Array)
+    {
+        /// A non-ASCII needle is unsafe: `match` folds case for ASCII only, `ilike` for the whole of UTF-8.
+        if (case_insensitive && !isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+            return {};
+
+        /// Wildcards do not count, and one literal character is required: the empty string has no token.
+        const auto literal_length = std::ranges::count_if(value, [](char c) { return c != '%' && c != '_'; });
+        if (static_cast<size_t>(literal_length) < std::max<size_t>(1, min_pattern_length))
+            return {};
+
+        return compile_pattern(value);
+    }
+
+    /// A splitting tokenizer needs an alphanumeric needle, which cannot span a token boundary.
     const char * data = value.data();
     const size_t length = value.size();
     size_t pos = 0;
@@ -927,7 +970,7 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
         return {};
 
     /// Reject short needles: they might match too many dictionary tokens.
-    if (end - start < getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length])
+    if (end - start < min_pattern_length)
         return {};
 
     String pattern;
@@ -937,12 +980,7 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     if (has_trailing_wildcard)
         pattern += '%';
 
-    std::vector<OptimizedRegularExpression> patterns;
-    if (case_insensitive)
-        patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
-    else
-        patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
-    return patterns;
+    return compile_pattern(pattern);
 }
 
 /// Converts a Field value to its text representation using `serializeText`,
@@ -1438,13 +1476,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const bool is_prefix = (function_name == "startsWith");
 
         /// A needle inside a single token yields no complete token below, so evaluate it as `LIKE 'needle%'`.
-        /// Safe for a literal needle: one that would need LIKE escaping is not alphanumeric and is rejected.
+        /// The needle is a literal, so escape it: any pattern is accepted below for the array tokenizer.
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
             const auto & needle = value_field.safeGet<String>();
-            const auto affix_pattern = is_prefix ? needle + "%" : "%" + needle;
-            auto patterns = stringLikeToPatterns(affix_pattern, /*case_insensitive=*/ false);
+            const auto affix_pattern = is_prefix ? escapeForLikePattern(needle) + "%" : "%" + escapeForLikePattern(needle);
+            auto patterns = stringLikeToPatterns(affix_pattern, /*case_insensitive=*/ false, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
             if (patterns.size() == 1 && affix_patterns_allowed)
             {
                 const auto is_exact = is_array_tokenizer && candidate_for_exact_mode;
@@ -1475,7 +1513,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
-            /// TODO(ahmadov): Only the '%foo%', 'foo%' and '%foo' patterns are eligible for a dictionary scan.
+            /// TODO(ahmadov): With a splitting tokenizer, only '%foo%', 'foo%' and '%foo' are eligible.
             /// Add support for multiple patterns later with hint mode:
             /// 1. Handle multiple patterns e.g. %foo bar% -> postings_pattern(%foo) && postings_pattern(bar%) && regex(%foo bar%)
             /// 2. Handle exact tokens and patterns e.g. %foo bar baz% -> postings_exact(bar) && postings_pattern(%foo) && postings_pattern(bar%)
@@ -1486,7 +1524,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// 2. Seek the sorted dictionary to the matching range of 'foo%' instead of scanning every block.
             /// 3. Bypass a non-selective hint: it prunes nothing and still costs a dictionary scan.
             const auto & like_pattern = value_field.safeGet<String>();
-            auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false);
+            auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
             const bool is_infix = isInfixPattern(like_pattern);
             if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
             {
@@ -1521,7 +1559,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & like_pattern = value_field.safeGet<String>();
-        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true);
+        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
         const bool is_infix = isInfixPattern(like_pattern);
         if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
         {
