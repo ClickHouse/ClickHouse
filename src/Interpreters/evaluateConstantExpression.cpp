@@ -9,6 +9,7 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Block.h>
+#include <Core/ConstantValue.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/FieldToDataType.h>
@@ -84,7 +85,7 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
 static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto [field, type] = getFieldAndDataTypeFromLiteral(literal);
-    return {type->createColumnConst(1, field), type};
+    return {ConstantValue::wrapToColumnConst(type->createColumnConst(1, field)), type};
 }
 
 /// `literal_out` (the compatibility shim documented on `getFieldAndDataTypeFromLiteral`): a literal
@@ -146,7 +147,7 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
 
         ColumnsDescription fake_column_descriptions(source_columns);
         auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+        auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
         QueryAnalyzer analyzer(false);
         analyzer.resolveConstantExpression(expression, fake_table_expression, execution_context);
@@ -235,19 +236,21 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
 
     /// Keep the value as a size-1 const column: this preserves the exact SQL type (no `Field`
     /// `NearestFieldType` collapse) and lets callers read it without materializing a `Field`.
-    return std::make_pair(result_column, result_type);
+    return ConstantValue{ConstantValue::wrapToColumnConst(result_column), result_type};
 }
 
 /// Materialize the column result into the legacy `Field` result. Used by the `Field`-returning
 /// entry points below (for callers not yet migrated to the column API) for NON-literal nodes only;
 /// literal nodes take the tag-preserving fast path (see `getFieldAndDataTypeFromLiteral`). Reading the value back
 /// with `operator[]` canonicalizes nested tags (`Bool`->`UInt64`), matching the historical behavior
-/// of the non-literal path, which also returned `(*result_column)[0]`.
+/// of the non-literal path, which also returned `(*result_column)[0]`. Read via the column's
+/// `operator[]` directly (not `ConstantValue::getField`, which uses `IColumn::get`) so this bridge stays
+/// byte-for-byte compatible with that historical path.
 static std::optional<EvaluateConstantExpressionResult> materializeToField(std::optional<EvaluateConstantExpressionColumnResult> column_result)
 {
     if (!column_result)
         return {};
-    return std::make_pair((*column_result->first)[0], std::move(column_result->second));
+    return std::make_pair((*column_result->getColumn())[0], column_result->getType());
 }
 
 std::optional<EvaluateConstantExpressionColumnResult> tryEvaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context)

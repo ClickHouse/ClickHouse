@@ -1,4 +1,5 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/BlobLinkCounts.h>
 
 #include <Common/Exception.h>
 #include <Common/UniqueLock.h>
@@ -20,6 +21,7 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -31,14 +33,6 @@ using FsNodeConstPtr = std::shared_ptr<const FsNode>;
 bool isVirtual(const FsNodePtr & node)
 {
     return !node->info.has_value();
-}
-
-FsNodePtr cloneFsNodeIfNotExclusive(const FsNodePtr & node)
-{
-    if (node.use_count() > 1)
-        return std::make_shared<FsNode>(*node);
-
-    return node;
 }
 
 template <class Ptr>
@@ -95,14 +89,14 @@ bool hasFileOnPath(const FsNodePtr & root, const NormalizedPath & path)
 
 std::pair<FsNodePtr, FsNodePtr> clonePath(const FsNodePtr & start, const NormalizedPath & path)
 {
-    FsNodePtr cloned_start = cloneFsNodeIfNotExclusive(start);
+    FsNodePtr cloned_start = std::make_shared<FsNode>(*start);
     FsNodePtr node = cloned_start;
 
     for (const auto & step : path)
     {
         FsNodePtr cloned_child;
         if (auto it = node->subdirectories.find(step); it != node->subdirectories.end())
-            cloned_child = cloneFsNodeIfNotExclusive(it->second);
+            cloned_child = std::make_shared<FsNode>(*it->second);
         else
             cloned_child = std::make_shared<FsNode>();
 
@@ -173,14 +167,30 @@ FsNodePtr unlinkTree(const FsNodePtr & root, const NormalizedPath & path)
 
 }
 
-FsSnapshot::FsSnapshot()
-    : root(std::make_shared<FsNode>())
+std::string getDefaultBlobKey(const std::string & directory_remote_path, const std::string & file_name)
 {
+    return directory_remote_path + "/" + file_name;
 }
 
-FsSnapshot::FsSnapshot(std::shared_ptr<FsNode> root_)
-    : root(std::move(root_))
+std::string getBlobKey(const DirectoryRemoteInfo & directory, const std::string & file_name, const FileRemoteInfo & file)
 {
+    if (!file.blob_key.empty())
+        return file.blob_key;
+    return getDefaultBlobKey(directory.remote_path, file_name);
+}
+
+FsSnapshot::FsSnapshot(std::shared_ptr<BlobLinkCounts> blob_link_counts_)
+    : root(std::make_shared<FsNode>())
+    , blob_link_counts(std::move(blob_link_counts_))
+{
+    chassert(blob_link_counts);
+}
+
+FsSnapshot::FsSnapshot(std::shared_ptr<FsNode> root_, std::shared_ptr<BlobLinkCounts> blob_link_counts_)
+    : root(std::move(root_))
+    , blob_link_counts(std::move(blob_link_counts_))
+{
+    chassert(blob_link_counts);
 }
 
 void FsSnapshot::recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info)
@@ -248,6 +258,26 @@ void FsSnapshot::removeDirectory(const std::string & path)
     });
 }
 
+void FsSnapshot::markDirectoryExplicit(const std::string & path)
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto node = walk(root, normalized_path);
+
+    if (!node)
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", normalized_path.string());
+
+    if (isVirtual(node))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual, it cannot have an explicit file list", normalized_path.string());
+
+    if (node->info->has_explicit_file_list)
+        return;
+
+    auto new_directory_info = node->info.value();
+    new_directory_info.has_explicit_file_list = true;
+    root = updateInfo(root, normalized_path, new_directory_info);
+}
+
 void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
 {
     UniqueLock lock(mutex);
@@ -265,6 +295,10 @@ void FsSnapshot::recordFile(const std::string & path, FileRemoteInfo info)
 
     if (node->info->files.contains(normalized_path.filename()))
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File '{}' already exists", normalized_path.string());
+
+    /// The default location is represented by an empty key.
+    if (info.blob_key == getDefaultBlobKey(node->info->remote_path, normalized_path.filename()))
+        info.blob_key.clear();
 
     auto new_directory_info = node->info.value();
     new_directory_info.files.emplace(normalized_path.filename(), std::move(info));
@@ -291,6 +325,31 @@ void FsSnapshot::removeFile(const std::string & path)
     new_directory_info.files.erase(normalized_path.filename());
     root = updateInfo(root, normalized_path.parent_path(), new_directory_info);
     remote_layout_files_delta -= 1;
+}
+
+uint32_t FsSnapshot::getBlobLinkCount(const std::string & blob_key) const
+{
+    UniqueLock lock(mutex);
+    int64_t count = blob_link_counts->get(blob_key);
+    if (const auto it = blob_link_deltas.find(blob_key); it != blob_link_deltas.end())
+        count += it->second;
+
+    if (count < 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Blob '{}' is not referenced by any file", blob_key);
+
+    return static_cast<uint32_t>(count);
+}
+
+void FsSnapshot::addBlobLink(const std::string & blob_key)
+{
+    UniqueLock lock(mutex);
+    ++blob_link_deltas[blob_key];
+}
+
+void FsSnapshot::removeBlobLink(const std::string & blob_key)
+{
+    UniqueLock lock(mutex);
+    --blob_link_deltas[blob_key];
 }
 
 std::vector<std::string> FsSnapshot::listDirectory(const std::string & path) const
@@ -386,6 +445,7 @@ void FsSnapshot::setRoot(std::shared_ptr<FsNode> new_root)
 {
     UniqueLock lock(mutex);
     root = std::move(new_root);
+    blob_link_deltas.clear();
     remote_layout_directories_delta = 0;
     remote_layout_files_delta = 0;
 }
@@ -394,6 +454,20 @@ std::pair<int64_t, int64_t> FsSnapshot::getRemoteLayoutDeltas() const
 {
     UniqueLock lock(mutex);
     return {remote_layout_directories_delta, remote_layout_files_delta};
+}
+
+std::unordered_map<std::string, int64_t> FsSnapshot::getBlobLinkDeltas() const
+{
+    UniqueLock lock(mutex);
+    return blob_link_deltas;
+}
+
+void FsSnapshot::resetDeltas()
+{
+    UniqueLock lock(mutex);
+    blob_link_deltas.clear();
+    remote_layout_directories_delta = 0;
+    remote_layout_files_delta = 0;
 }
 
 }

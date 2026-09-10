@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
@@ -18,9 +18,6 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class QueryPlan;
 
 class IQueryPlanStep;
-
-class PipelineExecutor;
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 class SubqueryForSet;
 
@@ -163,6 +160,14 @@ public:
         IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
+    /// Join two independent pipelines with a two-input joining transform created by the caller.
+    /// Each pipeline must have a single output stream (the transform may rely on its order).
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesPaired(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        ProcessorPtr joining,
+        Processors * collected_processors);
+
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
@@ -186,8 +191,6 @@ public:
     void addMaterializingCTETransform(
         SharedHeader res_header,
         MaterializedCTEPtr materialized_cte);
-
-    PipelineExecutorPtr execute();
 
     size_t getNumStreams() const { return pipe.numOutputPorts(); }
 

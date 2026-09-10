@@ -6,6 +6,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
@@ -64,6 +65,7 @@ namespace ErrorCodes
     extern const int HTTP_LENGTH_REQUIRED;
 
     extern const int TIMEOUT_EXCEEDED;
+    extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
 
     extern const int UNSUPPORTED_MEDIA_TYPE;
 }
@@ -78,7 +80,8 @@ Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code
         return HTTPResponse::HTTP_UNAUTHORIZED;
     }
     if (exception_code == ErrorCodes::UNKNOWN_USER || exception_code == ErrorCodes::WRONG_PASSWORD
-        || exception_code == ErrorCodes::AUTHENTICATION_FAILED || exception_code == ErrorCodes::SET_NON_GRANTED_ROLE)
+        || exception_code == ErrorCodes::AUTHENTICATION_FAILED || exception_code == ErrorCodes::SET_NON_GRANTED_ROLE
+        || exception_code == ErrorCodes::ACCESS_DENIED)
     {
         return HTTPResponse::HTTP_FORBIDDEN;
     }
@@ -127,6 +130,10 @@ Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int exception_code
     if (exception_code == ErrorCodes::TIMEOUT_EXCEEDED)
     {
         return HTTPResponse::HTTP_REQUEST_TIMEOUT;
+    }
+    if (exception_code == ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT)
+    {
+        return HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
     }
     if (exception_code == ErrorCodes::CANNOT_SCHEDULE_TASK)
     {

@@ -1,9 +1,12 @@
 #include <Parsers/ASTIndexDeclaration.h>
 
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
@@ -16,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -91,6 +95,18 @@ ASTPtr ASTIndexDeclaration::clone() const
     return res;
 }
 
+void ASTIndexDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name` and `granularity` are not children, so the default implementation does not see them.
+    /// `part_of_create_index_query` only affects formatting and is deliberately not hashed.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 72, "If members were added to ASTIndexDeclaration, hash them here unless they are purely cosmetic.");
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(granularity);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 ASTPtr ASTIndexDeclaration::getExpression() const
 {
     if (children.size() <= expression_idx)
@@ -106,6 +122,39 @@ boost::intrusive_ptr<ASTFunction> ASTIndexDeclaration::getType() const
     if (!func_ast)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
     return func_ast;
+}
+
+void ASTIndexDeclaration::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "IndexDeclaration");
+    w.writeString("name", name);
+    w.writeUInt("granularity", granularity);
+    if (part_of_create_index_query)
+        w.writeBool("part_of_create_index_query", true);
+    w.writeChild("expression", getExpression());
+    w.writeChild("index_type", getType());
+}
+
+void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+    granularity = r.getUInt("granularity");
+    part_of_create_index_query = r.getBool("part_of_create_index_query");
+
+    auto expression = r.readChild("expression");
+    if (!expression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration must have an expression during AST JSON deserialization");
+    children.push_back(expression);
+
+    auto index_type = r.readChild("index_type");
+    if (index_type)
+    {
+        if (!dynamic_cast<const ASTFunction *>(index_type.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Index declaration type must be a function during AST JSON deserialization");
+        children.push_back(index_type);
+    }
 }
 
 void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const

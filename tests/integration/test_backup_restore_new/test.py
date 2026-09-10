@@ -1303,6 +1303,8 @@ def test_required_privileges():
     create_and_fill_table(n=5)
 
     instance.query("CREATE USER u1")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    instance.query("GRANT READ ON DISK, WRITE ON DISK TO u1")
 
     backup_name = new_backup_name()
     expected_error = "necessary to have the grant BACKUP ON test.`table`"
@@ -1435,6 +1437,8 @@ def test_system_users_required_privileges():
 
     # SETTINGS allow_backup=false means the following user won't be included in backups.
     instance.query("CREATE USER u2 SETTINGS allow_backup=false")
+    # new_backup_name() returns a Disk(...) locator, so the DISK source grant is required.
+    instance.query("GRANT READ ON DISK, WRITE ON DISK TO u2")
 
     backup_name = new_backup_name()
 
@@ -1974,6 +1978,124 @@ def test_system_backups():
     assert info.bytes_read == 0
 
 
+def test_system_backups_read_counters_survive_a_stale_publisher():
+    # A restore publishes its progress from inside each of its concurrent tasks, and every task
+    # snapshots the counters before publishing them. This holds one task after its snapshot until
+    # its siblings have restored everything, so it publishes the oldest counts last.
+    instance.query("CREATE DATABASE test")
+    # More partitions than the default 16 of `restore_threads`: when the first task reaches the
+    # publish point the queued parts are still unread, so its snapshot is below the final counts.
+    instance.query(
+        "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x % 24"
+    )
+    instance.query(
+        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(240)"
+    )
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    # An undisturbed restore reads exactly the same files from the same backup, so it gives the
+    # counts the disturbed restore below has to end up with.
+    undisturbed_id = instance.query(
+        f"RESTORE TABLE test.table AS test.undisturbed FROM {backup_name}"
+    ).split("\t")[0]
+    undisturbed = get_backup_info_from_system_backups(by_id=undisturbed_id)
+    assert undisturbed.files_read > 0
+    assert undisturbed.bytes_read > 0
+
+    def restore_jobs_scheduled():
+        return int(
+            instance.query(
+                "SELECT value FROM system.metrics WHERE metric = 'RestoreThreadsScheduled'"
+            )
+        )
+
+    # A restore reports RESTORED from inside its own job, so the one above can still be counted
+    # here. The barrier below counts jobs, so let it drain first or the baseline would be too high.
+    wait_condition(
+        restore_jobs_scheduled, lambda scheduled: scheduled == 0, max_attempts=100
+    )
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT restore_pause_before_data_restore_tasks"
+        )
+        restore_id = instance.query(
+            f"RESTORE TABLE test.table AS test.restored FROM {backup_name} SETTINGS async = 1"
+        ).split("\t")[0]
+        instance.query(
+            "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE",
+            timeout=60,
+        )
+        # No data restore task is scheduled yet, so only this restore's own job is counted.
+        assert restore_jobs_scheduled() == 1
+
+        # Arm the publish pauses only now that the earlier stages have joined, then let the data
+        # restore tasks run: the first of them to publish is held with its own snapshot.
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT backups_pause_before_publishing_progress"
+        )
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT restore_pause_before_publishing_final_progress"
+        )
+        instance.query(
+            "SYSTEM NOTIFY FAILPOINT restore_pause_before_data_restore_tasks"
+        )
+        instance.query(
+            "SYSTEM WAIT FAILPOINT backups_pause_before_publishing_progress PAUSE",
+            timeout=60,
+        )
+
+        # Wait until the held task is the only one left: every sibling has published by then, so
+        # releasing it makes its own snapshot the last published one instead of leaving a straggler
+        # to publish after it. They restored the remaining parts, hence the full counts.
+        wait_condition(
+            restore_jobs_scheduled, lambda scheduled: scheduled == 2, max_attempts=100
+        )
+        assert (
+            get_backup_info_from_system_backups(by_id=restore_id).files_read
+            == undisturbed.files_read
+        )
+
+        # Releasing the held task makes it publish its stale snapshot last. The restore then stops
+        # right before the publication that follows the join, which is the state a restore used to
+        # end in, so the counters can be read there rather than raced against their repair.
+        instance.query(
+            "SYSTEM NOTIFY FAILPOINT backups_pause_before_publishing_progress"
+        )
+        instance.query(
+            "SYSTEM WAIT FAILPOINT restore_pause_before_publishing_final_progress PAUSE",
+            timeout=60,
+        )
+        held = get_backup_info_from_system_backups(by_id=restore_id)
+        assert held.files_read == undisturbed.files_read
+        assert held.bytes_read == undisturbed.bytes_read
+
+        instance.query(
+            "SYSTEM NOTIFY FAILPOINT restore_pause_before_publishing_final_progress"
+        )
+        restored = wait_condition(
+            lambda: get_backup_info_from_system_backups(by_id=restore_id),
+            lambda info: info.status == "RESTORED",
+            max_attempts=100,
+        )
+        assert restored.error == ""
+        assert restored.files_read == undisturbed.files_read
+        assert restored.bytes_read == undisturbed.bytes_read
+        assert instance.query("SELECT count() FROM test.restored") == "240\n"
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT restore_pause_before_data_restore_tasks"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT backups_pause_before_publishing_progress"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT restore_pause_before_publishing_final_progress"
+        )
+
+
 def test_mutation():
     create_and_fill_table(engine="MergeTree ORDER BY tuple()", n=5)
 
@@ -2166,6 +2288,8 @@ def test_required_privileges_with_partial_revokes():
     instance.query("CREATE USER u2")
     instance.query("GRANT SELECT ON *.* TO u2 WITH GRANT OPTION")
     instance.query("GRANT CREATE USER ON *.* TO u2")
+    # backup_name is a Disk(...) locator, so restoring from it needs the DISK source grant.
+    instance.query("GRANT READ ON DISK TO u2")
     instance.query("REVOKE SELECT ON system.zookeeper* FROM u2")
     instance.query("REVOKE SELECT ON foo.* FROM u2")
 
@@ -2333,3 +2457,229 @@ def test_async_backup_restore_with_max_execution_time_zero():
         inst.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
         inst.query("SYSTEM DISABLE FAILPOINT restore_pause_on_start")
         inst.query("DROP DATABASE IF EXISTS test")
+
+
+def test_structure_only_restores_access_entities_and_udfs():
+    """Verifies three things:
+    1. structure_only=true alone does NOT restore access entities, UDFs, or table data (backward compat).
+    2. structure_only=true with restore_access_entities=true, restore_functions=true restores
+       access entities and UDFs, but not table data.
+    3. structure_only=true with restore_table_data=true restores table data but not access/UDFs.
+    4. Explicit false values override the default to omit the selected categories."""
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY x"
+    )
+    instance.query(
+        "INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)"
+    )
+
+    instance.query("CREATE USER u1 IDENTIFIED BY 'qwe123' SETTINGS custom_a = 1")
+    instance.query("CREATE ROLE r1")
+    instance.query("GRANT r1 TO u1")
+    instance.query("CREATE SETTINGS PROFILE prof1 SETTINGS custom_b = 2 TO u1")
+    instance.query("CREATE ROW POLICY rowpol1 ON test.table USING x < 50 TO u1")
+    instance.query("CREATE QUOTA q1 TO r1")
+    instance.query("CREATE FUNCTION linear_equation AS (x, k, b) -> k * x + b")
+
+    backup_name = new_backup_name()
+    instance.query(
+        f"BACKUP DATABASE test,"
+        f" TABLE system.users, TABLE system.roles,"
+        f" TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas,"
+        f" TABLE system.functions"
+        f" TO {backup_name}"
+    )
+
+    # Drop the row policy before the database so the referenced table still exists.
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    instance.query("DROP QUOTA q1")
+    instance.query("DROP FUNCTION linear_equation")
+
+    # Phase 1: structure_only alone does NOT restore access/UDFs (backward compat)
+    structure_only_restore_id = uuid.uuid4().hex
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}"
+        f" SETTINGS id='{structure_only_restore_id}', structure_only=true"
+    )
+
+    assert (
+        instance.query(
+            "SELECT settings['restore_table_data'], settings['restore_access_entities'], "
+            f"settings['restore_functions'] FROM system.backups WHERE id = '{structure_only_restore_id}'"
+        )
+        == "0\t0\t0\n"
+    )
+    instance.query("SYSTEM FLUSH LOGS backup_log")
+    assert (
+        instance.query(
+            "SELECT settings['restore_table_data'], settings['restore_access_entities'], "
+            f"settings['restore_functions'] FROM system.backup_log WHERE id = '{structure_only_restore_id}' AND status = 'RESTORED'"
+        )
+        == "0\t0\t0\n"
+    )
+
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+    assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.functions WHERE name = 'linear_equation'") == "0\n"
+
+    instance.query("DROP DATABASE test")
+
+    # Phase 4: explicit false overrides the default and skips table data only.
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}" f" SETTINGS restore_table_data='false'"
+    )
+
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+    assert instance.query("SELECT linear_equation(2, 3, 1)") == "7\n"
+
+    instance.query("DROP FUNCTION linear_equation")
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    instance.query("DROP QUOTA q1")
+
+    # Phase 5: explicit false skips access entities and UDFs while preserving table data.
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}"
+        f" SETTINGS restore_access_entities='false', restore_functions='false'"
+    )
+
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "100\n"
+    assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.functions WHERE name = 'linear_equation'") == "0\n"
+
+    instance.query("DROP DATABASE test")
+
+    plain_restore_id = uuid.uuid4().hex
+    instance.query(f"RESTORE ALL FROM {backup_name} SETTINGS id='{plain_restore_id}'")
+    assert (
+        instance.query(
+            "SELECT settings['restore_table_data'], settings['restore_access_entities'], "
+            f"settings['restore_functions'] FROM system.backups WHERE id = '{plain_restore_id}'"
+        )
+        == "1\t1\t1\n"
+    )
+    instance.query("SYSTEM FLUSH LOGS backup_log")
+    assert (
+        instance.query(
+            "SELECT settings['restore_table_data'], settings['restore_access_entities'], "
+            f"settings['restore_functions'] FROM system.backup_log WHERE id = '{plain_restore_id}' AND status = 'RESTORED'"
+        )
+        == "1\t1\t1\n"
+    )
+
+    instance.query("DROP FUNCTION linear_equation")
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    instance.query("DROP QUOTA q1")
+
+    # Phase 2: structure_only + restore_access_entities + restore_functions.
+    # Quoted string values ('true'/'1') also exercise string parsing of the settings.
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}"
+        f" SETTINGS structure_only=true, restore_access_entities='true', restore_functions='1'"
+    )
+
+    # Table exists but has no data
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+    # All access entity types were restored
+    assert (
+        instance.query("SHOW CREATE USER u1")
+        == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
+    )
+    assert instance.query("SHOW GRANTS FOR u1") == "GRANT r1 TO u1\n"
+    assert instance.query("SHOW CREATE ROLE r1") == "CREATE ROLE r1\n"
+    assert (
+        instance.query("SHOW CREATE SETTINGS PROFILE prof1")
+        == "CREATE SETTINGS PROFILE `prof1` SETTINGS custom_b = 2 TO u1\n"
+    )
+    assert (
+        instance.query("SHOW CREATE ROW POLICY rowpol1")
+        == "CREATE ROW POLICY rowpol1 ON test.`table` FOR SELECT USING x < 50 TO u1\n"
+    )
+    assert instance.query("SHOW CREATE QUOTA q1") == "CREATE QUOTA q1 TO r1\n"
+
+    # UDF was restored
+    assert instance.query("SELECT linear_equation(2, 3, 1)") == "7\n"
+
+    instance.query("DROP FUNCTION linear_equation")
+
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+    instance.query("DROP DATABASE test")
+    instance.query("DROP USER u1")
+    instance.query("DROP ROLE r1")
+    instance.query("DROP SETTINGS PROFILE prof1")
+    instance.query("DROP QUOTA q1")
+
+    # Phase 3: structure_only + restore_table_data restores data but not access/UDFs
+    instance.query(
+        f"RESTORE ALL FROM {backup_name}"
+        f" SETTINGS structure_only=true, restore_table_data=true"
+    )
+
+    # Table data was restored
+    assert instance.query("EXISTS test.table") == "1\n"
+    assert instance.query("SELECT count() FROM test.table") == "100\n"
+
+    # Access entities and UDFs were NOT restored
+    assert instance.query("SELECT count() FROM system.users WHERE name = 'u1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.roles WHERE name = 'r1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.settings_profiles WHERE name = 'prof1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.row_policies WHERE short_name = 'rowpol1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.quotas WHERE name = 'q1'") == "0\n"
+    assert instance.query("SELECT count() FROM system.functions WHERE name = 'linear_equation'") == "0\n"
+
+    instance.query("DROP DATABASE test")
+
+
+def test_restore_granular_settings_reject_out_of_range_values():
+    """These flags control whether table data / access entities / UDFs are restored, so parsing
+    must fail closed: only 0/1/true/false are accepted. An out-of-range value such as 2 or -1, a
+    fractional value such as 0.5, or an unparseable string must raise rather than silently being
+    coerced to true."""
+    instance.query("CREATE DATABASE test")
+    instance.query(
+        "CREATE TABLE test.table(x UInt32) ENGINE=MergeTree ORDER BY x"
+    )
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query("DROP DATABASE test")
+
+    for bad_value in ["2", "-1", "0.5", "'yes'"]:
+        for setting in ["restore_table_data", "restore_access_entities", "restore_functions"]:
+            assert "Exception" in instance.query_and_get_error(
+                f"RESTORE DATABASE test FROM {backup_name} SETTINGS {setting}={bad_value}"
+            )
+
+    # A valid restore still works after the rejected attempts.
+    instance.query(f"RESTORE DATABASE test FROM {backup_name} SETTINGS restore_table_data=1")
+    assert instance.query("EXISTS test.table") == "1\n"
+
+    instance.query("DROP DATABASE test")

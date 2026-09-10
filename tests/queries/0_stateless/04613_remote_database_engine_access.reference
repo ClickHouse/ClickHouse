@@ -1,0 +1,48 @@
+-- the table of the Remote database resolves for the user (SHOW COLUMNS is granted)
+id	UInt64
+-- SELECT through it is rejected without SELECT on the underlying table (prints 1 if rejected)
+1
+-- INSERT through it is rejected without INSERT on the underlying table (prints 1 if rejected)
+1
+-- both work once the rights on the underlying table are granted
+1
+2
+-- a table the caller cannot see at all stays hidden: an existing and a missing name are
+-- indistinguishable through resolution (prints UNKNOWN_TABLE for both, three times each)
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+-- SHOW TABLES does not leak the underlying table name without SHOW TABLES on the underlying database (prints nothing)
+-- EXISTS TABLE does not leak the existence of the underlying table either (prints 0)
+0
+-- SHOW TABLES lists the table once SHOW TABLES on the underlying database is granted, even without SHOW COLUMNS
+t
+-- EXISTS TABLE answers from the name only, so it works without SHOW COLUMNS as well (prints 1)
+1
+-- ...but DESCRIBE is still rejected without SHOW COLUMNS on the underlying table (prints 1 if rejected)
+1
+-- a Remote database over another Remote database lists the names without resolving the structure
+t
+-- ...and it needs no grants on the intermediate database, only on the tables it finally proxies
+t
+1
+-- ...but the tables invisible in the innermost database stay hidden (prints nothing, then 0)
+0
+-- DESCRIBE through the chain needs no grants on the intermediate database either (prints id UInt64)
+id	UInt64
+-- reading and writing the data, in contrast, needs the rights on every hop of the chain (prints 1, 1)
+1
+1
+-- ...and then they work through the whole chain (prints 1, 2, 3)
+1
+2
+3
+-- system.tables keeps the row of a table whose structure cannot be fetched, with an empty engine
+t	
+-- a table of a multi-shard proxy resolves with the grants on the table alone (prints 4)
+4
+-- ...and only the tables the caller may see are listed
+t
