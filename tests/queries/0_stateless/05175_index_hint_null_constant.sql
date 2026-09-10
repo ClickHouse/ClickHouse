@@ -43,6 +43,26 @@ SELECT count() FROM t_hint_truthy WHERE indexHint(id < 10) AND id < 10;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT id FROM t_hint_truthy WHERE indexHint(id < 10)) WHERE explain LIKE '%Granules: 1/16%';
 DROP TABLE t_hint_truthy;
 
+SELECT 'a NULL that does not fold, and a NULL beside a surviving virtual-column atom';
+-- `materialize` and `identity` suppress constant folding, so the hint atom stays a function node,
+-- and a `NULL` combined with a predicate over a virtual column survives the split as a composite
+-- node. Neither shape is a folded constant, and both used to reach the conversion to the hint's
+-- non-nullable result type and throw.
+DROP TABLE IF EXISTS t_hint_null_parts;
+CREATE TABLE t_hint_null_parts (id UInt64) ENGINE = MergeTree PARTITION BY id % 4 ORDER BY id;
+INSERT INTO t_hint_null_parts SELECT number FROM numbers(100);
+SELECT count() FROM t_hint_null_parts WHERE indexHint(materialize(CAST(NULL, 'Nullable(UInt8)'))) AND id < 1000000000;
+SELECT count() FROM t_hint_null_parts WHERE indexHint(identity(CAST(NULL, 'Nullable(UInt8)'))) AND id < 1000000000;
+SELECT count() FROM t_hint_null_parts WHERE indexHint(_partition_id = '0' AND CAST(NULL, 'Nullable(UInt8)')) AND id < 1000000000;
+SELECT count() FROM t_hint_null_parts WHERE indexHint(_partition_id = '0' OR CAST(NULL, 'Nullable(UInt8)')) AND id < 1000000000;
+-- Controls: the same hints without the `NULL`.
+SELECT count() FROM t_hint_null_parts WHERE indexHint(_partition_id = '0') AND id < 1000000000;
+SELECT count() FROM t_hint_null_parts WHERE indexHint(materialize(CAST(1, 'Nullable(UInt8)'))) AND id < 1000000000;
+-- A constant that is not a number has to keep going through the ordinary conversion.
+SELECT count() FROM t_hint_null_parts WHERE indexHint(toString(1)) AND id < 1000000000;
+SELECT count() FROM t_hint_null_parts WHERE indexHint(toFixedString('1', 1)) AND id < 1000000000;
+DROP TABLE t_hint_null_parts;
+
 SELECT 'controls';
 SELECT count() FROM t_hint_null WHERE indexHint(toNullable(1));
 SELECT count() FROM t_hint_null WHERE indexHint(toInt64OrNull(toString(id)));

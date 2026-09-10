@@ -18,6 +18,15 @@ a Nothing-typed argument
 10
 10
 1
+a NULL that does not fold, and a NULL beside a surviving virtual-column atom
+100
+100
+0
+25
+25
+100
+100
+100
 controls
 100
 100
