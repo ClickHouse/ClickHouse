@@ -381,9 +381,6 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 dynamic_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
             }
 
-            /// Don't flush the last block here: the Wide writer flushes it between granules, and in Compact
-            /// letting the tail share the metadata block avoids a tiny final block (marks are absolute).
-
             /// End ObjectSharedDataData stream.
             settings.path.pop_back();
 

@@ -465,9 +465,8 @@ public:
         /// Used only in MergeTree for Object shared data serialization.
         StreamMarkGetter stream_mark_getter;
 
-        /// In Object ADVANCED shared data serialization, start a new compressed block at a path/substream
-        /// boundary only once the current block reached this size (small paths/substreams then share a block:
-        /// good compression, over-read bounded to one block). Used only in MergeTree; 0 flushes every boundary.
+        /// Minimum compressed block size. Some serializations use it to decide when to start a new
+        /// compressed block at a stream boundary. Used only in MergeTree; 0 - start a new block at every boundary.
         size_t min_compress_block_size = 0;
 
         /// Type of MergeTree data part we serialize data from if any.
