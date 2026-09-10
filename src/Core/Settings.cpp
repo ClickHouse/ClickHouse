@@ -2641,7 +2641,9 @@ Delivery is best effort: queues and batches are bounded, and samples can be drop
 
 Fully buffered HTTP responses (`http_wait_end_of_query=1`) retain samples in the bounded queue until the final drain, including when a query exception replaces the buffered output. Queue overflow is reported through `Dropped` rows.
 
-Remote queries request profile trace packets only when delivery is active for the coordinator's client. Remote SQL opt-ins cannot enable delivery when it is disabled at the coordinator; explicit remote SQL opt-outs remain effective.
+Native uploads of external tables, scalars, `INSERT` rows, or `input` rows retain samples in the bounded queue until the corresponding input terminator is received. If the server sends an exception or completes the query before that terminator, it discards queued samples without waiting for the collector or sending trace or loss-status packets. This includes detached-query completion. The original terminal response is sent without waiting for the remaining input.
+
+Remote queries request profile trace packets only when delivery is active for the coordinator's client. Remote SQL opt-ins cannot enable delivery when it is disabled at the coordinator; explicit remote SQL opt-outs remain effective. Remote `INSERT` uploads through `RemoteInserter` disable delivery; distributed `SELECT` execution can forward remote samples.
 
 Distributed samples retain their producing host and query identifiers. Delivery status rows report bounded server queue losses (`Dropped`) and collector flush timeouts (`Incomplete`); clients must handle them separately from stack samples. Loss deltas are aggregated once across the distributed response and are not attributable to an individual sampled host. Counts exclude losses before the collector and do not certify profile completeness. See [profile trace packets](/interfaces/framing-formats#framing-format-profile-traces).
 

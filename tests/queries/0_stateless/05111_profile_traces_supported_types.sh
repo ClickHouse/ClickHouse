@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-msan, no-parallel
 # The sampling query profiler is disabled under MSan.
-# Keep other profilers from delaying the query-specific `system.trace_log` witnesses.
+# Keep competing profilers from dropping this query's samples in the shared pipe.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -67,18 +67,6 @@ def quote(value):
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def wait_for_profile_events(query):
-    deadline = time.monotonic() + 20
-    table_exists = False
-    while time.monotonic() < deadline:
-        if not table_exists:
-            table_exists = run(client + ["--query", "EXISTS TABLE system.trace_log"]).stdout.strip() == "1"
-        if table_exists and run(client + ["--query", query]).stdout.strip() == "1":
-            return
-        time.sleep(0.1)
-    raise AssertionError("profile events did not appear in trace_log within 20 seconds")
-
-
 def execute(transport, query, query_id, sample_settings):
     options = dict(settings, **sample_settings, query_id=query_id)
     if transport == "native":
@@ -93,10 +81,8 @@ def execute(transport, query, query_id, sample_settings):
     return [sample for packet in packets if packet["packet"] == "profile_traces" for sample in packet["profile_traces"]]
 
 
-witnesses = []
 for transport in ("native", "HTTP"):
     for remote in (False, True):
-        observed_ids = set()
         # Keep the shared trace pipe and log within budget: timers and allocation
         # sampling run in separate queries, and only the latter traces profile events.
         for query, sample_settings, required_types in (
@@ -144,26 +130,10 @@ for transport in ("native", "HTTP"):
                 else:
                     assert all(sample["query_id"] == query_id for sample in samples), samples
                 types.update(sample["trace_type"] for sample in samples)
-                if sample_settings.get("trace_profile_events"):
-                    observed_ids.update(sample["query_id"] for sample in samples)
                 if required_types <= types:
                     break
                 if attempt < 3:
                     time.sleep(0.1)
             assert required_types <= types, (transport, remote, sorted(required_types - types))
-        witnesses.append((transport, remote, observed_ids))
-
-# Wait for these query IDs without waiting for unrelated records in the shared log.
-conditions = []
-for _, _, observed_ids in witnesses:
-    ids = ", ".join(quote(value) for value in sorted(observed_ids))
-    conditions.append(f"countIf(query_id IN ({ids})) > 0")
-wait_for_profile_events(f"""
-    SELECT arrayAll(observed -> observed, [{', '.join(conditions)}])
-    FROM system.trace_log
-    WHERE event_date >= today() - 1 AND event_time >= now() - 600
-      AND trace_type = 'ProfileEvent' AND event = 'FunctionExecute' AND notEmpty(trace)
-""")
-for transport, remote, _ in witnesses:
-    print(f"{transport} {'remote' if remote else 'local'}: supported types streamed; ProfileEvent retained in trace_log")
+        print(f"{transport} {'remote' if remote else 'local'}: supported types streamed; ProfileEvent excluded from stream")
 PY

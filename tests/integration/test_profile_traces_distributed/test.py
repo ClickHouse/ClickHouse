@@ -250,20 +250,19 @@ def test_nested_cancellation(transport):
         request = executor.submit(
             execute,
             transport,
-            nested("SELECT sum(sipHash64(number)) FROM numbers(1000000000000)") + " FORMAT TSV",
+            nested("SELECT sum(length(range(number % 128 + 100000))) FROM numbers(1000000000000)") + " FORMAT TSV",
             initial_id,
-            {"memory_profiler_sample_probability": 0, "query_profiler_real_time_period_ns": 100000000},
         )
         try:
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
-                running = leaf.query(f"SELECT query_id FROM system.processes WHERE initial_query_id = '{initial_id}'").splitlines()
+                running = leaf.query(f"SELECT query_id FROM system.processes WHERE initial_query_id = '{initial_id}' AND read_rows > 1").splitlines()
                 if running:
                     previous_ids.update(running)
                     break
                 assert not request.done(), request.result() if request.done() else ""
                 time.sleep(0.1)
-            assert running, "nested leaf query did not start"
+            assert running, "nested leaf query did not process rows"
         finally:
             coordinator.query(f"KILL QUERY WHERE query_id = '{initial_id}' SYNC", timeout=30)
         _, samples, error = request.result(timeout=30)

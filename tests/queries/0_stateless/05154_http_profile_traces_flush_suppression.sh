@@ -46,6 +46,27 @@ transport_functions = (
 )
 
 
+def sample_diagnostics(samples):
+    payload = [sample for sample in samples if any("IFramingFormat::onPayload" in symbol for symbol in sample["symbols"])]
+    transport = [sample for sample in samples if any(function in symbol for symbol in sample["symbols"] for function in transport_functions)]
+    compression = [sample for sample in samples if any("deflate" in symbol for symbol in sample["symbols"])]
+
+    def stack_example(rows):
+        return [{"trace_type": row["trace_type"], "symbols": [symbol[:200] for symbol in row["symbols"][:24]]} for row in rows[:1]]
+
+    return {
+        "timer_samples": {kind: sum(sample["trace_type"] == kind for sample in samples) for kind in ("CPU", "Real")},
+        "resolved_samples": sum(bool(any(sample["symbols"])) for sample in samples),
+        "on_payload_samples": len(payload),
+        "transport_samples": len(transport),
+        "compression_samples": len(compression),
+        "on_payload_example": stack_example(payload),
+        "transport_example": stack_example(transport),
+        "compression_example": stack_example(compression),
+        "timer_example": stack_example(samples),
+    }
+
+
 def execute(query, block_size):
     query_id = "profile_http_flush_" + uuid.uuid4().hex
     options = dict(settings, query_id=query_id, max_block_size=block_size)
@@ -80,14 +101,14 @@ def execute(query, block_size):
         for sample in samples
         if any("IFramingFormat::onPayload" in symbol for symbol in sample["symbols"]) and any(function in symbol for symbol in sample["symbols"] for function in transport_functions)
     ]
-    return packets, output_samples
+    return packets, output_samples, samples
 
 
 # `Null` still takes a payload boundary for every chunk but writes no data bytes.
 # With logs and profile events disabled, actual compression/socket work below
 # `onPayload` can only deliver trace packets. Merely entering an empty `flushOut`
 # is not sufficient evidence of unsuppressed trace delivery.
-packets, output_samples = execute(
+packets, output_samples, samples = execute(
     "SELECT length(range(number + 100000)) FROM numbers(1000000) FORMAT Null",
     16,
 )
@@ -97,11 +118,11 @@ print("trace-only HTTP payload flushes are excluded from streamed samples")
 
 # Ordinary result compression must remain visible when profile traces are enabled.
 # This catches a guard widened to cover every output flush instead of trace delivery.
-packets, output_samples = execute(
+packets, output_samples, samples = execute(
     "SELECT hex(cityHash64(number)) FROM numbers(500000) FORMAT TSV",
     8192,
 )
 assert any(packet["packet"] == "data" for packet in packets)
-assert output_samples, "ordinary HTTP result delivery was excluded from the profile"
+assert output_samples, "ordinary HTTP result delivery was excluded from the profile: " + json.dumps(sample_diagnostics(samples))
 print("ordinary HTTP result compression remains visible in streamed samples")
 PY

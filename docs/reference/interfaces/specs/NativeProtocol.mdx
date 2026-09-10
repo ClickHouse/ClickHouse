@@ -350,7 +350,7 @@ On error at any point the server sends an `Exception` instead of `EndOfStream`, 
 When enabled, `ProfileTraces` packets may also arrive before the header `Data` block and after the final `Progress` updates. Clients must continue draining until `EndOfStream` or `Exception`; a trace block is neither a schema block nor a completion marker. See [ProfileTraces](#profiletraces) for the revision gate, final-drain bounds, and client cancellation behavior.
 
 1. The client sends [`Query`](#query) with a unique `query_id` (typically a UUID).
-2. The client sends any external tables, then the empty Data marker. The empty Data packet has `table_name = ""`, `num_columns = 0`, `num_rows = 0`. The server does not begin executing the query until it receives this marker.
+2. The client sends any external tables, then the empty Data marker. The empty Data packet has `table_name = ""`, `num_columns = 0`, `num_rows = 0`. The server does not begin executing the query or delivering `ProfileTraces` until it receives this marker.
 3. The client moves to `READING_RESPONSE` and flushes its write buffer.
 4. The client reads response packets in a loop, dispatching by type:
 
@@ -406,7 +406,7 @@ sequenceDiagram
         loop row blocks
             C->>S: Data packet (rows N)
             opt interleaved metadata
-                S->>C: Log / ProfileEvents / ProfileTraces
+                S->>C: Log / ProfileEvents
             end
         end
         C->>S: Empty Data marker — end of insertion rows
@@ -420,11 +420,11 @@ sequenceDiagram
 1. The client sends [`Query`](#query) with `body` set to the `INSERT` SQL.
 2. The client sends an empty `Data` packet (`table_name = ""`, 0 columns, 0 rows) to terminate the external-table phase, just as in the [Query phase](#query-phase). This marker is separate from the one that terminates insertion rows in step 5. The server finishes reading external tables before preparing the insertion schema.
 3. The client reads `Log` packets and an optional [`TableColumns`](#tablecolumns) packet until it receives the schema `Data` packet — a block with 0 rows but full column structure (names and types). `Progress`, `ProfileInfo`, and `ProfileEvents` are not emitted on this pre-schema success path. If setup fails, the server may drain `ProfileTraces` before an `Exception` without sending a schema. Only the schema `Data` packet permits row upload; a trace block is auxiliary metadata, not the insertion schema.
-4. The client sends data block(s). For each block it writes `VarUInt(ClientPacket::Data = 2)`, then `String("")` for the empty external-table name, then the Block. Column types must align with the schema block's columns by position. The server may send interleaved `Log`, `ProfileEvents`, and `ProfileTraces` packets while the client uploads rows.
+4. The client sends data block(s). For each block it writes `VarUInt(ClientPacket::Data = 2)`, then `String("")` for the empty external-table name, then the Block. Column types must align with the schema block's columns by position. The server may send interleaved `Log` and `ProfileEvents` packets while the client uploads rows. It keeps profile traces in the bounded queue until the input terminator, avoiding opposing bulk socket writes even when the client reads replies between blocks.
 5. The client sends the end-of-input terminator: a Data packet with an empty Block (0 columns, 0 rows).
 6. The client drains the response stream, including `Progress`, `Log`, `ProfileEvents`, and `ProfileTraces`, until `EndOfStream` (success) or `Exception` (failure). `ProfileInfo` is not part of this direct streamed `INSERT` response. The final trace drain can emit additional `ProfileTraces` packets before the terminal packet. Trace delivery requires revision `54493`+ and `send_profile_traces = 1`; see [ProfileTraces](#profiletraces) for its bounded-drain and cancellation behavior. An exception during upload can terminate the response before the client reaches step 5.
 
-The external-table phase is distinct from insertion-row upload. `clickhouse-client` sends no external-table blocks for this direct `INSERT` form. A client that does send nonempty external-table blocks can receive `Log`, `ProfileEvents`, and `ProfileTraces` while the server reads them, before the insertion schema is prepared.
+The external-table phase is distinct from insertion-row upload. `clickhouse-client` sends no external-table blocks for this direct `INSERT` form. A client that does send nonempty external-table blocks can receive `Log` and `ProfileEvents` while the server reads them, before the insertion schema is prepared. Trace delivery is deferred through this phase, including scalar uploads, until its empty `Data` marker.
 
 An `INSERT` supplied through the [`input`](/sql-reference/table-functions/input) table function also receives an input-schema block. Its initializer can additionally send [`TimezoneUpdate`](#timezoneupdate) immediately after that block at revision `54464`+. An `INSERT ... SELECT` without client-supplied input uses the ordinary [query phase](#query-phase), not this row-upload exchange.
 
@@ -797,7 +797,11 @@ Delivery status rows use empty `trace` and `symbols` arrays and zero `thread_id`
 
 A coordinator consumes remote loss deltas and includes them once in its own status rows, even when its sample queue is full. For status rows, `host_name` and `query_id` identify the reporting coordinator; they do not attribute losses to a particular sampled host. The count covers reported queue losses across the response's distributed query subtree. It excludes losses in the signal-safe pipe before the collector and any metadata discarded by intermediaries that do not recognize these status kinds. An absent `Incomplete` row does not certify a lossless profile. Clients must handle status rows separately from samples and ignore unrecognized kinds.
 
-Packets may be interleaved with query results and INSERT metadata. On successful completion, the server drains accepted samples before `EndOfStream`. When a query fails and the connection is still usable, the server also drains accepted samples before sending the exception. The final drain waits at most ten seconds for the collector. If that deadline expires, remaining samples are discarded and a server warning is logged; the original query result or exception is preserved. When a client `Cancel` cancels the query, the server discards queued samples without waiting for the collector and sends `EndOfStream`. Clients must continue receiving until the terminal packet; a `ProfileTraces` block is never a result block or a completion marker. Delivery uses bounded queues, so samples may be dropped when a consumer cannot keep up. Disabling delivery discards queued samples without waiting for the collector. Excluded trace types, including `ProfileEvent` and `JemallocSample`, can still be collected in `system.trace_log` under their own settings.
+Packets may be interleaved with query results and trailing `INSERT` metadata. During Native uploads of external tables, scalars, `INSERT` rows, or `input` rows, samples stay in the bounded queue until the corresponding empty `Data` terminator has been received. Reading replies between upload blocks does not prevent opposing bulk writes from blocking, so no `ProfileTraces` packet is sent during those phases.
+
+Once input is complete, the server drains accepted samples before `EndOfStream` or, when the connection is still usable, before an `Exception`. An exception before the insertion schema can therefore include a trace drain if external input has already ended. If an exception or query completion occurs with input still pending, including detached-query completion, the server instead discards queued samples without waiting for the collector or sending trace or loss-status packets. It sends the original terminal response before attempting to consume the remaining input.
+
+The final drain waits at most ten seconds for the collector. If that deadline expires, remaining samples are discarded and a server warning is logged; the original query result or exception is preserved. When a client `Cancel` cancels the query, the server discards queued samples without waiting for the collector and sends `EndOfStream`. Clients must continue receiving until the terminal packet; a `ProfileTraces` block is never a result block or a completion marker. Delivery uses bounded queues, so samples may be dropped when a consumer cannot keep up, including while upload delivery is deferred. Disabling delivery discards queued samples without waiting for the collector. Excluded trace types, including `ProfileEvent` and `JemallocSample`, can still be collected in `system.trace_log` under their own settings.
 
 Samples collected while draining or serializing profile trace packets are excluded from the stream. `CPU` and `Real` samples from that work can still be collected in `system.trace_log`.
 
