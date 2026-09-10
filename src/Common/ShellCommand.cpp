@@ -183,7 +183,11 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     logCommand(filename, argv);
     ProfileEvents::increment(ProfileEvents::ExecuteShellCommand);
 
-#if !defined(USE_MUSL)
+#if defined(__FILC__)
+    /// FilC does not support `dlsym` lookups of libc symbols (`Invalid argument`) and has no `vfork`;
+    /// its runtime supports the ordinary `fork`, which is safe (if slower) for spawning the child.
+    static void * real_vfork = reinterpret_cast<void *>(&fork); // NOLINT(bugprone-unsafe-functions,cert-msc24-c,cert-msc33-c)
+#elif !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
       * http://www.oracle.com/technetwork/server-storage/solaris10/subprocess-136439.html

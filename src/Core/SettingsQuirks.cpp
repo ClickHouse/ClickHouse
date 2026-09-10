@@ -50,6 +50,7 @@ namespace Setting
 {
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
+    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -84,6 +85,16 @@ namespace Setting
 /// Update some settings defaults to avoid some known issues.
 void applySettingsQuirks(Settings & settings, LoggerPtr log)
 {
+#if defined(__FILC__)
+    /// FilC cannot switch stacks, so every path that runs on a `StackfulCoroutine` (hedged
+    /// connections, asynchronous reading from and writing to remote sockets) is unavailable, and
+    /// `PackedStringRef` cannot carry a FilC allocation capability. Force these off regardless of
+    /// user settings; a query-level override would otherwise terminate the server.
+    settings[Setting::async_socket_for_remote] = false;
+    settings[Setting::async_query_sending_for_remote] = false;
+    settings[Setting::use_hedged_requests] = false;
+    settings[Setting::enable_packed_string_keys_in_aggregation] = false;
+#endif
     if (!nestedEpollWorks(log))
     {
         if (!settings[Setting::async_socket_for_remote].changed && settings[Setting::async_socket_for_remote])

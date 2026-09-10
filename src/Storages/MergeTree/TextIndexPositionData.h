@@ -23,7 +23,13 @@ namespace DB
 ///
 /// Phrase matching reduces to sorted-array intersection with bitmap shifts.
 /// The (doc_id, group) pair serves as the intersection key.
-struct RoaringishEntry
+struct
+#if defined(__FILC__)
+/// FilC checks aggregate copies (e.g. `PODArray::push_back`) against pointer-word alignment; the
+/// 12-byte entries at odd indices are only 4-byte aligned, so pad the entry to 16 bytes under FilC.
+alignas(8)
+#endif
+RoaringishEntry
 {
     UInt32 doc_id;
     UInt32 group;
