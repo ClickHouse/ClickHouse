@@ -16,7 +16,6 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FailPoint.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -54,23 +53,11 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 
     stream << func->getName();
 
-    const auto parameters = func->getStateParameters();
-    const auto & argument_types = func->getArgumentTypes();
     /// This name travels with every state serialized into a `Field`, so it must spell the state the
     /// same way its state type does, or such a `Field` no longer matches the type it came from.
-    if (!parameters.empty())
-    {
-        stream << '(';
-        for (size_t i = 0; i < parameters.size(); ++i)
-        {
-            if (i)
-                stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
-        }
-        stream << ')';
-    }
+    stream << DataTypeAggregateFunction::formatParameters(*func, func->getStateParameters());
 
-    for (const auto & argument_type : argument_types)
+    for (const auto & argument_type : func->getArgumentTypes())
         stream << ", " << argument_type->getName();
 
     stream << ')';

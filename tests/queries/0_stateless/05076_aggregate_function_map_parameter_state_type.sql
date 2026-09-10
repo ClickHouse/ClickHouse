@@ -24,6 +24,12 @@ DROP TABLE argmin_map_param_field;
 SELECT dynamicType(x) FROM VALUES('x Dynamic', (arrayReduce('argMinState(map(1, 2))', [1, 2], [1, 2])));
 SELECT dynamicType(x) FROM VALUES('x Dynamic', (arrayReduce('intervalLengthSumState(map(1, 2))', [1., 2.], [3., 4.])));
 
+-- Parameters that the function does read travel in the spelling the state type uses. Dropping the
+-- `::Int64` or `::Decimal64` suffix reparses the name into a type the state does not belong to.
+SELECT dynamicType(x) FROM VALUES('x Dynamic', (initializeAggregation('groupArrayMovingSumState(42::Int64)', 1::Int64)));
+SET enable_time_series_aggregate_functions = 1;
+SELECT dynamicType(x) FROM VALUES('x Dynamic', (initializeAggregation('timeSeriesInstantRateToGridState(toDateTime64(1734004810, 3), toDateTime64(1734004860, 3), 10, 60)', [toDateTime64(1734004810, 3)], [1.0])));
+
 -- Upgrade compatibility: a column whose metadata still carries the parameters keeps accepting states
 -- through a `Field` as well.
 DROP TABLE IF EXISTS ils_legacy_param;
