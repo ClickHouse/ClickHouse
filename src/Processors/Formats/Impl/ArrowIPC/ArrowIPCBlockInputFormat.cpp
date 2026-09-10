@@ -1142,6 +1142,12 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
             std::tie(element, element_type) = reinterpretRawBytes(
                 element, from_element, target, /*ancestor_nulls=*/nullptr, case_insensitive, /*field=*/nullptr,
                 format_settings, /*repair_variants=*/true);
+            /// Tuple element names live in the type, so a case-differing decoded field is renamed here
+            /// rather than left to the cast, which pairs two disjoint name sets positionally. An element
+            /// already named as requested reaches no cast, and renaming it could only merge two of its
+            /// fields the request keeps apart by case.
+            if (case_insensitive && element_type->getName() != target->getName())
+                element_type = alignStructFieldNamesCaseInsensitive(element_type, target);
             /// By name, not `equals`: `Bool` and `UInt8` compare equal yet the element must end up under
             /// exactly the requested one.
             if (element_type->getName() != target->getName())
