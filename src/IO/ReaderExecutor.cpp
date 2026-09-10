@@ -381,9 +381,9 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
     auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
 
-    /// A miss to be populated carries its own open writer; any other miss is writer-less. `claim` is
-    /// filled by the claim loop below (empty for a writer-less miss, or a tail another reader leads).
-    struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::Claim claim; };
+    /// A miss to be populated carries its own open writer; any other miss is writer-less. `role` is
+    /// filled by the role loop below (empty for a writer-less miss, or a tail another reader leads).
+    struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::FillRole role; };
     VectorWithMemoryTracking<MissTier> miss_tiers;
     size_t next_resident = window_offset + max_serve;  /// nearest block any tier already has, ahead of the head
     for (auto & cache : cache_chain)
@@ -409,20 +409,22 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         }
     }
 
-    /// Every tier missed: claim each writing tier's lead role before the fetch (a held claim dedups the
-    /// download). If `claimLeadRole` reports a prefix cached since `resolve` covering the head, serve it
-    /// from that tier - no source read; otherwise keep the claim for the fetch.
+    /// Every tier missed: role each writing tier's lead role before the fetch (a held role dedups the
+    /// download). If `takeFillRole` reports a prefix cached since `resolve` covering the head, serve it
+    /// from that tier - no source read; otherwise keep the role for the fetch.
     bool any_writer = false;
     for (auto & miss_tier : miss_tiers)
     {
         if (!miss_tier.writer)
             continue;  /// nothing will be populated here
         any_writer = true;
-        auto lead = miss_tier.writer->claimLeadRole(miss_tier.range);
-        const ByteRange avail = lead.available;
-        if (avail.size && avail.offset <= window_offset && window_offset < avail.end())
-            return miss_tier.writer->read(ByteRange{window_offset, serve_len(std::min(avail.end(), miss_tier.range.end()))});
-        miss_tier.claim = std::move(lead.claim);
+        CacheWriter::FillRole role = miss_tier.writer->takeFillRole();
+        /// A prefix cached since `resolve` (`committed()`) covering the head is served from that tier - no
+        /// source read; otherwise keep the role for the fetch.
+        const size_t avail_end = miss_tier.writer->committed();
+        if (miss_tier.writer->range().offset <= window_offset && window_offset < avail_end)
+            return miss_tier.writer->read(ByteRange{window_offset, serve_len(std::min(avail_end, miss_tier.range.end()))});
+        miss_tier.role = std::move(role);
     }
 
     /// A range another thread is already downloading is fetched through below (its `write` lands 0).
@@ -460,9 +462,9 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 
     for (auto & miss_tier : miss_tiers)
     {
-        /// Only a held claim authorizes a write; a tier led by a concurrent downloader is filled by
+        /// Only a held role authorizes a write; a tier led by a concurrent downloader is filled by
         /// that thread, not here.
-        if (miss_tier.claim)
+        if (miss_tier.role)
         {
             const size_t lo = std::max(miss_tier.range.offset, fetch_lo);
             const size_t hi = std::min(miss_tier.range.end(), fetched_end);
@@ -473,14 +475,14 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
                 if (fetched.covers(write_range))
                 {
                     stats.add(Stats::CachePopulateRequests);
-                    miss_tier.writer->write(fetched.slice(write_range), miss_tier.claim);
+                    miss_tier.writer->write(fetched.slice(write_range), miss_tier.role);
                 }
             }
         }
-        /// Free the downloader role as soon as this tier is done, not at window end: reset the claim
+        /// Free the downloader role as soon as this tier is done, not at window end: reset the role
         /// (it completes+resets the role while we still hold it). The writer is finalized when
         /// `miss_tiers` is destroyed.
-        miss_tier.claim.reset();
+        miss_tier.role.reset();
     }
 
     return fetched.slice(ByteRange{window_offset, serve_len(fetched_end)});

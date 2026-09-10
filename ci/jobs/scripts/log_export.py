@@ -18,6 +18,7 @@ than one server tells them apart with `check_name_suffix`.
 import os
 from pathlib import Path
 
+from ci.jobs.scripts.log_cluster import LogCluster
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell, Utils
@@ -138,10 +139,14 @@ def start(
         os.environ["CLICKHOUSE_CI_LOGS_HOST"] = host
         os.environ["CLICKHOUSE_CI_LOGS_USER"] = CLICKHOUSE_CI_LOGS_USER
         os.environ["CLICKHOUSE_CI_LOGS_PASSWORD"] = password
-    info = Info()
-    check_name = info.job_name + check_name_suffix
-    os.environ["EXTRA_COLUMNS_EXPRESSION"] = (
-        f"toLowCardinality('{info.repo_name}') AS repo, CAST({info.pr_number} AS UInt32) AS pull_request_number, '{commit_sha or info.sha}' AS commit_sha, toDateTime('{Utils.timestamp_to_str(check_start_time)}', 'UTC') AS check_start_time, toLowCardinality('{check_name}') AS check_name, toLowCardinality('{info.instance_type}') AS instance_type, '{info.instance_id}' AS instance_id"
+    # The exported columns are defined once in LogCluster.META_COLUMNS so the
+    # DDL of the destination tables and these SELECT expressions cannot drift.
+    check_name = Info().job_name + check_name_suffix
+    os.environ["EXTRA_COLUMNS"] = LogCluster.extra_columns_ddl()
+    os.environ["EXTRA_COLUMNS_EXPRESSION"] = LogCluster.extra_columns_expression(
+        Utils.timestamp_to_str(check_start_time),
+        check_name=check_name,
+        commit_sha=commit_sha,
     )
     _set_server_port(port)
 

@@ -3,9 +3,12 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include <string_view>
+
 namespace DB
 {
 class FileNamesGenerator;
+class StorageObjectStorageConfiguration;
 }
 
 namespace DB::Iceberg
@@ -53,6 +56,15 @@ private:
     String raw_path;
 };
 
+struct BlobStorageDescription
+{
+    String type_name;
+    String namespace_name;
+    bool allow_foreign_namespaces;
+
+    static BlobStorageDescription fromConfiguration(const DB::StorageObjectStorageConfiguration & configuration);
+};
+
 /// Converts Iceberg metadata paths to actual object storage paths.
 ///
 /// This is the ONLY way to go from a metadata path to a storage path.
@@ -82,11 +94,10 @@ public:
     static TableRootDerivation
     deriveTableRoot(const String & table_location, const String & queried_path, const String & metadata_file_key);
 
-    IcebergPathResolver(String table_location_, String table_root_, String blob_storage_type_name_ = {}, String blob_storage_namespace_name_ = {})
+    IcebergPathResolver(String table_location_, String table_root_, BlobStorageDescription blob_storage_)
         : table_location(std::move(table_location_))
         , table_root(std::move(table_root_))
-        , blob_storage_type_name(std::move(blob_storage_type_name_))
-        , blob_storage_namespace_name(std::move(blob_storage_namespace_name_))
+        , blob_storage(std::move(blob_storage_))
     {
         auto trim_backward_slashes = [](String & str)
         {
@@ -99,10 +110,14 @@ public:
         /// Normalize: non-URI table_location should start with '/'
         if (!table_location.empty() && !table_location.contains("://") && table_location[0] != '/')
             table_location = "/" + table_location;
+
+        table_location_namespace = parseNamespace(table_location);
     }
 
     /// Convert a metadata path to an actual storage path for I/O operations.
     String resolve(const IcebergPathFromMetadata & metadata_path) const;
+
+    static String parseNamespace(std::string_view path);
 
     IcebergPathFromMetadata reverseResolve(const String & storage_path) const
     {
@@ -117,8 +132,8 @@ public:
     String resolveForCatalog(const IcebergPathFromMetadata & metadata_path) const
     {
         String catalog_filename = metadata_path.serialize();
-        if (!catalog_filename.starts_with(blob_storage_type_name))
-            catalog_filename = blob_storage_type_name + "://" + blob_storage_namespace_name + "/" + catalog_filename;
+        if (!catalog_filename.starts_with(blob_storage.type_name))
+            catalog_filename = blob_storage.type_name + "://" + blob_storage.namespace_name + "/" + catalog_filename;
         return catalog_filename;
     }
 
@@ -126,10 +141,12 @@ public:
     const String & getTableRoot() const { return table_root; }
 
 private:
+    bool isInForeignNamespace(const String & raw_path) const;
+
     String table_location;
     String table_root;
-    String blob_storage_type_name;
-    String blob_storage_namespace_name;
+    BlobStorageDescription blob_storage;
+    String table_location_namespace;
 };
 
 }

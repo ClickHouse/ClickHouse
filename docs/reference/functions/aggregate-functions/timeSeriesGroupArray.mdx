@@ -12,10 +12,15 @@ Introduced in: v25.8.0
 
 Sorts time series data by timestamp in ascending order.
 
+The samples can be passed in one of three forms:
+- as two arguments `timestamp` and `value`, where each row holds a single sample;
+- as two arrays of timestamps and values, where each row holds a whole time series;
+- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series. This form has the same type as the result, which allows using the function in the `SimpleAggregateFunction` data type.
+
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
 <Note>
-This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
     
 
@@ -23,12 +28,14 @@ This function is experimental, enable it by setting `allow_experimental_ts_to_gr
 
 ```sql
 timeSeriesGroupArray(timestamp, value)
+timeSeriesGroupArray(samples)
 ```
 
 **Arguments**
 
-- `timestamp` — Timestamp of the sample. [`DateTime`](/reference/data-types/datetime) or [`UInt32`](/reference/data-types/int-uint) or [`UInt64`](/reference/data-types/int-uint)
-- `value` — Value of the time series corresponding to the timestamp. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `timestamp` — Timestamp of the sample. Can be an individual value or an array. [`UInt32`](/reference/data-types/int-uint) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`Array(UInt32)`](/reference/data-types/array) or [`Array(DateTime)`](/reference/data-types/array) or [`Array(DateTime64)`](/reference/data-types/array)
+- `value` — Value of the time series corresponding to the timestamp. Can be an individual value or an array. [`Float*`](/reference/data-types/float) or [`Array(Float*)`](/reference/data-types/array)
+- `samples` — Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. [`Array(Tuple(T1, T2))`](/reference/data-types/array)
 
 **Returned value**
 

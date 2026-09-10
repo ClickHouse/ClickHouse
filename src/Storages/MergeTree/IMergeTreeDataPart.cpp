@@ -6,6 +6,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
@@ -24,6 +25,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/TransactionLog.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -212,6 +214,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
         serialization->deserializeBinary(min_val, *file, format_settings);
         Field max_val;
         serialization->deserializeBinary(max_val, *file, format_settings);
+
+        normalizeBoolFields(min_val);
+        normalizeBoolFields(max_val);
 
         // NULL_LAST
         if (min_val.isNull())
@@ -1952,18 +1957,35 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         String codec_line;
         readEscapedStringUntilEOL(codec_line, *file_buf);
 
+        /// A column-only mutation can hardlink all data columns from a part whose default codec was
+        /// only recovered approximately. In particular, a legacy part with explicitly coded columns
+        /// has no column that can prove its default on the next load. Keep an explicit durable marker
+        /// for that unknown state instead of trying to recover it from the new `checksums.txt`, whose
+        /// compression describes this version of ClickHouse rather than the old part's data.
+        if (codec_line == UNKNOWN_DEFAULT_COMPRESSION_CODEC)
+        {
+            default_codec = CompressionCodecFactory::instance().getDefaultCodec();
+            default_codec_is_approximate = true;
+            return;
+        }
+
         ReadBufferFromString buf(codec_line);
 
         if (!checkString("CODEC", buf))
         {
             LOG_WARNING(
                 storage.log,
-                "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be deduced "
-                "automatically, from data on disk",
+                "Cannot parse default codec for part {} from file {}, content '{}'. Default compression codec will be recovered "
+                "from data on disk.",
                 name,
                 path,
                 codec_line);
-            default_codec = detectDefaultCompressionCodec();
+            /// The codec file is present but malformed, so its recorded default cannot be parsed. When
+            /// no column proves the codec either, determine whether this is a legacy part from
+            /// `checksums.txt`. A post-change part with an unusable codec file has no authoritative
+            /// fallback and must not be silently relabelled with an unrelated codec.
+            default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
+            return;
         }
 
         try
@@ -1974,12 +1996,72 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         }
         catch (const DB::Exception & ex)
         {
-            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be deduced automatically, from data on disk.", name, path, codec_line, ex.what());
-            default_codec = detectDefaultCompressionCodec();
+            LOG_WARNING(storage.log, "Cannot parse default codec for part {} from file {}, content '{}', error '{}'. Default compression codec will be recovered from data on disk.", name, path, codec_line, ex.what());
+            /// Same recovery as the malformed-content branch above and the missing-file branch
+            /// below. A post-change part with no column proof must fail closed rather than report
+            /// an unrelated default codec.
+            default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
         }
     }
     else
-        default_codec = detectDefaultCompressionCodec();
+    {
+        /// The `default_compression_codec.txt` file is missing. When no column proves the codec
+        /// (every column has an explicit `CODEC`), only a legacy pre-change part can be recovered
+        /// safely. A post-change part must contain this file; otherwise its actual default is no
+        /// longer recorded on disk, so fail closed instead of reporting a guess.
+        default_codec = detectDefaultCompressionCodec([&] { return detectDefaultCompressionCodecFromChecksums(); });
+    }
+}
+
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodecFromChecksums() const
+{
+    /// Called when the part's `default_compression_codec.txt` is unusable (missing or malformed) and
+    /// no column proves the codec. `checksums.txt` is written with the built-in default, not the
+    /// part's selected default, so it cannot recover an arbitrary modern part. It can establish
+    /// that the part predates the change: older compressed checksums frames use `LZ4`, while new
+    /// ones use `ZSTD`. For a new-format frame, the missing codec file is corruption and must fail
+    /// closed rather than misreporting a size-aware, configured, or recompressed part as `ZSTD`.
+    /// Only an uncompressed legacy `checksums.txt` (version < 4) proves that `LZ4` is safe. A
+    /// missing or regenerated file has no trustworthy write-time provenance and must fail closed.
+    auto lz4 = CompressionCodecFactory::instance().get("LZ4", {});
+
+    /// If `checksums.txt` was missing and `loadChecksums` regenerated it earlier in this load, the file
+    /// now on disk is a fresh frame compressed with the *current* built-in default codec, not the one
+    /// the part was written with. Reading its codec family would recover the current default (e.g.
+    /// `ZSTD(3)` -> `ZSTD(1)`) rather than the write-time codec, defeating the purpose of this recovery.
+    /// It has no trustworthy write-time provenance, so fail closed.
+    if (checksums_were_regenerated)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot recover the default compression codec for part {}: {} was regenerated", name, DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    auto buf = readFileIfExists("checksums.txt");
+    if (!buf)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot recover the default compression codec for part {}: {} is missing", name, DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    if (!checkString("checksums format version: ", *buf))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Cannot recover the default compression codec for part {}: {} has an unknown format", name, DEFAULT_COMPRESSION_CODEC_FILE_NAME);
+
+    size_t format_version = 0;
+    readText(format_version, *buf);
+    assertChar('\n', *buf);
+
+    /// Only the compressed format carries a codec frame to read; earlier versions are plain text.
+    if (format_version < 4)
+        return lz4;
+
+    /// `getCompressionCodecForFile` reads the codec family from the compressed frame. Before this
+    /// change the built-in default was always `LZ4`; any other frame denotes a part written after
+    /// the codec-file contract was introduced.
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    auto codec = getCompressionCodecForFile(*buf, size_compressed, size_decompressed, /* skip_to_next_block */ false);
+    if (codec->getMethodByte() == lz4->getMethodByte())
+        return lz4;
+
+    throw Exception(
+        ErrorCodes::CORRUPTED_DATA,
+        "Cannot recover the default compression codec for part {}: {} is missing or malformed and the part was written after the codec-file contract was introduced",
+        name,
+        DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 }
 
 void IMergeTreeDataPart::setPatchPartIndex(PatchPartIndex patch_part_index_)
@@ -2078,47 +2160,143 @@ void IMergeTreeDataPart::removeMetadataVersion()
     getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
 }
 
-CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std::function<CompressionCodecPtr()> & get_fallback_codec) const
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    /// Consult the metadata that actually describes this part's columns: for a projection part the
+    /// table's columns say nothing about the projection's columns (which can be expressions such as
+    /// aggregates), so resolve through `getMetadataSnapshot`, which returns the projection's own
+    /// metadata for it.
+    auto metadata_snapshot = getMetadataSnapshot();
 
     const auto & storage_columns = metadata_snapshot->getColumns();
-    CompressionCodecPtr result = nullptr;
-    for (const auto & part_column : getColumns())
+
+    /// A column with no CODEC at all, and a column whose codec pipeline contains a `Default` stage
+    /// (`CODEC(Default)`, `CODEC(Delta, Default)`, ...), are both compressed with the part's default
+    /// codec in their generic-compression stage, so their data proves the default codec family. Only
+    /// a column with an explicit non-default codec must be skipped (its data does not represent the
+    /// default codec).
+    auto is_default_coded = [&](const String & column_name)
     {
-        /// It was compressed with default codec and it's not empty
-        auto column_size = getColumnSize(part_column.name);
-        if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
+        return !storage_columns.hasCompressionCodec(column_name)
+            || storage_columns.hasExplicitDefaultCompressionCodec(column_name);
+    };
+
+    /// The column proof is sound only when the codec declarations consulted above are the ones the
+    /// part was written under. After `ALTER TABLE ... MODIFY COLUMN ... CODEC(...)` (or a change
+    /// adding or removing a `Default` stage in a pipeline), the current declarations can make the
+    /// proof skip the only genuinely default-coded column - or, worse, read the frame of a column
+    /// that was explicitly coded at write time as proof of the default. Historical metadata is not
+    /// available here, so when the part records a metadata version different from the current one,
+    /// do not trust the column proof at all and take the approximate fallback. The fence is
+    /// best-effort: only `ReplicatedMergeTree` increments the metadata version on `ALTER` (for plain
+    /// `MergeTree` it stays 0), and a legacy part with no version recorded on disk had it fabricated
+    /// from the current metadata in `loadColumns` (`old_part_with_no_metadata_version_on_disk`), so
+    /// in both cases a mismatch is undetectable and the proof is kept, as before.
+    bool column_data_proves_default_codec = old_part_with_no_metadata_version_on_disk
+        || metadata_version == metadata_snapshot->getMetadataVersion();
+
+    /// In a Compact part all columns share a single data file, and `getCompressionCodecForFile`
+    /// reads that file's first frame, which belongs to whichever column was written first - not
+    /// necessarily to the column being inspected. The first frame proves the default codec only when
+    /// every stored column is default-coded; with mixed codecs the frame cannot be attributed to a
+    /// particular column, so the column proof must be skipped in favor of the fallback.
+    if (column_data_proves_default_codec && getType() == MergeTreeDataPartType::Compact)
+    {
+        for (const auto & part_column : getColumns())
         {
-            String path_to_data_file;
-            getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            if (!is_default_coded(part_column.name))
             {
+                column_data_proves_default_codec = false;
+                break;
+            }
+        }
+    }
+
+    CompressionCodecPtr result = nullptr;
+    if (column_data_proves_default_codec)
+    {
+        for (const auto & part_column : getColumns())
+        {
+            /// It was compressed with default codec and it's not empty.
+            auto column_size = getColumnSize(part_column.name);
+            /// Compact parts account all column data in the shared `data.bin`, so their per-column
+            /// compressed sizes are always zero. After verifying above that every stored column is
+            /// default-coded, its nonempty shared file proves the codec independently of those sizes.
+            if ((column_size.data_compressed != 0 || getType() == MergeTreeDataPartType::Compact) && is_default_coded(part_column.name))
+            {
+                String path_to_data_file;
+                getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    if (path_to_data_file.empty())
+                    {
+                        auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                        if (!stream_name)
+                            return;
+
+                        auto file_name = *stream_name + ".bin";
+                        /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                        if (getDataPartStorage().getFileSize(file_name) != 0)
+                            path_to_data_file = file_name;
+                    }
+                });
+
                 if (path_to_data_file.empty())
                 {
-                    auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
-                    if (!stream_name)
-                        return;
-
-                    auto file_name = *stream_name + ".bin";
-                    /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                    if (getDataPartStorage().getFileSize(file_name) != 0)
-                        path_to_data_file = file_name;
+                    LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but all data files don't exist or empty", name, backQuoteIfNeed(part_column.name));
+                    continue;
                 }
-            });
 
-            if (path_to_data_file.empty())
-            {
-                LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but all data files don't exist or empty", name, backQuoteIfNeed(part_column.name));
-                continue;
+                auto recovered = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
+
+                /// The default codec is the column's generic-compression stage. For a column coded
+                /// with the default codec alone the recovered frame codec is that stage itself; for a
+                /// pipeline (`CODEC(Delta, Default)`) the frame is a `Multiple` chain and the default
+                /// codec is its single generic-compression stage (a valid pipeline has at most one).
+                /// A structural substream (`Array` offsets, null map, ...) is written with the
+                /// generic stages only, dropping the rest of the pipeline, so search for the generic
+                /// stage instead of matching the declared pipeline by position. `NONE` counts too:
+                /// it is not a generic compression, but a default of `NONE` produces a plain `NONE`
+                /// frame that identifies the default exactly.
+                if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(recovered.get()))
+                {
+                    for (const auto & stage : multiple->getCodecs())
+                    {
+                        if (stage->isGenericCompression())
+                        {
+                            result = stage;
+                            break;
+                        }
+                    }
+                }
+                else if (recovered->isGenericCompression() || recovered->isNone())
+                    result = recovered;
+
+                /// No generic-compression stage in the frame: it cannot prove the default codec
+                /// (e.g. a pipeline whose generic stage was substituted by a `NONE` default), so try
+                /// the next column.
+                if (!result)
+                    continue;
+
+                /// `getCompressionCodecForFile` reconstructs codecs from the frame's method bytes
+                /// only. A method byte identifies neither the codec's numeric parameters (a
+                /// `ZSTD(3)` default reads back as `ZSTD(1)`) nor even always the exact family
+                /// (`LZ4` and `LZ4HC` share the byte `0x82`, see `CompressionInfo.h`, so an
+                /// `LZ4HC(N)` default reads back as plain `LZ4`). The recovery is therefore never
+                /// provably exact - mark `default_codec` approximate, for the same reasons as the
+                /// `!result` fallback below: consumers must treat it as "unknown" rather than trust
+                /// a descriptor that the on-disk frame does not preserve.
+                default_codec_is_approximate = true;
+
+                break;
             }
-
-            result = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
-            break;
         }
     }
 
     if (!result)
-        result = CompressionCodecFactory::instance().getDefaultCodec();
+    {
+        result = get_fallback_codec();
+        default_codec_is_approximate = true;
+    }
 
     return result;
 }
@@ -2192,6 +2370,12 @@ void IMergeTreeDataPart::loadChecksums(bool require)
         /// If the checksums file is not present, calculate the checksums and write them to disk.
         /// Check the data while we are at it.
         LOG_WARNING(storage.log, "Checksums for part {} not found. Will calculate them from data on disk.", name);
+
+        /// The file we are about to write is compressed with the *current* built-in default codec, so
+        /// its frame reflects that codec, not the one the part was written with. Remember that it was
+        /// regenerated so `detectDefaultCompressionCodecFromChecksums` does not mistake it for
+        /// write-time provenance (it runs later in `loadColumnsChecksumsIndexes`, after `loadChecksums`).
+        checksums_were_regenerated = true;
 
         bool noop = false;
         checksums = checkDataPart(shared_from_this(), false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */false);

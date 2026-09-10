@@ -23,6 +23,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -37,6 +38,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageValues.h>
+#include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -298,8 +300,27 @@ bool astContainsNonDeterministicFunction(const ASTPtr & ast, const ContextPtr & 
 /// already constant-folded live in ConstantNode::source_expression, which is NOT a child
 /// (children_size == 0), so they are correctly ignored: by then they are constants evaluated on
 /// the initiator and safe to ship.
+///
+/// A bare `IN some_table` / `NOT IN some_table` carries a TABLE node - or a TABLE_FUNCTION node for
+/// a table function - instead of a QUERY node, and reads a table by name exactly the way a subquery
+/// does: on the normal StorageView path against the initiator's table, per-shard once the
+/// optimization fires. Those count here too, otherwise two spellings of the same predicate over the
+/// same view return different rows. Only the right-hand side of an `IN` is inspected for them,
+/// because the query's own join tree is made of TABLE nodes as well.
 bool containsSubqueryNode(const QueryTreeNodePtr & node)
 {
+    if (const auto * function_node = node->as<FunctionNode>();
+        function_node && isNameOfInFunction(function_node->getFunctionName()))
+    {
+        const auto & arguments = function_node->getArguments().getNodes();
+        if (arguments.size() >= 2)
+        {
+            const auto right_node_type = arguments[1]->getNodeType();
+            if (right_node_type == QueryTreeNodeType::TABLE || right_node_type == QueryTreeNodeType::TABLE_FUNCTION)
+                return true;
+        }
+    }
+
     for (const auto & child : node->getChildren())
     {
         if (!child)
@@ -319,6 +340,13 @@ bool containsSubqueryNode(const QueryTreeNodePtr & node)
 /// filters on the normal StorageView path; a subquery inside them would be evaluated per-shard once
 /// the optimization fires, with the same divergence risk described above, so suppress the
 /// optimization when present. Mirrors hasSubquery in StorageView.cpp.
+///
+/// Like containsSubqueryNode, this also treats a bare `IN some_table` / `IN some_table_function(...)`
+/// as a subquery. The expression parser produces an ASTFunction from the IN family whose right-hand
+/// side is an ASTIdentifier (the table name) or an ASTFunction naming a table function, never an
+/// ASTSubquery, so the plain ASTSubquery check above misses it, while the analyzer resolves that
+/// identifier as a table and reads it exactly the way a subquery would - on each shard once folded
+/// into the shipped query. Only the right-hand side of an IN is inspected.
 bool astContainsSubquery(const ASTPtr & ast)
 {
     if (!ast)
@@ -326,6 +354,22 @@ bool astContainsSubquery(const ASTPtr & ast)
 
     if (ast->as<ASTSubquery>())
         return true;
+
+    if (const auto * function = ast->as<ASTFunction>();
+        function && function->arguments && isNameOfInFunction(function->name))
+    {
+        const auto & arguments = function->arguments->children;
+        if (arguments.size() >= 2)
+        {
+            const auto & right = arguments[1];
+            if (right->as<ASTIdentifier>())
+                return true;
+
+            if (const auto * right_function = right->as<ASTFunction>();
+                right_function && TableFunctionFactory::instance().isTableFunctionName(right_function->name))
+                return true;
+        }
+    }
 
     for (const auto & child : ast->children)
     {
@@ -530,6 +574,15 @@ RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const
         return nullptr;
     auto row_policy_filter = query_context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (const auto * alias = storage->as<StorageAlias>())
+    {
+        const auto target_storage_id = alias->getTargetTable()->getStorageID();
+        auto target_row_policy_filter = query_context->getRowPolicyFilter(
+            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
+    }
+
     if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
         return nullptr;
     return row_policy_filter;

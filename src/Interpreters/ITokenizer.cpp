@@ -8,7 +8,6 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <Functions/Regexps.h>
 
 #include <limits>
 
@@ -36,8 +35,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-#if USE_ICU
     extern const int BAD_ARGUMENTS;
+#if USE_ICU
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
@@ -318,18 +317,33 @@ String SplitByStringTokenizer::getDescription() const
     return result + "])";
 }
 
-SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_)
+SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool match_tokens_)
     : ITokenizerHelper(Type::SplitByRegexp)
     , regexp_str(regexp_)
-    /// `no_capture = true`: only the whole match (group 0) is ever read via `nextRegexpMatch`, so tracking
-    /// capture groups would only waste work (a larger `MatchVec` resized on every match).
-    , regexp(std::make_shared<OptimizedRegularExpression>(Regexps::createRegexp<false, true, false>(regexp_)))
+    , match_tokens(match_tokens_)
+    /// Captures are tracked in both modes for simplicity, though only `match_tokens` mode reads them.
+    , regexp(std::make_shared<OptimizedRegularExpression>(regexp_, OptimizedRegularExpression::RE_DOT_NL))
+    /// A pattern with capture groups is never "trivial", so whenever `getNumberOfSubpatterns()` is
+    /// non-zero, index 1 is always populated. See the `chassert` in `nextInStringImpl`.
+    , token_group(match_tokens_ && regexp->getNumberOfSubpatterns() > 0 ? 1 : 0)
 {
+    /// Best-effort: reject patterns that can match empty (they'd get `nextMatchedToken` stuck). Not
+    /// exhaustive - a zero-width assertion (`\b`, `$`) can still match empty only in some contexts,
+    /// which this check can't see; `nextMatchedToken` catches that case at the point of use instead.
+    OptimizedRegularExpression::MatchVec probe_matches;
+    if (match_tokens_ && regexp->match("", 0, probe_matches) > 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'{}' tokenizer: pattern '{}' can match an empty string, which is not supported with match_tokens = true",
+            getName(), regexp_);
 }
 
 bool SplitByRegexpTokenizer::nextInStringImpl(
     const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
 {
+    if (match_tokens)
+        return nextMatchedToken(data, length, pos, token_start, token_length, matches);
+
     while (pos <= length)
     {
         const size_t token_begin = pos;
@@ -364,6 +378,46 @@ bool SplitByRegexpTokenizer::nextInStringImpl(
     return false;
 }
 
+bool SplitByRegexpTokenizer::nextMatchedToken(
+    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
+{
+    while (pos <= length)
+    {
+        if (regexp->match(data, length, pos, matches) == 0)
+        {
+            pos = length + 1; /// Mark exhausted so subsequent calls return false.
+            return false;
+        }
+
+        chassert(token_group < matches.size());
+        const auto & whole_match = matches[0];
+
+        if (whole_match.length == 0)
+        {
+            /// Safety net for context-dependent cases (e.g. `\b`) the constructor's check can't see.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'{}' tokenizer: pattern '{}' matched an empty string, which is not supported with match_tokens = true",
+                getName(), regexp_str);
+        }
+
+        /// Advance past the whole match, not just the captured span, so matches never overlap.
+        pos = whole_match.offset + whole_match.length;
+
+        /// Capture group 1, or the whole match when the pattern has none. A non-participating or
+        /// empty group contributes no token.
+        const auto & group = matches[token_group];
+        if (group.offset != std::string::npos && group.length > 0)
+        {
+            token_start = group.offset;
+            token_length = group.length;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
 {
     /// Allocates the RE2 match scratch per call. This is only used by the (constant-only, documented as
@@ -391,6 +445,8 @@ void SplitByRegexpTokenizer::substringToTokens(const char *, size_t, VectorWithM
 
 String SplitByRegexpTokenizer::getDescription() const
 {
+    if (match_tokens)
+        return fmt::format("{}({}, true)", getName(), quoteString(regexp_str));
     return fmt::format("{}({})", getName(), quoteString(regexp_str));
 }
 
