@@ -175,7 +175,10 @@ private:
     ASTPtr parseFilterGT(const String & field_name);
     ASTPtr parseFilterLT(const String & field_name);
     ASTPtr parseFilterRange(const String & field_name);
-    ASTPtr parseFilterIn(const String & field_name);
+    /// `string_values` keeps simple unquoted tokens as string literals instead of canonicalizing
+    /// numeric-looking ones into numeric literals. It is used for opaque identifier fields
+    /// (`_stream_id`), where `in(00123)` has to match the string `00123` and not the number `123`.
+    ASTPtr parseFilterIn(const String & field_name, bool string_values = false);
     ASTPtr parseFilterContains(const String & field_name, bool need_all);
     ASTPtr parseFilterSequence(const String & field_name);
     ASTPtr parseFilterExact(const String & field_name);

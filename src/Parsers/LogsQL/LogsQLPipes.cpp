@@ -590,10 +590,12 @@ void LogsQLParser::parsePipeRename(Layer & layer)
 UInt64 LogsQLParser::parseLimitValue()
 {
     String text = lex.nextCompoundToken();
-    auto value = tryParseNumber(text);
-    if (!value || *value < 0 || std::isinf(*value) || std::isnan(*value) || *value != std::floor(*value))
+    /// The value is parsed on an exact integer path: a value out of the `UInt64` range is
+    /// rejected here instead of being rounded through `Float64` and cast out of range.
+    auto value = tryParseNonNegativeInteger(text);
+    if (!value)
         throwSyntaxError(fmt::format("cannot parse {} as a non-negative integer", text));
-    return static_cast<UInt64>(*value);
+    return *value;
 }
 
 void LogsQLParser::parsePipeLimit(Layer & layer)

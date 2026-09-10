@@ -412,6 +412,40 @@ std::optional<Field> tryParseNumberField(const String & text)
     return Field(*approximate);
 }
 
+std::optional<UInt64> tryParseNonNegativeInteger(const String & text)
+{
+    auto field = tryParseNumberField(text);
+    if (!field)
+        return {};
+
+    /// `tryParseNumberField` returns an integer field for every integral spelling that fits
+    /// the 64-bit range, so the exact value is available here without going through `Float64`.
+    if (field->getType() == Field::Types::UInt64)
+        return field->safeGet<UInt64>();
+
+    if (field->getType() == Field::Types::Int64)
+    {
+        const Int64 value = field->safeGet<Int64>();
+        if (value < 0)
+            return {};
+        return static_cast<UInt64>(value);
+    }
+
+    if (field->getType() != Field::Types::Float64)
+        return {};
+
+    /// The remaining values are the ones that are not integral by construction (a float or an
+    /// exponential spelling such as `1e3`) and the integral ones that did not fit the 64-bit
+    /// range, in which case the magnitude has already rounded through `Float64` and is rejected
+    /// by the bound below. `2^64` is exactly representable as `Float64`, so the comparison is exact.
+    const Float64 value = field->safeGet<Float64>();
+    if (std::isnan(value) || std::isinf(value) || value < 0 || value != std::floor(value))
+        return {};
+    if (value >= 18446744073709551616.0)
+        return {};
+    return static_cast<UInt64>(value);
+}
+
 bool isNumberPrefix(const String & text)
 {
     std::string_view rest = text;

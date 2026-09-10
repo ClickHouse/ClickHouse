@@ -22,6 +22,13 @@ std::optional<Float64> tryParseNumber(const String & text);
 /// comparisons stay exact across the full 64-bit range instead of rounding through `Float64`.
 std::optional<Field> tryParseNumberField(const String & text);
 
+/// Parses a LogsQL numeric value that has to be a non-negative integer fitting `UInt64`
+/// (`limit`, `offset`, bucket counts, `len_range` bounds, ...). Returns nullopt for
+/// anything that is not such an integer, including a value that is out of the `UInt64`
+/// range, so the caller reports a syntax error instead of casting an out-of-range
+/// `Float64` (which is undefined behaviour) or silently using a rounded value.
+std::optional<UInt64> tryParseNonNegativeInteger(const String & text);
+
 /// Parses a LogsQL duration ("5m", "1h33m55s", "-1.5d") into nanoseconds.
 std::optional<Int64> tryParseDuration(const String & text);
 

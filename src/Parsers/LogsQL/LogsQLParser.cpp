@@ -754,7 +754,7 @@ std::vector<String> LogsQLParser::parseArgsInParens(bool * wildcard)
     }
 }
 
-ASTPtr LogsQLParser::parseFilterIn(const String & field_name)
+ASTPtr LogsQLParser::parseFilterIn(const String & field_name, bool string_values)
 {
     lex.nextToken();
 
@@ -824,7 +824,7 @@ ASTPtr LogsQLParser::parseFilterIn(const String & field_name)
 
         ASTs elements;
         for (const auto & [value, quoted] : values)
-            elements.push_back(makeValueLiteral(value, quoted));
+            elements.push_back(string_values ? make_intrusive<ASTLiteral>(Field(value)) : makeValueLiteral(value, quoted));
         auto tuple = makeASTFunction("tuple");
         tuple->arguments->children = std::move(elements);
         return makeASTFunction("in", columnExpr(field_name), tuple);
@@ -1108,16 +1108,34 @@ ASTPtr LogsQLParser::parseFilterLenRange(const String & field_name)
     if ((std::isinf(*min_value) && *min_value > 0) || (std::isinf(*max_value) && *max_value < 0))
         return make_intrusive<ASTLiteral>(Field(static_cast<UInt8>(0)));
 
+    /// A finite bound becomes a `UInt64` literal, so it is parsed on an exact integer path
+    /// rather than cast from the `Float64` value above: a bound out of the `UInt64` range is
+    /// rejected instead of materializing a rounded literal.
+    std::optional<UInt64> min_bound;
+    std::optional<UInt64> max_bound;
+    if (!std::isinf(*min_value))
+    {
+        min_bound = tryParseNonNegativeInteger(args[0]);
+        if (!min_bound)
+            throwSyntaxError(fmt::format("len_range() bound {} does not fit UInt64", args[0]));
+    }
+    if (!std::isinf(*max_value))
+    {
+        max_bound = tryParseNonNegativeInteger(args[1]);
+        if (!max_bound)
+            throwSyntaxError(fmt::format("len_range() bound {} does not fit UInt64", args[1]));
+    }
+
     /// Both bounds are inclusive.
     ASTs conditions;
-    if (!std::isinf(*min_value))
+    if (min_bound)
         conditions.push_back(makeASTFunction("greaterOrEquals",
             makeASTFunction("length", columnExpr(field_name)),
-            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(*min_value)))));
-    if (!std::isinf(*max_value))
+            make_intrusive<ASTLiteral>(Field(*min_bound))));
+    if (max_bound)
         conditions.push_back(makeASTFunction("lessOrEquals",
             makeASTFunction("length", columnExpr(field_name)),
-            make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(*max_value)))));
+            make_intrusive<ASTLiteral>(Field(*max_bound))));
     return makeAnd(std::move(conditions));
 }
 
@@ -1232,15 +1250,16 @@ ASTPtr LogsQLParser::parseFilterStreamId()
 {
     /// `_stream_id` is treated as an ordinary column with exact-match semantics:
     /// `_stream_id:<id>`, `_stream_id:in(...)` and other filters work on it as on any other field.
+    /// A stream id is an opaque identifier, so its value stays a string literal even when it looks
+    /// like a number: `_stream_id:00123` matches the id `00123` and not the number `123`.
     if (lex.isKeyword("in"))
-        return parseFilterIn("_stream_id");
+        return parseFilterIn("_stream_id", /*string_values=*/ true);
 
     if (lex.isQueryPartTrailer())
         throwSyntaxError("missing the value of the _stream_id filter");
 
-    bool quoted = lex.isQuoted();
     String value = lex.nextCompoundToken();
-    return makeASTFunction("equals", columnExpr("_stream_id"), makeValueLiteral(value, quoted));
+    return makeASTFunction("equals", columnExpr("_stream_id"), make_intrusive<ASTLiteral>(Field(value)));
 }
 
 ASTPtr LogsQLParser::parseFilterCommonCase(const String & field_name, bool equals)
