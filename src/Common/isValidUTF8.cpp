@@ -2,6 +2,8 @@
 
 #include <Common/isValidUTF8.h>
 
+#include <base/unaligned.h>
+
 #include <cstring>
 
 #if USE_SIMDUTF
@@ -69,6 +71,15 @@ namespace UTF8
 
 UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
 {
+    /// A byte with the high bit clear is a complete code point on its own, and UTF-8 is
+    /// self-synchronising at code point boundaries, so dropping a leading run of them cannot change
+    /// the verdict for the rest.
+    while (len >= 8 && (unalignedLoad<UInt64>(data) & 0x8080808080808080ULL) == 0)
+    {
+        data += 8;
+        len -= 8;
+    }
+
 #if USE_SIMDUTF
     /// simdutf validates in 64-byte blocks and pads a short tail into a full one, so at and below one
     /// block it does a whole block's work whatever the input size.
