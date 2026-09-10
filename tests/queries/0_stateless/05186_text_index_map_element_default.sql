@@ -45,6 +45,16 @@ SELECT '-- equality with the String default keeps working';
 SELECT count() FROM tab_str WHERE m['nokey'] = '';
 SELECT count() FROM tab_str WHERE m['nokey'] = '' SETTINGS ignore_data_skipping_indices = 'idx';
 
+-- A perfect-affix pattern such as `zzz%` is rewritten to `startsWith` before index analysis, so it
+-- never reaches the `like` / `notLike` branches. An inner wildcard keeps the pattern a `like`.
+SELECT '-- a pattern the default does not satisfy still prunes';
+SELECT count() FROM tab_str WHERE m['nokey'] LIKE '%zzz%' SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT '-- notLike declines on the mirrored condition';
+SELECT count() FROM tab_str WHERE m['nokey'] NOT LIKE '%' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab_str WHERE m['nokey'] NOT LIKE '%' SETTINGS ignore_data_skipping_indices = 'idx';
+SELECT count() FROM tab_str WHERE m['nokey'] NOT LIKE '%zzz%' SETTINGS force_data_skipping_indices = 'idx';
+
 SELECT '-- an array needle cannot be served by a mapKeys probe';
 SELECT count() FROM tab_str WHERE multiSearchAny(m['nokey'], CAST([], 'Array(String)')) SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT count() FROM tab_str WHERE multiSearchAny(m['nokey'], CAST([], 'Array(String)')) SETTINGS optimize_functions_to_subcolumns = 1;

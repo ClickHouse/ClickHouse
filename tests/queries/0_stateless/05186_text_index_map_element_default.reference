@@ -18,6 +18,11 @@
 -- equality with the String default keeps working
 1
 1
+-- a pattern the default does not satisfy still prunes
+0
+-- notLike declines on the mirrored condition
+0
+1
 -- an array needle cannot be served by a mapKeys probe
 0
 0
