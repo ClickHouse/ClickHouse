@@ -1,0 +1,120 @@
+SET enable_nullable_tuple_type = 1;
+SET allow_suspicious_low_cardinality_types = 1;
+
+DROP TABLE IF EXISTS nullable_tuple_cast_inputs;
+CREATE TABLE nullable_tuple_cast_inputs (id UInt8, k Nullable(Tuple(String))) ENGINE = Memory;
+INSERT INTO nullable_tuple_cast_inputs VALUES (1, NULL), (2, ('1')), (3, NULL), (4, ('2')), (5, NULL);
+
+{% for mode in [0, 1] %}
+
+SET transform_null_in = {{ mode }};
+SELECT 'null mode {{ mode }}';
+
+-- Nullable RHS types permit NULL without necessarily containing a NULL key.
+SELECT id,
+    (k, 1) IN (SELECT tuple(toUInt8(1)), 1),
+    (k, 1) IN (SELECT toNullable(tuple(toUInt8(1))), 1),
+    (k, 1) NOT IN (SELECT toNullable(tuple(toUInt8(1))), 1)
+FROM nullable_tuple_cast_inputs ORDER BY id;
+
+-- A NULL key can match after converting the non-null tuples to the RHS element types.
+SELECT id,
+    (k, 1) IN (SELECT CAST(arrayJoin([tuple(1), NULL]), 'Nullable(Tuple(UInt8))'), 1),
+    (k, 1) NOT IN (SELECT CAST(arrayJoin([tuple(1), NULL]), 'Nullable(Tuple(UInt8))'), 1)
+FROM nullable_tuple_cast_inputs ORDER BY id;
+
+-- A block containing no NULLs takes the direct cast path, including scalar keys with `transform_null_in = 1`.
+SELECT id,
+    (k, 1) IN (SELECT toNullable(tuple(toUInt8(1))), 1),
+    (tupleElement(k, 1), 1) IN (SELECT toNullable(toUInt8(1)), 1)
+FROM nullable_tuple_cast_inputs WHERE id IN (2, 4) ORDER BY id;
+
+-- Scalar nullable keys also preserve their outer NULLs when matching nullable RHS values.
+SELECT id,
+    (tupleElement(k, 1), 1) IN (SELECT CAST(arrayJoin([1, NULL]), 'Nullable(UInt8)'), 1),
+    (tupleElement(k, 1), 1) NOT IN (SELECT CAST(arrayJoin([1, NULL]), 'Nullable(UInt8)'), 1)
+FROM nullable_tuple_cast_inputs ORDER BY id;
+
+-- Constant and materialized all-null columns need no element conversion, even for `Nothing` fields.
+{% for source_type in ['Nullable(Nothing)', 'Nullable(Tuple(String))', 'Nullable(Tuple(Nullable(Nothing)))'] %}
+{% for wrapper in ['', 'materialize'] %}
+SELECT
+    (k, 1) IN (SELECT tuple(toUInt8(1)), 1),
+    (k, 1) NOT IN (SELECT tuple(toUInt8(1)), 1),
+    (k, 1) IN (SELECT toNullable(tuple(toUInt8(1))), 1),
+    (k, 1) NOT IN (SELECT toNullable(tuple(toUInt8(1))), 1),
+    (k, 1) IN (SELECT CAST(NULL, 'Nullable(Tuple(UInt8))'), 1),
+    (k, 1) NOT IN (SELECT CAST(NULL, 'Nullable(Tuple(UInt8))'), 1)
+FROM (SELECT {{ wrapper }}(CAST(NULL, '{{ source_type }}')) AS k);
+{% endfor %}
+{% endfor %}
+
+-- Filtering and expansion preserve complex tuple fields and row positions across small blocks.
+SELECT countIf(actual != expected), countIf(negative != NOT expected)
+FROM
+(
+    SELECT
+        (k, 1) IN (SELECT toNullable(CAST((1, [1], map('a', 1), tuple(1), 1),
+            'Tuple(UInt8, Array(UInt8), Map(String, UInt8), Tuple(LowCardinality(UInt8)), Nullable(UInt8))')), 1) AS actual,
+        (k, 1) NOT IN (SELECT toNullable(CAST((1, [1], map('a', 1), tuple(1), 1),
+            'Tuple(UInt8, Array(UInt8), Map(String, UInt8), Tuple(LowCardinality(UInt8)), Nullable(UInt8))')), 1) AS negative,
+        (number % 3 != 0 AND number % 7 = 1) AS expected
+    FROM
+    (
+        SELECT number, CAST(if(number % 3 = 0, NULL,
+            (toString(number % 7), [toString(number % 7)], map('a', toString(number % 7)),
+             tuple(toString(number % 7)), toString(number % 7))),
+            'Nullable(Tuple(String, Array(String), Map(String, String), Tuple(LowCardinality(String)), Nullable(String)))') AS k
+        FROM numbers(101)
+    )
+)
+SETTINGS max_block_size = 7;
+
+{% if mode == 1 %}
+-- Strict set-key casts report invalid conversions in non-null tuples.
+SELECT (k, 1) IN (SELECT toNullable(tuple(toUInt8(1))), 1)
+FROM (SELECT materialize(CAST(tuple('bad'), 'Nullable(Tuple(String))')) AS k); -- { serverError CANNOT_PARSE_TEXT }
+
+-- A NULL field inside a non-null tuple is not an outer NULL that can be skipped during conversion.
+SELECT (k, 1) IN (SELECT tuple(toUInt8(1)), 1)
+FROM (SELECT materialize(CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))')) AS k); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+{% endif %}
+
+{% endfor %}
+
+-- Outer NULLs and precision loss in different key components exclude rows in either column order.
+{% for mode in [0, 1] %}
+{% for scale in [0, 3] %}
+SET transform_null_in = {{ mode }};
+SELECT 'mask composition: null mode {{ mode }}, scale {{ scale }}';
+SELECT number,
+    (k, ts1, ts2) IN (SELECT tuple(toUInt8(1)), toDateTime(0, 'UTC'), toDateTime(0, 'UTC')),
+    (k, ts1, ts2) NOT IN (SELECT tuple(toUInt8(1)), toDateTime(0, 'UTC'), toDateTime(0, 'UTC')),
+    (ts1, ts2, k) IN (SELECT toDateTime(0, 'UTC'), toDateTime(0, 'UTC'), tuple(toUInt8(1))),
+    (ts1, ts2, k) NOT IN (SELECT toDateTime(0, 'UTC'), toDateTime(0, 'UTC'), tuple(toUInt8(1)))
+FROM
+(
+    SELECT number,
+        CAST(if(number % 2 = 1, NULL, tuple('1')), 'Nullable(Tuple(String))') AS k,
+        toDateTime64(if(number % 4 >= 2, 0.5, 0), {{ scale }}, 'UTC') AS ts1,
+        toDateTime64(if(number >= 4, 0.5, 0), {{ scale }}, 'UTC') AS ts2
+    FROM numbers(8)
+)
+ORDER BY number;
+{% endfor %}
+{% endfor %}
+
+-- NULL keys remain non-matching when the target type cannot be wrapped in `Nullable`.
+{% for mode in [0, 1] %}
+SET transform_null_in = {{ mode }};
+{% for wrapper in ['', 'materialize'] %}
+SELECT
+    (k, 1) IN (SELECT [toUInt8(1)], 1),
+    (k, 1) NOT IN (SELECT [toUInt8(1)], 1),
+    (k, 1) IN (SELECT map('a', toUInt8(1)), 1),
+    (k, 1) NOT IN (SELECT map('a', toUInt8(1)), 1)
+FROM (SELECT {{ wrapper }}(NULL) AS k);
+{% endfor %}
+{% endfor %}
+
+DROP TABLE nullable_tuple_cast_inputs;
