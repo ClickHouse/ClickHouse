@@ -352,8 +352,11 @@ RemoteQueryExecutor::~RemoteQueryExecutor()
 {
     /// Backstop for the fragment span: an executor destroyed without reaching `EndOfStream`, a
     /// failure or a cancel is a fragment cancelled by teardown, so it is tagged as such and left UNSET.
-    markFragmentCancelled("destroyed");
-    finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
+    {
+        LockAndBlocker lock(was_cancelled_mutex);
+        markFragmentCancelled("destroyed");
+        finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
+    }
 
     /// We should finish establishing connections to disconnect it later,
     /// so these connections won't be in the out-of-sync state.
@@ -963,8 +966,11 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
     }
     catch (...)
     {
-        ///  A local failure while processing this fragment's packets on the consumer thread is this fragment's failure,
-        /// so record it on the span instead of letting the destructor mark it OK.
+        /// The lock taken inside the loop is gone by now (released while unwinding), so take it
+        /// again: a concurrent cancel() reads the recorded outcome under the same lock.
+        LockAndBlocker lock(was_cancelled_mutex);
+        /// A local failure while processing this fragment's packets on the consumer thread is this fragment's failure,
+        /// so record it on the span instead of letting the destructor mark it cancelled.
         finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
         throw;
     }
@@ -1171,9 +1177,6 @@ void RemoteQueryExecutor::finish()
 {
     LockAndBlocker guard(was_cancelled_mutex);
 
-    /// The executor is done with the fragment: close the detached synchronous-path span on every
-    /// exit from here. A full delivery was already recorded as OK at `EndOfStream`, so the span stays UNSET.
-    SCOPE_EXIT({ finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET); });
     try
     {
         finishUnlocked();
@@ -1184,6 +1187,10 @@ void RemoteQueryExecutor::finish()
         finishFragmentSpan(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
         throw;
     }
+
+    /// The executor is done with the fragment: close the detached synchronous-path span. A full
+    /// delivery was already recorded as OK at `EndOfStream`, so the span stays UNSET.
+    finishFragmentSpan(OpenTelemetry::SpanStatus::UNSET);
 }
 
 void RemoteQueryExecutor::finishUnlocked()

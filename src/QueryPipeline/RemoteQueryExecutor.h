@@ -297,8 +297,9 @@ private:
     std::unique_ptr<OpenTelemetry::Span> sync_fragment_span;
     /// Captured when the span is created: the thread finishing the span may have no tracing context of its own.
     std::weak_ptr<OpenTelemetrySpanLog> sync_fragment_span_log;
-    /// Set once the fragment span has an outcome.
-    bool fragment_outcome_recorded = false;
+    /// Set once the fragment span has an outcome. Written by the reading thread and read by the
+    /// cancelling thread, so it shares the lock that already serializes those two.
+    bool fragment_outcome_recorded TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
@@ -414,7 +415,7 @@ private:
     bool hasThrownException() const;
 
     /// Process packet for read and return data block if possible.
-    ReadResult processPacket(Packet packet);
+    ReadResult processPacket(Packet packet) TSA_REQUIRES(was_cancelled_mutex);
 
     /// The synchronous receive/process loop of read(): reads packets until they produce a result.
     ReadResult readLoop();
@@ -427,16 +428,16 @@ private:
     void addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept;
 
     /// Record the fragment's outcome on whichever span covers it.
-    void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept;
+    void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept TSA_REQUIRES(was_cancelled_mutex);
 
     /// Tag the fragment span as cancelled by the initiator: `clickhouse.cancelled = 1` and`clickhouse.cancel_reason = reason`.
-    void markFragmentCancelled(std::string_view reason) noexcept;
+    void markFragmentCancelled(std::string_view reason) noexcept TSA_REQUIRES(was_cancelled_mutex);
 
     /// Record a shard failure tolerated by `skip_unavailable_shards`
-    void finishFragmentSpanForSkippedShard(String status_message) noexcept;
+    void finishFragmentSpanForSkippedShard(String status_message) noexcept TSA_REQUIRES(was_cancelled_mutex);
 
     /// Close the fragment span of a parallel replica that became unavailable.
-    void finishFragmentSpanForUnavailableReplica() noexcept;
+    void finishFragmentSpanForUnavailableReplica() noexcept TSA_REQUIRES(was_cancelled_mutex);
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);
