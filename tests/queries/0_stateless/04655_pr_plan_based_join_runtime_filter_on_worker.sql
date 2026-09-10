@@ -34,6 +34,11 @@ SET query_plan_optimize_join_order_randomize = 0;
 -- Keep the filter on the row-level path: with index analysis the pruning happens at granule level instead,
 -- so the rows never reach `__applyFilter` and the row counters asserted below stop being comparable.
 SET enable_join_runtime_filters_index_analysis = 0;
+-- Never let the filter disable itself: `rf_build` holds the first 10000 probe keys and `rf_probe` is ordered
+-- by the same one, so a first block of at most 10000 rows passes every row and trips the pass-ratio
+-- heuristic. A skipped block is counted as `RuntimeFilterRowsSkipped` only, so it lands on neither side of
+-- the `Passed < Checked` assertion below, which then depends on the randomized block size.
+SET join_runtime_filter_blocks_to_skip_before_reenabling = 0;
 
 -- RIGHT JOIN: the build side is the coordinated side, so this is the shape whose split has to be lifted
 -- through `BuildRuntimeFilterStep` for the join to ship at all.
@@ -49,7 +54,8 @@ SYSTEM FLUSH LOGS query_log;
 SELECT 'remote queries', countIf(is_initial_query = 0) >= 1,
        'filter built on worker', sumIf(ProfileEvents['RuntimeFiltersCreated'], is_initial_query = 0) > 0,
        'filter applied on worker', sumIf(ProfileEvents['RuntimeFilterRowsPassed'], is_initial_query = 0)
-                                       < sumIf(ProfileEvents['RuntimeFilterRowsChecked'], is_initial_query = 0)
+                                       < sumIf(ProfileEvents['RuntimeFilterRowsChecked'], is_initial_query = 0),
+       'filter never disabled', sumIf(ProfileEvents['RuntimeFilterRowsSkipped'], is_initial_query = 0) = 0
 FROM system.query_log
 WHERE initial_query_id = (
     SELECT query_id FROM system.query_log

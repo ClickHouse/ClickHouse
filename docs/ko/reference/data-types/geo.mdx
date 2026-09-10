@@ -35,6 +35,26 @@ SELECT p, toTypeName(p) FROM geo_point;
 └─────────┴───────────────┘
 ```
 
+<div id="multipoint">
+  ## MultiPoint
+</div>
+
+`MultiPoint`는 Point 배열로 저장되는 Point 집합입니다: [배열](/ko/reference/data-types/array)([Point](#point)).
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE geo_multipoint (mp MultiPoint) ENGINE = Memory();
+INSERT INTO geo_multipoint VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT mp, toTypeName(mp) FROM geo_multipoint;
+```
+
+```text title="Response"
+┌─mp────────────────────────────┬─toTypeName(mp)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ MultiPoint     │
+└───────────────────────────────┴────────────────┘
+```
+
 <div id="ring">
   ## Ring
 </div>

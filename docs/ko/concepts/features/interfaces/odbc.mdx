@@ -151,11 +151,11 @@ ODBC 드라이버는 ClickHouse의 동작을 표준 SQL에 더 가깝게 맞출 
 
 이 섹션에서는 ODBC 드라이버가 어떤 설정을 변경하는지와 그 이유를 설명합니다.
 
-**[cast&#95;keep&#95;nullable](/ko/reference/settings/session-settings#cast_keep_nullable)**
+**[cast&#95;keep&#95;nullable](/ko/reference/settings/session-settings/cast#cast_keep_nullable)**
 
 기본적으로 ClickHouse는 널 허용 타입을 널을 허용하지 않는 타입으로 변환하는 것을 허용하지 않습니다. 하지만 많은 BI 도구는
 타입 변환을 수행할 때 널 허용 타입과 널을 허용하지 않는 타입을 구분하지 않습니다. 그 결과, BI 도구가 다음과 같은
-쿼리를 생성하는 경우를 흔히 볼 수 있습니다.
+쿼리를 생성하는 경우를 흔히 볼 수 있습니다:
 
 ```sql
 SELECT sum(CAST(value, 'Int32'))
@@ -172,7 +172,7 @@ DB::Exception: Cannot convert NULL value to non-Nullable type: while executing '
 `cast_keep_nullable`를 활성화하면 `CAST`의 동작이 바뀌어 인수의 널 허용 속성이 유지됩니다. 이렇게 하면
 이러한 변환에서 ClickHouse의 동작이 다른 데이터베이스 및 SQL 표준에 더 가까워집니다.
 
-**[prefer&#95;column&#95;name&#95;to&#95;alias](/ko/reference/settings/session-settings#prefer_column_name_to_alias)**
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/ko/reference/settings/session-settings/prefer#prefer_column_name_to_alias)**
 
 ClickHouse에서는 같은 `SELECT` 목록에 있는 표현식을 해당 별칭으로 참조할 수 있습니다. 예를 들어, 다음 쿼리는
 반복을 줄여 더 쉽게 작성할 수 있습니다:

@@ -72,6 +72,13 @@ ClickHouse 会根据文件扩展名识别该文件使用的是制表符分隔格
   ```
 </Tip>
 
+数据不必位于本地：可使用 URL 替代文件名，URL 协议会选择相应的表引擎 (`http://` 和 `https://` 的读取方式与 [url](/zh/reference/functions/table-functions/url) 函数相同，`s3://` 与 [s3](/zh/reference/functions/table-functions/s3) 函数相同，`file://` 与 [file](/zh/reference/functions/table-functions/file) 函数相同) ：
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
@@ -241,7 +248,7 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--echo-query-id [ <bool> ]` — 在执行前打印 `query_id`。接受可选的布尔值。在交互模式中默认启用，在批次模式中默认禁用。
 * `--echo-query-separator <string>` — 在格式化回显的查询前打印此分隔符 (需要 `--echo-formatted`) ，这样更容易区分输入的查询与其重新格式化后的回显。默认为空 (禁用) 。
 * `--highlight`, `--hilite` `<bool>` — 切换命令提示符和回显查询的语法高亮。默认启用。仅在输出到终端时应用高亮。
-* `--hints <bool>` — 当光标位于输入末尾时，显示输入时自动补全提示 (内联 &quot;ghost&quot; 文本) ，给出最佳匹配建议。可使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选中某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开经典补全列表。需要启用 `--highlight` (提示需要颜色) 以及建议机制 (因此 `--disable_suggestion` 也会将其关闭) 。默认启用。
+* `--hints <bool>` — 当光标位于输入末尾时，显示输入时自动补全提示 (内联 &quot;ghost&quot; 文本) ，给出最佳匹配建议。可使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选中某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开经典补全列表。需要启用 `--highlight` (提示需要颜色) 。建议提示还需要建议机制，因此 `--disable_suggestion` 会将其关闭；客户端的 [`/`-commands](/zh/interfaces/client#slash-commands) 是静态列表，只要启用 `--hints` 和 `--highlight` 就会持续显示提示。即使关闭提示，`Tab` 也可补全 `/`-commands。默认启用。
 * `--verbose` — 输出更多查询执行细节。
 * `--logger.console` — 输出到控制台。
 * `--logger.log` — 日志文件名。
@@ -398,10 +405,14 @@ clickhouse-local \
 
 `--listen_host`、`--tcp_port` 和 `--http_port` 选项用于配置绑定地址和端口。默认端口为：TCP 使用 `9000`，HTTP 使用 `8123`。
 
+HTTP 监听器会使用与默认 `clickhouse-server` 配置相同的宽松请求头响应 CORS 预检请求，因此 Web 应用程序无需额外配置即可从浏览器对其执行查询，包括从 `file://` URL 打开的 Web UI，其源为 `null`。要对此进行限制，请在通过 `--config-file` 传入的配置文件中定义自己的 `http_options_response` 部分；这将完全替换默认设置。
+
 <Warning>
   **安全**
 
   默认情况下，`clickhouse-local` 使用临时用户配置运行，因此它开启的任何监听都不进行身份验证。除非你已通过将 `users_config` 设置指向自定义 `users.xml` (例如通过 `--config-file`) 显式配置用户和访问控制，否则请绑定到回环地址 (`127.0.0.1` 或 `::1`) 。如果在未启用身份验证的情况下监听非回环地址，任何能够访问所选端口的人都可以访问本地实例的数据。
+
+  请注意，浏览器仍可访问回环地址：只要 HTTP 监听器处于打开状态，你访问的任何网页都可以查询本地实例，并且借助默认 CORS 请求头读取结果。
 </Warning>
 
 <div id="related-content-1">

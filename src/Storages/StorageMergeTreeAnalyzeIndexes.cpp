@@ -216,6 +216,7 @@ protected:
             .find_exact_ranges = false,
             .is_parallel_reading_from_replicas = false,
             .has_projections = false,
+            .check_row_limits = true,
             .result = analysis_result,
         };
         return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);
