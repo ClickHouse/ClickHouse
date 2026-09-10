@@ -65,6 +65,35 @@ bool zeroPaddedStringConstant(const DataTypePtr & type)
     return isFixedString(decayed);
 }
 
+Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
+{
+    auto inner_type = removeNullable(removeLowCardinality(type));
+
+    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
+        return Field(String(stripTrailingZeros(field.safeGet<String>())));
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
+        array_type && field.getType() == Field::Types::Array)
+    {
+        Array stripped;
+        const auto & elements = field.safeGet<Array>();
+        stripped.reserve(elements.size());
+        for (const auto & element : elements)
+            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
+        return Field(std::move(stripped));
+    }
+
+    return field;
+}
+
+DataTypePtr indexedElementType(const DataTypePtr & type)
+{
+    auto decayed = removeNullable(removeLowCardinality(type));
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(decayed.get()))
+        return removeNullable(removeLowCardinality(type_array->getNestedType()));
+    return decayed;
+}
+
 ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePtr & type)
 {
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))

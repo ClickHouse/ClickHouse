@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 
 #include <string_view>
@@ -34,6 +35,15 @@ bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & ri
 /// value cannot probe all of them, so it must decline rather than prune a matching granule.
 /// Recurses into `Array` for the constant of `has`/`hasAny`/`hasAll`.
 bool zeroPaddedStringConstant(const DataTypePtr & type);
+
+/// A copy of `field` with the trailing zero padding removed from every `FixedString` value it
+/// carries, recursing into `Array`. `String = FixedString(N)` ignores that padding, so the search
+/// terms of a skip index have to be taken from the value without it.
+Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type);
+
+/// The type whose values become the terms or hashes of a skip index: for an array-typed indexed
+/// column, its element type. `Nullable` and `LowCardinality` wrappers are removed.
+DataTypePtr indexedElementType(const DataTypePtr & type);
 
 /// The canonical form of a value under that rule.
 inline std::string_view stripTrailingZeros(std::string_view value)
