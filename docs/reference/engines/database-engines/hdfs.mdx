@@ -1,0 +1,45 @@
+---
+description: 'The HDFS database engine exposes files in HDFS as read-only tables.'
+sidebarTitle: 'HDFS'
+slug: /engines/database-engines/hdfs
+title: 'HDFS'
+doc_type: 'reference'
+---
+
+The `HDFS` database engine exposes files in HDFS as read-only tables. A table name is resolved through the [`hdfs`](/reference/table-functions/hdfs) table function.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE hdfs_data
+ENGINE = HDFS([hdfs_host_and_root_path]);
+```
+
+`hdfs_host_and_root_path` optionally sets a base HDFS URL. When it is present, table names are paths relative to that URL. Without it, table names must be full `hdfs://` URLs.
+
+## Usage {#usage}
+
+```sql
+CREATE DATABASE hdfs_data
+ENGINE = HDFS('hdfs://namenode:9000/data');
+
+SELECT * FROM hdfs_data.`events.parquet`;
+```
+
+The schema and format are inferred in the same way as for the `hdfs` table function. The database owns no table definitions and does not support table DDL or writes.
+
+## Access control {#access-control}
+
+HDFS URLs are checked against the server's remote-host filter. When [`table_engines_require_grant`](/reference/settings/server-settings/settings/access-control#table_engines_require_grant) is enabled, creating this database requires the appropriate `HDFS` source privilege, for example:
+
+```sql
+GRANT READ, WRITE ON HDFS TO user_name;
+```
+
+See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`hdfs` table function](/reference/table-functions/hdfs)
+- [Filesystem database engine](/reference/engines/database-engines/filesystem)
+- [S3 database engine](/reference/engines/database-engines/s3)
