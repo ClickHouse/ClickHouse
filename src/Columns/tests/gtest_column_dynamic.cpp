@@ -1,8 +1,10 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/Serializations/SerializationDynamic.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <gtest/gtest.h>
 #include <Common/Arena.h>
 
@@ -589,6 +591,40 @@ TEST(ColumnDynamic, SameLayoutSharedVariantKeepsInvariant)
     check(One);
     check(Many);
     check(Range);
+}
+
+TEST(ColumnDynamic, SharedVariantPromotionInvalidatesMergeStatistics)
+{
+    auto source_for_statistics = ColumnDynamic::create(10);
+    source_for_statistics->insert(Field(1));
+
+    auto column_to = ColumnDynamic::create(10);
+    column_to->takeDynamicStructureFromSourceColumns(Columns{source_for_statistics->getPtr()}, std::nullopt);
+    ASSERT_NE(column_to->getStatistics(), nullptr);
+    ASSERT_FALSE(column_to->getStatistics()->variants_statistics.contains("String"));
+
+    auto source_shared = ColumnDynamic::create(1);
+    source_shared->insert(Field(1));
+    source_shared->insert(Field("from_shared"));
+    ASSERT_EQ(getTypeNamesInSharedVariant(*source_shared), (std::set<String>{"String"}));
+
+    /// prepareForSquashing restores the destination's global variant capacity when its shared
+    /// storage is empty. The PR's shared-row insertion can then promote String to a regular variant.
+    column_to->prepareForSquashing(Columns{source_shared->getPtr()}, 1);
+    column_to->insertRangeFrom(*source_shared, 1, 1);
+
+    ASSERT_TRUE(column_to->getVariantInfo().variant_name_to_discriminator.contains("String"));
+
+    WriteBufferFromOwnString output;
+    SerializationDynamic serialization(10);
+    ISerialization::SerializeBinaryBulkSettings settings;
+    settings.getter = [&](const auto &) -> WriteBuffer * { return &output; };
+    settings.object_and_dynamic_write_statistics =
+        ISerialization::SerializeBinaryBulkSettings::ObjectAndDynamicStatisticsMode::PREFIX;
+    ISerialization::SerializeBinaryBulkStatePtr state;
+    ASSERT_NO_THROW(serialization.serializeBinaryBulkStatePrefix(*column_to, settings, state));
+
+    ASSERT_EQ(column_to->getStatistics(), nullptr);
 }
 
 void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const std::vector<String> & expected_names, const std::unordered_map<String, UInt8> & expected_variant_name_to_discriminator)
