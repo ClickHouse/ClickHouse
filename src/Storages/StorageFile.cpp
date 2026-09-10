@@ -1378,6 +1378,7 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     is_path_with_globs = file_source_.with_globs;
     path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
     archive_info = std::move(file_source_.archive_info);
+    total_bytes_to_read = file_source_.total_bytes_to_read;
 
     is_db_table = false;
 
