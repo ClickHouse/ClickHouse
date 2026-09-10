@@ -3,11 +3,13 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-coordinator = cluster.add_instance("coordinator", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, use_keeper=False)
-current = cluster.add_instance("current", main_configs=["configs/remote_servers.xml"], with_zookeeper=True, use_keeper=False)
+main_configs = ["configs/remote_servers.xml", "configs/backups_disk.xml"]
+coordinator = cluster.add_instance("coordinator", main_configs=main_configs, external_dirs=["/backups/"], with_zookeeper=True, use_keeper=False)
+current = cluster.add_instance("current", main_configs=main_configs, external_dirs=["/backups/"], with_zookeeper=True, use_keeper=False)
 older = cluster.add_instance(
     "older",
-    main_configs=["configs/remote_servers.xml"],
+    main_configs=main_configs,
+    external_dirs=["/backups/"],
     image="clickhouse/clickhouse-server",
     tag="26.5.1.882",
     stay_alive=True,
@@ -176,3 +178,57 @@ def test_setting_name_in_literal(peer_name):
 def test_initial_query_is_not_rewritten():
     error = older.query_and_get_error("SELECT 42 SETTINGS send_profile_traces = 0", timeout=30)
     assert "UNKNOWN_SETTING" in error and "send_profile_traces" in error
+
+
+@pytest.fixture(scope="module")
+def restore_seeds(started_cluster):
+    backups = {}
+    for name, peer in PEERS.items():
+        peer.query("CREATE TABLE backup_source (x UInt8) ENGINE = Memory")
+        peer.query("INSERT INTO backup_source VALUES (42)")
+        backups[name] = f"Disk('backups', 'seed_{name}')"
+        result = coordinator.query(
+            f"BACKUP TABLE backup_source ON CLUSTER {name}_cluster TO {backups[name]}",
+            settings=dict(SETTINGS, send_profile_traces=1),
+            timeout=30,
+        )
+        # A delivery setting in the separate DDL settings payload is clamped by old workers.
+        assert "BACKUP_CREATED" in result
+    return backups
+
+
+@pytest.mark.parametrize("peer_name", ["older", "current"])
+@pytest.mark.parametrize("operation", ["BACKUP", "RESTORE"])
+@pytest.mark.parametrize("index,value", enumerate([None, "0", "1", "'false'", "DEFAULT"]))
+def test_backup_restore_query_setting(peer_name, operation, index, value, restore_seeds):
+    name = f"backup_setting_{peer_name}_{index}"
+    if operation == "BACKUP":
+        query = f"BACKUP TABLE backup_source ON CLUSTER {peer_name}_cluster TO Disk('backups', '{name}')"
+    else:
+        query = f"RESTORE TABLE backup_source AS {name} ON CLUSTER {peer_name}_cluster FROM {restore_seeds[peer_name]}"
+    if value is not None:
+        query += f" SETTINGS send_profile_traces={value}"
+
+    result = coordinator.query(query, settings=dict(SETTINGS, send_profile_traces=1), timeout=30)
+    expected_status = "BACKUP_CREATED" if operation == "BACKUP" else "RESTORED"
+    assert expected_status in result
+    if operation == "RESTORE":
+        assert PEERS[peer_name].query(f"SELECT x FROM {name}") == "42\n"
+
+
+@pytest.mark.parametrize("peer_name", ["older", "current"])
+@pytest.mark.parametrize("operation", ["BACKUP", "RESTORE"])
+@pytest.mark.parametrize("clause", ["'not-a-bool'", "'not-a-bool', send_profile_traces=1", "1, send_profile_traces='not-a-bool'"])
+def test_backup_restore_invalid_query_setting(peer_name, operation, clause, restore_seeds):
+    if operation == "BACKUP":
+        query = f"BACKUP TABLE backup_source ON CLUSTER {peer_name}_cluster TO Disk('backups', 'invalid_setting')"
+    else:
+        query = f"RESTORE TABLE backup_source AS invalid_restore ON CLUSTER {peer_name}_cluster FROM {restore_seeds[peer_name]}"
+    # HTTP sends the invalid setting to the server without Native client validation.
+    error = coordinator.http_query_and_get_error(
+        query + f" SETTINGS send_profile_traces={clause}",
+        method="POST",
+        params=SETTINGS,
+        timeout=30,
+    )
+    assert "CANNOT_PARSE_BOOL" in error
