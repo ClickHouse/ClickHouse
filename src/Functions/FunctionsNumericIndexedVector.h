@@ -48,19 +48,9 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignatureString() const override
     {
-        const auto * arg = checkAndGetDataType<DataTypeMap>(arguments[0].get());
-        if (!arg)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The argument for function {} must be Map type", getName());
-        DataTypes argument_types = {arg->getKeyType(), arg->getValueType()};
-        Array params_row;
-        AggregateFunctionProperties properties;
-        AggregateFunctionPtr numeric_indexed_vector_function;
-        auto action = NullsAction::EMPTY;
-        numeric_indexed_vector_function = AggregateFunctionFactory::instance().get(
-            NameAggregateFunctionGroupNumericIndexedVector::name, action, argument_types, params_row, properties);
-        return std::make_shared<DataTypeAggregateFunction>(numeric_indexed_vector_function, argument_types, params_row);
+        return "(Map(K, V)) -> AggregateFunction('groupNumericIndexedVector', K, V)";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -138,6 +128,15 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    /// Binary ops between two NumericIndexedVector sketches or a sketch and a
+    /// scalar. The runtime additionally enforces that both sketches share inner
+    /// index/value types (the DSL doesn't model the cross-argument equality).
+    String getSignatureString() const override
+    {
+        return "(A : AggregateFunction('groupNumericIndexedVector', Any, Any), AggregateFunction('groupNumericIndexedVector', Any, Any)) -> A"
+               " OR (A : AggregateFunction('groupNumericIndexedVector', Any, Any), Number) -> A";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -536,6 +535,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> " + DataTypeNumber<ToType>{}.getName();
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -632,6 +636,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    /// The result type is the sketch's value type V (the second inner argument
+    /// of `groupNumericIndexedVector`). The DSL captures it directly inside
+    /// the matcher, so the signature is authoritative for this function.
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, V), Any) -> V";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * type0 = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -727,6 +739,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', Any, Any)) -> String";
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(arguments[0].get());
@@ -807,6 +824,11 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    String getSignatureString() const override
+    {
+        return "(AggregateFunction('groupNumericIndexedVector', K, V)) -> Map(K, V)";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

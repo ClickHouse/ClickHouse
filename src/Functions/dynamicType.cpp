@@ -39,15 +39,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        FunctionArgumentDescriptors mandatory_args{
-            {"dynamic", isDynamic, nullptr, "Dynamic"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-        return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    }
+    String getSignatureString() const override { return "(Dynamic) -> LowCardinality(String)"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
@@ -99,16 +91,7 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        FunctionArgumentDescriptors mandatory_args{
-            {"dynamic", isDynamic, nullptr, "Dynamic"}
-        };
-
-        validateFunctionArguments(*this, arguments, mandatory_args);
-
-        return DataTypeFactory::instance().get("Bool");
-    }
+    String getSignatureString() const override { return "(Dynamic) -> Bool"; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {

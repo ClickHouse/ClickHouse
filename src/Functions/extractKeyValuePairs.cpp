@@ -133,9 +133,10 @@ public:
         }
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    String getSignatureString() const override
     {
-        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
+        /// Argument types aren't validated by the legacy code; just the count is variadic.
+        return "(...) -> Map(String, String)";
     }
 
     bool isVariadic() const override

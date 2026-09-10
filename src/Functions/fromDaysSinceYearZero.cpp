@@ -51,13 +51,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignatureString() const override
     {
-        FunctionArgumentDescriptors args{{"days", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), nullptr, "Integer"}};
-
-        validateFunctionArguments(*this, arguments, args);
-
-        return std::make_shared<typename Traits::ReturnDataType>();
+        return "(NativeInteger) -> " + typename Traits::ReturnDataType{}.getName();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override

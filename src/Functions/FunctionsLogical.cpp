@@ -148,7 +148,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
@@ -687,42 +686,8 @@ llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & v
 #endif
 }
 
-template <typename Impl, typename Name>
-DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    if (arguments.size() < 2)
-        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                    "Number of arguments for function \"{}\" should be at least 2: passed {}",
-                    getName(), arguments.size());
-
-    bool has_nullable_arguments = false;
-    bool has_bool_arguments = false;
-    for (size_t i = 0; i < arguments.size(); ++i)
-    {
-        const auto & arg_type = arguments[i];
-
-        if (isBool(arg_type))
-            has_bool_arguments = true;
-
-        if (!has_nullable_arguments)
-        {
-            has_nullable_arguments = arg_type->isNullable();
-            if (has_nullable_arguments && !Impl::specialImplementationForNulls())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected type of argument for function \"{}\": "
-                    " argument {} is of type {}", getName(), i + 1, arg_type->getName());
-        }
-
-        if (!(isNativeNumber(arg_type)
-            || (Impl::specialImplementationForNulls() && (arg_type->onlyNull() || isNativeNumber(removeNullable(arg_type))))))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type ({}) of {} argument of function {}",
-                arg_type->getName(), i + 1, getName());
-    }
-
-    auto result_type = has_bool_arguments ? DataTypeFactory::instance().get("Bool") : std::make_shared<DataTypeUInt8>();
-    return has_nullable_arguments
-            ? makeNullable(result_type)
-            : result_type;
-}
+/// The result type of `and`/`or`/`xor` is derived from the declarative signature in
+/// `FunctionAnyArityLogical::getSignatureString` (the base `getReturnTypeImpl` applies it).
 
 template <bool inverted>
 static void applyTernaryLogicImpl(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)

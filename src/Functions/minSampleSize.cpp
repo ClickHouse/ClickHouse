@@ -41,29 +41,17 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    static DataTypePtr getReturnType()
+    String getSignatureString() const override
     {
-        auto float_64_type = std::make_shared<DataTypeNumber<Float64>>();
-
-        DataTypes types{
-            float_64_type,
-            float_64_type,
-            float_64_type,
-        };
-
-        Strings names{
-            "minimum_sample_size",
-            "detect_range_lower",
-            "detect_range_upper",
-        };
-
-        return std::make_shared<DataTypeTuple>(std::move(types), std::move(names));
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        Impl::validateArguments(arguments);
-        return getReturnType();
+        String args;
+        for (size_t i = 0; i < Impl::num_args; ++i)
+        {
+            if (i) args += ", ";
+            args += Impl::arg_matcher;
+        }
+        return "(" + args + ") -> Tuple(minimum_sample_size Float64, "
+                                       "detect_range_lower Float64, "
+                                       "detect_range_upper Float64)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -82,19 +70,7 @@ struct ContinuousImpl
     static constexpr auto name = "minSampleSizeContinuous";
     static constexpr size_t num_args = 5;
     static constexpr size_t const_args[] = {2, 3, 4};
-
-    static void validateArguments(const ColumnsWithTypeAndName & arguments)
-    {
-        FunctionArgumentDescriptors mandatory_args{
-            {"baseline", isNativeNumber, nullptr, "native numeric"},
-            {"sigma", isNativeNumber, nullptr, "native numeric"},
-            {"mde", isNativeNumber, nullptr, "native numeric"},
-            {"power", isNativeNumber, nullptr, "native numeric"},
-            {"alpha", isNativeNumber, nullptr, "native numeric"}
-        };
-
-        validateFunctionArguments(name, arguments, mandatory_args);
-    }
+    static constexpr std::string_view arg_matcher = "NativeNumber";
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
     {
@@ -175,18 +151,7 @@ struct ConversionImpl
     static constexpr auto name = "minSampleSizeConversion";
     static constexpr size_t num_args = 4;
     static constexpr size_t const_args[] = {1, 2, 3};
-
-    static void validateArguments(const ColumnsWithTypeAndName & arguments)
-    {
-        FunctionArgumentDescriptors mandatory_args{
-            {"p1", isFloat, nullptr, "Float"},
-            {"p2", isFloat, nullptr, "Float"},
-            {"power", isFloat, nullptr, "Float"},
-            {"alpha", isFloat, nullptr, "Float"}
-        };
-
-        validateFunctionArguments(name, arguments, mandatory_args);
-    }
+    static constexpr std::string_view arg_matcher = "Float";
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
     {

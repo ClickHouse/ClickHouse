@@ -10,8 +10,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
@@ -31,29 +29,14 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    String getSignatureString() const override
+    {
+        return "(UInt8, Array, Array, ...) -> UInt8";
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 };
-
-DataTypePtr FunctionValidateNestedArraySizes::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    size_t num_args = arguments.size();
-
-    if (num_args < 3)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs more than two arguments; passed {}.",
-            getName(), arguments.size());
-
-    if (!WhichDataType(arguments[0]).isUInt8())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {} Must be UInt.",
-                arguments[0]->getName(), getName());
-
-    for (size_t i = 1; i < num_args; ++i)
-        if (!WhichDataType(arguments[i]).isArray())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of {} argument of function {} Must be Array.",
-                arguments[i]->getName(), i, getName());
-
-    return std::make_shared<DataTypeUInt8>();
-}
 
 ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const

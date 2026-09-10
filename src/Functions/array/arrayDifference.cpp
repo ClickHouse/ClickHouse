@@ -21,6 +21,14 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
+    /// Authoritative — array of consecutive differences. The result element type widens to fit a
+    /// signed difference (e.g. `Array(UInt8)` → `Array(Int16)`, `Array(UInt32)` → `Array(Int64)`);
+    /// `Decimal` keeps its type and `DateTime64` widens to a signed `Decimal64` of the same scale.
+    /// See the `arrayDifferenceResult` type function. `Date`/`DateTime` inputs are accepted too.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number | DateOrDateTime), Array, ...) -> Array(arrayDifferenceResult(T))"
+        " OR (Array(T : Number | DateOrDateTime)) -> Array(arrayDifferenceResult(T))";
+
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }

@@ -42,6 +42,38 @@ public:
     bool isDeterministic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    /// Documentation-only — both variants produce a timestamp array tagged
+    /// with the broadest decimal-scale among the inputs (e.g. a `DateTime64(3)`
+    /// argument promotes the result), which isn't expressible in the DSL.
+    /// `timeSeriesFromGrid` wraps each timestamp with the matching value from
+    /// the trailing `Array(Float*)` / `Array(Nullable(Float*))` argument.
+    String getSignatureString() const override
+    {
+        if constexpr (with_values)
+            return "(DateTime | DateTime64 | UInt32,"
+                   " DateTime | DateTime64 | UInt32,"
+                   " Decimal | NativeInteger,"
+                   " Array) -> Array(Tuple(DateTime64, Any))";
+        else
+            return "(DateTime | DateTime64 | UInt32,"
+                   " DateTime | DateTime64 | UInt32,"
+                   " Decimal | NativeInteger) -> Array(DateTime64)";
+    }
+
+    /// The declarative signature above is documentation-only: the exact result type is not
+    /// expressible in the DSL, so the `ColumnsWithTypeAndName` override below is authoritative.
+    /// Route the types-only path to it as well, so the base
+    /// `IFunction::getReturnTypeImpl(DataTypes)` never applies the documentation string (which
+    /// would reject valid calls or evaluate an uncaptured return-type name).
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+        return getReturnTypeImpl(columns);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         checkDataTypes(arguments);

@@ -13,6 +13,8 @@ SELECT round(financialInternalRateOfReturnExtended([-10000], [toDate32('2020-01-
 SELECT round(financialInternalRateOfReturnExtended([-10000, NULL, 4250, 3250], [toDate32('2020-01-01'), toDate32('2020-03-01'), toDate32('2020-10-30'), toDate32('2021-02-15')]), 6) AS xirr_rate; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT financialInternalRateOfReturnExtended([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT financialInternalRateOfReturnExtended([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 1.0, 'QWERTY');  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- The daycount string cannot be supplied without guess: it must not bind to the optional guess position.
+SELECT financialInternalRateOfReturnExtended([-100, 110], [toDate('2020-01-01'), toDate('2020-02-01')], 'ACT_365F');  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 SELECT 'Zero cashflow entries -> NaN:';
 SELECT financialInternalRateOfReturnExtended([]::Array(Float32), []::Array(Date));
