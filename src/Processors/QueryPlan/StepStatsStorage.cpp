@@ -97,7 +97,7 @@ StepStatsStorage::ElapsedTimesPerStepGroup StepStatsStorage::collectTimingStats(
 
         if (group_stats.wall_clock_time_ns == 0)
         {
-            if (const auto * registry = pipeline.getStepClocks())
+            if (auto * registry = pipeline.getStepClocks())
                 if (const auto * clock = registry->find(step_id, group))
                     group_stats.wall_clock_time_ns = clock->getStepWallTime();
         }

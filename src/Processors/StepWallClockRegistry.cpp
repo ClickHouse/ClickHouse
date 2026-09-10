@@ -41,7 +41,12 @@ void StepWallClockRegistry::populateFromPlan(const QueryPlan & plan)
     }
 }
 
-StepWallClock * StepWallClockRegistry::find(const String & step_uniq_id, size_t group) const
+void StepWallClockRegistry::markExecutionFinished()
+{
+    execution_time_ns.store(clock_gettime_ns() - query_start_ns, std::memory_order_release);
+}
+
+StepWallClock * StepWallClockRegistry::find(const String & step_uniq_id, size_t group)
 {
     auto it = clocks.find({step_uniq_id, group});
     return it != clocks.end() ? it->second.get() : nullptr;

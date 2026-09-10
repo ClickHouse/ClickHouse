@@ -43,7 +43,7 @@ public:
     constexpr static size_t max_scheduled_local_tasks = 128;
     size_t num_scheduled_local_tasks = 0;
 
-    const StepWallClockRegistry * step_to_wall_clock_registry = nullptr;
+    StepWallClockRegistry * step_to_wall_clock_registry = nullptr;
 
     const size_t thread_number;
     const bool profile_processors;
@@ -63,7 +63,7 @@ public:
     std::exception_ptr getException();
     void rethrowExceptionIfHas();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
         : read_progress_callback(callback)
         , step_to_wall_clock_registry(step_wall_clock_registry_)
         , thread_number(thread_number_)

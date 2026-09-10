@@ -95,7 +95,7 @@ public:
     // threads can cover the push, or no new tasks were added).
     size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback);
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback);
 
     /// Push initial tasks. Returns the count of tasks pushed (regular + async) — used by
     /// `PipelineExecutor::initializeExecution` to size the slot-allocation ceiling via

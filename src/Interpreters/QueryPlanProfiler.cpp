@@ -1,7 +1,6 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/Stopwatch.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
@@ -141,7 +140,7 @@ const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
         {
             UInt64 execution_time_ns = 0;
             if (const auto * registry = pipeline->getStepClocks())
-                execution_time_ns = clock_gettime_ns() - registry->getQueryStartNs();
+                execution_time_ns = registry->getExecutionTimeNs();
             stats.emplace(*pipeline, execution_time_ns);
         }
 
