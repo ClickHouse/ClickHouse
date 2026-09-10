@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-darwin
-# no-darwin: on Darwin StackTrace::resolveAddress keeps runtime addresses (AddressKind::Unsupported) and
-# system.symbols reports absolute addresses of every loaded image, so no frame is stored as a file offset
-# and max(address_end) is above all of them: neither column below can measure anything there.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
