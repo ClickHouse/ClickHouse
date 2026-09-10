@@ -409,7 +409,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
     }
     else
     {
-        const size_t packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out);
+        const size_t packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out, codec);
         StreamingExchangeProtocol::finishDataPacket(const_cast<char *>(out->stringView().data()) + packet_offset, out->count() - packet_offset);
         ++packets_in_out;
     }

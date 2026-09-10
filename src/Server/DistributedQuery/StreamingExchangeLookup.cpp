@@ -10,13 +10,39 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <base/types.h>
+#include <Compression/CompressionFactory.h>
+#include <Core/Settings.h>
+#include <Poco/String.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
+}
+
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+CompressionCodecPtr streamingExchangeCompressionCodec(const Settings & settings)
+{
+    const String method = Poco::toUpper(settings[Setting::network_compression_method].toString());
+    /// The factory also knows codecs such as `Delta` that work only on some column types. Only the
+    /// general codecs can compress any data.
+    if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    std::optional<int> level;
+    if (method == "ZSTD")
+        level = static_cast<int>(settings[Setting::network_zstd_compression_level]);
+
+    CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(settings));
+    return CompressionCodecFactory::instance().get(method, level);
 }
 
 class StreamingExchangeLookup : public IExchangeLookup
@@ -26,11 +52,13 @@ public:
         const String & query_id_,
         ExchangeConnectionsPtr connections_,
         const ExchangeStreamSources & exchange_stream_sources_,
-        DistributedQueryCancellationPtr cancellation_)
+        DistributedQueryCancellationPtr cancellation_,
+        CompressionCodecPtr codec_)
         : query_id(query_id_)
         , connections(connections_)
         , exchange_stream_sources(exchange_stream_sources_)
         , cancellation(std::move(cancellation_))
+        , codec(std::move(codec_))
     {
     }
 
@@ -38,12 +66,12 @@ public:
     {
         auto stream_name = exchange_stream_id.toString();
         auto future_connection = connections->getConnection(query_id, stream_name);
-        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name, input_is_serialized);
+        return std::make_shared<StreamingExchangeSink>(input_header, future_connection, stream_name, input_is_serialized, codec);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String &) override
     {
-        return std::make_shared<StreamingExchangeSerializingTransform>(std::move(input_header));
+        return std::make_shared<StreamingExchangeSerializingTransform>(std::move(input_header), codec);
     }
 
     std::shared_ptr<IProcessor> createDeserializer(SharedHeader output_header, const String & exchange_id) override
@@ -69,15 +97,17 @@ private:
     const ExchangeConnectionsPtr connections;
     const ExchangeStreamSources exchange_stream_sources;
     const DistributedQueryCancellationPtr cancellation;
+    const CompressionCodecPtr codec;
 };
 
 ExchangeLookupPtr createStreamingExchangeLookup(
     const String & query_id,
     ExchangeConnectionsPtr connections,
     const ExchangeStreamSources & exchange_stream_sources,
-    DistributedQueryCancellationPtr cancellation)
+    DistributedQueryCancellationPtr cancellation,
+    CompressionCodecPtr codec)
 {
-    return std::make_shared<StreamingExchangeLookup>(query_id, connections, exchange_stream_sources, std::move(cancellation));
+    return std::make_shared<StreamingExchangeLookup>(query_id, connections, exchange_stream_sources, std::move(cancellation), std::move(codec));
 }
 
 }

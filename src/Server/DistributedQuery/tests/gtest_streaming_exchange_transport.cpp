@@ -14,6 +14,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
+#include <Compression/CompressionFactory.h>
 #include <Common/ThreadStatus.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -159,14 +160,14 @@ QueryPipeline makeSendingPipeline(
     if (sink_takes_packets)
         builder.addSimpleTransform([](const SharedHeader & stream_header)
         {
-            return std::make_shared<StreamingExchangeSerializingTransform>(stream_header);
+            return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec());
         });
     builder.resize(1);
 
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", sink_takes_packets);
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", sink_takes_packets, CompressionCodecFactory::instance().getDefaultCodec());
     });
     return QueryPipelineBuilder::getPipeline(std::move(builder));
 }
@@ -395,11 +396,11 @@ TEST(StreamingExchangeTransport, EmptyChunkIsDataOnAColumnlessStream)
             builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
             builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<EmptyOneRowChunks>(stream_header); });
             if (sink_takes_packets)
-                builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header); });
+                builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec()); });
             auto future_connection = exchange.connections->getConnection("query", "stream");
             builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
             {
-                return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", sink_takes_packets);
+                return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", sink_takes_packets, CompressionCodecFactory::instance().getDefaultCodec());
             });
             auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
 
@@ -452,11 +453,11 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(input))));
-    builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header); });
+    builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header, CompressionCodecFactory::instance().getDefaultCodec()); });
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
     {
-        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*input_is_serialized_=*/ true);
+        return std::make_shared<StreamingExchangeSink>(stream_header, future_connection, "stream", /*input_is_serialized_=*/ true, CompressionCodecFactory::instance().getDefaultCodec());
     });
     auto sending = QueryPipelineBuilder::getPipeline(std::move(builder));
 
@@ -630,7 +631,7 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
         {
             WriteBufferFromOwnString packets;
             const auto header = makeHeader();
-            const size_t first = StreamingExchangeProtocol::writeDataPacket(makeChunk(0, 3), header, packets);
+            const size_t first = StreamingExchangeProtocol::writeDataPacket(makeChunk(0, 3), header, packets, CompressionCodecFactory::instance().getDefaultCodec());
             const size_t marker = StreamingExchangeProtocol::writeEndOfStreamPacket(packets);
             packets.finalize();
             std::string bytes = packets.str();

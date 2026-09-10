@@ -20,17 +20,21 @@
 namespace DB
 {
 
+class ICompressionCodec;
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+
 class StreamingExchangeSink final : public ISink
 {
 public:
     /// With `input_is_serialized_` the input chunks are packets made by
     /// `StreamingExchangeSerializingTransform` and are sent as they are; otherwise the sink
     /// serializes the chunks itself.
-    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_, bool input_is_serialized_)
+    StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_, bool input_is_serialized_, CompressionCodecPtr codec_)
         : ISink(std::move(header_))
         , future_connection(std::move(future_connection_))
         , stream_name(std::move(stream_name_))
         , input_is_serialized(input_is_serialized_)
+        , codec(std::move(codec_))
     {
         wait_events_epoll.add(port_update_wakeup.fd());
     }
@@ -99,6 +103,9 @@ private:
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     const String stream_name;
     const bool input_is_serialized;
+    /// The codec for the packets the sink serializes itself. Packets that arrive serialized are
+    /// already compressed.
+    const CompressionCodecPtr codec;
 
     /// In-memory buffer to which the sink serializes chunks itself.
     /// Once it becomes big enough its contents move to `send_queue`.
