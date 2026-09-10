@@ -28,6 +28,7 @@
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingsFields.h>
 #include <Core/ServerSettings.h>
 #include <Core/UUID.h>
 
@@ -42,6 +43,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -125,6 +127,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -207,6 +210,38 @@ namespace fs = std::filesystem;
 
 namespace
 {
+
+bool fieldToBool(const Field & field)
+{
+    return SettingFieldBool(field);
+}
+
+bool hasLimitShuffleWithDisabledSetting(const ASTPtr & ast, bool allow_experimental_shuffle_query)
+{
+    if (!ast)
+        return false;
+
+    bool allow_experimental_shuffle_query_for_node = allow_experimental_shuffle_query;
+    if (const auto * select = ast->as<ASTSelectQuery>())
+    {
+        if (const auto * settings = select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr)
+        {
+            if (const auto * value = settings->changes.tryGet("allow_experimental_shuffle_query"))
+                allow_experimental_shuffle_query_for_node = fieldToBool(*value);
+        }
+
+        if (select->limit_shuffle && !allow_experimental_shuffle_query_for_node)
+            return true;
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (hasLimitShuffleWithDisabledSetting(child, allow_experimental_shuffle_query_for_node))
+            return true;
+    }
+
+    return false;
+}
 
 /// How many tables a single `CREATE` adds to the database. Usually one, but the engines with
 /// hidden inner tables (`MaterializedView`, `TimeSeries`) issue nested internal `CREATE`s from
@@ -1048,7 +1083,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (create.select)
     {
         if (create.isParameterizedView())
+        {
+            if (hasLimitShuffleWithDisabledSetting(create.select, getContext()->getSettingsRef()[Setting::allow_experimental_shuffle_query]))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled (turn on setting `allow_experimental_shuffle_query`)");
+
             return properties;
+        }
 
         if (create.aliases_list)
         {

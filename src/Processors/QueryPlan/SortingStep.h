@@ -123,6 +123,8 @@ public:
     void skipScatterByPartition() { skip_scatter_by_partition = true; }
 
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
+    bool allowsUnorderedOutput() const { return allow_unordered_output; }
+    void setAllowUnorderedOutput() { allow_unordered_output = true; }
 
     bool isPartialTopN() const { return is_partial_top_n; }
     void setPartialTopN() { is_partial_top_n = true; }
@@ -237,6 +239,7 @@ private:
     bool always_read_till_end = false;
     bool use_buffering = false;
     bool apply_virtual_row_conversions = false;
+    bool allow_unordered_output = false;
 
     TopKThresholdTrackerPtr threshold_tracker;
 

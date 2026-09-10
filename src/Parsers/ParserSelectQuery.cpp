@@ -346,6 +346,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_qualify(Keyword::QUALIFY);
     ParserKeyword s_order_by(Keyword::ORDER_BY);
     ParserKeyword s_limit(Keyword::LIMIT);
+    ParserKeyword s_shuffle(Keyword::SHUFFLE);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_by(Keyword::BY);
     ParserKeyword s_rollup(Keyword::ROLLUP);
@@ -677,6 +678,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     bool has_offset_clause = false;
     bool offset_clause_has_sql_standard_row_or_rows = false; /// OFFSET offset_row_count {ROW | ROWS}
+    bool limit_shuffle = false;
 
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list | LIMIT offset, length BY expr-list
     if (s_limit.ignore(pos, expected))
@@ -748,6 +750,10 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!exp_list.parse(pos, limit_by_expression_list, expected))
                         return false;
                 }
+            }
+            else if (s_shuffle.ignore(pos, expected))
+            {
+                limit_shuffle = true;
             }
 
             /// A range may follow the count (`LIMIT n AFTER ...`), but not a `LIMIT BY`.
@@ -866,8 +872,26 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (s_with_ties.ignore(pos, expected))
                 select_query->limit_with_ties = true;
 
+            if (s_shuffle.ignore(pos, expected))
+                limit_shuffle = true;
+
             parseLimitRange(pos, expected, limit_after, limit_until, select_query->limit_after_all);
         }
+    }
+
+    if (limit_shuffle)
+    {
+        if (!limit_length)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use SHUFFLE without LIMIT");
+        if (limit_offset)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use SHUFFLE with LIMIT OFFSET");
+        if (select_query->limit_with_ties)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use SHUFFLE with LIMIT WITH TIES");
+        if (order_expression_list)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use SHUFFLE together with ORDER BY");
+        if (limit_after || limit_until)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Can not use SHUFFLE with LIMIT AFTER/UNTIL");
+        select_query->limit_shuffle = true;
     }
 
     /// WITH TIES was used without ORDER BY
