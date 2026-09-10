@@ -2,7 +2,6 @@
 #include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
-#include <Common/StackTrace.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -100,9 +99,7 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "last_error_trace",
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
-                "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse "
-                "server process."
+                "A stack trace that represents a list of physical addresses where the called methods are stored."
             }
     };
 }
@@ -144,7 +141,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
         std::vector<UInt64> addrs;
         addrs.reserve(trace.size());
         for (auto * ptr : trace)
-            addrs.push_back(StackTrace::resolveAddressForStorage(ptr));
+            addrs.push_back(reinterpret_cast<uintptr_t>(ptr));
         return addrs;
     };
 
