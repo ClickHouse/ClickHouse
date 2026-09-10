@@ -6,6 +6,10 @@
 -- carries none. A session that primed the cache under one `session_timezone` therefore served its
 -- "no matching rows" verdict to a session in another zone, where the same filter matches every row.
 
+-- The query condition cache is written by a plan optimization the old analyzer never reaches, so it
+-- holds nothing there, no session can serve its verdict to another, and the counts below are 0.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_qcc_session_timezone;
 CREATE TABLE t_qcc_session_timezone (x UInt32) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = '';
