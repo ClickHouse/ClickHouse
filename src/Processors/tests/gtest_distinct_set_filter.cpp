@@ -720,33 +720,55 @@ TEST(DistinctSetFilterExtraction, ReturnedColumnsSurviveEarlyExtractorDestructio
     }
 }
 
-TEST(DistinctSetFilterGrowth, LeavesPendingInputAndRetainedKeysUnchangedWhenGrowthDoesNotFit)
+TEST(DistinctSetFilterGrowth, PreparationAndGrowthEstimationDoNotInsertRows)
 {
+    constexpr size_t num_rows = 1024;
     for (const bool populated : {false, true})
     {
-        for (const size_t spill_headroom_bytes : {0, 1024 * 1024})
-        {
-            MemoryTracker user{&total_memory_tracker, VariableContext::User, false};
-            MemoryTracker query{&user, VariableContext::Process, false};
-            std::thread([&]
-            {
-                ThreadStatus thread_status;
-                thread_status.memory_tracker.setParent(&query);
-                thread_status.untracked_memory_limit = 0;
-                const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
-                DistinctSetFilter filter(header, {}, SizeLimits{}, false, true);
-                if (populated)
-                    filter.filter(Chunk({makeColumn({1, 2, 3, 4})}, 4));
-                auto column = ColumnUInt64::create();
-                column->getData().resize(262144);
-                iota(column->getData().data(), column->size(), UInt64(0));
-                Chunk input(Columns{std::move(column)}, 262144);
-                user.setHardLimit(user.get() + 1024 * 1024);
-                EXPECT_FALSE(filter.prepareForInsert(input, spill_headroom_bytes));
-                EXPECT_EQ(filter.getTotalRowCount(), populated ? 4 : 0);
-                EXPECT_EQ(input.getNumRows(), 262144);
-                EXPECT_EQ(input.getColumns().front()->getUInt(262143), 262143);
-            }).join();
-        }
+        SCOPED_TRACE(populated);
+        const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+        DistinctSetFilter filter(header, {}, SizeLimits{});
+        if (populated)
+            filter.filter(Chunk({makeColumn({1, 2, 3, 4})}, 4));
+
+        auto column = ColumnUInt64::create();
+        column->getData().resize(num_rows);
+        iota(column->getData().data(), column->size(), UInt64(0));
+        Chunk input(Columns{std::move(column)}, num_rows);
+        filter.prepareForInsert(input);
+
+        const size_t prepared_bytes = filter.getTotalByteCount();
+        const size_t growth_memory = filter.estimateGrowthMemory(input.getNumRows());
+        EXPECT_GT(growth_memory, 0);
+        EXPECT_EQ(filter.estimateGrowthMemory(input.getNumRows()), growth_memory);
+        EXPECT_EQ(filter.estimateGrowthMemory(0), 0);
+        EXPECT_EQ(filter.getTotalByteCount(), prepared_bytes);
+        EXPECT_EQ(filter.getTotalRowCount(), populated ? 4 : 0);
+        EXPECT_EQ(input.getNumRows(), num_rows);
+        EXPECT_EQ(input.getColumns().front()->getUInt(num_rows - 1), num_rows - 1);
+
+        const auto output = filter.filter(std::move(input));
+        EXPECT_EQ(output.getNumRows(), num_rows - (populated ? 4 : 0));
+        EXPECT_EQ(filter.getTotalRowCount(), num_rows);
+    }
+}
+
+TEST(DistinctSetFilterGrowth, FixedTablesNeedNoGrowthMemory)
+{
+    for (const auto & type : DataTypes{std::make_shared<DataTypeUInt8>(), std::make_shared<DataTypeUInt16>()})
+    {
+        SCOPED_TRACE(type->getName());
+        const Block header = {ColumnWithTypeAndName(type, "k")};
+        DistinctSetFilter filter(header, {}, SizeLimits{});
+        auto column = type->createColumn();
+        column->insert(Field(UInt64(1)));
+        column->insert(Field(UInt64(2)));
+        Chunk input(Columns{std::move(column)}, 2);
+        filter.prepareForInsert(input);
+
+        EXPECT_EQ(filter.estimateGrowthMemory(0), 0);
+        EXPECT_EQ(filter.estimateGrowthMemory(1048576), 0);
+        filter.filter(std::move(input));
+        EXPECT_EQ(filter.estimateGrowthMemory(1048576), 0);
     }
 }

@@ -6,7 +6,6 @@
 #include <Core/Block.h>
 #include <DataTypes/NullableUtils.h>
 #include <Common/ColumnsHashing.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/assert_cast.h>
 
 #include <unordered_map>
@@ -425,8 +424,11 @@ void DistinctSetFilter::initialize(const ColumnRawPtrs & key_columns)
     data->init(type);
 }
 
-bool DistinctSetFilter::prepareForInsert(Chunk & chunk, size_t spill_headroom_bytes)
+void DistinctSetFilter::prepareForInsert(Chunk & chunk)
 {
+    chassert(hasKeyColumns());
+    chassert(!skip_null_keys);
+
     if (data->empty())
     {
         removeSpecialColumnRepresentations(chunk);
@@ -437,14 +439,12 @@ bool DistinctSetFilter::prepareForInsert(Chunk & chunk, size_t spill_headroom_by
             key_columns.push_back(chunk.getColumns()[pos].get());
         initialize(key_columns);
     }
+}
 
-    const auto available = getMostStrictAvailableSystemMemory();
-    if (!available)
-        return true;
-
-    const size_t growth_memory = data->estimateGrowthMemory(chunk.getNumRows());
-    return growth_memory == 0
-        || (spill_headroom_bytes <= *available && growth_memory <= *available - spill_headroom_bytes);
+size_t DistinctSetFilter::estimateGrowthMemory(size_t additional_keys) const
+{
+    chassert(!data->empty());
+    return data->estimateGrowthMemory(additional_keys);
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)

@@ -477,11 +477,16 @@ void ExternalDistinctTransform::consume(Chunk chunk)
         const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
         const size_t spill_headroom_bytes
             = chunk.allocatedBytes() + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
-        if (!distinct_set->prepareForInsert(chunk, spill_headroom_bytes))
+        distinct_set->prepareForInsert(chunk);
+        if (const auto available = getMostStrictAvailableSystemMemory())
         {
-            pending_input = std::move(chunk);
-            startFirstSpill();
-            return;
+            const size_t growth_memory = distinct_set->estimateGrowthMemory(chunk.getNumRows());
+            if (growth_memory && (spill_headroom_bytes > *available || growth_memory > *available - spill_headroom_bytes))
+            {
+                pending_input = std::move(chunk);
+                startFirstSpill();
+                return;
+            }
         }
     }
 

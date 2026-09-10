@@ -138,11 +138,13 @@ public:
     /// Passing `require_extractable_keys_ = true` guarantees the method choice.
     std::unique_ptr<KeyExtractor> extractKeys() &&;
 
-    /// Initializes the set and checks growth assuming every input row introduces a new key. If growth
-    /// is projected, returns `false` when available user/server memory cannot cover its buffer allocations
-    /// plus `spill_headroom_bytes`. The caller then releases or spills the set and processes this chunk
-    /// without inserting it. Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
-    bool prepareForInsert(Chunk & chunk, size_t spill_headroom_bytes);
+    /// Initializes the set from normalized input columns on first use, without inserting keys.
+    /// Requires `hasKeyColumns` to be true and `skip_null_keys_ = false`.
+    void prepareForInsert(Chunk & chunk);
+
+    /// Estimates peak additional hash-table buffer memory for `additional_keys` new keys, excluding
+    /// arena growth. Requires an initialized set.
+    size_t estimateGrowthMemory(size_t additional_keys) const;
 
     /// Inserts unseen keys and retains their first rows, preserving chunk information.
     /// `max_rows_in_distinct` and `max_bytes_in_distinct` apply after insertion. `THROW` raises an
