@@ -314,11 +314,6 @@ private:
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
-    /// True only while `finish` is between its completed `tryCancel` and the end of its packet drain,
-    /// so the Cancel packet is already sent there. Deliberately not guarded by `was_cancelled_mutex`:
-    /// `finish` holds that mutex across a blocking network read, so a reader of it could not proceed.
-    std::atomic_bool drain_in_progress = false;
-
     /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
     /// owe us is that announcement - see `tryCancel`.
     std::atomic_bool announcement_received = false;
