@@ -74,7 +74,9 @@ public:
       * Returns an empty `StorageID` for a table function that produces a storage of its own (`s3`, `numbers`,
       * `view`, `merge`), which is the default. Parallel replicas use this to decide whether a table function
       * can anchor a distributed read: the read is coordinated across replicas that each resolve the call
-      * locally, so it is only correct for a stable reference.
+      * locally, so it is only correct for a stable reference. Note that only the query-text mode addresses
+      * the read by this id; `parallel_replicas_plan_based` still ships the resolved storage's own id (see the
+      * `TODO` in `buildQueryPlanForTableExpression`).
       */
     virtual StorageID getReferencedTableID() const { return StorageID::createEmpty(); }
 

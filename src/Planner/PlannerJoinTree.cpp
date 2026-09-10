@@ -2721,6 +2721,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// plan. Deciding whether to use parallel replicas and where to place the
                                 /// local/remote boundary is done later, as an analysis of the whole plan
                                 /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
+                                ///
+                                /// TODO: this mode does not yet honour `ITableFunction::getReferencedTableID`.
+                                /// The shipped fragment is a `ReadFromMergeTree` and `ReadFromMergeTree::serialize`
+                                /// writes the storage the call resolved to *here*, so a read through a table
+                                /// function names the hidden inner table rather than the table the call names.
+                                /// Replicas that assigned a different UUID to the outer table then fail to find
+                                /// it. Teaching the fragment to carry the call instead needs a query-plan
+                                /// serialization change, so it is left out of the change that introduced
+                                /// `getReferencedTableID` for the query-text path.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,
