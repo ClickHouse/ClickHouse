@@ -10,6 +10,18 @@ text	Variant(IntervalDay, String)
 v	Variant(String, UInt16)					
 2022-01-08	Variant(Date, String)
 text	Variant(Date, String)
+--- for Variant(Tuple(ip IPv6), String), whose branch it stores as a struct of raw bytes ---
+v	Variant(String, Tuple(\n    ip FixedString(16)))					
+('::1')	Variant(String, Tuple(\n    ip IPv6))
+text	Variant(String, Tuple(\n    ip IPv6))
+--- for Variant(Array(IPv6), String) ---
+v	Variant(Array(FixedString(16)), String)					
+['::1']	Variant(Array(IPv6), String)
+text	Variant(Array(IPv6), String)
+--- and for Variant(Map(String, IPv6), String) ---
+v	Variant(Map(String, FixedString(16)), String)					
+text	Variant(Map(String, IPv6), String)
+{'k':'::1'}	Variant(Map(String, IPv6), String)
 --- Arrow: union children the writer stores alike are told apart by their names ---
 v	Variant(IPv6, Int128)					
 ::1	IPv6
@@ -199,6 +211,31 @@ s
 4	s
 --- ArrowStream: a date32 child is never narrowed to Date, so date32 children named Date and Date32 stay rejected ---
 (INCORRECT_DATA)
+--- a struct branch whose fields differ from the request only in case, matched by name ---
+(3,1)	Variant(String, Tuple(\n    a Int32,\n    b Int32))
+x	Variant(String, Tuple(\n    a Int32,\n    b Int32))
+(4,2)	Variant(String, Tuple(\n    a Int32,\n    b Int32))
+y	Variant(String, Tuple(\n    a Int32,\n    b Int32))
+--- a target tuple may name a subset of the struct's fields, and the rest are projected out ---
+(1)	Variant(String, Tuple(\n    a Int32))
+x	Variant(String, Tuple(\n    a Int32))
+(2)	Variant(String, Tuple(\n    a Int32))
+y	Variant(String, Tuple(\n    a Int32))
+--- an unnamed target tuple expresses no name expectation, so its fields are paired positionally ---
+(1,3,'2022-01-08')	Variant(String, Tuple(Int32, Int32, Date32))
+x	Variant(String, Tuple(Int32, Int32, Date32))
+(2,4,'2022-01-09')	Variant(String, Tuple(Int32, Int32, Date32))
+y	Variant(String, Tuple(Int32, Int32, Date32))
+--- a Variant nested inside a composite inside a Variant is repaired by the same walk ---
+('::1')	Variant(String, Tuple(\n    v Variant(IPv6, String)))
+p	Variant(String, Tuple(\n    v Variant(IPv6, String)))
+('x')	Variant(String, Tuple(\n    v Variant(IPv6, String)))
+q	Variant(String, Tuple(\n    v Variant(IPv6, String)))
+--- a branch already under the requested name keeps fields the request distinguishes by case ---
+(1,3)	Variant(IPv6, Tuple(\n    A Int32,\n    a Int32))
+1:203:405:607:809:a0b:c0d:e0f	Variant(IPv6, Tuple(\n    A Int32,\n    a Int32))
+(2,4)	Variant(IPv6, Tuple(\n    A Int32,\n    a Int32))
+::1	Variant(IPv6, Tuple(\n    A Int32,\n    a Int32))
 --- a date32 branch is excluded by design, so this stays rejected ---
 Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 --- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---
@@ -209,8 +246,16 @@ Cannot convert type Variant(String, UInt32) to Variant(DateTime64(3, 'UTC'), Int
 Cannot convert type Variant(Bool, UInt8) to Variant(String, UInt8).
 --- an int8 branch is never re-declared as Bool, so this stays rejected ---
 Cannot convert type Variant(Int8, String) to Variant(Bool, String).
---- a composite branch is never re-declared, so a name-differing field stays rejected ---
+--- a target field the struct does not have would be filled with a default, so this stays rejected ---
 Cannot convert type Variant(String, Tuple(a Nullable(Int32))) to Variant(String, Tuple(b Int32)).
+--- and so does one target field among fields the struct does have ---
+Cannot convert type Variant(String, Tuple(a Nullable(Int32), b Nullable(Int32), d Nullable(Date32))) to Variant(String, Tuple(a Int32, c Int32)).
+--- the case-insensitive match is the setting's, so by default a case-differing field is rejected ---
+Cannot convert type Variant(String, Tuple(B Nullable(Int32), A Nullable(Int32))) to Variant(String, Tuple(a Int32, b Int32)).
+--- and the date32 exclusion is inherited by the recursion into a struct field ---
+Cannot convert type Variant(String, Tuple(a Nullable(Int32), b Nullable(Int32), d Nullable(Date32))) to Variant(String, Tuple(d Int32)).
+--- an unnamed target tuple of another arity would drop a field silently, so it is rejected ---
+Cannot convert type Variant(String, Tuple(a Nullable(Int32), b Nullable(Int32), d Nullable(Date32))) to Variant(String, Tuple(Int32)).
 --- an ambiguous branch gets no alternative, so this stays rejected ---
 Cannot convert type Variant(FixedString(16), String) to Variant(IPv6, Int128).
 --- an unassigned branch the request does not name abandons the repair, keeping the message ---
@@ -240,6 +285,10 @@ bool_date32	Variant(Bool, Date32)
 retained	Variant(Int8)					
 aliased_retained	Variant(Int32, String)					
 struct_utf8	Variant(String, Tuple(\n    a Nullable(Int32)))					
+struct_ci	Variant(String, Tuple(\n    B Nullable(Int32),\n    A Nullable(Int32)))					
+struct_fields	Variant(String, Tuple(\n    a Nullable(Int32),\n    b Nullable(Int32),\n    d Nullable(Date32)))					
+struct_nested_union	Variant(String, Tuple(\n    v Variant(FixedString(16), String)))					
+struct_ci_dup	Variant(FixedString(16), Tuple(\n    A Int32,\n    a Int32))					
 binary_fsb	Variant(FixedString(16), String)					
 fsb_fsb	Variant(FixedString(16))					
 utf8_int32	Variant(Int32, String)					
