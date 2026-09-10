@@ -39,8 +39,9 @@ struct ViewTarget
         /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
         Tags,
 
-        /// The "metrics" table for a TimeSeries table, contains general information (metadata) about metrics.
-        Metrics,
+        /// The "metric families" table for a TimeSeries table, contains general information (metadata) about metric families.
+        /// The keyword `METRICS` is an old name of this target, it's kept for compatibility.
+        MetricFamilies,
     };
 
     explicit ViewTarget(Kind kind_);

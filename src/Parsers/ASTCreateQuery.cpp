@@ -799,7 +799,7 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
 
     /// The parser attaches each of these clause families only to specific `CREATE` variants:
     /// `refresh_strategy` only to materialized views; `targets` (`ASTViewTargets`) to materialized
-    /// views (`TO`/`TO INNER UUID`), `TimeSeries` tables (`DATA`/`TAGS`/`METRICS`) and plain tables
+    /// views (`TO`/`TO INNER UUID`), `TimeSeries` tables (`SAMPLES`/`TAGS`/`METRIC FAMILIES`) and plain tables
     /// with an explicit `TO INNER UUID` clause (`SharedSet`/`SharedJoin`). Malformed `clickhouse_json`
     /// could attach them to other variants; `formatQueryImpl` would then emit SQL the parser never
     /// accepts (e.g. `CREATE TABLE t REFRESH ...` or `CREATE TABLE t TO dst ...`) while execution

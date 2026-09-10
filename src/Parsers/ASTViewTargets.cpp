@@ -33,7 +33,7 @@ namespace
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
             case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
-            case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
+            case ViewTarget::MetricFamilies: return Keyword::METRIC_FAMILIES; /// METRIC FAMILIES mydb.mymetricfamilies
         }
         UNREACHABLE();
     }
@@ -384,6 +384,9 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         JSONObjectReader target_reader(*target_obj);
         String kind_str = target_reader.getString("kind");
         auto kind_opt = magic_enum::enum_cast<ViewTarget::Kind>(kind_str);
+        /// The old name of the `MetricFamilies` kind.
+        if (!kind_opt && (kind_str == "Metrics"))
+            kind_opt = ViewTarget::MetricFamilies;
         if (!kind_opt)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization", kind_str, i);
         target.kind = *kind_opt;

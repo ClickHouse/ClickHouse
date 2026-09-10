@@ -71,7 +71,7 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "RENAME TABLE ${ORD}.ts TO ${ORD
 # Every source inner table is still present (none orphaned), so the table keeps working.
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.\`.inner.samples.ts\`"
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.\`.inner.tags.ts\`"
-${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.\`.inner.metrics.ts\`"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.\`.inner.metricfamilies.ts\`"
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${ORD}.ts"
 
 ${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "DROP DATABASE ${ORD} SYNC" 2>/dev/null || true

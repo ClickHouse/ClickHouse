@@ -1,0 +1,59 @@
+--- a new table: the METRIC FAMILIES keyword, version 2, the .inner_id.metricfamilies inner table ---
+version = 2
+METRIC FAMILIES INNER UUID
+METRIC FAMILIES INNER COLUMNS
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+1
+0
+--- the metric families are written and read through the inner table ---
+http_requests_total	counter	requests	Total HTTP requests
+http_requests_total	counter	requests	Total HTTP requests
+the alias timeSeriesMetrics still works:
+http_requests_total	counter	requests	Total HTTP requests
+the outer columns are read from the metric families table:
+http_requests_total	counter	requests	Total HTTP requests
+--- the METRICS keyword is an alias of METRIC FAMILIES ---
+METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+0
+--- an external metric families table can be specified with either keyword ---
+METRIC FAMILIES <db>.mf_external
+METRIC FAMILIES <db>.mf_external
+up	gauge		Whether the target is up
+--- the old kind name in the AST JSON is understood ---
+CREATE TABLE t ENGINE = TimeSeries METRIC FAMILIES db.m
+--- a table of version 1 keeps the .inner_id.metrics inner table ---
+version = 1
+METRIC FAMILIES INNER UUID
+1
+0
+http_requests_total	counter
+--- a table of version 1 can be backed up and restored ---
+version = 1
+2
+http_requests_total	counter
+0
+--- a definition written by an older server (the METRICS keyword, version 1) is attached and works ---
+version = 1
+METRIC FAMILIES INNER UUID
+METRIC FAMILIES INNER COLUMNS
+METRIC FAMILIES INNER ENGINE
+0
+1
+http_requests_total	counter
+http_requests_total	counter
+up	gauge
+http_requests_total	counter
+up	gauge
+dropping the attached table drops the inner tables:
+0
+--- in an Ordinary database the inner tables are found by name, which depends on the version ---
+.inner.metricfamilies.ts_v2
+.inner.metrics.ts_v1
+v1
+v2
+the inner tables are renamed together with the table and keep the version-specific name:
+.inner.metricfamilies.ts_v2_renamed
+.inner.metrics.ts_v1_renamed
+v1
+v2
+0

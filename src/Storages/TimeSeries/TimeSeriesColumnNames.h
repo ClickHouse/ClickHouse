@@ -27,7 +27,7 @@ struct TimeSeriesColumnNames
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
-    /// The "metrics" table contains general information (metadata) about metrics:
+    /// The "metric families" table contains general information (metadata) about metric families:
     static constexpr const char * MetricFamily = "metric_family";
     static constexpr const char * Type = "type";
     static constexpr const char * Unit = "unit";
@@ -50,7 +50,7 @@ struct TimeSeriesColumnNames
 
     /// Old names kept for compatibility:
 
-    /// The old name of the "metric_family" column, still used in the "metrics" target table.
+    /// The old name of the "metric_family" column, still used in the "metric families" target table.
     static constexpr const char * MetricFamilyName = "metric_family_name";
 
     /// Tables created by older versions declare it as an ephemeral column and used to fill it

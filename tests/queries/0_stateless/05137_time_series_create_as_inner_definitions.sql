@@ -19,14 +19,14 @@ CREATE TABLE ts_src ENGINE = TimeSeries
 SAMPLES ENGINE = MergeTree
 RECENT SAMPLES ENGINE = MergeTree
 TAGS ENGINE = AggregatingMergeTree
-METRICS ENGINE = ReplacingMergeTree;
+METRIC FAMILIES ENGINE = ReplacingMergeTree;
 SELECT extract(create_table_query, 'SAMPLES INNER ENGINE = (.*?) RECENT SAMPLES INNER')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_src';
 SELECT extract(create_table_query, 'RECENT SAMPLES INNER ENGINE = (.*?) TAGS INNER')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_src';
-SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?) METRICS INNER')
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?) METRIC FAMILIES INNER')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_src';
-SELECT extract(create_table_query, 'METRICS INNER ENGINE = (.*)$')
+SELECT extract(create_table_query, 'METRIC FAMILIES INNER ENGINE = (.*)$')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_src';
 DROP TABLE ts_src;
 
@@ -36,7 +36,7 @@ TAGS INNER COLUMNS (min_time SimpleAggregateFunction(min, Nullable(DateTime64(3)
 CREATE TABLE ts_copy AS ts_src ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0;
 SELECT extract(create_table_query, 'TAGS INNER COLUMNS \((.*?)\) TAGS INNER ENGINE')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
-SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?) METRICS INNER')
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?) METRIC FAMILIES INNER')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
 DROP TABLE ts_copy;
 DROP TABLE ts_src;
@@ -64,7 +64,7 @@ SELECT extract(create_table_query, 'SAMPLES INNER COLUMNS \((.*?)\) SAMPLES INNE
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
 SELECT extract(create_table_query, 'TAGS INNER COLUMNS \((.*?)\) TAGS INNER ENGINE')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
-SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?) METRICS INNER')
+SELECT extract(create_table_query, 'TAGS INNER ENGINE = (.*?) METRIC FAMILIES INNER')
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts_copy';
 DROP TABLE ts_copy;
 
