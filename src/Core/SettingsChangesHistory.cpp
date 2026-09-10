@@ -46,6 +46,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_hash_join_subset_keys_auto", false, true, "Enable cardinality-based automatic demotion of JOIN equality keys out of the hash table key set. `compatibility` below 26.9 sets it to 0 and keeps the hash table keyed on every equality."},
             {"query_plan_hash_join_subset_keys_min_rows", 1000000, 1000000, "New setting: minimum build-side row count for `query_plan_hash_join_subset_keys_auto` to apply."},
             {"query_plan_hash_join_subset_keys_min_kept_selectivity", 0.01, 0.01, "New setting: target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`."},
+            {"query_plan_hash_join_subset_keys_max_probe_cost_ns", 200.0, 200.0, "New setting: ceiling on the probe-time work per probe row that `query_plan_hash_join_subset_keys_auto` may create."},
+            {"query_plan_hash_join_subset_keys_min_saving_bytes", 134217728, 134217728, "New setting: minimum estimated hash-table saving for `query_plan_hash_join_subset_keys_auto` to apply."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},

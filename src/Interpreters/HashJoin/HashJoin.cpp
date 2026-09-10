@@ -1,5 +1,7 @@
 #include <any>
 #include <limits>
+#include <type_traits>
+#include <utility>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -2125,6 +2127,69 @@ const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
 {
     /// It should be nullable when right side is nullable
     return savedBlockSample().getByName(table_join->getOnlyClause().key_names_right.back());
+}
+
+namespace
+{
+
+/// One switch over every map variant, so adding a variant to APPLY_FOR_JOIN_VARIANTS keeps this
+/// exhaustive instead of silently returning a stale size.
+template <typename Mapped>
+size_t cellBytesForMapped(HashJoin::Type type)
+{
+    using Maps = HashJoin::MapsTemplate<Mapped>;
+    switch (type)
+    {
+#define M(NAME) \
+        case HashJoin::Type::NAME: \
+            return sizeof(typename std::decay_t<decltype(*std::declval<Maps &>().NAME)>::cell_type);
+        APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
+    }
+    return 0;
+}
+
+}
+
+HashJoin::Type HashJoin::chooseMethodForTypes(const DataTypes & key_types, bool use_two_level_maps)
+{
+    Columns holders;
+    ColumnRawPtrs key_columns;
+    holders.reserve(key_types.size());
+    key_columns.reserve(key_types.size());
+    for (const auto & type : key_types)
+    {
+        holders.push_back(type->createColumn());
+        key_columns.push_back(holders.back().get());
+    }
+
+    Sizes key_sizes;
+    return chooseMethod(key_columns, key_sizes, use_two_level_maps);
+}
+
+size_t HashJoin::cellBytes(Type type, JoinStrictness strictness)
+{
+    if (strictness == JoinStrictness::All)
+        return cellBytesForMapped<RowRefList>(type);
+    if (strictness == JoinStrictness::Asof)
+        return cellBytesForMapped<AsofRowRefs>(type);
+    return cellBytesForMapped<RowRef>(type);
+}
+
+size_t HashJoin::estimateTableBytes(size_t key_count, Type type, JoinStrictness strictness)
+{
+    const size_t bytes_per_cell = cellBytes(type, strictness);
+    if (!key_count || !bytes_per_cell)
+        return 0;
+
+    /// Mirrors HashTableGrowerWithPrecalculation: a power-of-two cell array kept at most half full,
+    /// so the size jumps at every doubling of `key_count` rather than tracking it smoothly.
+    size_t cells = 1;
+    while (cells < key_count && cells <= std::numeric_limits<size_t>::max() / 4)
+        cells *= 2;
+    cells *= 2;
+
+    return cells * bytes_per_cell;
 }
 
 bool HashJoin::isAdditionalFilterSupported(JoinKind kind, JoinStrictness strictness)

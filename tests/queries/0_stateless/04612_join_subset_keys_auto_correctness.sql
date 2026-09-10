@@ -38,7 +38,8 @@ OPTIMIZE TABLE jks2_right FINAL;
 SELECT 'merge_pref_inner' AS t,
     (SELECT count() FROM jks2_left l JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'full_sorting_merge,hash', query_plan_hash_join_subset_keys_auto = 1,
-            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001)
+            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
+            query_plan_hash_join_subset_keys_max_probe_cost_ns = 1e9, query_plan_hash_join_subset_keys_min_saving_bytes = 0)
   = (SELECT count() FROM jks2_left l JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'full_sorting_merge,hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
 
@@ -48,7 +49,8 @@ SELECT 'merge_pref_inner' AS t,
 SELECT 'parallel_merge_pref_inner' AS t,
     (SELECT count() FROM jks2_left l JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'parallel_full_sorting_merge,hash', query_plan_hash_join_subset_keys_auto = 1,
-            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001)
+            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
+            query_plan_hash_join_subset_keys_max_probe_cost_ns = 1e9, query_plan_hash_join_subset_keys_min_saving_bytes = 0)
   = (SELECT count() FROM jks2_left l JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'parallel_full_sorting_merge,hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
 
@@ -58,21 +60,24 @@ SELECT 'parallel_merge_pref_inner' AS t,
 SELECT 'left_outer' AS t,
     (SELECT count() FROM jks2_left l LEFT JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
-            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001)
+            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
+            query_plan_hash_join_subset_keys_max_probe_cost_ns = 1e9, query_plan_hash_join_subset_keys_min_saving_bytes = 0)
   = (SELECT count() FROM jks2_left l LEFT JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
 
 SELECT 'left_outer_nulls' AS t,
     (SELECT countIf(r.user_id IS NULL) FROM jks2_left l LEFT JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
-            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001)
+            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
+            query_plan_hash_join_subset_keys_max_probe_cost_ns = 1e9, query_plan_hash_join_subset_keys_min_saving_bytes = 0)
   = (SELECT countIf(r.user_id IS NULL) FROM jks2_left l LEFT JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
 
 SELECT 'full_outer' AS t,
     (SELECT count() FROM jks2_left l FULL JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
-            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001)
+            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
+            query_plan_hash_join_subset_keys_max_probe_cost_ns = 1e9, query_plan_hash_join_subset_keys_min_saving_bytes = 0)
   = (SELECT count() FROM jks2_left l FULL JOIN jks2_right r ON l.user_id = r.user_id AND l.request_id = r.request_id
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
 
@@ -82,10 +87,41 @@ SELECT 'left_outer_extra_cond' AS t,
     (SELECT count() FROM jks2_left l LEFT JOIN jks2_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id AND r.extra < 500
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
-            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001)
+            query_plan_hash_join_subset_keys_min_rows = 0, query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
+            query_plan_hash_join_subset_keys_max_probe_cost_ns = 1e9, query_plan_hash_join_subset_keys_min_saving_bytes = 0)
   = (SELECT count() FROM jks2_left l LEFT JOIN jks2_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id AND r.extra < 500
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
+
+-- Every case above compares a demoted plan against a non-demoted one, so all of them pass
+-- whether or not the optimization actually fired. Assert that it does fire on this fixture,
+-- otherwise the cases silently stop testing anything - which is how the perf test for this
+-- feature went unnoticed while measuring nothing at all.
+SELECT 'demote_fired' AS t, countIf(explain LIKE '%Residual filter%') > 0 AS ok
+FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM jks2_left l JOIN jks2_right r
+        ON l.user_id = r.user_id AND l.request_id = r.request_id
+    SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_hash_join_subset_keys_min_rows = 0,
+        query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
+        query_plan_hash_join_subset_keys_max_probe_cost_ns = 1e9,
+        query_plan_hash_join_subset_keys_min_saving_bytes = 0
+);
+
+-- With the default gate the same fixture must be REFUSED. Here it is the saving that fails:
+-- keying on `user_id` alone would hold ~256 cells instead of ~2048, tens of kilobytes, far below
+-- `query_plan_hash_join_subset_keys_min_saving_bytes`. Paying any probe-time work for that is a
+-- loss, and on a fixture this small the whole hash table is noise against the query's memory.
+SELECT 'default_gate_declines' AS t, countIf(explain LIKE '%Residual filter%') = 0 AS ok
+FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM jks2_left l JOIN jks2_right r
+        ON l.user_id = r.user_id AND l.request_id = r.request_id
+    SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_hash_join_subset_keys_min_rows = 0,
+        query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001
+);
 
 DROP TABLE jks2_left;
 DROP TABLE jks2_right;

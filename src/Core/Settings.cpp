@@ -6397,7 +6397,13 @@ Use column statistics to automatically demote high-cardinality JOIN equality key
     DECLARE(UInt64, query_plan_hash_join_subset_keys_min_rows, 1000000, R"(
 Minimum estimated build-side row count for `query_plan_hash_join_subset_keys_auto` to apply. A small hash table does not benefit from key demotion.
 )", 0) \
-    DECLARE(Double, query_plan_hash_join_subset_keys_min_kept_selectivity, 0.01, R"(
+    DECLARE(Double, query_plan_hash_join_subset_keys_max_probe_cost_ns, 200.0, R"(
+Cost ceiling for `query_plan_hash_join_subset_keys_auto`, in estimated nanoseconds of probe-time work per probe row: the mean bucket size the kept keys leave, multiplied by what one candidate check costs for the demoted key types and the join kind. A demotion above this ceiling is rejected. Demoting a key can never make the probe cheaper - it only shrinks the hash table - so this bounds what is paid for that memory. Note the bucket size used here is the mean, which understates a skewed key distribution, so the default leaves room for that.
+)", 0) \
+DECLARE(UInt64, query_plan_hash_join_subset_keys_min_saving_bytes, 134217728, R"(
+Minimum estimated hash-table saving, in bytes, for `query_plan_hash_join_subset_keys_auto` to apply. Compares the cell array the full key set would allocate against the one the kept subset would, both as a power-of-two array kept at most half full. The estimate counts cells only and so overstates the real saving, since the arena that holds rows chaining past the first per key grows as keys are removed. The default is one arena chunk: below that, the peak the query reports would not move.
+)", 0) \
+DECLARE(Double, query_plan_hash_join_subset_keys_min_kept_selectivity, 0.01, R"(
 Target selectivity of the kept hash keys for `query_plan_hash_join_subset_keys_auto`, approximated as `NDV(kept_keys) / build_side_rows`. The smallest key subset that still reaches it is kept, bounding the bucket the probe-time equalities run over. The default `0.01` targets buckets of about 100 rows.
 )", 0) \
     \

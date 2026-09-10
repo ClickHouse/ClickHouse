@@ -5,6 +5,8 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -1222,6 +1224,80 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+/// Nanoseconds of probe-time work one candidate row costs when an equality is checked during the
+/// probe instead of being hashed into the key. Anchored on measurements of a FULL ALL join over
+/// 10M rows: about 40 ns for a fixed-width key and about 290 ns for a String one. Both are
+/// dominated by gathering the values out of the stored blocks through the row-ref lists, not by the
+/// comparison itself, which is why the width of the key matters so much more than its type.
+static Float64 probeCostPerCandidateNs(const DataTypes & demoted_types, JoinKind kind, JoinStrictness strictness)
+{
+    Float64 cost = 0.0;
+    for (const auto & type : demoted_types)
+    {
+        const auto & inner = removeNullable(removeLowCardinality(type));
+        if (!inner->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+            cost += 290.0;
+        else if (inner->getSizeOfValueInMemory() <= sizeof(UInt64))
+            cost += 8.0;
+        else
+            cost += 16.0;
+    }
+
+    /// An outer join pays for bookkeeping an inner join does not: a probe row whose whole bucket
+    /// fails still has to be NULL-extended (`add_missing`, so no early exit), and for RIGHT/FULL
+    /// every surviving candidate writes a used-flag for the non-joined pass (`need_flags`).
+    if (isRightOrFull(kind))
+        cost *= 1.5;
+    else if (isLeft(kind))
+        cost *= 1.2;
+
+    /// ANY/SEMI/ANTI stop at the first surviving candidate rather than walking the whole bucket.
+    if (strictness != JoinStrictness::All)
+        cost *= 0.5;
+
+    return cost;
+}
+
+/// Bytes of hash-table cells the demotion would avoid allocating: what the full key set needs,
+/// minus what the kept subset needs. Both sides go through `HashJoin` so the cell size and the
+/// power-of-two growth match the map that will actually be built, including the case where dropping
+/// a key moves the whole key set into a narrower method. Returns a signed value because a narrower
+/// key set can land on a *larger* array once rounding is taken into account.
+static Int64 estimatedTableBytesSaved(
+    const auto & candidate,
+    Float64 full_ndv,
+    const std::vector<const ActionsDAG::Node *> & right_key_nodes,
+    size_t equality_count,
+    JoinStrictness strictness)
+{
+    DataTypes full_types;
+    for (const auto * node : right_key_nodes)
+        full_types.push_back(node->result_type);
+
+    DataTypes kept_types;
+    for (size_t i : candidate.indices)
+        kept_types.push_back(right_key_nodes[i]->result_type);
+
+    if (full_types.size() != equality_count || kept_types.empty())
+        return 0;
+
+    /// Two-level maps hold the same cell type, so the choice only shifts how the rounding falls;
+    /// ask for the single-level variant and accept that slack.
+    const auto full_method = HashJoin::chooseMethodForTypes(full_types, /*use_two_level_maps=*/ false);
+    const auto kept_method = HashJoin::chooseMethodForTypes(kept_types, /*use_two_level_maps=*/ false);
+
+    const size_t full_bytes = HashJoin::estimateTableBytes(
+        static_cast<size_t>(full_ndv), full_method, strictness);
+    const size_t kept_bytes = HashJoin::estimateTableBytes(
+        candidate.ndv, kept_method, strictness);
+
+    /// A variant whose cell size is unknown reports 0; do not turn that into a fictional saving.
+    if (!full_bytes || !kept_bytes)
+        return 0;
+
+    return static_cast<Int64>(full_bytes) - static_cast<Int64>(kept_bytes);
+}
+
 /// Cardinality-driven optimization: when the equality keys of a JOIN together have a far higher NDV
 /// than one of their subsets, build the hash table on that subset only and evaluate the remaining
 /// equalities per row during the probe. This shrinks the hash table on multi-key joins whose trailing
@@ -1383,25 +1459,75 @@ static bool demoteHighNdvKeysToProbe(
         return lhs.indices.size() < rhs.indices.size();
     });
 
-    /// Take the smallest candidate whose buckets stay within the target size: the kept keys must
-    /// still discriminate to `rows * min_kept_selectivity` distinct values, so the probe-time
-    /// equalities run over a bounded bucket rather than a large fraction of the table.
+    /// Candidates must still discriminate to `rows * min_kept_selectivity` distinct values, so the
+    /// probe-time equalities run over a bounded bucket rather than a large fraction of the table.
     const Float64 target_ndv = rows * join_settings.query_plan_hash_join_subset_keys_min_kept_selectivity;
-    const Candidate * chosen = nullptr;
+
+    /// The NDV of the whole key set, which is what the hash table is keyed on today. Prefer a
+    /// measured joint value for it; otherwise assume the keys are independent, bounded by the row
+    /// count. It is only ever used to size the table the demotion would avoid building.
+    Float64 full_ndv = 1.0;
     for (const auto & candidate : candidates)
     {
-        if (static_cast<Float64>(candidate.ndv) >= target_ndv)
+        if (candidate.indices.size() == equality_positions.size())
         {
-            chosen = &candidate;
+            full_ndv = static_cast<Float64>(candidate.ndv);
             break;
         }
+        if (candidate.indices.size() == 1)
+            full_ndv *= static_cast<Float64>(candidate.ndv);
     }
-    if (!chosen || chosen->indices.size() == equality_positions.size())
-        return false;
+    full_ndv = std::min(full_ndv, rows);
 
-    /// Require at least a 2x smaller hash table than keying on everything (whose NDV is bounded by
-    /// the row count); below that the probe-time equality is unlikely to pay for itself.
-    if (static_cast<Float64>(chosen->ndv) * 2.0 > rows)
+    /// Both sides of the trade, per candidate:
+    ///
+    ///  - cost: the mean bucket the kept keys leave, times what one candidate check costs for the
+    ///    keys being demoted. Demoting can never make the probe cheaper - it only shrinks the hash
+    ///    table - so this is what is being paid, and it is capped rather than merely compared.
+    ///  - benefit: the cell array the full key set allocates minus the one the kept subset would.
+    ///
+    /// The cheapest surviving candidate wins. Picking the smallest-NDV one instead, as an earlier
+    /// version did, systematically demotes the most discriminating key, which is exactly the choice
+    /// that inflates the bucket the most.
+    const Candidate * chosen = nullptr;
+    Float64 chosen_cost = std::numeric_limits<Float64>::infinity();
+    for (const auto & candidate : candidates)
+    {
+        if (static_cast<Float64>(candidate.ndv) < target_ndv)
+            continue;
+        if (candidate.indices.size() == equality_positions.size())
+            continue;
+
+        DataTypes demoted_types;
+        std::vector<bool> in_candidate(right_key_nodes.size(), false);
+        for (size_t i : candidate.indices)
+            in_candidate[i] = true;
+        for (size_t i = 0; i < right_key_nodes.size(); ++i)
+        {
+            if (!in_candidate[i])
+                demoted_types.push_back(right_key_nodes[i]->result_type);
+        }
+        if (demoted_types.empty())
+            continue;
+
+        const Float64 mean_bucket = rows / std::max(1.0, static_cast<Float64>(candidate.ndv));
+        const Float64 cost = mean_bucket
+            * probeCostPerCandidateNs(demoted_types, join_operator.kind, join_operator.strictness);
+        if (cost > join_settings.query_plan_hash_join_subset_keys_max_probe_cost_ns)
+            continue;
+
+        const Int64 saving = estimatedTableBytesSaved(
+            candidate, full_ndv, right_key_nodes, equality_positions.size(), join_operator.strictness);
+        if (saving < static_cast<Int64>(join_settings.query_plan_hash_join_subset_keys_min_saving_bytes))
+            continue;
+
+        if (cost < chosen_cost)
+        {
+            chosen = &candidate;
+            chosen_cost = cost;
+        }
+    }
+    if (!chosen)
         return false;
 
     std::vector<bool> kept(right_key_nodes.size(), false);

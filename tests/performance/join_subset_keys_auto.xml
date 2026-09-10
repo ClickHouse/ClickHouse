@@ -2,6 +2,12 @@
     <settings>
         <allow_statistics>1</allow_statistics>
         <use_statistics>1</use_statistics>
+        <!--
+            The demote is only attempted when every algorithm in `join_algorithm` evaluates a mixed
+            JOIN ON condition, and the default value includes `direct` and `ie_join`, which do not.
+            Without pinning this the test measures the unoptimized plan on both sides.
+        -->
+        <join_algorithm>parallel_hash</join_algorithm>
     </settings>
 
     <create_query>
@@ -34,8 +40,9 @@
         report's "Backward-incompatible Queries" table. On a build without the
         optimization, both keys go into the hash table (~10M entries). With it,
         the join-order optimizer keeps `low_card` as the hash key and evaluates
-        `high_card` during the probe. Memory drops ~2x; runtime in the same shape ranges
-        from no change to a clear improvement depending on cache pressure.
+        `high_card` during the probe, so the table holds ~1M entries instead of ~10M.
+        The probe then walks a bucket of ~10 rows per probe row to check the demoted
+        equality, so this measures what that costs against the memory it saves.
     -->
     <fill_query>INSERT INTO jks_perf_left  SELECT number, intDiv(number, 10), number FROM numbers(10000000)</fill_query>
     <fill_query>INSERT INTO jks_perf_right SELECT number, intDiv(number, 10), number FROM numbers(10000000)</fill_query>

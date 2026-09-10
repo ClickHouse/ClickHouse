@@ -148,6 +148,10 @@ struct JoinSettings
     /// Target `NDV(kept_keys) / total_rows` for `query_plan_hash_join_subset_keys_auto`.
     /// The smallest hash key subset reaching this selectivity is selected.
     Float64 query_plan_hash_join_subset_keys_min_kept_selectivity;
+    /// Ceiling on the estimated probe-time work per probe row a demotion may create, in nanoseconds.
+    Float64 query_plan_hash_join_subset_keys_max_probe_cost_ns;
+    /// Minimum estimated hash-table saving, in bytes, for a demotion to be worth making.
+    UInt64 query_plan_hash_join_subset_keys_min_saving_bytes;
 
     /// Which statistics the join must collect for EXPLAIN ANALYZE
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;

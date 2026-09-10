@@ -4,3 +4,5 @@ left_outer	1
 left_outer_nulls	1
 full_outer	1
 left_outer_extra_cond	1
+demote_fired	1
+default_gate_declines	1

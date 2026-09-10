@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DataTypes/IDataType.h>
+
 #include <atomic>
 #include <deque>
 #include <memory>
@@ -732,6 +734,28 @@ public:
     /// (`TableJoin::getMixedJoinExpression`). Consulted by `validateAdditionalFilterExpression` and by
     /// the optimizer passes that produce such a condition, so both share one definition of the matrix.
     static bool isAdditionalFilterSupported(JoinKind kind, JoinStrictness strictness);
+
+    /// The map variant a hypothetical key set would use, given only the key types. `chooseMethod`
+    /// reads nothing but class-level properties of the key columns - `isNumeric`,
+    /// `sizeOfValueIfFixed`, `isFixedAndContiguous` and the column class itself - so empty columns
+    /// answer it exactly, and a plan-time caller can size a candidate key subset before any data
+    /// exists. Types are taken as given: a `Nullable` or `LowCardinality` key classifies here the
+    /// way its own column class dictates, which is not always what the join settles on after it
+    /// normalizes its keys. That only skews a size estimate, and skews both sides of a comparison
+    /// the same way, so callers comparing two key sets can use it directly.
+    static Type chooseMethodForTypes(const DataTypes & key_types, bool use_two_level_maps);
+
+    /// Bytes per cell of the map variant `type` under `strictness`, read out of `MapsTemplate`
+    /// itself so it cannot drift from the maps that are actually instantiated. Returns 0 for a
+    /// variant whose cell size is unknown, which callers must treat as "cannot estimate".
+    static size_t cellBytes(Type type, JoinStrictness strictness);
+
+    /// Bytes the cell array alone would occupy for `key_count` distinct keys. The grower allocates
+    /// a power-of-two number of cells and keeps it at most half full, so this is a step function of
+    /// `key_count`, not proportional to it. Payload outside the cells - the arena holding the rows
+    /// that chain past the first per key - is deliberately NOT counted: it grows as keys are
+    /// removed, so a cell-only figure is an upper bound on what demoting a key saves.
+    static size_t estimateTableBytes(size_t key_count, Type type, JoinStrictness strictness);
 
     bool mustKeepRightBlocks() const;
 
