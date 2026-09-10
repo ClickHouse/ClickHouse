@@ -170,6 +170,7 @@ static std::optional<String> tryGetDatabaseEngineName(ContextMutablePtr context,
     }
     catch (...)
     {
+        /// Ok to swallow: an unknown engine makes the caller rethrow the error it was recovering from.
         return {};
     }
 }
