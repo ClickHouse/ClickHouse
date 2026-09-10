@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/ExpressionActions.h>
@@ -74,6 +75,15 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
             const auto & data_type_tuple_elements = data_type_tuple.getElements();
             for (const auto & data_type_tuple_element : data_type_tuple_elements)
                 if (!isSafePrimaryDataKeyType(*data_type_tuple_element))
+                    return false;
+
+            return true;
+        }
+        case TypeIndex::Row:
+        {
+            const auto & data_type_row = static_cast<const DataTypeRow &>(data_type);
+            for (const auto & data_type_row_element : data_type_row.getElements())
+                if (!isSafePrimaryDataKeyType(*data_type_row_element))
                     return false;
 
             return true;

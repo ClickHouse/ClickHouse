@@ -71,6 +71,11 @@ private:
     {
         const size_t num_fields = row.getElements().size();
 
+        /// During type resolution a non-constant argument carries no column at all.
+        if (!arg.column || !isColumnConst(*arg.column))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument of {} must be a constant String name or constant integer index", getName());
+
         if (WhichDataType(arg.type).isNativeUInt() || WhichDataType(arg.type).isNativeInt())
         {
             UInt64 one_based = arg.column->getUInt(0);
