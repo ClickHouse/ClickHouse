@@ -164,8 +164,6 @@ UInt8 isValidUTF8SSE(const UInt8 * data, UInt64 len)
     /// Below one block the loop cannot run, so do not build its tables.
     if (len >= 16)
     {
-        const UInt8 * const data_original = data;
-
         /*
         * Map high nibble of "First Byte" to legal character length minus 1
         * 0x00 ~ 0xBF --> 0
@@ -309,18 +307,28 @@ UInt8 isValidUTF8SSE(const UInt8 * data, UInt64 len)
             if (!check_packed(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data))))
                 return false;
 
-        /// The last consumed block can end in the middle of a code point whose continuation bytes are in
-        /// the remainder. `prev_input` holds a consumed block only once the loop has run.
-        if (data != data_original)
+        if (len != 0)
         {
-            const UInt64 back = codepointSkipBackwards(static_cast<UInt32>(_mm_extract_epi32(prev_input, 3)));
-            data -= back;
-            len += back;
+            /// The input's last 16 bytes are in bounds because the loop consumed a block. Shifted down
+            /// by `16 - len` they are the remainder followed by zeros, and zeros are not continuation
+            /// bytes, so a truncated sequence fails here.
+            const __m128i last_block = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + len - 16));
+            const __m128i indexes = _mm_add_epi8(
+                _mm_setr_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15),
+                _mm_set1_epi8(static_cast<char>(16 - len)));
+            return check_packed(
+                _mm_shuffle_epi8(last_block, _mm_or_si128(indexes, _mm_cmpgt_epi8(indexes, _mm_set1_epi8(15)))));
         }
+
+        /// The input ends on a block boundary, so only its last code point can still be incomplete.
+        /// Rewinding to that code point's first byte lets the scalar validator decide.
+        const UInt64 back = codepointSkipBackwards(static_cast<UInt32>(_mm_extract_epi32(prev_input, 3)));
+        data -= back;
+        len += back;
     }
 
-    /// Reaching here means every consumed block was clean. The remainder is under 16 bytes plus the
-    /// rewind, so the scalar validator finishes it while reading strictly within the input buffer.
+    /// Either the input is shorter than one block, or every block was clean and at most one code point
+    /// is left to confirm.
     return isValidUTF8Scalar(data, len);
 }
 
