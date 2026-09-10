@@ -758,6 +758,9 @@ void TCPHandler::runImpl()
                     query_state->need_receive_data_for_input = true;
                     query_state->read_all_data = false;
 
+                    /// The client constructs its input formatter as soon as it receives the schema.
+                    sendTimezone(*query_state);
+
                     /// Send ColumnsDescription for input storage.
                     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
                         && query_state->query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
@@ -768,7 +771,6 @@ void TCPHandler::runImpl()
                     /// Send block to the client - input storage structure.
                     query_state->input_header = metadata_snapshot->getSampleBlock();
                     sendData(*query_state, query_state->input_header);
-                    sendTimezone(*query_state);
                     out->sync();
                 });
 
