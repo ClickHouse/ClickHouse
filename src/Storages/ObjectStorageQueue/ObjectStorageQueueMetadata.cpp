@@ -1347,10 +1347,11 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     /// Everything below runs pinned to `zk_client`, the session that owns the lock, and is not retried.
     /// A hardware error means that session may be gone - and the ephemeral lock with it - so the sweep
-    /// stops rather than deleting nodes on a session holding nothing, and `setAlreadyRemoved` keeps the
-    /// holder's destructor from removing a lock node that by then may belong to another replica. No
-    /// outer retry is needed here: unlike the user-facing drop, this task is periodic, so the next
-    /// scheduled run is the retry.
+    /// stops rather than deleting nodes on a session holding nothing. Releasing the lock is left to the
+    /// holder's destructor, which already tells the two cases apart: it removes the node while the
+    /// session is alive, and skips the removal once the session has expired, when the node is gone
+    /// anyway and the path may already have been taken by another replica. No outer retry is needed
+    /// here: unlike the user-facing drop, this task is periodic, so the next scheduled run is the retry.
     try
     {
         /// Check the TTL as well: it is changeable at runtime and zero disables
@@ -1404,7 +1405,6 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
         LOG_WARNING(log, "Keeper error while holding the cleanup lock: {}. The lock may no longer be ours, "
                          "so this sweep is abandoned; the next scheduled run will retry.", e.displayText());
-        ephemeral_node->setAlreadyRemoved();
         return;
     }
 
@@ -2294,8 +2294,9 @@ bool ObjectStorageQueueMetadata::tryDropFailedFilesOnce(const std::string & comm
 
     /// Everything below runs pinned to `zk_client`, the session that owns the lock, and without retries.
     /// A hardware error means that session may be gone - and the ephemeral lock with it - so the attempt
-    /// gives up rather than continuing on a session that holds nothing. `setAlreadyRemoved` keeps the
-    /// holder's destructor from deleting a lock node that by then may belong to another replica.
+    /// gives up rather than continuing on a session that holds nothing. Releasing the lock is left to the
+    /// holder's destructor, which removes the node while the session is alive and skips the removal once
+    /// it has expired - by which point the node is gone and the path may belong to another replica.
     try
     {
         /// This attempt's identity, published with its result so a waiting replica can tell this attempt's
@@ -2319,7 +2320,6 @@ bool ObjectStorageQueueMetadata::tryDropFailedFilesOnce(const std::string & comm
 
         LOG_WARNING(log, "Keeper error while holding the cleanup lock: {}. The lock may no longer be ours, "
                          "so this attempt is abandoned without publishing a result.", e.displayText());
-        ephemeral_node->setAlreadyRemoved();
         return false;
     }
 }
