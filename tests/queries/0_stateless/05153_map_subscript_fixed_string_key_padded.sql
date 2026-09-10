@@ -197,6 +197,36 @@ FROM (
     WHERE explain LIKE '%Granules:%'
 );
 
+-- S31/S32: an over-wide subscript is no key the map can hold, so each index must look for its own
+-- bytes and prune every granule. A pad that truncated instead would make it match the stored key,
+-- which no row count can distinguish because the row-level predicate filters those rows anyway.
+-- `tot > 0` drops the plan's summary counter row, which carries a bare `Granules: N` with no total.
+SELECT 'S31 control, text index prunes every granule for an over-wide subscript',
+       max((tot > 0) AND (sel = 0))
+FROM (
+    SELECT toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) AS sel,
+           toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)')) AS tot
+    FROM (
+        EXPLAIN indexes = 1 SELECT count() FROM t_text_key
+        WHERE m[materialize(unhex('6100000000'))] = 7
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+    )
+    WHERE explain LIKE '%Granules:%'
+);
+
+SELECT 'S32 control, bloom_filter prunes every granule for an over-wide subscript',
+       max((tot > 0) AND (sel = 0))
+FROM (
+    SELECT toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) AS sel,
+           toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)')) AS tot
+    FROM (
+        EXPLAIN indexes = 1 SELECT count() FROM t_bloom_key
+        WHERE m[materialize(unhex('6100000000'))] = 7
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+    )
+    WHERE explain LIKE '%Granules:%'
+);
+
 DROP TABLE t_fixed_key;
 DROP TABLE t_lc_fixed_key;
 DROP TABLE t_string_key;
