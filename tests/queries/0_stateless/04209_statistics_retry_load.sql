@@ -69,7 +69,7 @@ SELECT
         log_comment = '04209_statistics_retry_load_error_whatif'
         AND position(exception, '(while loading statistics for column a from file statistics_a.stats in packed file statistics.packed of part all_1_1_0)') > 0) = 1
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE current_database = currentDatabase() AND is_initial_query
   AND log_comment LIKE '04209_statistics_retry_load_error_%';
 
 -- After the failure, both representations must load valid statistics and prune all parts.
@@ -87,7 +87,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['SelectedParts']
 FROM system.query_log
-WHERE current_database = currentDatabase()
+WHERE current_database = currentDatabase() AND is_initial_query
   AND log_comment IN ('04209_statistics_retry_load_t_full', '04209_statistics_retry_load_t_packed')
   AND type = 'QueryFinish'
 ORDER BY log_comment;

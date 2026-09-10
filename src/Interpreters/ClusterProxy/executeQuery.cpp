@@ -753,9 +753,27 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
     /// initiator and must not be re-applied per replica (which would re-shape the already-shaped
     /// per-replica query or break it, e.g. `format = 'Null'`). This mirrors the `Distributed`
     /// fan-out and the `*Cluster` table functions; see `stripInitiatorOnlySettings`.
+    ///
+    /// `database` is then put back, unlike in the `Distributed` fan-out. It is stripped there because
+    /// `rewriteSelectQuery` can leave the remote table unqualified (a `Distributed` table created with
+    /// an empty database argument), so a shard must resolve it against its own default database. Parallel
+    /// replicas have no such remapping: every replica holds the same tables, and the query is written
+    /// against the initiator's current database. Sending it makes every unqualified name in the
+    /// forwarded query resolve the way the user wrote it - a table function argument
+    /// (`timeSeriesSamples(ts)`, `merge('^tbl')`, `dictionary('dict')`) is not qualified by the
+    /// `QueryTree -> AST` conversion the way a table name is, so without this it would silently resolve
+    /// against the replica's `default` database.
     {
         Settings new_settings = context_mutable->getSettingsCopy();
         stripInitiatorOnlySettings(new_settings);
+
+        const auto & current_database = context->getCurrentDatabase();
+        if (!current_database.empty())
+        {
+            new_settings[Setting::database] = current_database;
+            new_settings[Setting::database].changed = true;
+        }
+
         context_mutable->setSettings(new_settings);
     }
 
@@ -1092,7 +1110,10 @@ void executeQueryWithParallelReplicas(
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
             remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
-            remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            /// A null plan means the coordinated read could not be marked in it; fall back to sending the
+            /// query text, which every replica plans for itself (see `createRemotePlanForParallelReplicas`).
+            if (remote_query_plan)
+                remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         }
 
         /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its
