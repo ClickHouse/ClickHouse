@@ -1,0 +1,71 @@
+<test>
+    <settings>
+        <query_cache_min_query_runs>0</query_cache_min_query_runs>
+        <query_cache_min_query_duration>0</query_cache_min_query_duration>
+        <query_cache_ttl>600</query_cache_ttl>
+    </settings>
+
+    <create_query>
+        CREATE TABLE perf_cache_pr (
+            region String,
+            product_id UInt32,
+            val Float64
+        ) ENGINE = MergeTree ORDER BY region
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_cache_pr SELECT
+            arrayElement(['Europe', 'Asia', 'America', 'Africa', 'Oceania'], (number % 5) + 1),
+            number % 1000,
+            rand() % 10000
+        FROM numbers(20000000)
+    </fill_query>
+
+    <!-- Populate cache for partial results mode -->
+    <fill_query>SYSTEM DROP QUERY CACHE</fill_query>
+    <fill_query>
+        SELECT sum(val)
+        FROM perf_cache_pr
+        WHERE region = 'Europe'
+        FORMAT Null
+        SETTINGS use_query_cache = 1, query_cache_partial_results = 1
+    </fill_query>
+
+    <!-- Baseline: no cache -->
+    <query>
+        SELECT sum(val)
+        FROM perf_cache_pr
+        WHERE region = 'Europe'
+        FORMAT Null
+    </query>
+
+    <!-- Cache hit: same query -->
+    <query>
+        SELECT sum(val)
+        FROM perf_cache_pr
+        WHERE region = 'Europe'
+        FORMAT Null
+        SETTINGS use_query_cache = 1, query_cache_partial_results = 1
+    </query>
+
+    <!-- Cache hit: different aggregation, shared intermediate -->
+    <query>
+        SELECT avg(val), count()
+        FROM perf_cache_pr
+        WHERE region = 'Europe'
+        FORMAT Null
+        SETTINGS use_query_cache = 1, query_cache_partial_results = 1
+    </query>
+
+    <!-- Cache hit: different aggregation functions, shared scan -->
+    <query>
+        SELECT max(val), min(val), uniqExact(product_id)
+        FROM perf_cache_pr
+        WHERE region = 'Europe'
+        FORMAT Null
+        SETTINGS use_query_cache = 1, query_cache_partial_results = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_cache_pr</drop_query>
+    <drop_query>SYSTEM DROP QUERY CACHE</drop_query>
+</test>
