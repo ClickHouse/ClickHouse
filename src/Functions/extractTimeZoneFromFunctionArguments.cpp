@@ -22,7 +22,9 @@ std::string extractTimeZoneNameFromColumn(const IColumn * column, const String &
     /// The name can arrive wrapped, e.g. from `now(toLowCardinality('UTC'))`. The column is absent
     /// when the argument is not a constant, and the check below reports that.
     const auto full_column = column ? column->convertToFullColumnIfLowCardinality() : nullptr;
-    const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(full_column.get());
+    /// The callers that validate this argument - `now`, `now64`, `toTimezone` and the shared
+    /// date/time helpers - accept `String` or `FixedString`, so accept both here as well.
+    const ColumnConst * time_zone_column = full_column ? checkAndGetColumnConstStringOrFixedString(full_column.get()) : nullptr;
 
     if (!time_zone_column)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
