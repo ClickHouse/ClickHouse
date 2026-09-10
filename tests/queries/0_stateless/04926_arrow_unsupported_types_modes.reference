@@ -1,44 +1,53 @@
-=== SELECT '{"a":1,"b":"s"}'::JSON AS x
-text	String	7B2261223A312C2262223A2273227D
-binary	String	02016215017301610A0100000000000000
-throw	NOT_IMPLEMENTED
-=== SELECT 42::Dynamic AS x
-text	String	3432
-binary	String	15023432
-throw	NOT_IMPLEMENTED
-=== SELECT [1,2]::Array(Dynamic) AS x
-text	Array(String)	['31','32']
-binary	Array(String)	['0A0100000000000000','0A0200000000000000']
-throw	NOT_IMPLEMENTED
-=== SELECT sumState(number) AS x FROM numbers(3)
-text	String	0300000000000000
-binary	String	0300000000000000
-throw	NOT_IMPLEMENTED
-=== SELECT [1,2,3]::QBit(BFloat16, 3) AS x
-text	String	5B312C322C335D
-binary	String	03803F00404040
-throw	NOT_IMPLEMENTED
+=== text and binary, all five types, with the aggregate state read back ===
+Row 1:
+──────
+mode:          text
+json:          7B2261223A312C2262223A2273227D
+dynamic:       3432
+array_dynamic: ['31','32']
+aggregate:     8000000000000000
+qbit:          5B312C322C335D
+state:         128
+Row 1:
+──────
+mode:          binary
+json:          02016215017301610A0100000000000000
+dynamic:       15023432
+array_dynamic: ['0A0100000000000000','0A0200000000000000']
+aggregate:     8000000000000000
+qbit:          03803F00404040
+state:         128
+=== throw ===
+NOT_IMPLEMENTED
 === the old boolean, and precedence over it ===
 boolean=0	NOT_IMPLEMENTED
 throw wins over boolean=1	NOT_IMPLEMENTED
 boolean=1	15023432
 text wins over boolean=0	3432
 === pyarrow: storage type and clickhouse.opaque tag ===
-json/text	x	string	clickhouse.opaque	JSON
-json/binary	x	binary	clickhouse.opaque	JSON
-aggregate/text	x	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
-aggregate/binary	x	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
-map/text	x	map<string, uint8>	None	None
-map/text	x.entries	struct<key: string not null, value: uint8 not null>	None	None
-map/text	x.entries.key	string	clickhouse.opaque	JSON
-map/text	x.entries.value	uint8	None	None
-map/binary	x	map<binary, uint8>	None	None
-map/binary	x.entries	struct<key: binary not null, value: uint8 not null>	None	None
-map/binary	x.entries.key	binary	clickhouse.opaque	JSON
-map/binary	x.entries.value	uint8	None	None
-=== text payload under output_format_arrow_string_as_string ===
-string_as_string=1	string	clickhouse.opaque	{"a":1}
-string_as_string=0	binary	clickhouse.opaque	{"a":1}
-=== AggregateFunction round-trip ===
-text	128
-binary	128
+text	j	string	clickhouse.opaque	JSON
+text	d	string	clickhouse.opaque	Dynamic
+text	a	list<item: string not null>	None	None
+text	a.item	string	clickhouse.opaque	Dynamic
+text	s	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
+text	q	string	clickhouse.opaque	QBit(BFloat16, 3)
+binary	j	binary	clickhouse.opaque	JSON
+binary	d	binary	clickhouse.opaque	Dynamic
+binary	a	list<item: binary not null>	None	None
+binary	a.item	binary	clickhouse.opaque	Dynamic
+binary	s	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
+binary	q	binary	clickhouse.opaque	QBit(BFloat16, 3)
+map/text	m	map<string, uint8>	None	None
+map/text	m.entries	struct<key: string not null, value: uint8 not null>	None	None
+map/text	m.entries.key	string	clickhouse.opaque	JSON
+map/text	m.entries.value	uint8	None	None
+map/binary	m	map<binary, uint8>	None	None
+map/binary	m.entries	struct<key: binary not null, value: uint8 not null>	None	None
+map/binary	m.entries.key	binary	clickhouse.opaque	JSON
+map/binary	m.entries.value	uint8	None	None
+text,string_as_string=0	j	binary	clickhouse.opaque	JSON
+text,string_as_string=0	d	binary	clickhouse.opaque	Dynamic
+text,string_as_string=0	a	list<item: binary not null>	None	None
+text,string_as_string=0	a.item	binary	clickhouse.opaque	Dynamic
+text,string_as_string=0	s	binary	clickhouse.opaque	AggregateFunction(sum, UInt64)
+text,string_as_string=0	q	binary	clickhouse.opaque	QBit(BFloat16, 3)
