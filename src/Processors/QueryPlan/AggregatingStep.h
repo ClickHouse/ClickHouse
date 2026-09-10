@@ -73,6 +73,12 @@ public:
     const Aggregator::Params & getParams() const { return params; }
     bool isFinal() const { return final; }
 
+    /// See `Aggregator::Params::threshold_top_k`; called by the plan optimization.
+    void enableThresholdTopK(Aggregator::Params::ThresholdTopKParams threshold_top_k)
+    {
+        params.threshold_top_k = threshold_top_k;
+    }
+
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
     void enableBucketTopK(size_t n, bool ascending, size_t count_index)
     {
