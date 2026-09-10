@@ -42,9 +42,6 @@ struct ExtractFirstSignificantSubdomain
 
         if constexpr (conform_rfc)
         {
-            /// getURLHostRFC() returns a bracketed IP-literal host without its brackets, so it may
-            /// still contain ':', which a reg-name host never does; it is an IP address, not a DNS
-            /// name, so it has no significant subdomain to extract, e.g. "::ffff:192.0.2.128".
             if (find_first_symbols<':'>(tmp, tmp + domain_length) != tmp + domain_length)
                 return;
         }
@@ -121,10 +118,11 @@ struct ExtractFirstSignificantSubdomain
 
         if constexpr (conform_rfc)
         {
-            /// getURLHostRFC() returns a bracketed IP-literal host without its brackets, so it may
-            /// still contain ':', which a reg-name host never does; it is an IP address, not a DNS
-            /// name, so it has no significant subdomain to extract, e.g. "::ffff:192.0.2.128".
-            if (find_first_symbols<':'>(tmp, tmp + domain_length) != tmp + domain_length)
+            /// getURLHostRFC() returns a bracketed IP-literal host without its brackets; detect
+            /// that from the original text around it (rather than the host's own shape, e.g.
+            /// looking for ':', which misses IPvFuture forms like "v1.a" that have none). An IP
+            /// address is not a DNS name, so it has no significant subdomain to extract.
+            if (tmp > data && tmp[-1] == '[' && tmp + domain_length < data + size && tmp[domain_length] == ']')
                 return;
         }
 

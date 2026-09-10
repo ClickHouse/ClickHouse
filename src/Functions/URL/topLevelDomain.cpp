@@ -23,6 +23,13 @@ struct ExtractTopLevelDomain
 
         if (!host.empty())
         {
+            if constexpr (conform_rfc)
+            {
+                if (host.data() > data && host.data()[-1] == '[' && host.data() + host.size() < data + size
+                    && host.data()[host.size()] == ']')
+                    return;
+            }
+
             if (host[host.size() - 1] == '.')
                 host.remove_suffix(1);
 
