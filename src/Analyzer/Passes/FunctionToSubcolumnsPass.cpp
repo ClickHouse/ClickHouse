@@ -208,6 +208,17 @@ bool canOptimizeToExpectedSubcolumn(
     return info && is_expected_subcolumn(info->substreams_path);
 }
 
+bool canOptimizeFunctionToSubcolumn(const FunctionNode & function_node, TypeIndex type_id)
+{
+    /// `byteSize` is variadic, but the String rewrite below only handles its
+    /// unary form. Keep this check shared by both passes so a binary call is
+    /// not counted as optimizable and then left unchanged by the transformer.
+    if (type_id == TypeIndex::String && function_node.getFunctionName() == "byteSize")
+        return function_node.getArguments().getNodes().size() == 1;
+
+    return true;
+}
+
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
 {
     /// Replace `length(argument)` with `argument.size`.
@@ -218,6 +229,37 @@ void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, Colum
         || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
+}
+
+void optimizeFunctionStringByteSize(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Keep the first version limited to the single-argument form. `byteSize`
+    /// is variadic and the other arguments may have different byte-size rules.
+    if (!canOptimizeFunctionToSubcolumn(function_node, ctx.column.type->getTypeId()))
+        return;
+
+    NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationString::isStringSizesSubcolumn, column.type))
+        return;
+
+    /// `byteSize(String)` includes the storage representation's per-row
+    /// overhead. The size subcolumn keeps the same sparse wrapper, so its own
+    /// byteSize is 8 for dense rows, and includes the sparse offset for
+    /// non-default rows. This preserves the original result for both layouts.
+    auto size_node = std::make_shared<ColumnNode>(column, ctx.column_source);
+
+    auto byte_size_node = std::make_shared<FunctionNode>("byteSize");
+    byte_size_node->getArguments().getNodes().push_back(std::make_shared<ColumnNode>(column, ctx.column_source));
+    resolveOrdinaryFunctionNodeByName(*byte_size_node, "byteSize", ctx.context);
+
+    auto plus_node = std::make_shared<FunctionNode>("plus");
+    auto & plus_arguments = plus_node->getArguments().getNodes();
+    plus_arguments.push_back(std::move(size_node));
+    plus_arguments.push_back(std::move(byte_size_node));
+    resolveOrdinaryFunctionNodeByName(*plus_node, "plus", ctx.context);
+
+    node = std::move(plus_node);
 }
 
 template <bool positive>
@@ -494,6 +536,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 {
     {
         {TypeIndex::String, "length"}, optimizeFunctionStringLength,
+    },
+    {
+        {TypeIndex::String, "byteSize"}, optimizeFunctionStringByteSize,
     },
     {
         {TypeIndex::String, "empty"}, optimizeFunctionStringEmpty<true>,
@@ -852,6 +897,9 @@ std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesFo
         if (!first_argument_column_node)
             return {};
     }
+
+    if (!canOptimizeFunctionToSubcolumn(*function_node, first_argument_column_node->getColumn().type->getTypeId()))
+        return {};
 
     auto column_source = first_argument_column_node->getColumnSource();
     auto storage = getStorageForColumnSource(column_source);

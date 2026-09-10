@@ -1,0 +1,81 @@
+<test>
+    <!--
+         This models a log-size report. The query returns only aggregates and
+         never needs the message contents, so byteSize(message) should read
+         the String size stream instead of the full String data stream.
+    -->
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS byte_size_string_subcolumn_perf</create_query>
+
+    <create_query>
+        CREATE TABLE byte_size_string_subcolumn_perf
+        (
+            event_time DateTime,
+            service LowCardinality(String),
+            message String
+        )
+        ENGINE = MergeTree ORDER BY (service, event_time)
+        SETTINGS
+            string_serialization_version = 'with_size_stream',
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0,
+            index_granularity = 8192
+    </create_query>
+
+    <fill_query>
+        INSERT INTO byte_size_string_subcolumn_perf
+        SELECT
+            toDateTime('2026-01-01 00:00:00') + number % 86400 AS event_time,
+            arrayElement(['api', 'worker', 'web', 'scheduler'], number % 4 + 1) AS service,
+            randomString(512 + number % 1536) AS message
+        FROM numbers_mt(1000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE byte_size_string_subcolumn_perf FINAL SETTINGS mutations_sync = 1</fill_query>
+
+    <!-- Realistic log payload accounting query. -->
+    <query>
+        SELECT
+            service,
+            toStartOfHour(event_time) AS hour,
+            count() AS events,
+            sum(byteSize(message)) AS message_memory_bytes,
+            quantile(0.99)(byteSize(message)) AS p99_message_memory_bytes
+        FROM byte_size_string_subcolumn_perf
+        WHERE event_time &gt;= toDateTime('2026-01-01 00:00:00')
+          AND event_time &lt; toDateTime('2026-01-02 00:00:00')
+        GROUP BY service, hour
+        ORDER BY hour, service
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_move_to_prewhere = 0,
+            use_uncompressed_cache = 0
+    </query>
+
+    <query>
+        SELECT
+            service,
+            toStartOfHour(event_time) AS hour,
+            count() AS events,
+            sum(byteSize(message)) AS message_memory_bytes,
+            quantile(0.99)(byteSize(message)) AS p99_message_memory_bytes
+        FROM byte_size_string_subcolumn_perf
+        WHERE event_time &gt;= toDateTime('2026-01-01 00:00:00')
+          AND event_time &lt; toDateTime('2026-01-02 00:00:00')
+        GROUP BY service, hour
+        ORDER BY hour, service
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 0,
+            optimize_move_to_prewhere = 0,
+            use_uncompressed_cache = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS byte_size_string_subcolumn_perf</drop_query>
+</test>

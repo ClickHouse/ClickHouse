@@ -1,0 +1,21 @@
+SELECT plus(__table1.`s.size`, byteSize(__table1.`s.size`)) AS `byteSize(s)`
+FROM default.t_byte_size_string_subcolumn AS __table1
+8
+9
+13
+18
+8
+9
+13
+18
+48	48
+9
+10
+14
+19
+SELECT byteSize(__table1.s) AS `byteSize(s)`, byteSize(__table1.s, 1) AS `byteSize(s, 1)`
+FROM default.t_byte_size_string_subcolumn AS __table1
+id	Default
+s	Sparse
+optimized	2018
+unoptimized	2018
