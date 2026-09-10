@@ -138,6 +138,7 @@ private:
         bool allow_reorder_prewhere_conditions = false;
         bool is_final = false;
         bool use_statistics = false;
+        bool apply_string_filters_during_scan = false;
     };
 
     struct OptimizeResult
@@ -166,6 +167,12 @@ private:
     bool columnsSupportPrewhere(const NameSet & columns) const;
 
     bool isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const;
+
+    /// Whether the condition is a substring search on a String column that can be used as
+    /// a string value filter during the scan when `apply_string_filters_during_scan` is enabled
+    /// (see `extractStringValueFilters`). Such a condition is worth moving to PREWHERE even when
+    /// it involves all queried columns: the reader then skips copying the non-matching values.
+    bool isConditionSuitableForStringValueFilter(const RPNBuilderTreeNode & node) const;
 
     bool isSortingKey(const String & column_name) const;
 

@@ -304,6 +304,7 @@ void MergeTreeReaderCompact::readData(
         else
         {
             const auto & serialization = serializations[column_idx];
+            deserialize_settings.string_value_filter = getStringValueFilter(name_and_type);
             serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], substreams_cache);
         }
 

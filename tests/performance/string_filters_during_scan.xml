@@ -1,0 +1,20 @@
+<test>
+    <create_query>
+        CREATE TABLE t_string_filter_perf (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_string_filter_perf
+        SELECT number, concat('payload ', toString(number), ' ', randomPrintableASCII(100), if(number % 1000 = 0, ' needle', ''))
+        FROM numbers_mt(10000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+
+    <query>SELECT count(), max(length(s)) FROM t_string_filter_perf PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 0</query>
+    <query>SELECT count(), max(length(s)) FROM t_string_filter_perf PREWHERE s LIKE '%needle%' SETTINGS apply_string_filters_during_scan = 1</query>
+    <query>SELECT count(), max(length(s)) FROM t_string_filter_perf PREWHERE position(s, 'needle') > 0 SETTINGS apply_string_filters_during_scan = 1</query>
+    <query>SELECT sum(cityHash64(s)) FROM t_string_filter_perf PREWHERE endsWith(s, 'needle') SETTINGS apply_string_filters_during_scan = 1</query>
+    <query>SELECT sum(cityHash64(s)) FROM t_string_filter_perf PREWHERE startsWith(s, 'payload 1234') SETTINGS apply_string_filters_during_scan = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_string_filter_perf</drop_query>
+</test>
