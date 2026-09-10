@@ -2,6 +2,9 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -79,13 +82,31 @@ namespace
             tags.reserve(tags.size() + num_tags);
     }
 
-    std::string_view extractStringViewAt(const IColumn & column, size_t row)
+    bool isFixedStringColumn(const IColumn & column)
+    {
+        if (checkColumn<ColumnFixedString>(&column))
+            return true;
+
+        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&column))
+            return isFixedStringColumn(nullable_column->getNestedColumn());
+
+        if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(&column))
+            return isFixedStringColumn(*low_cardinality_column->getDictionary().getNestedColumn());
+
+        if (const auto * const_column = checkAndGetColumn<ColumnConst>(&column))
+            return isFixedStringColumn(const_column->getDataColumn());
+
+        return false;
+    }
+
+    std::string_view extractStringViewAt(const IColumn & column, size_t row, bool trim_fixed_string)
     {
         if (column.isNullAt(row))
             return {};
 
         auto value = std::string_view{column.getDataAt(row)};
-        trimRight(value, '\0'); /// Trim zero characters in case FixedString was used for this column.
+        if (trim_fixed_string)
+            trimRight(value, '\0'); /// Trim zero padding from a FixedString value.
         return value;
     }
 
@@ -108,6 +129,8 @@ namespace
             {
                 const IColumn & tag_names = tuple_column->getColumn(0);
                 const IColumn & tag_values = tuple_column->getColumn(1);
+                const bool tag_names_are_fixed_string = isFixedStringColumn(tag_names);
+                const bool tag_values_are_fixed_string = isFixedStringColumn(tag_values);
                 const IColumn::Offsets & offsets = array_column->getOffsets();
                 for (size_t i = 0; i != num_rows; ++i)
                 {
@@ -117,8 +140,8 @@ namespace
                     res.reserve(res.size() + (end_offset - start_offset) + num_extra_tags);
                     for (size_t j = start_offset; j != end_offset; ++j)
                     {
-                        auto tag_name = extractStringViewAt(tag_names, j);
-                        auto tag_value = extractStringViewAt(tag_values, j);
+                        auto tag_name = extractStringViewAt(tag_names, j, tag_names_are_fixed_string);
+                        auto tag_value = extractStringViewAt(tag_values, j, tag_values_are_fixed_string);
                         res.emplace_back(tag_name, tag_value);
                     }
                 }
@@ -190,10 +213,12 @@ namespace
         chassert(column_tag_value.size() == num_rows);
         chassert(out_tags_vector.size() == num_rows);
 
+        const bool tag_name_is_fixed_string = isFixedStringColumn(column_tag_name);
+        const bool tag_value_is_fixed_string = isFixedStringColumn(column_tag_value);
         for (size_t i = 0; i != num_rows; ++i)
         {
-            auto tag_name = extractStringViewAt(column_tag_name, i);
-            auto tag_value = extractStringViewAt(column_tag_value, i);
+            auto tag_name = extractStringViewAt(column_tag_name, i, tag_name_is_fixed_string);
+            auto tag_value = extractStringViewAt(column_tag_value, i, tag_value_is_fixed_string);
             out_tags_vector[i].emplace_back(tag_name, tag_value);
         }
     }
