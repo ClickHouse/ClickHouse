@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnConst.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/Context.h>
@@ -8,8 +9,6 @@
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-
-#include <vector>
 
 namespace DB
 {
@@ -69,11 +68,11 @@ private:
 
         struct ConvertedColumn
         {
-            ColumnPtr column;
-            bool is_const;
+            ColumnPtr column = nullptr;
+            bool is_const = false;
         };
 
-        std::vector<ConvertedColumn> converted_columns;
+        VectorWithMemoryTracking<ConvertedColumn> converted_columns;
         converted_columns.reserve(arguments.size());
         bool has_const_column = false;
         for (const auto & argument : arguments)
