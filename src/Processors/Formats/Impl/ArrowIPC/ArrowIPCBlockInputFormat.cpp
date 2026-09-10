@@ -630,14 +630,94 @@ bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & 
     return ArrowIPC::stripHint(alternative)->getName() == decoded->getName();
 }
 
+std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to, bool case_insensitive);
+bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative, bool case_insensitive);
+
+/// Whether every name is distinct after lowercasing, so a case-insensitive lookup is unambiguous and the
+/// rename before the cast cannot map two fields onto one name.
+bool namesDistinctCaseInsensitively(const Strings & names)
+{
+    UnorderedSetWithMemoryTracking<String> lowered;
+    for (const auto & name : names)
+        if (!lowered.insert(boost::to_lower_copy(name)).second)
+            return false;
+    return true;
+}
+
+/// Whether a decoded composite element can be repaired into a requested composite alternative: the same
+/// shape, and a field correspondence the repair cast realises without inventing or relabelling a value. A
+/// named target tuple must find every one of its fields in the decoded struct, which is what makes the cast
+/// pair them by name: a decoded field the target does not name is projected out, a target field the decode
+/// does not have would be filled with a default, and two disjoint name sets are paired positionally
+/// (#70830), so a field would come back holding another field's value. An unnamed target tuple expresses no
+/// name expectation and is paired positionally, with the same arity so no decoded field is dropped
+/// silently. A nested `Variant` child is admissible when this walk's own repair reaches types the request
+/// names, decided by the same function that performs it.
+bool variantElementCompositeMatchesType(const DataTypePtr & decoded, const DataTypePtr & to, bool case_insensitive)
+{
+    /// A decoded child carries the wrappers the Arrow schema gave it, while the element rules are stated
+    /// for the unwrapped type; the cast restores the requested wrappers.
+    const auto child_matches = [&](const DataTypePtr & from_child, const DataTypePtr & to_child)
+    {
+        return variantElementMatchesType(ArrowIPC::stripHint(from_child), to_child, case_insensitive);
+    };
+
+    if (const auto * from_arr = typeid_cast<const DataTypeArray *>(decoded.get()))
+    {
+        const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get());
+        return to_arr && child_matches(from_arr->getNestedType(), to_arr->getNestedType());
+    }
+    if (const auto * from_map = typeid_cast<const DataTypeMap *>(decoded.get()))
+    {
+        const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+        return to_map && child_matches(from_map->getKeyType(), to_map->getKeyType())
+            && child_matches(from_map->getValueType(), to_map->getValueType());
+    }
+    if (const auto * from_nested = typeid_cast<const DataTypeVariant *>(decoded.get()))
+    {
+        const auto * to_nested = typeid_cast<const DataTypeVariant *>(to.get());
+        return to_nested && variantElementTargets(*from_nested, *to_nested, case_insensitive).has_value();
+    }
+
+    const auto * from_tup = typeid_cast<const DataTypeTuple *>(decoded.get());
+    const auto * to_tup = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tup || !to_tup)
+        return false;
+    const DataTypes & from_elements = from_tup->getElements();
+    const DataTypes & to_elements = to_tup->getElements();
+    if (to_tup->hasExplicitNames())
+    {
+        if (!from_tup->hasExplicitNames() || to_elements.empty())
+            return false;
+        if (case_insensitive
+            && !(namesDistinctCaseInsensitively(from_tup->getElementNames())
+                 && namesDistinctCaseInsensitively(to_tup->getElementNames())))
+            return false;
+        const Strings & to_names = to_tup->getElementNames();
+        for (size_t i = 0; i < to_elements.size(); ++i)
+        {
+            const auto position = from_tup->tryGetPositionByName(to_names[i], case_insensitive);
+            if (!position || !child_matches(from_elements[*position], to_elements[i]))
+                return false;
+        }
+        return true;
+    }
+    if (from_elements.size() != to_elements.size())
+        return false;
+    for (size_t i = 0; i < to_elements.size(); ++i)
+        if (!child_matches(from_elements[i], to_elements[i]))
+            return false;
+    return true;
+}
+
 /// Whether a decoded `Variant` element can be repaired into a requested alternative: its own decoded type,
 /// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from `decoded`.
-/// Three exclusions whose reason the arms below do not show: a `UInt8` value outside 0/1 would render as
-/// `true` under the equal-comparing `Bool`; a cast between tuples with differing names fills the target
-/// fields rather than rejecting them, and this walk keeps the decoded names; and `Date32` decoding is
-/// hint-dependent (range-checked, saturated or verbatim) while this layer supplies no hint, whereas the
-/// admitted widenings read no hint and are in range at every scale.
-bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
+/// Two exclusions whose reason the arms below do not show: a `UInt8` value outside 0/1 would render as
+/// `true` under the equal-comparing `Bool`; and `Date32` decoding is hint-dependent (range-checked,
+/// saturated or verbatim) while this layer supplies no hint, whereas the admitted widenings read no hint
+/// and are in range at every scale. A composite takes an alternative of the same shape under the
+/// correspondence rule above.
+bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative, bool case_insensitive)
 {
     const DataTypePtr to = ArrowIPC::stripHint(alternative);
     const WhichDataType from(decoded);
@@ -646,6 +726,8 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
     /// An element admitted by no arm must still claim its own alternative, or it leaves a sibling ambiguous.
     if (variantElementPrefersType(decoded, alternative))
         return true;
+    if (from.isTuple() || from.isArray() || from.isMap() || from.isVariant())
+        return variantElementCompositeMatchesType(decoded, to, case_insensitive);
     if (isBool(decoded))
         return which.isUInt8() || which.isEnum8() || variantElementWidensTo(to, 0);
     if (from.isInt8() || from.isUInt8())
@@ -692,8 +774,9 @@ bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & 
 /// an element whose correspondence stays ambiguous is left unassigned, so no guess is ever made. Two
 /// elements are never left on one alternative name: `DataTypeVariant` deduplicates by name while the column
 /// keeps one element per union child, so a shared name would describe a column whose layout contradicts its
-/// type.
-DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to)
+/// type. Nothing is returned at all when an element would end up under a type the request does not name: the
+/// cast then rejects the read whatever this walk does, so the assignment is not worth performing.
+std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to, bool case_insensitive)
 {
     const DataTypes & elements = from.getVariants();
     const DataTypes & alternatives = to.getVariants();
@@ -702,7 +785,7 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
     VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> candidates(elements.size());
     for (size_t e = 0; e < elements.size(); ++e)
         for (size_t a = 0; a < alternatives.size(); ++a)
-            if (variantElementMatchesType(elements[e], alternatives[a]))
+            if (variantElementMatchesType(elements[e], alternatives[a], case_insensitive))
                 candidates[e].push_back(a);
 
     const auto preferred_candidates = [&](size_t e)
@@ -766,6 +849,19 @@ DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVari
                 targets[e] = nullptr;
                 dropped = true;
             }
+    }
+
+    /// Matched by full name, as the cast itself matches alternatives: when an element ends up under a type
+    /// the request does not name, the cast rejects the read whatever this walk does, and rebuilding would
+    /// only change the type its message prints.
+    for (size_t e = 0; e < elements.size(); ++e)
+    {
+        const DataTypePtr & landed = targets[e] ? targets[e] : elements[e];
+        bool requested = false;
+        for (const DataTypePtr & alternative : alternatives)
+            requested |= alternative->getName() == landed->getName();
+        if (!requested)
+            return {};
     }
 
     return targets;
@@ -1016,25 +1112,15 @@ std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
     const DataTypeVariant & to_variant, bool case_insensitive, const FormatSettings & format_settings)
 {
     const DataTypes & elements = from_variant.getVariants();
-    const DataTypes targets = variantElementTargets(from_variant, to_variant);
+    const std::optional<DataTypes> maybe_targets = variantElementTargets(from_variant, to_variant, case_insensitive);
+    if (!maybe_targets)
+        return {col, from_type};
+    const DataTypes & targets = *maybe_targets;
     bool any_change = false;
     for (size_t g = 0; g < elements.size() && !any_change; ++g)
         any_change = targets[g] && targets[g]->getName() != elements[g]->getName();
     if (!any_change)
         return {col, from_type};
-
-    /// Repairing helps only when every element ends up under an alternative the request names, matched by
-    /// full name as the cast matches them: otherwise the cast rejects the read whatever this walk does.
-    for (size_t g = 0; g < elements.size(); ++g)
-    {
-        if (targets[g])
-            continue;
-        bool requested = false;
-        for (const DataTypePtr & alternative : to_variant.getVariants())
-            requested |= alternative->getName() == elements[g]->getName();
-        if (!requested)
-            return {col, from_type};
-    }
 
     const auto & variant_col = assert_cast<const ColumnVariant &>(*col);
     const size_t num_elements = variant_col.getNumVariants();
