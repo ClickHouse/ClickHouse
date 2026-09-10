@@ -131,6 +131,12 @@ SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 -- The inversion also reaches the hint through De Morgan, with no `NOT indexHint` in the text.
 SELECT 'negated hint', count() FROM t_index_hint WHERE NOT (indexHint(id) AND id > 500)
 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+-- An inverted hint has to contribute a constant false, not merely be dropped: `or(false, <key atom>)`
+-- still prunes on the real conjunct, while a dropped hint leaves the whole condition unknown, which
+-- `force_primary_key` rejects.
+SELECT 'negated hint forces pk', count() FROM t_index_hint
+WHERE NOT indexHint(id) OR (id >= 1 AND id <= 3)
+SETTINGS force_primary_key = 1;
 -- Two inversions cancel before any leaf, so this hint keeps its condition and every row matches.
 SELECT 'negated hint twice', count() FROM t_index_hint WHERE NOT NOT indexHint('x') OR (id >= 1 AND id <= 3);
 
