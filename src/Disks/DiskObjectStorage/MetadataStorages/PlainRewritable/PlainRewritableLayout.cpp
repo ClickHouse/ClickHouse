@@ -34,6 +34,11 @@ std::string PlainRewritableLayout::constructFileObjectKey(const std::string & di
     return object_storage_common_key_prefix / directory_remote_path / file_name;
 }
 
+std::string PlainRewritableLayout::constructBlobObjectKey(const std::string & blob_key) const
+{
+    return object_storage_common_key_prefix / blob_key;
+}
+
 std::string PlainRewritableLayout::constructDirectoryObjectKey(const std::string & directory_remote_path) const
 {
     return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / directory_remote_path / PREFIX_PATH_FILE_NAME;
