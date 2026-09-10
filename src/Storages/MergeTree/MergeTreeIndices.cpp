@@ -5,7 +5,6 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
 
@@ -18,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 bool indexFileExistsInChecksums(
@@ -51,6 +51,14 @@ String getIndexFileName(const String & index_name, bool escape_filename)
 {
     if (escape_filename)
         return escapeForFileName(String(SKIP_INDEX_FILE_PREFIX) + index_name);
+
+    /// Here the name becomes a part of the file name as is, so a '/' in it would turn into a path
+    /// separator. `getIndexFromAST` rejects such names, but `escape_index_filenames` can also be
+    /// switched off by `ALTER TABLE ... MODIFY SETTING` after the index was created.
+    if (index_name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Skip index name ({}) cannot contain '/' with `escape_index_filenames` disabled", index_name);
+
     return String(SKIP_INDEX_FILE_PREFIX) + index_name;
 }
 
@@ -64,37 +72,15 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
-{
-    return index.expression->getRequiredColumnsWithTypes();
-}
-
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
-{
-    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
-        if (part.isSystemColumnInvalidated(column))
-            return {0 /*unknown*/, {}};
-
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
-
-    return {0 /*unknown*/, {}};
-}
-
-MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & relative_path_prefix,
     const IDataPartStorage * storage) const
 {
-    /// Not routed through `getDeserializedFormat`: that answers the read-time question and
-    /// reports nothing once a required system column is invalidated, while a file left on disk
-    /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
-    MergeTreeIndexSubstreams substreams;
-    for (const auto & substream : getSubstreams())
-        if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
-            substreams.push_back(substream);
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
-    return substreams;
+    return {0 /*unknown*/, {}};
 }
 
 void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const

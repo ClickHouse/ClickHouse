@@ -2,7 +2,6 @@
 
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/SipHash.h>
-#include <bit>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -30,6 +29,41 @@ static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
     return hash.get128();
 }
 
+/** Hash methods declare two independent prefetch predicates. They are not interchangeable, and the
+  * places that read them are disjoint.
+  *
+  * `has_cheap_key_holder` - read by `Aggregator::executeImpl`.
+  *
+  * Is it acceptable to call `getKeyHolder(row)` a second time for the same row purely to issue a
+  * software prefetch? The aggregation prefetch pipeline runs
+  *
+  *     auto && key_holder = state.getKeyHolder(i + look_ahead, pool);
+  *     data.prefetch(std::move(key_holder));
+  *
+  * ahead of the `emplaceKey`/`findKey` loop, so the look-ahead row's key holder is built once for
+  * the prefetch and once again when that row is actually processed. Hiding a cache miss is only a
+  * win when that duplicated work is cheaper than the miss.
+  *
+  * `true` means `getKeyHolder` reads the key in place: an unaligned load, a `packFixed`, or a
+  * `string_view` over the column's own memory. Rebuilding it costs a handful of instructions.
+  *
+  * `false` means `getKeyHolder` materializes the key - serializing every key column into the arena,
+  * or hashing every key column through virtual `IColumn` calls. For those methods building the key
+  * *is* the dominant cost of the aggregation, so paying it twice per row costs far more than the
+  * miss it hides.
+  *
+  * Note this is deliberately not "is the hash cheap". Hashing a string is not cheap, but a prefetch
+  * has to hash the key by definition, and `HashMethodString` still profits because building its key
+  * holder is free.
+  *
+  * `has_cheap_key_calculation` - read by the JOIN probe loop, via `join_prefetch_supported` in
+  * HashJoinMethodsImpl.h (the `KeyGetterForType` aliases in HashJoin/KeyGetter.h resolve to these
+  * same hash methods). It is the stricter "the whole key calculation, hashing included, is cheap",
+  * and is left as it was: the JOIN probe loop has its own cost balance, which this file's
+  * aggregation-side reasoning says nothing about. Only the aggregator reads
+  * `has_cheap_key_holder`.
+  */
+
 /// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
 template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
@@ -45,6 +79,8 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = true;
+    /// An unaligned load from the column's own memory.
+    static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
     const char * vec;
@@ -113,6 +149,8 @@ struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
 
     static constexpr bool has_range_check = true;
     static constexpr bool has_cheap_key_calculation = true;
+    /// An unaligned load from the column's own memory.
+    static constexpr bool has_cheap_key_holder = true;
 
     const char * vec;
     FieldType min_key{};
@@ -176,6 +214,8 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// A `string_view` over the column's own chars; the arena copy only happens on persist.
+    static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
     const IColumn::Offset * offsets;
@@ -215,104 +255,6 @@ protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
-/// For the case when there is one packed string key.
-/// Unlike `HashMethodString`, this method does not support nullable keys or key offsets,
-/// and the key is always persisted into the arena by `keyHolderPersistKey`.
-template <typename Value, typename Mapped, bool use_cache>
-struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
-                              HashMethodPackedString<Value, Mapped, use_cache>,
-                              Value,
-                              Mapped,
-                              use_cache,
-                              /*need_offset=*/ false,
-                              /*nullable=*/ false>
-{
-    using Self = HashMethodPackedString<Value, Mapped, use_cache>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
-
-    static constexpr bool has_cheap_key_calculation = false;
-
-    const IColumn::Offset * offsets;
-    const UInt8 * chars;
-
-    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
-        : Base(key_columns[0])
-    {
-        const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
-        offsets = column_string.getOffsets().data();
-        chars = column_string.getChars().data();
-    }
-
-    /// Content hash stored inside the packed key. `PackedStringRef::build` invokes it
-    /// only for lengths that store a hash (1..UInt32 max): the empty value hashes to
-    /// zero by construction and oversized strings use the length as a hash surrogate,
-    /// trading hash quality for a uniform cell layout (full string comparison remains
-    /// the final equality check).
-    ///
-    /// Computing the hash inside `build` keeps a single pass over the string data:
-    /// a separate per-block hashing pass would read every key twice and allocate a
-    /// hash array per block. The flip side is that when the `Aggregator` prefetch
-    /// pipeline is active (hash table larger than L2), the look-ahead `getKeyHolder`
-    /// call rebuilds the key and hashes it a second time - the same behaviour as the
-    /// `StringHashTable` prefetch path this method replaces.
-    ///
-    /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
-    /// aggregation derives a 64-bit hash via a dedicated conversion path.
-    struct Hash
-    {
-        ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
-        {
-#if defined(CRC_INT)
-            /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
-            /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
-            /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
-            /// which otherwise dominates low-cardinality short-string aggregation
-            /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
-            /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
-            /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
-            if (size < 8)
-                return hashTinyKey(data, size);
-#endif
-            return static_cast<UInt32>(StringViewHash()(std::string_view(data, size)));
-        }
-    };
-
-#if defined(CRC_INT)
-    /// Hash a 1..7 byte key with a single CRC instruction.
-    /// Reading 8 bytes from the key start is safe: `ColumnString::Chars` is a `PaddedPODArray`
-    /// with at least 15 bytes of right padding, so the load never crosses the allocation end.
-    /// Trailing bytes beyond the key length are masked off, so the result depends only on the
-    /// key content and is independent of neighbouring data.
-    static ALWAYS_INLINE UInt32 hashTinyKey(const char * data, size_t size)
-    {
-        const UInt8 shift = static_cast<UInt8>((-size & 7) * 8);
-        UInt64 word = 0;
-        memcpy(&word, data, sizeof(word));
-        /// `memcpy` places the key in the low bytes of `word` on little-endian and in the high
-        /// bytes on big-endian, so the trailing-byte mask has to follow the same direction.
-        /// `CRC_INT` is also defined on big-endian s390x, so masking the wrong end there would
-        /// fold neighbouring padding bytes into the hash and split a single tiny key into
-        /// several groups (the hash is stored in `PackedStringRef::low` and gates `operator==`).
-        if constexpr (std::endian::native == std::endian::little)
-            word &= (~UInt64(0) >> shift);
-        else
-            word &= (~UInt64(0) << shift);
-        size_t res = static_cast<size_t>(-1);
-        res = CRC_INT(static_cast<UInt32>(res), word);
-        return static_cast<UInt32>(res);
-    }
-#endif
-
-    ArenaPackedStringHolder getKeyHolder(ssize_t row, Arena & pool) const
-    {
-        const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
-        const size_t size = offsets[row] - offsets[row - 1];
-        return ArenaPackedStringHolder{PackedStringRef::build(data, size, Hash{}), pool};
-    }
-
-protected:
-    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
-};
 
 /// For the case when there is one fixed-length string key.
 template <
@@ -334,6 +276,8 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// A `string_view` over the column's own chars; the arena copy only happens on persist.
+    static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
     size_t n;
@@ -406,6 +350,8 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     static constexpr bool has_cheap_key_calculation = true;
+    /// `packFixed` copies a few fixed-width fields into the key; no allocation.
+    static constexpr bool has_cheap_key_holder = true;
     static constexpr bool has_pre_computed_hashes = false;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
@@ -580,6 +526,8 @@ struct HashMethodHashed
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     static constexpr bool has_cheap_key_calculation = false;
+    /// `hash128` SipHashes every key column through a virtual `IColumn::updateHashWithValue`.
+    static constexpr bool has_cheap_key_holder = false;
     static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;

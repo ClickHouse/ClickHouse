@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
@@ -147,20 +146,17 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
 {
     if (expression_ast)
     {
-        /// Detect pure case-folding preprocessors of the exact form lower(expr), lowerUTF8(expr),
-        /// upper(expr), or upperUTF8(expr), where expr is the index expression itself.
+        /// Detect pure case-folding preprocessors of the exact form lower(col), lowerUTF8(col),
+        /// upper(col), or upperUTF8(col), where col is the index column itself.
         /// Nested expressions such as lower(trim(col)) are not considered pure case folding
         /// because the additional transformation would change the dictionary tokens in a way
         /// that the ILIKE case-insensitive regex can no longer match them correctly.
         const auto * func = expression_ast->as<ASTFunction>();
-        if (func && func->arguments && func->arguments->children.size() == 1)
+        if (func && (func->name == "lower" || func->name == "lowerUTF8" || func->name == "upper" || func->name == "upperUTF8")
+            && func->arguments && func->arguments->children.size() == 1)
         {
-            const auto & name = getFunctionCanonicalNameIfAny(func->name);
-            if (name == "lower" || name == "lowerUTF8" || name == "upper" || name == "upperUTF8")
-            {
-                const auto & arg = func->arguments->children.front();
-                is_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
-            }
+            const auto * arg = func->arguments->children.front()->as<ASTIdentifier>();
+            is_lower_or_upper = arg && arg->name() == index_description.column_names.front();
         }
     }
 }

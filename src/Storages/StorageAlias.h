@@ -27,11 +27,7 @@ public:
 
     std::string getName() const override { return "Alias"; }
 
-    bool isMergeTree() const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->isMergeTree();
-    }
+    bool readsFromOtherTables() const override { return true; }
 
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
@@ -98,8 +94,6 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override { getTargetTable()->checkMutationIsPossible(commands, settings); }
 
-    void checkInsertIsAllowed(ContextPtr local_context) const override { getTargetTable()->checkInsertIsAllowed(local_context); }
-
     /// Mutate target table
     void mutate(
         const MutationCommands & commands,
@@ -136,7 +130,6 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
-    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getTargetTable()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool canMoveConditionsToPrewhere() const override
     {
         auto target = tryGetTargetTable();
@@ -281,9 +274,6 @@ public:
     }
 
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
-
-    DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context) override;
-    std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
 

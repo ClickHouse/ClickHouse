@@ -3,11 +3,12 @@
 #include <algorithm>
 
 #include <Common/KnownObjectNames.h>
-#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
+#include <Common/re2.h>
 #include <Common/maskURIPassword.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -19,10 +20,16 @@ namespace
     /// (which strips the same fields from persisted backup metadata). Returns true if anything was masked.
     bool maskS3URICredentials(String & url)
     {
-        /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular
-        /// expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
-        bool changed = maskURIUserinfo(url);
-        changed |= maskPresignedURLParameters(url);
+        bool changed = false;
+        /// Greedy up to the last at-sign before the path, so a userinfo whose password itself
+        /// contains an at-sign is masked whole, not just up to the first one.
+        static re2::RE2 userinfo_pattern = "^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@";
+        if (RE2::Replace(&url, userinfo_pattern, "\\1[HIDDEN]@"))
+            changed = true;
+        static re2::RE2 presign_pattern
+            = "([?&](?:AWSAccessKeyId|Signature|Expires|GoogleAccessId|X-Amz-[A-Za-z0-9\\-]*|X-Goog-[A-Za-z0-9\\-]*)=)[^&#]*";
+        if (RE2::GlobalReplace(&url, presign_pattern, "\\1[HIDDEN]"))
+            changed = true;
         return changed;
     }
 }
@@ -149,7 +156,7 @@ void FunctionSecretArgumentsFinder::maskS3PositionalSecrets(
         return url_slot + slot < positional.size()
             && tryGetStringFromArgument(positional[url_slot + slot], &value) && predicate(value);
     };
-    auto is_nosign = [&](size_t slot) { return value_is(slot, [](const String & v) { return equalsCaseInsensitive(v, "NOSIGN"); }); };
+    auto is_nosign = [&](size_t slot) { return value_is(slot, [](const String & v) { return boost::iequals(v, "NOSIGN"); }); };
     auto is_format = [&](size_t slot) { return value_is(slot, [](const String & v) { return v == "auto" || KnownFormatNames::instance().exists(v); }); };
 
     bool secret_access_key = false; /// slot 2
@@ -261,7 +268,7 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
         /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
         findEncryptionFunctionSecretArguments();
     }
-    else if (equalsCaseInsensitive(function->name(), "HMAC"))
+    else if (boost::iequals(function->name(), "HMAC"))
     {
         /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
         findHMACSecretArguments();
@@ -541,7 +548,8 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
 
     if (!url_arg.starts_with("http"))
     {
-        if (maskConnectionStringKey(url_arg, "AccountKey="))
+        static re2::RE2 account_key_pattern = "AccountKey=.*?(;|$)";
+        if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
             result.start = url_arg_idx;
@@ -551,7 +559,8 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
             return true;
         }
 
-        if (maskConnectionStringKey(url_arg, "SharedAccessSignature="))
+        static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
+        if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
         {
             chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
             result.start = url_arg_idx;

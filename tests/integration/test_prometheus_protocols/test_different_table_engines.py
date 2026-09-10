@@ -329,8 +329,7 @@ def test_external_tables():
         "tags Map(LowCardinality(String), String), "
         "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
         "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
-        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "SETTINGS allow_dimensions_outside_sorting_key = 1"
+        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
     )
 
     node.query(
@@ -368,8 +367,7 @@ def test_data_keyword():
         "tags Map(LowCardinality(String), String), "
         "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
         "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
-        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "SETTINGS allow_dimensions_outside_sorting_key = 1"
+        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
     )
     node.query(
         "CREATE TABLE mymetrics (metric_family_name String, type String, unit String, help String) "

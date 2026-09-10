@@ -1,5 +1,4 @@
 -- Test that FORMAT Null is ignored for EXPLAIN queries when setting is enabled (default)
-SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1, max_threads = 2;
 

@@ -58,8 +58,6 @@ public:
 
     std::optional<size_t> getColumnPosition(const String & column_name) const override { return data_part->getColumnPosition(column_name); }
 
-    bool isSystemColumnInvalidated(const String & column_name) const override { return data_part->isSystemColumnInvalidated(column_name); }
-
     AlterConversionsPtr getAlterConversions() const override { return alter_conversions; }
 
     String getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const override
@@ -89,7 +87,7 @@ public:
 
     void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns) override
     {
-        if (read_columns.contains("_distance") || read_hints_.use_vector_search_result_filter)
+        if (read_columns.contains("_distance"))
             read_hints = read_hints_;
     }
 

@@ -21,7 +21,6 @@
 #include <Core/Settings.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include <base/defines.h>
 
 namespace DB
 {
@@ -58,7 +57,7 @@ ASTPtr getParameterizedViewInnerQuery(const StoragePtr & storage)
 }
 
 TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , storage(std::move(storage_))
     , storage_id(std::move(storage_id_))
     , storage_lock(std::move(storage_lock_))
@@ -68,7 +67,7 @@ TableNode::TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder
 {}
 
 TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , storage(std::move(storage_))
     , storage_id(storage->getStorageID())
     , storage_lock(std::move(storage_lock_))
@@ -79,7 +78,7 @@ TableNode::TableNode(StoragePtr storage_, TableLockHolder storage_lock_, Storage
 }
 
 TableNode::TableNode(StoragePtr storage_, const ContextPtr & context)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , storage(std::move(storage_))
     , storage_id(storage->getStorageID())
     , storage_lock(storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]))
@@ -111,15 +110,6 @@ void TableNode::finalizeMaterializedCTE(TemporaryTableHolder temporary_table_hol
     materialized_cte->table_holder = std::move(temporary_table_holder_);
     typeid_cast<StorageMemory *>(real_storage.get())->setMaterializedCTE(materialized_cte);
     updateStorage(std::move(real_storage), context_);
-}
-
-void TableNode::adoptMaterializedCTE(MaterializedCTEPtr materialized_cte_, const ContextPtr & context_)
-{
-    chassert(isMaterializedCTE());
-    chassert(materialized_cte_ && materialized_cte_->isStorageInitialized());
-    materialized_cte = std::move(materialized_cte_);
-    setTemporaryTableName(materialized_cte->temporary_table_name);
-    updateStorage(materialized_cte->storage, context_);
 }
 
 void TableNode::updateStorage(StoragePtr storage_value, const ContextPtr & context)

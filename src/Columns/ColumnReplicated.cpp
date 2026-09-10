@@ -325,11 +325,9 @@ void ColumnReplicated::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnReplicated::permute(const Permutation & perm, size_t limit) const
 {
-    /// Do not require perm.size() == size(): the general IColumn::permute contract
-    /// (see getLimitForPermutation) allows a shorter permutation when limit is set.
-    /// The indexes column has the same size as this column, so its permute below
-    /// performs the correct contract check and throws SIZES_OF_COLUMNS_DOESNT_MATCH
-    /// when the permutation is actually too short.
+    if (size() != perm.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of permutation ({}) doesn't match size of column ({})", perm.size(), size());
+
     auto permuted_indexes = ColumnIndex(indexes.getIndexes()->permute(perm, limit));
     return create(nested_column, std::move(permuted_indexes));
 }
@@ -602,9 +600,6 @@ void ColumnReplicated::rollback(const ColumnCheckpoint & checkpoint)
 
     nested_column->rollback(*with_nested.nested);
     indexes.resizeAssumeReserve(with_nested.size);
-    /// The cache maps source ids to absolute indexes in nested_column; rolling nested_column back
-    /// invalidates them, so it must be cleared (same as filter() does when it mutates the indexes).
-    insertion_cache.clear();
 }
 
 void ColumnReplicated::forEachMutableSubcolumn(MutableColumnCallback callback)

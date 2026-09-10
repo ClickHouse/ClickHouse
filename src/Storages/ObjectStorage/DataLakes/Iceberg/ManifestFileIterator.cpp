@@ -5,7 +5,6 @@
 
 #include <compare>
 #include <optional>
-#include <unordered_set>
 
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -232,7 +231,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
 {
     insertRowToLogTable(
         context_,
-        manifest_file_deserializer_->getMetadataContent(),
+        [&] { return manifest_file_deserializer_->getMetadataContent(); },
         DB::IcebergMetadataLogLevel::ManifestFileMetadata,
         path_resolver_.getTableRoot(),
         path_to_manifest_file_,
@@ -251,6 +250,10 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
 
+    if (manifest_format_version > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
+
     Poco::JSON::Parser parser;
 
     auto partition_spec_json_string = manifest_file_deserializer_->tryGetAvroMetadataValue("partition-spec");
@@ -261,7 +264,6 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     DB::NamesAndTypesList partition_columns_description;
-    std::unordered_set<String> partition_columns_seen;
     auto partition_key_ast = make_intrusive<ASTFunction>();
     partition_key_ast->name = "tuple";
     partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
@@ -303,11 +305,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             continue;
 
         partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
-        /// One source column may back several partition fields (e.g. hours(ts) and identity ts).
-        /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
-        /// against these input columns, which must contain each source column at most once.
-        if (partition_columns_seen.insert(numeric_column_name).second)
-            partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
+        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
     std::optional<DB::KeyDescription> partition_key_description;
@@ -384,7 +382,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     {
         insertRowToLogTable(
             context,
-            manifest_file_deserializer->getContent(row_index),
+            [&] { return manifest_file_deserializer->getContent(row_index); },
             DB::IcebergMetadataLogLevel::ManifestFileEntry,
             path_resolver.getTableRoot(),
             path_to_manifest_file,
@@ -497,7 +495,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     }
     insertRowToLogTable(
         context,
-        manifest_file_deserializer->getContent(row_index),
+        [&] { return manifest_file_deserializer->getContent(row_index); },
         DB::IcebergMetadataLogLevel::ManifestFileEntry,
         path_resolver.getTableRoot(),
         path_to_manifest_file,

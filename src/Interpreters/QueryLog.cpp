@@ -272,23 +272,14 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
+    if (query_settings)
     {
-        /// Write into the subcolumns directly: IColumn::insert(Field) reaches
-        /// ColumnUnique::uniqueInsert(Field), which clones a whole ColumnString per boxed value.
-        /// Both key and value are LowCardinality here, so that would be two clones per entry.
-        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
-        auto & offsets = column_map.getNestedColumn().getOffsets();
-        auto & tuple_column = column_map.getNestedData();
-        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
-        auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
-
-        for (const auto & [name, value] : query_settings)
-        {
-            key_column.insertData(name.data(), name.size());
-            value_column.insertData(value.data(), value.size());
-        }
-
-        offsets.push_back(offsets.back() + query_settings.size());
+        auto * column = columns[i++].get();
+        query_settings->dumpToMapColumn(column, true);
+    }
+    else
+    {
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
     }
 
     {
@@ -346,22 +337,10 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(uint8_t(query_result_cache_usage));
 
-    {
-        /// Same as for Settings above: avoid boxing through Field. Only the key is LowCardinality.
-        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
-        auto & offsets = column_map.getNestedColumn().getOffsets();
-        auto & tuple_column = column_map.getNestedData();
-        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
-        auto & value_column = typeid_cast<ColumnUInt64 &>(tuple_column.getColumn(1));
-
-        for (const auto & [name, value] : async_read_counters)
-        {
-            key_column.insertData(name.data(), name.size());
-            value_column.getData().push_back(value);
-        }
-
-        offsets.push_back(offsets.back() + async_read_counters.size());
-    }
+    if (async_read_counters)
+        async_read_counters->dumpToMapColumn(columns[i++].get());
+    else
+        typeid_cast<ColumnMap &>(*columns[i++]).insertDefault();
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
 }

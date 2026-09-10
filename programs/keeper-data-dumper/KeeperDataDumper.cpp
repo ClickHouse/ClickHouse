@@ -5,8 +5,6 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
-#include <Coordination/KeeperStorageImpl.h>
-#include <Common/assert_cast.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
@@ -27,7 +25,7 @@ namespace DB::CoordinationSetting
 namespace
 {
 
-void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
+void dumpMachine(std::shared_ptr<KeeperStateMachine<DB::KeeperMemoryStorage>> machine)
 {
     auto & storage = machine->getStorageUnsafe();
     std::queue<std::string> keys;
@@ -38,26 +36,23 @@ void dumpMachine(std::shared_ptr<KeeperStateMachine> machine)
         auto key = keys.front();
         keys.pop();
         std::cout << key << "\n";
-        KeeperNodeStats stats;
-        std::string data;
-        if (!storage.nodes_storage->getCommittedNodeSimple(key, &stats, &data))
-            continue;
-        std::cout << "\tStat: {version: " << stats.version <<
-            ", mtime: " << stats.mtime <<
-            ", emphemeralOwner: " << stats.getEphemeralOwner() <<
-            ", czxid: " << stats.czxid <<
-            ", mzxid: " << stats.mzxid <<
-            ", numChildren: " << stats.getNumChildren() <<
-            ", dataLength: " << stats.data_size <<
+        auto value = storage.container.getValue(key);
+        std::cout << "\tStat: {version: " << value.stats.version <<
+            ", mtime: " << value.stats.mtime <<
+            ", emphemeralOwner: " << value.stats.ephemeralOwner() <<
+            ", czxid: " << value.stats.czxid <<
+            ", mzxid: " << value.stats.mzxid <<
+            ", numChildren: " << value.numChildren() <<
+            ", dataLength: " << value.stats.data_size <<
             "}" << std::endl;
-        std::cout << "\tData: " << data << std::endl;
+        std::cout << "\tData: " << storage.container.getValue(key).getData() << std::endl;
 
-        for (const auto & child : storage.nodes_storage->listCommittedChildrenNames(key))
+        for (const auto & child : value.getChildren())
         {
             if (key == "/")
-                keys.push(key + child);
+                keys.push(key + std::string{child});
             else
-                keys.push(key + "/" + child);
+                keys.push(key + "/" + std::string{child});
         }
     }
     std::cout << std::flush;
@@ -85,7 +80,7 @@ int mainEntryClickHouseKeeperDataDumper(int argc, char ** argv)
     keeper_context->setLogDisk(std::make_shared<DB::DiskLocal>("LogDisk", argv[2]));
     keeper_context->setSnapshotDisk(std::make_shared<DB::DiskLocal>("SnapshotDisk", argv[1]));
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<DB::KeeperMemoryStorage>>(nullptr, snapshots_queue, keeper_context, nullptr);
     state_machine->init();
     size_t last_commited_index = state_machine->last_commit_index();
 

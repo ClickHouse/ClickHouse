@@ -15,10 +15,9 @@ extern template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
 namespace DB
 {
 
-/// KeeperRequestDispatcher takes client requests from KeeperTCPHandler (or whoever else calls
-/// putRequest), passes them to nuraft leader, detects when they're committed (or failed), and
-/// passes responses back to KeeperTCPHandler (or whoever registers their response callback by
-/// calling registerSession).
+/// Takes client requests from KeeperTCPHandler (or whoever else calls putRequest), passes them
+/// to nuraft leader, detects when they're committed (or failed), and passes responses back to
+/// KeeperTCPHandler (or whoever registers their response callback by calling registerSession).
 ///
 /// Considerations:
 ///  * Forwarding. If nuraft leader is not on this node, requests are sent to the leader node.
@@ -62,7 +61,7 @@ namespace DB
 ///    throughout nuraft.
 ///    (All intermediate messages inside nuraft are small, so there's no situation where our
 ///     moderate amount of requests translates to disproportionately large memory usage inside nuraft.)
-///  * After going through nuraft, newly committed requests end up in KeeperStateMachine::commit,
+///  * After going through nuraft, newly committed requests end up in KeeperStateMachine<Storage>::commit,
 ///    which produces responses and passes them to KeeperRequestDispatcher::onResponse.
 ///    From onResponse they go to responses_queue, then to KeeperTCPHandler::responses (through responseThread).
 ///    The total size of responses_queue + all KeeperTCPHandler::responses queues is tracked by
@@ -81,7 +80,6 @@ namespace DB
 ///  equally fast because KeeperRequestDispatcher shouldn't be the bottleneck.
 ///  One part where performance may matter is commit callback; we shouldn't waste any time there
 ///  because the commit thread is likely a bottleneck.)
-
 class KeeperRequestDispatcher
 {
 public:
