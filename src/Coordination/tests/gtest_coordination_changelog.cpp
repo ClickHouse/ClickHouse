@@ -177,17 +177,19 @@ TEST(ChangelogValidRuns, ForwardGapAfterCompactionStartsNewRun)
     EXPECT_EQ(runs.end_position, 40u);
 }
 
-/// Not built under ASan, TSan or MSan: those drop jemalloc (see `contrib/jemalloc-cmake`) and do not
-/// route allocations through ClickHouse's `operator new`, so the memory tracker reports nothing and
-/// there is nothing to compare the charge against. UBSan keeps jemalloc and debug builds track
-/// normally, so `DEBUG_OR_SANITIZER_BUILD` would exclude more than it should.
+/// Not built under ASan, TSan or MSan: their runtimes replace `operator new`, so
+/// `Memory::trackMemory` never runs and the tracker has nothing to report. That is the only
+/// requirement - jemalloc is not one. Without it `getActualAllocationSize` is the identity, and
+/// since both sides of the comparison below size their allocations through that same function, they
+/// simply drop the size-class rounding together. So `ENABLE_JEMALLOC=0` builds run this too, as do
+/// UBSan and debug builds, which is why `DEBUG_OR_SANITIZER_BUILD` would exclude too much.
 #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
 
 /// The cache's accounting is only worth having if it matches what the allocator actually hands out.
 /// Add a few entries to a `LogEntryStorage` on a thread of its own and compare the size it charges
-/// against a memory tracker parented to that thread. Both count size classes rather than requested
-/// bytes - `Memory::trackMemory` rounds through `getActualAllocationSize`, the same function
-/// `cachedLogEntryBytes` uses - so the two agree to within tens of bytes, and any future drift in
+/// against a memory tracker parented to that thread. `Memory::trackMemory` sizes an allocation
+/// through the same `getActualAllocationSize` that `cachedLogEntryBytes` uses, so the two agree to
+/// within tens of bytes whether or not the allocator rounds to size classes, and any future drift in
 /// what a cached entry really costs shows up here.
 TEST(CachedLogEntryBytes, MatchesTrackedAllocation)
 {
