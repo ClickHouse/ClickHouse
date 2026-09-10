@@ -294,7 +294,7 @@ CatalogTables UnityV2Catalog::listTablesInNamespaceDirect(const std::string & na
 
 bool UnityV2Catalog::existsTable(const std::string & schema_name, const std::string & table_name) const
 {
-    auto full_table_name = warehouse + "." + schema_name + "." + table_name;
+    auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
     auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
 
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
@@ -316,7 +316,7 @@ bool UnityV2Catalog::tryGetTableMetadata(
     const std::string & table_name,
     TableMetadata & result) const
 {
-    auto full_table_name = warehouse + "." + schema_name + "." + table_name;
+    auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
 
     auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
     const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
@@ -603,7 +603,7 @@ CatalogTables UnityV2Catalog::getTablesForSchema(const std::string & schema, siz
                 {
                     const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                     const auto table_name = current_table_json->get("name").extract<String>();
-                    auto qualified_name = schema + "." + table_name;
+                    auto qualified_name = fmt::format("{}.{}", schema, table_name);
 
                     const auto table_format = detectTableFormat(current_table_json);
                     /// Delta needs `storage_location` from this response, while an Iceberg table
