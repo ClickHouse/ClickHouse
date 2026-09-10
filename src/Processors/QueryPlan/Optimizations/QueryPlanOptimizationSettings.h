@@ -256,6 +256,10 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
+    /// Assigns a unique id to each join cluster during reordering so EXPLAIN ANALYZE scopes actual cost
+    /// per cluster like the optimizer scopes the estimated cost
+    mutable UInt64 join_reorder_next_cluster_id = 0;
+
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
     /// of re-running the same subqueries.
     std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
