@@ -44,6 +44,11 @@ std::string toString(const Values & value)
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 /** We rely that FieldVisitorAccurateLess will have strict weak ordering for any Field values including
   * NaN, Null and containers (Array, Tuple, Map) that contain NaN or Null. But right now it does not properly
   * support NaN and Nulls inside containers, because it uses Field operator< or accurate::lessOp for comparison
@@ -141,6 +146,30 @@ int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
     }
 
     return 0;
+}
+
+/// A part's marks are ordered by the sorting key the part was written with, so in the order this table
+/// declares, the primary key value at a range's end mark can precede the value at its start mark. The
+/// event ordering the splitter relies on below cannot represent that.
+void checkPartRangeMatchesKeyOrder(
+    const String & part_name,
+    const MarkRange & range,
+    const Values & range_start_value,
+    const Values & range_end_value,
+    bool in_reverse_order)
+{
+    if (compareValues(range_start_value, range_end_value, in_reverse_order) <= 0)
+        return;
+
+    throw Exception(
+        ErrorCodes::INCORRECT_DATA,
+        "Part {} is not sorted by the sorting key declared by this table: in the declared order the primary key value "
+        "{} at mark {} is greater than the value {} at mark {}",
+        part_name,
+        toString(range_start_value),
+        range.begin,
+        toString(range_end_value),
+        range.end);
 }
 
 /// Adaptor to access PK values from index.
@@ -493,8 +522,17 @@ SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_par
             if (!value_is_defined_at_end_mark)
                 continue;
 
+            auto range_end_value = index_access.getValue(part_index, range.end);
+
+            checkPartRangeMatchesKeyOrder(
+                ranges_in_data_parts[part_index].data_part->name,
+                range,
+                parts_ranges.back().value,
+                range_end_value,
+                in_reverse_order);
+
             parts_ranges.push_back(
-                {index_access.getValue(part_index, range.end),
+                {std::move(range_end_value),
                  in_reverse_order,
                  range,
                  part_index,
