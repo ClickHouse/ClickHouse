@@ -224,9 +224,11 @@ def test_backup_restore_invalid_query_setting(peer_name, operation, clause, rest
         query = f"BACKUP TABLE backup_source ON CLUSTER {peer_name}_cluster TO Disk('backups', 'invalid_setting')"
     else:
         query = f"RESTORE TABLE backup_source AS invalid_restore ON CLUSTER {peer_name}_cluster FROM {restore_seeds[peer_name]}"
-    error = coordinator.query_and_get_error(
+    # HTTP sends the invalid setting to the server without Native client validation.
+    error = coordinator.http_query_and_get_error(
         query + f" SETTINGS send_profile_traces={clause}",
-        settings=SETTINGS,
+        method="POST",
+        params=SETTINGS,
         timeout=30,
     )
     assert "CANNOT_PARSE_BOOL" in error
