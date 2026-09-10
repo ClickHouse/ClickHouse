@@ -132,12 +132,25 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
+    /// The types below are read from the TimeSeries table, so reaching them requires what describing that
+    /// table requires.
+    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
+
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    /// Only the id column of the tags target is read below, and the rows this function returns come from a
+    /// query it generates, which authorizes that target per column. Checked before the lookup, because
+    /// looking a name up reports whether that target exists, which is its metadata and not the parent's.
+    if (auto configured_tags_target_id = time_series_storage->tryGetConfiguredExternalTargetTableID(ViewTarget::Tags, context);
+        !configured_tags_target_id.empty())
+        checkAccessToTimeSeriesTargetTableID(
+            configured_tags_target_id, context, AccessType::SHOW_COLUMNS, TimeSeriesColumnNames::ID);
+
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
+    checkAccessToTimeSeriesTargetTable(tags_target, context, AccessType::SHOW_COLUMNS, TimeSeriesColumnNames::ID);
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
     DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
@@ -823,7 +836,16 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// Authorized here rather than where this storage is created, so that a persistent table built over this
+    /// table function is authorized on every read, with the reader's own grants. Before the table is
+    /// resolved, so that an unauthorized reader learns nothing about it.
+    checkAccessToTimeSeriesTable(config.time_series_storage_id, context, AccessType::SELECT);
+
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
+
+    /// The resolved storage names itself, and that is the table the rows below are read from.
+    checkAccessToTimeSeriesTable(time_series_storage->getStorageID(), context, AccessType::SELECT);
+
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_settings = time_series_storage->getStorageSettings();
 
