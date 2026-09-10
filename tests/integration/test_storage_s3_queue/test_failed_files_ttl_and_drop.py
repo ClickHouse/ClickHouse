@@ -1595,3 +1595,68 @@ def test_drop_failed_files_waiter_follows_its_command_across_a_retry(started_clu
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
+def test_legacy_metadata_inherits_failed_files_ttl_from_tracked_ttl(started_cluster):
+    """A table whose Keeper metadata predates `failed_files_ttl_sec` keeps its old cleanup behaviour.
+
+    Before this setting existed, `/failed` was trimmed by `tracked_file_ttl_sec`. Metadata written
+    then has no `failed_files_ttl_sec` key at all, so the parser falls back to `tracked_files_ttl_sec`
+    for it - that fallback is the PR's backward-compatibility promise, and it has to survive a
+    restart or re-attach without the user setting anything.
+
+    Asserted on the `adjustFromKeeper` log rather than on cleanup behaviour, and deliberately so: the
+    count-based tracked-files sweep now also trims `/failed` for every non-exclusive mode using
+    `tracked_files_ttl_sec`, so a behavioural test would pass whether or not the fallback worked -
+    the file would be removed either way. The log line proves the parsed value specifically: it is
+    emitted only when Keeper's value differs from the local one and the local one was never set,
+    which is exactly the legacy case, and it carries the value that was inherited.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_legacy_ttl_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    tracked_ttl = 3
+
+    # `failed_files_ttl_sec` is deliberately not set: this table looks like one created before the
+    # setting existed, which is what makes the local value "never explicitly set".
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_file_ttl_sec": tracked_ttl,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    metadata_path = f"{keeper_path}/metadata"
+
+    # Rewrite the metadata node as a pre-upgrade server would have written it: with the key absent
+    # entirely, not merely set to zero. Absence is what triggers the fallback.
+    raw, _ = zk.get(metadata_path)
+    metadata = json.loads(raw.decode())
+    assert "failed_files_ttl_sec" in metadata, (
+        f"expected the current server to write the key, so its removal is meaningful: {metadata}"
+    )
+    assert int(metadata["tracked_files_ttl_sec"]) == tracked_ttl, metadata
+    del metadata["failed_files_ttl_sec"]
+    zk.set(metadata_path, json.dumps(metadata).encode())
+
+    # Re-attach so the metadata is parsed again from Keeper.
+    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"ATTACH TABLE {table_name}")
+
+    # The inherited value, reported by `adjustFromKeeper`: Keeper says `tracked_ttl`, the local
+    # setting was never set, so the table adopts Keeper's. Had the fallback not applied, Keeper would
+    # have parsed as 0, matched the local 0, and this line would never be emitted.
+    expected = f"Using `failed_files_ttl_sec` from keeper: {tracked_ttl} (local: 0)"
+    assert node.contains_in_log(expected), (
+        f"expected the legacy fallback to be reported in the log: {expected!r}"
+    )
+
+    node.query(f"DROP TABLE {table_name}")

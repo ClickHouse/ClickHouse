@@ -216,10 +216,19 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
-    , failed_files_ttl_sec(getOrDefault(json, "failed_files_ttl_sec", "", tracked_files_ttl_sec.load()))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
 {
     validateMode(mode);
+
+    /// Metadata written before `failed_files_ttl_sec` existed has no such key, and those tables had
+    /// their `/failed` set trimmed by `tracked_file_ttl_sec`. Inheriting that value keeps their
+    /// behaviour across an upgrade without the user having to set the new setting.
+    ///
+    /// Computed here rather than in the initialiser list on purpose: reading `tracked_files_ttl_sec`
+    /// while initialising `failed_files_ttl_sec` is only safe because of the order the two happen to
+    /// be declared in, and reordering the declarations would silently read an uninitialised atomic.
+    /// In the body both are already initialised, whatever that order is.
+    failed_files_ttl_sec = getOrDefault(json, "failed_files_ttl_sec", "", tracked_files_ttl_sec.load());
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
