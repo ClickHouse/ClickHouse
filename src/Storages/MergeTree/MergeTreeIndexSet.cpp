@@ -121,12 +121,13 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & elem = block.getByPosition(i);
-        elem.column = elem.column->cloneEmpty();
+        auto mutable_col = elem.column->cloneEmpty();
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(elem.column, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
+        elem.column = std::move(mutable_col);
 
         /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
         /// columns are untouched. LC(Nullable(T)) then keeps the NULL sentinel via getExtremesNullLast
@@ -187,25 +188,23 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
     /// Due to using of position-dependent encoding, we have to read into a temporary block and then move to the accumulating block.
     for (size_t i = 0; i < num_columns; ++i)
     {
-        /// A reference into the scratch block (not a copy), so it stays uniquely owned: `mutate` below is a no-op
-        /// and the `popBack` reset is written back, leaving the scratch column empty for the next granule.
+        /// A reference into the scratch block (not a copy), so it stays uniquely owned and `mutate` is a no-op.
         auto & column = block_for_reading.getByPosition(i).column;
+        auto mutable_col = IColumn::mutate(std::move(column));
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(column, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
 
         {
             auto mutable_column = IColumn::mutate(std::move(block.getByPosition(i).column));
-            mutable_column->insertRangeFrom(*column, 0, rows_to_read);
+            mutable_column->insertRangeFrom(*mutable_col, 0, rows_to_read);
             block.getByPosition(i).column = std::move(mutable_column);
         }
 
-        {
-            auto mutable_column = IColumn::mutate(std::move(column));
-            mutable_column->popBack(rows_to_read);
-            column = std::move(mutable_column);
-        }
+        /// Reset the scratch column to empty for the next granule.
+        mutable_col->popBack(rows_to_read);
+        column = std::move(mutable_col);
     }
 
     /// The last column is designating the granule
@@ -592,11 +591,14 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// "It's a bug!" exception from `__bitWrapperFunc` at execution time. Fall back to
             /// `UNKNOWN_FIELD` so that the index does not prune granules and the query goes
             /// through the regular filter path.
+            /// A type with no boolean reading takes the same way out. A wide integer is an integer,
+            /// so `__bitWrapperFunc` would read `indexHint(toUInt256(v))` as `v != 0` and prune the
+            /// granules holding `v = 0`, while nothing else in the query reads that hint at all.
             const auto & atom_result_type = atom_node_ptr->result_type;
             const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
                 ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
                 : WhichDataType(removeNullable(atom_result_type)).isInteger();
-            if (is_integer_atom)
+            if (is_integer_atom && atom_result_type->canBeUsedInBooleanContext())
             {
                 auto bit_wrapper_function = FunctionFactory::instance().get("__bitWrapperFunc", context);
                 result_node = &result_dag.addFunction(bit_wrapper_function, {atom_node_ptr}, {});
@@ -795,6 +797,16 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
     return nullptr;
 }
 
+/// The truth value of a constant used as a condition. A type with no boolean reading (`String`, a
+/// wide integer) only reaches a condition position inside `indexHint`, which never evaluates its
+/// arguments, so it states nothing: `getBool` would throw on a `String` and read 256 as false.
+static std::optional<bool> tryGetConstantCondition(const ActionsDAG::Node & node)
+{
+    if (!node.column || !node.result_type->canBeUsedInBooleanContext())
+        return {};
+    return node.column->getBool(0);
+}
+
 bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic) const
 {
     const auto * node_to_check = &node;
@@ -812,7 +824,7 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
     }
     if (node.column)
     {
-        return !atomic && node.column->getBool(0);
+        return !atomic && tryGetConstantCondition(node).value_or(true);
     }
     if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -830,12 +842,10 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             bool all_useless = true;
             for (const auto & arg : arguments)
             {
-                /// For OR, skip constant false children — they are identity elements
-                /// of OR and don't affect filtering. Without this, the constant
-                /// check above returns false (not useless) for `getBool(0) == 0`,
-                /// which would incorrectly make the entire OR appear non-useless
-                /// even when no indexed columns are referenced.
-                if (function_name == "or" && arg->column && !arg->column->getBool(0))
+                /// A constant false child of an OR is its identity element and does not affect
+                /// filtering, but the constant check above reports it as not useless, which would
+                /// make the whole OR look non-useless even with no indexed column in it.
+                if (function_name == "or" && tryGetConstantCondition(*arg) == false)
                     continue;
 
                 bool u = checkDAGUseless(*arg, context, sets_to_prepare, atomic);
