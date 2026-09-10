@@ -203,4 +203,14 @@ SELECT count() FROM cmp_04812 WHERE v = '0abc'; -- { serverError TYPE_MISMATCH }
 SELECT 'group 14: index analysis accepts the same literal';
 SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE id = '007') WHERE explain ILIKE '%Condition:%';
 SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE v = '007') WHERE explain ILIKE '%Name:%';
+
+-- 15. A '+' with no digit after it is refused by the reader itself, so these two carriers now report the
+-- reader's code where an integer target used to reach their own. Neither carrier normalizes reader codes:
+-- the float rows are the control, and they answer identically without this change.
+SELECT 'group 15: a lone plus reports the reader code, as a float target already does';
+SELECT count() FROM cmp_04812 WHERE v = '+'; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT count() FROM (SELECT materialize(1.5) AS f) WHERE f = '+'; -- { serverError CANNOT_PARSE_NUMBER }
+SET param_lone = '+';
+SELECT {lone:Int64}; -- { serverError CANNOT_PARSE_NUMBER }
+SELECT {lone:Float64}; -- { serverError CANNOT_PARSE_NUMBER }
 DROP TABLE cmp_04812;
