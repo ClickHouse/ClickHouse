@@ -363,6 +363,12 @@ public:
 
     bool isTableReadOnly () { return is_readonly || isStaticStorage(); }
 
+    /// Whether `shutdown` has been called on this table. A shut-down ReplicatedMergeTree stays permanently
+    /// read-only (its restarting thread has stopped and will not restart), unlike a table that is only
+    /// transiently read-only while starting up. Used to detect a nested table left behind by a refused
+    /// coordinated MaterializedPostgreSQL drop, which must be dropped and recreated rather than reused.
+    bool isShutdownCalled () const { return shutdown_called.load(); }
+
     std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
     /// Get a sequential consistent view of current parts.

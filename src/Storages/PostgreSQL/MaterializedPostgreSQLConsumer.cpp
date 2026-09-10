@@ -63,6 +63,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     const std::string & start_lsn,
     const size_t max_block_size_,
     bool schema_as_a_part_of_table_name_,
+    bool coordinated_,
     StorageInfos storages_info_,
     const String & name_for_logger)
     : log(getLogger("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
@@ -75,6 +76,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , lsn_value(getLSNValue(start_lsn))
     , max_block_size(max_block_size_)
     , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
+    , coordinated(coordinated_)
 {
     {
         auto tx = std::make_shared<pqxx::nontransaction>(connection->getRef());
@@ -93,8 +95,10 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
             /// The structure of the PostgreSQL table might no longer match the structure of
             /// the nested ClickHouse table (for example, a column was added or dropped in
             /// PostgreSQL while the server was down). Do not fail the whole consumer because
-            /// of a single out-of-sync table: skip it (the user can bring it back with
-            /// DETACH/ATTACH) and keep replicating the rest of the tables. Only the expected
+            /// of a single out-of-sync table: skip it and keep replicating the rest of the tables.
+            /// In a non-coordinated setup the user can repair the table with `DETACH`/`ATTACH`;
+            /// a coordinated setup must instead be recreated, because a per-table change would
+            /// affect only the local replica. Only the expected
             /// structure-mismatch error is handled this way; any other error is a real problem
             /// and must propagate.
             if (e.code() != ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
@@ -103,9 +107,11 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
             tryLogCurrentException(
                 log,
                 fmt::format("Table {} is skipped from replication because its structure does not match "
-                            "the structure of the nested ClickHouse table. "
-                            "Please perform manual DETACH and ATTACH of the table to bring it back",
-                            table_name));
+                            "the structure of the nested ClickHouse table. {}",
+                            table_name,
+                            coordinated
+                                ? "Recreate the coordinated database after reconciling the PostgreSQL schema"
+                                : "Please perform manual DETACH and ATTACH of the table to bring it back"));
         }
     }
 
@@ -944,7 +950,15 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             if (!relation_id_to_name.contains(relation_id))
                 relation_id_to_name[relation_id] = table_name;
 
-            if (!isSyncAllowed(relation_id, relation_name))
+            /// The gate must be consulted under the very key the rest of the consumer uses
+            /// (`waiting_list`, `deleted_tables`, `storages` and `tables_to_sync` are all keyed by
+            /// `postgres_table_name`, which is schema-qualified in multi-schema mode). With the bare
+            /// PostgreSQL name a pre-`start_lsn` `Relation` message for `schema1.t` would bypass the
+            /// waiting gate, and a structure or replica-identity mismatch below would then erase
+            /// `storages["schema1.t"]` while `waiting_list["schema1.t"]` stayed behind - the first later
+            /// `I`/`U`/`D` for that relation would consume the waiting entry and dereference the missing
+            /// storage.
+            if (!isSyncAllowed(relation_id, table_name))
                 return;
 
             auto storage_iter = storages.find(table_name);
@@ -1276,14 +1290,24 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(
 {
     skip_list.insert({relation_id, ""}); /// Empty lsn string means - continue waiting for valid lsn.
     storages.erase(relation_name);
+    /// A table can be skipped while it is still waiting for its `start_lsn` (it was added to replication
+    /// and its snapshot was loaded, but the consumer has not read the WAL up to that position yet). Its
+    /// `waiting_list` entry must go with the storage: `isSyncAllowed` consults `waiting_list` before the
+    /// skip list, so a leftover entry would let the table pass the gate as soon as the LSN is reached and
+    /// the DML paths would dereference the storage that was just erased.
+    waiting_list.erase(relation_name);
     /// The storage is gone, so its queued buffers can no longer be flushed. Drop them to keep
     /// `tables_to_sync` consistent with `storages` (`syncTables` looks the table up there).
     tables_to_sync.erase(relation_name);
     LOG_WARNING(
         log,
-        "Table {} is skipped from replication stream {}. "
-        "Please detach this table and reattach to resume the replication (relation id: {})",
-        relation_name, skip_reason, relation_id);
+        "Table {} is skipped from replication stream {}. {} (relation id: {})",
+        relation_name,
+        skip_reason,
+        coordinated
+            ? "Recreate the coordinated database after reconciling the PostgreSQL schema to resume replication"
+            : "Please detach this table and reattach to resume replication",
+        relation_id);
 }
 
 void MaterializedPostgreSQLConsumer::addNested(
