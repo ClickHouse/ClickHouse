@@ -259,10 +259,20 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
 FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const TableExpressionNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter)
 {
     bool collect_filters = false;
-    const auto & settings = query_context->getSettingsRef();
 
-    bool parallel_replicas_estimation_enabled
-        = query_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
+    /// `table_nodes` also holds the nested query and union scopes, and the settings may be set only in one
+    /// of them, so the top-level context alone is not enough to tell whether the estimation will run.
+    const bool parallel_replicas_estimation_enabled = std::ranges::any_of(table_nodes, [](const TableExpressionNodePtr & scope)
+    {
+        const auto * scope_query = scope->as<QueryNode>();
+        const auto * scope_union = scope->as<UnionNode>();
+        if (!scope_query && !scope_union)
+            return false;
+
+        const auto & scope_context = scope_query ? scope_query->getContext() : scope_union->getContext();
+        return scope_context->canUseParallelReplicasOnInitiator()
+            && scope_context->getSettingsRef()[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
+    });
 
     auto storage_requires_filter_collection = [parallel_replicas_estimation_enabled](const StoragePtr & storage_ptr)
     {
@@ -1395,7 +1405,9 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     UsefulSets & useful_sets)
 {
     NameSet order_by_column_names;
-    SortDescription fill_description;
+    /// `FillingStep` derives the columns to fill from the sort description; this only has to know whether
+    /// there is anything to fill at all, and that every such column is readable here.
+    bool has_fill = false;
 
     const auto & header = query_plan.getCurrentHeader();
 
@@ -1406,11 +1418,11 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
-            fill_description.push_back(description);
+            has_fill = true;
         }
     }
 
-    if (fill_description.empty())
+    if (!has_fill)
         return;
 
     InterpolateDescriptionPtr interpolate_description;
@@ -1493,7 +1505,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     auto filling_step = std::make_unique<FillingStep>(
         query_plan.getCurrentHeader(),
         query_analysis_result.sort_description,
-        std::move(fill_description),
         interpolate_description,
         settings[Setting::use_with_fill_by_sorting_prefix]);
     query_plan.addStep(std::move(filling_step));
