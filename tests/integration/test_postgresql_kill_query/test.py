@@ -520,16 +520,9 @@ ENGINE = PostgreSQL(
                 sleep_time=0.5,
             )
 
+            # Delivered while the COPY is still withheld, so the connection has no statement in
+            # progress. The query ends at once, so there is no cancelled state to observe.
             node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
-            # Deliver the cancel while the COPY is still withheld, so that `onCancel` runs
-            # against a connection with no statement in progress.
-            assert_eq_with_retry(
-                node1,
-                f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
-                "1",
-                retry_count=60,
-                sleep_time=0.5,
-            )
         finally:
             proxy.release()
 

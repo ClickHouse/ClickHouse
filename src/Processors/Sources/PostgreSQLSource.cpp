@@ -292,14 +292,18 @@ void PostgreSQLSource<T>::onCancel() noexcept
         if (!tx_snapshot)
             return;
 
-        /// The connection is ours to discard, so a read parked in the client library with no deadline is
-        /// woken by taking the transport away. `shutdown` keeps the descriptor valid for that thread.
+        /// The connection is ours to discard. Ask the server to cancel first, while the connection can still
+        /// address it, then take the transport away, which wakes the read whether or not the server obliged.
         if (connection_holder && fd >= 0)
         {
             /// A finish already under way has nothing left to wake, and its COMMIT must not be broken.
             if (teardown_started.exchange(true))
                 return;
 
+            if (tx_snapshot->conn().is_open())
+                finalize(tx_snapshot, nullptr);
+
+            /// `shutdown` and not `close` keeps the descriptor valid for the thread still reading it.
             ::shutdown(fd, SHUT_RDWR);
             connection_holder->setBroken();
             LOG_DEBUG(getLogger("PostgreSQLSource"), "Shut the connection down to interrupt the read");
@@ -323,7 +327,7 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     /// The teardown owner for every path but a clean finish, which prepare() claims. Without
     /// cancelling the COPY the ROLLBACK issued during transaction abort waits for it. With no
     /// transaction nothing reached the connection, so it stays healthy and is left in the pool.
-    /// A connection already taken down has nothing left to cancel, and the attempt would block.
+    /// A connection already cancelled and taken down has nothing left to cancel, and the attempt would block.
     if (!finalized.exchange(true) && tx)
         finalize((stream && !teardown_started.load()) ? tx : nullptr, stream.get());
 
