@@ -15,3 +15,13 @@ a float primary key still deduplicates within a partition
 a float partition column outside the primary key was already declined
 1
 1
+a float nested inside a key column is detected too
+1
+1
+1
+a tuple without a float still skips the cross-partition merge
+2
+an Array(Float64) key column is detected too
+1
+1
+1
