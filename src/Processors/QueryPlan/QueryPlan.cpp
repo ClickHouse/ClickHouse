@@ -50,6 +50,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -663,6 +664,7 @@ void QueryPlan::explainPlan(
         .write_header = options.header,
         .compact = options.compact,
         .pretty = options.pretty,
+        .inside_explain_analyze = steps_to_stats != nullptr,
         .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
         .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
@@ -962,8 +964,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// We cannot use query_id from the context because user can put any string there and it might be not unique
         UUID unique_query_id = UUIDHelpers::generateV4();
 
+        /// Shared by the source driving the plan and the source reading the result, so the client gets
+        /// the failure that stopped the query and not one it caused.
+        auto cancellation = std::make_shared<DistributedQueryCancellation>();
+
         /// Make plan stub that reads from the executor that executes the distributed plan
-        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(result_header, unique_query_id, std::move(distributed_plan), task_to_host_map));
+        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(
+            result_header, unique_query_id, std::move(distributed_plan), task_to_host_map, cancellation));
         Pipes pipes;
         pipes.emplace_back(std::move(run_distributed_plan));
 
@@ -981,7 +988,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
             context,
-            execute_locally);
+            execute_locally,
+            cancellation);
 
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
@@ -1299,6 +1307,15 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         auto & frame = nodes_to_process.back();
         if (frame.children.size() == frame.node->children.size())
         {
+            /// A `DelayedCreatingSetsStep` holding sets cannot be part of a cloned plan: its clone is
+            /// shallow, so both copies would claim the same one-shot `FutureSetFromSubquery::source`,
+            /// only the first claimant would get a builder, and the set the other copy reads would
+            /// stay unbuilt. A step whose sets were detached is inert and clones fine.
+            if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(frame.node->step.get());
+                delayed && !delayed->getSets().empty())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED, "Cannot clone a plan holding a {} step with sets", delayed->getName());
+
             frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
 
