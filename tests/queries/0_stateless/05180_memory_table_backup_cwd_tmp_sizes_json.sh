@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: memory-engine
 # A file in the working directory must not be read when a `Memory` table is backed up:
 # the `sizes.json` the backup ships is built in memory.
 
