@@ -5,6 +5,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 
 namespace DB
