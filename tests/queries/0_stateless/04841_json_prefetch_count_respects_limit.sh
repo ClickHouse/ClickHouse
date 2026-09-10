@@ -232,6 +232,8 @@ SELECT '-- and all 80 of them when unlimited';
 SELECT $(count_of plain_pool_unlim) = 80;
 SELECT '-- a bounded JSON read step prefetches fewer substreams than an unbounded one';
 SELECT $(count_of json_step_limit) < $(count_of json_step_unlim);
+SELECT '-- and a stream that ends returns its capacity: the step submits more than it may hold';
+SELECT $(count_of json_step_limit) > 50;
 SELECT '-- prefetching does happen on this fixture when the byte bound is not the binding one';
 SELECT $(count_of json_enc_unlim) > 0;
 SELECT '-- the memory bound alone stops prefetching, on an encrypted disk';

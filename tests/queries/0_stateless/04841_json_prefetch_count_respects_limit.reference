@@ -8,6 +8,8 @@
 1
 -- a bounded JSON read step prefetches fewer substreams than an unbounded one
 1
+-- and a stream that ends returns its capacity: the step submits more than it may hold
+1
 -- prefetching does happen on this fixture when the byte bound is not the binding one
 1
 -- the memory bound alone stops prefetching, on an encrypted disk
