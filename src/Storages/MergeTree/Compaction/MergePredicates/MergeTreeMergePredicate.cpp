@@ -97,11 +97,14 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     {
         data_versions_by_partition = getDataVersionsByPartition(parts_visible_for_merge);
 
-        /// A selected mutate task owns a data version that no part carries yet and that
-        /// 'current_mutations_by_version' need not still list (KILL MUTATION erases the entry while
-        /// the task keeps running), and it still builds its mutations snapshot at that version.
-        chassert(merge_mutate_lock.owns_lock()); /// guards currently_mutating_part_future_versions
+        /// A selected mutate task and a running merge that applies patch parts each own a data version that no part
+        /// carries yet: the merge takes its result version from those patches, and the mutation's version need not
+        /// still be in 'current_mutations_by_version', because KILL MUTATION erases it while the task keeps running.
+        chassert(merge_mutate_lock.owns_lock()); /// guards both maps read below
         for (const auto & [part, future_version] : storage.currently_mutating_part_future_versions)
+            data_versions_by_partition[part->info.getPartitionId()].push_back(future_version);
+
+        for (const auto & [part, future_version] : storage.currently_merging_part_future_versions)
             data_versions_by_partition[part->info.getPartitionId()].push_back(future_version);
 
         sortDataVersions(data_versions_by_partition);

@@ -924,6 +924,8 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
 
     if (is_mutation)
         storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
+    else if (!future_part->isResultPatch())
+        storage.currently_merging_part_future_versions[future_part->parts[0]] = future_part->part_info.getDataVersion();
 }
 
 
@@ -938,6 +940,7 @@ void CurrentlyMergingPartsTagger::finalize()
             std::terminate();
         storage.currently_merging_mutating_parts.erase(part);
         storage.currently_mutating_part_future_versions.erase(part);
+        storage.currently_merging_part_future_versions.erase(part);
     }
 
     storage.currently_processing_in_background_condition.notify_all();
