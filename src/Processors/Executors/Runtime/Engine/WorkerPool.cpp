@@ -144,8 +144,16 @@ void WorkerPool::run()
     auto slot = cpu_slots->acquire();
     ++workers_count;
 
-    if (const size_t initial_tasks = scheduler.queued(); initial_tasks > 1)
-        grow(initial_tasks - 1);
+    try
+    {
+        if (const size_t initial_tasks = scheduler.queued(); initial_tasks > 1)
+            grow(initial_tasks - 1);
+    }
+    catch (...)
+    {
+        pipeline.fail(std::current_exception());
+        coordinator.stop();
+    }
 
     runSlot(std::move(slot), nullptr);
     --workers_count;
@@ -182,8 +190,8 @@ void WorkerPool::grow(size_t threads_needed)
     {
         if (auto slot = cpu_slots->tryAcquire())
             spawn(std::move(slot));
-
-        return;
+        else
+            break;
     }
 }
 
