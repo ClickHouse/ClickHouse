@@ -16,9 +16,12 @@ std::span<const ClientSlashCommand> clientSlashCommands()
     /// Alphabetical, so that the order the commands are offered in is stable and predictable.
     static constexpr ClientSlashCommand commands[]
     {
-        {"/clear", false},
-        {"/help", true},
-        {"/man", true},
+        {"/clear", false, false},
+        {"/dialect", true, true},
+        {"/help", true, false},
+        {"/lang", true, true},
+        {"/language", true, true},
+        {"/man", true, false},
     };
     return commands;
 }
@@ -37,12 +40,14 @@ bool startsWithCaseInsensitive(std::string_view s, std::string_view prefix)
 constexpr size_t MAX_COMMAND_HINTS = 3;
 
 /// The commands a misspelled name probably meant: the ones it is a prefix of (an unfinished name,
-/// which is the most likely mistake) and the ones within a typo distance of it.
-VectorWithMemoryTracking<String> getSimilarCommands(std::string_view name)
+/// which is the most likely mistake) and the ones within a typo distance of it. Only the commands
+/// accepted in the current mode are suggested.
+VectorWithMemoryTracking<String> getSimilarCommands(std::string_view name, bool interactive)
 {
     VectorWithMemoryTracking<String> all_names;
     for (const auto & command : clientSlashCommands())
-        all_names.emplace_back(command.name);
+        if (interactive || !command.interactive_only)
+            all_names.emplace_back(command.name);
 
     /// `NamePrompter` skips candidates whose length differs too much from the name, so a short
     /// prefix (`/cl`) gets no hint from it - hence the prefix matches are collected separately.
@@ -60,7 +65,7 @@ VectorWithMemoryTracking<String> getSimilarCommands(std::string_view name)
 
 }
 
-std::optional<String> diagnoseClientSlashCommand(std::string_view trimmed_input)
+std::optional<String> diagnoseClientSlashCommand(std::string_view trimmed_input, bool interactive)
 {
     /// A `/` starts the command list, while `/*` opens a SQL comment.
     if (trimmed_input.empty() || trimmed_input[0] != '/'
@@ -77,14 +82,18 @@ std::optional<String> diagnoseClientSlashCommand(std::string_view trimmed_input)
     {
         if (!equalsCaseInsensitive(name, command.name))
             continue;
+        if (command.interactive_only && !interactive)
+            return fmt::format("The `{}` command is available in interactive mode only", command.name);
         if (!has_argument || command.takes_argument)
             return {}; /// A valid command, dispatched elsewhere.
         return fmt::format("The `{}` command does not accept an argument", command.name);
     }
 
     String message = fmt::format("Unknown command `{}`", name);
-    message += getHintsErrorMessageSuffix(getSimilarCommands(name));
-    message += ". Type `/` at the beginning of the line to see all the commands";
+    message += getHintsErrorMessageSuffix(getSimilarCommands(name, interactive));
+    /// The list is offered by the line editor, which a noninteractive script does not have.
+    if (interactive)
+        message += ". Type `/` at the beginning of the line to see all the commands";
     return message;
 }
 

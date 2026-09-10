@@ -1,0 +1,125 @@
+#!/usr/bin/expect -f
+
+# Test for the client-side /dialect command (aliases /lang, /language) and
+# the display of a non-default dialect in the prompt.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file --allow_experimental_kusto_dialect=1"
+expect ":) "
+
+send -- "/dialect\r"
+expect -- "Current dialect: clickhouse"
+expect -- ":) "
+
+# The prompt shows a non-default dialect in parentheses.
+send -- "/dialect kusto\r"
+expect -- "(kusto) :) "
+
+send -- "/dialect\r"
+expect -- "Current dialect: kusto"
+expect -- "(kusto) :) "
+
+# The argument may be quoted, as in the equivalent SET query.
+send -- "/dialect 'clickhouse'\r"
+expect -- ":) "
+
+send -- "/dialect 'kusto'\r"
+expect -- "(kusto) :) "
+
+# The /language and /lang aliases work; the default dialect is not shown in the prompt.
+send -- "/language clickhouse\r"
+expect -- ":) "
+
+send -- "SELECT 42\r"
+expect -- "42"
+expect -- ":) "
+
+send -- "/lang kusto\r"
+expect -- "(kusto) :) "
+
+# An unknown dialect is rejected and the current dialect is kept.
+send -- "/dialect unknown_dialect\r"
+expect -- "Unexpected value of Dialect"
+expect -- "(kusto) :) "
+
+# The command works even when the current dialect cannot parse a SET query.
+send -- "/dialect clickhouse\r"
+expect -- ":) "
+send -- "/dialect\r"
+expect -- "Current dialect: clickhouse"
+expect -- ":) "
+
+# A successful plain SET is also retained in the client context, so the
+# prompt, /dialect, and parsing of the next query use the server's dialect.
+send -- "SET dialect = 'kusto'\r"
+expect -- "(kusto) :) "
+send -- "/dialect\r"
+expect -- "Current dialect: kusto"
+expect -- "(kusto) :) "
+send -- "SET dialect = 'clickhouse'\r"
+expect -- ":) "
+send -- "/dialect\r"
+expect -- "Current dialect: clickhouse"
+expect -- ":) "
+
+# A PromQL metric named `set` must not be mistaken for the SQL SET escape.
+send -- "SET dialect = 'promql'\r"
+expect -- "(promql) :) "
+send -- "set{job=\"x\"}\r"
+expect -- "TimeSeries table to use with promql dialect is not specified"
+expect -- "(promql) :) "
+send -- "SET dialect = 'clickhouse'\r"
+expect -- ":) "
+
+send -- "exit\r"
+expect eof
+
+# A server-side setting constraint must reject the meta-command without
+# changing the client-side parser or prompt.
+spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file --allow_experimental_kusto_dialect=1 --readonly=1"
+expect ":) "
+
+send -- "/dialect kusto\r"
+expect ":) "
+send -- "/dialect\r"
+expect -- "Current dialect: clickhouse"
+expect -- ":) "
+send -- "SELECT 42\r"
+expect -- "42"
+expect -- ":) "
+send -- "exit\r"
+expect eof
+
+# A custom prompt does not have to contain the {display_name} placeholder:
+# the active dialect is appended to it anyway.
+spawn bash -c "source $basedir/../shell_config.sh; TERM=xterm \$CLICKHOUSE_LOCAL --hints 0 --history_file=$history_file --prompt 'custom-prompt>' --allow_experimental_kusto_dialect=1"
+expect "custom-prompt> :) "
+
+send -- "/dialect kusto\r"
+expect -- "custom-prompt> (kusto) :) "
+
+send -- "/dialect clickhouse\r"
+expect -- "custom-prompt> :) "
+
+send -- "exit\r"
+expect eof
