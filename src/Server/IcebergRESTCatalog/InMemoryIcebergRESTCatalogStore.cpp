@@ -36,9 +36,15 @@ std::vector<IcebergNamespaceName> InMemoryIcebergRESTCatalogStore::listNamespace
     return result;
 }
 
-IcebergRESTCatalogStorePtr getSharedInMemoryIcebergRESTCatalogStore()
+IcebergRESTCatalogStorePtr getSharedInMemoryIcebergRESTCatalogStore(const String & warehouse)
 {
-    static IcebergRESTCatalogStorePtr store = std::make_shared<InMemoryIcebergRESTCatalogStore>();
+    static std::mutex mutex;
+    static std::map<String, IcebergRESTCatalogStorePtr> stores;
+
+    std::lock_guard lock(mutex);
+    auto & store = stores[warehouse];
+    if (!store)
+        store = std::make_shared<InMemoryIcebergRESTCatalogStore>();
     return store;
 }
 

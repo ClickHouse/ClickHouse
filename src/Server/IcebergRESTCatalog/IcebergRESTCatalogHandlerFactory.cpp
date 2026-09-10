@@ -23,7 +23,8 @@ std::unique_ptr<HTTPRequestHandler> IcebergRESTCatalogHandlerFactory::createRequ
 
 HTTPRequestHandlerFactoryPtr createIcebergRESTCatalogHandlerFactory(IServer & server, String warehouse)
 {
-    return std::make_shared<IcebergRESTCatalogHandlerFactory>(server, std::move(warehouse), getSharedInMemoryIcebergRESTCatalogStore());
+    auto store = getSharedInMemoryIcebergRESTCatalogStore(warehouse);
+    return std::make_shared<IcebergRESTCatalogHandlerFactory>(server, std::move(warehouse), std::move(store));
 }
 
 }

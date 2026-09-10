@@ -21,7 +21,7 @@ private:
     std::map<IcebergNamespaceName, std::map<String, String>> namespaces;
 };
 
-/// Shared across listeners for all listen hosts and across STOP/START LISTEN cycles.
-IcebergRESTCatalogStorePtr getSharedInMemoryIcebergRESTCatalogStore();
+/// One store per warehouse, shared across listeners for all listen hosts, STOP/START LISTEN cycles and config reloads.
+IcebergRESTCatalogStorePtr getSharedInMemoryIcebergRESTCatalogStore(const String & warehouse);
 
 }
