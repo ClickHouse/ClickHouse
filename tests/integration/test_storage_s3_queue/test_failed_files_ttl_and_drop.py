@@ -574,6 +574,12 @@ def test_failed_files_ttl_does_not_reset_retry_counter(started_cluster):
                 )
                 assert status == "Failed", \
                     f"Status should be 'Failed' in terminal state, got: {status}"
+                # Capture the confirming observation. The terminal failed node is
+                # itself subject to failed_files_ttl_sec (2s here), so re-reading
+                # Keeper after the loop can legitimately find it already swept.
+                observed_retries = retries
+                observed_terminal = is_terminal
+                observed_status = status
                 break
 
             # Bug detection: retry counter went backwards (got reset)
@@ -604,20 +610,13 @@ def test_failed_files_ttl_does_not_reset_retry_counter(started_cluster):
                 f"Status: {final_status}, retries: {final_retries}, terminal: {final_is_terminal}"
             )
 
-    # Final verification: file is in terminal failed state with exactly 3 retries
-    final_retries, final_is_terminal = get_retry_count_from_keeper()
-    final_status = get_file_status()
-
-    assert final_is_terminal, "File should be in terminal failed state (no .retriable suffix)"
-    assert final_retries == 3, \
-        f"Terminal failed node should have retries=3, got: {final_retries}"
-
-    # Cache may be cleared by TTL cleanup (cache-Keeper consistency guarantee from e5fc138),
-    # but if it still exists, it must show "Failed" status
-    if final_status is not None:
-        assert final_status == "Failed", \
-            f"If cache entry exists, status must be 'Failed', got: {final_status}"
-    # else: cache already cleared by TTL — acceptable per cache-Keeper consistency guarantee
+    # Final verification, against what was observed at the moment the file reached
+    # the terminal state. Deleting terminal failed nodes after failed_files_ttl_sec
+    # is the feature under test, so Keeper must not be re-read here.
+    assert observed_terminal, \
+        f"File should have reached terminal failed state (no .retriable suffix), status: {observed_status}"
+    assert observed_retries == 3, \
+        f"Terminal failed node should have retries=3, got: {observed_retries}"
 
     logging.info("Test passed: retry counter was NOT reset by TTL cleanup")
 
