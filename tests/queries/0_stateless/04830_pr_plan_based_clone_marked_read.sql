@@ -85,12 +85,15 @@ SETTINGS parallel_replicas_plan_based = 0, parallel_replicas_local_plan = 0;
 -- serialized plan. Those run under their own query id and the initiator still returns the right rows
 -- without them, so the result comparisons above cannot see them fail. A callback missing at plan
 -- construction time is logged before the query starts, so both exception types count.
+-- A cancelled arm is not a failed one: the coordinator cancels the replicas it no longer needs, which the
+-- slowdown failpoint above makes routine, so the cancellation codes are excluded.
 SYSTEM FLUSH LOGS query_log;
 SELECT count() AS failed_queries
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase()
   AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')
+  AND exception_code NOT IN (394, 735) -- QUERY_WAS_CANCELLED, QUERY_WAS_CANCELLED_BY_CLIENT
 SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE t_clone_marked;
