@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="supported-regions">
-  ## Поддерживаемые регионы
-</div>
+## Поддерживаемые регионы {#supported-regions}
 
 В следующих таблицах перечислены поддерживаемые регионы для каждого облачного провайдера. Значки указывают на доступность: `Public` для общедоступных регионов, а `Private`, `HIPAA` или `PCI` — для регионов, где доступны соответствующие возможности.
 
@@ -23,10 +21,10 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
     | `ap-east-1`      | <Badge color="purple">Приватный</Badge>                                                                    |
     | `ap-east-2`      | <Badge color="purple">Приватный</Badge>                                                                    |
     | `ap-northeast-1` | <Badge color="yellow">Публичный</Badge>                                                                    |
-    | `ap-northeast-2` | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `ap-northeast-2` | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-south-1`     | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-southeast-1` | <Badge color="yellow">Публичный</Badge>                                                                    |
-    | `ap-southeast-2` | <Badge color="yellow">Публичный</Badge>                                                                    |
+    | `ap-southeast-2` | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-southeast-3` | <Badge color="purple">Приватный</Badge>                                                                    |
     | `ap-southeast-5` | <Badge color="purple">Приватный</Badge>                                                                    |
     | `ca-central-1`   | <Badge color="yellow">Публичный</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
@@ -75,9 +73,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
   Нужно развернуть сервис в регионе, которого пока нет в списке? [Отправьте запрос](https://clickhouse.com/pricing?modal=open).
 </Note>
 
-<div id="private-regions">
-  ## Частные регионы
-</div>
+## Частные регионы {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="Возможность частных регионов" />
 
@@ -90,17 +86,13 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 
 Для соответствия требованиям HIPAA могут предъявляться дополнительные требования, включая подписание соглашения Business Associate Agreement (BAA). HIPAA в настоящее время доступна только для сервисов уровня Enterprise.
 
-<div id="hipaa-compliant-regions">
-  ## Регионы, соответствующие требованиям HIPAA
-</div>
+## Регионы, соответствующие требованиям HIPAA {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
 Чтобы развернуть сервисы в регионах, отмеченных в таблице как соответствующие требованиям HIPAA, клиенты должны подписать BAA и запросить онбординг через отдел продаж или службу поддержки.
 
-<div id="pci-compliant-regions">
-  ## Регионы, соответствующие требованиям PCI
-</div>
+## Регионы, соответствующие требованиям PCI {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 

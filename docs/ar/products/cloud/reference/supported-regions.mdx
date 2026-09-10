@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="supported-regions">
-  ## المناطق المدعومة
-</div>
+## المناطق المدعومة {#supported-regions}
 
 توضح الجداول التالية المناطق المدعومة حسب مزود السحابة. تشير الشارات إلى التوافر: `Public` للمناطق المتاحة بشكل عام، و`Private` أو `HIPAA` أو `PCI` للمناطق التي توفر هذه الخيارات.
 
@@ -23,10 +21,10 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
     | `ap-east-1`      | <Badge color="purple">خاص</Badge>                                                                    |
     | `ap-east-2`      | <Badge color="purple">خاص</Badge>                                                                    |
     | `ap-northeast-1` | <Badge color="yellow">عام</Badge>                                                                    |
-    | `ap-northeast-2` | <Badge color="yellow">عام</Badge>                                                                    |
+    | `ap-northeast-2` | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-south-1`     | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-southeast-1` | <Badge color="yellow">عام</Badge>                                                                    |
-    | `ap-southeast-2` | <Badge color="yellow">عام</Badge>                                                                    |
+    | `ap-southeast-2` | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-southeast-3` | <Badge color="purple">خاص</Badge>                                                                    |
     | `ap-southeast-5` | <Badge color="purple">خاص</Badge>                                                                    |
     | `ca-central-1`   | <Badge color="yellow">عام</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
@@ -75,9 +73,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   هل تحتاج إلى النشر في منطقة غير مدرجة حاليًا؟ [أرسل طلبًا](https://clickhouse.com/pricing?modal=open).
 </Note>
 
-<div id="private-regions">
-  ## المناطق الخاصة
-</div>
+## المناطق الخاصة {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="ميزة المناطق الخاصة" />
 
@@ -90,17 +86,13 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 قد تنطبق متطلبات إضافية للامتثال لمتطلبات HIPAA، بما في ذلك توقيع اتفاقية الشريك التجاري (BAA). يتوفر HIPAA حاليًا فقط للخدمات من فئة Enterprise.
 
-<div id="hipaa-compliant-regions">
-  ## المناطق المتوافقة مع HIPAA
-</div>
+## المناطق المتوافقة مع HIPAA {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
 يجب على العملاء توقيع اتفاقية الشريك التجاري (BAA) وطلب عملية الإعداد عبر فريق المبيعات أو الدعم لإعداد الخدمات في المناطق المحددة في الجدول على أنها متوافقة مع HIPAA.
 
-<div id="pci-compliant-regions">
-  ## المناطق المتوافقة مع PCI
-</div>
+## المناطق المتوافقة مع PCI {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 

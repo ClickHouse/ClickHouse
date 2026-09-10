@@ -139,7 +139,7 @@ Esta solicitud devuelve una excepción `BAD_ARGUMENTS`. El handler HTTP debe dec
 
 Pase el ajuste en la URL o configúrelo a nivel de usuario o de perfil.
 
-## Monitorear la ejecución {#monitor-execution}
+## Monitorizar la ejecución {#monitor-execution}
 
 Use el `query_id` para comprobar si una consulta se está ejecutando actualmente:
 
@@ -170,24 +170,23 @@ LIMIT 1;
 La solicitud de envío puede completarse correctamente aunque la ejecución en segundo plano falle después. En ese caso, la excepción se registra
 en `system.query_log` en lugar de devolverse por la conexión original.
 
-:::note Implementaciones en clúster y con balanceo de carga
-`system.processes`, `system.query_log` y `KILL QUERY` son locales al nodo: cada uno solo ve las consultas del servidor que responde.
+<Note title="Implementaciones en clúster y con balanceo de carga">
+  `system.processes`, `system.query_log` y `KILL QUERY` son locales al nodo: cada uno solo ve las consultas del servidor que responde.
 
-Una consulta en segundo plano pertenece al servidor que la aceptó, que no es necesariamente aquel al que llegará su siguiente solicitud a través de un balanceador de carga. En su lugar, consulte todo el clúster:
+  Una consulta en segundo plano pertenece al servidor que la aceptó, que no es necesariamente aquel al que llegará su siguiente solicitud a través de un balanceador de carga. En su lugar, consulte todo el clúster:
 
-```sql
-SELECT hostName(), query_id, elapsed, query
-FROM clusterAllReplicas(my_cluster, system.processes)
-WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
 
-Lo mismo se aplica a `system.query_log`, y la cancelación requiere la forma que abarca todo el clúster:
+  Lo mismo se aplica a `system.query_log`, y la cancelación requiere la forma que abarca todo el clúster:
 
-```sql
-KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
-
-:::
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
 
 ## Retraso en el volcado del registro de consultas {#query-log-flush-delay}
 

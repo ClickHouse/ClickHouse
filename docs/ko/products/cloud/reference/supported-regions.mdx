@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="supported-regions">
-  ## 지원되는 리전
-</div>
+## 지원되는 리전 {#supported-regions}
 
 다음 표에는 클라우드 제공업체별 지원 리전이 나열되어 있습니다. 배지는 가용성을 나타냅니다. 일반 제공 리전은 `Public`으로, 해당 옵션을 제공하는 리전은 `Private`, `HIPAA` 또는 `PCI`로 표시됩니다.
 
@@ -23,10 +21,10 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePl
     | `ap-east-1`      | <Badge color="purple">비공개</Badge>                                                                    |
     | `ap-east-2`      | <Badge color="purple">비공개</Badge>                                                                    |
     | `ap-northeast-1` | <Badge color="yellow">공개</Badge>                                                                     |
-    | `ap-northeast-2` | <Badge color="yellow">공개</Badge>                                                                     |
+    | `ap-northeast-2` | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
     | `ap-south-1`     | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
     | `ap-southeast-1` | <Badge color="yellow">공개</Badge>                                                                     |
-    | `ap-southeast-2` | <Badge color="yellow">공개</Badge>                                                                     |
+    | `ap-southeast-2` | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
     | `ap-southeast-3` | <Badge color="purple">비공개</Badge>                                                                    |
     | `ap-southeast-5` | <Badge color="purple">비공개</Badge>                                                                    |
     | `ca-central-1`   | <Badge color="yellow">공개</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
@@ -75,9 +73,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePl
   현재 목록에 없는 리전에 배포해야 하나요? [요청을 제출하세요](https://clickhouse.com/pricing?modal=open).
 </Note>
 
-<div id="private-regions">
-  ## 프라이빗 리전
-</div>
+## 프라이빗 리전 {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="프라이빗 리전 기능" />
 
@@ -90,17 +86,13 @@ Enterprise tier 서비스에 프라이빗 리전을 제공합니다. 프라이�
 
 HIPAA 컴플라이언스를 위해 Business Associate Agreement(BAA) 서명을 포함한 추가 요구 사항이 적용될 수 있습니다. 현재 HIPAA는 Enterprise tier 서비스에서만 사용할 수 있습니다.
 
-<div id="hipaa-compliant-regions">
-  ## HIPAA 규정을 준수하는 리전
-</div>
+## HIPAA 규정을 준수하는 리전 {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
 고객은 표에서 HIPAA 준수로 표시된 리전에 서비스를 설정하려면 BAA를 체결하고 Sales 또는 Support를 통해 온보딩을 요청해야 합니다.
 
-<div id="pci-compliant-regions">
-  ## PCI 규정을 준수하는 리전
-</div>
+## PCI 규정을 준수하는 리전 {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 

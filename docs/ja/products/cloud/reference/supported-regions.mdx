@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="supported-regions">
-  ## サポート対象リージョン
-</div>
+## サポート対象リージョン {#supported-regions}
 
 以下の表は、クラウドプロバイダー別のサポート対象リージョンを示しています。バッジは利用可能なオプションを示します。一般提供リージョンには `Public`、`Private`、`HIPAA`、または `PCI` を提供するリージョンには該当するバッジが表示されます。
 
@@ -23,10 +21,10 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePl
     | `ap-east-1`      | <Badge color="purple">プライベート</Badge>                                                                    |
     | `ap-east-2`      | <Badge color="purple">プライベート</Badge>                                                                    |
     | `ap-northeast-1` | <Badge color="yellow">パブリック</Badge>                                                                     |
-    | `ap-northeast-2` | <Badge color="yellow">パブリック</Badge>                                                                     |
+    | `ap-northeast-2` | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
     | `ap-south-1`     | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
     | `ap-southeast-1` | <Badge color="yellow">パブリック</Badge>                                                                     |
-    | `ap-southeast-2` | <Badge color="yellow">パブリック</Badge>                                                                     |
+    | `ap-southeast-2` | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
     | `ap-southeast-3` | <Badge color="purple">プライベート</Badge>                                                                    |
     | `ap-southeast-5` | <Badge color="purple">プライベート</Badge>                                                                    |
     | `ca-central-1`   | <Badge color="yellow">パブリック</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge>  |
@@ -75,9 +73,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePl
   一覧にないリージョンへのデプロイが必要な場合は、[リクエストを送信](https://clickhouse.com/pricing?modal=open)してください。
 </Note>
 
-<div id="private-regions">
-  ## プライベートリージョン
-</div>
+## プライベートリージョン {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="プライベートリージョン機能" />
 
@@ -90,17 +86,13 @@ Enterprise tier のサービスでは、プライベートリージョンを提�
 
 BAA (Business Associate Agreement) の締結を含め、HIPAA 準拠には追加要件が適用される場合があります。HIPAA は現在 Enterprise tier のサービスでのみ利用可能です。
 
-<div id="hipaa-compliant-regions">
-  ## HIPAA 準拠リージョン
-</div>
+## HIPAA 準拠リージョン {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
 表で HIPAA 準拠と示されているリージョンでサービスをセットアップするには、BAA に署名し、営業またはサポートを通じてオンボーディングを依頼する必要があります。
 
-<div id="pci-compliant-regions">
-  ## PCI 準拠リージョン
-</div>
+## PCI 準拠リージョン {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 

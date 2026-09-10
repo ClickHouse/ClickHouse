@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="supported-regions">
-  ## Régions prises en charge
-</div>
+## Régions prises en charge {#supported-regions}
 
 Les tableaux suivants répertorient les régions prises en charge par fournisseur de Cloud. Les badges indiquent la disponibilité : `Public` pour les régions généralement disponibles, et `Private`, `HIPAA` ou `PCI` pour les régions proposant ces options.
 
@@ -23,10 +21,10 @@ Les tableaux suivants répertorient les régions prises en charge par fournisseu
     | `ap-east-1`      | <Badge color="purple">Privé</Badge>                                                                     |
     | `ap-east-2`      | <Badge color="purple">Privé</Badge>                                                                     |
     | `ap-northeast-1` | <Badge color="yellow">Public</Badge>                                                                    |
-    | `ap-northeast-2` | <Badge color="yellow">Public</Badge>                                                                    |
+    | `ap-northeast-2` | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-south-1`     | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-southeast-1` | <Badge color="yellow">Public</Badge>                                                                    |
-    | `ap-southeast-2` | <Badge color="yellow">Public</Badge>                                                                    |
+    | `ap-southeast-2` | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-southeast-3` | <Badge color="purple">Privé</Badge>                                                                     |
     | `ap-southeast-5` | <Badge color="purple">Privé</Badge>                                                                     |
     | `ca-central-1`   | <Badge color="yellow">Public</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
@@ -75,9 +73,7 @@ Les tableaux suivants répertorient les régions prises en charge par fournisseu
   Vous devez déployer dans une région qui n&#39;est pas encore répertoriée ? [Envoyez une demande](https://clickhouse.com/pricing?modal=open).
 </Note>
 
-<div id="private-regions">
-  ## Régions privées
-</div>
+## Régions privées {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="Fonctionnalité Régions privées" />
 
@@ -90,17 +86,13 @@ Points importants à prendre en compte pour les régions privées :
 
 Des exigences supplémentaires peuvent s’appliquer pour la conformité HIPAA, notamment la signature d’un Business Associate Agreement (BAA). HIPAA est actuellement disponible uniquement pour les services du niveau Enterprise.
 
-<div id="hipaa-compliant-regions">
-  ## Régions conformes à HIPAA
-</div>
+## Régions conformes à HIPAA {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
 Les clients doivent signer un BAA et demander l’onboarding auprès des équipes commerciales ou du support afin de mettre en place des services dans les régions indiquées comme conformes à HIPAA dans le tableau.
 
-<div id="pci-compliant-regions">
-  ## Régions conformes PCI
-</div>
+## Régions conformes PCI {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 

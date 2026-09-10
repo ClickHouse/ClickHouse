@@ -165,24 +165,23 @@ LIMIT 1;
 
 送信リクエストは、その後のバックグラウンド実行が失敗した場合でも成功することがあります。その場合、例外は元の接続経由で返されるのではなく、`system.query_log` に記録されます。
 
-:::note クラスター構成およびロードバランサー配下のデプロイメント
-`system.processes`、`system.query_log`、`KILL QUERY` はノードローカルであり、それぞれ応答したサーバー上のクエリしか参照できません。
+<Note title="クラスター構成およびロードバランサー配下のデプロイメント">
+  `system.processes`、`system.query_log`、`KILL QUERY` はノードローカルであり、それぞれ応答したサーバー上のクエリしか参照できません。
 
-バックグラウンドクエリは、それを受け付けたサーバーに属します。しかし、そのサーバーは、次のリクエストがロードバランサー経由で到達するサーバーとは限りません。代わりに、クラスター全体を参照してください。
+  バックグラウンドクエリは、それを受け付けたサーバーに属します。しかし、そのサーバーは、次のリクエストがロードバランサー経由で到達するサーバーとは限りません。代わりに、クラスター全体を参照してください。
 
-```sql
-SELECT hostName(), query_id, elapsed, query
-FROM clusterAllReplicas(my_cluster, system.processes)
-WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
 
-`system.query_log` についても同様で、キャンセルにはクラスター全体を対象とする形式を使用する必要があります:
+  `system.query_log` についても同様で、キャンセルにはクラスター全体を対象とする形式を使用する必要があります:
 
-```sql
-KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
-
-:::
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
 
 ## クエリログのフラッシュ遅延 {#query-log-flush-delay}
 

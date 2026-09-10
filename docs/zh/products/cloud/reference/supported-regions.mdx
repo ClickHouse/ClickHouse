@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<div id="supported-regions">
-  ## 支持的区域
-</div>
+## 支持的区域 {#supported-regions}
 
 下表按云提供商列出了支持的区域。徽章表示可用性：`Public` 表示正式可用的区域，`Private`、`HIPAA` 或 `PCI` 表示提供这些选项的区域。
 
@@ -23,10 +21,10 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
     | `ap-east-1`      | <Badge color="purple">私网</Badge>                                                                    |
     | `ap-east-2`      | <Badge color="purple">私网</Badge>                                                                    |
     | `ap-northeast-1` | <Badge color="yellow">公网</Badge>                                                                    |
-    | `ap-northeast-2` | <Badge color="yellow">公网</Badge>                                                                    |
+    | `ap-northeast-2` | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-south-1`     | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-southeast-1` | <Badge color="yellow">公网</Badge>                                                                    |
-    | `ap-southeast-2` | <Badge color="yellow">公网</Badge>                                                                    |
+    | `ap-southeast-2` | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
     | `ap-southeast-3` | <Badge color="purple">私网</Badge>                                                                    |
     | `ap-southeast-5` | <Badge color="purple">私网</Badge>                                                                    |
     | `ca-central-1`   | <Badge color="yellow">公网</Badge> <Badge color="green">HIPAA</Badge> <Badge color="blue">PCI</Badge> |
@@ -75,9 +73,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
   需要部署到当前未列出的区域？[提交请求](https://clickhouse.com/pricing?modal=open)。
 </Note>
 
-<div id="private-regions">
-  ## 私有区域
-</div>
+## 私有区域 {#private-regions}
 
 <EnterprisePlanFeatureBadge feature="Private regions feature" />
 
@@ -90,17 +86,13 @@ import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePl
 
 HIPAA 合规可能还有其他要求，包括签署商业伙伴协议 (BAA)。HIPAA 目前仅适用于 Enterprise 层级服务。
 
-<div id="hipaa-compliant-regions">
-  ## HIPAA 合规区域
-</div>
+## HIPAA 合规区域 {#hipaa-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
 
 客户必须签署 BAA，并通过销售或支持团队申请开通流程，才能在表中标记为 HIPAA 合规的区域中创建服务。
 
-<div id="pci-compliant-regions">
-  ## PCI 合规区域
-</div>
+## PCI 合规区域 {#pci-compliant-regions}
 
 <EnterprisePlanFeatureBadge feature="PCI" support="true" />
 

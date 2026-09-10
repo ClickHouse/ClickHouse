@@ -170,24 +170,23 @@ LIMIT 1;
 A requisição de envio pode ser bem-sucedida mesmo que a execução em segundo plano falhe posteriormente. Nesse caso, a exceção é registrada
 em `system.query_log` em vez de ser retornada pela conexão original.
 
-:::note Implantações em cluster e com balanceamento de carga
-`system.processes`, `system.query_log` e `KILL QUERY` são locais ao nó: cada um enxerga apenas as consultas do servidor que os atende.
+<Note title="Implantações em cluster e com balanceamento de carga">
+  `system.processes`, `system.query_log` e `KILL QUERY` são locais ao nó: cada um enxerga apenas as consultas do servidor que os atende.
 
-Uma consulta em segundo plano pertence ao servidor que a aceitou, que não é necessariamente aquele que sua próxima requisição alcançará por meio de um balanceador de carga. Em vez disso, consulte o cluster inteiro:
+  Uma consulta em segundo plano pertence ao servidor que a aceitou, que não é necessariamente aquele que sua próxima requisição alcançará por meio de um balanceador de carga. Em vez disso, consulte o cluster inteiro:
 
-```sql
-SELECT hostName(), query_id, elapsed, query
-FROM clusterAllReplicas(my_cluster, system.processes)
-WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
 
-O mesmo se aplica a `system.query_log`, e o cancelamento requer a forma em todo o cluster:
+  O mesmo se aplica a `system.query_log`, e o cancelamento requer a forma em todo o cluster:
 
-```sql
-KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
-
-:::
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
 
 ## Atraso no flush do query log {#query-log-flush-delay}
 

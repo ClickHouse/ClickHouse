@@ -165,24 +165,23 @@ LIMIT 1;
 
 백그라운드 실행이 나중에 실패하더라도 제출 요청 자체는 성공할 수 있습니다. 이 경우 예외는 원래의 연결(connection)로 반환되지 않고 `system.query_log`에 기록됩니다.
 
-:::note 클러스터 및 로드 밸런싱 배포 환경
-`system.processes`, `system.query_log`, `KILL QUERY`는 노드 로컬로 동작합니다. 즉, 요청에 응답한 서버의 쿼리만 확인할 수 있습니다.
+<Note title="클러스터 및 로드 밸런싱 배포 환경">
+  `system.processes`, `system.query_log`, `KILL QUERY`는 노드 로컬로 동작합니다. 즉, 요청에 응답한 서버의 쿼리만 확인할 수 있습니다.
 
-백그라운드 쿼리는 해당 쿼리를 수락한 서버에 속하며, 이 서버가 로드 밸런서를 통해 다음 요청이 도달하는 서버와 반드시 같지는 않습니다. 따라서 클러스터 전체를 조회하십시오:
+  백그라운드 쿼리는 해당 쿼리를 수락한 서버에 속하며, 이 서버가 로드 밸런서를 통해 다음 요청이 도달하는 서버와 반드시 같지는 않습니다. 따라서 클러스터 전체를 조회하십시오:
 
-```sql
-SELECT hostName(), query_id, elapsed, query
-FROM clusterAllReplicas(my_cluster, system.processes)
-WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
 
-`system.query_log`에도 동일하게 적용되며, 취소 시에는 클러스터 전체를 대상으로 하는 형태를 사용해야 합니다:
+  `system.query_log`에도 동일하게 적용되며, 취소 시에는 클러스터 전체를 대상으로 하는 형태를 사용해야 합니다:
 
-```sql
-KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
-
-:::
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
 
 ## 쿼리 로그 플러시 지연 {#query-log-flush-delay}
 

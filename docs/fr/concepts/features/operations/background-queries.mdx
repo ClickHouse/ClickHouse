@@ -168,24 +168,23 @@ LIMIT 1;
 La requête de soumission peut réussir même si l&#39;exécution en arrière-plan échoue ensuite. Dans ce cas, l&#39;exception est consignée
 dans `system.query_log` au lieu d&#39;être renvoyée sur la connexion d&#39;origine.
 
-:::note Déploiements en cluster et derrière un load balancer
-`system.processes`, `system.query_log` et `KILL QUERY` sont locaux au nœud : chacun ne voit que les requêtes du serveur qui y répond.
+<Note title="Déploiements en cluster et derrière un load balancer">
+  `system.processes`, `system.query_log` et `KILL QUERY` sont locaux au nœud : chacun ne voit que les requêtes du serveur qui y répond.
 
-Une requête en arrière-plan appartient au serveur qui l&#39;a acceptée, lequel n&#39;est pas nécessairement celui que votre prochaine requête atteindra via un load balancer. Interrogez plutôt l&#39;ensemble du cluster :
+  Une requête en arrière-plan appartient au serveur qui l&#39;a acceptée, lequel n&#39;est pas nécessairement celui que votre prochaine requête atteindra via un load balancer. Interrogez plutôt l&#39;ensemble du cluster :
 
-```sql
-SELECT hostName(), query_id, elapsed, query
-FROM clusterAllReplicas(my_cluster, system.processes)
-WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
 
-Il en va de même pour `system.query_log`, et l&#39;annulation nécessite la forme applicable à l&#39;ensemble du cluster :
+  Il en va de même pour `system.query_log`, et l&#39;annulation nécessite la forme applicable à l&#39;ensemble du cluster :
 
-```sql
-KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
-
-:::
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
 
 ## Délai de flush du query log {#query-log-flush-delay}
 

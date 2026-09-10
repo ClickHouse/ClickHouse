@@ -164,24 +164,23 @@ LIMIT 1;
 
 即使后台执行随后失败，提交请求仍可能成功。在这种情况下，异常会记录到 `system.query_log` 中，而不会通过原始连接返回。
 
-:::note 集群与负载均衡部署
-`system.processes`、`system.query_log` 和 `KILL QUERY` 都是节点本地的：它们只能看到响应该请求的那台服务器上的查询。
+<Note title="集群与负载均衡部署">
+  `system.processes`、`system.query_log` 和 `KILL QUERY` 都是节点本地的：它们只能看到响应该请求的那台服务器上的查询。
 
-后台查询归属于接受该查询的服务器，而这台服务器不一定就是下一个请求经负载均衡器到达的那台。请改为读取整个集群：
+  后台查询归属于接受该查询的服务器，而这台服务器不一定就是下一个请求经负载均衡器到达的那台。请改为读取整个集群：
 
-```sql
-SELECT hostName(), query_id, elapsed, query
-FROM clusterAllReplicas(my_cluster, system.processes)
-WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
 
-`system.query_log` 同理，取消操作也需要使用集群级的形式：
+  `system.query_log` 同理，取消操作也需要使用集群级的形式：
 
-```sql
-KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
-
-:::
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
 
 ## 查询日志刷新延迟 {#query-log-flush-delay}
 

@@ -169,24 +169,23 @@ LIMIT 1;
 قد ينجح طلب الإرسال حتى لو فشل التنفيذ في الخلفية لاحقًا. في هذه الحالة، يُسجَّل الاستثناء
 في `system.query_log` بدلًا من إعادته عبر الاتصال الأصلي.
 
-:::note عمليات النشر العنقودية والموزَّعة عبر موازن الأحمال
-جداول `system.processes` و`system.query_log` وأمر `KILL QUERY` محلية على مستوى العقدة: فكل منها لا يرى سوى استعلامات الخادم الذي يستجيب لها.
+<Note title="عمليات النشر العنقودية والموزَّعة عبر موازن الأحمال">
+  جداول `system.processes` و`system.query_log` وأمر `KILL QUERY` محلية على مستوى العقدة: فكل منها لا يرى سوى استعلامات الخادم الذي يستجيب لها.
 
-ينتمي الاستعلام الخلفي إلى الخادم الذي قَبِله، وهو ليس بالضرورة الخادم الذي يصل إليه طلبك التالي عبر موازن الأحمال. لذا اقرأ من العنقود بأكمله بدلًا من ذلك:
+  ينتمي الاستعلام الخلفي إلى الخادم الذي قَبِله، وهو ليس بالضرورة الخادم الذي يصل إليه طلبك التالي عبر موازن الأحمال. لذا اقرأ من العنقود بأكمله بدلًا من ذلك:
 
-```sql
-SELECT hostName(), query_id, elapsed, query
-FROM clusterAllReplicas(my_cluster, system.processes)
-WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
 
-ينطبق الأمر نفسه على `system.query_log`، ويتطلب الإلغاء استخدام الصيغة الشاملة للعنقود:
+  ينطبق الأمر نفسه على `system.query_log`، ويتطلب الإلغاء استخدام الصيغة الشاملة للعنقود:
 
-```sql
-KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
-```
-
-:::
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
 
 ## تأخير flush لـ query log {#query-log-flush-delay}
 
