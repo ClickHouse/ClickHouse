@@ -4,15 +4,18 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Processors/Transforms/DistinctSpillLayout.h>
+#include <Processors/Transforms/SortingTransform.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/logger_useful.h>
 
 #include <optional>
+#include <variant>
 
 namespace DB
 {
 
-class MergeSorter;
+class BufferingFromFileSource;
+class BufferingToFileSink;
 class DistinctSortedTransform;
 
 /// The final hash-based `DISTINCT` streams first occurrences until tracked query memory exceeds its
@@ -55,102 +58,163 @@ public:
     PipelineUpdate updatePipeline() override;
 
 private:
-    enum class Stage : uint8_t
+    struct Hashing
     {
-        Consume = 0,
-        ExtractSuppression,
-        Generate,
-        Serialize,
+        Hashing(const Block & header, const Names & columns, const SizeLimits & limits)
+            : set(header, columns, limits, /*skip_null_keys_=*/ false, /*require_extractable_keys_=*/ true)
+        {
+        }
+
+        DistinctSetFilter set;
+        /// EOF is observed in `prepare`, but releasing the set belongs to `work`.
+        bool input_finished = false;
     };
 
-    enum class RunKind : uint8_t
+    struct ExtractingSuppression
     {
-        Input,
-        Suppression,
+        std::unique_ptr<DistinctSetFilter::KeyExtractor> keys;
     };
 
-    enum class PipelineUpdateKind : uint8_t
+    struct PreparedMerge
     {
-        InitializeMergeAndAddRun,
-        AddRun,
-        AddInMemoryTail,
+        std::shared_ptr<DistinctSortedTransform> merger;
+        Processors order_restoration;
     };
 
-    struct PendingPipelineUpdate
+    struct MergeRegistration
     {
-        PipelineUpdateKind kind;
-        RunKind run_kind;
-        ProcessorPtr sink;
-        ProcessorPtr source;
-        Processors merged_stream;
-        Processors processors;
+        std::shared_ptr<DistinctSortedTransform> merger;
+        InputPort & input;
     };
 
-    Status prepareConsume();
-    Status prepareSerialize();
-    Status prepareGenerate();
+    /// Exhausting the merger and handing off its last chunk completes the producer, not the file.
+    struct RunWriteProgress
+    {
+        std::unique_ptr<MergeSorter> merger;
+        Chunk chunk;
+    };
 
-    void consume(Chunk chunk);
-    void extractSuppressionRun();
-    void serialize();
-    void generate();
+    struct PreparedRun
+    {
+        RunWriteProgress progress;
+        std::shared_ptr<BufferingToFileSink> sink;
+        std::shared_ptr<BufferingFromFileSource> source;
+        std::optional<PreparedMerge> initial_merge;
+    };
 
-    /// Stably sorts suppression rows and stably sorts and deduplicates ordinary input rows.
-    Chunk sortSpillChunk(Chunk chunk, RunKind kind) const;
+    struct ConnectingSuppressionRun
+    {
+        PreparedRun run;
+        std::unique_ptr<DistinctSetFilter::KeyExtractor> keys;
+    };
 
-    void startFirstSpill();
-    void startSpillRun(Chunks run_chunks, size_t run_bytes, RunKind kind);
-    void createMergedStream(PendingPipelineUpdate & update);
-    void connectMergedStream(const Processors & merged_stream);
-    void attachSpilledRun(const ProcessorPtr & source, const ProcessorPtr & sink, RunKind kind);
-    void attachInMemoryTail(const ProcessorPtr & source);
+    struct WritingSuppressionRun
+    {
+        RunWriteProgress progress;
+        OutputPort & output;
+        std::unique_ptr<DistinctSetFilter::KeyExtractor> keys;
+        InputPort & completion;
+        OutputPort & readiness;
+    };
+
+    struct CollectingInput
+    {
+        Chunks chunks;
+        size_t bytes = 0;
+    };
+
+    struct ConnectingInputRun
+    {
+        PreparedRun run;
+    };
+
+    struct WritingInputRun
+    {
+        RunWriteProgress progress;
+        OutputPort & output;
+    };
+
+    struct PreparingTail
+    {
+        Chunks chunks;
+    };
+
+    struct ConnectingTail
+    {
+        std::shared_ptr<MergeSorterSource> source;
+    };
+
+    struct Merging
+    {
+        InputPort & input;
+        Chunk chunk;
+    };
+
+    struct Finishing
+    {
+    };
+
+    /// Connection states hand processors prepared by `work` to `updatePipeline`. Each writing state
+    /// determines its own continuation and owns only the completion dependencies that it needs.
+    using State = std::variant<
+        Hashing,
+        ExtractingSuppression,
+        ConnectingSuppressionRun,
+        WritingSuppressionRun,
+        CollectingInput,
+        ConnectingInputRun,
+        WritingInputRun,
+        PreparingTail,
+        ConnectingTail,
+        Merging,
+        Finishing>;
+
+    Status prepareInput();
+    Status prepareCollectingInput(CollectingInput & collecting);
+    Status prepareRunWrite(RunWriteProgress & progress, OutputPort & output);
+    Status prepareSuppressionWrite(WritingSuppressionRun & writing);
+    Status prepareInputWrite(WritingInputRun & writing);
+    Status prepareMergedOutput(Merging & merging);
+    Status prepareFinish();
+    Status finish();
+
+    void consumeHashing(Hashing & hashing);
+    void startSpilling(Hashing & hashing);
+    void extractSuppressionRun(ExtractingSuppression & extracting);
+    void collectInput(CollectingInput & collecting);
+    void readRun(RunWriteProgress & progress);
+    void prepareTail(PreparingTail & tail);
+    void consumeMerged(Merging & merging);
+
+    PreparedRun prepareRun(Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
+    PreparedMerge prepareMerge();
+    void connectMerge(PreparedMerge & prepared, Processors & processors);
+    OutputPort & connectRun(PreparedRun & prepared, Processors & processors);
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
-    /// Owns hashing state until the first spill. Resetting it permanently ends the hashing phase.
-    std::optional<DistinctSetFilter> distinct_set;
-    /// Owns the set and arena while successive suppression runs are extracted and written.
-    std::unique_ptr<DistinctSetFilter::KeyExtractor> suppression_keys;
+    State state;
     const UInt64 limit_hint;
     const SizeLimits set_size_limits;
-
     const size_t max_bytes_before_external_distinct;
     TemporaryDataOnDiskScopePtr tmp_data;
     const size_t min_free_disk_space;
     const size_t max_block_size_rows;
     const DistinctSpillLayout spill_layout;
 
-    /// Counts received rows and provides the next arrival number.
-    UInt64 consumed_rows = 0;
-
-    /// Accumulates sorted chunks with unset emitted flags until the next run is written.
-    Chunks chunks;
-    size_t sum_bytes_in_chunks = 0;
-
+    /// Tracks connected merge inputs until tail attachment or early termination closes registration.
+    std::optional<MergeRegistration> merge_registration;
     size_t temporary_files_num = 0;
-    std::unique_ptr<MergeSorter> merge_sorter;
-    std::shared_ptr<DistinctSortedTransform> distinct_merger;
-    std::optional<PendingPipelineUpdate> pending_pipeline_update;
 
-    InputPort * merged_input = nullptr;
-    OutputPort * run_write_output = nullptr;
-    InputPort * run_completion_input = nullptr;
-    OutputPort * run_readiness_output = nullptr;
+    /// Counts accepted input rows and provides the next arrival number.
+    UInt64 consumed_rows = 0;
+    /// Counts rows admitted to the result, before the pending output is pushed to its port.
+    size_t result_rows = 0;
 
-    Stage stage = Stage::Consume;
-    /// The in-memory tail closes merge-input registration exactly once, even when it contains no rows.
-    bool merge_inputs_finalized = false;
-    /// No more output is needed: the limit hint or a size limit (with the 'break' overflow mode) was
-    /// reached. The counterpart of `ISimpleTransform::stopReading`.
-    bool read_stopped = false;
-
-    /// Counts distinct rows sent downstream in both phases for limit hints and the row limit.
-    size_t emitted_rows = 0;
-
-    /// Retains unprocessed input while the existing set is extracted into suppression runs.
-    Chunk pending_input;
-    Chunk current_chunk;
-    Chunk generated_chunk;
+    /// Input rejected before hash-table growth remains here until suppression extraction finishes.
+    Chunk input_chunk;
+    /// Both hashing and merging produce results here, independently of spill-writing progress.
+    Chunk output_chunk;
 
     LoggerPtr log = getLogger("ExternalDistinctTransform");
 };
