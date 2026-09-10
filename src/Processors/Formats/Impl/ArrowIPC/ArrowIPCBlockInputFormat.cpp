@@ -861,7 +861,7 @@ std::optional<DataTypes> variantElementTargets(const DataTypeVariant & from, con
         for (const DataTypePtr & alternative : alternatives)
             requested |= alternative->getName() == landed->getName();
         if (!requested)
-            return {};
+            return std::nullopt;
     }
 
     return targets;
