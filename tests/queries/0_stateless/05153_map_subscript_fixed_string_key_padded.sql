@@ -7,8 +7,13 @@ SET enable_analyzer = 1;
 DROP TABLE IF EXISTS t_fixed_key;
 DROP TABLE IF EXISTS t_lc_fixed_key;
 DROP TABLE IF EXISTS t_string_key;
+DROP TABLE IF EXISTS t_bad_key;
 DROP TABLE IF EXISTS t_bloom_key;
 DROP TABLE IF EXISTS t_text_key;
+DROP TABLE IF EXISTS t_bloom_lc_key;
+DROP TABLE IF EXISTS t_text_lc_key;
+DROP TABLE IF EXISTS t_bloom_mixed;
+DROP TABLE IF EXISTS t_text_mixed;
 
 CREATE TABLE t_fixed_key (m Map(FixedString(4), UInt8), k String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_fixed_key SELECT map(CAST('a', 'FixedString(4)'), 7), unhex('6100');
@@ -38,6 +43,13 @@ SELECT 'S6 control, subcolumn rewrite still fires', count() FROM (
     EXPLAIN QUERY TREE SELECT m[unhex('6100')] FROM t_fixed_key
 ) WHERE explain ILIKE '%column\_name: m.key\_%' SETTINGS optimize_functions_to_subcolumns = 1;
 
+-- S21: arrayElementOrNull is the same matchers in Null mode, so a paddable key must return the value
+-- rather than NULL, and a subscript wider than N must keep returning NULL.
+SELECT 'S21 arrayElementOrNull, key column', arrayElementOrNull(m, k) FROM t_fixed_key;
+
+SELECT 'S23 control, arrayElementOrNull over-wide subscript is still NULL',
+       arrayElementOrNull(m, unhex('6100000000')) FROM t_fixed_key;
+
 CREATE TABLE t_lc_fixed_key (m Map(LowCardinality(FixedString(4)), UInt8), k String) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_lc_fixed_key SELECT map(CAST('a', 'FixedString(4)'), 7), unhex('6100');
 
@@ -47,6 +59,11 @@ SELECT 'S7 LowCardinality key column', m[k],
 SELECT 'S8 LowCardinality dictionary lookup', m[unhex('6100')],
        arraySum(arrayMap((kk, v) -> if(kk = unhex('6100'), v, 0), mapKeys(m), mapValues(m)))
 FROM t_lc_fixed_key SETTINGS optimize_functions_to_subcolumns = 0;
+
+-- S22: `optimize_functions_to_subcolumns = 0` keeps this arm on the matcher path whether or not the
+-- subcolumn rewrite ever learns this spelling.
+SELECT 'S22 arrayElementOrNull, LowCardinality key, constant subscript',
+       arrayElementOrNull(m, unhex('6100')) FROM t_lc_fixed_key SETTINGS optimize_functions_to_subcolumns = 0;
 
 -- S9: a String key is stored at its own length, so it must keep comparing exact-length.
 CREATE TABLE t_string_key (m Map(String, UInt8), k String) ENGINE = MergeTree ORDER BY tuple();
@@ -75,6 +92,19 @@ WHERE m[unhex('6263')] = 7 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'S12 control, bloom_filter used for an exact-width key', count() FROM t_bloom_key
 WHERE m[unhex('61000000')] = 7 SETTINGS force_data_skipping_indices = 'idx';
 
+-- S19: `m[k] IN (set)` resolves the key constant in a different branch of the bloom filter condition
+-- (traverseTreeIn) from `m[k] = v` (traverseTreeEquals). Two set elements, so the arm cannot be folded
+-- into an equality, and plain `IN`, since the branch declines `notIn`.
+SELECT 'S19 bloom_filter IN path, indexed count matches unindexed',
+       (SELECT count() FROM t_bloom_key WHERE m[materialize(unhex('6100'))] IN (7, 9) SETTINGS use_skip_indexes = 1),
+       (SELECT count() FROM t_bloom_key WHERE m[materialize(unhex('6100'))] IN (7, 9) SETTINGS use_skip_indexes = 0);
+
+SELECT 'S20 control, bloom_filter used for the IN path', count() FROM t_bloom_key
+WHERE m[materialize(unhex('6100'))] IN (7, 9) SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT 'S26 control, bloom_filter used for a paddable key', count() FROM t_bloom_key
+WHERE m[materialize(unhex('6100'))] = 7 SETTINGS force_data_skipping_indices = 'idx';
+
 CREATE TABLE t_text_key (m Map(FixedString(4), UInt8), INDEX idx_t mapKeys(m) TYPE text(tokenizer = array) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 INSERT INTO t_text_key SELECT map(CAST('a', 'FixedString(4)'), 7) FROM numbers(8);
@@ -91,8 +121,9 @@ WHERE m[unhex('6263')] = 7 SETTINGS force_data_skipping_indices = 'idx_t';
 SELECT 'S15 control, text index used for a paddable key', count() FROM t_text_key
 WHERE m[materialize(unhex('6100'))] = 7 SETTINGS force_data_skipping_indices = 'idx_t';
 
--- The index element type carries the map key's LowCardinality wrapper, which has to be stripped before
--- the key width is read.
+-- `mapKeys()` strips the key's LowCardinality wrapper, so the index element type is
+-- `Array(FixedString(N))` for both carriers. These arms cross the LowCardinality map with each index
+-- family: the function side resolves through the dictionary, the index side through the same padded key.
 CREATE TABLE t_bloom_lc_key (m Map(LowCardinality(FixedString(4)), UInt8), INDEX idx_lc mapKeys(m) TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
 INSERT INTO t_bloom_lc_key SELECT map(CAST('a', 'FixedString(4)'), 7) FROM numbers(8);
@@ -100,6 +131,9 @@ INSERT INTO t_bloom_lc_key SELECT map(CAST('a', 'FixedString(4)'), 7) FROM numbe
 SELECT 'S16 bloom_filter over LowCardinality key, indexed matches unindexed',
        (SELECT count() FROM t_bloom_lc_key WHERE m[materialize(unhex('6100'))] = 7 SETTINGS use_skip_indexes = 1),
        (SELECT count() FROM t_bloom_lc_key WHERE m[materialize(unhex('6100'))] = 7 SETTINGS use_skip_indexes = 0);
+
+SELECT 'S27 control, bloom_filter over LowCardinality key used for a paddable key', count() FROM t_bloom_lc_key
+WHERE m[materialize(unhex('6100'))] = 7 SETTINGS force_data_skipping_indices = 'idx_lc';
 
 CREATE TABLE t_text_lc_key (m Map(LowCardinality(FixedString(4)), UInt8), INDEX idx_tlc mapKeys(m) TYPE text(tokenizer = array) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
@@ -112,6 +146,28 @@ SELECT 'S17 text index over LowCardinality key, indexed matches unindexed',
 SELECT 'S18 control, text index over LowCardinality key still prunes an absent key', count() FROM t_text_lc_key
 WHERE m[unhex('6263')] = 7 SETTINGS force_data_skipping_indices = 'idx_tlc';
 
+SELECT 'S28 control, text index over LowCardinality key used for a paddable key', count() FROM t_text_lc_key
+WHERE m[materialize(unhex('6100'))] = 7 SETTINGS force_data_skipping_indices = 'idx_tlc';
+
+-- S24/S25: half the granules hold a different key, so the expected count is a strict subset of the
+-- table. An index that pruned the paddable key, and a subscript that matched every key, are both
+-- visible here and neither is visible against single-key data.
+CREATE TABLE t_bloom_mixed (m Map(FixedString(4), UInt8), INDEX idx_bm mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bloom_mixed SELECT map(CAST(if(number % 2 = 0, 'a', 'b'), 'FixedString(4)'), 7) FROM numbers(8);
+
+SELECT 'S24 bloom_filter, mixed keys, indexed count matches unindexed',
+       (SELECT count() FROM t_bloom_mixed WHERE m[materialize(unhex('6100'))] = 7 SETTINGS use_skip_indexes = 1),
+       (SELECT count() FROM t_bloom_mixed WHERE m[materialize(unhex('6100'))] = 7 SETTINGS use_skip_indexes = 0);
+
+CREATE TABLE t_text_mixed (m Map(FixedString(4), UInt8), INDEX idx_tm mapKeys(m) TYPE text(tokenizer = array) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_text_mixed SELECT map(CAST(if(number % 2 = 0, 'a', 'b'), 'FixedString(4)'), 7) FROM numbers(8);
+
+SELECT 'S25 text index, mixed keys, indexed count matches unindexed',
+       (SELECT count() FROM t_text_mixed WHERE m[materialize(unhex('6100'))] = 7 SETTINGS use_skip_indexes = 1),
+       (SELECT count() FROM t_text_mixed WHERE m[materialize(unhex('6100'))] = 7 SETTINGS use_skip_indexes = 0);
+
 DROP TABLE t_fixed_key;
 DROP TABLE t_lc_fixed_key;
 DROP TABLE t_string_key;
@@ -119,3 +175,5 @@ DROP TABLE t_bloom_key;
 DROP TABLE t_text_key;
 DROP TABLE t_bloom_lc_key;
 DROP TABLE t_text_lc_key;
+DROP TABLE t_bloom_mixed;
+DROP TABLE t_text_mixed;
