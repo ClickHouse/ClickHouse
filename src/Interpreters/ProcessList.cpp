@@ -608,6 +608,8 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         cancel_reason = reason;
         /// Only ever read (copied) after this, so it must not alias an object a caller still decorates.
         cancellation_exception = exception ? copyMutableException(exception) : nullptr;
+        if (exception && reason != CancelReason::TIMEOUT)
+            cancellation_exception_instances.push_back(exception);
     }
 
     std::vector<ExecutorHolderPtr> executors_snapshot;
@@ -698,7 +700,11 @@ void QueryStatus::throwQueryWasCancelled() const
 {
     /// A private copy per caller: `catch (Exception &)` handlers up the stack decorate what they catch.
     if (cancellation_exception)
-        std::rethrow_exception(copyMutableException(cancellation_exception));
+    {
+        auto exception = copyMutableException(cancellation_exception);
+        cancellation_exception_instances.push_back(exception);
+        std::rethrow_exception(exception);
+    }
     else
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 }
@@ -713,7 +719,14 @@ void QueryStatus::throwIfKilled()
 bool QueryStatus::isStoredCancellationException(const std::exception_ptr & exception) const
 {
     std::lock_guard lock(cancel_mutex);
-    return is_killed && cancel_reason != CancelReason::TIMEOUT && cancellation_exception && cancellation_exception == exception;
+    if (!is_killed || cancel_reason == CancelReason::TIMEOUT)
+        return false;
+
+    for (const auto & cancellation_exception_instance : cancellation_exception_instances)
+        if (cancellation_exception_instance == exception)
+            return true;
+
+    return false;
 }
 
 CancelReason QueryStatus::getCancelReason() const

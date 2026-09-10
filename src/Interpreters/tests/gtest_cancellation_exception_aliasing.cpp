@@ -69,6 +69,7 @@ TEST(QueryStatusCancellationException, EachThrowIfKilledCallerGetsItsOwnExceptio
     auto query = makeQueryStatus("gtest_cancellation_exception_consumers");
     query->cancelQuery(CancelReason::CANCELLED_BY_USER, makeCancellationException());
 
+    std::exception_ptr previous_exception;
     for (size_t caller = 1; caller <= 3; ++caller)
     {
         try
@@ -78,6 +79,10 @@ TEST(QueryStatusCancellationException, EachThrowIfKilledCallerGetsItsOwnExceptio
         }
         catch (Exception & e)
         {
+            auto current_exception = std::current_exception();
+            EXPECT_TRUE(query->isStoredCancellationException(current_exception));
+            EXPECT_NE(current_exception, previous_exception);
+            previous_exception = current_exception;
             const std::string message = e.message();
 
             EXPECT_EQ(e.code(), ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT);
@@ -102,6 +107,7 @@ TEST(QueryStatusCancellationException, StoredExceptionDoesNotAliasTheCallersObje
 
     auto produced = makeCancellationException();
     query->cancelQuery(CancelReason::CANCELLED_BY_USER, produced);
+    EXPECT_TRUE(query->isStoredCancellationException(produced));
 
     try
     {
@@ -119,6 +125,7 @@ TEST(QueryStatusCancellationException, StoredExceptionDoesNotAliasTheCallersObje
     }
     catch (Exception & e)
     {
+        EXPECT_TRUE(query->isStoredCancellationException(std::current_exception()));
         const std::string & message = e.message();
 
         EXPECT_NE(message.find(cancellation_reason), std::string::npos)

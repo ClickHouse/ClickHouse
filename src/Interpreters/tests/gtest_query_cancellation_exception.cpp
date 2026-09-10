@@ -96,7 +96,10 @@ TEST(QueryCancellationException, IdentityBlockerAndThreadGroup)
             EXPECT_EQ(thrownCancellation(), nullptr);
             EXPECT_FALSE(CurrentThread::isQueryCancellationException(exception));
             first.status->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
-            EXPECT_EQ(thrownCancellation(), exception);
+            auto propagated_exception = thrownCancellation();
+            ASSERT_NE(propagated_exception, nullptr);
+            EXPECT_NE(propagated_exception, exception);
+            EXPECT_TRUE(CurrentThread::isQueryCancellationException(propagated_exception));
             EXPECT_TRUE(CurrentThread::isQueryCancellationException(same_exception));
             EXPECT_FALSE(CurrentThread::isQueryCancellationException(other_exception));
             {
@@ -112,7 +115,10 @@ TEST(QueryCancellationException, IdentityBlockerAndThreadGroup)
                 EXPECT_EQ(thrownCancellation(), nullptr);
                 EXPECT_FALSE(CurrentThread::isQueryCancellationException(exception));
                 second.status->cancelQuery(CancelReason::CANCELLED_BY_USER, other_exception);
-                EXPECT_EQ(thrownCancellation(), other_exception);
+                auto other_propagated_exception = thrownCancellation();
+                ASSERT_NE(other_propagated_exception, nullptr);
+                EXPECT_NE(other_propagated_exception, other_exception);
+                EXPECT_TRUE(CurrentThread::isQueryCancellationException(other_propagated_exception));
                 EXPECT_FALSE(CurrentThread::isQueryCancellationException(exception));
                 EXPECT_TRUE(CurrentThread::isQueryCancellationException(other_exception));
             }
