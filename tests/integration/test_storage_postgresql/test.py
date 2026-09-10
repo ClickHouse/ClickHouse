@@ -889,8 +889,8 @@ def test_postgresql_identifier_quoting(started_cluster):
     cursor.execute('CREATE TABLE "ddq_q""x" ("c""o" integer)')
     cursor.execute('INSERT INTO "ddq_q""x" VALUES (7)')
 
-    # An explicit structure is used throughout so the read path is exercised without going through
-    # structure inference, whose identifier positions are a separate set of call sites.
+    # Most arms below pass an explicit structure so that one read or insert call site is exercised at
+    # a time; one drops it to cover the default entrypoint, where the structure is inferred first.
 
     # A remote name shaped like a payload must reach PostgreSQL as one identifier, so the statement
     # after it is never executed and the lookup simply fails.
@@ -910,6 +910,15 @@ def test_postgresql_identifier_quoting(started_cluster):
         f"""CREATE TABLE ddq_quote (`c"o` Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'ddq_q"x', 'postgres', '{pg_pass}')"""
     )
     assert node1.query('SELECT `c"o` FROM ddq_quote').strip() == "7"
+
+    # The same read with no explicit structure, which is how the engine and the table function are
+    # normally used: the structure is inferred from PostgreSQL first, then the same query is built.
+    assert (
+        node1.query(
+            f"""SELECT `c"o` FROM postgresql('postgres1:5432', 'postgres', 'ddq_q"x', 'postgres', '{pg_pass}')"""
+        ).strip()
+        == "7"
+    )
 
     # And so is a relation whose name ends in a backslash: it must be sent as that one byte.
     node1.query("DROP TABLE IF EXISTS ddq_backslash")
