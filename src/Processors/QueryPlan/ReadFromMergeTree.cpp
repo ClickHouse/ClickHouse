@@ -3157,8 +3157,8 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 
         /// don't let deferred filters participate in index analysis
         /// otherwise partition pruning / skip indexes could drop data that FINAL still needs
+        index_analysis_filter_dag = query_info.filter_actions_dag;
         const ActionsDAG * index_filter_dag = query_info.filter_actions_dag.get();
-        std::shared_ptr<const ActionsDAG> index_filter_dag_without_deferred;
 
         deferFiltersAfterFinalIfNeeded();
         if (deferred_row_level_filter || deferred_prewhere_info)
@@ -3201,10 +3201,9 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             }
 
             auto idx_dag = ActionsDAG::buildFilterActionsDAG(index_nodes, node_name_to_input);
-            if (idx_dag)
-                index_filter_dag_without_deferred = std::make_shared<const ActionsDAG>(std::move(*idx_dag));
+            index_analysis_filter_dag = idx_dag ? std::make_shared<const ActionsDAG>(std::move(*idx_dag)) : nullptr;
             /// nullptr is fine here: all filters are deferred, nothing left for indexes
-            index_filter_dag = index_filter_dag_without_deferred.get();
+            index_filter_dag = index_analysis_filter_dag.get();
 
             LOG_DEBUG(
                 log,
@@ -4461,6 +4460,9 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    /// Filled by applyFilters before any clone is made and never again for the clone; a distributed
+    /// read from a cloned step would otherwise ship no skip-index state and silently stop pruning.
+    cloned_step->index_analysis_filter_dag = index_analysis_filter_dag;
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }

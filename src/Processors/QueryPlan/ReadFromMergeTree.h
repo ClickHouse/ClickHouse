@@ -435,6 +435,10 @@ public:
     void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool is_final);
 
     const std::optional<Indexes> & getIndexes() const { return indexes; }
+
+    /// The filter index analysis ran with: the query filter minus the deferred FINAL filters, which
+    /// must not prune before the merge. Null when every filter was deferred.
+    std::shared_ptr<const ActionsDAG> getIndexAnalysisFilterDAG() const { return index_analysis_filter_dag; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns) const;
     /// Compose statistics over the part set of the given partition/PK analysis result
     /// instead of all prepared parts. Passing nullptr falls back to getParts().
@@ -557,6 +561,7 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+    std::shared_ptr<const ActionsDAG> index_analysis_filter_dag;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
