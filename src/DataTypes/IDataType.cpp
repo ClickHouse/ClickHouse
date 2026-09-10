@@ -31,8 +31,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/// One substream node constructs several serializations, so it costs far more than the cheapest loop
-/// `units_per_check` is calibrated for: this polls once per 256 nodes.
+/// One unit of enumeration work constructs several serializations, so it costs far more than the
+/// cheapest loop `units_per_check` is calibrated for: this polls once per 256 units.
 static constexpr size_t cancellation_units_per_substream = CancellationBudget::units_per_check / 256;
 
 IDataType::IDataType() = default;
@@ -136,6 +136,12 @@ void IDataType::forEachSubcolumn(
             size_t prefix_len = i + 1;
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
+                /// A type whose substream tree is one long path produces a single callback, and
+                /// `createFromPath` reapplies every preceding creator, so one subcolumn costs
+                /// `prefix_len`.
+                if (budget)
+                    budget->chargeUnits(cancellation_units_per_substream * prefix_len);
+
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
                 auto subdata = ISerialization::createFromPath(subpath, prefix_len);
                 auto path_copy = subpath;

@@ -15,12 +15,16 @@ FP="storage_merge_schema_inference_pause"
 KILL_QID="merge_structure_kill_${CLICKHOUSE_DATABASE}_$$"
 BREAK_QID="merge_structure_break_${CLICKHOUSE_DATABASE}_$$"
 
-# Every arm matches exactly ONE source table, so a checkpoint that only ran between source tables
-# could not stop any of them. Depth 10 polls 19 times inside that single column's substream walk,
-# which is what makes the arms below observations about one column rather than about the union.
+# Every poll below happens inside ONE column's substream walk, so a checkpoint that only ran between
+# source tables or between columns could not stop any of the arms. Depth 10 polls 944 times.
 DEEP="Int32"
 for _ in $(seq 1 10); do DEEP="Array(Map(String, Tuple(a ${DEEP}, b ${DEEP})))"; done
-# Depth 8 still polls 4 times, and its parts hold a fifth as many stream files, so the part-loading
+# A type whose substream tree is one long path yields a single stream callback, so it is the shape
+# that catches accounting charged per callback rather than per unit of work. Depth 100 polls 17
+# times and its 100 subcolumns cost one prefix walk each.
+UNARY="Int32"
+for _ in $(seq 1 100); do UNARY="Tuple(a ${UNARY})"; done
+# Depth 8 still polls 181 times, and its parts hold a fifth as many stream files, so the part-loading
 # arm can reach the checkpoint while staying cheap enough to write real parts.
 SHALLOWER="Int32"
 for _ in $(seq 1 8); do SHALLOWER="Array(Map(String, Tuple(a ${SHALLOWER}, b ${SHALLOWER})))"; done
@@ -33,11 +37,13 @@ function cleanup()
 }
 trap cleanup EXIT
 
-# Structure inference reads metadata only, so this table deliberately holds no data: one row of this
-# type occupies about 8000 stream files, which would dominate the test's cost for no coverage.
+# Structure inference reads metadata only, so these tables deliberately hold no data: one row of the
+# branching type occupies about 8000 stream files, which would dominate the test's cost for no coverage.
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS deep0;
+    DROP TABLE IF EXISTS unary0;
     CREATE TABLE deep0 (k UInt32, c ${DEEP}) ENGINE = MergeTree ORDER BY k;
+    CREATE TABLE unary0 (k UInt32, c ${UNARY}) ENGINE = MergeTree ORDER BY k;
 "
 
 # Positive control: with no deadline the inference completes and the read runs, returning no rows.
@@ -47,7 +53,7 @@ $CLICKHOUSE_CLIENT --query "SELECT count() FROM merge(currentDatabase(), '^deep0
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${FP}"
 
 $CLICKHOUSE_CLIENT --query_id="${KILL_QID}" \
-    --query "DESCRIBE TABLE merge(currentDatabase(), '^deep0$') FORMAT Null" > /dev/null 2>&1 &
+    --query "DESCRIBE TABLE merge(currentDatabase(), '^unary0$') FORMAT Null" > /dev/null 2>&1 &
 KILL_PID=$!
 
 # The enumeration is now paused at a poll inside the only matched table's column. Bound the wait:
@@ -62,7 +68,7 @@ $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${KILL_QID}' FORMAT Nul
 # Resume WITHOUT disabling, so the failpoint channel survives for the second observation.
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT ${FP}"
 
-# A cancelled walk must stop at its next poll, and 18 further polls remain, so it must never pause
+# A cancelled walk must stop at its next poll, and 16 further polls remain, so it must never pause
 # again. Only status 124 means the wait timed out, which is the expected outcome. Status 0 means the
 # walk kept going, and any other status means the wait itself failed.
 kill_wait_rc=0
@@ -94,10 +100,18 @@ $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
 # truncated schema is a wrong structure rather than a smaller result: CREATE TABLE ... AS merge(...)
 # writes the inferred structure into the table's metadata. So this must fail rather than return.
 # The pause makes the elapsed time exceed max_execution_time without relying on timing.
+#
+# This arm reaches the walk through the widening branch instead of the first-column one: cheap0 sorts
+# before deep0, so `c` enters the union as Int32 and deep0 widens it, which re-walks the supertype.
+# cheap0's own column is far too cheap to poll, so every poll here is still inside one column's walk.
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS cheap0;
+    CREATE TABLE cheap0 (k UInt32, c Int32) ENGINE = MergeTree ORDER BY k;
+"
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${FP}"
 
 $CLICKHOUSE_CLIENT --query_id="${BREAK_QID}" --query "
-    DESCRIBE TABLE merge(currentDatabase(), '^deep0$')
+    DESCRIBE TABLE merge(currentDatabase(), '^(cheap|deep)0$')
     SETTINGS max_execution_time = 3, timeout_overflow_mode = 'break'
     FORMAT Null
 " > /dev/null 2> "${CLICKHOUSE_TMP}/05158_break.err" &
