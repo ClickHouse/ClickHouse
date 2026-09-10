@@ -13,8 +13,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # broken off, and it always returns no rows: `materialize` keeps the filter from being evaluated at
 # analysis time, so every row is read and rejected.
 
+# The test profile in CI sets `max_rows_to_read`, and the estimated number of rows of the scan exceeds it, so the
+# query would be rejected before it starts; the read limits have to be lifted for the scan to reach the timeout.
 QUERY="SELECT number FROM numbers(10000000000) WHERE materialize(0) = 1"
-URL="${CLICKHOUSE_URL}&max_execution_time=1&timeout_overflow_mode=break&max_threads=2"
+URL="${CLICKHOUSE_URL}&max_execution_time=1&timeout_overflow_mode=break&max_threads=2&max_rows_to_read=0&max_bytes_to_read=0"
 
 ${CLICKHOUSE_CURL} -sS "$URL" -d "$QUERY FORMAT JSON" > "${CLICKHOUSE_TMP}/05077.json"
 ${CLICKHOUSE_LOCAL} --query "
