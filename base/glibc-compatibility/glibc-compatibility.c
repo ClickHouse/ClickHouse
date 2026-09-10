@@ -125,6 +125,36 @@ int sscanf(const char *restrict s, const char *restrict fmt, ...)
 
 int __isoc99_sscanf(const char *str, const char *format, ...) __attribute__((weak, nonnull, nothrow, alias("sscanf")));
 
+/// glibc 2.38 redirects strtol and friends to __isoc23_* under _GNU_SOURCE or a C2x standard
+/// (the C23 versions also accept a 0b prefix), and g++ defines _GNU_SOURCE unconditionally, so
+/// anything compiled against a 2.38+ glibc with libstdc++ - std::stoi and friends inline the
+/// call - needs these. That is the GPU island (cmake/cuda.cmake), which compiles against the
+/// host's headers and links against the sysroot's glibc.
+long int __isoc23_strtol(const char *nptr, char **endptr, int base)
+{
+    return strtol(nptr, endptr, base);
+}
+
+unsigned long int __isoc23_strtoul(const char *nptr, char **endptr, int base)
+{
+    return strtoul(nptr, endptr, base);
+}
+
+long long int __isoc23_strtoll(const char *nptr, char **endptr, int base)
+{
+    return strtoll(nptr, endptr, base);
+}
+
+unsigned long long int __isoc23_strtoull(const char *nptr, char **endptr, int base)
+{
+    return strtoull(nptr, endptr, base);
+}
+
+/// glibc 2.32 exports this flag and libstdc++ reads it to skip atomic reference counting while
+/// the process has a single thread. A constant "no" is the conservative answer, and the correct
+/// one for ClickHouse, which is multi-threaded from startup.
+char __libc_single_threaded = 0;
+
 int open(const char *path, int oflag);
 
 int __open_2(const char *path, int oflag)
