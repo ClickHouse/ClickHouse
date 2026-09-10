@@ -1,5 +1,6 @@
 #include <Interpreters/BlobStorageLog.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 
 #include <Common/DateLUTImpl.h>
 
@@ -36,6 +37,8 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the event."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Time of the event."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Time of the event with microseconds precision."},
@@ -64,6 +67,8 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
 
     auto event_time_seconds = timeInSeconds(event_time);
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
     columns[i++]->insert(event_time_seconds);
     columns[i++]->insert(Decimal64(timeInMicroseconds(event_time)));

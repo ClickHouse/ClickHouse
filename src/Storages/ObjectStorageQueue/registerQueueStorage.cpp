@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Databases/DatabaseReplicatedHelpers.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -40,6 +41,7 @@ namespace Setting
 
 namespace ObjectStorageQueueSetting
 {
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
@@ -131,6 +133,32 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
+    /// In `exclusive` mode there is no coordination through Keeper: each server keeps the list of
+    /// processed files only in its own memory. If two servers read the same path, both will read
+    /// every file and every row will be inserted twice. So each server needs its own path.
+    /// But `ON CLUSTER` queries and `Replicated` databases send the same `CREATE` text to all
+    /// servers. The `{replica}` macro solves this: one query text, a different path per server.
+    /// The other modes need the opposite (the same path on all servers, because files in Keeper are
+    /// named by file path), so this code runs only for `exclusive` mode.
+    if ((*queue_settings)[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        Macros::MacroExpansionInfo info;
+        info.expand_special_macros_only = true;
+
+        const auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        const auto is_replicated_database = is_on_cluster && database->getEngineName() == "Replicated";
+
+        if (is_replicated_database)
+            info.replica = getReplicatedDatabaseReplicaName(database);
+        else
+            info.replica = Context::getGlobalContextInstance()->getMacros()->tryGetValue("replica");
+
+        auto path = configuration->getPathForRead();
+        path.path = args.getContext()->getMacros()->expand(path.path, info);
+        configuration->setPathForRead(path);
+    }
+
     /// The S3 client is built once in the storage constructor and reused by background threads, so the
     /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE
     /// query. The storage itself must keep the persistent global context (`args.getContext()`): it is held
@@ -211,9 +239,9 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [max_processing_time_sec_before_commit = 0,]
 ```
 
-:::warning
+<Warning>
 Before `24.7`, it is required to use `s3queue_` prefix for all settings apart from `mode`, `after_processing` and `keeper_path`.
-:::
+</Warning>
 
 **Engine parameters**
 
@@ -253,13 +281,13 @@ SETTINGS
 
 To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
-:::note Setting Names (24.7+)
+<Note title="Setting Names (24.7+)">
 Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
 - **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
 - **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
 
 Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
-:::
+</Note>
 
 ### Mode {#mode}
 
@@ -267,8 +295,11 @@ Possible values:
 
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
 - ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
+- exclusive - With exclusive mode, nothing is tracked in Zookeeper. Your S3 url (first parameter in `S3Queue()`) *must* resolve to a unique host or path. This mode is only useful for high-throughput and/or self-hosted scenarios.
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
+
+When using `exclusive` mode, using the `{replica}` macro in the S3 url is supported.
 
 ### `after_processing` {#after_processing}
 
@@ -409,7 +440,7 @@ Default value: `10`.
 
 ### `processing_threads_num` {#processing_threads_num}
 
-Number of threads to perform processing. Applies only for `Unordered` mode.
+Number of threads to perform processing. Applies only for `Unordered` or `Exclusive` mode.
 
 Default value: Number of CPUs or 16.
 
@@ -418,9 +449,9 @@ Default value: Number of CPUs or 16.
 By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
 But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
 
-:::note
+<Note>
 `INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
-:::
+</Note>
 
 Default value: `false`.
 
@@ -462,7 +493,7 @@ Default value: `30000`.
 
 ### `tracked_files_limit` {#tracked_files_limit}
 
-Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
+Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' or 'exclusive' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
 
 Possible values:
@@ -473,7 +504,7 @@ Default value: `1000`.
 
 ### `tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
-Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
+Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' or 'exclusive' mode.
 After the specified number of seconds, the file will be re-imported.
 
 Possible values:
@@ -552,7 +583,8 @@ The setting `(s3queue_)buckets` is available starting with version `24.6`.
 
 SELECT queries are forbidden by default on S3Queue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-The S3Queue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
+The S3Queue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it. (Note: this setting doesn't make sense in `exclusive` mode and is ignored; `exclusive` mode always acts as if `commit_on_select` is `True`.)
+
 
 ## Description {#description}
 
@@ -844,7 +876,7 @@ SETTINGS
 
 SELECT queries are forbidden by default on AzureQueue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
+The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it. (Note: this setting doesn't make sense in `exclusive` mode and is ignored; `exclusive` mode always acts as if `commit_on_select` is `True`.)
 
 ## Description {#description}
 
