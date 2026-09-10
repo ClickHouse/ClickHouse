@@ -2,6 +2,9 @@ the step never reaches what its four readers asked for	1
 the limit is observed, not naturally small: four readers want 4 x 80 of them	1
 a single reader above the limit prefetches the first N substreams, not none	1
 and all 80 of them when unlimited	1
+the two readers of one task really are two	1
+and between them they ask for all 80 substreams	1
+one budget for the task, not one per reader: neither reader alone reaches the bound	1
 a bounded JSON read prefetches fewer substreams than an unbounded one	1
 and the bound is what decides how many: limits 10 apart, counts 10 apart	1
 a stream that ends returns its capacity: the arm submits more than it may hold	1

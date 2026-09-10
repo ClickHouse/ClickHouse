@@ -22,7 +22,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Every JSON arm reads ONE part with ONE thread, so its count is exact: the reader's substreams
 # minus what the bound refuses. How many readers of a step are alive together is decided by thread
 # scheduling and not by the query, so a count that needs several of them at once is not an oracle.
-# The step-wide bound is asserted on the plain arms, whose streams all live to the end of the query.
+# The two readers that ARE alive together by construction are a task's PREWHERE one and its main one,
+# and that is where one budget being shared across readers is asserted.
 
 # A stream keeps its reservation while it lives, because consuming a prefetch moves the allocation
 # into the read buffer rather than freeing it, so one reservation covers however many times that
@@ -146,6 +147,13 @@ logged_count_of() {
 
 wide_read="SELECT * FROM t_wide40"
 wide4_read="SELECT * FROM t_wide40_4parts"
+# One read task, two readers: the PREWHERE one over c1..c8 (16 substreams) and the main one over the
+# other 32 columns (64). Both are created for the task and both live until it ends, so neither is
+# subject to thread scheduling. Below the bound of 70 apiece, above it together, which is what tells
+# one budget per read step apart from one per reader: per reader nothing is ever refused.
+# PREWHERE is written out rather than moved there by the optimizer, which the reads here disable.
+wide_prewhere_read="SELECT $(seq -f 'c%g' -s ', ' 9 40) FROM t_wide40
+                    PREWHERE $(seq -f 'c%g >= 0' -s ' AND ' 1 8)"
 json_read="SELECT count() FROM t_json WHERE length(JSONAllPaths(jn)) >= 0"
 enc_read="SELECT count() FROM t_json_enc WHERE length(JSONAllPaths(jn)) >= 0"
 # One part read by one thread, and a prefetch buffer well under a granule's worth of data so the
@@ -164,6 +172,8 @@ $(read_stmt 1 50 '1Gi'  4 'step_limit'       "$wide4_read")
 $(read_stmt 1 0  '10Gi' 4 'step_unlimited'   "$wide4_read")
 $(read_stmt 0 50 '1Gi'  4 'plain_pool_limit' "$wide_read")
 $(read_stmt 0 0  '10Gi' 4 'plain_pool_unlim' "$wide_read")
+$(read_stmt 1 70 '1Gi'  4 'shared_limit'     "$wide_prewhere_read")
+$(read_stmt 1 0  '10Gi' 4 'shared_unlim'     "$wide_prewhere_read")
 $(read_stmt 1 5  '1Gi'  1 'json_limit_5'     "$json_read")
 $(read_stmt 1 15 '1Gi'  1 'json_limit_15'    "$json_read")
 $(read_stmt 1 0  '10Gi' 1 'json_unlim'       "$json_read")
@@ -209,6 +219,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
 CREATE TEMPORARY TABLE arms AS
     SELECT log_comment AS arm,
            argMax(ProfileEvents['RemoteFSPrefetches'], event_time_microseconds) AS prefetches,
+           argMax(ProfileEvents['RowsReadByPrewhereReaders'], event_time_microseconds) AS prewhere_rows,
            argMax(query_id, event_time_microseconds) AS query_id
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish'
@@ -224,6 +235,12 @@ SELECT 'a single reader above the limit prefetches the first N substreams, not n
        $(count_of plain_pool_limit) = 50;
 SELECT 'and all 80 of them when unlimited',
        $(count_of plain_pool_unlim) = 80;
+SELECT 'the two readers of one task really are two',
+       (SELECT prewhere_rows FROM arms WHERE arm = '04841_shared_limit_${CLICKHOUSE_TEST_UNIQUE_NAME}') > 0;
+SELECT 'and between them they ask for all 80 substreams',
+       $(count_of shared_unlim) = 80;
+SELECT 'one budget for the task, not one per reader: neither reader alone reaches the bound',
+       $(count_of shared_limit) < $(count_of shared_unlim);
 SELECT 'a bounded JSON read prefetches fewer substreams than an unbounded one',
        $(count_of json_limit_5) < $(count_of json_unlim);
 SELECT 'and the bound is what decides how many: limits 10 apart, counts 10 apart',
