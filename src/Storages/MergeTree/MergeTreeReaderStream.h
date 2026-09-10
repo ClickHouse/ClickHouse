@@ -66,6 +66,8 @@ public:
     /// consuming a prefetch moves the allocation into the read buffer rather than freeing it.
     bool tryReservePrefetchBuffer();
 
+    bool hasPrefetchReservation() const { return static_cast<bool>(prefetch_slot); }
+
     size_t getFileSize() const { return file_size; }
 
 private:

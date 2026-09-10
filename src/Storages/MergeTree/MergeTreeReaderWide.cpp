@@ -536,20 +536,27 @@ bool MergeTreeReaderWide::tryReservePrefetchBuffer(const String & stream_name)
     return it != streams.end() && it->second->tryReservePrefetchBuffer();
 }
 
+bool MergeTreeReaderWide::hasPrefetchReservation(const String & stream_name) const
+{
+    auto it = streams.find(stream_name);
+    return it != streams.end() && it->second->hasPrefetchReservation();
+}
+
 void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, Priority priority)
 {
     auto prefixes_prefetch_callback_getter = [&](const NameAndTypePair & name_and_type)
     {
         return [&](const ISerialization::SubstreamPath & substream_path)
         {
-            /// An exhausted budget must not make the reader open a stream it is then refused:
-            /// getStream() forces the stream's marks to be loaded, possibly a remote read.
-            if (settings.prefetch_budget && !settings.prefetch_budget->hasCapacity())
-                return;
-
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name && !prefetched_streams.contains(*stream_name))
             {
+                /// A stream that already holds a reservation may prefetch again without new memory,
+                /// so only an unreserved one has to find capacity. Opening one costs a marks load.
+                if (!hasPrefetchReservation(*stream_name) && settings.prefetch_budget
+                    && !settings.prefetch_budget->hasCapacity())
+                    return;
+
                 if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, caches[name_and_type.getNameInStorage()]))
                 {
                     if (!tryReservePrefetchBuffer(*stream_name))
@@ -583,15 +590,16 @@ void MergeTreeReaderWide::prefetchForColumn(
         if (!ISerialization::isPrefetchNeededForSubstream(substream_path, substream_path.size(), settings.prefetch_json_shared_data_substreams))
             return;
 
-        /// An exhausted budget must not make the reader open a stream it is then refused:
-        /// getStream() forces the stream's marks to be loaded, possibly a remote read.
-        if (settings.prefetch_budget && !settings.prefetch_budget->hasCapacity())
-            return;
-
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
 
         if (stream_name && !prefetched_streams.contains(*stream_name))
         {
+            /// A stream that already holds a reservation may prefetch again without new memory,
+            /// so only an unreserved one has to find capacity. Opening one costs a marks load.
+            if (!hasPrefetchReservation(*stream_name) && settings.prefetch_budget
+                && !settings.prefetch_budget->hasCapacity())
+                return;
+
             bool seek_to_mark = !continue_reading && !read_without_marks;
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), name_and_type, from_mark, seek_to_mark, cache))
             {

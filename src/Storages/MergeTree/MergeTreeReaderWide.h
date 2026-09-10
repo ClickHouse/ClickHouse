@@ -103,6 +103,9 @@ private:
     /// budget is exhausted and this substream must be read synchronously instead.
     bool tryReservePrefetchBuffer(const String & stream_name);
 
+    /// False for a stream that has not been opened yet.
+    bool hasPrefetchReservation(const String & stream_name) const;
+
     void deserializePrefixForAllColumns(size_t num_columns, size_t from_mark);
     void deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, Priority priority);
 
