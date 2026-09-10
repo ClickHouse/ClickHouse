@@ -1063,10 +1063,12 @@ endif()
 
 if (ENABLE_FILC)
     # Avoid the measured optimizer bottlenecks in these large translation units.
+    add_glob(filc_hash_join_sources Interpreters/HashJoin/*.cpp)
     set_source_files_properties(
         Core/Settings.cpp
         DataTypes/Serializations/SerializationMap.cpp
         Interpreters/Aggregator.cpp
+        ${filc_hash_join_sources}
         PROPERTIES COMPILE_OPTIONS "-O0")
     set_source_files_properties(
         Functions/FunctionsConversion.cpp
