@@ -132,8 +132,8 @@ QueryPlanStepPtr RollupStep::fromWire(RollupWire wire, Deserialization & ctx)
         throw Exception(ErrorCodes::INCORRECT_DATA, "RollupStep must have one input stream");
 
     Aggregator::Params params(
-        std::move(wire.keys),
-        std::move(wire.aggregates.value),
+        wire.keys,
+        wire.aggregates.value,
         wire.overflow_row,
         ctx.context->getSettingsRef()[Setting::max_threads],
         wire.max_block_size,

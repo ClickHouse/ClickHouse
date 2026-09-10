@@ -38,7 +38,7 @@ struct TestWire
 {
     UInt64 count = 0;
     bool flag = false;
-    String tail = "";
+    String tail;
     std::optional<UInt64> maybe;
 };
 

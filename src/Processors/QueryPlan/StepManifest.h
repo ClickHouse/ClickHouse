@@ -141,9 +141,9 @@ struct WireField
     using Wire = Wire_;
     using Value = T;
 
-    const char * name;
-    WireFieldClass field_class;
-    T Wire::* member;
+    const char * name = nullptr;
+    WireFieldClass field_class = WireFieldClass::Logical;
+    T Wire::* member = nullptr;
     bool in_cache_key = true;
 
     constexpr WireField notInCacheKey() const
