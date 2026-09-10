@@ -1,3 +1,5 @@
+#include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsMiscellaneous.h>
@@ -87,13 +89,6 @@ bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet 
     }
 }
 
-/// A condition that reads no column has the same value for every row, so pre-filtering a join side
-/// with it either removes nothing or removes everything - and in both cases the copy of the filter
-/// that stays above the join already does exactly that. What it does change is what the later
-/// optimizations recognize: a `Filter` above a key-value right side hides the prepared storage, so
-/// a forced `join_algorithm = 'direct'` had no algorithm left and the query failed with
-/// `NOT_IMPLEMENTED` as soon as such a conjunct was added to the `WHERE` clause. So a conjunct is
-/// worth extracting only when it reads at least one column of the side it is extracted for.
 bool dependsOnSomeColumn(const ActionsDAG::Node & node)
 {
     if (node.type == ActionsDAG::ActionType::INPUT)
@@ -106,6 +101,31 @@ bool dependsOnSomeColumn(const ActionsDAG::Node & node)
     }
 
     return false;
+}
+
+/// A condition that reads no column is the same for every row, so pre-filtering a side with it can
+/// only do one useful thing: a constant that is already known to be false makes the side's read
+/// provably empty, which the join-order estimator turns into an exact empty relation
+/// (`04516_join_order_estimation_pruned_parts`). Anything else - a `materialize(1)`, a folded true
+/// constant - removes nothing and only interposes a `Filter` step, which changes what later
+/// optimizations recognize: a `Filter` above a key-value right side hides the prepared storage, so
+/// a forced `join_algorithm = 'direct'` had no algorithm left and the query failed with
+/// `NOT_IMPLEMENTED` as soon as such a conjunct was added to the `WHERE` clause.
+///
+/// The always-false case is deliberately limited to a constant the DAG has already folded. Deriving
+/// it for an unfolded expression such as `materialize(0)` would be strictly worse: it buys only
+/// symmetry with the folded case, and it costs the `NOT_IMPLEMENTED` above for one more class of
+/// queries, because the filter it lets through is the very `Filter` that hides the key-value side.
+bool isUsefulToPreFilterWith(const ActionsDAG::Node & node)
+{
+    if (dependsOnSomeColumn(node))
+        return true;
+
+    if (!node.column)
+        return false;
+
+    const ConstantFilterDescription constant_filter(*node.column);
+    return constant_filter.always_false;
 }
 
 /// Extract all conditions from the filter that use only columns from the list.
@@ -149,7 +169,7 @@ ConditionList extractPartialPredicate(const ActionsDAG::Node & node, const NameS
         if (!onlyDependsOnAvailableColumns(node, available_columns))
             return ConditionList{}; /// If the subtree depends on other columns then we cannot include it into partial predicate, so assume it's True
 
-        if (!dependsOnSomeColumn(node))
+        if (!isUsefulToPreFilterWith(node))
             return ConditionList{}; /// Nothing to pre-filter with, so assume it's True
 
         return ConditionList{

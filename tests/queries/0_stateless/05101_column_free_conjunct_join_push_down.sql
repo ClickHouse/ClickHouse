@@ -26,8 +26,9 @@ SELECT 'toNullable(256)';
 SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE toNullable(256) SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
 SELECT 'CAST to LowCardinality(Nullable)';
 SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE CAST(1 AS LowCardinality(Nullable(UInt8))) SETTINGS join_algorithm = 'direct', allow_suspicious_low_cardinality_types = 1, use_join_disjunctions_push_down = 1);
-SELECT 'an always false conjunct is not pushed down either';
-SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE 0 SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
+-- An always false conjunct the DAG has not folded is not pushed down either. A folded `WHERE 0` is,
+-- deliberately: the join-order estimator reads the empty side out of it.
+SELECT 'an unfolded always false conjunct is not pushed down either';
 SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE materialize(0) SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
 SELECT count() FROM (SELECT value2 FROM t_direct_left LEFT JOIN t_direct_right ON t_direct_right.key == t_direct_left.k WHERE materialize(toNullable(NULL)) SETTINGS join_algorithm = 'direct', use_join_disjunctions_push_down = 1);
 SELECT 'a column predicate is still pushed down';

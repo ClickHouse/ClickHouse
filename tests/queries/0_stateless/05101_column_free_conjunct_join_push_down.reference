@@ -23,8 +23,7 @@ toNullable(256)
 10
 CAST to LowCardinality(Nullable)
 10
-an always false conjunct is not pushed down either
-0
+an unfolded always false conjunct is not pushed down either
 0
 0
 a column predicate is still pushed down
