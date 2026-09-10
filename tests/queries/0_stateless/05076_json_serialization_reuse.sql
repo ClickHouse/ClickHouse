@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Requires `RapidJSON`, which is not included in the Fast test build.
+
 CREATE TABLE json_serialization_reuse
 (
     a JSON(x UInt64),
