@@ -1266,9 +1266,8 @@ def test_cancelling_projection_copy_stops_s3_retries(s3_cancellation, broken_s3)
     assert_s3_cancelled(node, table, request, broken_s3, "object_copy_injected")
 
 
-@pytest.mark.parametrize("request_kind", ["object_head", "object_read"])
 def test_cancelling_mutation_copy_source_stops_s3_retries(
-    s3_cancellation, broken_s3, request_kind
+    s3_cancellation, broken_s3
 ):
     node, table = s3_cancellation
     node.query(
@@ -1282,23 +1281,18 @@ def test_cancelling_mutation_copy_source_stops_s3_retries(
         f"SELECT part_storage_type FROM system.parts WHERE database=currentDatabase() AND table='{table}' AND active"
     ).strip() == "Full"
 
-    # Hold the copy at its size probe, after predicate evaluation, so GET failures
-    # exercise the copy source rather than ordinary mutation reads.
+    # Deny native copy first, then fail buffered source reads. This avoids injecting
+    # errors into ordinary mutation reads before the copy operation starts.
     broken_s3.reset()
-    broken_s3.setup_at_object_head(action="internal_error", count=10000)
+    broken_s3.setup_at_object_copy(action="access_denied", count=10000)
     request = node.get_query_request(
         f"ALTER TABLE {table} UPDATE value = value WHERE key < 0 SETTINGS mutations_sync=1",
         timeout=30,
     )
-    wait_for_s3_request(broken_s3, "object_head")
-    if request_kind == "object_read":
-        broken_s3.setup_at_object_copy(action="access_denied", count=10000)
-        broken_s3.setup_at_object_read(action="internal_error", count=10000)
-        broken_s3.setup_at_object_head(count=0)
-        wait_for_s3_request(broken_s3, "object_read")
-        assert broken_s3.get_request_counts()["object_copy"] > 0
-
-    assert_s3_cancelled(node, table, request, broken_s3, request_kind)
+    wait_for_s3_request(broken_s3, "object_copy")
+    broken_s3.setup_at_object_read(action="internal_error", count=10000)
+    wait_for_s3_request(broken_s3, "object_read")
+    assert_s3_cancelled(node, table, request, broken_s3, "object_read")
 
 
 @pytest.mark.parametrize("operation", ["merge", "mutation"])

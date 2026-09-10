@@ -649,7 +649,9 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto settings_ptr = s3_settings.get();
         const auto [src_bucket, src_key] = splitBucketAndKey(object_from.remote_path);
         const auto [dest_bucket, dest_key] = dest_s3->splitBucketAndKey(object_to.remote_path);
-        auto size = S3::getObjectSize(*client.get(), src_bucket, src_key, {}, cancellation_hook);
+        /// Size probe is metadata-only and intentionally outside MergeTree copy cancellation scope.
+        /// The operation hook starts at the data movement itself below.
+        auto size = S3::getObjectSize(*client.get(), src_bucket, src_key, {}, {});
         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
         const auto read_settings_to_use = patchSettings(read_settings);
 
