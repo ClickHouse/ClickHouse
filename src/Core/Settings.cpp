@@ -34,6 +34,7 @@
 
 #include <array>
 #include <bit>
+#include <bitset>
 #include <cstring>
 
 namespace
@@ -9170,6 +9171,10 @@ Enabling it automatically adjusts settings that control features not supported b
 - `use_skip_indexes_on_data_read = 0`;
 - `compile_expressions = 0`;
 - `query_plan_direct_read_from_text_index = 0`.
+
+Those adjustments answer to the settings constraints in force: when a constraint forbids the value an
+adjustment writes, enabling `make_distributed_plan` is rejected instead of leaving the setting on a
+value the constraint does not allow.
 )", PRIVATE_PREVIEW) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.
@@ -9547,7 +9552,14 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     bool isExplicitlyAssigned(std::string_view name) const
     {
         const size_t index = Traits::Accessor::instance().find(SettingsTraits::resolveName(name));
-        return index != static_cast<size_t>(-1) && isChanged(name) && !isChangedByCompatibility(index);
+        return index != static_cast<size_t>(-1) && isChanged(name) && !isChangedByCompatibility(index)
+            && !settings_changed_by_post_processor.test(index);
+    }
+    void markChangedByPostProcessor(std::string_view name)
+    {
+        if (const size_t index = Traits::Accessor::instance().find(SettingsTraits::resolveName(name));
+            index != static_cast<size_t>(-1))
+            settings_changed_by_post_processor.set(index);
     }
     void resetSettingsChangedByCompatibility();
     void markSettingsChangedByCompatibilityAsUnchanged();
@@ -9564,6 +9576,10 @@ private:
         = (static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
     std::array<UInt64, num_setting_bitmap_words> settings_changed_by_compatibility_setting = {};
     size_t num_settings_changed_by_compatibility_setting = 0;
+
+    /// Which settings a post-processor wrote rather than anything assigning them. Nothing has to walk
+    /// this set, so a bitset carries it instead of the word array above.
+    std::bitset<static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS)> settings_changed_by_post_processor;
 
     bool isChangedByCompatibility(size_t index) const
     {
@@ -9779,11 +9795,15 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     /// otherwise the next time we will change compatibility setting
     /// this setting will be changed too (and we don't want it).
     /// Resolve aliases so the lookup matches the canonical names stored in the set.
-    else if (num_settings_changed_by_compatibility_setting != 0)
+    /// An assignment is what the caller asked for, so it also ends a post-processor's claim on the value.
+    else if (num_settings_changed_by_compatibility_setting != 0 || settings_changed_by_post_processor.any())
     {
         const auto & accessor = Traits::Accessor::instance();
         if (size_t index = accessor.find(SettingsTraits::resolveName(name)); index != static_cast<size_t>(-1))
+        {
             unmarkChangedByCompatibility(index);
+            settings_changed_by_post_processor.reset(index);
+        }
     }
 
     BaseSettings::set(name, value);
@@ -10024,6 +10044,11 @@ bool Settings::hasSettingsChangedByCompatibility() const
 bool Settings::isExplicitlyAssigned(std::string_view name) const
 {
     return impl->isExplicitlyAssigned(name);
+}
+
+void Settings::markChangedByPostProcessor(std::string_view name)
+{
+    impl->markChangedByPostProcessor(name);
 }
 
 void Settings::resetSettingsChangedByCompatibility()

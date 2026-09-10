@@ -3603,10 +3603,12 @@ void Context::applySettingsChangesAndResets(const SettingsChanges & changes, con
     /// they can enter applies to the reset as well. A derived value additionally needs the undo, since
     /// it is already in place by the time it can be read.
     /// A `profile` installs its own constraints, so the pre-statement set cannot judge what it derives.
+    const bool can_derive_a_value_nothing_assigned
+        = changes.tryGet("compatibility") != nullptr || postProcessorsCanDeriveValues(*settings, changes);
     const bool must_check_after_the_changes
         = !names_to_reset.empty()
         || changes.tryGet("profile") != nullptr
-        || (changes.tryGet("compatibility") != nullptr
+        || (can_derive_a_value_nothing_assigned
             && !getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.empty());
     if (!must_check_after_the_changes)
     {
