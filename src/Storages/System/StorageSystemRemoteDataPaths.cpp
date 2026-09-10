@@ -128,6 +128,11 @@ private:
 
     /// Metadata type name of the current disk, computed once per disk instead of once per row.
     String current_metadata_type_name;
+
+    /// `Plain` metadata records no modification time: its `getLastModifiedIfExists` answers with the
+    /// current time for every path that exists, so asking it would report the time of the query as the
+    /// time of the file. Leave the column at zero for those disks, which is what it means.
+    bool current_disk_reports_last_modified = true;
 };
 
 class ReadFromSystemRemoteDataPaths final : public SourceStepWithFilter
@@ -183,7 +188,7 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
         {"size", std::make_shared<DataTypeUInt64>(), "Size of the file (compressed)."},
         {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Common prefix for blobs in object storage."},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Cache files for corresponding blob."},
-        {"last_modified", std::make_shared<DataTypeDateTime>(), "Last modification time of the file's metadata. Zero if the metadata storage does not report one."},
+        {"last_modified", std::make_shared<DataTypeDateTime>(), "Last modification time of the file's metadata. Zero for a metadata storage that records none."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -268,6 +273,7 @@ bool SystemRemoteDataPathsSource::nextDisk()
         const auto & disk = disks[current_disk].second;
         const auto metadata_type = disk->getDataSourceDescription().metadata_type;
         current_metadata_type_name = String{magic_enum::enum_name(metadata_type)};
+        current_disk_reports_last_modified = (metadata_type != MetadataStorageType::Plain);
 
         auto & current = paths_stack.emplace_back();
 
@@ -448,8 +454,11 @@ Chunk SystemRemoteDataPathsSource::generate()
         }
 
         time_t last_modified = 0;
-        if (auto ts = metadata_storage->getLastModifiedIfExists(local_path))
-            last_modified = ts->epochTime();
+        if (current_disk_reports_last_modified)
+        {
+            if (auto ts = metadata_storage->getLastModifiedIfExists(local_path))
+                last_modified = ts->epochTime();
+        }
 
         for (const auto & object : storage_objects)
         {
