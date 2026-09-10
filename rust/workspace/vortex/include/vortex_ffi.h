@@ -6,8 +6,9 @@
 /// crate; the other half lives in `rust/workspace/vortex/src/lib.rs`. Arrays cross the boundary as
 /// Arrow C Data Interface structs, and IO is delegated back through callbacks.
 ///
-/// THIS FILE IS GENERATED FROM `src/lib.rs` BY `generate-header.sh`. DO NOT EDIT IT BY HAND:
-/// change the Rust side, including its doc comments, and regenerate.
+/// THIS FILE IS GENERATED FROM `src/lib.rs` BY `build.rs`. DO NOT EDIT IT BY HAND: change the Rust
+/// side, including its doc comments, and regenerate with
+/// `VORTEX_FFI_HEADER_UPDATE=1 cargo check -p _ch_rust_vortex`.
 ///
 /// Ownership:
 ///   - an Arrow struct passed into a function is consumed by it;
@@ -68,15 +69,13 @@ struct ArrowArray
 #endif // ARROW_C_DATA_INTERFACE
 
 
-/// The operator of `vortex_ffi_expr_compare`.
-enum class FFI_VortexComparisonOperator : int32_t
+/// The queue a task waits in.
+enum class FFI_VortexTaskQueue : int32_t
 {
-    Eq = 0,
-    NotEq = 1,
-    Lt = 2,
-    Lte = 3,
-    Gt = 4,
-    Gte = 5,
+    /// Decoding, filtering and exporting to Arrow: work that needs a core.
+    CPU = 0,
+    /// Work that calls the read callback and blocks until it returns.
+    IO = 1,
 };
 
 /// The type of a literal. It has to be exactly the type of the file column it is compared with:
@@ -95,15 +94,6 @@ enum class FFI_VortexPrimitiveType : int32_t
     F64 = 9,
 };
 
-/// The queue a task waits in.
-enum class FFI_VortexTaskQueue : int32_t
-{
-    /// Decoding, filtering and exporting to Arrow: work that needs a core.
-    CPU = 0,
-    /// Work that calls the read callback and blocks until it returns.
-    IO = 1,
-};
-
 /// The unit of a temporal literal; the values mirror the discriminants of the Vortex `TimeUnit`.
 enum class FFI_VortexTimeUnit : int32_t
 {
@@ -112,6 +102,17 @@ enum class FFI_VortexTimeUnit : int32_t
     Milliseconds = 2,
     Seconds = 3,
     Days = 4,
+};
+
+/// The operator of `vortex_ffi_expr_compare`.
+enum class FFI_VortexComparisonOperator : int32_t
+{
+    Eq = 0,
+    NotEq = 1,
+    Lt = 2,
+    Lte = 3,
+    Gt = 4,
+    Gte = 5,
 };
 
 struct FFI_VortexExpression;
@@ -160,13 +161,11 @@ struct FFI_VortexScanOptions
     /// The row range `[row_range_begin, row_range_end)`. Both zero means the whole file.
     uint64_t row_range_begin;
     uint64_t row_range_end;
-
-    const uint64_t* row_selection_begin;
+    const uint64_t *row_selection_begin;
+    /// Zero means the whole file.
     uint64_t row_selection_len;
-
-    /// If true, prepend a row_idx() column to output
+    /// Prepends a `row_idx` column to the output.
     bool row_index_column;
-
     /// The number of splits that may be in flight at once: being read, being decoded, or already
     /// handed over and not yet released. 0 selects the default. This is what keeps the scan from
     /// running ahead of the caller; the reads underneath are bounded separately by

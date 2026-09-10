@@ -20,5 +20,11 @@ parking = "2"
 kanal = "0.1"
 vortex = { version = "0.84.0", default-features = false, features = ["files", "zstd"] }
 
+[build-dependencies]
+# Generates `include/vortex_ffi.h`, see `build.rs`. Pinned exactly: cbindgen formats differently
+# between patch versions, and the version has to be one `contrib/rust_vendor` carries. Its default
+# features are only needed by the command-line tool.
+cbindgen = { version = "=0.29.2", default-features = false }
+
 [lib]
 crate-type = ["staticlib"]
