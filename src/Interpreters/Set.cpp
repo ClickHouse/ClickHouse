@@ -5,7 +5,6 @@
 #include <Core/Field.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnTuple.h>
 
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -13,7 +12,6 @@
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -332,106 +330,22 @@ Columns Set::getSetElements() const
     return result;
 }
 
-static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
+/// Identify `DateTime64` values whose fractional seconds cannot match a key with whole-second precision.
+static ColumnUInt8::Ptr getDateTime64PrecisionLossNullMap(const ColumnWithTypeAndName & column)
 {
-    // Handle nullable columns
-    const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
-    const IColumn * original_nested_column = original_nullable_column
-        ? &original_nullable_column->getNestedColumn()
-        : column_to_cast.column.get();
+    const auto & values = assert_cast<const ColumnDecimal<DateTime64> &>(*column.column).getData();
+    const auto & type = assert_cast<const DataTypeDateTime64 &>(*column.type);
+    auto null_map_column = ColumnUInt8::create(values.size(), static_cast<UInt8>(0));
+    auto & null_map = null_map_column->getData();
 
-    // Check if the original column is of ColumnDecimal<DateTime64> type
-    const auto * original_decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(original_nested_column);
-    if (!original_decimal_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for DateTime64");
-
-    // Get the data array from the original column
-    const auto & original_data = original_decimal_column->getData();
-    size_t vec_res_size = original_data.size();
-
-    // Prepare the precision null map
-    auto precision_null_map_column = ColumnUInt8::create(vec_res_size, static_cast<UInt8>(0));
-    NullMap & precision_null_map = precision_null_map_column->getData();
-
-    // Determine which rows should be null based on precision loss
-    const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_to_cast.type.get());
-    auto scale = datetime64_type->getScale();
-    if (scale >= 1)
+    if (type.getScale() > 0)
     {
-        Int64 scale_multiplier = common::exp10_i32(scale);
-        for (size_t row = 0; row < vec_res_size; ++row)
-        {
-            Int64 value = original_data[row];
-            if (value % scale_multiplier != 0)
-                precision_null_map[row] = 1; // Mark as null due to precision loss
-            else
-                precision_null_map[row] = 0;
-        }
+        const auto scale_multiplier = type.getScaleMultiplier().value;
+        for (size_t row = 0; row < values.size(); ++row)
+            null_map[row] = values[row] % scale_multiplier != 0;
     }
 
-    return precision_null_map_column;
-}
-
-static ColumnPtr mergeNullMaps(const ColumnPtr & null_map_column1, const ColumnUInt8::Ptr & null_map_column2)
-{
-    if (!null_map_column1)
-        return null_map_column2;
-    if (!null_map_column2)
-        return null_map_column1;
-
-    const auto & null_map1 = assert_cast<const ColumnUInt8 &>(*null_map_column1).getData();
-    const auto & null_map2 = (*null_map_column2).getData();
-
-    size_t size = null_map1.size();
-    if (size != null_map2.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Null maps have different sizes");
-
-    auto merged_null_map_column = ColumnUInt8::create(size);
-    auto & merged_null_map = merged_null_map_column->getData();
-
-    for (size_t i = 0; i < size; ++i)
-        merged_null_map[i] = null_map1[i] || null_map2[i];
-
-    return merged_null_map_column;
-}
-
-void Set::processDateTime64Column(
-    const ColumnWithTypeAndName & column_to_cast,
-    ColumnPtr & result,
-    ColumnPtr & null_map_holder,
-    ConstNullMapPtr & null_map) const
-{
-    // Check for sub-second precision and create a null map
-    ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
-
-    // Extract existing null map and nested column from the result
-    const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
-    const IColumn * nested_result_column = result_nullable_column
-        ? &result_nullable_column->getNestedColumn()
-        : result.get();
-
-    ColumnPtr existing_null_map_column = result_nullable_column
-        ? result_nullable_column->getNullMapColumnPtr()
-        : nullptr;
-
-    if (transform_null_in)
-    {
-        if (!null_map_holder)
-            null_map_holder = filtered_null_map_column;
-        else
-            null_map_holder = mergeNullMaps(null_map_holder, filtered_null_map_column);
-
-        const ColumnUInt8 * null_map_column = checkAndGetColumn<ColumnUInt8>(null_map_holder.get());
-        if (!null_map_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Null map must be ColumnUInt8");
-
-        null_map = &null_map_column->getData();
-    }
-    else
-    {
-        ColumnPtr merged_null_map_column = mergeNullMaps(existing_null_map_column, filtered_null_map_column);
-        result = ColumnNullable::create(nested_result_column->getPtr(), merged_null_map_column);
-    }
+    return null_map_column;
 }
 
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
@@ -470,8 +384,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
     Columns materialized_columns;
     materialized_columns.reserve(num_key_columns);
 
-    /// We will check existence in Set only for keys whose components do not contain any NULL value.
-    ConstNullMapPtr null_map{};
+    /// Exclude rows with an outer NULL in a non-nullable key or a conversion that loses precision.
     ColumnPtr null_map_holder;
 
     for (size_t i = 0; i < num_key_columns; ++i)
@@ -482,69 +395,52 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        /// Since we have optional support for Nullable(Tuple), if `data_types[i]` is `Tuple(...)` type, then
-        /// we will enter the `castColumnAccurateOrNull` path; however, it can lead to casted column type
-        /// becomes `Tuple(Nullable(...), Nullable(...))` which will create problems during matching keys in Set.
-        /// To avoid that, we do not do `castColumnAccurateOrNull` for Tuple types.
-        auto target_type_without_nullable = removeNullable(data_types[i]);
-        bool is_tuple_type = typeid_cast<const DataTypeTuple *>(target_type_without_nullable.get()) != nullptr;
-
-        bool use_cast_accurate_or_null = !transform_null_in && data_types[i]->canBeInsideNullable() && !is_tuple_type;
+        /// Tuple keys require `castColumnAccurate`: `castColumnAccurateOrNull` rejects tuple elements
+        /// that cannot be inside `Nullable`, such as arrays.
+        const auto target_type_without_nullable = removeNullable(data_types[i]);
+        const bool use_cast_accurate_or_null
+            = !transform_null_in && data_types[i]->canBeInsideNullable() && !isTuple(target_type_without_nullable);
 
         if (use_cast_accurate_or_null)
         {
             result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
+        else if (column_to_cast.type->isNullable())
+        {
+            /// Cast only non-null rows. A nullable key type preserves outer NULLs for matching with
+            /// `transform_null_in = 1`; a non-nullable key type excludes them through the combined null map.
+            /// Nullable fields inside a non-null tuple remain part of the key value in either mode.
+            const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
+            result = castColumnAccurateSkipNulls(column_to_cast, target_type_without_nullable, cast_cache.get());
+            if (data_types[i]->isNullable())
+                result = ColumnNullable::create(result, column_nullable.getNullMapColumnPtr());
+            else
+                null_map_holder = mergeNullMaps(std::move(null_map_holder), column_nullable.getNullMapColumnPtr());
+        }
         else
         {
-            /// Special case when transform_null_in = true and type of column is Nullable but type of this key in Set is not Nullable.
-            /// For example: SELECT NULL::Nullable(String) IN (SELECT 'abc') SETTINGS transform_null_in = 1;
-            /// In this case we cannot just cast Nullable column to non-nullable type because it will fail if column contains nulls.
-            /// We should cast nested column and remember the null map to use negative value on rows with null (as key column is not
-            /// Nullable, Set cannot contain nulls for this column anyhow).
-            if (transform_null_in && column_to_cast.type->isNullable() && !data_types[i]->isNullable())
-            {
-                auto nested_type = assert_cast<const DataTypeNullable &>(*column_to_cast.type).getNestedType();
-                const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
-                result = castColumnAccurate(ColumnWithTypeAndName(column_nullable.getNestedColumnPtr(), nested_type, column_to_cast.name), data_types[i], cast_cache.get());
-                if (!null_map_holder)
-                {
-                    null_map_holder = column_nullable.getNullMapColumnPtr();
-                }
-                else
-                {
-                    MutableColumnPtr mutable_null_map_holder = IColumn::mutate(std::move(null_map_holder));
-
-                    PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
-                    const PaddedPODArray<UInt8> & other_null_map = column_nullable.getNullMapData();
-                    for (size_t j = 0, size = mutable_null_map.size(); j < size; ++j)
-                        mutable_null_map[j] |= other_null_map[j];
-
-                    null_map_holder = std::move(mutable_null_map_holder);
-                }
-
-                null_map = &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData();
-            }
-            else
-            {
-                result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
-            }
+            result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
-        // If the original column is DateTime64, check for sub-second precision
+        /// Fractional seconds must not match a key after conversion to whole-second precision.
         if (isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
         {
-            processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
+            null_map_holder = mergeNullMaps(std::move(null_map_holder), getDateTime64PrecisionLossNullMap(column_to_cast));
         }
 
-        // Append the result to materialized columns
         materialized_columns.emplace_back(std::move(result));
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
     if (!transform_null_in)
-        null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+    {
+        /// The keys cast with `castColumnAccurateOrNull` are still `Nullable`: unwrap them and fold their null maps in.
+        ConstNullMapPtr extracted_null_map = nullptr;
+        ColumnPtr extracted_null_map_holder = extractNestedColumnsAndNullMap(key_columns, extracted_null_map);
+        null_map_holder = mergeNullMaps(std::move(null_map_holder), extracted_null_map_holder);
+    }
 
+    const auto * null_map = null_map_holder ? &assert_cast<const ColumnUInt8 &>(*null_map_holder).getData() : nullptr;
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
     return res;

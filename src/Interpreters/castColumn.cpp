@@ -4,9 +4,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB
@@ -53,6 +56,36 @@ ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePt
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
     return castColumn(CastType::accurateOrNull, arg, type, cache);
+}
+
+ColumnPtr castColumnAccurateSkipNulls(
+    const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
+{
+    const auto & column = assert_cast<const ColumnNullable &>(*arg.column);
+    const auto & nested_type = assert_cast<const DataTypeNullable &>(*arg.type).getNestedType();
+    chassert(!type->isNullable());
+
+    const ColumnPtr & nested_column = column.getNestedColumnPtr();
+    if (nested_type->equals(*type))
+        return nested_column;
+
+    const size_t rows = column.size();
+    const NullMap & null_map = column.getNullMapData();
+    const size_t not_null_rows = rows - countBytesInFilter(null_map);
+    if (not_null_rows == 0)
+        return type->createColumn()->cloneResized(rows);
+
+    if (not_null_rows == rows)
+        return castColumnAccurate({nested_column, nested_type, arg.name}, type, cache);
+
+    IColumn::Filter not_null(rows);
+    for (size_t i = 0; i < rows; ++i)
+        not_null[i] = !null_map[i];
+
+    auto result = IColumn::mutate(castColumnAccurate(
+        {nested_column->filter(not_null, not_null_rows), nested_type, arg.name}, type, cache));
+    result->expand(not_null, false);
+    return result;
 }
 
 }
