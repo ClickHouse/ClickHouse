@@ -395,6 +395,28 @@ class JobState:
     def name(self):
         return self.job.name
 
+    def published_result(self):
+        """The job's Result as a fresh dict for the workflow report, with the
+        orchestrator-owned ``rerun_count`` projected into ``ext``.
+
+        ``rerun_count`` lives canonically on the JobState (persisted in the run
+        snapshot). Projecting it here — the single point report rows are built —
+        keeps it consistent across both the live completion path and a resume,
+        instead of mutating and persisting a copy of the runner's raw result.
+        Returns None when no result is set.
+        """
+        if not isinstance(self.result, dict):
+            return None
+        from copy import deepcopy
+
+        pub = deepcopy(self.result)
+        ext = pub.get("ext")
+        if not isinstance(ext, dict):
+            ext = {}
+            pub["ext"] = ext
+        ext["rerun_count"] = self.rerun_count
+        return pub
+
     def _update_check(self, transition):
         """Run a check-run API call; never let it take down the orchestrator."""
         if self.check is None:
@@ -983,36 +1005,40 @@ class WorkflowState:
         if not self._ensure_report_env():
             return
         try:
-            from copy import deepcopy
-
             from ..host_metrics import HostMetricsCollector
             from ..result import Result, _ResultS3
             from ..usage import ComputeUsage, PipelineUtilization, StorageUsage
 
-            rows = [Result.from_dict(deepcopy(js.result)) for _, js in terminal]
+            # Each job's published view is a fresh dict with rerun_count projected
+            # into ext (see JobState.published_result).
+            published = [(name, js, js.published_result()) for name, js in terminal]
 
             # Recompute the FULL usage aggregate from every finished job's Result
             # (idempotent — see docstring). storage_usage + metrics ride in each
             # job's result.ext; compute is derived from its runner + duration.
+            # Read these before building rows below: Result.from_dict consumes
+            # (mutates) the dict it is handed.
             storage = StorageUsage()
             compute = ComputeUsage()
             pipeline = PipelineUtilization()
             has_pipeline = False
-            for name, js in terminal:
-                ext = js.result.get("ext") or {}
+            for name, js, pub in published:
+                ext = pub.get("ext") or {}
                 su = ext.get("storage_usage")
                 if isinstance(su, dict):
                     storage.merge_with(StorageUsage.from_dict(su))
                 runner_str = "_".join(js.job.runs_on) if js.job.runs_on else ""
                 compute.merge_with(
                     ComputeUsage().set_usage(
-                        runner_str, js.result.get("duration") or 0, name
+                        runner_str, pub.get("duration") or 0, name
                     )
                 )
                 metrics = ext.get("metrics")
                 if metrics and HostMetricsCollector.qualifies(metrics):
                     pipeline.merge_with(PipelineUtilization.from_job_metrics(metrics))
                     has_pipeline = True
+
+            rows = [Result.from_dict(pub) for _, _, pub in published]
 
             _ResultS3.update_workflow_results(
                 workflow_name=self.workflow.name,
@@ -1195,6 +1221,9 @@ class WorkflowState:
             js.filter_reason = rec.get("filter_reason")
             js.rerun_count = rec.get("rerun_count", 0) or 0
             if js.status in _TERMINAL:
+                # Raw result from final.json; rerun_count (restored onto
+                # js.rerun_count above) is projected into ext at report time by
+                # JobState.published_result, so there is nothing to stamp here.
                 js.result = self._load_job_result_from_s3(name)
             check_id = rec.get("check_id")
             if check_id and self.can_post_checks:
@@ -1491,15 +1520,10 @@ class WorkflowState:
             non_blocking = False
             result_dict = payload.get("result")
             if isinstance(result_dict, dict):
-                # Stamp the orchestrator-authoritative re-run count into the
-                # result's ext so it rides into the workflow report rows (and,
-                # from there, the CIDB usage row) — marking usage totals that a
-                # re-run has touched.
-                ext = result_dict.get("ext")
-                if not isinstance(ext, dict):
-                    ext = {}
-                    result_dict["ext"] = ext
-                ext["rerun_count"] = js.rerun_count
+                # Stash the runner's raw Result. The orchestrator-authoritative
+                # rerun_count is projected into ext at report time by
+                # JobState.published_result (single point, survives resume) — not
+                # stamped here.
                 js.result = result_dict
                 try:
                     from copy import deepcopy
