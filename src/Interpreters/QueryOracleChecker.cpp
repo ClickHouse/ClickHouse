@@ -300,6 +300,20 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
     if (ast->as<ASTQueryParameter>())
         return true;
 
+    /// Virtual columns that expose the physical part layout (`_part`, `_part_offset`,
+    /// `_part_starting_offset`, `_part_granule_offset`, `_part_index`, `_part_uuid`,
+    /// `_part_data_version`, `_block_number`, `_block_offset`) change their values whenever a
+    /// background merge rewrites the parts between two reads, so two executions of the same query
+    /// legitimately differ. (`_partition_id` / `_partition_value` are per-row stable and stay allowed.)
+    if (const auto * ident = ast->as<ASTIdentifier>())
+    {
+        static const std::unordered_set<String> layout_virtual_columns = {
+            "_part", "_part_index", "_part_uuid", "_part_offset", "_part_starting_offset",
+            "_part_granule_offset", "_part_data_version", "_block_number", "_block_offset"};
+        if (layout_virtual_columns.contains(ident->shortName()))
+            return true;
+    }
+
     if (const auto * table_expr = ast->as<ASTTableExpression>())
     {
         /// SAMPLE picks a row subset; which rows end up in the subset is not
