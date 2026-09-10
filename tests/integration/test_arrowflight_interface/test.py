@@ -720,6 +720,7 @@ def test_doget_unsupported_type_honors_format_settings():
 
 
 # Invalid queries are handled too.
+def test_doget_invalid_query():
     client, options = get_client()
 
     descriptor = flight.FlightDescriptor.for_command("BAD QUERY")
