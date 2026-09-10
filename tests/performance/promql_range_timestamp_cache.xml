@@ -5,10 +5,10 @@
     </settings>
 
     <!--
-        Benchmarks the Prometheus HTTP range-response writer with a large,
+        Benchmarks the Prometheus HTTP range-response writer with an extreme,
         fully populated evaluation grid. Every series has the same 1024
-        evaluation timestamps, so timestamp formatting is repeated across
-        4096 series while label and value formatting stay small.
+        evaluation timestamps, so each timestamp is reused across 16384
+        series while the value formatting stays constant.
 
         The query is sent to /prometheus/api/v1/query_range rather than the
         prometheusQueryRange table function because this measures
@@ -18,16 +18,16 @@
         CREATE TABLE promql_range_timestamp_cache ENGINE = TimeSeries
     </create_query>
 
-    <!-- 4096 series x 1024 samples = 4,194,304 response samples. -->
+    <!-- 16384 series x 1024 samples = 16,777,216 response samples. -->
     <fill_query>
         INSERT INTO promql_range_timestamp_cache (metric_name, tags, time_series)
         SELECT
             'cache_metric',
             map('instance', toString(number)),
             arrayMap(
-                step -&gt; (toDateTime64(1700000000 + step * 15, 3), toFloat64(number % 1000 + 1)),
+                step -&gt; (toDateTime64(1700000000 + step * 15, 3), toFloat64(1)),
                 range(1024))
-        FROM numbers_mt(4096)
+        FROM numbers_mt(16384)
     </fill_query>
 
     <query type="shell"><![CDATA[
@@ -36,7 +36,7 @@
             --data-urlencode "start=1700000000" \
             --data-urlencode "end=1700015345" \
             --data-urlencode "step=15" \
-            --data-urlencode "max_block_size=100000" \
+            --data-urlencode "max_block_size=16384" \
             --data-urlencode "max_threads=8" \
             --data-urlencode "use_query_cache=0" \
             --data-urlencode "enable_http_compression=0" \
