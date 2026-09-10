@@ -2308,6 +2308,7 @@ try
             global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
 
             if (config().has("keeper_server"))
+            {
                 global_context->updateKeeperConfiguration(config());
 
             /// Reload the number of threads for global pools.

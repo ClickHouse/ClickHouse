@@ -81,6 +81,8 @@ public:
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
 
+    void updateSettings(CoordinationSettingsPtr new_settings);
+
     bool setShutdownCalled();
     const auto & isShutdownCalled() const
     {

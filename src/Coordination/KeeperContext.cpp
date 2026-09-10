@@ -554,10 +554,40 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
     feature_flags.logFlags(getLogger("KeeperContext"));
 }
 
-void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
+static UInt64 calculateMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
 {
     if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
-        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+    {
+        UInt64 explicit_value = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+        // 0 falls through to ratio-based calculation for backward compatibility.
+        if (explicit_value > 0)
+            return explicit_value;
+    }
+
+    Float64 ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio", 0.9);
+    size_t physical_server_memory = getMemoryAmount();
+    if (ratio > 0 && physical_server_memory > 0)
+        return static_cast<UInt64>(static_cast<Float64>(physical_server_memory) * ratio);
+
+    return 0;
+}
+
+void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
+{
+    const auto limit = calculateMemorySoftLimit(config);
+    memory_soft_limit = limit;
+    LOG_INFO(getLogger("KeeperContext"), "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(limit));
+}
+
+void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
+{
+    auto merged = std::make_shared<CoordinationSettings>(*fixed_settings);
+    merged->updateHotReloadableSettings(*new_settings);
+
+    std::lock_guard lock(settings_mutex);
+    merged->version = next_coordination_settings_version++;
+    dynamic_settings = std::move(merged);
+    settings_version.store(dynamic_settings->version);
 }
 
 bool KeeperContext::setShutdownCalled()
