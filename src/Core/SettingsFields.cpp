@@ -736,6 +736,15 @@ void SettingFieldNonZeroUInt32::parseFromString(const String & str)
     *this = static_cast<UInt32>(wide_value);
 }
 
+void SettingFieldNonZeroUInt32::readBinary(ReadBuffer & in)
+{
+    UInt64 wide_value = 0;
+    readVarUInt(wide_value, in);
+    if (wide_value > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "A setting's value {} is out of range of UInt32 type", wide_value);
+    *this = static_cast<UInt32>(wide_value);
+}
+
 void SettingFieldNonZeroUInt32::checkValueNonZero() const
 {
     if (value == 0)
