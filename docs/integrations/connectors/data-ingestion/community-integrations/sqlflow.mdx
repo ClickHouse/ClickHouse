@@ -354,7 +354,7 @@ GROUP BY lang ORDER BY posts DESC LIMIT 5;
 
 sqlflow hands each batch to ClickHouse as rows built from the Arrow table DuckDB produces, so what matters is the Arrow type each SQL column ends up with. Cast in the handler SQL to control it.
 
-Every row below is generated from the engine's type matrix and proven by an integration test that writes the value, reads it back through the server, and compares. The matrix and the test live in the [sqlflow repository](https://github.com/turbolytics/sql-flow/blob/main/docs/coverage/clickhouse-types.mdx). Parameterised column types are listed as the instance the test wrote.
+Every row below is generated from the engine's type matrix and proven by an integration test that writes the value, reads it back through the server, and compares. The matrix and the test live in the [sqlflow repository](https://github.com/turbolytics/sql-flow/blob/main/docs/coverage/clickhouse-types.mdx). A pairing in the table is proven. A pairing missing from it is untested, not refused: the refused ones are listed under [Unsupported](#unsupported) and fail the batch with a code. Parameterised column types are listed as the instance the test wrote.
 
 | DuckDB SQL type (cast to) | ClickHouse column types that accept it | Notes |
 | --- | --- | --- |
@@ -369,12 +369,12 @@ Every row below is generated from the engine's type matrix and proven by an inte
 | `UBIGINT` | `UInt64` |  |
 | `REAL` | `Float32` |  |
 | `DOUBLE` | `Float64` |  |
-| `VARCHAR`, `UUID`, `JSON` | `String`, `LowCardinality(String)`, `DateTime64(3)`, `Enum8('' = 0, 'a' = 1, 'b' = 2)`, `FixedString(36)`, `UUID`, `IPv4`, `Decimal(10, 2)` |  |
+| `VARCHAR`, `UUID`, `JSON` | `String`, `LowCardinality(String)`, `DateTime64(3)`, `DateTime`, `Enum8('' = 0, 'a' = 1, 'b' = 2)`, `FixedString(36)`, `UUID`, `IPv4`, `Decimal(10, 2)` |  |
 | `BLOB`, `BIT`, `VARINT` | `String` |  |
 | `DATE` | `Date`, `Date32` |  |
 | `TIMESTAMP_S` | `DateTime` |  |
 | `TIMESTAMP_MS` | `DateTime64(3)` |  |
-| `TIMESTAMP` | `DateTime64(6)` |  |
+| `TIMESTAMP` | `DateTime64(6)`, `DateTime` | DateTime keeps whole seconds; DateTime64(6) keeps all six digits |
 | `TIMESTAMP_NS` | `DateTime64(9)` |  |
 | `TIMESTAMPTZ` | `DateTime64(6)` | stored as the same UTC instant; the zone is dropped and the column's own zone governs rendering |
 | `BOOLEAN[]` | `Array(Bool)` |  |
@@ -452,26 +452,26 @@ These fail the batch with `user.sink.type_unsupported` rather than reaching the 
 
 ## Performance {#performance}
 
-Measured with the example above: one million 17-column rows, one sqlflow process, Kafka co-located with sqlflow.
+Measured with the example above on sqlflow v1.1.0: one million 17-column rows, one sqlflow process, Kafka co-located with sqlflow, two runs per row.
 
 | Target                                     | Rows/second |
 | ------------------------------------------ | ----------- |
-| Self-hosted ClickHouse, sqlflow and Kafka on the same Docker network | ~65,000 |
-| Self-hosted ClickHouse, sqlflow on the host reaching Kafka through Docker's port forwarding | ~50,000 |
-| ClickHouse Cloud (us-east-2), from a laptop over the public internet | 14,000 – 31,000 across runs on different days |
+| Self-hosted ClickHouse, sqlflow and Kafka on the same Docker network | 67,000 and 70,000 |
+| ClickHouse Cloud (us-east-2), sqlflow beside the broker, over the public internet | 29,800 and 29,200 |
+| Self-hosted ClickHouse, sqlflow on the host reaching Kafka through Docker Desktop's port forwarding | 23,400 and 24,700 |
 
-Two things those rows say. Docker Desktop's host-to-container port forwarding costs about 20%, so benchmark from inside the network. And the Cloud spread is the network between the laptop and the service, not sqlflow: measured back to back, `batch_size` 20,000 and 50,000 came within 6% of each other. Run sqlflow near the service, same region and ideally same VPC, for numbers closer to the self-hosted figure.
+Two things those rows say. The Cloud figure is the network between the laptop and the service, not sqlflow: the same pipeline against a self-hosted server on the same Docker network runs more than twice as fast. Run sqlflow near the service, same region and ideally same VPC, for numbers closer to the self-hosted figure. And Docker Desktop's host-to-container port forwarding is not a tax to shrug off: it caps the Kafka fetch at roughly 10 to 15 MB/s, which for rows this wide is about 24,000 a second whatever `batch_size` is set to. Benchmark from inside the network.
 
-`batch_size` is the lever on a nearby target:
+`batch_size` is the lever on a nearby target, measured on the same Docker network:
 
-| `batch_size` | Rows/second (self-hosted, same host) |
-| ------------ | ------------------------------------ |
-| 5,000        | ~30,000 |
-| 20,000       | ~50,000 |
-| 50,000       | ~50,000 |
-| 100,000      | ~51,000 |
+| `batch_size` | Rows/second |
+| ------------ | ----------- |
+| 5,000        | 36,900 |
+| 20,000       | 67,000 |
+| 50,000       | 67,300 |
+| 100,000      | 71,200 |
 
-Below about 20,000 rows per batch, per-`INSERT` overhead dominates; above it there is nothing further to gain, and memory per batch grows. 20,000 is a good default for rows of this width; verify against your own.
+Below about 20,000 rows per batch, per-`INSERT` overhead dominates; above it there is little further to gain, and memory per batch grows. 20,000 is a good default for rows of this width; verify against your own.
 
 ## Troubleshooting {#troubleshooting}
 
