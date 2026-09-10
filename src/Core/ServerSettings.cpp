@@ -39,6 +39,7 @@
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
@@ -552,6 +553,9 @@ A value of `0` means "never". The default value corresponds to 1 day.
     \
     \
     DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_elevated_level_pct, DEFAULT_MEMORY_PRESSURE_ELEVATED_PCT, R"(Memory-pressure threshold, as a percent of a memory tracker's hard limit, at which the experimental `ReaderExecutor` enters the `Elevated` memory-pressure level and starts shrinking its read window. The thresholds are applied to three scopes independently - the server total (`max_server_memory_usage`), the user (`max_memory_usage_for_user`) and the query (`max_memory_usage`) - and a reader takes the highest of the three, so one query near its own limit shrinks its window even while the server is idle. A scope with no hard limit contributes nothing. Must be in `[1, 100]` and satisfy `elevated <= high <= critical`; an out-of-range or out-of-order triple is rejected at startup and on `SYSTEM RELOAD CONFIG`. Zero is rejected because an `elevated` of 0 would put every scope at `Elevated`, including one with no hard limit.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_high_level_pct, DEFAULT_MEMORY_PRESSURE_HIGH_PCT, R"(Memory-pressure threshold at which the experimental `ReaderExecutor` enters the `High` memory-pressure level. See `reader_executor_memory_pressure_elevated_level_pct` for the scopes, range and ordering rules.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_memory_pressure_critical_level_pct, DEFAULT_MEMORY_PRESSURE_CRITICAL_PCT, R"(Memory-pressure threshold at which the experimental `ReaderExecutor` enters the `Critical` memory-pressure level, its most aggressive read-window reduction. See `reader_executor_memory_pressure_elevated_level_pct` for the scopes, range and ordering rules.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
 Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
@@ -1397,7 +1401,6 @@ Threads for cleanup of shared merge tree snapshot cleaner threads. Only availabl
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
 Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
 )", 0) \
-    DECLARE(String, license_file, "", "License file contents for ClickHouse Enterprise Edition", 0) \
     DECLARE(String, license_public_key_for_testing, "", "Licensing demo key, for CI use only", 0) \
     DECLARE(Bool, show_license_expiration_warnings, true, "Show the warning about the upcoming license expiration in system.warnings", 0) \
     DECLARE(NonZeroUInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
@@ -2283,6 +2286,11 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "library_bridge",
         "odbc_bridge",
         "jdbc_bridge",
+
+        /// The license text. Read directly from the config by the enterprise build and deliberately not
+        /// declared as a server setting: a `ServerSettings` entry is returned verbatim by
+        /// `system.server_settings` and by `getServerSetting`, and no user needs to read the license.
+        "license_file",
 
         /// Sections used in private builds (shared catalog, distributed cache, stateless workers, cloud readiness)
         "shared_database_catalog",
@@ -3547,12 +3555,24 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 {
     using ChangeableWithoutRestart = ServerSettings::ChangeableWithoutRestart;
 
+    const MemoryPressureThresholds memory_pressure_thresholds = getMemoryPressureThresholds();
+
     ChangeableSettingsMap changeable_settings
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
             {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
             {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
+
+            /// Report the live thresholds, not the values captured at startup. One snapshot for all
+            /// three rows: reading three times could straddle a reload and report thresholds that were
+            /// never published, such as an out-of-order one.
+            {"reader_executor_memory_pressure_elevated_level_pct",
+             {std::to_string(memory_pressure_thresholds.elevated_pct), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_high_level_pct",
+             {std::to_string(memory_pressure_thresholds.high_pct), ChangeableWithoutRestart::Yes}},
+            {"reader_executor_memory_pressure_critical_level_pct",
+             {std::to_string(memory_pressure_thresholds.critical_pct), ChangeableWithoutRestart::Yes}},
 
             /// Named collections metadata storage is initialized once, so use its effective startup type.
             {"named_collections_storage_type",
@@ -3624,7 +3644,6 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
-            {"license_file", {context->getLicenseFile(), ChangeableWithoutRestart::Yes}},
             {"show_license_expiration_warnings", {std::to_string(context->getShowLicenseExpirationWarnings()), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
@@ -3787,8 +3806,8 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
         const bool is_changeable = (changeable_settings_it != changeable_settings.end());
 
         res_columns[0]->insert(setting_path.empty() ? setting_name : setting_path);
-        res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString());
-        res_columns[2]->insert(setting.getDefaultValueString());
+        res_columns[1]->insert(is_changeable ? changeable_settings_it->second.first : setting.getValueString(/* show_secrets */ true));
+        res_columns[2]->insert(setting.getDefaultValueString(/* show_secrets */ true));
         res_columns[3]->insert(setting.isValueChanged());
         res_columns[4]->insert(setting.getDescription());
         res_columns[5]->insert(setting.getTypeName());
