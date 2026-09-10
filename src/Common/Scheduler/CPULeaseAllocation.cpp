@@ -483,6 +483,12 @@ bool CPULeaseAllocation::parkLease(Lease & lease)
     if (shutdown)
         return false;
 
+    // Enforce the parking mode at the source, not only at the executor's publication gate: parking
+    // is supported only when it is enabled and the master and worker threads share one resource.
+    // A direct park() caller in any other configuration is a no-op (returns false, so no unpark).
+    if (!settings.parking_enabled || !parking_supported)
+        return false;
+
     const size_t thread_num = lease.slot_id;
     ProfileEvents::increment(ProfileEvents::ConcurrencyControlParks);
     parked_increment.add(1);

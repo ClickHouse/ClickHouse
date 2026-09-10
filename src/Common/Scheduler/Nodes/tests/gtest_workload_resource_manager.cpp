@@ -1352,28 +1352,26 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkFreesSlotForOtherQuery)
 {
     ResourceTest t;
 
-    // Two competing worker slots; master threads are noncompeting (run on a free slot).
-    t.query("CREATE RESOURCE cpu (WORKER THREAD)");
+    // Parking is supported only in the target mode: master and worker on the same resource.
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
     t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 2");
 
     auto q0 = std::make_shared<TestQuery>(t);
     auto q1 = std::make_shared<TestQuery>(t);
 
-    // Q0 occupies both worker slots (master + 2 workers).
-    q0->start(TestQuery::AllocateLease, "all", 3);
-    q0->waitStartedThreads(3);
+    // Q0 occupies both slots (master + 1 worker).
+    q0->start(TestQuery::AllocateLease, "all", 2);
+    q0->waitStartedThreads(2);
 
-    // Q1 wants a worker too. Its master (noncompeting) starts; its worker request is enqueued
-    // and blocked because Q0 holds both worker slots.
+    // Q1 wants slots too, but both are held by Q0, so its request is enqueued and blocked.
     q1->start(TestQuery::AllocateLease, "all", 2);
-    q1->waitStartedThreads(1);
     q1->waitEnqueued();
 
-    // Q0's workers enter a non-CPU wait (park), releasing their scheduler slots. Q1's worker
-    // must now be granted. If park did not free the semaphore units, this call would hang.
+    // Q0's worker enters a non-CPU wait (park), releasing its scheduler slot. Q1 must now be
+    // granted one. If park did not free the semaphore unit, this call would hang.
     q0->requestPark();
-    q0->waitParkedThreads(2);
-    q1->waitStartedThreads(2); // master + 1 worker => a parked slot was handed to Q1
+    q0->waitParkedThreads(1);
+    q1->waitStartedThreads(1); // a parked slot was handed to Q1
 
     // Resume Q0 and let both queries finish normally.
     q0->releasePark();
@@ -1385,17 +1383,18 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkFreesSlotForOtherQuery)
 
 TEST(SchedulerWorkloadResourceManager, CPULeaseParkDoesNotOverAcquireOwnSlots)
 {
-    // Regression: a single query occupies all its worker slots and parks them all at once (a long
+    // Regression: a single query occupies all its slots and parks its workers all at once (a long
     // sequential phase). Parking must not push `granted` positive while every slot_id is leased —
     // that would make the executor acquire an out-of-range slot (OOB in its per-slot arrays). The
     // query must finish cleanly.
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (WORKER THREAD)");
-    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 3");
+    // Target mode (master and worker share one resource), the only mode where parking is enabled.
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
 
     auto q = std::make_shared<TestQuery>(t);
-    q->start(TestQuery::AllocateLease, "all", 4); // master (noncompeting) + 3 workers
+    q->start(TestQuery::AllocateLease, "all", 4); // master + 3 workers (all competing)
     q->waitStartedThreads(4);
 
     // All three worker threads park simultaneously. With the old accounting this made `granted > 0`
@@ -1417,11 +1416,12 @@ TEST(SchedulerWorkloadResourceManager, CPULeaseParkedThreadShutdownNoDeadlock)
     // terminate on the unpark re-request; this must finish cleanly.
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (WORKER THREAD)");
-    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 2");
+    // Target mode (master and worker share one resource), the only mode where parking is enabled.
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 3");
 
     auto q = std::make_shared<TestQuery>(t);
-    q->start(TestQuery::AllocateLease, "all", 3); // master (noncompeting) + 2 workers
+    q->start(TestQuery::AllocateLease, "all", 3); // master + 2 workers (all competing)
     q->waitStartedThreads(3);
 
     // Both workers park (emulating a blocking I/O wait), then the query is destroyed while parked.
