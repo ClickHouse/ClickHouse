@@ -104,6 +104,7 @@ namespace FailPoints
     /// hit the window where a scheduling pass that gives up coordination must not still cause the
     /// exchange to be lost / the view to be disabled mid-flight.
     extern const char refresh_mv_pause_after_interrupt_check[];
+    extern const char refresh_mv_pause_inside_coordination_write[];
     /// Forces the feature-flags-missing give-up path to use a stale coordination version, so the
     /// reconciling set() is rejected with ZBADVERSION. Simulates another replica advancing the
     /// coordination znode after this replica lost its Keeper session mid-refresh. Used to test that
@@ -1189,9 +1190,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
         /// The time to start next refresh is now!
 
-        /// Clear any stale interrupt before the keeper write below, which releases the mutex for a
-        /// coordinated view: a SYSTEM STOP/CANCEL VIEW landing in that window then sets the interrupt
-        /// and the refresh we are about to dispatch honors it, instead of the store erasing it.
         chassert(execution.state == ExecutionState::State::None);
         execution.interrupt_execution.store(false);
 
@@ -1797,6 +1795,8 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         Coordination::Responses responses;
 
         lock.unlock();
+        if (running)
+            FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_inside_coordination_write);
         auto code = zookeeper->tryMulti(ops, responses);
         lock.lock();
 

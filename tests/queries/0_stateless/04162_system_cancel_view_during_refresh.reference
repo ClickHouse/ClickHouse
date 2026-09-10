@@ -1,1 +1,2 @@
 <1: cancel during refresh records an exception>	1	1	1
+<2: stop during the coordination write is honored>	1	0

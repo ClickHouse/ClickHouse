@@ -14,6 +14,7 @@
 <4g: wait is silent about a cancelled refresh>	Disabled
 <4h: stale scheduled failure not reported after stop>	1	Disabled
 <4i: wait is silent after cancel>	1
+<4j: failure is reported after a later stop>	1	Disabled
 <5: refresh all background refreshes all views>	1	1
 <6: stop all background disables all>	2	2
 <7: pause all background disables all>	2	2

@@ -361,6 +361,31 @@ $CLICKHOUSE_CLIENT -q "
     drop table src;"
 
 # ---------------------------------------------------------------------------
+# Test 4j: SYSTEM WAIT VIEW reports a failed SYSTEM REFRESH VIEW even when the
+# view is stopped only after the failure. Reporting must not depend on the view
+# still being enabled at the time WAIT VIEW is called.
+# ---------------------------------------------------------------------------
+
+$CLICKHOUSE_CLIENT -q "
+    create materialized view fs refresh every 1 year settings refresh_retries = 0 (x Int64) engine Memory empty as
+        select throwIf(1, 'late-boom')::Int64 as x;
+    system refresh view fs;"
+
+# While the view is still enabled the failure is reported. This part always worked.
+$CLICKHOUSE_CLIENT -q "system wait view fs; -- { serverError REFRESH_FAILED }"
+
+$CLICKHOUSE_CLIENT -q "system stop view fs;"
+wait_status fs Disabled
+
+# Same failure, view now stopped: it must still be reported.
+$CLICKHOUSE_CLIENT -q "system wait view fs; -- { serverError REFRESH_FAILED }"
+
+$CLICKHOUSE_CLIENT -q "
+    select '<4j: failure is reported after a later stop>', exception like '%late-boom%', status
+        from refreshes where view = 'fs';
+    drop table fs;"
+
+# ---------------------------------------------------------------------------
 # The SYSTEM ... ALL BACKGROUND wildcard applies the command to every table with
 # background activity. Here those tables are two refreshable views; the same code
 # path covers the streaming engines (Kafka, S3Queue, RabbitMQ, NATS) too.
