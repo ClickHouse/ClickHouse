@@ -88,6 +88,20 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     getTask()->schedule();
 }
 
+void ReplicatedMergeTreePartCheckThread::clearQueue()
+{
+    /// Lock order matches enqueuePart: cancel_removed_parts_mutex before parts_mutex.
+    std::lock_guard cancel_lock(cancel_removed_parts_mutex);
+    std::lock_guard lock(parts_mutex);
+
+    if (parts_queue.empty())
+        return;
+
+    LOG_TRACE(log, "Dropping {} queued part checks", parts_queue.size());
+    parts_queue.clear();
+    parts_set.clear();
+}
+
 BackgroundSchedulePoolTaskHolder & ReplicatedMergeTreePartCheckThread::getTask()
 {
     return pausable_task.getTask();

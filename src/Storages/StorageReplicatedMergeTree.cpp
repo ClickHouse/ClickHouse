@@ -7433,6 +7433,9 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     /// We need to bump the ZK version to match so parts don't appear "from the future".
     int32_t max_parts_metadata_version = 0;
 
+    /// No check may run while block numbers are reissued below.
+    auto pause_checking_parts = part_check_thread.temporaryPause();
+
     /// Why all parts (not only Active) are moved to detached/:
     /// After ZK metadata restoration ZK resets sequential counters (including block number counters), so one may
     /// potentially encounter a situation that a part we want to attach already exists.
@@ -7454,6 +7457,9 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
     }
 
     LOG_INFO(log, "Moved all parts to detached/");
+
+    /// Parts come back under freshly allocated block numbers, so queued names are now stale.
+    part_check_thread.clearQueue();
 
     const bool is_first_replica = createTableIfNotExists(metadata_snapshot, zookeeper_retries_info);
 
@@ -11619,9 +11625,9 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         auto replaced_parts = renameTempPartAndReplace(new_data_part, transaction, /*rename_in_transaction=*/ true);
-        new_data_part->getDataPartStorage().commitTransaction();
-        transaction.renameParts();
 
+        /// Checked before the rename below: rollback only moves the part to Outdated, so past
+        /// that point its directory survives under the final name as an unexpected part.
         if (!replaced_parts.empty())
         {
             Strings part_names;
@@ -11640,6 +11646,9 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
                             "Tried to create empty part {}, but it replaces existing parts {}.",
                             lost_part_name, fmt::join(part_names, ", "));
         }
+
+        new_data_part->getDataPartStorage().commitTransaction();
+        transaction.renameParts();
 
         lockSharedData(*new_data_part, false, {});
 
