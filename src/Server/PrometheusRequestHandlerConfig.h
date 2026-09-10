@@ -21,7 +21,7 @@ struct PrometheusRequestHandlerConfig
         APIv1,
 
         /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-        /// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values),
+        /// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata),
         /// i.e. everything under "/api/v1" except remote write and remote read.
         Query,
 

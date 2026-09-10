@@ -124,6 +124,7 @@
                     "reference/statements/create/table/replace-table"
                   ]
                 },
+                "reference/statements/create/token",
                 "reference/statements/create/user",
                 "reference/statements/create/view"
               ]
@@ -139,6 +140,7 @@
             "reference/statements/explain",
             "reference/statements/grant",
             "reference/statements/hypothetical-index",
+            "reference/statements/hypothetical-projection",
             "reference/statements/in",
             "reference/statements/insert-into",
             "reference/statements/kill",
@@ -186,8 +188,7 @@
             "reference/statements/truncate",
             "reference/statements/undrop",
             "reference/statements/update",
-            "reference/statements/use",
-            "reference/statements/watch"
+            "reference/statements/use"
           ]
         },
         {
@@ -1067,14 +1068,17 @@
         "reference/system-tables/histogram_metric_log",
         "reference/system-tables/histogram_metrics",
         "reference/system-tables/hypothetical_indexes",
+        "reference/system-tables/hypothetical_projections",
         "reference/system-tables/iceberg_files",
         "reference/system-tables/iceberg_history",
         "reference/system-tables/iceberg_metadata_log",
         "reference/system-tables/information_schema",
         "reference/system-tables/instrumentation",
+        "reference/system-tables/jemalloc_arena_bins",
         "reference/system-tables/jemalloc_bins",
         "reference/system-tables/jemalloc_stats",
         "reference/system-tables/jemalloc_profile_text",
+        "reference/system-tables/jemalloc_sampled_allocations",
         "reference/system-tables/kafka_consumers",
         "reference/system-tables/keeper_changelogs",
         "reference/system-tables/keeper_cluster",
