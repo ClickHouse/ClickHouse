@@ -49,6 +49,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -56,6 +57,9 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
@@ -176,7 +180,6 @@
 #include <unordered_set>
 #include <filesystem>
 
-#include <absl/container/inlined_vector.h>
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
 #include <Poco/Net/NetException.h>
@@ -3858,8 +3861,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
     return true;
 }
 
-
-size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     size_t cleared_count = 0;
 
@@ -3867,14 +3869,15 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
     if (allowRemoveStaleMovingParts())
     {
+        static constexpr std::array<std::string_view, 1> moving_prefixes = {""};
         /// Clear _all_ parts from the `moving` directory
-        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, {""});
+        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, moving_prefixes);
     }
 
     return cleared_count;
 }
 
-size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -3901,7 +3904,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
             bool start_with_valid_prefix = false;
             for (const auto & prefix : valid_prefixes)
             {
-                if (startsWith(basename, prefix))
+                if (std::string_view(basename).starts_with(prefix))
                 {
                     start_with_valid_prefix = true;
                     break;
@@ -4762,7 +4765,7 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     resetColumnSizes();
     unregisterFromMergeSelection(settings_ptr);
@@ -5498,6 +5501,95 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+
+    /// Statistics of a column that is not physically stored can never be built: the column is absent
+    /// from every written block. Only the state after all commands can decide, because one command can
+    /// turn a column non-physical and another give it statistics.
+    /// A `Replicated` database re-executes the ALTER per replica here, so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    /// Shared Catalog secondaries replay without a metadata transaction and are told apart by the
+    /// client info instead (the same marker `AlterCommands` and `StorageKeeperMap` use).
+    {
+        const auto txn = local_context->getZooKeeperMetadataTransaction();
+        const bool is_ddl_replay = txn && !txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        const bool is_shared_catalog_replay = local_context->getClientInfo().is_shared_catalog_internal
+            && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+        const bool is_shared_catalog_replay = false;
+#endif
+
+        if (!is_ddl_replay && !is_shared_catalog_replay)
+        {
+            /// Only effective commands count. `command.ignore` covers a command that is a no-op against
+            /// the pre-ALTER snapshot (`ADD COLUMN IF NOT EXISTS` for a column that already exists), but
+            /// it is decided before any command ran, so the commands are replayed here against the set
+            /// of names present after each preceding one, the way `AlterCommand::apply` will see them:
+            /// an `ADD COLUMN IF NOT EXISTS` of a name a preceding rename created adds nothing, and a
+            /// rename or drop of a name a preceding drop or rename already removed moves nothing.
+            NameSet present;
+            for (const auto & column : old_columns)
+                present.insert(column.name);
+
+            NameSet statistics_named_by_alter;
+            NameSet dropped_by_alter;
+            std::unordered_map<String, String> renamed_from;
+            for (const auto & command : commands)
+            {
+                if (command.ignore)
+                    continue;
+
+                if (command.type == AlterCommand::ADD_COLUMN)
+                {
+                    if (present.contains(command.column_name))
+                        continue;
+                    present.insert(command.column_name);
+                }
+
+                if (command.column_statistics_decl != nullptr)
+                    statistics_named_by_alter.insert(command.column_name);
+
+                /// A drop only ends the stored column's identity while that column still holds the
+                /// name. `CLEAR COLUMN` shares this type but only erases data, leaving the column in place.
+                if (command.type == AlterCommand::DROP_COLUMN && !command.clear && present.erase(command.column_name))
+                    dropped_by_alter.insert(command.column_name);
+
+                if (command.type == AlterCommand::RENAME_COLUMN && present.erase(command.column_name))
+                {
+                    present.insert(command.rename_to);
+                    renamed_from[command.rename_to] = command.column_name;
+                }
+            }
+
+            for (const auto & column : new_metadata.columns)
+            {
+                if (new_metadata.columns.hasPhysical(column.name) || !column.statistics.hasExplicitStatistics())
+                    continue;
+
+                /// A table created before this check stays alterable: the state is only refused when
+                /// this ALTER produced it, not when it was inherited untouched. A rename carries the
+                /// whole column description across, so resolve the pre-ALTER name. One hop is the
+                /// whole relation: transitive renames in one statement are rejected earlier, so a
+                /// second hop can only reach a different column reusing a name freed here.
+                String old_name = column.name;
+                if (auto it = renamed_from.find(old_name); it != renamed_from.end())
+                    old_name = it->second;
+
+                /// Dropping the stored column ends its identity, so a later column of the same name is
+                /// a new one and the state it carries is this ALTER's, however it reached that name.
+                if (!statistics_named_by_alter.contains(column.name)
+                    && !dropped_by_alter.contains(old_name)
+                    && old_columns.has(old_name)
+                    && !old_columns.hasPhysical(old_name)
+                    && old_columns.get(old_name).statistics.hasExplicitStatistics())
+                    continue;
+
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+            }
+        }
+    }
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -6379,6 +6471,76 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
 }
 
+void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
+{
+    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+
+    if (!disk->existsFileOrDirectory(format_version_path))
+        return;
+
+    if (!disk->existsFile(format_version_path))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+    auto buf = disk->readFileIfExists(format_version_path, getReadSettings());
+    if (buf)
+    {
+        UInt32 current_format_version{0};
+        if (!tryReadIntText(current_format_version, *buf) || !buf->eof())
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+        if (current_format_version != format_version.toUnderType())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Version file on {} contains version {} expected version is {}.",
+                fullPath(disk, format_version_path),
+                current_format_version,
+                format_version.toUnderType());
+
+        return;
+    }
+
+    throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+}
+
+bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
+{
+    if (!disk->existsDirectory(relative_data_path))
+        return false;
+
+    /// A newly added disk may have only explicitly safe entries.
+    /// Anything else would become owned by the table path after the policy change.
+    validateFormatVersion(disk);
+
+    for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+    {
+        const auto name = it->name();
+
+        /// `format_version.txt` is validated above and has no table rows or mutable table state.
+        if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
+            continue;
+
+        const auto entry_path = fs::path(relative_data_path) / name;
+        if (name == DETACHED_DIR_NAME)
+        {
+            /// `detached/` is removed recursively on `DROP TABLE`, so accept it only when empty.
+            if (!disk->existsDirectory(entry_path))
+                return true;
+
+            if (!disk->isDirectoryEmpty(entry_path))
+                return true;
+
+            continue;
+        }
+
+        /// Recovery-only entries like `tmp_`, `delete_tmp_`, `tmp-fetch_`, `tmp_mutation_`,
+        /// and `moving/` are not cleaned before `changeSettings` publishes the new policy.
+        /// They can conflict with later writes, merges, mutations, or moves. See #109823.
+        return true;
+    }
+
+    return false;
+}
+
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
@@ -6417,8 +6579,11 @@ void MergeTreeData::changeSettings(
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
-                        if (disk->existsDirectory(relative_data_path))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
+
+                        if (containsTableDataOnNewDisk(disk))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
                     for (const String & disk_name : all_diff_disk_names)
@@ -6427,7 +6592,10 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(relative_data_path);
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
-                    /// FIXME how would that be done while reloading configuration???
+                    /// FIXME: current update in config reload is done asynchronously, so we can't guarantee that it will
+                    /// initialize new disks before they are actually used
+                    /// so we can't use disks reliably without some kind of authoritative initialization model
+                    /// but this issue is relatively rare
 
                     has_storage_policy_changed = true;
                 }
@@ -9431,7 +9599,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     /// Re-parse partition key fields using the information about expected field types.
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    /// Existing parts hold partition values produced with the adjusted partition key (`modulo` becomes
+    /// `moduloLegacy`, which can differ in signedness), so a value parsed here must use the same types.
+    const auto adjusted_partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot, local_context);
+    const Block & key_sample_block = adjusted_partition_key.sample_block;
     size_t fields_count = key_sample_block.columns();
     if (partition_ast_fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
@@ -9526,10 +9697,12 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             existing_part_in_partition = getAnyPartInPartition(partition_id, readLockParts());
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
-            auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
-                            "doesn't match partition value for an existing part with the same partition ID: {}",
-                            partition_str, existing_part_in_partition->name);
+            auto part_metadata_snapshot = existing_part_in_partition->getMetadataSnapshot();
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value {} does not match partition value {} "
+                            "of the existing part {} with the same partition ID",
+                            partition.serializeToString(part_metadata_snapshot),
+                            existing_part_in_partition->partition.serializeToString(part_metadata_snapshot),
+                            existing_part_in_partition->name);
         }
     }
 
@@ -11184,43 +11357,9 @@ namespace
 
 /// NULL and NaN sort above every ordinary value in a key while min/max skip them, so a bound
 /// holding one at any depth does not answer the aggregate.
-/// Iterative because Fields nest inside Fields and a recursive walk overflows the native stack.
 bool containsOrderInconsistentValue(const Field & field)
 {
-    absl::InlinedVector<const Field *, 16> pending{&field};
-
-    while (!pending.empty())
-    {
-        const Field * current = pending.back();
-        pending.pop_back();
-
-        if (current->isNull() || isNaNField(*current))
-            return true;
-
-        switch (current->getType())
-        {
-            case Field::Types::Array:
-                for (const Field & element : current->safeGet<Array>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Tuple:
-                for (const Field & element : current->safeGet<Tuple>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Map:
-                for (const Field & element : current->safeGet<Map>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Object:
-                for (const auto & [_, element] : current->safeGet<Object>())
-                    pending.push_back(&element);
-                break;
-            default:
-                break;
-        }
-    }
-
-    return false;
+    return anyFieldSatisfies(field, [](const Field & f) { return f.isNull() || isNaNField(f); });
 }
 
 /// Both ends the same degenerate value means the part holds no ordinary comparable value, which only
