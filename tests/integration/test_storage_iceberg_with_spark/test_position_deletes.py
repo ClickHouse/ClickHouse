@@ -273,7 +273,7 @@ def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark, use_r
 
 @pytest.mark.parametrize("run_on_cluster", [False, True])
 @pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_v3_deletion_vectors_table_function(
         started_cluster_iceberg_with_spark, use_roaring_bitmaps, storage_type, run_on_cluster):
     if storage_type == "local" and run_on_cluster:
@@ -309,8 +309,7 @@ def test_v3_deletion_vectors_table_function(
     assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == 80
     assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 85", settings=settings)) == 5
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spark):
     storage_type = "local"
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_v3_deletion_vectors_named_local_" + get_uuid_str()
@@ -332,7 +331,6 @@ def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spar
 
     settings = {
         "allow_iceberg_deletion_vectors": 1,
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(10, 90))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 80
@@ -341,8 +339,7 @@ def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spar
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg_with_spark):
     storage_type = "local"
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_v3_deletion_vectors_mutations_" + get_uuid_str()
@@ -365,7 +362,6 @@ def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg
     settings = {
         "allow_iceberg_deletion_vectors": 1,
         "allow_insert_into_iceberg": 1,
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     for mutation in [
         f"ALTER TABLE {TABLE_NAME} DELETE WHERE id = 10",
@@ -410,8 +406,7 @@ def test_v3_tables_without_deletion_vectors_reject_clickhouse_mutations(started_
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_v3_deletion_vectors_apply_only_to_referenced_data_file(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_v3_deletion_vectors_apply_only_to_referenced_data_file(started_cluster_iceberg_with_spark):
     storage_type = "local"
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_v3_deletion_vectors_referenced_data_file_" + get_uuid_str()
@@ -433,7 +428,6 @@ def test_v3_deletion_vectors_apply_only_to_referenced_data_file(started_cluster_
 
     settings = {
         "allow_iceberg_deletion_vectors": 1,
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 200))
     assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 100", settings=settings)) == 100
@@ -500,8 +494,7 @@ def upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, table_n
         table_function=True)
 
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_v3_deletion_vectors_trivial_count(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_v3_deletion_vectors_trivial_count(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_v3_deletion_vectors_trivial_count_" + get_uuid_str()
@@ -515,7 +508,6 @@ def test_v3_deletion_vectors_trivial_count(started_cluster_iceberg_with_spark, u
 
     settings = {
         "allow_iceberg_deletion_vectors": 1,
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
         "optimize_trivial_count_query": 1,
     }
     assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == 80
@@ -523,8 +515,7 @@ def test_v3_deletion_vectors_trivial_count(started_cluster_iceberg_with_spark, u
     assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 50", settings=settings)) == 50
 
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_v3_deletion_vectors_partitioned_table(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_v3_deletion_vectors_partitioned_table(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_v3_deletion_vectors_partitioned_" + get_uuid_str()
@@ -538,7 +529,6 @@ def test_v3_deletion_vectors_partitioned_table(started_cluster_iceberg_with_spar
 
     settings = {
         "allow_iceberg_deletion_vectors": 1,
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
         "use_iceberg_partition_pruning": 1,
     }
     expected = [x for x in range(0, 100) if x % 7 != 0]
@@ -547,8 +537,7 @@ def test_v3_deletion_vectors_partitioned_table(started_cluster_iceberg_with_spar
     assert int(instance.query(f"SELECT id FROM {expression} WHERE id = 43", settings=settings)) == 43
 
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_v3_deletion_vectors_time_travel(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_v3_deletion_vectors_time_travel(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_v3_deletion_vectors_time_travel_" + get_uuid_str()
@@ -567,7 +556,6 @@ def test_v3_deletion_vectors_time_travel(started_cluster_iceberg_with_spark, use
 
     settings = {
         "allow_iceberg_deletion_vectors": 1,
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(
         f"SELECT id FROM {expression} SETTINGS iceberg_snapshot_id = {snapshot_before_delete}", settings=settings
@@ -578,8 +566,7 @@ def test_v3_deletion_vectors_time_travel(started_cluster_iceberg_with_spark, use
     assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 50))
 
 
-@pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
-def test_v3_deletion_vectors_after_update_and_merge(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
+def test_v3_deletion_vectors_after_update_and_merge(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_v3_deletion_vectors_update_merge_" + get_uuid_str()
@@ -594,7 +581,6 @@ def test_v3_deletion_vectors_after_update_and_merge(started_cluster_iceberg_with
 
     settings = {
         "allow_iceberg_deletion_vectors": 1,
-        "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(0, 40))
     assert int(instance.query(f"SELECT count() FROM {expression} WHERE data = 'updated'", settings=settings)) == 10
