@@ -1,31 +1,32 @@
+#include <Access/AccessBackup.h>
+#include <Access/AccessChangesNotifier.h>
 #include <Access/AccessControl.h>
-#include <Access/MultipleAccessStorage.h>
-#include <Access/MemoryAccessStorage.h>
-#include <Access/ReplicatedAccessStorage.h>
-#include <Access/UsersConfigAccessStorage.h>
-#include <Access/DiskAccessStorage.h>
-#include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledSettings.h>
+#include <Access/DiskAccessStorage.h>
 #include <Access/EnabledRolesInfo.h>
-#include <Access/RoleCache.h>
-#include <Access/RowPolicyCache.h>
+#include <Access/EnabledSettings.h>
+#include <Access/ExternalAuthenticators.h>
+#include <Access/LDAPAccessStorage.h>
+#include <Access/MemoryAccessStorage.h>
+#include <Access/MultipleAccessStorage.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
-#include <Access/SettingsProfilesCache.h>
+#include <Access/ReplicatedAccessStorage.h>
+#include <Access/RoleCache.h>
+#include <Access/RowPolicyCache.h>
 #include <Access/SettingsConstraints.h>
-#include <Access/resolveEffectiveSettings.h>
+#include <Access/SettingsProfilesCache.h>
 #include <Access/User.h>
-#include <Access/ExternalAuthenticators.h>
-#include <Access/AccessChangesNotifier.h>
-#include <Access/AccessBackup.h>
+#include <Access/UsersConfigAccessStorage.h>
+#include <Access/resolveEffectiveSettings.h>
 #include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <base/range.h>
 #include <IO/Operators.h>
+#include <base/range.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
@@ -45,6 +46,11 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FailPoints
+{
+extern const char access_control_pause_after_feature_tier_check[];
 }
 
 namespace
@@ -568,20 +574,56 @@ scope_guard AccessControl::subscribeForChanges(const std::vector<UUID> & ids, co
 
 bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
+    return insertImpl(nullptr, id, entity, replace_if_exists, throw_if_exists, conflicting_id);
+}
+
+bool AccessControl::insertImpl(
+    IAccessStorage * storage,
+    const UUID & id,
+    const AccessEntityPtr & entity,
+    bool replace_if_exists,
+    bool throw_if_exists,
+    UUID * conflicting_id)
+{
+    std::unique_lock lock{access_entities_mutex};
+    if (storage)
+    {
+        for (const auto & other_storage : getStorages())
+        {
+            if (other_storage.get() == storage)
+                continue;
+            if (other_storage->find(entity->getType(), entity->getName()))
+                throwNameCollisionCannotInsert(entity->getType(), entity->getName(), other_storage->getStorageName());
+        }
+    }
+
+    auto & target = storage ? *storage : static_cast<IAccessStorage &>(*this);
+    auto existing_id = target.find(entity->getType(), entity->getName());
+
+    /// Preserve the storage's collision behavior and, in particular, do not validate a no-op
+    /// `CREATE ... IF NOT EXISTS` as if it inserted a new entity.
+    if (existing_id && !replace_if_exists)
+    {
+        if (storage)
+            return storage->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
+        return MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
+    }
+
     if (isAnyFeatureTierRestricted(*this))
     {
         PendingAccessEntities pending;
         pending[id] = entity;
         /// A replacement drops the entity that holds the name, which need not be `id`.
-        if (replace_if_exists)
-        {
-            if (auto existing_id = find(entity->getType(), entity->getName()); existing_id && *existing_id != id)
-                pending[*existing_id] = nullptr;
-        }
+        if (replace_if_exists && existing_id && *existing_id != id)
+            pending[*existing_id] = nullptr;
         checkFeatureTierForPendingAccessEntities(*this, pending);
+        FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
     }
 
-    if (MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
+    bool inserted = storage ? storage->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id)
+                            : MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
+    lock.unlock();
+    if (inserted)
     {
         changes_notifier->sendNotifications();
         return true;
@@ -591,10 +633,18 @@ bool AccessControl::insertImpl(const UUID & id, const AccessEntityPtr & entity, 
 
 bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
+    std::unique_lock lock{access_entities_mutex};
+    if (!exists(id))
+        return MultipleAccessStorage::removeImpl(id, throw_if_not_exists);
+
     if (isAnyFeatureTierRestricted(*this))
+    {
         checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, nullptr}});
+        FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
+    }
 
     bool removed = MultipleAccessStorage::removeImpl(id, throw_if_not_exists);
+    lock.unlock();
     if (removed)
         changes_notifier->sendNotifications();
     return removed;
@@ -602,18 +652,48 @@ bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
 
 bool AccessControl::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
+    std::unique_lock lock{access_entities_mutex};
+    auto old_entity = tryRead(id);
+    if (!old_entity)
+        return MultipleAccessStorage::updateImpl(id, update_func, throw_if_not_exists);
+
+    auto new_entity = update_func(old_entity, id);
     if (isAnyFeatureTierRestricted(*this))
     {
-        /// The same update is applied here and by the storage below: it is a function of the stored
-        /// entity, so both get the same result.
-        if (auto old_entity = tryRead(id))
-            checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, update_func(old_entity, id)}});
+        checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, new_entity}});
+        FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
     }
 
-    bool updated = MultipleAccessStorage::updateImpl(id, update_func, throw_if_not_exists);
+    bool updated = MultipleAccessStorage::updateImpl(
+        id, [&new_entity](const AccessEntityPtr &, const UUID &) { return new_entity; }, throw_if_not_exists);
+    lock.unlock();
     if (updated)
         changes_notifier->sendNotifications();
     return updated;
+}
+
+std::vector<UUID> AccessControl::insertInto(
+    const String & storage_name, const std::vector<AccessEntityPtr> & entities, bool replace_if_exists, bool throw_if_exists)
+{
+    auto storage = getStorageByName(storage_name);
+    std::vector<UUID> inserted_ids;
+    inserted_ids.reserve(entities.size());
+    for (const auto & entity : entities)
+    {
+        auto id = generateRandomID();
+        if (insertImpl(storage.get(), id, entity, replace_if_exists, throw_if_exists, nullptr))
+            inserted_ids.push_back(id);
+    }
+    return inserted_ids;
+}
+
+void AccessControl::moveAccessEntities(
+    const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
+{
+    std::unique_lock lock{access_entities_mutex};
+    MultipleAccessStorage::moveAccessEntities(ids, source_storage_name, destination_storage_name);
+    lock.unlock();
+    changes_notifier->sendNotifications();
 }
 
 AccessChangesNotifier & AccessControl::getChangesNotifier()

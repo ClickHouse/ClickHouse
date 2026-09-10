@@ -26,6 +26,7 @@ class ExternalAuthenticators;
 enum class AuthenticationType : uint8_t;
 class BackupEntriesCollector;
 class RestorerFromBackup;
+class MultipleAccessStorage;
 
 /// Result of authentication
 struct AuthResult
@@ -277,6 +278,9 @@ protected:
     [[noreturn]] void throwRestoreNotAllowed() const;
 
 private:
+    friend class MultipleAccessStorage;
+    std::vector<UUID> removeWithoutDependencies(const std::vector<UUID> & ids);
+
     const String storage_name;
 
     mutable OnceFlag log_initialized;

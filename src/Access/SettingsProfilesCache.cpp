@@ -162,48 +162,22 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
 
 void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const
 {
-    SettingsProfileElements merged_settings;
-    if (default_profile_id)
-    {
-        SettingsProfileElement new_element;
-        new_element.parent_profile = *default_profile_id;
-        merged_settings.emplace_back(new_element);
-    }
-
-    for (const auto & [profile_id, profile] : all_profiles)
-        if (profile->to_roles.match(enabled.params.user_id, enabled.params.enabled_roles))
-        {
-            SettingsProfileElement new_element;
-            new_element.parent_profile = profile_id;
-            merged_settings.emplace_back(new_element);
-        }
-
-    merged_settings.merge(enabled.params.settings_from_enabled_roles, /* normalize= */ false);
-    merged_settings.merge(enabled.params.settings_from_user, /* normalize= */ false);
+    auto resolved = resolveSettingsProfileElements(
+        default_profile_id,
+        all_profiles,
+        enabled.params.user_id,
+        enabled.params.enabled_roles,
+        enabled.params.settings_from_enabled_roles,
+        enabled.params.settings_from_user);
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
-
-    substituteProfiles(merged_settings, info->profiles, info->profiles_with_implicit, info->names_of_profiles);
-
-    info->settings = merged_settings.toSettingsChanges();
-    info->constraints = merged_settings.toSettingsConstraints(access_control);
+    info->profiles = std::move(resolved.profiles);
+    info->profiles_with_implicit = std::move(resolved.substituted_profiles);
+    info->names_of_profiles = std::move(resolved.names_of_substituted_profiles);
+    info->settings = resolved.elements.toSettingsChanges();
+    info->constraints = resolved.elements.toSettingsConstraints(access_control);
 
     enabled.setInfo(std::move(info));
-}
-
-
-void SettingsProfilesCache::substituteProfiles(
-    SettingsProfileElements & elements,
-    std::vector<UUID> & profiles,
-    std::vector<UUID> & substituted_profiles,
-    std::unordered_map<UUID, String> & names_of_substituted_profiles) const
-{
-    auto get_profile = [this](const UUID & profile_id) -> SettingsProfilePtr
-    {
-        auto it = all_profiles.find(profile_id);
-        return it == all_profiles.end() ? nullptr : it->second;
-    };
-    DB::substituteProfiles(elements, get_profile, profiles, substituted_profiles, names_of_substituted_profiles);
 }
 
 
@@ -259,7 +233,12 @@ std::shared_ptr<const SettingsProfilesInfo> SettingsProfilesCache::getSettingsPr
 
     auto info = std::make_shared<SettingsProfilesInfo>(access_control);
 
-    substituteProfiles(elements, info->profiles, info->profiles_with_implicit, info->names_of_profiles);
+    auto get_profile = [this](const UUID & id) -> SettingsProfilePtr
+    {
+        auto it = all_profiles.find(id);
+        return it == all_profiles.end() ? nullptr : it->second;
+    };
+    DB::substituteProfiles(elements, get_profile, info->profiles, info->profiles_with_implicit, info->names_of_profiles);
     info->settings = elements.toSettingsChanges();
     info->constraints.merge(elements.toSettingsConstraints(access_control));
 

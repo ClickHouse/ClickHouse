@@ -252,6 +252,7 @@ StoragePtr MultipleAccessStorage::findExcludingStorage(AccessEntityType type, co
 
 void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
 {
+    std::lock_guard lock{move_mutex};
     auto source_storage = getStorageByName(source_storage_name);
     auto destination_storage = getStorageByName(destination_storage_name);
 
@@ -260,7 +261,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
     try
     {
-        source_storage->remove(ids); // NOLINT
+        source_storage->removeWithoutDependencies(ids); // NOLINT
         need_rollback = true;
         destination_storage->insert(to_move, ids);
     }

@@ -498,6 +498,22 @@ std::vector<UUID> IAccessStorage::tryRemove(const std::vector<UUID> & ids)
 }
 
 
+std::vector<UUID> IAccessStorage::removeWithoutDependencies(const std::vector<UUID> & ids)
+{
+    ++remove_depth;
+    SCOPE_EXIT(--remove_depth);
+
+    std::vector<UUID> removed_ids;
+    removed_ids.reserve(ids.size());
+    for (const auto & id : ids)
+    {
+        if (removeImpl(id, /* throw_if_not_exists= */ true))
+            removed_ids.push_back(id);
+    }
+    return removed_ids;
+}
+
+
 bool IAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
     if (isReadOnly(id))

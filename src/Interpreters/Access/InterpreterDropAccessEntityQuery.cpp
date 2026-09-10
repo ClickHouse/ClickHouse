@@ -55,9 +55,9 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         }
 
         if (query.if_exists)
-            storage->tryRemove(storage->find(query.type, names));
+            access_control.tryRemove(storage->find(query.type, names));
         else
-            storage->remove(storage->getIDs(query.type, names));
+            access_control.remove(storage->getIDs(query.type, names));
     };
 
     if (query.type == AccessEntityType::USER)

@@ -147,11 +147,8 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled_roles, scope_guard * 
 
     auto get_role_function = [this](const UUID & id) TSA_NO_THREAD_SAFETY_ANALYSIS { return getRole(id); };
 
-    for (const auto & current_role : enabled_roles.params.current_roles)
-        collectRoles(*new_info, skip_ids, get_role_function, current_role, true, false);
-
-    for (const auto & current_role : enabled_roles.params.current_roles_with_admin_option)
-        collectRoles(*new_info, skip_ids, get_role_function, current_role, true, true);
+    collectRoles(
+        *new_info, skip_ids, get_role_function, enabled_roles.params.current_roles, enabled_roles.params.current_roles_with_admin_option);
 
     /// Remember which roles take part in this enabled set, so that a later change to one of them triggers
     /// a recalculation (and a change to a role nobody uses does not).
