@@ -1,0 +1,358 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# A packet that cannot appear at the current point of the native TCP protocol must be rejected with
+# `UNEXPECTED_PACKET_FROM_CLIENT` (101) without reading its payload off the wire.
+#
+# Deserializing a payload only to throw it away exposes a large amount of code - data type parsing,
+# serializations and aggregate function states in a `Data` packet - to a peer that, in interserver
+# mode, has not authenticated yet. Every scenario below therefore sends the packet type and nothing
+# else: a server that reads the payload waits for the missing bytes until the receive timeout, so
+# the socket timeout here fails the test instead of the server answering right away.
+#
+# The client speaks the raw native protocol pinned to revision 54482, so the set of exchanged,
+# revision-gated fields is fixed and does not drift.
+
+import os
+import socket
+import struct
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "unexpected packet"
+
+REVISION = 54482
+
+UNEXPECTED_PACKET_FROM_CLIENT = 101
+VIOLATED_CONSTRAINT = 469
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+        ba.append(byte)
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8") if isinstance(s, str) else s
+    writeVarUInt(len(b), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise EOFError("Connection closed by server")
+        size -= len(cur)
+        res.extend(cur)
+    return res
+
+
+def readUInt(s, size=1):
+    res = readStrict(s, size)
+    val = 0
+    for i in range(len(res)):
+        val += res[i] << (i * 8)
+    return val
+
+
+def readUInt8(s):
+    return readUInt(s)
+
+
+def readUInt32(s):
+    return readUInt(s, 4)
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+        if not byte & 0x80:
+            return x
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    return readStrict(s, size).decode("utf-8")
+
+
+def sendHello(s):
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(24, ba)  # major
+    writeVarUInt(9, ba)  # minor
+    writeVarUInt(REVISION, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)  # database
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # password
+    s.sendall(ba)
+
+
+def receiveHello(s):
+    assert readVarUInt(s) == 0  # Hello
+    readStringBinary(s)  # server name
+    readVarUInt(s)  # major
+    readVarUInt(s)  # minor
+    readVarUInt(s)  # revision
+    readVarUInt(s)  # parallel replicas protocol version (>= 54471)
+    readStringBinary(s)  # timezone (>= 54058)
+    readStringBinary(s)  # display name (>= 54372)
+    readVarUInt(s)  # version patch (>= 54401)
+    readStringBinary(s)  # proto_send chunked (>= 54470)
+    readStringBinary(s)  # proto_recv chunked (>= 54470)
+    for _ in range(readVarUInt(s)):  # password complexity rules (>= 54461)
+        readStringBinary(s)
+        readStringBinary(s)
+    readStrict(s, 8)  # nonce, UInt64 (>= 54462)
+    # Server settings in STRINGS_WITH_FLAGS format: (name, flags, value)* terminated
+    # by an empty name (>= 54474). The server sends its changed settings here.
+    while True:
+        if readStringBinary(s) == "":  # setting name
+            break
+        readVarUInt(s)  # flags
+        readStringBinary(s)  # value
+    readVarUInt(s)  # query plan serialization version (>= 54477)
+    readVarUInt(s)  # cluster function protocol version (>= 54479)
+
+
+def sendAddendum(s):
+    ba = bytearray()
+    writeStringBinary("", ba)  # quota key (>= 54458)
+    writeStringBinary("notchunked", ba)  # proto_send chunked (>= 54470)
+    writeStringBinary("notchunked", ba)  # proto_recv chunked (>= 54470)
+    writeVarUInt(0, ba)  # parallel replicas protocol version (>= 54471)
+    s.sendall(ba)
+
+
+def serializeClientInfo(ba, query_id):
+    ba.append(1)  # INITIAL_QUERY
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.extend([0] * 8)  # initial_query_start_time_microseconds (>= 54449)
+    ba.append(1)  # interface = TCP
+    writeStringBinary("os_user", ba)
+    writeStringBinary("client_hostname", ba)
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(24, ba)  # client major
+    writeVarUInt(9, ba)  # client minor
+    writeVarUInt(REVISION, ba)  # client tcp protocol version
+    writeStringBinary("", ba)  # quota key (>= 54060)
+    writeVarUInt(0, ba)  # distributed_depth (>= 54448)
+    writeVarUInt(1, ba)  # client version patch (>= 54401)
+    ba.append(0)  # opentelemetry: no trace id (>= 54442)
+    writeVarUInt(0, ba)  # parallel replicas: collaborate_with_initiator (>= 54453)
+    writeVarUInt(0, ba)  # parallel replicas: obsolete count
+    writeVarUInt(0, ba)  # parallel replicas: number_of_current_replica
+    writeVarUInt(0, ba)  # script query number (>= 54475)
+    writeVarUInt(0, ba)  # script line number (>= 54475)
+    ba.append(0)  # jwt: none (>= 54476)
+
+
+def sendQuery(s, query):
+    ba = bytearray()
+    query_id = uuid.uuid4().hex
+    writeVarUInt(1, ba)  # Query
+    writeStringBinary(query_id, ba)
+    serializeClientInfo(ba, query_id)
+    writeStringBinary("", ba)  # empty per-query settings (they are set in the query text)
+    writeStringBinary("", ba)  # interserver externally granted roles (>= 54472)
+    writeStringBinary("", ba)  # interserver secret (>= 54441)
+    writeVarUInt(2, ba)  # stage = Complete
+    ba.append(0)  # no compression
+    writeStringBinary(query, ba)
+    writeStringBinary("", ba)  # query parameters terminator (>= 54459)
+    s.sendall(ba)
+
+
+def serializeBlockInfo(ba):
+    writeVarUInt(1, ba)  # field 1
+    ba.append(0)  # is_overflows = false
+    writeVarUInt(2, ba)  # field 2
+    ba.extend(struct.pack("<i", -1))  # bucket_num = -1
+    writeVarUInt(0, ba)  # end of block info
+
+
+def readBlockInfo(s):
+    while True:
+        field_num = readVarUInt(s)
+        if field_num == 0:
+            break
+        if field_num == 1:
+            readUInt8(s)  # is_overflows
+        elif field_num == 2:
+            readUInt32(s)  # bucket_num
+        elif field_num == 3:  # out_of_order_buckets (>= 54480)
+            for _ in range(readVarUInt(s)):
+                readUInt32(s)
+        else:
+            raise RuntimeError("Unknown BlockInfo field {}".format(field_num))
+
+
+def readKindStack(s):
+    kind = readUInt8(s)
+    if kind == 5:  # COMBINATION: number of kinds and the kinds themselves
+        readStrict(s, readVarUInt(s))
+
+
+def sendEmptyBlock(s):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
+    serializeBlockInfo(ba)
+    writeVarUInt(0, ba)  # columns
+    writeVarUInt(0, ba)  # rows
+    s.sendall(ba)
+
+
+def readException(s):
+    code = readUInt32(s)
+    readStringBinary(s)  # name
+    text = readStringBinary(s)
+    readStringBinary(s)  # trace
+    readUInt8(s)  # has_nested
+    return code, text
+
+
+def readHeader(s):
+    packet_type = readVarUInt(s)
+    if packet_type == 2:  # Exception
+        code, text = readException(s)
+        raise RuntimeError("Unexpected exception {}: {}".format(code, text))
+    assert packet_type == 1, "Expected Data (header) packet, got {}".format(packet_type)
+    readStringBinary(s)  # external table name
+    readBlockInfo(s)
+    columns = readVarUInt(s)
+    rows = readVarUInt(s)
+    assert rows == 0, "Expected an empty header block, got {} rows".format(rows)
+    # Consume the per-column descriptor so the stream stays aligned.
+    for _ in range(columns):
+        readStringBinary(s)  # column name
+        readStringBinary(s)  # column type
+        if readUInt8(s):  # has custom serialization (>= 54454)
+            readKindStack(s)
+
+
+def readExceptionPacket(s, expected_code):
+    packet_type = readVarUInt(s)
+    assert packet_type == 2, "Expected Exception packet, got {}".format(packet_type)
+    code, text = readException(s)
+    assert code == expected_code, "Expected code {}, got {}: {}".format(expected_code, code, text)
+    return text
+
+
+def connectAndHandshake(s):
+    s.settimeout(30)
+    s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+    sendHello(s)
+    receiveHello(s)
+    sendAddendum(s)
+
+
+def sendPacketTypeOnly(s, packet_type):
+    ba = bytearray()
+    writeVarUInt(packet_type, ba)
+    s.sendall(ba)
+
+
+def sendUInt64Block(s, values):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)  # external table name
+    serializeBlockInfo(ba)
+    writeVarUInt(1, ba)  # columns
+    writeVarUInt(len(values), ba)  # rows
+    writeStringBinary("x", ba)
+    writeStringBinary("UInt64", ba)
+    ba.append(0)  # no custom serialization
+    for value in values:
+        ba.extend(struct.pack("<Q", value))
+    s.sendall(ba)
+
+
+def startInsert(s):
+    # input_format_defaults_for_omitted_fields=0 suppresses the TableColumns packet
+    # (mirrors 02010_lc_native); async_insert=0 forces the synchronous insert path.
+    sendQuery(
+        s,
+        "INSERT INTO {}.tab "
+        "SETTINGS input_format_defaults_for_omitted_fields = 0, async_insert = 0, send_profile_events = 0 "
+        "FORMAT Native".format(CLICKHOUSE_DATABASE),
+    )
+    sendEmptyBlock(s)  # end of the external tables
+    readHeader(s)
+
+
+def beforeQueryScenario(packet_type, packet_name):
+    # No query has been received yet, so there is no query context to serialize an exception into
+    # and the server just closes the connection - promptly, because it does not wait for a payload
+    # it will never use.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        connectAndHandshake(s)
+        sendPacketTypeOnly(s, packet_type)
+        assert s.recv(1) == b"", "Expected the server to close the connection"
+        print("{} before a query: connection closed".format(packet_name))
+
+
+def duringInsertScenario(packet_type, packet_name):
+    # In the middle of an INSERT the query context is already there, so the exception itself is
+    # observable.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        connectAndHandshake(s)
+        startInsert(s)
+
+        sendPacketTypeOnly(s, packet_type)
+        text = readExceptionPacket(s, UNEXPECTED_PACKET_FROM_CLIENT)
+        assert "Unexpected packet {} received from client".format(packet_name) in text, text
+        print("{} during an insert: UNEXPECTED_PACKET_FROM_CLIENT".format(packet_name))
+
+
+def dataAfterFailedInsertScenario():
+    # The one place where a data packet of a doomed query is still deserialized: a client that keeps
+    # streaming data for an insert that has already failed. The blocks are read only to find where
+    # they end, so that the connection survives and can serve the next query.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        connectAndHandshake(s)
+        startInsert(s)
+
+        # `tab` has a CHECK constraint that every one of these rows violates, so the insert fails
+        # while the client is still sending.
+        for _ in range(4):
+            sendUInt64Block(s, [100])
+        sendEmptyBlock(s)  # end of the data
+
+        readExceptionPacket(s, VIOLATED_CONSTRAINT)
+
+        # The leftover blocks have been discarded, so the connection is still framed correctly.
+        sendPacketTypeOnly(s, 4)  # Ping
+        assert readVarUInt(s) == 4, "Expected Pong"
+        print("data after a failed insert: discarded, connection preserved")
+
+
+def main():
+    beforeQueryScenario(2, "Data")
+    beforeQueryScenario(7, "Scalar")
+    beforeQueryScenario(0, "Hello")
+
+    duringInsertScenario(1, "Query")
+    duringInsertScenario(0, "Hello")
+    duringInsertScenario(5, "TablesStatusRequest")
+
+    dataAfterFailedInsertScenario()
+
+
+if __name__ == "__main__":
+    main()

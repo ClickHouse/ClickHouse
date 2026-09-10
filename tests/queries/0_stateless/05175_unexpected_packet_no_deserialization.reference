@@ -1,0 +1,8 @@
+Data before a query: connection closed
+Scalar before a query: connection closed
+Hello before a query: connection closed
+Query during an insert: UNEXPECTED_PACKET_FROM_CLIENT
+Hello during an insert: UNEXPECTED_PACKET_FROM_CLIENT
+TablesStatusRequest during an insert: UNEXPECTED_PACKET_FROM_CLIENT
+data after a failed insert: discarded, connection preserved
+server alive	0

@@ -163,11 +163,6 @@ struct QueryState
 };
 
 
-struct LastBlockInputParameters
-{
-    Protocol::Compression compression = Protocol::Compression::Disable;
-};
-
 class TCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
@@ -271,9 +266,6 @@ private:
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
     std::shared_ptr<std::mutex> callback_mutex = std::make_shared<std::mutex>();
 
-    /// Last block input parameters are saved to be able to receive unexpected data packet sent after exception.
-    LastBlockInputParameters last_block_in;
-
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
     /// It is the name of the server that will be sent to the client.
@@ -315,11 +307,8 @@ private:
 
     void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
     void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
+    bool skipDataPacket(QueryState & state) TSA_REQUIRES(callback_mutex);
 
-    bool processUnexpectedData();
-    [[noreturn]] void processUnexpectedQuery();
-    [[noreturn]] void processUnexpectedHello();
-    [[noreturn]] void processUnexpectedTablesStatusRequest();
     /// Reject the obsolete IgnoredPartUUIDs packet (allow_experimental_query_deduplication was removed).
     [[noreturn]] void processObsoleteIgnoredPartUUIDs();
 
