@@ -205,9 +205,11 @@ ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of plain_pool_unlim) = 300"
 
 # Both JSON reads are the same fixture at the same max_threads, one bounded and one not, so nothing
 # here is compared against a literal: on a build that does not bound the read step the two submit the
-# same number. The bound is well under the default one because releasing a prefix stream returns its
-# capacity to the budget, so the bounded count grows with the query's churn rather than staying at the
-# limit: at 200 it was measured within 6% of the unbounded count, at 50 it stays around a fifth of it.
+# same number. Releasing a prefix stream returns its capacity to the budget, so the bounded count
+# tracks the query's churn instead of settling at the limit, and the limit here is well below the
+# default one to keep the two counts apart by more than that churn.
+# This row is also the file's shared-budget oracle: one budget per reader instead of one per read step
+# never binds at this limit, and the two counts become equal.
 echo "-- a bounded JSON read step prefetches fewer substreams than an unbounded one"
 ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of json_step_limit) < $(count_of json_step_unlim)"
 

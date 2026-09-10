@@ -52,7 +52,8 @@ public:
     MergeTreePrefetchSlot tryReserve(std::shared_ptr<MergeTreePrefetchBudget> self, size_t bytes);
 
     /// Whether any reservation could succeed. Advisory: used to skip opening a stream that would be
-    /// refused anyway, so a stale answer costs at most one prefetch either way.
+    /// refused anyway, so a stale answer costs at most one prefetch either way. Deliberately stricter
+    /// than `tryReserve` at exactly-full bytes, where admitting zero-byte candidates opens every one.
     bool hasCapacity();
 
 private:
