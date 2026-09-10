@@ -12,3 +12,5 @@
 1
 -- rewriting __name__ keeps the duplicate check conservative
 1
+-- count_values rewriting __name__ keeps the duplicate check conservative
+1

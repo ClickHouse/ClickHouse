@@ -45,4 +45,8 @@ SELECT '-- rewriting __name__ keeps the duplicate check conservative';
 SELECT countIf(explain LIKE '%timeSeriesThrowDuplicateSeriesIf%') > 0
 FROM (EXPLAIN SELECT * FROM prometheusQuery('prometheus', 'abs(label_replace(m, "__name__", "renamed", "", ""))', 120));
 
+SELECT '-- count_values rewriting __name__ keeps the duplicate check conservative';
+SELECT countIf(explain LIKE '%timeSeriesThrowDuplicateSeriesIf%') > 0
+FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus', 'abs(count_values("__name__", m))', 100, 120, 10));
+
 DROP TABLE prometheus;
