@@ -185,10 +185,8 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
         /// Skip CTEs whose holder was already extracted: `inlineViewSubqueryIfNeeded` runs a
         /// nested QueryAnalyzer::resolve on the view subtree, which registers the view's
         /// reused CTEs before the outer resolve reaches this point again.
-        auto query_context = context->getQueryContext();
         for (const auto & materialized_cte : reused_materialized_cte)
-            if (materialized_cte->table_holder.has_value())
-                query_context->addExternalTable(materialized_cte->temporary_table_name, materialized_cte->extractTableHolder());
+            materialized_cte->registerInQueryContext(context);
     }
     else
     {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 
@@ -15,6 +16,7 @@ class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
 class QueryPlan;
+class Pipe;
 
 /// Owns a temporary Memory table used by a materialized CTE. The writer
 /// (`MaterializingCTETransform`) commits the data to `storage` via
@@ -27,7 +29,7 @@ class QueryPlan;
 /// (asserted as a fail-fast invariant in `ReadFromMemoryStorageStep`).
 /// Pattern parallel to `CreatingSetsStep`'s `DelayedPortsProcessor`
 /// gating.
-struct MaterializedCTE
+struct MaterializedCTE : public std::enable_shared_from_this<MaterializedCTE>
 {
     explicit MaterializedCTE(const std::string & cte_name_);
 
@@ -35,6 +37,16 @@ struct MaterializedCTE
     MaterializedCTE & operator=(const MaterializedCTE &) = delete;
 
     ~MaterializedCTE() noexcept;
+
+    /// Initialize the shared storage after the CTE's output columns have been resolved.
+    void initializeStorage(const NamesAndTypesList & columns, const ContextPtr & context);
+
+    /// Transfer ownership of the temporary table to the query context, once.
+    void registerInQueryContext(const ContextPtr & context);
+
+    /// Materialize an already prepared source with the same writer used by planned CTEs.
+    /// The returned CTE is built and registered before any consumer can read it.
+    static std::shared_ptr<MaterializedCTE> materialize(const std::string & cte_name, Pipe source, const ContextPtr & context);
 
     bool isStorageInitialized() const noexcept
     {

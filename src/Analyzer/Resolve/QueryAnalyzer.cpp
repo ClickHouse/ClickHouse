@@ -3374,15 +3374,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             for (const auto & col : proj_cols)
                                 columns.emplace_back(col.name, col.type);
 
-                            auto query_context = scope.context->getQueryContext();
-                            auto storage_holder = TemporaryTableHolder(
-                                query_context,
-                                ColumnsDescription(std::move(columns), false),
-                                ConstraintsDescription{},
-                                nullptr /*query*/,
-                                true /*create_for_global_subquery*/);
-
-                            mat_table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
+                            mat_table_node->finalizeMaterializedCTE(columns, scope.context);
                         }
                         else
                         {
@@ -6102,15 +6094,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     for (const auto & col : projection_columns)
                         columns.emplace_back(col.name, col.type);
 
-                    auto query_context = scope.context->getQueryContext();
-                    auto storage_holder = TemporaryTableHolder(
-                        query_context,
-                        ColumnsDescription(std::move(columns), false),
-                        ConstraintsDescription{},
-                        nullptr /*query*/,
-                        true /*create_for_global_subquery*/);
-
-                    table_node->finalizeMaterializedCTE(std::move(storage_holder), scope.context);
+                    table_node->finalizeMaterializedCTE(columns, scope.context);
                 }
                 else
                 {
