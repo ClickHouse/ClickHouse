@@ -94,7 +94,7 @@ std::vector<JoinActionRef *> getApplicableExpressions(
 /// Compute selectivity combining direct edges and transitive equivalence classes.
 /// Direct edges and transitive equivalences may cover different columns between
 /// the two relation sets, so both contribute to the overall selectivity.
-double computeSelectivity(
+SelectivityEstimate computeSelectivity(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     SelectivityCache & expression_selectivity,
@@ -102,7 +102,7 @@ double computeSelectivity(
     const BitSet & left,
     const BitSet & right)
 {
-    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
 
     /// Also account for transitively-equivalent columns spanning both sides.
     using ConstClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
@@ -122,7 +122,7 @@ double computeSelectivity(
         /// to either side of the join. This is equivalent to evaluating all
         /// (left_member, right_member) pairs and taking the minimum selectivity,
         /// since min(1/max(l,r)) = 1/max(all l's and r's).
-        size_t max_ndv = 0;
+        UInt64 max_ndv = 0;
         bool has_left = false;
         bool has_right = false;
         for (const auto & equiv_member : *equiv_class)
@@ -130,22 +130,30 @@ double computeSelectivity(
             auto relation = equiv_member.getSourceRelations().getSingleBit();
             if (!relation)
                 continue;
+            auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
             if (left.test(*relation))
             {
                 has_left = true;
-                max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+                max_ndv = std::max(max_ndv, ndv.value_or(0));
             }
             else if (right.test(*relation))
             {
                 has_right = true;
-                max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+                max_ndv = std::max(max_ndv, ndv.value_or(0));
             }
         }
-        if (has_left && has_right && max_ndv > 0)
-            selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+        if (has_left && has_right)
+        {
+            estimate.has_equi = true;
+            if (max_ndv > 0)
+            {
+                estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
+                estimate.reliable = true;
+            }
+        }
     }
 
-    return selectivity;
+    return estimate;
 }
 
 }
