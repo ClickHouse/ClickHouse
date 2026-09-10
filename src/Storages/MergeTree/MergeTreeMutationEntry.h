@@ -1,7 +1,10 @@
 #pragma once
 
+#include <set>
+
 #include <base/types.h>
 #include <Disks/IDisk.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MutationCommands.h>
 #include <Common/TransactionID.h>
@@ -44,6 +47,11 @@ struct MergeTreeMutationEntry
     time_t finish_time = 0;
 
     UInt64 block_number = 0;
+
+    /// On-disk bytes the mutation's remaining parts had when this entry was created or loaded
+    /// (in-memory only): the denominator for byte-weighted progress in `system.mutations`.
+    /// Mutable because scope discovered later is accounted while reporting status, under the storage's mutex.
+    mutable MutationScopeInitialBytes initial_bytes_to_do;
 
     String latest_failed_part;
     MergeTreePartInfo latest_failed_part_info;

@@ -189,6 +189,43 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
     return {};
 }
 
+namespace
+{
+
+/// Where an active part stands relative to the scope of a mutation, i.e. the set of parts
+/// `selectPartsToMutate` will really rewrite. Every path that decides whether a mutation is
+/// finished must use this one predicate, or the same mutation can report as done on one path and
+/// unfinished on another, and a waiter (or its transaction) hangs on the difference.
+/// Only active parts are ever mutated, so an Outdated part is out of scope even while some
+/// transaction's snapshot can still see it.
+enum class PartMutationScope
+{
+    Outside,        /// Already mutated, or never this mutation's work.
+    Inside,         /// Work left, of known size.
+    PendingCommit,  /// Not countable work yet, but joins the scope once its transaction commits.
+};
+
+PartMutationScope getPartMutationScope(const IMergeTreeDataPart & part, Int64 mutation_version, const TransactionID & mutation_tid)
+{
+    if (part.info.getDataVersion() >= mutation_version)
+        return PartMutationScope::Outside;
+
+    /// A transactional mutation rewrites exactly the lower-version parts visible to its own
+    /// snapshot: that admits its own transaction's parts and excludes both other transactions'
+    /// uncommitted parts and the ones committed after the snapshot.
+    if (!mutation_tid.isNonTransactional())
+        return part.version && part.version->isVisible(mutation_tid.start_csn, mutation_tid)
+            ? PartMutationScope::Inside
+            : PartMutationScope::Outside;
+
+    /// A plain mutation rewrites every committed lower-version part, and an uncommitted one may
+    /// still be rolled back and never join it.
+    const bool committed = !part.version || part.version->getInfo().isCreated();
+    return committed ? PartMutationScope::Inside : PartMutationScope::PendingCommit;
+}
+
+}
+
 static bool supportTransaction(const Disks & disks, LoggerPtr log)
 {
     for (const auto & disk : disks)
@@ -1031,6 +1068,12 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     /// mutex across the file I/O would block merge selection for its full duration.
     auto prepared = prepareMutationEntry(commands, query_context);
     Int64 version = prepared.version;
+    /// Snapshot the byte weight of the parts this mutation will have to rewrite; the finished
+    /// portion keeps this weight in `progress`, whatever size the rewrite leaves behind.
+    for (const auto & part : getDataPartsVectorForInternalUsage())
+        if (getPartMutationScope(*part, version, prepared.entry.tid) == PartMutationScope::Inside)
+            prepared.entry.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
+
     String mutation_id = prepared.mutation_id;
     FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_register_mutation);
 
@@ -1333,12 +1376,9 @@ struct PartVersionWithName
 {
     Int64 version;
     String name;
+    UInt64 bytes_on_disk = 0;
+    MergeTreePartInfo info = {};
 };
-
-bool comparator(const PartVersionWithName & f, const PartVersionWithName & s)
-{
-    return f.version < s.version;
-}
 
 }
 
@@ -1399,12 +1439,27 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
         }
     }
 
-    auto data_parts = getVisibleDataPartsVector(txn);
-    for (const auto & data_part : data_parts)
+    /// Part is locked by a concurrent transaction, most likely it will never be mutated.
+    auto report_locked_part = [&](const DataPartPtr & part)
     {
-        Int64 data_version = data_part->info.getDataVersion();
-        if (data_version < mutation_version)
+        TIDHash part_locked = part->version->getRemovalTIDLockHash();
+        if (!part_locked || part_locked == mutation_entry.tid.getHash())
+            return false;
+        result.latest_failed_part = part->name;
+        result.latest_fail_reason = fmt::format("Serialization error: part {} is locked by transaction {}", part->name, part_locked);
+        result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::PART_IS_LOCKED);
+        result.latest_fail_time = time(nullptr);
+        return true;
+    };
+
+    /// Completion is decided by the one shared scope predicate over active parts - exactly the set
+    /// `selectPartsToMutate` rewrites - so a waiter here cannot disagree with `markFinishedMutations`
+    /// or `system.mutations` about the same mutation.
+    for (const auto & data_part : getDataPartsVectorForInternalUsage())
+    {
+        if (getPartMutationScope(*data_part, mutation_version, mutation_entry.tid) != PartMutationScope::Outside)
         {
+            const Int64 data_version = data_part->info.getDataVersion();
             if (!mutation_entry.latest_fail_reason.empty())
             {
                 result.latest_failed_part = mutation_entry.latest_failed_part;
@@ -1425,21 +1480,32 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
                 }
             }
             else if (txn && !from_another_mutation)
-            {
-                /// Part is locked by concurrent transaction, most likely it will never be mutated
-                TIDHash part_locked = data_part->version->getRemovalTIDLockHash();
-                if (part_locked && part_locked != mutation_entry.tid.getHash())
-                {
-                    result.latest_failed_part = data_part->name;
-                    result.latest_fail_reason = fmt::format("Serialization error: part {} is locked by transaction {}", data_part->name, part_locked);
-                    result.latest_fail_error_code_name = ErrorCodes::getName(ErrorCodes::PART_IS_LOCKED);
-                    result.latest_fail_time = time(nullptr);
-                }
-            }
+                report_locked_part(data_part);
 
             return result;
         }
     }
+
+    /// A part that this mutation's snapshot still sees but another transaction has already outdated
+    /// is never mutated (`selectPartsToMutate` skips Outdated parts), so it cannot keep the mutation
+    /// unfinished - but the mutation can never do that work either, so report the conflict.
+    if (txn && !from_another_mutation)
+    {
+        for (const auto & data_part : getDataPartsVectorForInternalUsage({DataPartState::Outdated}))
+        {
+            if (getPartMutationScope(*data_part, mutation_version, mutation_entry.tid) != PartMutationScope::Outside
+                && report_locked_part(data_part))
+                return result;
+        }
+    }
+
+    /// Every visible part is mutated, but an in-flight INSERT / ATTACH / MOVE PARTITION can still
+    /// commit a part under a lower block number, which this mutation must also rewrite; reporting
+    /// done here would let waiters return and see the mutation flip back to unfinished later.
+    /// A transactional mutation is scoped by its own snapshot instead (`selectPartsToMutate` only
+    /// mutates parts visible to its tid), so another transaction's part is never its work.
+    if (mutation_entry.tid.isNonTransactional() && getLowestUncommittedNewPartBlockNum() < mutation_version)
+        return result;
 
     result.is_done = true;
     return result;
@@ -1448,23 +1514,31 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
 std::map<std::string, MutationCommands> StorageMergeTree::getUnfinishedMutationCommands() const
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
-    std::vector<PartVersionWithName> part_versions_with_names;
     auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
-    for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
 
     std::map<std::string, MutationCommands> result;
 
+    const Int64 lowest_uncommitted_insert_block = getLowestUncommittedNewPartBlockNum();
     for (const auto & [mutation_version, entry] : current_mutations_by_version)
     {
-        const PartVersionWithName needle{static_cast<Int64>(mutation_version), ""};
-        auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
+        const bool scope_is_block_ordered = entry.tid.isNonTransactional();
+        size_t parts_to_do = 0;
+        /// Not countable work yet, but this mutation still has to rewrite it once the transaction
+        /// commits, so the entry must not be reported as having nothing left.
+        bool has_uncommitted_part_in_scope = false;
+        for (const auto & part : data_parts)
+        {
+            switch (getPartMutationScope(*part, static_cast<Int64>(mutation_version), entry.tid))
+            {
+                case PartMutationScope::Inside: ++parts_to_do; break;
+                case PartMutationScope::PendingCommit: has_uncommitted_part_in_scope = true; break;
+                case PartMutationScope::Outside: break;
+            }
+        }
 
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
-        if (parts_to_do > 0)
+        const bool waiting_for_lower_block
+            = scope_is_block_ordered && static_cast<Int64>(mutation_version) > lowest_uncommitted_insert_block;
+        if (parts_to_do > 0 || waiting_for_lower_block || has_uncommitted_part_in_scope)
             result.emplace(entry.file_name, *entry.commands);
     }
     return result;
@@ -1474,30 +1548,49 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 {
     std::lock_guard lock(currently_processing_in_background_mutex);
 
-    std::vector<PartVersionWithName> part_versions_with_names;
+    if (current_mutations_by_version.empty())
+        return {};
+
+    /// A part's membership in a mutation's scope depends on the mutation, so the parts are kept
+    /// together here and classified per entry below.
+    struct PartWithVersion
+    {
+        PartVersionWithName part;
+        DataPartPtr data_part;
+    };
+    std::vector<PartWithVersion> all_parts;
     auto data_parts = getDataPartsVectorForInternalUsage();
-    part_versions_with_names.reserve(data_parts.size());
+    all_parts.reserve(data_parts.size());
+    /// Postpone reasons are keyed by part name, so the scope predicate needs the part behind it.
+    std::unordered_map<std::string_view, DataPartPtr> active_parts_by_name;
+    active_parts_by_name.reserve(data_parts.size());
     for (const auto & part : data_parts)
-        part_versions_with_names.emplace_back(PartVersionWithName{part->info.getDataVersion(), part->name});
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end(), comparator);
+    {
+        all_parts.push_back(
+            {PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info}, part});
+        active_parts_by_name.emplace(part->name, part);
+    }
+
+    /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
+    /// The merge list has its own mutex, no lock ordering issue with the mutex held above.
+    std::unordered_map<String, Float64> mutating_part_progress;
+    for (const auto & merge : getContext()->getMergeList().get())
+    {
+        if (!merge.is_mutation || merge.database != getStorageID().getDatabaseName() || merge.table != getStorageID().getTableName())
+            continue;
+        for (const auto & source_part_name : merge.source_part_names)
+            mutating_part_progress[source_part_name.safeGet<String>()] = merge.progress;
+    }
+
+    /// An INSERT that took a lower block number but has not published its part yet lands inside the
+    /// scope of every mutation above that number, so their remaining byte weight is not known yet.
+    const Int64 lowest_uncommitted_insert_block = getLowestUncommittedNewPartBlockNum();
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)
     {
         Int64 mutation_version = kv.first;
         const MergeTreeMutationEntry & entry = kv.second;
-        const PartVersionWithName needle{mutation_version, ""};
-        auto versions_it = std::lower_bound(
-            part_versions_with_names.begin(), part_versions_with_names.end(), needle, comparator);
-
-        size_t parts_to_do = versions_it - part_versions_with_names.begin();
-        Names parts_to_do_names;
-        parts_to_do_names.reserve(parts_to_do);
-        for (size_t i = 0; i < parts_to_do; ++i)
-            parts_to_do_names.push_back(part_versions_with_names[i].name);
-
-        std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
-
         Names parts_in_progress_names;
         for (const auto &[part, future_version] : currently_mutating_part_future_versions)
         {
@@ -1505,8 +1598,57 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 parts_in_progress_names.push_back(part->name);
         }
 
+        const bool scope_is_block_ordered = entry.tid.isNonTransactional();
+        Names parts_to_do_names;
+        UInt64 bytes_to_do = 0;
+        Float64 bytes_in_flight_done = 0;
+        /// An uncommitted lower-version part - whose committing-block holder `MergeTreeSink::commitPart`
+        /// already released - is pending work of unknown size, so nothing-left does not mean done.
+        bool has_uncommitted_part_in_scope = false;
+        for (const auto & [part_version, data_part] : all_parts)
+        {
+            const auto scope = getPartMutationScope(*data_part, mutation_version, entry.tid);
+            if (scope == PartMutationScope::PendingCommit)
+                has_uncommitted_part_in_scope = true;
+            if (scope != PartMutationScope::Inside)
+                continue;
+
+            parts_to_do_names.push_back(part_version.name);
+            bytes_to_do += part_version.bytes_on_disk;
+            /// Scope discovered after the entry was created (e.g. a part committed under an
+            /// earlier block number) grows the denominator, so the work finished before the
+            /// discovery keeps its share of `progress`.
+            entry.initial_bytes_to_do.account(part_version.info, part_version.bytes_on_disk);
+            /// A rewrite of this part may stop short of this mutation's version, in which case it
+            /// advances an earlier mutation only. `parts_in_progress_names` holds the right cutoff.
+            if (std::find(parts_in_progress_names.begin(), parts_in_progress_names.end(), part_version.name) == parts_in_progress_names.end())
+                continue;
+            if (auto it = mutating_part_progress.find(part_version.name); it != mutating_part_progress.end())
+                bytes_in_flight_done += static_cast<Float64>(part_version.bytes_on_disk) * it->second;
+        }
+
+        /// The denominator is the byte weight the mutation's scope had when each part entered
+        /// it (re-measured from what remains after a restart), so finished parts keep their
+        /// pre-mutation weight whatever size the rewrite left behind.
+        UInt64 initial_bytes = std::max(entry.initial_bytes_to_do.bytes, bytes_to_do);
+        Float64 progress = std::clamp(
+            1.0 - (static_cast<Float64>(bytes_to_do) - bytes_in_flight_done)
+                / std::max<Float64>(static_cast<Float64>(initial_bytes), 1.0),
+            0.0, 1.0);
+
+        const bool waiting_for_lower_block = scope_is_block_ordered && lowest_uncommitted_insert_block < mutation_version;
+        const bool mutation_is_done = parts_to_do_names.empty()
+            && !waiting_for_lower_block
+            && !has_uncommitted_part_in_scope;
+        if (mutation_is_done)
+            entry.initial_bytes_to_do.finalize();
+
+        std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
+
         std::map<String, String> parts_postpone_reasons_map;
-        if (!parts_to_do_names.empty())
+        /// A part still pending its transaction's commit is in scope too, and the reason recorded
+        /// for it is the only diagnostic the entry has while it holds nothing else.
+        if (!parts_to_do_names.empty() || has_uncommitted_part_in_scope)
         {
             for (const auto &[part_name, postpone_reason] : current_parts_postpone_reasons)
             {
@@ -1514,13 +1656,17 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 {
                     parts_postpone_reasons_map[part_name] = postpone_reason;
                     chassert(current_parts_postpone_reasons.size() == 1);
+                    continue;
                 }
-                else
-                {
-                    auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-                    if (part_info.getDataVersion() < mutation_version)
-                        parts_postpone_reasons_map[part_name] = postpone_reason;
-                }
+
+                /// Same scope rule as `parts_to_do_names`, so the diagnostic cannot blame a part this
+                /// mutation never rewrites; a part that is gone keeps the plain block-number rule.
+                const auto part_it = active_parts_by_name.find(part_name);
+                const bool in_scope = part_it != active_parts_by_name.end()
+                    ? getPartMutationScope(*part_it->second, mutation_version, entry.tid) != PartMutationScope::Outside
+                    : MergeTreePartInfo::fromPartName(part_name, format_version).getDataVersion() < mutation_version;
+                if (in_scope)
+                    parts_postpone_reasons_map[part_name] = postpone_reason;
             }
         }
 
@@ -1536,12 +1682,15 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 parts_in_progress_names,
                 parts_to_do_names,
                 parts_postpone_reasons_map,
-                /* is_done = */parts_to_do_names.empty(),
+                /* is_done = */mutation_is_done,
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
                 entry.latest_fail_error_code_name,
             });
+            result.back().bytes_to_do = bytes_to_do;
+            if (!waiting_for_lower_block && !has_uncommitted_part_in_scope)
+                result.back().progress = progress;
         }
     }
 
@@ -1665,6 +1814,23 @@ void StorageMergeTree::loadMutations()
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
                 disk->removeFile(it->path());
+            }
+        }
+    }
+
+    if (!current_mutations_by_version.empty())
+    {
+        /// Re-snapshot the denominators for byte-weighted progress from what remains: the byte
+        /// weight of the parts finished before the restart is not recoverable. Parts of
+        /// transactions still open across the reload stay out, as everywhere else.
+        auto reload_parts = getDataPartsVectorForInternalUsage();
+        for (auto & mutation : current_mutations_by_version)
+        {
+            /// Same scope predicate as the live read path, so a restart does not change the denominator.
+            for (const auto & part : reload_parts)
+            {
+                if (getPartMutationScope(*part, static_cast<Int64>(mutation.first), mutation.second.tid) == PartMutationScope::Inside)
+                    mutation.second.initial_bytes_to_do.account(part->info, part->getBytesOnDisk());
             }
         }
     }
@@ -2493,23 +2659,67 @@ UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique
 
 size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_version)
 {
-    auto end_it = current_mutations_by_version.end();
+    /// A mutation is finished only when every part below its version is mutated - including
+    /// parts an in-flight INSERT / ATTACH / MOVE PARTITION can still commit under a lower block;
+    /// otherwise `clearOldMutations()` could drop the entry before that part is published.
+    Int64 done_below = getLowestUncommittedNewPartBlockNum();
     if (std::optional<Int64> min_version = getMinPartDataVersion())
-        end_it = current_mutations_by_version.upper_bound(*min_version);
+        done_below = std::min(done_below, *min_version);
 
     const time_t now = time(nullptr);
 
-    size_t done_count = 0;
-    for (auto it = current_mutations_by_version.begin(); it != end_it; ++it)
-    {
-        auto & entry = it->second;
+    /// Fetched lazily: only a transactional entry needs it, since only its completion is decided by
+    /// snapshot visibility rather than by the block-order bound above.
+    std::optional<DataPartsVector> parts_for_visibility;
 
-        if (!entry.tid.isNonTransactional())
-            break;
+    size_t done_count = 0;
+    /// `clearOldMutations` erases the leading `done_count` entries without re-checking them, so the
+    /// count must stay an unbroken run of entries it may erase: finished, and not transactional -
+    /// a transactional entry may be erased only once its transaction has committed.
+    bool erasable_prefix = true;
+    for (auto & [mutation_version, entry] : current_mutations_by_version)
+    {
+        if (entry.tid.isNonTransactional())
+        {
+            /// `max()` means nothing bounds completion - no uncommitted block and no part left -
+            /// so every ordinary entry is done. Otherwise the map is ordered by version, so once one
+            /// falls outside the bound so does every later one; the test is monotone, so skipping
+            /// rather than breaking costs nothing and still lets the transactional entries behind
+            /// this one reach the visibility check, which that bound does not decide.
+            if (done_below != std::numeric_limits<Int64>::max() && static_cast<Int64>(mutation_version) > done_below)
+            {
+                erasable_prefix = false;
+                continue;
+            }
+        }
+        else
+        {
+            /// A transactional mutation is finished once no part in its scope is left - the same
+            /// rule `getMutationsStatus` and `waitForMutation` report. Stopping at the first such
+            /// entry instead left it permanently unfinished here, so its counters were never
+            /// decremented and no entry behind it was ever marked done either.
+            if (!parts_for_visibility)
+                parts_for_visibility = getDataPartsVectorForInternalUsage();
+
+            const auto version = static_cast<Int64>(mutation_version);
+            const bool part_in_scope_left = std::any_of(
+                parts_for_visibility->begin(), parts_for_visibility->end(), [&](const auto & part)
+                {
+                    return getPartMutationScope(*part, version, entry.tid) != PartMutationScope::Outside;
+                });
+            if (part_in_scope_left)
+            {
+                erasable_prefix = false;
+                continue;
+            }
+        }
 
         if (!entry.is_done)
         {
             entry.is_done = true;
+            /// The scope of a done mutation cannot grow again, so drop its per-part bookkeeping
+            /// here rather than on the next `system.mutations` read, which may never come.
+            entry.initial_bytes_to_do.finalize();
             decrementMutationsCounters(mutation_counters, *entry.commands);
         }
 
@@ -2519,10 +2729,13 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
         /// was not observed. A mutation in the attributed range can be `is_done` already if a
         /// concurrent unattributed pass flipped it right after the event, so check `finish_time`
         /// itself rather than stamping under the `is_done` flip above.
-        if (!entry.finish_time && it->first >= first_just_completed_version)
+        if (!entry.finish_time && mutation_version >= first_just_completed_version)
             entry.finish_time = now;
 
-        ++done_count;
+        if (!entry.tid.isNonTransactional())
+            erasable_prefix = false;
+        if (erasable_prefix)
+            ++done_count;
     }
 
     return done_count;
@@ -4059,5 +4272,14 @@ CommittingBlocksSet StorageMergeTree::getCommittingBlocks() const
 {
     std::lock_guard lock(committing_blocks_mutex);
     return committing_blocks;
+}
+
+Int64 StorageMergeTree::getLowestUncommittedNewPartBlockNum() const
+{
+    /// Committing blocks are ordered by number, so the first NewPart entry is the lowest one.
+    for (const auto & block : getCommittingBlocks())
+        if (block.op == CommittingBlock::Op::NewPart)
+            return block.number;
+    return std::numeric_limits<Int64>::max();
 }
 }
