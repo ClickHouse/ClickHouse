@@ -1,3 +1,5 @@
+-- Tags: long
+
 SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS nullable_tuple_timestamps;
@@ -9,9 +11,10 @@ FROM numbers(10);
 
 -- Scale conversion excludes only timestamps with digits that the destination cannot represent.
 -- Nullable fields, outer NULLs, empty containers, and tuple field mapping retain their own semantics.
+-- Every pair of scales that drops digits is checked. All lossless conversions take the same path, so one
+-- widening pair and one identity pair represent them.
 {% for mode in [0, 1] %}
-{% for source_scale in [0, 3, 6, 9] %}
-{% for target_scale in [0, 3, 6, 9] %}
+{% for source_scale, target_scale in [(0, 9), (3, 0), (6, 0), (6, 3), (9, 0), (9, 3), (9, 6), (9, 9)] %}
 {% set source_timestamp_type = "DateTime64(" ~ source_scale ~ ", 'UTC')" %}
 {% set target_timestamp_type = "DateTime64(" ~ target_scale ~ ", 'UTC')" %}
 {% for label, expression, target, null_value, empty in [
@@ -44,7 +47,6 @@ FROM
     FROM inputs
 )
 SETTINGS transform_null_in = {{ mode }}, max_block_size = 3;
-{% endfor %}
 {% endfor %}
 {% endfor %}
 {% endfor %}
