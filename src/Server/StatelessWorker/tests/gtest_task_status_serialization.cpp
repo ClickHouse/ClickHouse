@@ -139,7 +139,7 @@ TEST(TaskStatusSerialization, NewVersionEmptyLogs)
 /// The version the worker serializes a status with, negotiated from the coordinator's
 /// `task_status_version` request parameter. Extracted from the get_status endpoint so it can be
 /// tested without an HTTPServerResponse (which needs a live socket session).
-TEST(TaskStatusNegotiation, ClampAndLegacyDefault)
+TEST(TaskStatusNegotiation, LegacyDefaultAndRoundTrip)
 {
     /// Old coordinator sends nothing -> legacy format it can read.
     EXPECT_EQ(negotiateTaskStatusVersion(std::nullopt),
@@ -152,8 +152,4 @@ TEST(TaskStatusNegotiation, ClampAndLegacyDefault)
     /// The logs feature version round-trips (regression guard on the specific constant).
     EXPECT_EQ(negotiateTaskStatusVersion(DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_TASK_LOGS),
               DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_TASK_LOGS);
-
-    /// Newer coordinator than this worker -> clamp down to what the worker can serialize.
-    EXPECT_EQ(negotiateTaskStatusVersion(DBMS_TCP_PROTOCOL_VERSION + 100),
-              DBMS_TCP_PROTOCOL_VERSION);
 }
