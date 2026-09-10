@@ -98,7 +98,8 @@ void MergeTreeReaderCompact::fillColumnPositions()
             const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
             const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
             const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
-            if (!type_for_subcolumn->hasSubcolumn(subcolumn_name))
+            if (!part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_to_read.name)
+                && !type_for_subcolumn->hasSubcolumn(subcolumn_name))
                 position.reset();
         }
 
@@ -390,7 +391,8 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         auto column_from_part = part_columns.getColumn(GetColumnsOptions::All, column);
         for (size_t index : subcolumns_indexes)
         {
-            if (column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
+            if (part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), columns_to_read[index].name)
+                || column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
             {
                 subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
                                           .withType(columns_to_read[index].type)

@@ -81,6 +81,17 @@
         SETTINGS min_bytes_for_wide_part = 1, min_rows_for_wide_part = 1
     </create_query>
 
+    <create_query>
+        CREATE TABLE json_subcolumn_serialization_cache_compact AS json_subcolumn_serialization_cache
+        ENGINE = MergeTree PARTITION BY part ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = '100G', write_marks_for_substreams_in_compact_parts = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE json_subcolumn_serialization_cache_compact_substreams AS json_subcolumn_serialization_cache
+        ENGINE = MergeTree PARTITION BY part ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = '100G', write_marks_for_substreams_in_compact_parts = 1
+    </create_query>
+
     <fill_query>
         INSERT INTO json_subcolumn_serialization_cache
         SELECT number, toJSONString(map('p510', number, 'p511', number))
@@ -88,8 +99,15 @@
         SETTINGS max_partitions_per_insert_block = 96
     </fill_query>
 
+    <fill_query>INSERT INTO json_subcolumn_serialization_cache_compact SELECT * FROM json_subcolumn_serialization_cache</fill_query>
+    <fill_query>INSERT INTO json_subcolumn_serialization_cache_compact_substreams SELECT * FROM json_subcolumn_serialization_cache</fill_query>
+
     <!-- The declared typed path avoids dynamic-path type resolution and isolates serialization lookup. -->
     <query>SELECT json.p510, json.p511 FROM json_subcolumn_serialization_cache FORMAT Null</query>
+    <query>SELECT json.p510, json.p511 FROM json_subcolumn_serialization_cache_compact FORMAT Null</query>
+    <query>SELECT json.p510, json.p511 FROM json_subcolumn_serialization_cache_compact_substreams FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS json_subcolumn_serialization_cache</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_subcolumn_serialization_cache_compact</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_subcolumn_serialization_cache_compact_substreams</drop_query>
 </test>
