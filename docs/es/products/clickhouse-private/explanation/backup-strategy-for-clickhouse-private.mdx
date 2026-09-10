@@ -1,0 +1,43 @@
+---
+noindex: true
+title: "Estrategia de copia de seguridad para ClickHouse Private"
+sidebarTitle: "Estrategia de copia de seguridad"
+description: "Este documento explica el comportamiento y las limitaciones de las copias de seguridad en ClickHouse Private."
+---
+
+Este documento explica el comportamiento y las limitaciones de las copias de seguridad en ClickHouse Private. Para consultar los conceptos generales sobre copias de seguridad en ClickHouse (completas frente a incrementales, cadenas de copias de seguridad y sintaxis SQL), consulta la [documentación general de copias de seguridad de ClickHouse](https://clickhouse.com/docs/operations/backup/overview). Para ver procedimientos paso a paso, consulta [Hacer copia de seguridad y restaurar (manual)](/es/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) o [Gestionar copias de seguridad mediante API](/es/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+<div id="backup-location">
+  ## Ubicación de las copias de seguridad
+</div>
+
+Las copias de seguridad se almacenan en **Amazon S3**. Las copias de seguridad de cada clúster se organizan bajo el prefijo de clave S3 del clúster (que se encuentra en el CR, en `spec.s3.keyPrefix`), lo que garantiza que las copias de seguridad de distintos clústeres permanezcan aisladas incluso cuando comparten el mismo bucket de S3.
+
+<div id="manual-vs-api-driven-backups">
+  ## Copias de seguridad manuales vs. mediante API
+</div>
+
+ClickHouse Private admite dos enfoques para las copias de seguridad:
+
+* **Manual (SQL)** -- Ejecute las sentencias `BACKUP`/`RESTORE` directamente en un pod de Kubernetes del servidor. Control total sobre el alcance y las rutas de S3. Consulte [Hacer copia de seguridad y restaurar (manual)](/es/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+* **Mediante API** -- Use el endpoint REST de la API privada, que crea recursos personalizados `Backup` administrados por el operador. Consulte [Gestionar copias de seguridad mediante API](/es/products/clickhouse-private/guides/manage-backups-via-the-private-api) y la [referencia de la API](/es/products/clickhouse-private/reference/clickhouse-private-api-reference).
+
+<div id="backup-pod-designation">
+  ## Designación del pod de copia de seguridad
+</div>
+
+En la arquitectura MultiSTS, se designa exactamente una réplica como **pod de copia de seguridad** (`isBackupPod: true` en el ReplicaStateMap). Las operaciones de copia de seguridad siempre se ejecutan en este pod de Kubernetes. El operador evita marcar el pod de copia de seguridad como Condemned durante la reducción de escala para no interrumpir las operaciones de copia de seguridad.
+
+<div id="restore-limitation">
+  ## Limitación de la restauración
+</div>
+
+La API privada **no permite restaurar una copia de seguridad en el mismo clúster** del que se creó (`instance_id == target_instance_id`). Esto evita añadir carga adicional a un clúster de producción en funcionamiento y reduce el riesgo de sobrescribir datos. El enfoque recomendado es aprovisionar un clúster nuevo y restaurar en él.
+
+Si debe restaurar en el mismo clúster (por ejemplo, para recuperar una tabla específica), use comandos SQL manuales directamente en un pod de Kubernetes del servidor.
+
+<div id="incremental-backup-chain-integrity">
+  ## Integridad de la cadena de copias de seguridad incrementales
+</div>
+
+Al usar políticas de ciclo de vida de S3 con copias de seguridad incrementales, asegúrese de que las reglas de expiración no eliminen una copia de seguridad completa mientras aún existan copias de seguridad incrementales que dependan de ella. Si se elimina una copia de seguridad completa, ninguna de las copias de seguridad incrementales de su cadena podrá restaurarse.

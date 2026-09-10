@@ -1,0 +1,64 @@
+---
+title: 'Bring Your Own Cloud'
+slug: /docs/products/bring-your-own-cloud
+sidebarTitle: 'نظرة عامة'
+keywords: ['BYOC', 'cloud', 'bring your own cloud']
+description: 'انشر ClickHouse على بنيتك التحتية السحابية الخاصة'
+doc_type: 'مرجع'
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يتيح لك BYOC ‏(Bring Your Own Cloud) نشر ClickHouse Cloud على بنيتك التحتية السحابية الخاصة. ويكون ذلك مفيدًا إذا كانت لديك متطلبات أو قيود محددة تحول دون استخدام خدمة ClickHouse Cloud المُدارة.
+
+> **إذا كنت ترغب في الحصول على هذه الإمكانية، يُرجى [التواصل معنا](https://clickhouse.com/cloud/bring-your-own-cloud).** راجع [شروط الخدمة](https://clickhouse.com/legal/agreements/terms-of-service) لمزيد من المعلومات.
+
+لا تتوفر حاليًا ميزة BYOC إلا على AWS. ويمكنك الانضمام إلى قائمة الانتظار الخاصة بـ GCP وAzure من [هنا](https://clickhouse.com/cloud/bring-your-own-cloud).
+
+<Note>
+  صُمم BYOC خصيصًا لعمليات النشر واسعة النطاق، ويتطلب من العملاء توقيع عقد التزام.
+</Note>
+
+<div id="glossary">
+  ## مسرد المصطلحات
+</div>
+
+* **ClickHouse VPC:**  شبكة VPC المملوكة لـ ClickHouse Cloud.
+* **Customer BYOC VPC:** شبكة VPC المملوكة للحساب السحابي الخاص بالعميل، والتي تُوفَّر وتُدار بواسطة ClickHouse Cloud وتُخصَّص لعملية نشر BYOC على ClickHouse Cloud.
+* **Customer VPC** شبكات VPC الأخرى المملوكة للحساب السحابي الخاص بالعميل والمستخدمة للتطبيقات التي تحتاج إلى الاتصال بـ Customer BYOC VPC.
+
+<div id="features">
+  ## الميزات
+</div>
+
+<div id="supported-features">
+  ### الميزات المدعومة
+</div>
+
+* **SharedMergeTree**: يستخدم ClickHouse Cloud وBYOC نفس الملف التنفيذي ونفس الإعدادات. لذلك، تكون جميع ميزات ClickHouse الأساسية مدعومة في BYOC، مثل SharedMergeTree.
+* **الوصول إلى Console لإدارة حالة الخدمة**:
+  * يدعم عمليات مثل البدء، والإيقاف، والإنهاء.
+  * عرض الخدمات والحالة.
+* **النسخ الاحتياطي والاستعادة.**
+* **التحجيم الرأسي والأفقي اليدوي.**
+* **الخمول.**
+* **Warehouses**: فصل الحوسبة عن الحوسبة
+* **شبكة Zero Trust عبر Tailscale.**
+* **المراقبة**:
+  * يتضمن Cloud Console لوحات معلومات مدمجة لمراقبة سلامة الخدمة.
+  * يدعم كشط Prometheus للمراقبة المركزية باستخدام Prometheus وGrafana وDatadog. راجع [وثائق Prometheus](/ar/products/cloud/features/monitoring/prometheus) للحصول على إرشادات الإعداد.
+* **VPC Peering.**
+* **Integrations**: راجع القائمة الكاملة في [هذه الصفحة](/ar/integrations/home).
+* **S3 الآمن.**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/).**
+
+<div id="planned-features-currently-unsupported">
+  ### الميزات المخطط لها (غير مدعومة حاليًا)
+</div>
+
+* [AWS KMS](https://aws.amazon.com/kms/) المعروف أيضًا باسم CMEK (مفاتيح التشفير المُدارة من قِبل العميل)
+* ClickPipes لإدخال البيانات
+* التوسع التلقائي
+* واجهة MySQL

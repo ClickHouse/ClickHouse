@@ -54,8 +54,6 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
     Names index_columns;
     String index_name;
     BloomFilterParameters params;
-
-    std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
 
     MergeTreeIndexGranuleBloomFilterTextPtr granule;
@@ -149,10 +147,7 @@ private:
     Names index_columns;
     DataTypes index_data_types;
     BloomFilterParameters params;
-
-    std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
-
     RPN rpn;
 };
 

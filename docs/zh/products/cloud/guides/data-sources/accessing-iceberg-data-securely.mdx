@@ -25,15 +25,25 @@ ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在�
 </div>
 
 <Steps>
-  <Step title="1. 登录您的 ClickHouse Cloud 账户。" id="login" />
+  <Step>
+    ### 1. 登录您的 ClickHouse Cloud 账户。
+  </Step>
 
-  <Step title="2. 选择要查询 Iceberg 数据的 ClickHouse 服务。" id="select-service" />
+  <Step>
+    ### 2. 选择要查询 Iceberg 数据的 ClickHouse 服务。
+  </Step>
 
-  <Step title={<>3. 转到 <strong>Settings</strong> 选项卡。</>} id="settings-tab" />
+  <Step>
+    ### 3. 转到 **Settings** 选项卡。
+  </Step>
 
-  <Step title={<>4. 向下滚动到 <strong>Network security 信息</strong>。</>} id="network-security-information" />
+  <Step>
+    ### 4. 向下滚动到 **Network security 信息**。
+  </Step>
 
-  <Step title={<>5. 复制 <strong>服务角色 ID (IAM)</strong> 的值。</>} id="service-role-iam-value">
+  <Step>
+    ### 5. 复制 **Service role ID (IAM)** 的值。
+
     此 ARN 是为将访问您的 Iceberg 数据的 AWS IAM 角色配置信任策略所必需的。
 
     <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="获取 ClickHouse 服务 IAM 角色 ARN" border />
@@ -45,13 +55,19 @@ ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在�
 </div>
 
 <Steps>
-  <Step title="1. 登录 AWS 并进入 IAM 服务。" id="aws-iam-service" />
+  <Step>
+    ### 1. 登录 AWS 并进入 IAM 服务。
+  </Step>
 
-  <Step title="2. 选择 Roles，然后点击 Create role。" id="create-role">
+  <Step>
+    ### 2. 选择 Roles，然后点击 Create role。
+
     将 `Trusted entity type` 设为 `Custom trust policy`，并根据步骤 3 填写相应的值。
   </Step>
 
-  <Step title="3. 添加信任策略和 IAM 策略。" id="add-trust-iam-policies">
+  <Step>
+    ### 3. 添加信任策略和 IAM 策略。
+
     将 `{service-role-id}` 替换为你的 ClickHouse 实例中的 Service Role ID (IAM)。
 
     ```json
@@ -106,7 +122,9 @@ ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在�
     </Note>
   </Step>
 
-  <Step title="4. 完成角色创建。" id="finish-role-creation">
+  <Step>
+    ### 4. 完成角色创建。
+
     a. 点击 Next，然后在权限分配页面再次点击 Next。
 
     b. 添加名称 (例如 `iceberg-role-for-clickhouse`) 和描述。
@@ -118,7 +136,9 @@ ClickHouse Cloud 通过基于 ARN 的 AWS IAM 信任关系，支持对存储在�
     e. 选择 `Create role`。
   </Step>
 
-  <Step title={<>5. 创建完成后，复制新的 <strong>IAM Role Arn</strong>。</>} id="copy-role-arn" />
+  <Step>
+    ### 5. 创建完成后，复制新的 **IAM Role Arn**。
+  </Step>
 </Steps>
 
 <div id="configure-iceberg-access">

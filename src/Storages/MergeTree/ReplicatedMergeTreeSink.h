@@ -1,6 +1,5 @@
 #pragma once
 
-#include <exception>
 #include <optional>
 #include <string>
 #include <base/types.h>
@@ -141,10 +140,6 @@ protected:
     size_t max_parts_per_block;
 
     UInt64 deduplication_cache_version = 0;
-
-    /// The result of the "too many parts" check, evaluated on the query thread at sink
-    /// construction and thrown from onStart, when the sink starts executing.
-    std::exception_ptr too_many_parts_exception;
 
     bool is_attach = false;
     bool allow_attach_while_readonly = false;
