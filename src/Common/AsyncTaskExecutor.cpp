@@ -26,6 +26,10 @@ AsyncTaskExecutor::AsyncTaskExecutor(
 
 bool AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept
 {
+    /// Make sure there is a valid tracing context before any new attribute is set
+    if (!parent_trace_context.isTraceEnabled())
+        return false;
+
     std::lock_guard guard(span_attributes_mutex);
     try
     {
@@ -42,11 +46,8 @@ bool AsyncTaskExecutor::addSpanAttribute(OpenTelemetry::SpanAttribute attribute)
 void AsyncTaskExecutor::setSpanStatus(OpenTelemetry::SpanStatus status, String message) noexcept
 {
     std::lock_guard guard(span_attributes_mutex);
-    /// ERROR is final. OK is provisional: callers buffer it ahead of a cancel, and a cancel
-    /// that fails must still be able to turn it into ERROR before the span is logged.
+    /// ERROR is final. UNSET is the default and cannot be requested explicitly.
     if (span_status == OpenTelemetry::SpanStatus::ERROR || status == OpenTelemetry::SpanStatus::UNSET)
-        return;
-    if (span_status == OpenTelemetry::SpanStatus::OK && status == OpenTelemetry::SpanStatus::OK)
         return;
     span_status = status;
     span_status_message = std::move(message);
@@ -119,7 +120,7 @@ void AsyncTaskExecutor::cancel()
         catch (...)
         {
             /// The coroutine is destroyed on scope exit and logs the span right away. A cancellation
-            /// that fails is this task's failure, so record it before the buffered OK is flushed.
+            /// that fails is this task's failure, so record it before the span is flushed.
             setSpanStatus(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(/*with_stacktrace=*/false));
             throw;
         }
@@ -162,7 +163,7 @@ struct AsyncTaskExecutor::Routine
             std::exchange(executor.initial_span_id, 0ULL));
 
         /// A non-zero initial start time hands over a span opened before the executor existed
-        /// Otherwise keep the current time set by the holder. The exchange makes the handover one-shot
+        /// Otherwise keep the current time set by the holder. The exchange makes the handover one-shot.
         if (trace_context_holder.root_span.isTraceEnabled())
         {
             if (UInt64 initial_start_time_us = std::exchange(executor.initial_span_start_time_us, 0ULL))

@@ -293,13 +293,12 @@ private:
     /// Shard identification for the OpenTelemetry span covering this executor.
     ShardScope shard_scope;
 
-    /// Span covering the whole fragment execution on the synchronous path (no read context
-    /// fiber): connection establishing, query sending and packet reading until `EndOfStream`,
-    /// an exception or a cancel.
+    /// Span covering the whole fragment execution on the synchronous path (no read context fiber)
     std::unique_ptr<OpenTelemetry::Span> sync_fragment_span;
-    /// Captured when the span is created: the thread finishing the span may have no
-    /// tracing context of its own.
+    /// Captured when the span is created: the thread finishing the span may have no tracing context of its own.
     std::weak_ptr<OpenTelemetrySpanLog> sync_fragment_span_log;
+    /// Set once the fragment span has an outcome.
+    bool fragment_outcome_recorded = false;
 
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
@@ -405,7 +404,8 @@ private:
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);
-    void tryCancel(const char * reason) TSA_REQUIRES(was_cancelled_mutex);
+    /// `reason` goes to the log
+    void tryCancel(const char * reason, std::string_view span_cancel_reason) TSA_REQUIRES(was_cancelled_mutex);
 
     /// Returns true if query was sent
     bool isQueryPending() const;
@@ -423,13 +423,29 @@ private:
     /// covering it (the read context fiber span or the synchronous-path fragment span).
     OpenTelemetry::SpanAttributes getFragmentSpanAttributes() const;
 
+    /// Add an attribute to whichever span covers the fragment. No-op when the fragment is not traced.
+    void addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept;
+
     /// Record the fragment's outcome on whichever span covers it: writes the detached synchronous-path span to the span log,
     /// or buffers the status onto the read context fiber span, which is applied when the fiber exits.
+    /// The status follows a three-state model: OK only for a fragment that delivered its full result
+    /// (`EndOfStream`), ERROR for a genuine failure, UNSET plus an explaining attribute otherwise
+    /// (`clickhouse.cancelled`, `clickhouse.replica_unavailable`, `clickhouse.span_truncated`).
     void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept;
+
+    /// Tag the fragment span as cancelled by the initiator: `clickhouse.cancelled = 1` and
+    /// `clickhouse.cancel_reason = reason`. The status stays UNSET (neither success nor failure).
+    /// Does not close the span; idempotent, and a no-op once an outcome is recorded.
+    void markFragmentCancelled(std::string_view reason) noexcept;
 
     /// Record a shard failure tolerated by `skip_unavailable_shards` as ERROR on the fragment
     /// span, tagged with the `clickhouse.shard_skipped` attribute.
     void finishFragmentSpanForSkippedShard(String status_message) noexcept;
+
+    /// Close the fragment span of a parallel replica that became unavailable: its work is
+    /// reassigned by the coordinator, so the fragment neither delivered nor failed. The status
+    /// stays UNSET, tagged with the `clickhouse.replica_unavailable` attribute.
+    void finishFragmentSpanForUnavailableReplica() noexcept;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);
