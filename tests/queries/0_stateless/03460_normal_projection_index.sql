@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 -- { echo ON }
 
 SET optimize_use_projections = 1;

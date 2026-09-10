@@ -1,6 +1,7 @@
 -- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
 SET force_primary_key_reverse_order = 0;
 
+SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1;
 DROP TABLE IF EXISTS mytable;
 
@@ -30,12 +31,22 @@ SELECT if(explain like '%ReadType: InOrder%', 'Ok', 'Error: ' || explain) FROM (
 ) WHERE explain like '%ReadType%';
 
 
+SELECT if(explain like '%ReadType: InReverseOrder%', 'Ok', 'Error: ' || explain) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT timestamp, value
+    FROM mytable FINAL
+    WHERE key = 5
+    ORDER BY timestamp DESC
+) WHERE explain like '%ReadType%';
+
+
 SELECT if(explain like '%ReadType: Default%', 'Ok', 'Error: ' || explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT timestamp, value
     FROM mytable FINAL
     WHERE key = 5
     ORDER BY timestamp DESC
+    SETTINGS optimize_read_in_reverse_order_final = 0
 ) WHERE explain like '%ReadType%';
 
 

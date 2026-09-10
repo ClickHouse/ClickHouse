@@ -1,0 +1,10 @@
+CREATE TABLE t (`e` Enum8(\'a\' = 1, \'b\' = 2)) ENGINE = Memory
+CREATE TABLE t (`e` Enum16(\'a\' = 100, \'b\' = 200)) ENGINE = Memory
+CREATE TABLE t (`e` Enum8(\'a\' = -1, \'b\' = 0, \'c\' = 1)) ENGINE = Memory
+CREATE TABLE t (`e` Enum8(\'only\' = 42)) ENGINE = Memory
+CREATE TABLE t (`e` Nullable(Enum8(\'a\' = 1, \'b\' = 2))) ENGINE = Memory
+CREATE TABLE t (`e` Array(Enum8(\'a\' = 1))) ENGINE = Memory
+CREATE TABLE t (`e` Enum8(\'a\', \'b\')) ENGINE = Memory
+CREATE TABLE t (`x` Tuple(a UInt8, b String)) ENGINE = Memory
+CREATE TABLE t (`x` Tuple(UInt8, String)) ENGINE = Memory
+CREATE TABLE t (`x` Array(Tuple(a UInt8, b String))) ENGINE = Memory

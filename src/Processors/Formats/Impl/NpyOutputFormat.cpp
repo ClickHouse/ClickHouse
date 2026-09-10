@@ -254,6 +254,7 @@ void NpyOutputFormat::writeColumns()
     }
 }
 
+void registerOutputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory)
 {
     factory.registerOutputFormat("Npy",[](

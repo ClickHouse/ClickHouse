@@ -1,4 +1,3 @@
-SET query_plan_use_new_logical_join_step = 0;
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t1;

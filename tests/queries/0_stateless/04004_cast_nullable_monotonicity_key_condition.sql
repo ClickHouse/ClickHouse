@@ -2,6 +2,7 @@
 -- EXPLAIN output may differ
 -- Disable force_primary_key_reverse_order: EXPLAIN key conditions depend on key direction
 SET force_primary_key_reverse_order = 0;
+SET explain_query_plan_default = 'legacy';
 
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;

@@ -6,7 +6,8 @@
 
 #include <memory>
 #include <mutex>
-#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace DB
@@ -23,13 +24,13 @@ public:
         std::string callback;
     };
 
-    struct FileEvents
-    {
-        bool received_modification_event = false;
-        std::vector<EventInfo> file_events;
-    };
-
-    using Events = std::unordered_map<std::string, FileEvents>;
+    /// Events are accumulated as a flat chronologically-ordered sequence so that
+    /// consumers see the cross-name order matching the kernel-emitted order
+    /// (within a single batch). The previous per-name aggregation was an
+    /// `unordered_map`, which dropped global ordering and made rename pairs
+    /// (`DW_ITEM_MOVED_FROM` on one name + `DW_ITEM_MOVED_TO` on another)
+    /// race against unrelated events on a third name.
+    using Events = std::vector<std::pair<std::string, EventInfo>>;
 
     struct Error
     {
@@ -68,6 +69,12 @@ private:
     /// And we should put other members before dw as well, because all of them can be
     /// accessed in thread created by dw.
     Events events;
+
+    /// Dedup state for repeated `DW_ITEM_MODIFIED` events within a single
+    /// batch. The original aggregation stored this per-name in `FileEvents`;
+    /// with a flat event list we keep it as a side set, cleared together with
+    /// `events` on `getEventsAndReset`.
+    std::unordered_set<std::string> modified_seen;
 
     LoggerPtr log;
 

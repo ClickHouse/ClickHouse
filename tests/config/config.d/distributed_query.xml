@@ -1,0 +1,39 @@
+<clickhouse>
+
+    <!-- Enable Stateless Worker endpoint -->
+    <stateless_worker_server>
+        <enabled>1</enabled>
+        <endpoint>localhost</endpoint>
+    </stateless_worker_server>
+
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <!-- Distributed reads require a single-shard worker cluster (replicas hold the same data). -->
+        <cluster>test_cluster_one_shard_two_replicas</cluster>
+    </stateless_worker_client>
+
+    <distributed_query>
+        <streaming_exchange_port>9223</streaming_exchange_port>
+        <streaming_exchange_listen_host>0.0.0.0</streaming_exchange_listen_host>
+        <streaming_exchange_listen_host>::</streaming_exchange_listen_host>
+        <temporary_files_storage>
+            <!-- Using local object storage  -->
+            <type>local</type>
+            <path>./local_object_storage/</path>
+            <endpoint_subpath>tmp_sub_path/</endpoint_subpath>
+
+            <!-- Using S3 object strorage -->
+<!--
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <path>s3_disk/</path>
+                <endpoint>http://localhost:11111/test/test/</endpoint>
+                <endpoint_subpath>tmp_sub_path/</endpoint_subpath>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+                <request_timeout_ms>20000</request_timeout_ms>
+ -->
+        </temporary_files_storage>
+    </distributed_query>
+
+</clickhouse>

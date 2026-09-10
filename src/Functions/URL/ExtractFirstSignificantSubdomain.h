@@ -33,8 +33,8 @@ struct ExtractFirstSignificantSubdomain
         res_data = data;
         res_size = 0;
 
-        Pos tmp;
-        size_t domain_length;
+        Pos tmp = nullptr;
+        size_t domain_length = 0;
         ExtractDomain<without_www, conform_rfc>::execute(data, size, tmp, domain_length);
 
         if (domain_length == 0)
@@ -103,8 +103,8 @@ struct ExtractFirstSignificantSubdomain
         res_data = data;
         res_size = 0;
 
-        Pos tmp;
-        size_t domain_length;
+        Pos tmp = nullptr;
+        size_t domain_length = 0;
         ExtractDomain<without_www, conform_rfc>::execute(data, size, tmp, domain_length);
 
         if (domain_length == 0)

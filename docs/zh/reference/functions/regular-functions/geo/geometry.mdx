@@ -1,0 +1,149 @@
+---
+description: 'Geometry 函数文档'
+sidebarTitle: 'Geometry'
+slug: /sql-reference/functions/geo/geometry
+title: '用于处理 Geometry 的函数'
+doc_type: 'reference'
+---
+
+<div id="geometry">
+  ## Geometry
+</div>
+
+Geometry 函数可用于计算 POLYGON、LINESTRING、MULTIPOLYGON、MULTILINESTRING、RING 和 POINT 等几何类型的周长和面积。请在 Geometry 类型中使用几何对象。如果输入值为 `NULL`，则以下所有函数都返回 0。
+
+<div id="perimetercartesian">
+  ## perimeterCartesian
+</div>
+
+计算给定 Geometry 对象在笛卡尔 (平面) 坐标系中的周长。
+
+**语法**
+
+```sql
+perimeterCartesian(geom)
+```
+
+**参数**
+
+* `geom` — Geometry 对象。[Geometry](/zh/reference/data-types/geo)。
+
+**返回值**
+
+* 数值 — 该对象的周长，以坐标系单位表示。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT perimeterCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterCartesian(geom)─┐
+│ 4.0                      │
+└──────────────────────────┘
+```
+
+<div id="areacartesian">
+  ## areaCartesian
+</div>
+
+计算给定 Geometry 对象在笛卡尔坐标系下的面积。
+
+**语法**
+
+```sql
+areaCartesian(geom)
+```
+
+**参数**
+
+* `geom` — Geometry 对象。[Geometry](/zh/reference/data-types/geo)。
+
+**返回值**
+
+* 数值 — 对象的面积，以坐标系单位表示。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaCartesian(geom)─┐
+│ -1                  │
+└─────────────────────┘
+```
+
+<div id="perimeterspherical">
+  ## perimeterSpherical
+</div>
+
+计算球面上 Geometry 对象的周长。
+
+**语法**
+
+```sql
+perimeterSpherical(geom)
+```
+
+**参数**
+
+* `geom` — Geometry 对象。[Geometry](/zh/reference/data-types/geo)。
+
+**返回值**
+
+* 数值 — 周长。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('LINESTRING(0 0,1 0,1 1,0 1,0 0)');
+SELECT perimeterSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterSpherical(geom)─┐
+│ 0                        │
+└──────────────────────────┘
+```
+
+<div id="areaspherical">
+  ## areaSpherical
+</div>
+
+计算球面上 Geometry 对象的面积。
+
+**语法**
+
+```sql
+areaSpherical(geom)
+```
+
+**参数**
+
+* `geom` — Geometry。[Geometry](/zh/reference/data-types/geo)。
+
+**返回值**
+
+* 数值 — 面积。[Float64](/zh/reference/data-types/float)。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaSpherical(geom)────┐
+│ -0.0003046096848622019 │
+└────────────────────────┘
+```

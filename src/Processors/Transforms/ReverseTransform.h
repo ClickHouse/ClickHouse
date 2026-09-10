@@ -5,7 +5,7 @@ namespace DB
 {
 
 /// Reverse rows in chunk.
-class ReverseTransform : public ISimpleTransform
+class ReverseTransform final : public ISimpleTransform
 {
 public:
     explicit ReverseTransform(SharedHeader header) : ISimpleTransform(header, header, false) {}

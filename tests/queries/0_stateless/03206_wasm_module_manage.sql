@@ -124,9 +124,26 @@ INSERT INTO system.webassembly_modules (name, code) SELECT 'module1', base64Deco
 
 CREATE OR REPLACE FUNCTION is_prime AS x -> x + 1;
 
-DELETE FROM system.webassembly_modules WHERE name like 'module1'; -- { serverError BAD_ARGUMENTS }
+--- test deleting multiple modules with different patterns
+INSERT INTO system.webassembly_modules (name, code) SELECT '03206_delete_module1', base64Decode(s) FROM wasm_data;
+INSERT INTO system.webassembly_modules (name, code) SELECT '03206_delete_module2', base64Decode(s) FROM wasm_data;
+INSERT INTO system.webassembly_modules (name, code) SELECT '03206_delete_module3', base64Decode(s) FROM wasm_data;
+INSERT INTO system.webassembly_modules (name, code) SELECT '03206_delete_module11', base64Decode(s) FROM wasm_data;
+
+DELETE FROM system.webassembly_modules WHERE name LIKE '03206\\_delete_module';
+SELECT count() FROM system.webassembly_modules WHERE name LIKE '03206\\_delete_module%';
+
+DELETE FROM system.webassembly_modules WHERE name LIKE '03206\\_delete_module%1';
+SELECT count() FROM system.webassembly_modules WHERE name LIKE '03206\\_delete_module%';
+
+DELETE FROM system.webassembly_modules WHERE name LIKE '03206\\_delete_module%';
+SELECT count() FROM system.webassembly_modules WHERE name LIKE '03206\\_delete_module%';
+
 DELETE FROM system.webassembly_modules WHERE code == '123'; -- { serverError BAD_ARGUMENTS }
 DELETE FROM system.webassembly_modules WHERE hash == 1; -- { serverError BAD_ARGUMENTS }
+DELETE FROM system.webassembly_modules WHERE name NOT LIKE 'module1'; -- { serverError BAD_ARGUMENTS }
+DELETE FROM system.webassembly_modules WHERE name = 'a' OR name = 'b'; -- { serverError BAD_ARGUMENTS }
+DELETE FROM system.webassembly_modules WHERE 1=1; -- { serverError BAD_ARGUMENTS }
 
 DELETE FROM system.webassembly_modules WHERE name = 'module1';
 

@@ -16,6 +16,7 @@
 #include <Columns/ColumnVariant.h>
 
 #include <IO/ReadBuffer.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -33,6 +34,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+/// Validate that a discriminator value is within bounds (< num_variants) or is NULL_DISCRIMINATOR.
+/// Throws INCORRECT_DATA in native format (untrusted input) or LOGICAL_ERROR otherwise.
+static void checkDiscriminatorValue(ColumnVariant::Discriminator discr, size_t num_variants, bool native_format)
+{
+    if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= num_variants)
+        throw Exception(
+            native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+            "Invalid discriminator value {} (num_variants = {})",
+            static_cast<UInt32>(discr), num_variants);
+}
 
 UInt128 SerializationVariant::getHash(const VariantSerializations & variant_serializations_, const String & variant_name_)
 {
@@ -81,12 +92,17 @@ SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, 
     return ISerialization::pooled(getHash(variant_serializations_, variant_name_), [&] { return new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_); });
 }
 
+bool SerializationVariant::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
+{
+    return !path.empty() && path.back().type == Substream::VariantElement && path.back().variant_element_name == element_name;
+}
+
 SerializationVariant::SerializationVariant(
     const DataTypes & variant_types_,
     const VariantSerializations & variant_serializations_,
     const Names & variant_names_,
     const String & variant_name_)
-    : variant_types(variant_types_)
+    : variant_types(variant_types_.begin(), variant_types_.end())
     , variant_serializations(variant_serializations_)
     , variant_names(variant_names_)
     , deserialize_text_order(getVariantsDeserializeTextOrder(variant_types_))
@@ -137,7 +153,9 @@ void SerializationVariant::enumerateStreams(
             variant_names[i],
             i,
             column_variant ? column_variant->localDiscriminatorByGlobal(i) : i,
-            make_subcolumn_nullable);
+            make_subcolumn_nullable,
+            nullptr,
+            variant_serializations.size());
 
         auto variant_data = SubstreamData(variant_serializations[i])
                              .withType(type)
@@ -165,7 +183,8 @@ void SerializationVariant::enumerateStreams(
         if (!canExtractedSubcolumnsBeInsideNullable(variant_types[i]))
             continue;
 
-        settings.path.back().creator = std::make_shared<SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator>(local_discriminators, variant_names[i], i, column_variant ? column_variant->localDiscriminatorByGlobal(i) : i);
+        settings.path.back().creator = std::make_shared<SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator>(
+            local_discriminators, variant_names[i], i, column_variant ? column_variant->localDiscriminatorByGlobal(i) : i, variant_serializations.size());
         settings.path.push_back(Substream::VariantElementNullMap);
         settings.path.back().variant_element_name = variant_names[i];
         settings.path.back().data = null_map_data;
@@ -264,7 +283,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
-        UInt64 mode;
+        UInt64 mode = 0;
         readBinaryLittleEndian(mode, *discriminators_stream);
         discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
         addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
@@ -510,20 +529,18 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
     DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
     UnorderedMapWithMemoryTracking<String, size_t> tmp_statistics;
-    size_t tmp_size;
+    size_t tmp_size = 0;
     serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics, tmp_size);
 }
 
 void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
-    ColumnPtr & column,
-    size_t rows_offset,
+    IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto mutable_column = column->assumeMutable();
-    ColumnVariant & col = assert_cast<ColumnVariant &>(*mutable_column);
+    ColumnVariant & col = assert_cast<ColumnVariant &>(column);
     /// We always serialize Variant column with global variants order,
     /// so while deserialization column should be always with global variants order.
     if (!col.hasGlobalVariantsOrder())
@@ -536,63 +553,35 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantDiscriminators);
 
     DeserializeBinaryBulkStateVariant * variant_state = nullptr;
-    std::vector<size_t> variant_rows_offsets;
     std::vector<size_t> variant_limits;
 
-    size_t num_read_discriminators = 0;
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    size_t prev_size = col.getLocalDiscriminatorsColumn().size();
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getLocalDiscriminatorsColumn()))
     {
-        auto [cached_column, num_read_rows] = *cached_column_with_num_read_rows;
-        /// Cached column contains discriminators without applied rows_offset and can be used in other serializations
-        /// so if rows_offset is not 0 we cannot use it as is because we will modify it here later by applying rows_offset.
-        /// Instead we need to insert data from the current range from it.
-        if (rows_offset)
-            col.getLocalDiscriminatorsPtr()->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-        else
-            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows, cache, true);
-
-        num_read_discriminators = num_read_rows;
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
-        size_t prev_size = col.getLocalDiscriminatorsPtr()->size();
 
         /// Deserialize discriminators according to serialization mode.
-        /// Don't skip rows_offset rows now, because we will need to calculate offsets for variants later.
-        /// We will apply rows_offset on discriminators later.
         if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
         {
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
-                *col.getLocalDiscriminatorsPtr()->assumeMutable(), *discriminators_stream, 0, rows_offset + limit, 0);
+                col.getLocalDiscriminatorsColumn(), *discriminators_stream, limit, 0);
         }
         else
         {
-            auto variant_pair = deserializeCompactDiscriminators(
-                col.getLocalDiscriminatorsPtr(), rows_offset, limit, discriminators_stream, settings.continuous_reading,
-                *discriminators_state);
-
-            variant_rows_offsets = variant_pair.first;
-            variant_limits = variant_pair.second;
+            variant_limits = deserializeCompactDiscriminators(
+                col.getLocalDiscriminatorsColumn(), limit, discriminators_stream, settings.continuous_reading,
+                *discriminators_state, settings);
         }
-
-        num_read_discriminators = col.getLocalDiscriminatorsPtr()->size() - prev_size;
 
         if (cache)
         {
-            ColumnPtr discriminators_for_cache;
-            /// If rows_offset != 0 we should keep discriminators without applied offsets in the cache to be able
-            /// to calculate variants offsets later. As we will apply offsets to the current discriminators column
-            /// we cannot put in the cache, so we use cut() method to create a separate column with all the data from
-            /// current deserialization.
-            if (rows_offset)
-                discriminators_for_cache = col.getLocalDiscriminatorsPtr()->cut(prev_size, num_read_discriminators);
-            else
-                discriminators_for_cache = col.getLocalDiscriminatorsPtr();
-
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, discriminators_for_cache, num_read_discriminators);
+            size_t num_read_discriminators = col.getLocalDiscriminatorsColumn().size() - prev_size;
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getLocalDiscriminatorsColumn().getPtr(), num_read_discriminators);
         }
     }
     /// It may happen that there is no such stream, in this case just do nothing.
@@ -604,36 +593,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
-    size_t discriminators_offset = col.getLocalDiscriminators().size() - num_read_discriminators;
+    size_t discriminators_offset = prev_size;
 
-    /// Second, calculate offsets and limits for each variant by iterating through new discriminators
+    /// Second, calculate limits for each variant by iterating through new discriminators
     /// if we didn't do it during discriminators deserialization.
-    if (variant_rows_offsets.empty())
-    {
-        variant_rows_offsets.resize(variant_serializations.size(), 0);
-
-        if (rows_offset)
-        {
-            auto & discriminators_data = col.getLocalDiscriminators();
-
-            for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
-            {
-                ColumnVariant::Discriminator discr = discriminators_data[i];
-                if (discr != ColumnVariant::NULL_DISCRIMINATOR)
-                    ++variant_rows_offsets[discr];
-            }
-        }
-    }
-
-    if (rows_offset)
-    {
-        auto & discriminators_data = col.getLocalDiscriminators();
-
-        for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
-            discriminators_data[i] = discriminators_data[i + rows_offset];
-        col.getLocalDiscriminatorsPtr()->assumeMutable()->popBack(rows_offset);
-    }
-
     if (variant_limits.empty())
     {
         variant_limits.resize(variant_serializations.size(), 0);
@@ -643,7 +606,24 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         {
             ColumnVariant::Discriminator discr = discriminators_data[i];
             if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                checkDiscriminatorValue(discr, variant_limits.size(), settings.native_format);
                 ++variant_limits[discr];
+            }
+        }
+    }
+
+    /// Current variant sizes are the start offsets for the values read in the current range.
+    std::vector<size_t> variant_offsets(variant_serializations.size());
+    size_t num_non_empty_variants = 0;
+    ColumnVariant::Discriminator last_non_empty_discr = 0;
+    for (ColumnVariant::Discriminator i = 0; i != variant_serializations.size(); ++i)
+    {
+        variant_offsets[i] = col.getVariantByLocalDiscriminator(i).size();
+        if (variant_limits[i])
+        {
+            ++num_non_empty_variants;
+            last_non_empty_discr = i;
         }
     }
 
@@ -651,100 +631,66 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variant_serializations.size(); ++i)
     {
-        auto & variant_column = col.getVariantPtrByLocalDiscriminator(i);
-        if (!variant_column)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column for variant {} is invalid", variant_names[i]);
-
         addVariantElementToPath(settings.path, i);
         variant_serializations[i]->deserializeBinaryBulkWithMultipleStreams(
-            variant_column, variant_rows_offsets[i], variant_limits[i],
+            col.getVariantByLocalDiscriminator(i), variant_limits[i],
             settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
 
-        /// Verify that we deserialized data of this variant.
-        if (variant_limits[i] && col.getVariantPtrByLocalDiscriminator(i)->empty())
-            throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Variant {} is empty, but expected to be read {} values", variant_names[i], variant_limits[i]);
+        /// Verify that we deserialized the expected number of rows for this variant.
+        if (col.getVariantByLocalDiscriminator(i).size() < variant_offsets[i] + variant_limits[i])
+            throw Exception(
+                settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+                "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}",
+                variant_names[i],
+                variant_offsets[i] + variant_limits[i],
+                col.getVariantByLocalDiscriminator(i).size());
     }
     settings.path.pop_back();
 
-    /// Fill offsets column.
-    /// It's important to do it after deserialization of all variants, because to fill offsets we need
-    /// initial variants sizes without values in current range, but some variants can be shared with
-    /// other columns via substream cache and they can already contain values from this range even
-    /// before we call deserialize for them. So, before deserialize we cannot know for sure if
-    /// variant columns already contain values from current range or not. But after calling deserialize
-    /// we know for sure that they contain these values, so we can use valiant limits and their
-    /// new sizes to calculate correct offsets.
-    settings.path.push_back(Substream::VariantOffsets);
-    /// If insert_only_rows_in_current_range_from_substreams_cache is set we cannot use offsets from
-    /// cache and need to calculate correct offsets for current read range.
-    if (settings.insert_only_rows_in_current_range_from_substreams_cache || !insertDataFromSubstreamsCacheIfAny(cache, settings, col.getOffsetsPtr()))
+    /// Fill offsets column. Offsets index this reader's own variant sub-columns, so they are always
+    /// recomputed here and never taken from the substreams cache.
+    auto & discriminators_data = col.getLocalDiscriminators();
+    auto & offsets = col.getOffsets();
+    size_t num_new_offsets = discriminators_data.size() - offsets.size();
+    offsets.reserve(offsets.size() + num_new_offsets);
+    /// If only NULLs were read, fill offsets with 0.
+    if (num_non_empty_variants == 0)
     {
-        std::vector<size_t> variant_offsets;
-        variant_offsets.reserve(variant_serializations.size());
-        size_t num_non_empty_variants = 0;
-        ColumnVariant::Discriminator last_non_empty_discr = 0;
-        for (ColumnVariant::Discriminator i = 0; i != variant_serializations.size(); ++i)
-        {
-            if (variant_limits[i])
-            {
-                ++num_non_empty_variants;
-                last_non_empty_discr = i;
-            }
-
-            if (col.getVariantByLocalDiscriminator(i).size() < variant_limits[i])
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of variant {} is expected to be not less than {} according to discriminators, but it is {}", variant_names[i], variant_limits[i], col.getVariantByLocalDiscriminator(i).size());
-
-            variant_offsets.push_back(col.getVariantByLocalDiscriminator(i).size() - variant_limits[i]);
-        }
-
-        auto & discriminators_data = col.getLocalDiscriminators();
-        auto & offsets = col.getOffsets();
-        size_t prev_size = offsets.size();
-        size_t num_new_offsets = discriminators_data.size() - offsets.size();
-        offsets.reserve(offsets.size() + num_new_offsets);
-        /// If there are only NULLs were read, fill offsets with 0.
-        if (num_non_empty_variants == 0)
-        {
-            offsets.resize_fill(discriminators_data.size(), 0);
-        }
-        /// If there is only 1 variant and no NULLs was read, fill offsets with sequential offsets of this variant.
-        else if (num_non_empty_variants == 1 && variant_limits[last_non_empty_discr] == num_new_offsets)
-        {
-            size_t first_offset = col.getVariantByLocalDiscriminator(last_non_empty_discr).size() - num_new_offsets;
-            for (size_t i = 0; i != num_new_offsets; ++i)
-                offsets.push_back(first_offset + i);
-        }
-        /// Otherwise iterate through discriminators and fill offsets accordingly.
-        else
-        {
-            size_t start = offsets.size();
-            for (size_t i = start; i != discriminators_data.size(); ++i)
-            {
-                ColumnVariant::Discriminator discr = discriminators_data[i];
-                if (discr == ColumnVariant::NULL_DISCRIMINATOR)
-                    offsets.emplace_back();
-                else
-                    offsets.push_back(variant_offsets[discr]++);
-            }
-        }
-
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getOffsetsPtr(), col.getOffsetsPtr()->size() - prev_size);
+        offsets.resize_fill(discriminators_data.size(), 0);
     }
-    settings.path.pop_back();
+    /// If there is only 1 variant and no NULLs were read, fill offsets with sequential offsets of this variant.
+    else if (num_non_empty_variants == 1 && variant_limits[last_non_empty_discr] == num_new_offsets)
+    {
+        size_t first_offset = variant_offsets[last_non_empty_discr];
+        for (size_t i = 0; i != num_new_offsets; ++i)
+            offsets.push_back(first_offset + i);
+    }
+    /// Otherwise iterate through discriminators and fill offsets accordingly.
+    else
+    {
+        for (size_t i = offsets.size(); i != discriminators_data.size(); ++i)
+        {
+            ColumnVariant::Discriminator discr = discriminators_data[i];
+            if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+                offsets.emplace_back();
+            else
+                offsets.push_back(variant_offsets[discr]++);
+        }
+    }
 
-    col.validateState();
+    col.validateState(/*allow_logical_error=*/ !settings.native_format);
 }
 
-std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deserializeCompactDiscriminators(
-    DB::ColumnPtr & discriminators_column,
-    size_t rows_offset,
+std::vector<size_t> SerializationVariant::deserializeCompactDiscriminators(
+    IColumn & discriminators_column,
     size_t limit,
     ReadBuffer * stream,
     bool continuous_reading,
-    DeserializeBinaryBulkStateVariantDiscriminators & state) const
+    DeserializeBinaryBulkStateVariantDiscriminators & state,
+    const DeserializeBinaryBulkSettings & settings) const
 {
-    auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
+    auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(discriminators_column);
     auto & discriminators_data = discriminators.getData();
 
     /// Reset state if we are reading from the start of the granule and not from the previous position in the file.
@@ -752,9 +698,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         state.remaining_rows_in_granule = 0;
 
     /// Calculate limits for variants during discriminators deserialization.
-    std::vector<size_t> variant_rows_offsets(variant_serializations.size(), 0);
     std::vector<size_t> variant_limits(variant_serializations.size(), 0);
-    limit += rows_offset;
 
     while (limit)
     {
@@ -762,9 +706,9 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         if (state.remaining_rows_in_granule == 0)
         {
             if (stream->eof())
-                return {variant_rows_offsets, variant_limits};
+                return variant_limits;
 
-            readDiscriminatorsGranuleStart(state, stream);
+            readDiscriminatorsGranuleStart(state, stream, variant_serializations.size(), settings);
         }
 
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
@@ -772,64 +716,53 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         {
             auto & data = discriminators.getData();
             data.resize_fill(data.size() + limit_in_granule, state.compact_discr);
-            auto remained_limit_in_granule = limit_in_granule;
 
-            if (rows_offset)
-            {
-                size_t skipped_rows = std::min(rows_offset, limit_in_granule);
-                if (state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR)
-                    variant_rows_offsets[state.compact_discr] += skipped_rows;
-
-                remained_limit_in_granule -= skipped_rows;
-                rows_offset -= skipped_rows;
-            }
-
-            if (remained_limit_in_granule && state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR)
-                variant_limits[state.compact_discr] += remained_limit_in_granule;
+            if (state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR)
+                variant_limits[state.compact_discr] += limit_in_granule;
         }
         else
         {
-            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, 0, limit_in_granule, 0);
+            SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(discriminators, *stream, limit_in_granule, 0);
             size_t start = discriminators_data.size() - limit_in_granule;
-            size_t skipped_rows = std::min(rows_offset, limit_in_granule);
 
-            for (size_t i = start; i != start + skipped_rows; ++i)
+            for (size_t i = start; i != discriminators_data.size(); ++i)
             {
                 ColumnVariant::Discriminator discr = discriminators_data[i];
                 if (discr != ColumnVariant::NULL_DISCRIMINATOR)
-                    ++variant_rows_offsets[discr];
-            }
-
-            for (size_t i = start + skipped_rows; i != discriminators_data.size(); ++i)
-            {
-                ColumnVariant::Discriminator discr = discriminators_data[i];
-                if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    checkDiscriminatorValue(discr, variant_limits.size(), settings.native_format);
                     ++variant_limits[discr];
+                }
             }
-
-            rows_offset -= skipped_rows;
         }
 
         state.remaining_rows_in_granule -= limit_in_granule;
         limit -= limit_in_granule;
     }
 
-    return {variant_rows_offsets, variant_limits};
+    return variant_limits;
 }
 
-void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, DB::ReadBuffer * stream)
+void SerializationVariant::readDiscriminatorsGranuleStart(
+    DeserializeBinaryBulkStateVariantDiscriminators & state,
+    ReadBuffer * stream,
+    size_t num_variants,
+    const DeserializeBinaryBulkSettings & settings)
 {
-    UInt64 granule_size;
+    UInt64 granule_size = 0;
     readVarUInt(granule_size, *stream);
     state.remaining_rows_in_granule = granule_size;
-    UInt8 granule_format;
+    UInt8 granule_format = 0;
     readBinaryLittleEndian(granule_format, *stream);
     if (granule_format != CompactDiscriminatorsGranuleFormat::COMPACT && granule_format != CompactDiscriminatorsGranuleFormat::PLAIN)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected format of compact discriminators granule: {}", UInt32(granule_format));
 
     state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
     if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
+    {
         readBinaryLittleEndian(state.compact_discr, *stream);
+        checkDiscriminatorValue(state.compact_discr, num_variants, settings.native_format);
+    }
 }
 
 void SerializationVariant::addVariantElementToPath(DB::ISerialization::SubstreamPath & path, size_t i) const
@@ -860,7 +793,7 @@ void SerializationVariant::serializeBinary(const IColumn & column, size_t row_nu
 void SerializationVariant::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     ColumnVariant & col = assert_cast<ColumnVariant &>(column);
-    ColumnVariant::Discriminator global_discr;
+    ColumnVariant::Discriminator global_discr = 0;
     readBinaryLittleEndian(global_discr, istr);
     if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
     {
@@ -1057,21 +990,13 @@ std::vector<size_t> SerializationVariant::getVariantsDeserializeTextOrder(const 
 }
 
 
-bool SerializationVariant::tryDeserializeImpl(
+bool SerializationVariant::tryDeserializeVariantFromField(
     IColumn & column,
     const String & field,
-    std::function<bool(ReadBuffer &)> check_for_null,
     std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
     const FormatSettings & settings) const
 {
     auto & column_variant = assert_cast<ColumnVariant &>(column);
-    ReadBufferFromString null_buf(field);
-    if (check_for_null(null_buf) && null_buf.eof())
-    {
-        column_variant.insertDefault();
-        return true;
-    }
-
     FormatSettings modified_settings = settings;
     modified_settings.allow_special_bool_values = settings.allow_special_bool_values_inside_variant;
     for (size_t global_discr : deserialize_text_order)
@@ -1087,11 +1012,29 @@ bool SerializationVariant::tryDeserializeImpl(
         }
         if (variant_column.size() > prev_size)
         {
-            variant_column.popBack(1);
+            variant_column.popBack(variant_column.size() - prev_size);
         }
     }
 
     return false;
+}
+
+bool SerializationVariant::tryDeserializeImpl(
+    IColumn & column,
+    const String & field,
+    std::function<bool(ReadBuffer &)> check_for_null,
+    std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
+    const FormatSettings & settings) const
+{
+    auto & column_variant = assert_cast<ColumnVariant &>(column);
+    ReadBufferFromString null_buf(field);
+    if (check_for_null(null_buf) && null_buf.eof())
+    {
+        column_variant.insertDefault();
+        return true;
+    }
+
+    return tryDeserializeVariantFromField(column, field, try_deserialize_nested, settings);
 }
 
 void SerializationVariant::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1104,33 +1047,105 @@ void SerializationVariant::serializeTextEscaped(const IColumn & column, size_t r
         variant_serializations[global_discr]->serializeTextEscaped(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
 }
 
+template <typename ReadField, typename TryDeserializeVariant>
+bool SerializationVariant::tryDeserializeTextEscapedOrRawImpl(
+    IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+    ReadField && read_field, TryDeserializeVariant && try_deserialize_variant) const
+{
+    const String & null_representation = settings.tsv.null_representation;
+
+    auto read_field_and_try_deserialize = [&](ReadBuffer & buf)
+    {
+        String field;
+        read_field(field, buf);
+        return tryDeserializeVariantFromField(column, field, try_deserialize_variant, settings);
+    };
+
+    /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
+    if (istr.eof() || (!null_representation.empty() && *istr.position() != null_representation[0]))
+        return read_field_and_try_deserialize(istr);
+
+    /// Check if we have enough data in buffer to check if it's a null.
+    if (istr.available() > null_representation.size())
+    {
+        auto * pos = istr.position();
+        if (checkString(null_representation, istr)
+            && (istr.eof() || *istr.position() == '\t' || *istr.position() == '\n'
+                || (settings.tsv.crlf_end_of_line_input && *istr.position() == '\r')))
+        {
+            assert_cast<ColumnVariant &>(column).insertDefault();
+            return true;
+        }
+        istr.position() = pos;
+        return read_field_and_try_deserialize(istr);
+    }
+
+    /// We don't have enough data in buffer to check if it's a null.
+    /// Use PeekableReadBuffer to make a checkpoint before checking null
+    /// representation and rollback if check was failed.
+    PeekableReadBuffer peekable_buf(istr, true);
+    peekable_buf.setCheckpoint();
+    if (checkString(null_representation, peekable_buf)
+        && (peekable_buf.eof() || *peekable_buf.position() == '\t' || *peekable_buf.position() == '\n'
+            || (settings.tsv.crlf_end_of_line_input && *peekable_buf.position() == '\r')))
+    {
+        peekable_buf.dropCheckpoint();
+        assert_cast<ColumnVariant &>(column).insertDefault();
+        return true;
+    }
+
+    /// Not null. Rollback and continue reading from peekable_buf,
+    /// because istr position is already advanced by the failed null check.
+    peekable_buf.rollbackToCheckpoint();
+    peekable_buf.dropCheckpoint();
+    bool result = read_field_and_try_deserialize(peekable_buf);
+
+    /// Check that we don't have any unread data in PeekableReadBuffer own memory.
+    /// It can happen only if there is a string instead of a number
+    /// or if someone uses tab or LF in TSV null_representation.
+    /// In the first case we cannot continue reading anyway. The second case seems to be unlikely.
+    if (likely(!peekable_buf.hasUnreadData()))
+        return result;
+
+    /// We have some unread data in PeekableReadBuffer own memory.
+    /// We should delete incorrectly deserialized value from the column.
+    if (result)
+        column.popBack(1);
+    return false;
+}
+
 bool SerializationVariant::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String field;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, istr) : readEscapedString(field, istr);
-    return tryDeserializeTextEscapedImpl(column, field, settings);
-}
-
-void SerializationVariant::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String field;
-    settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, istr) : readEscapedString(field, istr);
-    if (!tryDeserializeTextEscapedImpl(column, field, settings))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse escaped value of type {} here: {}", variant_name, field);
-}
-
-bool SerializationVariant::tryDeserializeTextEscapedImpl(DB::IColumn & column, const String & field, const DB::FormatSettings & settings) const
-{
-    auto check_for_null = [&](ReadBuffer & buf)
+    auto read_field = [&](String & field, ReadBuffer & buf)
     {
-        return SerializationNullable::tryDeserializeNullEscaped(buf, settings);
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(field, buf) : readEscapedString(field, buf);
     };
+
     auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
         return variant_serialization->tryDeserializeTextEscaped(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
+    return tryDeserializeTextEscapedOrRawImpl(column, istr, settings, read_field, try_deserialize_variant);
+}
+
+void SerializationVariant::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    auto read_field = [&](String & f, ReadBuffer & buf)
+    {
+        settings.tsv.crlf_end_of_line_input ? readEscapedStringCRLF(f, buf) : readEscapedString(f, buf);
+        /// Save field for better exception message in case of error during parsing.
+        field = f;
+    };
+
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
+    {
+        return variant_serialization->tryDeserializeTextEscaped(variant_column, buf, settings_);
+    };
+
+    if (!tryDeserializeTextEscapedOrRawImpl(column, istr, settings, read_field, try_deserialize_variant))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse escaped value of type {} here: {}", variant_name, field);
 }
 
 void SerializationVariant::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -1145,31 +1160,36 @@ void SerializationVariant::serializeTextRaw(const IColumn & column, size_t row_n
 
 bool SerializationVariant::tryDeserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    String field;
-    readString(field, istr);
-    return tryDeserializeTextRawImpl(column, field, settings);
-}
-
-void SerializationVariant::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String field;
-    readString(field, istr);
-    if (!tryDeserializeTextRawImpl(column, field, settings))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse raw value of type {} here: {}", variant_name, field);
-}
-
-bool SerializationVariant::tryDeserializeTextRawImpl(DB::IColumn & column, const String & field, const DB::FormatSettings & settings) const
-{
-    auto check_for_null = [&](ReadBuffer & buf)
+    auto read_field = [](String & field, ReadBuffer & buf)
     {
-        return SerializationNullable::tryDeserializeNullRaw(buf, settings);
+        readString(field, buf);
     };
+
     auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
     {
         return variant_serialization->tryDeserializeTextRaw(variant_column, buf, settings_);
     };
 
-    return tryDeserializeImpl(column, field, check_for_null, try_deserialize_variant, settings);
+    return tryDeserializeTextEscapedOrRawImpl(column, istr, settings, read_field, try_deserialize_variant);
+}
+
+void SerializationVariant::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    auto read_field = [&](String & f, ReadBuffer & buf)
+    {
+        readString(f, buf);
+        /// Save field for better exception message in case of error during parsing.
+        field = f;
+    };
+
+    auto try_deserialize_variant = [](IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer & buf, const FormatSettings & settings_)
+    {
+        return variant_serialization->tryDeserializeTextRaw(variant_column, buf, settings_);
+    };
+
+    if (!tryDeserializeTextEscapedOrRawImpl(column, istr, settings, read_field, try_deserialize_variant))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse raw value of type {} here: {}", variant_name, field);
 }
 
 void SerializationVariant::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

@@ -41,7 +41,6 @@ $CLICKHOUSE_CLIENT --send_logs_level=error -q "
         s3queue_processing_threads_num = 1,
         s3queue_polling_min_timeout_ms = 100,
         s3queue_polling_max_timeout_ms = 500,
-        input_format_parquet_use_native_reader_v3 = 1,
         use_parquet_metadata_cache = 1
 "
 

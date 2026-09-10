@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-merge-tree-settings, long
+-- Tags: no-parallel, no-random-merge-tree-settings, no-flaky-check, long
 -- EXPLAIN PIPELINE output depends on in-order aggregation which is sensitive to MergeTree key direction
 SET force_primary_key_reverse_order = 0;
 

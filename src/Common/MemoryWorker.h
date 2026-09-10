@@ -4,8 +4,13 @@
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
 #include <Common/PageCache.h>
+#include <IO/ReadBufferFromFile.h>
 
+#include <atomic>
 #include <filesystem>
+#include <memory>
+#include <optional>
+#include <string_view>
 
 namespace DB
 {
@@ -33,6 +38,50 @@ struct ICgroupsReader
     virtual std::string dumpAllStats() = 0;
 };
 
+#if defined(OS_LINUX)
+/// Pure decision helper for the dynamic hard-limit headroom computation, factored out of
+/// `MemoryWorker::readAvailableForDynamicLimit` so the cgroup decision matrix is unit-testable.
+namespace MemoryWorkerHelpers
+{
+    enum class CgroupLevelKind : uint8_t
+    {
+        /// No finite limit at this level: the cgroup v2 `"max"` token, an unparseable or
+        /// zero value, or the cgroup v1 "no limit" sentinel (a value `>= host RAM`). Such a
+        /// level imposes no cap and does not contribute to the headroom minimum.
+        Unbounded,
+        /// A real finite limit; `available` is meaningful (`max(0, limit - used)`).
+        Finite,
+    };
+
+    struct CgroupLevelAvailability
+    {
+        CgroupLevelKind kind = CgroupLevelKind::Unbounded;
+        uint64_t available = 0;
+    };
+
+    /// Decide a single cgroup level's contribution from the raw first token of its
+    /// `memory.max` (cgroup v2) / `memory.limit_in_bytes` (cgroup v1) file and the level's
+    /// current usage. `host_memory_bytes` filters the cgroup v1 "no limit" sentinel
+    /// (`PAGE_COUNTER_MAX`, ~2^63): any value `>= host_memory_bytes` is treated as unbounded.
+    /// A `host_memory_bytes` of `0` disables that filter.
+    ///
+    /// `used` is expected to already exclude reclaimable memory (page cache, reclaimable
+    /// slab): the headroom `max - used` then mirrors the kernel's `MemAvailable`, counting
+    /// memory the kernel can reclaim under pressure as still-available. See
+    /// `reclaimableFromCgroupV2Stat`, which `readAvailableForDynamicLimit` subtracts from the
+    /// raw `memory.current` before calling this.
+    CgroupLevelAvailability decideCgroupLevelAvailability(std::string_view max_token, uint64_t used, uint64_t host_memory_bytes);
+
+    /// Sum the reclaimable memory reported in a cgroup v2 `memory.stat`: file-backed page
+    /// cache (`active_file` + `inactive_file`) plus reclaimable slab (`slab_reclaimable`).
+    /// These are exactly the categories the kernel frees under memory pressure before
+    /// invoking the OOM killer, so subtracting them from `memory.current` yields a
+    /// `MemAvailable`-like view of what the level actually owns. Missing keys count as `0`
+    /// (older kernels), so the result degrades to a conservative (smaller) reclaimable sum.
+    uint64_t reclaimableFromCgroupV2Stat(ReadBuffer & buf);
+}
+#endif
+
 struct MemoryWorkerConfig
 {
     uint64_t rss_update_period_ms = 0;
@@ -41,6 +90,8 @@ struct MemoryWorkerConfig
     bool correct_tracker = false;
     uint64_t decay_adjustment_period_ms = 0;
     bool use_cgroup = true;
+    double rss_speculative_reserve_ratio = 0.0;
+    double dynamic_hard_limit_ratio = 0.0;
 };
 
 /// Correct MemoryTracker based on external information (e.g. Cgroups or stats.resident from jemalloc)
@@ -62,6 +113,23 @@ public:
     MemoryUsageSource getSource();
 
     void start();
+
+    /// Update the dynamic hard-limit settings from a config reload, and atomically apply
+    /// `ceiling` as the new `total_memory_tracker` hard limit.
+    ///   * `ceiling` is the configured `max_server_memory_usage` (after applying the ratio);
+    ///     the dynamic adjustment may never set the hard limit above this. A value <= 0
+    ///     disables the cap (i.e. unlimited).
+    ///   * `ratio` is the `max_server_memory_usage_to_ram_ratio`; setting it to 0 disables
+    ///     the dynamic adjustment entirely.
+    ///
+    /// The call is serialized with the worker's own `setHardLimit` via
+    /// `dynamic_hard_limit_apply_mutex`, so a concurrent worker tick that computed a value
+    /// against the old ratio cannot overwrite the freshly installed limit.
+    ///
+    /// Until this is called for the first time, the dynamic adjustment is suppressed, so
+    /// the worker cannot inflate the hard limit before the server has had a chance to load
+    /// its memory settings. Re-calling it on config reload keeps both values in sync.
+    void setDynamicHardLimitSettings(Int64 ceiling, double ratio);
 
     ~MemoryWorker();
 private:
@@ -89,6 +157,86 @@ private:
     double purge_dirty_pages_threshold_ratio;
     uint64_t page_size = 0;
     std::chrono::milliseconds decay_adjustment_period_ms{0};
+    double rss_speculative_reserve_ratio = 0.0;
+
+    /// Scaling factor the dynamic adjustment applies to `resident + available` to compute
+    /// the new hard limit. Mirrors `max_server_memory_usage_to_ram_ratio` and is refreshed
+    /// on each config reload via `setDynamicHardLimitSettings`. A value <= 0 disables the
+    /// dynamic adjustment.
+    std::atomic<double> dynamic_hard_limit_ratio{0.0};
+
+    /// Ceiling for the dynamic hard limit, set by Server.cpp / LocalServer.cpp.
+    /// Initial value -1 means "not configured yet"; the dynamic adjustment then skips this tick.
+    std::atomic<Int64> external_hard_limit{-1};
+
+    /// Amount of memory that may still be allocated by ClickHouse, used as input to the
+    /// dynamic hard-limit formula. Prefers the cgroup view (`memory.max` minus the cgroup's
+    /// `memory.current`-equivalent via `cgroups_reader`) when running in a cgroup with a
+    /// finite limit; otherwise falls back to `/proc/meminfo`'s `MemAvailable`.
+    ///
+    /// Returns `std::nullopt` if no source could be read at all. A successful read returning
+    /// `0` is a legitimate "fully under pressure" signal (cgroup at/over its limit, or
+    /// `MemAvailable: 0`) and is distinct from a read failure: the dynamic limit must still
+    /// shrink in that case rather than keep the previous (larger) value.
+    std::optional<uint64_t> readAvailableForDynamicLimit();
+
+    /// Reads `MemAvailable` from /proc/meminfo. Returns `std::nullopt` if the file can't be
+    /// read or the field is missing; returns `0` if `MemAvailable` is genuinely `0`.
+    /// The lazily-opened buffer is owned by `updateResidentMemoryThread`, which is the only caller.
+    std::optional<uint64_t> readSystemAvailableMemory();
+    std::unique_ptr<ReadBufferFromFile> meminfo_buf;
+    [[maybe_unused]] bool meminfo_warnings_printed = false;
+
+    /// Per-cgroup-level open files used to compute headroom. On cgroup v2, every ancestor
+    /// cgroup up to the mount root has its own `memory.max` *and* `memory.current`, and
+    /// any of them can be the binding limit. We pair each level's `memory.max` with the
+    /// same level's `memory.current` so the computed `available_i = max_i - current_i`
+    /// reflects sibling consumption inside an ancestor (otherwise the leaf's
+    /// `memory.current` would undercount and we could exceed the ancestor's budget).
+    /// We then take the minimum of `available_i` across the hierarchy.
+    /// On cgroup v1 there is a single `memory.limit_in_bytes` for the leaf cgroup,
+    /// and leaf usage comes from `cgroups_reader` (`current_buf` is left empty).
+    /// `max_path`/`current_path` are retained so a level whose files exist but could not be
+    /// opened at construction (or whose descriptor later became unusable) is *reopened* on a
+    /// subsequent tick instead of being permanently dropped. Dropping a level silently would
+    /// let `readAvailableForDynamicLimit` compute the headroom minimum from an incomplete set
+    /// of ancestors and overestimate it when the dropped ancestor was the tighter one.
+    /// `current_path` is empty on cgroup v1 (leaf usage comes from `cgroups_reader`).
+    /// `stat_path` points at the same level's `memory.stat` (cgroup v2 only); it is read to
+    /// subtract reclaimable page cache and slab from `memory.current`, so the level's headroom
+    /// mirrors `MemAvailable` instead of counting warm page cache as usage. It is empty on
+    /// cgroup v1, where leaf usage from `cgroups_reader` already excludes reclaimable memory.
+    struct CgroupMemoryLevel
+    {
+        std::string max_path;
+        std::string current_path;
+        std::string stat_path;
+        std::unique_ptr<ReadBufferFromFile> max_buf;
+        std::unique_ptr<ReadBufferFromFile> current_buf;
+        std::unique_ptr<ReadBufferFromFile> stat_buf;
+    };
+    std::vector<CgroupMemoryLevel> cgroup_memory_levels;
+    [[maybe_unused]] bool cgroup_memory_max_warnings_printed = false;
+
+    /// Total host RAM, captured at construction. Used to filter out the cgroup v1
+    /// "no limit" sentinel (`PAGE_COUNTER_MAX`, ~2^63), which is far larger than any
+    /// real RAM amount. Treating it as finite would pin the dynamic limit to the
+    /// startup ceiling on v1-unlimited hosts instead of tracking host `MemAvailable`.
+    uint64_t host_memory_bytes = 0;
+
+    /// Bumped by `setDynamicHardLimitSettings` after writing the new ratio/ceiling.
+    /// The worker captures the generation when it starts a dynamic update tick, then
+    /// re-checks under `dynamic_hard_limit_apply_mutex` before calling `setHardLimit`.
+    /// If the generation changed while the tick was in flight, a config reload took
+    /// effect concurrently and the tick's computed value would be stale, so we skip
+    /// applying it.
+    std::atomic<uint64_t> settings_generation{0};
+
+    /// Serializes `total_memory_tracker.setHardLimit` between the worker's tick and
+    /// `setDynamicHardLimitSettings`. Without it, a worker that observed the old
+    /// generation could call `setHardLimit` after the reload installed its own value,
+    /// overwriting it with a stale number computed against the old ratio.
+    std::mutex dynamic_hard_limit_apply_mutex;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 

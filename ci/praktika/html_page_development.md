@@ -2,7 +2,7 @@
 
 ## Page development and testing with an AI agent
 
-This guide explains how to preview and validate the CI HTML page (`ci/praktika/json.html`) locally with an AI agent and how to deploy changes for test or production.
+This guide explains how to preview and validate the CI HTML page (`ci/praktika/praktika.html`) locally with an AI agent and how to deploy changes for test or production.
 
 ### Prerequisites
 
@@ -29,10 +29,10 @@ This guide explains how to preview and validate the CI HTML page (`ci/praktika/j
 
 ### Quick start with an AI agent
 
-Ask your agent to start Chrome with CORS disabled and open `./ci/praktika/json.html` with parameters, for example:
+Ask your agent to start Chrome with CORS disabled and open `./ci/praktika/praktika.html` with parameters, for example:
 
 ```
-Please start Chrome with disabled CORS and open ./ci/praktika/json.html file with params:
+Please start Chrome with disabled CORS and open ./ci/praktika/praktika.html file with params:
 REF=master&sha=YOUR_COMMIT_SHA&base_url=https%3A%2F%2Fs3.amazonaws.com%2Fclickhouse-test-reports&name_0=MasterCI
 ```
 
@@ -48,7 +48,7 @@ open -a "Google Chrome" --args \
   --disable-site-isolation-trials \
   --allow-file-access-from-files \
   --user-data-dir="/tmp/ch-dev" \
-  "file:///ABSOLUTE_PATH_TO_REPO/ci/praktika/json.html?REF=master&sha=YOUR_COMMIT_SHA&base_url=https%3A%2F%2Fs3.amazonaws.com%2Fclickhouse-test-reports&name_0=MasterCI"
+  "file:///ABSOLUTE_PATH_TO_REPO/ci/praktika/praktika.html?REF=master&sha=YOUR_COMMIT_SHA&base_url=https%3A%2F%2Fs3.amazonaws.com%2Fclickhouse-test-reports&name_0=MasterCI"
 ```
 
 - Replace `ABSOLUTE_PATH_TO_REPO` with your local path.
@@ -57,7 +57,7 @@ open -a "Google Chrome" --args \
 ### Full example (agent prompt)
 
 ```
-Please start Chrome with disabled CORS and open ./ci/praktika/json.html file with params:
+Please start Chrome with disabled CORS and open ./ci/praktika/praktika.html file with params:
 REF=master&sha=59d18f406d9ef99bbf400184fd0ba47a84381bec&base_url=https%3A%2F%2Fs3.amazonaws.com%2Fclickhouse-test-reports&name_0=MasterCI
 ```
 
@@ -70,10 +70,10 @@ Run the following from the repository root.
 ## Test location
 
 - Will not affect production.
-- Can be accessed by replacing `json.html` with `json_test.html` in any CI report URL.
+- Can be accessed by replacing `praktika.html` with `praktika_test.html` in any CI report URL.
 
 ```bash
-python -m ci.praktika infrastructure --deploy --only html --test
+python -m praktika infrastructure --deploy --only html --test
 ```
 
 ## Production
@@ -81,7 +81,7 @@ python -m ci.praktika infrastructure --deploy --only html --test
 - Will be immediately applied for all CI reports.
 
 ```bash
-python -m ci.praktika infrastructure --deploy --only html
+python -m praktika infrastructure --deploy --only html
 ```
 
 ### Troubleshooting

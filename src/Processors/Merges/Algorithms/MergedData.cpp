@@ -13,6 +13,27 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+bool hasNonAdditiveByteSizeAt(const IColumn & column)
+{
+    if (column.getDataType() == TypeIndex::LowCardinality
+        || column.getDataType() == TypeIndex::AggregateFunction
+        || column.isReplicated()
+        || column.hasDynamicStructure())
+        return true;
+
+    bool result = false;
+    column.forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        result = result || hasNonAdditiveByteSizeAt(*subcolumn);
+    });
+    return result;
+}
+
+}
+
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
@@ -54,7 +75,21 @@ void MergedData::insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t
     size_t num_columns = raw_columns.size();
     chassert(columns.size() == num_columns);
     for (size_t i = 0; i < num_columns; ++i)
+    {
+        /// If the source is `ColumnReplicated` but the destination is not, wrap the destination
+        /// in `ColumnReplicated` so its `insertFrom` can consume both regular and replicated
+        /// sources through the same optimized path. This preserves the lazy replication
+        /// optimization instead of eagerly materializing the source.
+        ///
+        /// This can happen when `initialize` set the destination type based on the initial
+        /// inputs (none of which were `ColumnReplicated`), but a later chunk arrives via
+        /// `consume` with non-sort `ColumnReplicated` columns (for example, from a JOIN
+        /// with `enable_lazy_columns_replication = 1`).
+        if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
+            columns[i] = ColumnReplicated::create(std::move(columns[i]));
+
         columns[i]->insertFrom(*raw_columns[i], row);
+    }
 
     ++total_merged_rows;
     ++merged_rows;
@@ -67,6 +102,10 @@ void MergedData::insertRows(const ColumnRawPtrs & raw_columns, size_t start_inde
     chassert(columns.size() == num_columns);
     for (size_t i = 0; i < num_columns; ++i)
     {
+        /// See comment in `insertRow` for why this wrapping is needed.
+        if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
+            columns[i] = ColumnReplicated::create(std::move(columns[i]));
+
         if (length == 1)
             columns[i]->insertFrom(*raw_columns[i], start_index);
         else
@@ -101,24 +140,42 @@ void MergedData::insertChunk(Chunk && chunk, size_t rows_size)
         /// the input chunk because the resulting column may have different dynamic structure
         /// (after calling `chooseDynamicStructureForMerge`).
         /// We need to use `cloneEmpty` + `insertRangeFrom` to properly re-insert data.
+        ///
+        /// If `chunk_columns[i]` is `ColumnReplicated`, wrap the empty destination in
+        /// `ColumnReplicated` so `insertRangeFrom` consumes the source via the optimized path
+        /// without eagerly materializing it. This preserves the lazy replication optimization.
         else if (columns[i]->hasDynamicStructure())
         {
             columns[i] = columns[i]->cloneEmpty();
+            if (chunk_columns[i]->isReplicated() && !columns[i]->isReplicated())
+                columns[i] = ColumnReplicated::create(std::move(columns[i]));
             columns[i]->insertRangeFrom(*chunk_columns[i], 0, num_rows);
         }
         /// For columns with statistics (like Map with adaptive buckets) we can reuse the column
         /// from the input chunk, but need to preserve the merged statistics computed during `initialize`.
         else if (columns[i]->hasStatistics())
         {
+            /// We cannot call takeOrCalculateStatisticsFrom for non-replicated column with replicated arguments.
+            if (columns[i]->getPtr()->isReplicated() && !chunk_columns[i]->isReplicated())
+                chunk_columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
+
             chunk_columns[i]->takeOrCalculateStatisticsFrom({columns[i]->getPtr()});
             columns[i] = std::move(chunk_columns[i]);
         }
-        else if (columns[i]->isReplicated() && !chunk_columns[i]->isReplicated())
+        else if (columns[i]->isReplicated())
         {
-            columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
+            /// Destination is `ColumnReplicated` (set during `initialize`). If the chunk is also
+            /// `ColumnReplicated` move it through; otherwise wrap the regular chunk column.
+            if (chunk_columns[i]->isReplicated())
+                columns[i] = std::move(chunk_columns[i]);
+            else
+                columns[i] = ColumnReplicated::create(std::move(chunk_columns[i]));
         }
         else
         {
+            /// Simple case: move the chunk column into the destination. If the chunk is
+            /// `ColumnReplicated`, the destination becomes `ColumnReplicated` — this preserves
+            /// the lazy replication optimization.
             columns[i] = std::move(chunk_columns[i]);
         }
     }
@@ -167,7 +224,7 @@ bool MergedData::hasEnoughRows() const
         return true;
 
     /// Never return more than max_block_size_bytes
-    if (max_block_size_bytes)
+    if (merged_rows && max_block_size_bytes)
     {
         size_t merged_bytes = 0;
         for (const auto & column : columns)
@@ -187,6 +244,62 @@ bool MergedData::hasEnoughRows() const
 
     size_t average = sum_blocks_granularity / merged_rows;
     return merged_rows >= average;
+}
+
+size_t MergedData::rowsToInsertBeforeFlush(
+    const ColumnRawPtrs & raw_columns,
+    size_t start_index,
+    size_t max_rows,
+    size_t block_size) const
+{
+    chassert(max_rows > 0);
+
+    size_t rows_to_insert = max_rows;
+
+    if (use_average_block_size)
+    {
+        for (size_t length = 1; length <= rows_to_insert; ++length)
+        {
+            const size_t merged_rows_after_insert = merged_rows + length;
+            const size_t average_block_size
+                = (sum_blocks_granularity + block_size * length) / merged_rows_after_insert;
+
+            if (merged_rows_after_insert >= average_block_size)
+            {
+                rows_to_insert = length;
+                break;
+            }
+        }
+    }
+
+    if (!max_block_size_bytes)
+        return rows_to_insert;
+
+    chassert(columns.size() == raw_columns.size());
+
+    /// `byteSizeAt` is not additive for dictionary/index-backed columns, so let
+    /// `hasEnoughRows` measure the actual size after inserting one row.
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (hasNonAdditiveByteSizeAt(*columns[i]) || hasNonAdditiveByteSizeAt(*raw_columns[i]))
+            return 1;
+    }
+
+    size_t merged_bytes = 0;
+    for (const auto & column : columns)
+        merged_bytes += column->byteSize();
+
+    for (size_t length = 1; length <= rows_to_insert; ++length)
+    {
+        const size_t row = start_index + length - 1;
+        for (const auto * column : raw_columns)
+            merged_bytes += column->byteSizeAt(row);
+
+        if (merged_bytes >= max_block_size_bytes)
+            return length;
+    }
+
+    return rows_to_insert;
 }
 
 }

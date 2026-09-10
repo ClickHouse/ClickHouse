@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cassert>
 #include <random>
 
 namespace DB
@@ -246,10 +245,10 @@ void selectWithinPartsRange(
     /// Enable heuristic for lowering selected merge ranges. This can increase number of
     /// concurrently running merges and thus increase the merge speed.
     size_t max_parts_to_merge_at_once = settings.max_parts_to_merge_at_once;
-    if (settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
+    if (settings.max_parts_to_merge_at_once && settings.enable_heuristic_to_lower_max_parts_to_merge_at_once)
     {
-        assert(settings.partitions_stats);
-        assert(range_it->size() > 1);
+        chassert(settings.partitions_stats);
+        chassert(range_it->size() > 1);
         const auto & partition_stats = settings.partitions_stats->at(range_it->front().info.getPartitionId());
 
         if (static_cast<double>(partition_stats.part_count) < settings.base)
@@ -270,6 +269,8 @@ void selectWithinPartsRange(
                 (static_cast<double>(max_parts_to_merge_at_once) - settings.base) * (1.0 - std::pow((static_cast<double>(partition_stats.part_count) - settings.base) / (static_cast<double>(settings.parts_to_throw_insert) - settings.base), exponent))
             );
         }
+
+        max_parts_to_merge_at_once = std::min(max_parts_to_merge_at_once, settings.max_parts_to_merge_at_once);
     }
 
     for (; begin < parts_count; ++begin)
@@ -281,7 +282,7 @@ void selectWithinPartsRange(
 
         for (size_t end = begin + 2; end <= parts_count; ++end)
         {
-            assert(end > begin);
+            chassert(end > begin);
             if (max_parts_to_merge_at_once && end - begin > max_parts_to_merge_at_once)
                 break;
 

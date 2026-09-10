@@ -64,7 +64,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               id
-            Condition: (toUInt64(plus(id, 2)) in 5-element set)
+            Condition: (toUInt64(plus(id, 2)) in 3-element set)
             Parts: 1/1
             Granules: 3/100
             Search Algorithm: generic exclusion search
@@ -238,7 +238,7 @@ Expression ((Project names + Projection))
             Keys:
               k1
               k2
-            Condition: ((k1, k2) in 3-element set)
+            Condition: ((k1, k2) in 2-element set)
             Parts: 1/1
             Granules: 3/100
             Search Algorithm: generic exclusion search

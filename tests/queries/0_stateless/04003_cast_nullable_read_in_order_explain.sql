@@ -3,9 +3,12 @@
 -- Disable force_primary_key_reverse_order: reversed key changes read-in-order direction breaking EXPLAIN output checks
 SET force_primary_key_reverse_order = 0;
 
+SET explain_query_plan_default = 'legacy';
+
 -- { echo }
 
 SET optimize_read_in_order = 1;
+SET query_plan_read_in_order = 1;
 
 DROP TABLE IF EXISTS test_nullable_order_by;
 CREATE TABLE test_nullable_order_by (x UInt32, y UInt32) ENGINE=MergeTree ORDER BY x;

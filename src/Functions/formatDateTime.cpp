@@ -21,6 +21,7 @@
 
 #include <Common/Concepts.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
@@ -64,6 +65,8 @@ enum class FormatSyntax : uint8_t
     MySQL,
     Joda
 };
+
+constexpr size_t MAX_JODA_TIMEZONE_NAME_LENGTH = 32;
 
 template <typename DataType> struct InstructionValueTypeMap {};
 template <> struct InstructionValueTypeMap<DataTypeInt8>       { using InstructionValueType = UInt32; };
@@ -138,7 +141,7 @@ constexpr std::string_view monthsShort[] = {"Jan", "Feb", "Mar", "Apr", "May", "
   * PS. We can make this function to return FixedString. Currently it returns String.
   */
 template <typename Name, SupportInteger support_integer, FormatSyntax format_syntax>
-class FunctionFormatDateTimeImpl : public IFunction
+class FunctionFormatDateTimeImpl final : public IFunction
 {
 private:
     /// Time is either UInt32 for DateTime or UInt16 for Date.
@@ -196,7 +199,7 @@ private:
         static size_t writeNumber2(char * p, T v)
         {
             static_assert(std::is_integral_v<T>);
-            assert(v >= 0 && v <= 99);
+            chassert(v >= 0 && v <= 99);
 
             memcpy(p, &digits100[v * 2], 2);  /// NOLINT(clang-analyzer-security.ArrayBound)
             return 2;
@@ -850,6 +853,8 @@ private:
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Short name time zone is not yet supported");
 
             auto str = timezone.getTimeZone();
+            if (str.size() > MAX_JODA_TIMEZONE_NAME_LENGTH)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Time zone name is longer than the maximum supported length of {} bytes", MAX_JODA_TIMEZONE_NAME_LENGTH);
             memcpy(dest, str.data(), str.size());
             return str.size();
         }
@@ -863,7 +868,7 @@ private:
     static bool containsOnlyFixedWidthMySQLFormatters(std::string_view format, bool mysql_M_is_month_name, bool mysql_format_ckl_without_leading_zeros, bool mysql_e_with_space_padding)
     {
         static constexpr std::array variable_width_formatter = {'W'};
-        static constexpr std::array variable_width_formatter_M_is_month_name = {'W', 'M'};
+        static constexpr std::array variable_width_formatter_M_is_month_name = {'M'};
         static constexpr std::array variable_width_formatter_leading_zeros = {'c', 'l', 'k'};
         static constexpr std::array variable_width_formatter_e_with_space_padding = {'e'};
 
@@ -874,6 +879,12 @@ private:
                 case '%':
                     if (i + 1 >= format.size())
                         throwLastCharacterIsPercentException();
+
+                    if (std::any_of(
+                            variable_width_formatter.begin(), variable_width_formatter.end(),
+                            [&](char c){ return c == format[i + 1]; }))
+                        return false;
+
                     if (mysql_M_is_month_name)
                     {
                         if (std::any_of(
@@ -895,13 +906,7 @@ private:
                                 [&](char c){ return c == format[i + 1]; }))
                             return false;
                     }
-                    else
-                    {
-                        if (std::any_of(
-                                variable_width_formatter.begin(), variable_width_formatter.end(),
-                                [&](char c){ return c == format[i + 1]; }))
-                            return false;
-                    }
+
                     i += 1;
                     continue;
                 default:
@@ -911,6 +916,39 @@ private:
 
         return true;
     }
+
+    class TimeZoneCache
+    {
+    public:
+        const DateLUTImpl & getOrSet(std::string_view time_zone_name)
+        {
+            for (const Entry & cached_time_zone : cached_time_zones)
+            {
+                if (cached_time_zone.time_zone == nullptr)
+                    break;
+                if (cached_time_zone.name == time_zone_name)
+                    return *cached_time_zone.time_zone;
+            }
+
+            /// insert new entry or replace existing entry
+            const DateLUTImpl & time_zone = DateLUT::instance(time_zone_name);
+            cached_time_zones[next] = {String(time_zone_name), &time_zone};
+            next = (next + 1) % CACHE_SIZE;
+            return time_zone;
+        }
+
+    private:
+        constexpr static size_t CACHE_SIZE = 4;
+
+        struct Entry
+        {
+            String name;
+            const DateLUTImpl * time_zone = nullptr;
+        };
+        using CacheTable = std::array<Entry, CACHE_SIZE>;
+        CacheTable cached_time_zones;
+        size_t next = 0; /// position to insert the next entry at
+    };
 
     const bool mysql_M_is_month_name;
     const bool mysql_f_prints_single_zero;
@@ -1087,7 +1125,7 @@ public:
             : false;
 
         using T = typename InstructionValueTypeMap<DataType>::InstructionValueType;
-        std::vector<Instruction<T>> instructions;
+        VectorWithMemoryTracking<Instruction<T>> instructions;
         String out_template;
         size_t out_template_size = parseFormat(format, instructions, scale, mysql_with_only_fixed_length_formatters, out_template);
 
@@ -1141,14 +1179,19 @@ public:
 
         auto * begin = reinterpret_cast<char *>(res_data.data());
         auto * pos = begin;
+
+        /// Non-const time zone arguments are resolved per row. This is done under an expensive mutex in DateLUT.
+        /// Lots of queries use only a handful of different time zones. As an optimization, cache the resolved time zones.
+        TimeZoneCache time_zone_cache;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             if (!const_time_zone_column && arguments.size() > 2)
             {
-                if (!arguments[2].column.get()->getDataAt(i).empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
-                else
+                std::string_view time_zone_name = arguments[2].column->getDataAt(i);
+                if (time_zone_name.empty())
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
+                time_zone = &time_zone_cache.getOrSet(time_zone_name);
             }
             if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
             {
@@ -1178,7 +1221,7 @@ public:
     }
 
     template <typename T>
-    size_t parseFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         static_assert(format_syntax == FormatSyntax::MySQL || format_syntax == FormatSyntax::Joda);
 
@@ -1189,7 +1232,7 @@ public:
     }
 
     template <typename T>
-    size_t parseMySQLFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
+    size_t parseMySQLFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32 scale, bool mysql_with_only_fixed_length_formatters, String & out_template) const
     {
         auto add_extra_shift = [&](size_t amount)
         {
@@ -1723,7 +1766,7 @@ public:
     }
 
     template <typename T>
-    size_t parseJodaFormat(const String & format, std::vector<Instruction<T>> & instructions, UInt32, bool, String &) const
+    size_t parseJodaFormat(const String & format, VectorWithMemoryTracking<Instruction<T>> & instructions, UInt32, bool, String &) const
     {
         /// If the argument was DateTime, add instruction for printing. If it was date, just append default literal
         auto add_instruction = [&]([[maybe_unused]] typename Instruction<T>::FuncJoda && func, [[maybe_unused]] const String & default_literal)
@@ -1963,8 +2006,7 @@ public:
                         Instruction<T> instruction;
                         instruction.setJodaFunc(std::bind_front(&Instruction<T>::jodaTimezone, repetitions));
                         instructions.push_back(std::move(instruction));
-                        /// Longest length of full name of time zone is 32.
-                        reserve_size += 32;
+                        reserve_size += MAX_JODA_TIMEZONE_NAME_LENGTH; /// we'll throw at runtime if the time zone is longer than that
                         break;
                     }
                     case 'Z':
@@ -2023,7 +2065,7 @@ Formats a date or date with time according to the given format string. `format` 
 
 `formatDateTime` uses MySQL datetime format style, refer to the [mysql docs](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
-The opposite operation of this function is [`parseDateTime`](/sql-reference/functions/type-conversion-functions#parseDateTime).
+The opposite operation of this function is [`parseDateTime`](/reference/functions/regular-functions/type-conversion-functions#parseDateTime).
 
 Using replacement fields, you can define a pattern for the resulting string.
 The example column in the table below shows formatting result for `2018-01-02 22:33:44`.
@@ -2099,7 +2141,7 @@ SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
         )",
         R"(
 ┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
-│ 1234560                                                             │
+│ 123456                                                              │
 └─────────────────────────────────────────────────────────────────────┘
         )"},
         {"Format with timezone", R"(
@@ -2138,8 +2180,8 @@ This function converts a Unix timestamp to a calendar date and a time of a day.
 
 It can be called in two ways:
 
-- When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#toDateTime).
-- When given two or three arguments where the first argument is a value of type [`Integer`](../data-types/int-uint.md), [`Date`](../data-types/date.md), [`Date32`](../data-types/date32.md), [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](../data-types/string.md), i.e. it behaves like [`formatDateTime`](#formatDateTime).
+- When given a single argument of type [`Integer`](/reference/data-types/int-uint), it returns a value of type [`DateTime`](/reference/data-types/datetime), i.e. behaves like [`toDateTime`](/reference/functions/regular-functions/type-conversion-functions#toDateTime).
+- When given two or three arguments where the first argument is a value of type [`Integer`](/reference/data-types/int-uint), [`Date`](/reference/data-types/date), [`Date32`](/reference/data-types/date32), [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](/reference/data-types/string), i.e. it behaves like [`formatDateTime`](#formatDateTime).
   In this case, [MySQL's datetime format style](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format) is used.
     )";
     FunctionDocumentation::Syntax syntax_fromUnixTimestamp = R"(
@@ -2160,7 +2202,7 @@ SELECT fromUnixTimestamp(423543535)
         )",
         R"(
 ┌─fromUnixTimestamp(423543535)─┐
-│          1983-06-04 10:58:55 │
+│          1983-06-04 02:58:55 │
 └──────────────────────────────┘
         )"},
         {"Convert Unix timestamp with format", R"(
@@ -2168,7 +2210,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
         )",
         R"(
 ┌─DateTime────────────┐
-│ 2009-02-11 14:42:23 │
+│ 2009-02-11 06:42:23 │
 └─────────────────────┘
         )"}
     };
@@ -2183,7 +2225,7 @@ SELECT fromUnixTimestamp(1234334543, '%Y-%m-%d %R:%S') AS DateTime
     FunctionDocumentation::Description description_formatDateTimeInJodaSyntax = R"(
 Similar to `formatDateTime`, except that it formats datetime in Joda style instead of MySQL style. Refer to [Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html).
 
-The opposite operation of this function is [`parseDateTimeInJodaSyntax`](/sql-reference/functions/type-conversion-functions#parseDateTimeInJodaSyntax).
+The opposite operation of this function is [`parseDateTimeInJodaSyntax`](/reference/functions/regular-functions/type-conversion-functions#parseDateTimeInJodaSyntax).
 
 Using replacement fields, you can define a pattern for the resulting string.
 
@@ -2232,8 +2274,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
         )",
         R"(
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_formatDateTimeInJodaSyntax = {20, 1};
@@ -2247,9 +2289,9 @@ This function converts a Unix timestamp to a calendar date and a time of a day.
 
 It can be called in two ways:
 
-When given a single argument of type [`Integer`](../data-types/int-uint.md), it returns a value of type [`DateTime`](../data-types/datetime.md), i.e. behaves like [`toDateTime`](../../sql-reference/functions/type-conversion-functions.md#toDateTime).
+When given a single argument of type [`Integer`](/reference/data-types/int-uint), it returns a value of type [`DateTime`](/reference/data-types/datetime), i.e. behaves like [`toDateTime`](/reference/functions/regular-functions/type-conversion-functions#toDateTime).
 
-When given two or three arguments where the first argument is a value of type [`Integer`](../data-types/int-uint.md), [`Date`](../data-types/date.md), [`Date32`](../data-types/date32.md), [`DateTime`](../data-types/datetime.md) or [`DateTime64`](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](../data-types/string.md), i.e. it behaves like [`formatDateTimeInJodaSyntax`](#formatDateTimeInJodaSyntax). In this case, [Joda datetime format style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) is used.
+When given two or three arguments where the first argument is a value of type [`Integer`](/reference/data-types/int-uint), [`Date`](/reference/data-types/date), [`Date32`](/reference/data-types/date32), [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [`String`](/reference/data-types/string), i.e. it behaves like [`formatDateTimeInJodaSyntax`](#formatDateTimeInJodaSyntax). In this case, [Joda datetime format style](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) is used.
     )";
     FunctionDocumentation::Syntax syntax_fromUnixTimestampInJodaSyntax = R"(
 fromUnixTimestampInJodaSyntax(timestamp)

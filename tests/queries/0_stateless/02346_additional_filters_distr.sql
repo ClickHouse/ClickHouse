@@ -1,4 +1,4 @@
--- Tags: no-parallel, distributed
+-- Tags: no-parallel, distributed, no-flaky-check
 -- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
 SET force_primary_key_reverse_order = 0;
 

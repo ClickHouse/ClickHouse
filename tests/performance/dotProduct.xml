@@ -1,5 +1,4 @@
 <test>
-
     <substitutions>
         <substitution>
             <name>element_type</name>
@@ -9,6 +8,7 @@
                 <!-- <value>Int16</value> -->
                 <!-- <value>Int32</value> -->
                 <!-- <value>Int64</value> -->
+                <value>BFloat16</value>
                 <value>Float32</value>
                 <value>Float64</value>
             </values>
@@ -21,7 +21,7 @@
         ) ENGINE=Memory;
     </create_query>
 
-    <!-- Gererate arrays with random data -->
+    <!-- Generate arrays with random data -->
     <!-- Dimension = 150 is realistic for vector search use cases -->
 
     <fill_query>

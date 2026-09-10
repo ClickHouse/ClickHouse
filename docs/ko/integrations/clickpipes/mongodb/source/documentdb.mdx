@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'Amazon DocumentDB'
+description: 'Amazon DocumentDB를 ClickPipes 소스로 설정하는 단계별 가이드'
+slug: /integrations/clickpipes/mongodb/source/documentdb
+title: 'Amazon DocumentDB 소스 설정 가이드'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'documentdb', 'cdc', '데이터 수집', '실시간 동기화']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="supported-documentdb-versions">
+  ## 지원되는 DocumentDB 버전
+</div>
+
+ClickPipes는 DocumentDB 5.0 버전을 지원합니다.
+
+<div id="configure-change-stream-log-retention">
+  ## 변경 스트림 로그 보존 기간 설정
+</div>
+
+기본적으로 Amazon DocumentDB의 변경 스트림 로그 보존 기간은 3시간입니다. 반면 초기 적재는 DocumentDB에 기존 데이터가 얼마나 있는지에 따라 훨씬 더 오래 걸릴 수 있습니다. 초기 스냅샷이 완료되기 전에 변경 스트림 로그가 잘리지 않도록, 로그 보존 기간을 72시간 이상으로 설정하는 것이 좋습니다.
+
+<div id="update-change-stream-log-retention-via-aws-console">
+  ### AWS Console을 통해 변경 스트림 로그 보존 기간 업데이트
+</div>
+
+1. 왼쪽 패널에서 `Parameter groups`를 클릭한 다음, DocumentDB 클러스터에서 사용 중인 parameter group을 찾으십시오(기본 parameter group을 사용 중이면, 이를 수정하려면 먼저 새 parameter group을 생성해야 합니다).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp" alt="parameter group 선택" size="lg" border />
+
+2. `change_stream_log_retention_duration`를 검색한 다음, 해당 항목을 선택하여 `259200`(72시간)으로 수정하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp" alt="parameter group 수정" size="lg" border />
+
+3. `Apply Changes`를 클릭하여 수정한 parameter group을 DocumentDB 클러스터에 즉시 적용하십시오. parameter group의 상태가 `applying`으로 변경된 후, 변경 사항이 적용되면 `in-sync`로 바뀝니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp" alt="parameter group 적용" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp" alt="parameter group 상태" size="lg" border />
+
+<div id="update-change-stream-log-retention-via-aws-cli">
+  ### AWS CLI로 변경 스트림 로그 보존 기간 업데이트
+</div>
+
+또는 AWS CLI로 이를 설정할 수 있습니다.
+
+현재 변경 스트림 로그 보존 기간을 확인하려면:
+
+```shell
+aws docdb describe-db-cluster-parameters --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --query "Parameters[?ParameterName=='change_stream_log_retention_duration'].{Name:ParameterName,Value:ParameterValue}"
+```
+
+변경 스트림 로그 보존 기간을 72시간으로 설정하려면:
+
+```shell
+aws docdb modify-db-cluster-parameter-group --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --parameters "ParameterName=change_stream_log_retention_duration,ParameterValue=259200,ApplyMethod=immediate"
+```
+
+<div id="configure-database-user">
+  ## 데이터베이스 사용자 설정
+</div>
+
+관리자 사용자로 DocumentDB 클러스터에 연결한 다음, MongoDB CDC ClickPipes에 사용할 데이터베이스 사용자를 생성하려면 다음 명령을 실행하십시오:
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  `clickpipes_user`와 `some_secure_password`를 원하는 사용자 이름과 비밀번호로 바꾸십시오.
+</Note>
+
+<div id="whats-next">
+  ## 다음 단계는 무엇인가요?
+</div>
+
+이제 [ClickPipe를 생성](/ko/integrations/clickpipes/mongodb/index)하고 DocumentDB 인스턴스의 데이터를 ClickHouse Cloud로 수집하기 시작할 수 있습니다.
+ClickPipe 생성 과정에서 필요하므로, DocumentDB 클러스터를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

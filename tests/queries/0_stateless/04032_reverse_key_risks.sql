@@ -101,8 +101,8 @@ DROP TABLE t_reverse_minmax;
 
 -- ==========================================================================
 -- Positive test for force_primary_key_reverse_order setting
--- Verifies that the setting rewrites ORDER BY columns to DESC and that
--- tables are created successfully without explicit allow_experimental_reverse_key.
+-- Verifies that the setting rewrites ORDER BY columns to DESC, that tables are created
+-- successfully, and that `CLONE AS` keeps the original direction.
 -- ==========================================================================
 
 SET force_primary_key_reverse_order = 1;
@@ -110,7 +110,7 @@ SET force_primary_key_reverse_order = 1;
 -- Single-column ORDER BY: should be rewritten to DESC
 DROP TABLE IF EXISTS t_force_reverse_single;
 CREATE TABLE t_force_reverse_single (x UInt64) ENGINE = MergeTree ORDER BY x;
--- Verify DESC appears in the stored ORDER BY (allow_experimental_reverse_key was auto-enabled)
+-- Verify DESC appears in the stored ORDER BY
 SELECT create_table_query LIKE '%ORDER BY x DESC%' FROM system.tables
     WHERE database = currentDatabase() AND name = 't_force_reverse_single';
 
@@ -127,6 +127,21 @@ SELECT x FROM t_force_reverse_single ORDER BY x ASC;
 INSERT INTO t_force_reverse_multi VALUES (1, 'a', '2024-01-01'), (2, 'b', '2024-01-02'), (3, 'c', '2024-01-03');
 SELECT a, b FROM t_force_reverse_multi ORDER BY a ASC;
 
+-- `CLONE AS` reuses the source parts, which are physically sorted in the original order,
+-- so its ORDER BY must be left alone even with the setting enabled.
+DROP TABLE IF EXISTS t_force_reverse_clone_src;
+DROP TABLE IF EXISTS t_force_reverse_clone_dst;
+SET force_primary_key_reverse_order = 0;
+CREATE TABLE t_force_reverse_clone_src (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_force_reverse_clone_src SELECT number FROM numbers(10);
+SET force_primary_key_reverse_order = 1;
+CREATE TABLE t_force_reverse_clone_dst CLONE AS t_force_reverse_clone_src;
+SELECT create_table_query LIKE '%ORDER BY x DESC%' FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_force_reverse_clone_dst';
+SELECT x FROM t_force_reverse_clone_dst ORDER BY x ASC;
+
+DROP TABLE t_force_reverse_clone_src;
+DROP TABLE t_force_reverse_clone_dst;
 DROP TABLE t_force_reverse_single;
 DROP TABLE t_force_reverse_multi;
 

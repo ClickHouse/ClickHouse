@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database, no-asan
 -- no-asan: runs too long
-
 -- Basic tests for text index stored in compact vs. wide format, respectively full vs. packed parts
+SET explain_query_plan_default = 'legacy';
 
 -- Disable force_primary_key_reverse_order: tests text index part format on MergeTree, behavior depends on key direction
 SET force_primary_key_reverse_order = 0;

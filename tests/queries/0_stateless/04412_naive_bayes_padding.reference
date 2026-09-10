@@ -1,0 +1,8 @@
+byte	1	0
+byte hex==dec	1
+byte shared-boundary	1
+byte start-only	1
+byte end-only	1
+byte empty==omitted	1
+codepoint	1	0
+token	1	0

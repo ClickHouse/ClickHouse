@@ -2,6 +2,8 @@
 -- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
 SET force_primary_key_reverse_order = 0;
 
+SET parallel_replicas_local_plan = 1;
+
 DROP TABLE IF EXISTS t_primary_index_cache;
 
 SYSTEM CLEAR PRIMARY INDEX CACHE;

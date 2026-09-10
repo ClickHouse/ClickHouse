@@ -47,6 +47,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+    void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
@@ -113,12 +114,19 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+    void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
 
     StorageID getStorageID() const { return storage_id; }
     ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
+
+    /// The connection pools (sized to the coordinator's replica count) and the local replica's index
+    /// within them. Captured before this step is dropped from the local INSERT SELECT plan so the
+    /// remote-pool pass can reuse the exact same replica set the coordinator was created with.
+    const std::vector<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
+    std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
 
 private:
     Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);

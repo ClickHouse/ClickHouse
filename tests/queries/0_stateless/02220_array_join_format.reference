@@ -1,9 +1,1 @@
-SELECT *
-FROM
-(
-    SELECT
-        range(0, 10) AS range_,
-        point_
-    FROM system.one
-    ARRAY JOIN range_ AS point_
-)
+SELECT *\nFROM\n(\n    SELECT\n        range(0, 10) AS range_,\n        point_\n    FROM system.one\n    ARRAY JOIN range_ AS point_\n)

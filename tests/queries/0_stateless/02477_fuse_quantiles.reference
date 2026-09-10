@@ -79,4 +79,4 @@ QUERY id: 0
             TABLE id: 30, alias: __table3, table_name: default.fuse_tbl
       GROUP BY
         LIST id: 35, nodes: 1
-          COLUMN id: 36, column_name: x, result_type: Float64, source_id: 19
+          COLUMN id: 18, column_name: x, result_type: Float64, source_id: 19

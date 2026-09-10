@@ -2,14 +2,12 @@ import csv
 import logging
 import os
 import shutil
-from uuid import uuid4
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
-from helpers.test_tools import TSV
 
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler())

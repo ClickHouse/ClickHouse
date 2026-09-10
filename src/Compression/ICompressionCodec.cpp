@@ -1,6 +1,5 @@
 #include <Compression/ICompressionCodec.h>
 
-#include <cassert>
 
 #include <Parsers/ASTFunction.h>
 #include <base/unaligned.h>
@@ -22,9 +21,15 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
+void ICompressionCodec::setAndCheckVectorDimension(size_t /*dimension*/)
+{
+    if (!needsVectorDimensionUpfront())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not set dimensions for a non-vector codec");
+}
 
 void ICompressionCodec::setCodecDescription(const String & codec_name, const ASTs & arguments)
 {
@@ -85,7 +90,7 @@ UInt64 ICompressionCodec::getHash() const
 
 UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
 {
-    assert(source != nullptr && dest != nullptr);
+    chassert(source != nullptr && dest != nullptr);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::Compressing);
 
@@ -100,7 +105,7 @@ UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char
 
 UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
-    assert(source != nullptr && dest != nullptr);
+    chassert(source != nullptr && dest != nullptr);
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::Decompressing);
 

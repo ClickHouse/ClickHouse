@@ -4,6 +4,8 @@
 -- Disable force_primary_key_reverse_order: tests EXPLAIN monotonicity key conditions sensitive to key direction
 SET force_primary_key_reverse_order = 0;
 
+SET explain_query_plan_default = 'legacy';
+
 -- { echoOn }
 
 DROP VIEW IF EXISTS view_ifnull;

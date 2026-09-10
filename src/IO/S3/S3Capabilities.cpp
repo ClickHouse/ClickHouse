@@ -48,8 +48,8 @@ S3Capabilities getCapabilitiesFromConfig(const Poco::Util::AbstractConfiguration
 
 void S3Capabilities::serialize(WriteBuffer & out) const
 {
-    int my_support_batch_delete;
-    bool my_support_proxy;
+    int my_support_batch_delete = 0;
+    bool my_support_proxy = false;
     {
         std::lock_guard lock(mutex);
         if (support_batch_delete.has_value())
@@ -67,12 +67,12 @@ void S3Capabilities::serialize(WriteBuffer & out) const
 S3Capabilities S3Capabilities::deserialize(ReadBuffer & in)
 {
     std::optional<bool> support_batch_deletes;
-    int support_batch_deletes_int;
+    int support_batch_deletes_int = 0;
     readBinary(support_batch_deletes_int, in);
     if (support_batch_deletes_int != 2)
         support_batch_deletes = support_batch_deletes_int;
 
-    bool my_support_proxy;
+    bool my_support_proxy = false;
     readBinary(my_support_proxy, in);
 
     return S3Capabilities(support_batch_deletes, my_support_proxy);

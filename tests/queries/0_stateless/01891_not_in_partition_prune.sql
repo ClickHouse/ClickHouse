@@ -1,3 +1,8 @@
+-- Tags: no-parallel-replicas
+-- With parallel replicas the NOT IN subquery source table is read on every
+-- replica, so the per-replica row counting exceeds the tight max_rows_to_read
+-- limit and the test reports more rows than the single-node plan.
+
 drop table if exists test1;
 
 create table test1 (i int, j int) engine MergeTree partition by i order by tuple() settings index_granularity = 1;

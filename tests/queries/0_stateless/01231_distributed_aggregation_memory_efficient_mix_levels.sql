@@ -1,4 +1,4 @@
--- Tags: distributed, no-parallel
+-- Tags: distributed, no-parallel, no-flaky-check
 
 -- Distributed aggregation with memory-efficient mode and external group by produces wrong counts with reversed keys
 SET force_primary_key_reverse_order = 0;

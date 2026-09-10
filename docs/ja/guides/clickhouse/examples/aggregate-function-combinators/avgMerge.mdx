@@ -1,0 +1,33 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMerge'
+title: 'avgMerge'
+description: 'avgMerge combinatorの使用例'
+keywords: ['avg', 'merge', 'combinator', '例', 'avgMerge']
+sidebarTitle: 'avgMerge'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`Merge`](/ja/reference/functions/aggregate-functions/combinators#-state) コンビネータは
+[`avg`](/ja/reference/functions/aggregate-functions/avg) 関数に適用でき、
+部分的な集約状態を結合して最終的な結果を生成できます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+`Merge` コンビネータは、`State` コンビネータと密接に関連しています。
+`avgMerge` と `avgState` の両方の例については、
+[&quot;avgState の使用例&quot;](/ja/guides/clickhouse/examples/aggregate-function-combinators/avgState#example-usage)
+を参照してください。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`avg`](/ja/reference/functions/aggregate-functions/avg)
+* [`Merge`](/ja/reference/functions/aggregate-functions/combinators#-merge)
+* [`MergeState`](/ja/reference/functions/aggregate-functions/combinators#-mergestate)

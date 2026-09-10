@@ -1,0 +1,48 @@
+---
+sidebarTitle: 'MinIO'
+slug: /integrations/minio
+description: '介绍如何配合 ClickHouse 使用 MinIO 的页面'
+title: '使用 MinIO'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+keywords: ['S3', 'MinIO', '对象存储', '数据加载', '兼容存储']
+---
+
+import SelfManaged from '/snippets/zh/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+所有 S3 函数和表都与 [MinIO](https://min.io/) 兼容。使用自托管的 MinIO 存储时，尤其在网络就近性最佳的情况下，你可能会获得更高的吞吐量。
+
+此外，backed merge tree 配置同样兼容，只需对配置做一些小改动：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://min.io/tables//</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        ...
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  请注意端点标签中的双斜杠，这用于指定存储桶的根目录。
+</Tip>

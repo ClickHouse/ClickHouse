@@ -1,0 +1,14 @@
+--- shape 1: nested cluster table function (urlCluster) ---
+cannot be nested inside another distributed query
+--- shape 1: nested cluster table function (fileCluster) ---
+cannot be nested inside another distributed query
+--- shape 1: nested cluster table function (s3Cluster) ---
+cannot be nested inside another distributed query
+--- shape 2: cluster table function under parallel replicas ---
+cannot use distributed processing inside a query that runs with parallel replicas
+--- top-level urlCluster still works ---
+1
+--- INSERT INTO distributed SELECT FROM urlCluster reads each task once ---
+3
+--- server alive ---
+1

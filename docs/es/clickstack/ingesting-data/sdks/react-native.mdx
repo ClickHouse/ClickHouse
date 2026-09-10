@@ -1,0 +1,143 @@
+---
+slug: /use-cases/observability/clickstack/sdks/react-native
+description: 'SDK de React Native para ClickStack - la pila de observabilidad de ClickHouse'
+title: 'React Native'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'logging', 'integración', 'monitoreo de aplicaciones']
+---
+
+El SDK de React Native de ClickStack le permite instrumentar su aplicación de React Native
+para enviar eventos a ClickStack. Esto le permite ver las solicitudes de red de la aplicación móvil
+y las excepciones junto con los eventos del backend en una sola línea de tiempo.
+
+Esta guía integra:
+
+* **Solicitudes XHR/Fetch**
+
+<div id="getting-started">
+  ## Primeros pasos
+</div>
+
+<div id="install-via-npm">
+  ### Instalar con NPM
+</div>
+
+Usa el siguiente comando para instalar el [paquete React Native de ClickStack](https://www.npmjs.com/package/@hyperdx/otel-react-native).
+
+```shell
+npm install @hyperdx/otel-react-native
+```
+
+<div id="initialize-clickstack">
+  ### Inicializar ClickStack
+</div>
+
+Inicializa la biblioteca tan pronto como sea posible en el ciclo de vida de tu aplicación:
+
+```javascript
+import { HyperDXRum } from '@hyperdx/otel-react-native';
+
+HyperDXRum.init({
+  url: 'http://your-otel-collector:4318',
+  service: 'my-rn-app',
+  apiKey: '<YOUR_INGESTION_API_KEY>', // Omitir para Managed ClickStack
+  tracePropagationTargets: [/api.myapp.domain/i], // Configurar para vincular traces del frontend con las solicitudes del backend
+});
+```
+
+<div id="attach-user-information-metadata">
+  ### Adjuntar información del usuario o metadatos (opcional)
+</div>
+
+Adjuntar información del usuario le permitirá buscar/filtrar sesiones y eventos
+en HyperDX. Esto puede llamarse en cualquier momento durante la sesión del cliente. La
+sesión actual del cliente y todos los eventos enviados después de la llamada se asociarán
+con la información del usuario.
+
+`userEmail`, `userName` y `teamName` rellenarán la UI de sesiones con los
+valores correspondientes, pero pueden omitirse. También pueden especificarse otros valores
+adicionales y usarse para buscar eventos.
+
+```javascript
+HyperDXRum.setGlobalAttributes({
+  userId: user.id,
+  userEmail: user.email,
+  userName: user.name,
+  teamName: user.team.name,
+  // Otras propiedades personalizadas...
+});
+```
+
+<div id="instrument-lower-versions">
+  ### Instrumentar versiones anteriores
+</div>
+
+Para instrumentar aplicaciones que se ejecutan con versiones de React Native anteriores a la 0.68,
+edita tu archivo `metro.config.js` para obligar a metro a usar paquetes
+específicos del navegador. Por ejemplo:
+
+```javascript
+const defaultResolver = require('metro-resolver');
+
+module.exports = {
+  resolver: {
+    resolveRequest: (context, realModuleName, platform, moduleName) => {
+      const resolved = defaultResolver.resolve(
+        {
+          ...context,
+          resolveRequest: null,
+        },
+        moduleName,
+        platform,
+      );
+
+      if (
+        resolved.type === 'sourceFile' &&
+        resolved.filePath.includes('@opentelemetry')
+      ) {
+        resolved.filePath = resolved.filePath.replace(
+          'platform\\node',
+          'platform\\browser',
+        );
+        return resolved;
+      }
+
+      return resolved;
+    },
+  },
+  transformer: {
+    getTransformOptions: async () => ({
+      transform: {
+        experimentalImportSupport: false,
+        inlineRequires: true,
+      },
+    }),
+  },
+};
+```
+
+<div id="view-navigation">
+  ## Navegación entre vistas
+</div>
+
+Se admiten las versiones 5 y 6 de [react-navigation](https://github.com/react-navigation/react-navigation).
+
+El siguiente ejemplo muestra cómo instrumentar la navegación:
+
+```javascript
+import { startNavigationTracking } from '@hyperdx/otel-react-native';
+
+export default function App() {
+  const navigationRef = useNavigationContainerRef();
+  return (
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        startNavigationTracking(navigationRef);
+      }}
+    >
+      <Stack.Navigator>...</Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+```

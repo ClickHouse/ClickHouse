@@ -62,7 +62,6 @@ Parts: 0/1
 
 -- No skip for substring
 Parts: 1/1
-Parts: 1/1
 1	Service is not ready
 
 -- Skip for substring with complete token

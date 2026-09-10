@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 -- Verify dedicated cache arena metrics exist in system.asynchronous_metrics.
 -- When jemalloc is enabled, the dedicated cache arena metrics should be present.
 WITH

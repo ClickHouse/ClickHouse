@@ -1,13 +1,14 @@
+#include <algorithm>
+#include <array>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionSpaceFillingCurve.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
 
 #include <morton-nd/mortonND_LUT.h>
-#if USE_MULTITARGET_CODE && defined(__BMI2__)
+#if defined(__BMI2__)
 #include <morton-nd/mortonND_BMI2.h>
 #endif
 
@@ -21,18 +22,8 @@ namespace DB
         auto & vec##INDEX = col##INDEX->getData(); \
         vec##INDEX.resize(input_rows_count);
 
-#define DECODE(ND, ...) \
-        if (nd == (ND)) \
-        { \
-            for (size_t i = 0; i < input_rows_count; i++) \
-            { \
-                auto res = MortonND_##ND##D_Dec.Decode(col_code->getUInt(i)); \
-                __VA_ARGS__ \
-            } \
-        }
-
 #define MASK(IDX, ...) \
-        ((mask) ? shrink(mask->getColumn((IDX)).getUInt(0), std::get<IDX>(__VA_ARGS__)) : std::get<IDX>(__VA_ARGS__))
+        ((mask) ? shrink(mask_ratios[(IDX)], std::get<IDX>(__VA_ARGS__)) : std::get<IDX>(__VA_ARGS__))
 
 #define EXECUTE() \
     size_t nd; \
@@ -45,6 +36,11 @@ namespace DB
     auto non_const_arguments = arguments; \
     non_const_arguments[1].column = non_const_arguments[1].column->convertToFullColumnIfConst(); \
     const ColumnPtr & col_code = non_const_arguments[1].column; \
+    const auto code_span = makeUIntColumnSpan(*col_code); \
+    std::array<UInt64, 8> mask_ratios{}; \
+    if (mask) \
+        for (size_t mask_idx = 0; mask_idx < std::min<size_t>(nd, mask_ratios.size()); ++mask_idx) \
+            mask_ratios[mask_idx] = mask->getColumn(mask_idx).getUInt(0); \
     Columns tuple_columns(nd); \
     EXTRACT_VECTOR(0) \
     if (nd == 1) \
@@ -53,7 +49,7 @@ namespace DB
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                vec0[i] = shrink(mask->getColumn(0).getUInt(0), col_code->getUInt(i)); \
+                vec0[i] = shrink(mask_ratios[0], code_span[i]); \
             } \
             tuple_columns[0] = std::move(col0); \
         } \
@@ -61,7 +57,7 @@ namespace DB
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                vec0[i] = col_code->getUInt(i); \
+                vec0[i] = code_span[i]; \
             } \
             tuple_columns[0] = std::move(col0); \
         } \
@@ -170,7 +166,18 @@ namespace DB
     } \
     return ColumnTuple::create(tuple_columns);
 
-DECLARE_DEFAULT_CODE(
+#if !defined(__BMI2__)
+
+#define DECODE(ND, ...) \
+        if (nd == (ND)) \
+        { \
+            for (size_t i = 0; i < input_rows_count; i++) \
+            { \
+                auto res = MortonND_##ND##D_Dec.Decode(code_span[i]); \
+                __VA_ARGS__ \
+            } \
+        }
+
 constexpr auto MortonND_2D_Dec = mortonnd::MortonNDLutDecoder<2, 32, 8>();
 constexpr auto MortonND_3D_Dec = mortonnd::MortonNDLutDecoder<3, 21, 8>();
 constexpr auto MortonND_4D_Dec = mortonnd::MortonNDLutDecoder<4, 16, 8>();
@@ -221,21 +228,19 @@ public:
         EXECUTE()
     }
 };
-) // DECLARE_DEFAULT_CODE
 
-#if defined(MORTON_ND_BMI2_ENABLED)
-#undef DECODE
+#else
+
 #define DECODE(ND, ...) \
         if (nd == (ND)) \
         { \
             for (size_t i = 0; i < input_rows_count; i++) \
             { \
-                auto res = MortonND_##ND##D::Decode(col_code->getUInt(i)); \
+                auto res = MortonND_##ND##D::Decode(code_span[i]); \
                 __VA_ARGS__ \
             } \
         }
 
-DECLARE_AVX2_SPECIFIC_CODE(
 using MortonND_2D = mortonnd::MortonNDBmi<2, uint64_t>;
 using MortonND_3D = mortonnd::MortonNDBmi<3, uint64_t>;
 using MortonND_4D = mortonnd::MortonNDBmi<4, uint64_t>;
@@ -243,8 +248,20 @@ using MortonND_5D = mortonnd::MortonNDBmi<5, uint64_t>;
 using MortonND_6D = mortonnd::MortonNDBmi<6, uint64_t>;
 using MortonND_7D = mortonnd::MortonNDBmi<7, uint64_t>;
 using MortonND_8D = mortonnd::MortonNDBmi<8, uint64_t>;
-class FunctionMortonDecode: public TargetSpecific::Default::FunctionMortonDecode
+class FunctionMortonDecode : public FunctionSpaceFillingCurveDecode<8, 1, 8>
 {
+public:
+    static constexpr auto name = "mortonDecode";
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionMortonDecode>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
     static UInt64 shrink(UInt64 ratio, UInt64 value)
     {
         switch (ratio)
@@ -274,41 +291,13 @@ class FunctionMortonDecode: public TargetSpecific::Default::FunctionMortonDecode
         EXECUTE()
     }
 };
-)
-#endif // MORTON_ND_BMI2_ENABLED
+
+#endif
 
 #undef DECODE
 #undef MASK
 #undef EXTRACT_VECTOR
 #undef EXECUTE
-
-class FunctionMortonDecode: public TargetSpecific::Default::FunctionMortonDecode
-{
-public:
-    explicit FunctionMortonDecode(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-                                        TargetSpecific::Default::FunctionMortonDecode>();
-
-#if USE_MULTITARGET_CODE && defined(MORTON_ND_BMI2_ENABLED)
-        selector.registerImplementation<TargetArch::x86_64_v3,
-                                        TargetSpecific::x86_64_v3::FunctionMortonDecode>();
-#endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionMortonDecode>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
 
 // NOLINTEND(bugprone-switch-missing-default-case)
 
@@ -355,9 +344,9 @@ mortonDecode(range_mask, code)
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the specified size.", {"Tuple(UInt64)"}};
     FunctionDocumentation::Examples examples = {
-        {"Simple mode", "SELECT mortonDecode(3, 53)", R"(["1", "2", "3"])"},
-        {"Single argument", "SELECT mortonDecode(1, 1)", R"(["1"])"},
-        {"Expanded mode, shrinking one argument", R"(SELECT mortonDecode(tuple(2), 32768))", R"(["128"])"},
+        {"Simple mode", "SELECT mortonDecode(3, 53)", R"((1,2,3))"},
+        {"Single argument", "SELECT mortonDecode(1, 1)", R"((1))"},
+        {"Expanded mode, shrinking one argument", R"(SELECT mortonDecode(tuple(2), 32768))", R"((128))"},
         {"Column usage",
          R"(
 -- First create the table and insert some data
@@ -378,7 +367,7 @@ INSERT INTO morton_numbers (*) values(1, 2, 3, 4, 5, 6, 7, 8);
 -- Use column names instead of constants as function arguments
 SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FROM morton_numbers;
          )",
-         "1 2 3 4 5 6 7 8"
+         "1\t2\t3\t4\t5\t6\t7\t8"
         }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 6};

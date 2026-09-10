@@ -5,6 +5,8 @@ SET force_primary_key_reverse_order = 0;
 -- add_minmax_index_for_numeric_columns=0: Different plan
 -- EXPLAIN output may differ
 
+SET explain_query_plan_default = 'legacy';
+
 -- { echoOn }
 
 DROP TABLE IF EXISTS test_has_idx_simple;

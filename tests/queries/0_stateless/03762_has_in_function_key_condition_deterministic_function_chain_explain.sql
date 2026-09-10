@@ -4,10 +4,12 @@
 -- add_minmax_index_for_numeric_columns=0: Changes the plan
 -- Disable force_primary_key_reverse_order: EXPLAIN indexes output depends on key direction
 SET force_primary_key_reverse_order = 0;
+SET explain_query_plan_default = 'legacy';
 
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_and_compare_chain = 1;
 SET optimize_extract_common_expressions = 0;
+SET optimize_rewrite_has_to_in = 0;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 

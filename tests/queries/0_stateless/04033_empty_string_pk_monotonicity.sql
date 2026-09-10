@@ -6,6 +6,7 @@
 -- With optimize_empty_string_comparisons=1 (default), `s = ''` is rewritten
 -- to `empty(s)`. This test verifies that empty() and notEmpty() report
 -- monotonicity for String arguments so granules can be skipped.
+SET explain_query_plan_default = 'legacy';
 
 -- Reverse key changes granule skip behavior for empty/notEmpty monotonicity checks
 SET force_primary_key_reverse_order = 0;

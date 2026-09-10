@@ -1,6 +1,7 @@
 -- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
 SET force_primary_key_reverse_order = 0;
 
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS checks SYNC;
 
 CREATE TABLE checks

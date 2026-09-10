@@ -1,0 +1,153 @@
+---
+slug: /community-wisdom/performance-optimization
+sidebarTitle: 'Optimización del rendimiento'
+doc_type: 'guide'
+keywords: [
+  'optimización del rendimiento',
+  'rendimiento de consultas',
+  'ajuste de bases de datos',
+  'consultas lentas',
+  'optimización de memoria',
+  'análisis de cardinalidad',
+  'estrategias de indexación',
+  'optimización de agregación',
+  'técnicas de muestreo',
+  'rendimiento de bases de datos',
+  'análisis de consultas',
+  'solución de problemas de rendimiento'
+]
+title: 'Lecciones - optimización del rendimiento'
+description: 'Ejemplos reales de estrategias de optimización del rendimiento'
+---
+
+*Esta guía forma parte de una colección de conclusiones extraídas de reuniones de la comunidad. Para ver más soluciones y observaciones reales, puedes [explorar por problema específico](/es/resources/support-center/tips-and-tricks/community-wisdom).*
+*¿Tienes problemas con las vistas materializadas? Consulta la guía de la comunidad sobre [vistas materializadas](/es/resources/support-center/tips-and-tricks/materialized-views).*
+*Si tus consultas son lentas y quieres ver más ejemplos, también tenemos una guía sobre [optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization).*
+
+<div id="cardinality-ordering">
+  ## Orden por cardinalidad (de menor a mayor)
+</div>
+
+El índice primario de ClickHouse funciona mejor cuando las columnas con baja cardinalidad van primero, lo que le permite omitir grandes fragmentos de datos de forma eficiente. Las columnas con alta cardinalidad, situadas más adelante en la clave, proporcionan una ordenación más detallada dentro de esos fragmentos. Empiece con columnas que tengan pocos valores únicos (como estado, categoría o país) y termine con columnas que tengan muchos valores únicos (como user&#95;id, timestamp o session&#95;id).
+
+Consulte más documentación sobre la cardinalidad y los índices primarios:
+
+* [Elegir una clave primaria](/es/concepts/best-practices/choosing-a-primary-key)
+* [Índices primarios](/es/concepts/core-concepts/primary-indexes)
+
+<div id="time-granularity">
+  ## La granularidad temporal importa
+</div>
+
+Al usar marcas de tiempo en la cláusula ORDER BY, ten en cuenta la compensación entre cardinalidad y precisión. Las marcas de tiempo con precisión de microsegundos generan una cardinalidad muy alta (casi un valor único por fila), lo que reduce la eficacia del índice primario disperso de ClickHouse. Las marcas de tiempo redondeadas generan una cardinalidad menor, lo que permite omitir más datos mediante el índice, pero se pierde precisión en las consultas basadas en el tiempo.
+
+```sql runnable editable
+-- Desafío: Prueba diferentes funciones de tiempo como toStartOfMinute o toStartOfWeek
+-- Experimento: Compara las diferencias de cardinalidad con tus propios datos de timestamp
+SELECT 
+    'Microsecond precision' as granularity,
+    uniq(created_at) as unique_values,
+    'Creates massive cardinality - bad for sort key' as impact
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL
+SELECT 
+    'Hour precision',
+    uniq(toStartOfHour(created_at)),
+    'Much better for sort key - enables skip indexing'
+FROM github.github_events
+WHERE created_at >= '2024-01-01'
+UNION ALL  
+SELECT 
+    'Day precision',
+    uniq(toStartOfDay(created_at)),
+    'Best for reporting queries'
+FROM github.github_events
+WHERE created_at >= '2024-01-01';
+```
+
+<div id="focus-on-individual-queries-not-averages">
+  ## Céntrate en las consultas individuales, no en los promedios
+</div>
+
+Al depurar el rendimiento de ClickHouse, no te bases en los tiempos medios de las consultas ni en las métricas generales del sistema. En su lugar, identifica por qué ciertas consultas concretas son lentas. Un sistema puede tener un buen rendimiento medio mientras algunas consultas individuales se ven afectadas por agotamiento de memoria, un filtrado deficiente o operaciones de alta cardinalidad.
+
+Según Alexey, CTO de ClickHouse: *&quot;La forma correcta es preguntarte por qué esta consulta en concreto tardó cinco segundos en procesarse... No me importa si la mediana y otras consultas se procesan rápido. Lo único que me importa es mi consulta&quot;*
+
+Cuando una consulta sea lenta, no te limites a mirar los promedios. Pregúntate: &quot;¿Por qué fue lenta ESTA consulta en concreto?&quot; y examina los patrones reales de uso de recursos.
+
+<div id="memory-and-row-scanning">
+  ## Memoria y escaneo de filas
+</div>
+
+Sentry es una plataforma de seguimiento de errores pensada ante todo para desarrolladores, que procesa miles de millones de eventos al día de más de 4 millones de desarrolladores. Su idea clave: *&quot;La cardinalidad de la clave de agrupación es lo que va a determinar el uso de memoria en esta situación concreta&quot;* - Las agregaciones de alta cardinalidad degradan el rendimiento por agotamiento de memoria, no por el escaneo de filas.
+
+Cuando las consultas fallen, determine si se trata de un problema de memoria (demasiados grupos) o de escaneo (demasiadas filas).
+
+Una consulta como `GROUP BY user_id, error_message, url_path` crea un estado de memoria independiente para cada combinación única de esos tres valores. Con una mayor carga de usuarios, tipos de error y rutas URL, podría generar fácilmente millones de estados de agregación que deben mantenerse en memoria simultáneamente.
+
+Para casos extremos, Sentry usa muestreo determinístico. Una muestra del 10 % reduce el uso de memoria en un 90 % y mantiene aproximadamente un 5 % de precisión en la mayoría de las agregaciones:
+
+```sql
+WHERE cityHash64(user_id) % 10 = 0  -- Siempre el mismo 10% de usuarios
+```
+
+Esto garantiza que los mismos usuarios aparezcan en cada consulta, lo que proporciona resultados consistentes en distintos períodos de tiempo. La idea clave: `cityHash64()` produce valores hash consistentes para la misma entrada, de modo que `user_id = 12345` siempre dará el mismo hash, lo que garantiza que ese usuario siempre aparezca en tu muestra del 10 % o no aparezca nunca; sin fluctuaciones entre consultas.
+
+<div id="bit-mask-optimization">
+  ## Optimización de máscaras de bits de Sentry
+</div>
+
+Al agregar por columnas de alta cardinalidad (como las URL), cada valor único crea un estado de agregación independiente en memoria, lo que puede agotar la memoria. La solución de Sentry: en lugar de agrupar por las URL reales, agrupa por expresiones booleanas que se reducen a máscaras de bits.
+
+Aquí tienes una consulta que puedes probar en tus propias tablas si te encuentras en esta situación:
+
+```sql
+-- Patrón de agregación eficiente en memoria: cada condición = un entero por grupo
+-- Idea clave: sumIf() acota el uso de memoria independientemente del volumen de datos
+-- Memoria por grupo: N enteros (N * 8 bytes) donde N = número de condiciones
+
+SELECT 
+    your_grouping_column,
+    
+    -- Cada sumIf crea exactamente un contador entero por grupo
+    -- La memoria se mantiene constante sin importar cuántas filas coincidan con cada condición
+    sumIf(1, your_condition_1) as condition_1_count,
+    sumIf(1, your_condition_2) as condition_2_count,
+    sumIf(1, your_text_column LIKE '%pattern%') as pattern_matches,
+    sumIf(1, your_numeric_column > threshold_value) as above_threshold,
+    
+    -- Las agregaciones complejas con múltiples condiciones también usan memoria constante
+    sumIf(1, your_condition_1 AND your_text_column LIKE '%pattern%') as complex_condition_count,
+    
+    -- Agregaciones estándar de referencia
+    count() as total_rows,
+    avg(your_numeric_column) as average_value,
+    max(your_timestamp_column) as latest_timestamp
+    
+FROM your_schema.your_table
+WHERE your_timestamp_column >= 'start_date' 
+  AND your_timestamp_column < 'end_date'
+GROUP BY your_grouping_column
+HAVING condition_1_count > minimum_threshold 
+   OR condition_2_count > another_threshold
+ORDER BY (condition_1_count + condition_2_count + pattern_matches) DESC
+LIMIT 20
+```
+
+En lugar de almacenar cada cadena única en memoria, almacenas como enteros la respuesta a preguntas sobre esas cadenas. El estado de agregación pasa a ser acotado y muy pequeño, independientemente de la diversidad de los datos.
+
+Del equipo de ingeniería de Sentry: &quot;Estas consultas pesadas son más de 10 veces más rápidas y nuestro uso de memoria es 100 veces menor (y, lo que es más importante, está acotado). Nuestros clientes más grandes ya no ven errores al buscar reproducciones y ahora podemos dar soporte a clientes de cualquier tamaño sin quedarnos sin memoria.&quot;
+
+<div id="video-sources">
+  ## Videos
+</div>
+
+* [Perdido en el pajar: optimización de agregaciones de alta cardinalidad](https://www.youtube.com/watch?v=paK84-EUJCA) - Lecciones de Sentry en producción sobre la optimización del uso de memoria
+* [Análisis de rendimiento de ClickHouse](https://www.youtube.com/watch?v=lxKbvmcLngo) - Alexey Milovidov sobre metodología de depuración
+* [Meetup de ClickHouse: técnicas de optimización de consultas](https://www.youtube.com/watch?v=JBomQk4Icjo) - Estrategias de optimización de la comunidad
+
+**Sigue leyendo**:
+
+* [Guía de optimización de consultas](/es/guides/clickhouse/performance-and-monitoring/query-optimization)
+* [Perspectivas de la comunidad sobre vistas materializadas](/es/resources/support-center/tips-and-tricks/materialized-views)

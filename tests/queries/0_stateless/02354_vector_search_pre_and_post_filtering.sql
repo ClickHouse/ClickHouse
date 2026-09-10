@@ -1,8 +1,8 @@
 -- Tags: no-fasttest, no-ordinary-database
 -- Disable force_primary_key_reverse_order: reversed key changes data layout in granules breaking EXPLAIN index output
 SET force_primary_key_reverse_order = 0;
-
 -- Tests pre vs. post-filtering for vector search.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to have local plan for parallel replicas
@@ -156,13 +156,13 @@ ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
 SETTINGS vector_search_index_fetch_multiplier = 2.0;
 
-SELECT '-- Negative parameter values throw an exception';
+SELECT '-- Fractional parameter values below 1.0 throw an exception (regression test for #110407)';
 SELECT id
 FROM tab
 WHERE date = '2025-01-03' AND attr2 >= 1008
 ORDER BY L2Distance(vec, [1.0, 1.0])
 LIMIT 3
-SETTINGS vector_search_index_fetch_multiplier = -1.0; -- { serverError INVALID_SETTING_VALUE }
+SETTINGS vector_search_index_fetch_multiplier = 0.99; -- { serverError INVALID_SETTING_VALUE }
 
 SELECT '-- Zero parameter values throw an exception';
 SELECT id

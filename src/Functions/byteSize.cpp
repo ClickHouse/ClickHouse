@@ -13,7 +13,7 @@ namespace
 
 /** byteSize() - get the value size in number of bytes for accounting purposes.
   */
-class FunctionByteSize : public IFunction
+class FunctionByteSize final : public IFunction
 {
 public:
     static constexpr auto name = "byteSize";
@@ -100,7 +100,7 @@ SELECT byteSize('string')
         )",
         R"(
 ┌─byteSize('string')─┐
-│                 15 │
+│                 14 │
 └────────────────────┘
         )"
     },
@@ -111,7 +111,7 @@ SELECT byteSize(NULL, 1, 0.3, '')
         )",
         R"(
 ┌─byteSize(NULL, 1, 0.3, '')─┐
-│                         19 │
+│                         18 │
 └────────────────────────────┘
         )"
     }

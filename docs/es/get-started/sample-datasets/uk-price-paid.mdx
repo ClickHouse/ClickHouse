@@ -1,0 +1,204 @@
+---
+description: 'Aprende a usar proyecciones para mejorar el rendimiento de las consultas que
+  ejecutas con frecuencia con el conjunto de datos de propiedades del Reino Unido, que contiene datos sobre los precios pagados por propiedades inmobiliarias en Inglaterra y Gales'
+sidebarTitle: 'Precios de propiedades en el Reino Unido'
+slug: /getting-started/example-datasets/uk-price-paid
+title: 'El conjunto de datos de precios de propiedades en el Reino Unido'
+doc_type: 'guide'
+keywords: ['conjunto de datos de ejemplo', 'propiedades del Reino Unido', 'datos de muestra', 'bienes inmuebles', 'primeros pasos']
+---
+
+import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.jsx";
+
+Estos datos incluyen los precios pagados por inmuebles en Inglaterra y Gales. Están disponibles desde 1995, y el tamaño del conjunto de datos sin comprimir es de aproximadamente 4 GiB (que en ClickHouse solo ocupan unos 278 MiB).
+
+* Fuente: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+* Descripción de los campos: https://www.gov.uk/guidance/about-the-price-paid-data
+* Incluye datos de HM Land Registry © Crown copyright y derechos sobre la base de datos de 2021. Estos datos se distribuyen bajo la licencia Open Government Licence v3.0.
+
+<div id="create-table">
+  ## Crear la tabla
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+<div id="preprocess-import-data">
+  ## Preprocesar e insertar los datos
+</div>
+
+Usaremos la función `url` para cargar los datos en ClickHouse. Primero necesitamos preprocesar parte de los datos entrantes, lo que incluye:
+
+* dividir `postcode` en dos columnas distintas, `postcode1` y `postcode2`, lo que mejora el almacenamiento y las consultas
+* convertir el campo `time` a fecha, ya que solo contiene la hora 00:00
+* ignorar el campo [UUid](/es/reference/data-types/uuid) porque no lo necesitamos para el análisis
+* transformar `type` y `duration` en campos `Enum` más legibles mediante la función [transform](/es/reference/functions/regular-functions/other-functions#transform)
+* transformar el campo `is_new` de una cadena de un solo carácter (`Y`/`N`) a un campo [UInt8](/es/reference/data-types/int-uint) con valor 0 o 1
+* eliminar las dos últimas columnas, ya que todas tienen el mismo valor (0)
+
+La función `url` envía los datos desde el servidor web a su tabla de ClickHouse. El siguiente comando inserta 5 millones de filas en la tabla `uk_price_paid`:
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+Espera a que se inserten los datos; esto tardará uno o dos minutos, según la velocidad de la red.
+
+<div id="validate-data">
+  ## Validar los datos
+</div>
+
+Verifiquemos que funcionó comprobando cuántas filas se insertaron:
+
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM uk.uk_price_paid
+  ```
+</RunnableCode>
+
+En el momento en que se ejecutó esta consulta, el conjunto de datos tenía 27,450,499 filas. Veamos cuánto espacio de almacenamiento ocupa la tabla en ClickHouse:
+
+<RunnableCode>
+  ```sql
+  SELECT formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'uk_price_paid'
+  ```
+</RunnableCode>
+
+¡Observa que el tamaño de la tabla es de solo 221.43 MiB!
+
+<div id="run-queries">
+  ## Ejecutar algunas consultas
+</div>
+
+Vamos a ejecutar algunas consultas para analizar los datos:
+
+<div id="average-price">
+  ### Consulta 1. Precio medio por año
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 1000000, 80
+  )
+  FROM uk.uk_price_paid
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+<div id="average-price-london">
+  ### Consulta 2. precio medio por año en Londres
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 2000000, 100
+  )
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+¡Algo pasó con los precios de la vivienda en 2020! Pero probablemente no sorprenda...
+
+<div id="most-expensive-neighborhoods">
+  ### Consulta 3. Los barrios más caros
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid
+  WHERE date >= '2020-01-01'
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+<div id="speeding-up-queries-with-projections">
+  ## Acelerar las consultas con proyecciones
+</div>
+
+Estas consultas pueden acelerarse con proyecciones. Consulta [&quot;Proyecciones&quot;](/es/concepts/features/projections/projections) para ver ejemplos con este conjunto de datos.
+
+<div id="playground">
+  ### Pruébelo en Playground
+</div>
+
+Este conjunto de datos también está disponible en el [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX).

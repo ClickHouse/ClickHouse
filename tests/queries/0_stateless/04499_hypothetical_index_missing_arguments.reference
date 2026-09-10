@@ -1,0 +1,16 @@
+--- set with no argument ---
+INCORRECT_QUERY
+--- ngrambf_v1 with no arguments ---
+BAD_ARGUMENTS
+--- tokenbf_v1 with no arguments ---
+BAD_ARGUMENTS
+--- sparse_grams with no arguments ---
+BAD_ARGUMENTS
+--- vector_similarity with no arguments ---
+INCORRECT_QUERY
+--- server is still alive ---
+1
+--- well-formed set is still accepted ---
+1
+--- well-formed vector_similarity is still 'not supported' ---
+NOT_IMPLEMENTED

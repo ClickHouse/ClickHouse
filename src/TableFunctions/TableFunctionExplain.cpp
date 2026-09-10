@@ -1,4 +1,5 @@
 #include <Analyzer/TableFunctionNode.h>
+#include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterExplainQuery.h>
@@ -52,7 +53,7 @@ private:
         return "";
     }
 
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -63,16 +64,23 @@ private:
     ASTPtr query = nullptr;
 };
 
-std::vector<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
+VectorWithMemoryTracking<size_t> TableFunctionExplain::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr /*context*/) const
 {
     const auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     const auto & table_function_node_arguments = table_function_node.getArguments().getNodes();
     size_t table_function_node_arguments_size = table_function_node_arguments.size();
 
-    if (table_function_node_arguments_size == 3)
-        return {2};
+    /// `viewExplain` is the internal lowered form of `SELECT * FROM (EXPLAIN ...)`.
+    /// Its first two arguments must remain string literals: the `EXPLAIN` kind and
+    /// serialized settings, for example `indexes = 1`. The optional third argument
+    /// must remain the unresolved `SELECT` query being explained. `parseArguments`
+    /// consumes these AST shapes directly, so they do not need expression analysis.
+    VectorWithMemoryTracking<size_t> result;
+    result.reserve(table_function_node_arguments_size);
+    for (size_t i = 0; i < table_function_node_arguments_size; ++i)
+        result.push_back(i);
 
-    return {};
+    return result;
 }
 
 void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -108,8 +116,12 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     {
         const Settings & settings = context->getSettingsRef();
 
-        /// parse_only_internals_ = true - we don't want to parse `SET` keyword
-        ParserSetQuery settings_parser(/* parse_only_internals_ = */ true);
+        /// parse_only_internals_ = true - we don't want to parse `SET` keyword.
+        /// shorthand_syntax_ = false - `EXPLAIN` settings are read as numbers by
+        /// `InterpreterExplainQuery::checkAndGetSettings`, with no schema to check a bare
+        /// `SETTINGS name` against, so the shorthand must be rejected here exactly as
+        /// `ParserExplainQuery` rejects it for `EXPLAIN` itself.
+        ParserSetQuery settings_parser(/* parse_only_internals_ = */ true, /* shorthand_syntax_ = */ false);
         ASTPtr settings_ast = parseQuery(
             settings_parser, settings_str, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         explain_query->setSettings(std::move(settings_ast));
@@ -161,7 +173,7 @@ Block executeMonoBlock(QueryPipeline & pipeline)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected pulling pipeline");
 
     PullingPipelineExecutor pulling_executor(pipeline);
-    std::vector<Block> blocks;
+    Blocks blocks;
     while (true)
     {
         Block block;
@@ -209,7 +221,14 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
                 Example:
                 [example:1]
                 )",
-            .examples={{"1", "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'", ""}},
+            .examples={
+                {"1",
+                 "SELECT explain FROM (EXPLAIN AST SELECT * FROM system.numbers) WHERE explain LIKE '%Asterisk%'",
+                 R"(
+┌─explain──────┐
+│     Asterisk │
+└──────────────┘
+)"}},
             .category = FunctionDocumentation::Category::TableFunction
         });
 }

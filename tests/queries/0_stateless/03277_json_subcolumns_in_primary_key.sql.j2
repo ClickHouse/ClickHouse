@@ -2,6 +2,7 @@
 -- Disable force_primary_key_reverse_order: reversed key changes read-in-order optimization for JSON subcolumn queries
 SET force_primary_key_reverse_order = 0;
 
+set explain_query_plan_default='legacy';
 set optimize_read_in_order=1;
 set enable_json_type=1;
 set allow_experimental_variant_type=1;

@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The query condition cache can reduce rows_read across repeated queries on the same table,
+# making the rows_read assertions below non-deterministic.
+CLICKHOUSE_CLIENT+=" --use_query_condition_cache=0"
+
 
 # Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"

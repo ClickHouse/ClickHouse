@@ -11,11 +11,14 @@ namespace DB
 
 class ColumnsDescription;
 
+struct KeyDescription;
 struct ProjectionDescription;
 
 using IColumnPermutation = PaddedPODArray<size_t>;
 
 class ASTProjectionDeclaration;
+
+struct MergeTreeSettings;
 
 /// Base interface for projection index implementations.
 class IProjectionIndex
@@ -26,7 +29,12 @@ public:
     virtual String getName() const = 0;
 
     virtual void fillProjectionDescription(
-        ProjectionDescription & result, const IAST * index_expr, const ColumnsDescription & columns, ContextPtr query_context) const
+        ProjectionDescription & result,
+        const IAST * index_expr,
+        const ColumnsDescription & columns,
+        const KeyDescription * partition_key,
+        const ContextPtr & query_context,
+        const MergeTreeSettings & projection_settings) const
         = 0;
 
     virtual Block calculate(
@@ -36,6 +44,15 @@ public:
         ContextPtr context,
         const IColumnPermutation * perm_ptr) const
         = 0;
+
+    /// Returns default MergeTreeSettings for this projection index type.
+    /// These defaults are applied before any user-specified SETTINGS overrides.
+    virtual std::shared_ptr<MergeTreeSettings> getDefaultSettings() const;
+
+    /// Returns the maximum number of rows supported by this index.
+    /// Some indices are limited to 32-bit row counts (approx. 4.29 billion).
+    /// Defaults to the maximum possible value if no specific limit exists.
+    virtual UInt64 getMaxRows() const { return std::numeric_limits<UInt64>::max(); }
 };
 
 using ProjectionIndexPtr = std::shared_ptr<IProjectionIndex>;

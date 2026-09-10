@@ -3,11 +3,18 @@
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
 #include <Columns/IColumn.h>
+#include <Common/Exception.h>
 #include <Common/JSONBuilder.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <DataTypes/DataTypeNullable.h>
+
+#include <string_view>
+#include <unordered_set>
 
 #include "config.h"
 
@@ -25,8 +32,43 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
+String checkFillDescription(const FillColumnDescription & fill, int direction)
 {
+    if (accurateEquals(fill.fill_step, Field{0}))
+        return "WITH FILL STEP value cannot be zero";
+
+    if (!fill.fill_staleness.isNull() && !fill.fill_from.isNull())
+        return "WITH FILL STALENESS cannot be used together with WITH FILL FROM";
+
+    if (direction > 0)
+    {
+        if (accurateLess(fill.fill_step, Field{0}))
+            return "WITH FILL STEP value cannot be negative for sorting in ascending direction";
+
+        if (accurateLess(fill.fill_staleness, Field{0}))
+            return "WITH FILL STALENESS value cannot be negative for sorting in ascending direction";
+
+        if (!fill.fill_from.isNull() && !fill.fill_to.isNull() && accurateLess(fill.fill_to, fill.fill_from))
+            return "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction";
+    }
+    else
+    {
+        if (accurateLess(Field{0}, fill.fill_step))
+            return "WITH FILL STEP value cannot be positive for sorting in descending direction";
+
+        if (accurateLess(Field{0}, fill.fill_staleness))
+            return "WITH FILL STALENESS value cannot be positive for sorting in descending direction";
+
+        if (!fill.fill_from.isNull() && !fill.fill_to.isNull() && accurateLess(fill.fill_from, fill.fill_to))
+            return "WITH FILL FROM value cannot be less than TO value for sorting in descending direction";
+    }
+
+    return {};
+}
+
+void dumpSortDescription(const SortDescription & description, ExplainFormatSettings & settings)
+{
+    auto & out = settings.out;
     bool first = true;
 
     for (const auto & desc : description)
@@ -35,7 +77,7 @@ void dumpSortDescription(const SortDescription & description, WriteBuffer & out)
             out << ", ";
         first = false;
 
-        out << desc.column_name;
+        out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(desc.column_name, settings.pretty_names) : desc.column_name);
 
         if (desc.direction > 0)
             out << " ASC";
@@ -70,22 +112,6 @@ bool SortDescription::hasPrefix(const SortDescription & prefix) const
     return true;
 }
 
-bool SortDescription::hasPrefix(const Names & prefix) const
-{
-    if (prefix.empty())
-        return true;
-
-    if (prefix.size() > size())
-        return false;
-
-    for (size_t i = 0; i < prefix.size(); ++i)
-    {
-        if ((*this)[i].column_name != prefix[i])
-            return false;
-    }
-    return true;
-}
-
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs)
 {
     size_t i = 0;
@@ -100,28 +126,76 @@ SortDescription commonPrefix(const SortDescription & lhs, const SortDescription 
     return res;
 }
 
+SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns)
+{
+    std::unordered_set<std::string_view> column_set(columns.begin(), columns.end());
+
+    SortDescription prefix;
+    for (const auto & sort_column_desc : description)
+    {
+        if (!column_set.contains(sort_column_desc.column_name))
+            break;
+
+        /// A collated column is ordered by its collation key, not by value, so equal values are not
+        /// adjacent; in-order grouping (DISTINCT / LIMIT BY) cannot rely on it. Stop the prefix here.
+        if (sort_column_desc.collator)
+            break;
+
+        prefix.emplace_back(sort_column_desc);
+    }
+
+    return prefix;
+}
+
 #if USE_EMBEDDED_COMPILER
 
-static CHJIT & getJITInstance()
+namespace
 {
-    static CHJIT jit;
-    return jit;
+    std::mutex sort_description_jit_mutex;
+    /// See `aggregator_jit_instance` in `Aggregator.cpp` for the rationale of `shared_ptr` ownership.
+    std::shared_ptr<CHJIT> sort_description_jit_instance;
+}
+
+static std::shared_ptr<CHJIT> getJITInstancePtr()
+{
+    std::lock_guard lock(sort_description_jit_mutex);
+    if (!sort_description_jit_instance)
+        sort_description_jit_instance = std::make_shared<CHJIT>();
+    return sort_description_jit_instance;
+}
+
+void resetSortDescriptionJITInstance()
+{
+    std::lock_guard lock(sort_description_jit_mutex);
+    sort_description_jit_instance.reset();
 }
 
 class CompiledSortDescriptionFunctionHolder final : public CompiledExpressionCacheEntry
 {
 public:
-    explicit CompiledSortDescriptionFunctionHolder(CompiledSortDescriptionFunction compiled_function_)
+    explicit CompiledSortDescriptionFunctionHolder(CompiledSortDescriptionFunction compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
         , compiled_sort_description_function(compiled_function_)
+        , jit_owner(std::move(jit_owner_))
     {}
 
     ~CompiledSortDescriptionFunctionHolder() override
     {
-        getJITInstance().deleteCompiledModule(compiled_sort_description_function.compiled_module);
+        try
+        {
+            /// Use the JIT instance that compiled this module (see `CompiledAggregateFunctionsHolder`).
+            jit_owner->deleteCompiledModule(compiled_sort_description_function.compiled_module);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     CompiledSortDescriptionFunction compiled_sort_description_function;
+
+private:
+    std::shared_ptr<CHJIT> jit_owner;
 };
 
 static std::string getSortDescriptionDump(const SortDescription & description, const DataTypes & header_types)
@@ -149,7 +223,7 @@ static LoggerPtr getLogger()
 
 void compileSortDescriptionIfNeeded(SortDescription & description, const DataTypes & sort_description_types, bool increase_compile_attempts)
 {
-    static std::unordered_map<UInt128, UInt64, UInt128Hash> counter;
+    static UnorderedMapWithMemoryTracking<UInt128, UInt64, UInt128Hash> counter;
     static std::mutex mutex;
 
     if (!description.compile_sort_description || sort_description_types.empty())
@@ -193,8 +267,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
         {
             LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
 
-            auto compiled_sort_description = compileSortDescription(getJITInstance(), description, sort_description_types, description_dump);
-            return std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description));
+            auto jit_owner = getJITInstancePtr();
+            auto compiled_sort_description = compileSortDescription(*jit_owner, description, sort_description_types, description_dump);
+            return std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description), std::move(jit_owner));
         });
 
         compiled_sort_description_holder = std::static_pointer_cast<CompiledSortDescriptionFunctionHolder>(compiled_function_cache_entry);
@@ -202,8 +277,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
     else
     {
         LOG_TRACE(getLogger(), "Compile sort description {}", description_dump);
-        auto compiled_sort_description = compileSortDescription(getJITInstance(), description, sort_description_types, description_dump);
-        compiled_sort_description_holder = std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description));
+        auto jit_owner = getJITInstancePtr();
+        auto compiled_sort_description = compileSortDescription(*jit_owner, description, sort_description_types, description_dump);
+        compiled_sort_description_holder = std::make_shared<CompiledSortDescriptionFunctionHolder>(std::move(compiled_sort_description), std::move(jit_owner));
     }
 
     auto comparator_function = compiled_sort_description_holder->compiled_sort_description_function.comparator_function;
@@ -225,7 +301,9 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 std::string dumpSortDescription(const SortDescription & description)
 {
     WriteBufferFromOwnString wb;
-    dumpSortDescription(description, wb);
+    ExplainFormatSettings settings{.out = wb, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
+
+    dumpSortDescription(description, settings);
     return wb.str();
 }
 

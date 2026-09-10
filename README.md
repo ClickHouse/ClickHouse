@@ -22,7 +22,7 @@ curl https://clickhouse.com/ | sh
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
-* [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse as a service, built by the creators and maintainers.
+* [ClickHouse Cloud](https://clickhouse.com/cloud) ClickHouse as a service, built by the creators and maintainers.
 * [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
 * [Documentation](https://clickhouse.com/docs/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
@@ -34,42 +34,43 @@ curl https://clickhouse.com/ | sh
 * [Contacts](https://clickhouse.com/company/contact) can help to get your questions answered if there are any.
 
 ## Monthly Release & Community Call
+The [ClickHouse **26.8** Release Call](https://www.youtube.com/watch?v=5A9gRYE0v2M) took place on August 27, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.8/).
 
-Join us for the [ClickHouse **26.2** Release Call](https://clickhouse.com/company/events/v26-2-community-release-call) on February 26, 2026.
+The [ClickHouse **26.7** Release Call](https://www.youtube.com/watch?v=mKBNLaFOVDA) took place on July 23, 2026 — watch the recording and the [slides](https://presentations.clickhouse.com/2026-release-26.7/).
+
+The [ClickHouse **26.6** special "10 Year Anniversary" Release Call](https://www.youtube.com/watch?v=-NmqMH9y4EY) — recording and [slides](https://presentations.clickhouse.com/2026-release-26.6/).
 
 Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
 ## Upcoming Events
 
 Keep an eye out for upcoming meetups and events around the world.
-Somewhere else you want us to be?
-Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com.
+Want to speak? Apply [here](https://forms.gle/3h4XCEENJZ3eaVGy7)
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [AI Builders Night San Jose](https://luma.com/xoq2dz0l) - March 16th, 2026
-* [Munich Meetup](https://www.meetup.com/clickhouse-meetup-munich/events/313487152/) - March 19th, 2026
-* [NY Meetup](https://luma.com/c7tprb51) - March 19th, 2026
-* [RSA Iceberg Meetup SF](https://luma.com/rsa-iceberg) - March 24th, 2026 
-* [Milan Meetup](https://www.meetup.com/clickhouse-italy-user-group/events/313586581/) - March 26th, 2026
-* [Seattle Observability Meetup](https://luma.com/vph3jbkm) - March 26th, 2026
-* [San Francisco Observability FireSide Chat](https://luma.com/v5d8u087) - March 31st, 2026
-* [AI Demo Night SF](https://luma.com/jyzlu78v) - April 9th, 2026
-* [Taipei Open Source Night](https://luma.com/kt3xtz3a) - April 16th, 2026
+* [Boston Hands-on training: Building agents with ClickHouse and LibreChat Boston](https://luma.com/clickh-nw1d) - September 14th, 2026
+* [Amsterdam Meetup](https://luma.com/clickh-vu1p) - September 15th, 2026
+* [Cape Town Meetup](https://luma.com/clickh-dw1v) - September 15th, 2026
+* [DET New York](https://luma.com/xf3wghdh) - September 17th, 2026
+* [The Agentic Data Stack: Paris](https://luma.com/clickh-s2a1) - September 17th, 2026
+* [The Agentic Data Stack: Zurich](https://luma.com/clickh-oo1l) - September 17th, 2026
+* [Rows And Columns Summit](https://luma.com/event/evt-bQcR6tDKi8OmTXu) - September 22nd, 2026
+* [PyData Seattle Meetup](https://luma.com/clickh-ttgg) - September 24th, 2026
+* [Mountain view Meetup](https://luma.com/clickh-5ms6) - September 24th, 2026
+* [Chicago Meetup](https://luma.com/clickh-8tnc) - September 28th, 2026
+* [Paris Meetup](https://luma.com/clickh-gsz1) - September 29th, 2026
+* [Open House London](https://luma.com/ggnwajnd) - September 30th, 2026
+* [Open House Munich](https://luma.com/6xorx3qw) - October 6th, 2026
+* [AI Builders and Databases Stockholm](https://luma.com/clickh-ku2p) - October 8th, 2026
+
 
 Recent meetups
-* [Apache Iceberg™ Meetup Pittsburgh](https://luma.com/mqgwk79x) - March 12th, 2026
-* [SRE Days London Meetup](https://luma.com/sreday-2026-london-q1) - March 12, 2026
-* [San Francisco Meetup](https://luma.com/6rnu6wzs) - March 11th, 2026
-* [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/313294062) - March 10th, 2026
-* [Women+ in open source](https://luma.com/qcqlia4g) - March 9th, 2026 
-* [Tokyo Meetup - LibreChat Night](https://www.meetup.com/clickhouse-tokyo-user-group/events/313275265/) - March 9th, 2026
-* [LA Meetup](https://luma.com/wbkqmaqk) - March 6th, 2026
-* [Bangalore GDG + Deutsche Bank Meetup](https://www.meetup.com/clickhouse-bangalore-user-group/events/313325219/) - February 28th, 2026
-* [Seattle Meetup](https://luma.com/jsctpwoa) - February 26th, 2026
-* [Melbourne Meetup](https://www.meetup.com/clickhouse-melbourne-user-group/events/312871833/) - February 24th, 2026
-
-
+* [Bangalore Iceberg Community Meetup](https://luma.com/clickh-t3iz) - August 22nd, 2026
+* [Vancouver Meetup](https://luma.com/jr8tc94e) - August 25th, 2026
+* [Boston Trivia](https://luma.com/clickh-thmi) - August 31st, 2026
+* [Bangkok Meetup](https://luma.com/clickh-ct1j) - September 1st, 2026
+* [Agentic Data Stack: Berlin](https://luma.com/clickh-2ccj) - September 2nd, 2026
 
 
 ## Recent Recordings

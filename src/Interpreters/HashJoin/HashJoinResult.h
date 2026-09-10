@@ -14,17 +14,18 @@ public:
         const Block & required_right_keys;
         const std::vector<String> & required_right_keys_sources;
 
-        size_t max_joined_block_rows;
-        size_t max_joined_block_bytes;
+        size_t max_joined_block_rows = 0;
+        size_t max_joined_block_bytes = 0;
 
-        size_t avg_joined_bytes_per_row;
+        size_t avg_joined_bytes_per_row = 0;
 
-        bool need_filter;
-        bool is_join_get;
+        bool need_filter = false;
+        bool is_join_get = false;
 
         bool joined_block_split_single_row = false;
 
         bool enable_lazy_columns_replication = false;
+        bool enable_lazy_columns_indexing = false;
     };
 
     HashJoinResult(
@@ -33,12 +34,15 @@ public:
         IColumn::Offsets offsets_,
         IColumn::Filter filter_,
         IColumn::Offsets && matched_rows_,
+        size_t matched_right_rows_,
         ScatteredBlock && block_,
         Properties properties_);
 
     JoinResultBlock next() override;
 
     void setNextBlock(ScatteredBlock && block);
+
+    size_t getMatchedRightRows() const override { return matched_right_rows; }
 
     ~HashJoinResult() override;
 private:
@@ -58,6 +62,7 @@ private:
     size_t next_matched_rows_it = 0;
     size_t next_row_ref = 0;
     size_t num_joined_rows = 0;
+    size_t matched_right_rows = 0;
 
     struct GenerateCurrentRowState
     {
