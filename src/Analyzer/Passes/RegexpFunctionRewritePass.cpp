@@ -94,7 +94,15 @@ private:
     {
         bool zero_width = false; /// An assertion such as `\b`: always matches the empty string and never consumes.
         bool nullable = false; /// Can match the empty string, e.g. `o*`, or is not understood well enough to tell.
+        bool is_dollar = false; /// The element is a bare `$` anchor, not quantified and not quoted by `\Q...\E`.
     };
+
+    /// The result of tokenizing a pattern that is not understood: a single element that can match
+    /// the empty string, which only ever makes the caller decline the rewrite.
+    static std::vector<RegexpAtom> giveUp()
+    {
+        return {RegexpAtom{.zero_width = false, .nullable = true}};
+    }
 
     /// Whether the group that spans `[begin, end)` is an inline flag group, `(?i)`, rather than a
     /// capturing or a non-capturing one.
@@ -117,8 +125,6 @@ private:
     /// single nullable atom, which only makes the caller decline the rewrite.
     static std::vector<RegexpAtom> tokenizeRegexp(const std::string & regexp)
     {
-        const std::vector<RegexpAtom> give_up = {RegexpAtom{.zero_width = false, .nullable = true}};
-
         std::vector<RegexpAtom> atoms;
         size_t i = 0;
         while (i < regexp.size())
@@ -126,10 +132,38 @@ private:
             RegexpAtom atom;
             const char c = regexp[i];
 
-            if (c == '\\')
+            if (c == '\\' && i + 1 < regexp.size() && regexp[i + 1] == 'Q')
+            {
+                /// `\Q...\E` quotes its body: every byte in it is a literal, including `$`, and an
+                /// unterminated `\Q` quotes up to the end of the pattern. The body is a run of
+                /// literals, so it consumes - unless it is empty, in which case the whole construct
+                /// matches the empty string without consuming, exactly like an assertion.
+                size_t j = i + 2;
+                size_t body_size = 0;
+                while (j < regexp.size())
+                {
+                    if (j + 1 < regexp.size() && regexp[j] == '\\' && regexp[j + 1] == 'E')
+                    {
+                        j += 2;
+                        break;
+                    }
+                    ++body_size;
+                    ++j;
+                }
+                atom.zero_width = body_size == 0;
+                i = j;
+            }
+            else if (c == '\\' && i + 1 < regexp.size() && regexp[i + 1] == 'E')
+            {
+                /// A `\E` without a matching `\Q`. re2 rejects such a pattern outright, so the query
+                /// throws either way; zero-width is the conservative reading of it here.
+                atom.zero_width = true;
+                i += 2;
+            }
+            else if (c == '\\')
             {
                 if (i + 1 >= regexp.size())
-                    return give_up; /// A trailing backslash - the pattern is not even valid.
+                    return giveUp(); /// A trailing backslash - the pattern is not even valid.
 
                 /// re2's zero-width escapes. Everything else, such as `\d` or `\.`, consumes a character.
                 const char escaped = regexp[i + 1];
@@ -139,6 +173,7 @@ private:
             else if (c == '^' || c == '$')
             {
                 atom.zero_width = true;
+                atom.is_dollar = c == '$';
                 ++i;
             }
             else if (c == '[')
@@ -152,7 +187,7 @@ private:
                 while (j < regexp.size() && regexp[j] != ']')
                     j += regexp[j] == '\\' ? 2 : 1;
                 if (j >= regexp.size())
-                    return give_up; /// Unterminated.
+                    return giveUp(); /// Unterminated.
                 i = j + 1;
             }
             else if (c == '(')
@@ -172,7 +207,7 @@ private:
                     ++j;
                 }
                 if (depth > 0)
-                    return give_up; /// Unbalanced.
+                    return giveUp(); /// Unbalanced.
                 atom.zero_width = isInlineFlagGroup(regexp, i, j);
                 atom.nullable = !atom.zero_width;
                 i = j;
@@ -180,14 +215,16 @@ private:
             else if (c == '|' || c == ')' || c == '*' || c == '+' || c == '?' || c == '{')
             {
                 /// An alternation, or a quantifier where an element was expected.
-                return give_up;
+                return giveUp();
             }
             else
             {
                 ++i; /// An ordinary character.
             }
 
-            /// A quantifier binds to the element that has just been read.
+            /// A quantifier binds to the element that has just been read. A quantified `$` is no
+            /// longer an anchor that the pattern must end at, so it does not count as one.
+            const size_t element_end = i;
             if (i < regexp.size() && (regexp[i] == '*' || regexp[i] == '?'))
             {
                 atom.nullable = true;
@@ -216,7 +253,7 @@ private:
                         ++j;
                 }
                 if (!has_digits || j >= regexp.size() || regexp[j] != '}')
-                    return give_up; /// Not a repetition after all - re2 takes `{` literally here.
+                    return giveUp(); /// Not a repetition after all - re2 takes `{` literally here.
                 if (lower_bound == 0)
                     atom.nullable = true;
                 i = j + 1;
@@ -226,28 +263,36 @@ private:
             if (i < regexp.size() && regexp[i] == '?')
                 ++i;
 
+            if (i != element_end)
+                atom.is_dollar = false;
+
             atoms.push_back(atom);
         }
         return atoms;
     }
 
-    /// Whether a pattern that ends with an unescaped `$` can also match the empty string there.
-    /// A global replace resumes right after a match, so it can match the empty string at the end of
-    /// the subject once more, which a single replace never does: `replaceRegexpAll('foo', 'o*$', 'Z')`
-    /// is `fZZ`, while `replaceRegexpOne` gives `fZ`. Trailing zero-width assertions consume nothing
-    /// and are looked through, so `a?\b$` is nullable just like `a?$`.
-    static bool canMatchEmptyBeforeDollar(const std::string & regexp)
+    /// Whether the pattern ends with a `$` anchor and has to consume a character before it, so that
+    /// it can match at most once, at the end of the subject.
+    /// A global replace resumes right after a match, so a pattern that can also match the empty
+    /// string at the end of the subject matches there once more, which a single replace never does:
+    /// `replaceRegexpAll('foo', 'o*$', 'Z')` is `fZZ`, while `replaceRegexpOne` gives `fZ`. Trailing
+    /// zero-width assertions consume nothing and are looked through, so `a?\b$` is nullable just
+    /// like `a?$`. A `$` that is quoted by `\Q...\E` or quantified is a literal, not an anchor.
+    static bool endsWithRequiredDollarAnchor(const std::string & regexp)
     {
         auto atoms = tokenizeRegexp(regexp);
+
+        if (atoms.empty() || !atoms.back().is_dollar)
+            return false;
 
         /// Drop the trailing `$` together with every assertion in front of it.
         while (!atoms.empty() && atoms.back().zero_width)
             atoms.pop_back();
 
         if (atoms.empty())
-            return true; /// Nothing but assertions, so the pattern matches the empty string.
+            return false; /// Nothing but assertions, so the pattern matches the empty string.
 
-        return atoms.back().nullable;
+        return !atoms.back().nullable;
     }
 
     bool handleReplaceRegexpAll(FunctionNode & function_node)
@@ -267,26 +312,18 @@ private:
         if (regexp.empty())
             return false;
 
-        bool starts_with_caret = regexp.front() == '^';
-        bool ends_with_unescaped_dollar = false;
-
-        if (!regexp.empty() && regexp.back() == '$')
-            ends_with_unescaped_dollar = isUnescaped(regexp, regexp.size() - 1);
-
-        if (!starts_with_caret && !ends_with_unescaped_dollar)
+        /// A `^`-anchored pattern can only match at offset 0, so replacing all and replacing one are
+        /// the same. A pattern anchored only by a trailing `$` matches once at the end - unless it
+        /// can also match the empty string there, in which case a global replace replaces twice:
+        /// `replaceRegexpAll('foo', 'o*$', 'Z')` is `fZZ`, while `replaceRegexpOne` gives `fZ`.
+        const bool starts_with_caret = regexp.front() == '^';
+        if (!starts_with_caret && !endsWithRequiredDollarAnchor(regexp))
             return false;
 
         /// An inline `m` flag makes `^` and `$` match at every line boundary rather than only at the
         /// ends of the subject, so the pattern can match once per line: `replaceRegexpAll` over
         /// `(?m)a$` replaces every line's `a`, `replaceRegexpOne` only the first line's.
         if (enablesMultiline(regexp))
-            return false;
-
-        /// A `^`-anchored pattern can only match at offset 0, so replacing all and replacing one are
-        /// the same. A pattern anchored only by a trailing `$` matches once at the end - unless it
-        /// can also match the empty string there, in which case a global replace replaces twice:
-        /// `replaceRegexpAll('foo', 'o*$', 'Z')` is `fZZ`, while `replaceRegexpOne` gives `fZ`.
-        if (!starts_with_caret && canMatchEmptyBeforeDollar(regexp))
             return false;
 
         /// Analyze the regular expression to detect presence of alternatives (e.g., 'a|b'). If any alternatives are

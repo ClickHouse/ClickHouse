@@ -41,3 +41,21 @@ SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT r
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('foo'), '(?m)o$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('foo'), 'o*$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('a'), 'a?\\b$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+
+-- `\Q...\E` quotes its body, so a `$` inside it is a literal and not an anchor, and an empty body
+-- consumes nothing at all. An unterminated `\Q` quotes up to the end of the pattern.
+SELECT 'quoted literals';
+SELECT replaceRegexpAll(h, 'a?\\Q\\E$', 'Z') FROM (SELECT 'a' AS h);
+SELECT replaceRegexpAll(h, 'a?\\Q\\E$', 'Z') FROM (SELECT 'a' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+
+SELECT replaceRegexpAll(h, 'a\\Q$', 'Z') FROM (SELECT 'a$a$' AS h);
+SELECT replaceRegexpAll(h, 'a\\Q$', 'Z') FROM (SELECT 'a$a$' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('a'), 'a?\\Q\\E$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('a$a$'), 'a\\Q$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
+
+-- A quoted literal that has to consume a character in front of a real `$` keeps the rewrite.
+SELECT 'still rewritten';
+SELECT replaceRegexpAll(h, 'a\\Qxy\\E$', 'Z') FROM (SELECT 'axy' AS h);
+SELECT replaceRegexpAll(h, 'a\\Qxy\\E$', 'Z') FROM (SELECT 'axy' AS h) SETTINGS optimize_rewrite_regexp_functions = 0;
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity('axy'), 'a\\Qxy\\E$', 'Z')) WHERE explain LIKE '%replaceRegexpOne%';
