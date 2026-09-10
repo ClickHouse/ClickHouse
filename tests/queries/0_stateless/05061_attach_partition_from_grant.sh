@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# (`CREATE TABLE ... CLONE AS` is not supported with `Replicated` databases.)
 
 # `ALTER TABLE ... ATTACH PARTITION ... FROM ...` and `CREATE TABLE ... CLONE AS ...` only add data to
 # the destination table, so they must require only `INSERT`, not `ALTER DELETE`. `REPLACE PARTITION`
@@ -26,6 +28,7 @@ CREATE USER $user_ins IDENTIFIED WITH plaintext_password BY 'password';
 GRANT SELECT ON $CLICKHOUSE_DATABASE.src TO $user_ins;
 GRANT INSERT ON $CLICKHOUSE_DATABASE.dst TO $user_ins;
 GRANT CREATE TABLE, INSERT ON $CLICKHOUSE_DATABASE.cloned TO $user_ins;
+GRANT TABLE ENGINE ON MergeTree TO $user_ins;
 
 -- Can read the source and delete from the destination, but cannot write to the destination.
 CREATE USER $user_del IDENTIFIED WITH plaintext_password BY 'password';
