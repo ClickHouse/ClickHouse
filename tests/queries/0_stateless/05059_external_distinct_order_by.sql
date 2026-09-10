@@ -14,10 +14,10 @@ SELECT count() FROM (EXPLAIN PLAN actions = 1 SELECT DISTINCT a FROM (SELECT num
 -- aggregation over it, so `groupArray` observes the arrival order.
 SELECT count(), uniqExact(a), groupArray(a) = arrayReverseSort(groupArray(a)) FROM (SELECT DISTINCT number AS a FROM numbers(300000) ORDER BY a + 1 DESC) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0, log_comment = '05059_external_distinct_order_by/spill';
 
--- The same through a remote server that receives the serialized query plan: the single shard executes
--- the whole query, so the order requirement has to travel with the plan. The local replica must not be
--- preferred, otherwise the query would run in-process without the round trip.
-SELECT count(), uniqExact(a), groupArray(a) = arrayReverseSort(groupArray(a)) FROM (SELECT DISTINCT number AS a FROM remote('127.0.0.1', view(SELECT number FROM numbers(300000))) ORDER BY a + 1 DESC) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0, serialize_query_plan = 1, prefer_localhost_replica = 0, log_comment = '05059_external_distinct_order_by/remote';
+-- The remote server executes the whole query from a serialized plan, including the order requirement.
+-- `max_parallel_replicas = 1` keeps the final `DISTINCT` on that server, and `prefer_localhost_replica = 0`
+-- ensures the plan travels over the network.
+SELECT count(), uniqExact(a), groupArray(a) = arrayReverseSort(groupArray(a)) FROM (SELECT DISTINCT number AS a FROM remote('127.0.0.1', view(SELECT number FROM numbers(300000))) ORDER BY a + 1 DESC) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0, serialize_query_plan = 1, prefer_localhost_replica = 0, max_parallel_replicas = 1, log_comment = '05059_external_distinct_order_by/remote';
 
 -- With a `LIMIT` larger than the rows emitted before the spill (the first block), the result is the head of
 -- the sorted order.
