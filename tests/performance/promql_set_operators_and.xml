@@ -19,6 +19,8 @@
 
     <query>SELECT * FROM prometheusQueryRange('promql_set_operators_and_ts', 'sum by (instance) (last_over_time(foo[10])) and sum by (instance) (last_over_time(bar[10]))', 100, 390, 10) FORMAT Null</query>
     <query>SELECT * FROM prometheusQueryRange('promql_set_operators_and_ts', 'sum by (instance) (last_over_time(foo[10])) and on(instance) sum by (instance) (last_over_time(bar[10]))', 100, 390, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_and_ts', 'sum by (instance) (last_over_time(foo[10])) and sum by (instance) (last_over_time(bar[10]))', 100, 399, 1) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_and_ts', 'sum by (instance) (last_over_time(foo[10])) and on(instance) sum by (instance) (last_over_time(bar[10]))', 100, 399, 1) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_set_operators_and_ts</drop_query>
 </test>

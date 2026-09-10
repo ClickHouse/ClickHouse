@@ -41,11 +41,11 @@ namespace
                 makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
                 makeASTFunction(
                     "if",
-                    makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("y")),
+                    makeASTFunction("greater", make_intrusive<ASTIdentifier>("y"), make_intrusive<ASTLiteral>(0u)),
                     make_intrusive<ASTIdentifier>("x"),
                     make_intrusive<ASTLiteral>(Field{} /* NULL */))),
             make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
-            make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values})));
+            make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::JoinPresence})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         builder.from_table = left;
@@ -57,6 +57,21 @@ namespace
             "equals",
             make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Group}),
             make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Group}));
+
+        return builder.getSelectQuery();
+    }
+
+    ASTPtr makeExactGroupPresenceQuery(const String & right)
+    {
+        SelectQueryBuilder builder;
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+
+        builder.select_list.push_back(makePresenceArray(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.select_list.back()->setAlias(ColumnNames::JoinPresence);
+
+        builder.from_table = right;
 
         return builder.getSelectQuery();
     }
@@ -88,8 +103,12 @@ SQLQueryPiece applyBinaryOperatorAnd(
     if (canUseExactGroupMatch(
             operator_node, left_argument.metric_name_dropped, right_argument.metric_name_dropped))
     {
+        context.subqueries.emplace_back(SQLSubquery{
+            context.subqueries.size(), makeExactGroupPresenceQuery(right), SQLSubqueryType::TABLE});
+        String right_presence = context.subqueries.back().name;
+
         SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
-        res.select_query = makeExactGroupAndQuery(left, right);
+        res.select_query = makeExactGroupAndQuery(left, right_presence);
         res.metric_name_dropped = left_argument.metric_name_dropped;
 
         res.start_time = left_argument.start_time;
