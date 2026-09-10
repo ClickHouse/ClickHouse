@@ -34,9 +34,80 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_PARSE_BOOL;
+    extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_IPV4;
+    extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_NUMBER;
+    extern const int CANNOT_PARSE_TEXT;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int DECIMAL_OVERFLOW;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
+
+namespace ArrayIndexLowCardinalityHelpers
+{
+
+/// Is [code] a cast declining its input, rather than a fault of the caller? Anything else (a memory
+/// limit, a logical error, a cancellation) is not an answer about the value and must propagate.
+inline bool isConstantCastDecline(int code)
+{
+    return code == ErrorCodes::CANNOT_CONVERT_TYPE
+        || code == ErrorCodes::CANNOT_PARSE_BOOL
+        || code == ErrorCodes::CANNOT_PARSE_DATE
+        || code == ErrorCodes::CANNOT_PARSE_DATETIME
+        || code == ErrorCodes::CANNOT_PARSE_IPV4
+        || code == ErrorCodes::CANNOT_PARSE_IPV6
+        || code == ErrorCodes::CANNOT_PARSE_NUMBER
+        || code == ErrorCodes::CANNOT_PARSE_TEXT
+        || code == ErrorCodes::CANNOT_PARSE_UUID
+        || code == ErrorCodes::DECIMAL_OVERFLOW
+        || code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+        || code == ErrorCodes::NOT_IMPLEMENTED
+        || code == ErrorCodes::TOO_LARGE_STRING_SIZE
+        || code == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM
+        || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+}
+
+/// Did [value] survive the cast that produced [image]? The cast alone cannot report loss, since it
+/// truncates UInt64(256) to UInt8(0) and succeeds, so compare the two in the type they meet in, where
+/// neither side's padding is a difference.
+inline bool targetTypeRepresentsValue(
+    const ColumnPtr & value, const DataTypePtr & value_type, const ColumnPtr & image, const DataTypePtr & image_type)
+{
+    try
+    {
+        /// Without a common type the pair only compares as numbers, so [value_type] is where they meet.
+        const auto common_type = tryGetLeastSupertype(DataTypes{value_type, image_type});
+        const auto compare_type = common_type ? makeNullable(common_type) : makeNullable(value_type);
+
+        const auto restored = castColumnAccurateOrNull({image, image_type, ""}, compare_type);
+        if (restored->empty() || restored->isNullAt(0))
+            return false;
+
+        const auto original = castColumnAccurateOrNull({value, value_type, ""}, compare_type);
+        if (original->empty() || original->isNullAt(0))
+            return false;
+
+        return accurateEquals((*restored)[0], (*original)[0]);
+    }
+    catch (const Exception & e)
+    {
+        if (!isConstantCastDecline(e.code()))
+            throw;
+
+        return false;
+    }
+}
+
 }
 
 using NullMap = PaddedPODArray<UInt8>;
@@ -848,6 +919,14 @@ private:
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
         auto right = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
 
+        /// A float zero equals two byte-distinct dictionary entries, -0.0 and 0.0, and a single index
+        /// cannot denote both, so leave a zero needle to the path that compares values. The needle
+        /// type is narrowed only so that reading it as a float is total.
+        const auto needle_type = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+        if (isFloat(removeNullable(target_type)) && (isNumber(needle_type) || isEnum(needle_type))
+            && !right_const->isNullAt(0) && right_const->getDataColumnPtr()->getFloat64(0) == 0.0)
+            return nullptr;
+
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
@@ -855,15 +934,33 @@ private:
         if (!right->isNullAt(0))
         {
             auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
+            auto original_right = right;
+            auto cast_type = target_type;
             right = castColumn({right, right_type, ""}, target_type);
 
             if (right->isNullable())
+            {
                 right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
+                cast_type = removeNullable(cast_type);
+            }
 
             std::string_view elem = right->getDataAt(0);
             const auto & left_dict = left_lc->getDictionary();
 
-            if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
+            auto find_in_dictionary = [&](std::string_view value) -> std::optional<UInt64>
+            {
+                /// The default slot holds its value whether or not any row references it, and the cast above
+                /// narrows without reporting loss, so UInt64(256) reaches it as UInt8(0). Answering from that
+                /// slot requires the constant to have survived the cast; one that did not equals no element.
+                if (value == left_dict.getNestedNotNullableColumn()->getDataAt(left_dict.getNestedTypeDefaultValueIndex())
+                    && !target_type->equals(*right_type)
+                    && !ArrayIndexLowCardinalityHelpers::targetTypeRepresentsValue(original_right, right_type, right, cast_type))
+                    return {};
+
+                return left_dict.getOrFindValueIndex(value);
+            };
+
+            if (std::optional<UInt64> maybe_index = find_in_dictionary(elem); maybe_index)
             {
                 index = *maybe_index;
             }

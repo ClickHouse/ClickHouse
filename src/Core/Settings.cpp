@@ -12,12 +12,17 @@
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsObsoleteMacros.h>
+#include <Core/SettingsSecrets.h>
 #include <Core/SettingsTierType.h>
+#include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
+#include <IO/WriteBufferFromString.h>
+#include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <base/types.h>
 #include <Common/NamePrompter.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 
 #include <boost/program_options.hpp>
@@ -6227,6 +6232,9 @@ Limit on size of a single batch of file segments that a read buffer can request 
     DECLARE(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
 Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
+    DECLARE(UInt64, filesystem_cache_wait_for_concurrent_download_timeout_milliseconds, 1000, R"(
+Maximum time to wait for a file segment which is being downloaded to the filesystem cache by a concurrent query. When the timeout is reached, the read bypasses the filesystem cache for that range and reads directly from remote storage, while the concurrent download continues to fill the cache. Value `0` means do not wait at all: bypass the cache immediately if the needed range is not downloaded yet. Lowering this value bounds the tail latency of cache-hit reads which would otherwise wait for another query's download pace at the cost of additional requests to remote storage.
+)", 0) \
     DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
@@ -6462,6 +6470,8 @@ Maximum time to read from a pipe for receiving information from the threads when
 - **Default value:** Empty string
 
 This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
+
+Renaming is a write to the source, so a query that reads the files with this option set requires the `WRITE ON FILE` grant in addition to `READ ON FILE`. `DESCRIBE` does not build the data-reading pipeline that renames, and so requires only `READ ON FILE`.
 
 ### Placeholders
 
@@ -7376,6 +7386,9 @@ As each series represents a node in Keeper, it is recommended to have no more th
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
+    DECLARE(Bool, throw_on_hive_partitioning_resolution_failure, false, R"(
+Throw an exception instead of logging a warning when Hive-style partitioning detection for an object storage table fails to list the storage. When disabled, the query runs without the Hive partition columns, which may change its result.
+)", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
 The former is used when we know that the right table size is below the threshold.
@@ -7949,6 +7962,15 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 IMPLEMENT_SETTINGS_TRAITS(SettingsTraits, LIST_OF_SETTINGS)
 
+/// A `merge_tree_`-prefixed name is a `MergeTreeSettings` setting kept here as a custom setting, and it can
+/// have two names. Store it under the canonical one, so that a value written under either name is the value
+/// read under either name, instead of the two names holding two values of one setting.
+template <>
+std::string_view resolveCustomSettingName<SettingsTraits>(std::string_view name)
+{
+    return canonicalSettingName(name);
+}
+
 /** Settings of query execution.
   * These settings go to users.xml.
   */
@@ -7965,7 +7987,7 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
 
     /// Dumps profile events to column of type Map(String, String)
-    void dumpToMapColumn(IColumn * column, bool changed_only = true);
+    void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets);
 
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
@@ -8019,7 +8041,7 @@ void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util:
     }
 }
 
-void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
+void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets)
 {
     if (!column)
         return;
@@ -8042,6 +8064,8 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
 
         const auto & name = accessor.getName(i);
         auto value = accessor.getValueString(*this, i);
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(String(name), value);
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
         ++size;
@@ -8055,7 +8079,9 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
             continue;
 
         const auto & name = custom.first;
-        auto value = setting_field.toString();
+        auto value = setting_field.toString(show_secrets);
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(name, value);
         key_column.insertData(name.data(), name.size());
         value_column.insertData(value.data(), value.size());
         ++size;
@@ -8231,9 +8257,24 @@ std::vector<String> Settings::getHints(const String & name) const
     return impl->getHints(name);
 }
 
-String Settings::toString() const
+String Settings::toString(bool show_secrets) const
 {
-    return impl->toString();
+    if (show_secrets)
+        return impl->toString();
+
+    /// Same rendering as `BaseSettings::toString`, with the secrets masked.
+    WriteBufferFromOwnString out;
+    bool first = true;
+    for (const auto & setting : impl->allChanged())
+    {
+        if (!first)
+            out << ", ";
+        auto masked = CoreSettings::renderSecretSettingValue(String(setting.getName()), setting.getValue());
+        out << setting.getName() << " = "
+            << (masked ? *masked : applyVisitor(FieldVisitorToString(), setting.getValue()));
+        first = false;
+    }
+    return out.str();
 }
 
 SettingsChanges Settings::changes() const
@@ -8288,13 +8329,30 @@ std::vector<std::string_view> Settings::getUnchangedNames() const
     return setting_names;
 }
 
-void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const
+void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const
 {
     MutableColumns & res_columns = params.res_columns;
 
+    /// `setting_name` may be an alias, so the masking always keys off the canonical name.
+    const auto mask = [&](const auto & setting, String & value)
+    {
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(String(setting.getName()), value);
+    };
+
+    /// For a constraint, whose raw `Field` is at hand: the value of a custom setting can be an AST
+    /// that no plain `Field` formatter hides.
+    const auto mask_field = [&](const auto & setting, const Field & field, String & value)
+    {
+        if (!show_secrets)
+            CoreSettings::maskSettingValue(String(setting.getName()), field, value);
+    };
+
     const auto fill_data_for_setting = [&](std::string_view setting_name, const auto & setting)
     {
-        res_columns[1]->insert(setting.getValueString());
+        String value = setting.getValueString(show_secrets);
+        mask(setting, value);
+        res_columns[1]->insert(value);
         res_columns[2]->insert(setting.isValueChanged());
 
         /// Trim starting/ending newline.
@@ -8314,20 +8372,34 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 
         /// These two columns can accept strings only.
         if (!min.isNull())
-            min = Settings::valueToStringUtil(setting_name, min);
+        {
+            String min_string = Settings::valueToStringUtil(setting_name, min);
+            mask_field(setting, min, min_string);
+            min = min_string;
+        }
         if (!max.isNull())
-            max = Settings::valueToStringUtil(setting_name, max);
+        {
+            String max_string = Settings::valueToStringUtil(setting_name, max);
+            mask_field(setting, max, max_string);
+            max = max_string;
+        }
 
         Array disallowed_array;
-        for (const auto & value : disallowed_values)
-            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
+        for (const auto & disallowed_value : disallowed_values)
+        {
+            String disallowed_string = Settings::valueToStringUtil(setting_name, disallowed_value);
+            mask_field(setting, disallowed_value, disallowed_string);
+            disallowed_array.emplace_back(disallowed_string);
+        }
 
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
         res_columns[6]->insert(disallowed_array);
         res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
         res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getDefaultValueString());
+        String default_value = setting.getDefaultValueString(show_secrets);
+        mask(setting, default_value);
+        res_columns[9]->insert(default_value);
         res_columns[11]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
         res_columns[12]->insert(setting.getTier());
     };
@@ -8353,9 +8425,9 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
     }
 }
 
-void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
+void Settings::dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const
 {
-    impl->dumpToMapColumn(column, changed_only);
+    impl->dumpToMapColumn(column, changed_only, show_secrets);
 }
 
 NameToNameMap Settings::toNameToNameMap() const
@@ -8364,7 +8436,7 @@ NameToNameMap Settings::toNameToNameMap() const
     for (const auto & param : *impl)
     {
         std::string value;
-        ReadBufferFromOwnString buf(param.getValueString());
+        ReadBufferFromOwnString buf(param.getValueString(/* show_secrets */ true));
         readQuoted(value, buf);
         query_parameters.emplace(param.getName(), value);
     }
@@ -8443,6 +8515,11 @@ Field Settings::stringToValueUtil(std::string_view name, const String & str)
 bool Settings::hasBuiltin(std::string_view name)
 {
     return SettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> Settings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return SettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view Settings::resolveName(std::string_view name)

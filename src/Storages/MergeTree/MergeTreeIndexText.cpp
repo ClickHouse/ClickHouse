@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/TextIndexCache.h>
 
 
+#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
 #include <fmt/ranges.h>
@@ -57,6 +58,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int CORRUPTED_DATA;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
@@ -204,14 +206,14 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
         /// If the posting list is completely in the buffer, avoid copying.
         if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
         {
-            auto result = std::make_shared<PostingList>(PostingList::read(istr.position()));
+            auto result = std::make_shared<PostingList>(PostingList::readSafe(istr.position(), num_bytes));
             istr.position() += num_bytes;
             return result;
         }
 
         deserialization_buffer.resize(num_bytes);
         istr.readStrict(deserialization_buffer.data(), num_bytes);
-        return std::make_shared<PostingList>(PostingList::read(deserialization_buffer.data()));
+        return std::make_shared<PostingList>(PostingList::readSafe(deserialization_buffer.data(), num_bytes));
     }
 }
 
@@ -290,6 +292,9 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
         {
             UInt64 first_token_size = 0;
             readVarUInt(first_token_size, istr);
+            /// Prevent a corrupt or malicious .dct file from allocating huge amounts of memory
+            if (first_token_size > SerializationString::MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: first token size ({}) exceeds the maximum ({})", first_token_size, SerializationString::MAX_STRING_SIZE);
             offset += first_token_size;
             if (offset > data.size())
                 data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
@@ -307,7 +312,26 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
             UInt64 data_size = 0;
             readVarUInt(data_size, istr);
 
-            offset += lcp + data_size;
+            /// Reject a corrupted or malicious `.dct`: an out-of-range `lcp` or an overflowing `lcp + data_size` would wrap `offset`, skip the resize, and cause an out-of-bounds write below.
+            const UInt64 previous_token_size = data_offset - previous_token_offset;
+            if (lcp > previous_token_size)
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted text index dictionary: front-coding longest common prefix ({}) exceeds the previous token size ({})",
+                    lcp, previous_token_size);
+
+            UInt64 token_size = 0;
+            UInt64 next_offset = 0;
+            if (common::addOverflow(lcp, data_size, token_size) || common::addOverflow<UInt64>(offset, token_size, next_offset))
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted text index dictionary: front-coding token size overflows (lcp = {}, data_size = {})",
+                    lcp, data_size);
+
+            if (token_size > SerializationString::MAX_STRING_SIZE)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: front-coding token size ({}) exceeds the maximum ({})", token_size, SerializationString::MAX_STRING_SIZE);
+
+            offset = next_offset;
 
             if (offset > data.size())
                 data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
@@ -684,6 +708,7 @@ void serializeTokensRaw(
     for (size_t i = block_begin; i < block_end; ++i)
     {
         auto current_token = token_getter(i);
+        TextIndexSerialization::checkTokenSize(current_token.size());
         writeVarUInt(current_token.size(), ostr);
         ostr.write(current_token.data(), current_token.size());
     }
@@ -702,6 +727,7 @@ void serializeTokensFrontCoding(
     size_t block_end)
 {
     const auto & first_token = token_getter(block_begin);
+    TextIndexSerialization::checkTokenSize(first_token.size());
     writeVarUInt(first_token.size(), ostr);
     ostr.write(first_token.data(), first_token.size());
 
@@ -709,6 +735,7 @@ void serializeTokensFrontCoding(
     for (size_t i = block_begin + 1; i < block_end; ++i)
     {
         auto current_token = token_getter(i);
+        TextIndexSerialization::checkTokenSize(current_token.size());
         auto lcp = computeCommonPrefixLength(previous_token, current_token);
         writeVarUInt(lcp, ostr);
         writeVarUInt(current_token.size() - lcp, ostr);
@@ -858,6 +885,12 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     }
 
     return info;
+}
+
+void TextIndexSerialization::checkTokenSize(size_t token_size)
+{
+    if (token_size > SerializationString::MAX_STRING_SIZE)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
 }
 
 void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
@@ -1110,6 +1143,7 @@ DictionarySparseIndex serializeTokensAndPostings(
         chassert(dictionary_mark.offset_in_decompressed_block == 0);
 
         const auto & first_token = tokens_and_postings[block_begin].first;
+        TextIndexSerialization::checkTokenSize(first_token.size());
         sparse_index_offsets_data.emplace_back(dictionary_mark.offset_in_compressed_file);
         sparse_index_str.insertData(first_token.data(), first_token.size());
 

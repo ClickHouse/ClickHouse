@@ -699,7 +699,8 @@ struct SettingFieldCustom final : SettingFieldBase
 
     explicit operator Field() const override { return value; }
 
-    String toString() const override;
+    String toString() const override { return toString(/* show_secrets */ true); }
+    String toString(bool show_secrets) const;
     void parseFromString(const String & str) override;
 
     void writeBinary(WriteBuffer & out) const override;

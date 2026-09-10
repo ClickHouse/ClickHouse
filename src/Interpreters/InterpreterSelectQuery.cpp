@@ -79,6 +79,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -234,6 +235,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -540,6 +542,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     query_info.is_internal = options.is_internal;
 
+    /// Only the analyzer can resolve recursive CTEs, and reaching this interpreter means the old analyzer.
+    if (getSelectQuery().recursive_with)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+
     initSettings();
 
     // Automatic parallel replicas aren't supported in the old analyzer, this code is needed only as a safe guard for
@@ -573,7 +580,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor(context).visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -3161,10 +3168,26 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
             /// would produce incomplete data and cause the pipeline to get stuck.
             sort_settings.size_limits.overflow_mode = OverflowMode::THROW;
 
+            /// The sort scatters rows across threads by the hash of the partition columns it is given,
+            /// but `WindowTransform` finds partition boundaries with `compareAt`. For key types where
+            /// the two disagree the scatter would split one logical partition across threads, so such
+            /// windows sort in a single merged stream instead.
+            SortDescription scatter_partition_by = window.partition_by;
+            const auto & sort_input_header = query_plan.getCurrentHeader();
+            for (const auto & partition_column : window.partition_by)
+            {
+                if (QueryPlanOptimizations::keyTypeBreaksHashSharding(
+                        *sort_input_header->getByName(partition_column.column_name).type))
+                {
+                    scatter_partition_by.clear();
+                    break;
+                }
+            }
+
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
                 window.full_sort_description,
-                window.partition_by,
+                scatter_partition_by,
                 0 /* LIMIT */,
                 sort_settings);
             sorting_step->setStepDescription(fmt::format("Sorting for window '{}'", window.window_name), options.max_step_description_length);

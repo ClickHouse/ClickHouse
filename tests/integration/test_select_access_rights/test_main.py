@@ -319,8 +319,10 @@ def test_select_count():
 
     select_query = "SELECT count() FROM table1"
     assert (
-        "it's necessary to have the grant SELECT for at least one column on default.table1"
-        in instance.query_and_get_error(select_query, user="A")
+        "it's necessary to have the grant SELECT ON default.table1"
+        in instance.query_and_get_error(
+            select_query, user="A", settings={"enable_analyzer": 1}
+        )
     )
 
     instance.query("GRANT SELECT(x) ON default.table1 TO A")
@@ -328,8 +330,10 @@ def test_select_count():
 
     instance.query("REVOKE SELECT(x) ON default.table1 FROM A")
     assert (
-        "it's necessary to have the grant SELECT for at least one column on default.table1"
-        in instance.query_and_get_error(select_query, user="A")
+        "it's necessary to have the grant SELECT ON default.table1"
+        in instance.query_and_get_error(
+            select_query, user="A", settings={"enable_analyzer": 1}
+        )
     )
 
     instance.query("GRANT SELECT(y) ON default.table1 TO A")
@@ -337,8 +341,10 @@ def test_select_count():
 
     instance.query("REVOKE SELECT(y) ON default.table1 FROM A")
     assert (
-        "it's necessary to have the grant SELECT for at least one column on default.table1"
-        in instance.query_and_get_error(select_query, user="A")
+        "it's necessary to have the grant SELECT ON default.table1"
+        in instance.query_and_get_error(
+            select_query, user="A", settings={"enable_analyzer": 1}
+        )
     )
 
     instance.query("GRANT SELECT ON default.table1 TO A")
@@ -426,9 +432,13 @@ def test_select_with_row_policy():
         "it's necessary to have the grant SELECT ON default.table1"
         in instance.query_and_get_error(select_query, user="A")
     )
+    # Without any grant on the table the analyzer rejects the table itself
+    # when it resolves the identifier, before the column-level check.
     assert (
-        "it's necessary to have the grant SELECT for at least one column on default.table1"
-        in instance.query_and_get_error(select_query2, user="A")
+        "it's necessary to have the grant SELECT ON default.table1"
+        in instance.query_and_get_error(
+            select_query2, user="A", settings={"enable_analyzer": 1}
+        )
     )
 
     instance.query("GRANT SHOW COLUMNS ON default.table1 TO A")
