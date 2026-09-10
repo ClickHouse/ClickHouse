@@ -6,7 +6,7 @@
             event_time DateTime,
             tenant_id UInt32,
             event_id UInt64,
-            request_body String TTL event_time + INTERVAL 30 DAY
+            request_body String
         )
         ENGINE = MergeTree
         PARTITION BY tuple()
@@ -65,14 +65,18 @@
         SETTINGS max_threads = 1, max_insert_threads = 1
     </fill_query>
 
+    <fill_query>OPTIMIZE TABLE ttl_column_skip_untouched_blocks_src FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>SYSTEM STOP MERGES ttl_column_skip_untouched_blocks</fill_query>
+
     <query type="shell"><![CDATA[
         ${CLICKHOUSE_CLIENT} --query "
             TRUNCATE TABLE ttl_column_skip_untouched_blocks;
             ALTER TABLE ttl_column_skip_untouched_blocks ATTACH PARTITION tuple() FROM ttl_column_skip_untouched_blocks_src;
-            OPTIMIZE TABLE ttl_column_skip_untouched_blocks FINAL;
+            OPTIMIZE TABLE ttl_column_skip_untouched_blocks FINAL SETTINGS optimize_throw_if_noop = 1;
         "
     ]]></query>
 
+    <drop_query>SYSTEM START MERGES ttl_column_skip_untouched_blocks</drop_query>
     <drop_query>DROP TABLE IF EXISTS ttl_column_skip_untouched_blocks</drop_query>
     <drop_query>SYSTEM START MERGES ttl_column_skip_untouched_blocks_src</drop_query>
     <drop_query>DROP TABLE IF EXISTS ttl_column_skip_untouched_blocks_src</drop_query>
