@@ -7,11 +7,15 @@
 #include <Common/TargetSpecific.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <memory>
 #include <numbers>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
@@ -22,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -776,6 +781,461 @@ float VectorQuantizer::distance(const Query & query, const char * code)
         }
     }
     return 0.0f;
+}
+
+/// Named (not anonymous) so the TargetSpecific::* namespaces the macro below generates cannot collide with
+/// identically named kernels from another translation unit.
+namespace RaBitQIndexImpl
+{
+namespace
+{
+
+/// Codes are interleaved LANES at a time, so one SIMD register holds the same 64-bit word of LANES
+/// different codes and the popcount accumulator has one lane per code - no horizontal reduction per code.
+/// 8 lanes fill a 512-bit register.
+constexpr size_t LANES = 8;
+
+/// `__builtin_elementwise_popcount` lowers to `vpopcntq` with AVX-512 VPOPCNTDQ (`x86_64_icelake` and up,
+/// including Zen 4 and 5), a `vpshufb` nibble table on AVX2 and plain AVX-512, NEON `cnt` on ARM.
+using LaneU64 = UInt64 __attribute__((vector_size(LANES * sizeof(UInt64))));
+using LaneF32 = Float32 __attribute__((vector_size(LANES * sizeof(Float32))));
+
+/// Groups per emitted minimum. Keeping the running minimum costs one vector `min` per group, but collapsing
+/// it to a scalar is a shuffle chain: at 768 dimensions one scalar minimum per group costs 60% on top of the
+/// scan, one per 16 groups costs 6%.
+constexpr size_t MINIMA_WINDOW = 16;
+
+/// `DECLARE_MULTITARGET_CODE` stops at `x86_64_v4`, which has no VPOPCNTDQ. That instruction is worth about
+/// 2.6x here, so the Ice Lake tier gets its own copy of the body.
+#define DECLARE_MULTITARGET_CODE_WITH_ICELAKE(...) \
+DECLARE_MULTITARGET_CODE(__VA_ARGS__) \
+DECLARE_X86_ICELAKE_SPECIFIC_CODE(__VA_ARGS__)
+
+DECLARE_MULTITARGET_CODE_WITH_ICELAKE(
+
+/// Score one query against `groups * LANES` codes, writing one estimated squared L2 distance per code.
+///
+/// Word `w` of the `LANES` codes in group `g` is at `codes[(g * words + w) * LANES]`. `planes` is the
+/// bit-sliced query, `RABITQ_QUERY_BITS` planes of `words` words. `popcounts`, `sq_norms` and `factors` hold
+/// `groups * LANES` entries, one per code.
+///
+/// Also writes the smallest estimate of each window of MINIMA_WINDOW groups to `window_minima`
+/// (`ceil(groups / MINIMA_WINDOW)` entries), so the caller can reject `MINIMA_WINDOW * LANES` codes against
+/// its running k-th best with one comparison. It has to happen here: float minimum reassociates no more than
+/// float addition does, so a minimum taken in the caller stays a scalar chain.
+///
+/// The estimator is the one in `raBitQDistance`, rearranged so everything independent of the code is folded
+/// by the caller into three scalars. With `weighted = sum_j 2^j * popcount(code AND plane_j)` and
+/// `pc = popcount(code)`,
+///     sum_i s_i q_i = 2 * (delta * weighted + q_min * pc) - q_total
+///     ||x - c||^2 = ||x||^2 + ||c||^2 - 2 (x . c), (x . c) ~= cos(x, c) * ||x|| * ||c||
+/// so with `factors[c] = ||c|| * inv_factor` and `qa`, `qb`, `qc` carrying delta, q_min and q_total (see
+/// `prepareScanQuery`), the result is `||c||^2 - 2 (x . c)` - the squared distance less `||x||^2`, which is
+/// constant across codes and so ranks the same. The estimated cosine is not clamped to [-1, 1] as
+/// `raBitQDistance` clamps it: that would flatten the near-ties this ranking has to resolve.
+void scanCodes(
+    const UInt64 * __restrict codes, size_t groups, size_t words, const UInt64 * __restrict planes,
+    const Float32 * __restrict popcounts, const Float32 * __restrict sq_norms, const Float32 * __restrict factors,
+    Float32 qa, Float32 qb, Float32 qc, Float32 * __restrict scores, Float32 * __restrict window_minima)
+{
+    static_assert(RABITQ_QUERY_BITS == 4, "scanCodes is unrolled over exactly four query bit-planes");
+    const UInt64 * __restrict plane0 = planes;
+    const UInt64 * __restrict plane1 = planes + words;
+    const UInt64 * __restrict plane2 = planes + 2 * words;
+    const UInt64 * __restrict plane3 = planes + 3 * words;
+
+    LaneF32 window_min = LaneF32{} + std::numeric_limits<Float32>::infinity();
+    for (size_t group = 0; group < groups; ++group)
+    {
+        LaneU64 acc0{};
+        LaneU64 acc1{};
+        LaneU64 acc2{};
+        LaneU64 acc3{};
+        const UInt64 * __restrict group_codes = codes + group * words * LANES;
+        for (size_t word = 0; word < words; ++word)
+        {
+            /// Copied, not dereferenced: the lane type wants an alignment the buffer does not promise.
+            LaneU64 code;
+            __builtin_memcpy(&code, group_codes + word * LANES, sizeof(code));
+            acc0 += __builtin_elementwise_popcount(code & (plane0[word] - LaneU64{}));
+            acc1 += __builtin_elementwise_popcount(code & (plane1[word] - LaneU64{}));
+            acc2 += __builtin_elementwise_popcount(code & (plane2[word] - LaneU64{}));
+            acc3 += __builtin_elementwise_popcount(code & (plane3[word] - LaneU64{}));
+        }
+
+        const LaneU64 weighted = acc0 + (acc1 << 1) + (acc2 << 2) + (acc3 << 3);
+        LaneF32 lane_popcounts;
+        LaneF32 lane_sq_norms;
+        LaneF32 lane_factors;
+        __builtin_memcpy(&lane_popcounts, popcounts + group * LANES, sizeof(lane_popcounts));
+        __builtin_memcpy(&lane_sq_norms, sq_norms + group * LANES, sizeof(lane_sq_norms));
+        __builtin_memcpy(&lane_factors, factors + group * LANES, sizeof(lane_factors));
+
+        const LaneF32 estimate = lane_sq_norms
+            - lane_factors * (qa * __builtin_convertvector(weighted, LaneF32) + qb * lane_popcounts + qc);
+        __builtin_memcpy(scores + group * LANES, &estimate, sizeof(estimate));
+
+        window_min = __builtin_elementwise_min(window_min, estimate);
+        if ((group + 1) % MINIMA_WINDOW == 0 || group + 1 == groups)
+        {
+            /// Spelled out because `__builtin_reduce_min` lowers to far more than the three
+            /// shuffle-and-minimum steps a power-of-two width needs.
+            LaneF32 folded = __builtin_elementwise_min(window_min, __builtin_shufflevector(window_min, window_min, 4, 5, 6, 7, 0, 1, 2, 3));
+            folded = __builtin_elementwise_min(folded, __builtin_shufflevector(folded, folded, 2, 3, 0, 1, 6, 7, 4, 5));
+            folded = __builtin_elementwise_min(folded, __builtin_shufflevector(folded, folded, 1, 0, 3, 2, 5, 4, 7, 6));
+            window_minima[group / MINIMA_WINDOW] = folded[0];
+            window_min = LaneF32{} + std::numeric_limits<Float32>::infinity();
+        }
+    }
+}
+
+) // DECLARE_MULTITARGET_CODE_WITH_ICELAKE
+
+#undef DECLARE_MULTITARGET_CODE_WITH_ICELAKE
+
+/// Runtime dispatch to the widest ISA the CPU supports. Where multitarget code is off (ARM, or
+/// ENABLE_MULTITARGET_CODE=OFF) only Default exists, which is why the body above is written with vector
+/// extensions rather than intrinsics.
+void scanCodes(
+    const UInt64 * codes, size_t groups, size_t words, const UInt64 * planes,
+    const Float32 * popcounts, const Float32 * sq_norms, const Float32 * factors,
+    Float32 qa, Float32 qb, Float32 qc, Float32 * scores, Float32 * window_minima)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_icelake))
+    {
+        TargetSpecific::x86_64_icelake::scanCodes(codes, groups, words, planes, popcounts, sq_norms, factors, qa, qb, qc, scores, window_minima);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v4))
+    {
+        TargetSpecific::x86_64_v4::scanCodes(codes, groups, words, planes, popcounts, sq_norms, factors, qa, qb, qc, scores, window_minima);
+        return;
+    }
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        TargetSpecific::x86_64_v3::scanCodes(codes, groups, words, planes, popcounts, sq_norms, factors, qa, qb, qc, scores, window_minima);
+        return;
+    }
+#endif
+    TargetSpecific::Default::scanCodes(codes, groups, words, planes, popcounts, sq_norms, factors, qa, qb, qc, scores, window_minima);
+}
+
+/// Bytes of codes to score before returning to the first query of the chunk, sized to keep a tile in L2
+/// across the whole chunk. Without it every query re-reads the entire code array and a large index runs at
+/// L3 or DRAM bandwidth.
+constexpr size_t CODE_TILE_BYTES = 384 * 1024;
+
+/// Queries in flight. Their planes and candidate buffers share L2 with the code tile, so this trades cache
+/// footprint against how well the tile is amortized.
+constexpr size_t QUERY_CHUNK = 128;
+
+/// The `k` smallest estimates seen so far for one query.
+///
+/// Not a heap: almost every code is rejected by the single comparison against `threshold`, which both
+/// structures do equally well, and for the few hundred that get past it a heap pays a sift per insertion.
+/// Appending into a buffer of twice the size and partitioning when it fills costs a handful of
+/// `nth_element` calls per query instead. A heap here spent a fifth of the scan in `sift_down`.
+struct CandidateBuffer
+{
+    std::vector<std::pair<Float32, UInt32>> entries;
+    size_t k = 0;
+    Float32 limit = std::numeric_limits<Float32>::infinity();
+
+    void reset(size_t k_)
+    {
+        k = k_;
+        limit = std::numeric_limits<Float32>::infinity();
+        entries.clear();
+        entries.reserve(2 * k);
+    }
+
+    /// Only an estimate below this can still reach the final `k`; infinite until the buffer first fills.
+    Float32 threshold() const { return limit; }
+
+    void add(Float32 estimate, UInt32 position)
+    {
+        entries.emplace_back(estimate, position);
+        if (entries.size() == 2 * k)
+            shrinkToK();
+    }
+
+    /// Keep the `k` smallest and take the largest of them as the new threshold. Nothing at or above the old
+    /// threshold was ever added, so these really are the `k` smallest seen.
+    void shrinkToK()
+    {
+        /// Compare the estimate only; the default `std::pair` comparison drags in the position for no
+        /// benefit, and it is not free.
+        std::nth_element(entries.begin(), entries.begin() + (k - 1), entries.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
+        limit = entries[k - 1].first;
+        entries.resize(k);
+    }
+};
+
+/// Rotate a query the way the codes were rotated, bit-slice it into `planes` (RABITQ_QUERY_BITS planes of
+/// `words` words) and fold the rest of the estimator into the `qa`, `qb`, `qc` that `scanCodes` takes.
+/// `work` is scratch of at least the projection's working size.
+void prepareScanQuery(
+    const std::vector<float> & projection, const float * query, size_t dimensions, size_t words,
+    std::vector<float> & work, UInt64 * planes, std::array<Float32, 3> & scalars)
+{
+    const size_t code_bytes = dimensions / 8;
+    applyRandomProjection(projection, query, dimensions, work.data());
+    const RaBitQQuery prepared = buildRaBitQQuery(work.data(), dimensions);
+
+    /// Repack the plane bytes as words, in the same layout as the codes.
+    for (int bit = 0; bit < RABITQ_QUERY_BITS; ++bit)
+        for (size_t word = 0; word < words; ++word)
+        {
+            const size_t offset = word * sizeof(UInt64);
+            UInt64 value = 0;
+            std::memcpy(&value, prepared.planes.data() + static_cast<size_t>(bit) * code_bytes + offset,
+                std::min(sizeof(UInt64), code_bytes - offset));
+            planes[static_cast<size_t>(bit) * words + word] = value;
+        }
+
+    /// `scale` turns the estimated cosine into twice the estimated inner product, the form the distance
+    /// expansion needs. A zero-length query leaves it zero and the estimate reduces to `||c||^2`, which is
+    /// the right answer for the origin.
+    double query_sq_norm = 0.0;
+    for (size_t coord = 0; coord < dimensions; ++coord)
+        query_sq_norm += static_cast<double>(query[coord]) * static_cast<double>(query[coord]);
+    const Float32 scale = 2.0f * static_cast<Float32>(std::sqrt(query_sq_norm)) * prepared.inv_qnorm;
+
+    scalars = {2.0f * scale * prepared.delta, 2.0f * scale * prepared.q_min, -scale * prepared.q_total};
+}
+
+}
+}
+
+bool RaBitQIndex::supportsDimensions(size_t dimensions)
+{
+    return dimensions > 0 && dimensions % 8 == 0;
+}
+
+struct RaBitQIndex::Data
+{
+    size_t count = 0;
+    size_t dimensions = 0;
+    size_t words = 0;   /// UInt64 words per code
+    size_t groups = 0;  /// `count` rounded up to whole groups of LANES
+
+    /// Shared by the codes and every query, which have to be rotated the same way.
+    std::vector<float> projection;
+
+    /// The interleaved codes, `groups * words * LANES` words. See `scanCodes`.
+    std::vector<UInt64> codes;
+
+    /// The three per-code scalars the estimator needs, `groups * LANES` entries each. Entries past `count`
+    /// pad the last group; an infinite squared norm and a zero factor keep their estimate infinite.
+    std::vector<Float32> popcounts;  /// popcount of the code, which does not depend on the query
+    std::vector<Float32> sq_norms;   /// ||v||^2
+    std::vector<Float32> factors;    /// ||v|| * inv_factor, the data half of the cosine estimator
+};
+
+RaBitQIndex::RaBitQIndex(const float * vectors, size_t count, size_t dimensions)
+    : data(std::make_unique<Data>())
+{
+    using namespace RaBitQIndexImpl;
+
+    if (!supportsDimensions(dimensions))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "RaBitQIndex: the dimension must be a non-zero multiple of 8, got {}", dimensions);
+    if (count == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RaBitQIndex: cannot index an empty set of vectors");
+
+    const size_t code_bytes = dimensions / 8;
+    data->count = count;
+    data->dimensions = dimensions;
+    data->words = (code_bytes + sizeof(UInt64) - 1) / sizeof(UInt64);
+    data->groups = (count + LANES - 1) / LANES;
+
+    data->projection = generateRandomProjection(dimensions);
+    data->codes.assign(data->groups * data->words * LANES, 0);
+    data->popcounts.assign(data->groups * LANES, 0.0f);
+    data->sq_norms.assign(data->groups * LANES, std::numeric_limits<Float32>::infinity());
+    data->factors.assign(data->groups * LANES, 0.0f);
+
+    std::vector<float> work(data->projection.size() / PROJECTION_ROUNDS);
+    std::vector<char> code(code_bytes + sizeof(float));
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        const float * vector = vectors + i * dimensions;
+        encodeRaBitQ(data->projection, vector, dimensions, work.data(), code.data());
+
+        /// Scatter the packed sign bits into the interleaved layout. The last word is only partly covered
+        /// when the dimension is not a multiple of 64; the rest stays zero and contributes no popcount, and
+        /// neither does the matching padding in the query planes.
+        UInt64 * slot = data->codes.data() + (i / LANES) * data->words * LANES + i % LANES;
+        UInt64 popcount = 0;
+        for (size_t word = 0; word < data->words; ++word)
+        {
+            const size_t offset = word * sizeof(UInt64);
+            UInt64 value = 0;
+            std::memcpy(&value, code.data() + offset, std::min(sizeof(UInt64), code_bytes - offset));
+            slot[word * LANES] = value;
+            popcount += static_cast<UInt64>(std::popcount(value));
+        }
+
+        float inv_factor = 0.0f;
+        std::memcpy(&inv_factor, code.data() + code_bytes, sizeof(float));
+
+        double sq_norm = 0.0;
+        for (size_t coord = 0; coord < dimensions; ++coord)
+            sq_norm += static_cast<double>(vector[coord]) * static_cast<double>(vector[coord]);
+
+        data->popcounts[i] = static_cast<Float32>(popcount);
+        data->sq_norms[i] = static_cast<Float32>(sq_norm);
+        data->factors[i] = static_cast<Float32>(std::sqrt(sq_norm)) * inv_factor;
+    }
+}
+
+RaBitQIndex::~RaBitQIndex() = default;
+
+size_t RaBitQIndex::size() const
+{
+    return data->count;
+}
+
+void RaBitQIndex::nearestByL2(const float * queries, size_t num_queries, size_t k, UInt32 * out) const
+{
+    using namespace RaBitQIndexImpl;
+
+    if (k == 0 || k > data->count)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "RaBitQIndex: asked for the {} nearest of {} indexed vectors", k, data->count);
+
+    const size_t count = data->count;
+    const size_t dimensions = data->dimensions;
+    const size_t words = data->words;
+    const size_t tile_groups = std::max<size_t>(1, CODE_TILE_BYTES / (words * LANES * sizeof(UInt64)));
+
+    std::vector<float> work(data->projection.size() / PROJECTION_ROUNDS);
+    /// Per query in the chunk: the bit-sliced planes and the three scalars `scanCodes` folds the rest into.
+    std::vector<UInt64> planes(QUERY_CHUNK * RABITQ_QUERY_BITS * words);
+    std::vector<std::array<Float32, 3>> scalars(QUERY_CHUNK);
+    std::vector<CandidateBuffer> buffers(QUERY_CHUNK);
+    std::vector<Float32> scores(tile_groups * LANES);
+    std::vector<Float32> window_minima((tile_groups + MINIMA_WINDOW - 1) / MINIMA_WINDOW);
+
+    for (size_t chunk_start = 0; chunk_start < num_queries; chunk_start += QUERY_CHUNK)
+    {
+        const size_t chunk = std::min(QUERY_CHUNK, num_queries - chunk_start);
+
+        for (size_t q = 0; q < chunk; ++q)
+        {
+            prepareScanQuery(data->projection, queries + (chunk_start + q) * dimensions, dimensions, words,
+                work, planes.data() + q * RABITQ_QUERY_BITS * words, scalars[q]);
+            buffers[q].reset(k);
+        }
+
+        for (size_t tile_start = 0; tile_start < data->groups; tile_start += tile_groups)
+        {
+            const size_t tile = std::min(tile_groups, data->groups - tile_start);
+            const size_t first = tile_start * LANES;
+
+            for (size_t q = 0; q < chunk; ++q)
+            {
+                scanCodes(
+                    data->codes.data() + tile_start * words * LANES, tile, words,
+                    planes.data() + q * RABITQ_QUERY_BITS * words,
+                    data->popcounts.data() + first, data->sq_norms.data() + first, data->factors.data() + first,
+                    scalars[q][0], scalars[q][1], scalars[q][2], scores.data(), window_minima.data());
+
+                /// One window of MINIMA_WINDOW * LANES codes at a time, so the common case - nothing in
+                /// the window beats the running k-th best - costs one comparison instead of one per code.
+                CandidateBuffer & buffer = buffers[q];
+                for (size_t window = 0; window * MINIMA_WINDOW < tile; ++window)
+                {
+                    if (!(window_minima[window] < buffer.threshold()))
+                        continue;
+                    const size_t from = window * MINIMA_WINDOW * LANES;
+                    const size_t to = std::min((window + 1) * MINIMA_WINDOW, tile) * LANES;
+                    for (size_t i = from; i < to; ++i)
+                        if (scores[i] < buffer.threshold() && first + i < count)
+                            buffer.add(scores[i], static_cast<UInt32>(first + i));
+                }
+            }
+        }
+
+        for (size_t q = 0; q < chunk; ++q)
+        {
+            /// The buffer holds between `k` and `2k - 1` entries unless it happened to fill exactly.
+            if (buffers[q].entries.size() > k)
+                buffers[q].shrinkToK();
+            UInt32 * row = out + (chunk_start + q) * k;
+            for (size_t i = 0; i < k; ++i)
+                row[i] = buffers[q].entries[i].second;
+        }
+    }
+}
+
+size_t RaBitQIndex::nearestByL2InRanges(
+    const float * query, const PositionRange * ranges, size_t num_ranges, size_t k, UInt32 * out) const
+{
+    using namespace RaBitQIndexImpl;
+
+    if (k == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RaBitQIndex: asked for the 0 nearest");
+
+    const size_t count = data->count;
+    const size_t words = data->words;
+
+    std::vector<float> work(data->projection.size() / PROJECTION_ROUNDS);
+    std::vector<UInt64> planes(static_cast<size_t>(RABITQ_QUERY_BITS) * words);
+    std::array<Float32, 3> scalars{};
+    prepareScanQuery(data->projection, query, data->dimensions, words, work, planes.data(), scalars);
+
+    CandidateBuffer buffer;
+    buffer.reset(k);
+
+    /// The scan works whole groups, so a range is widened to the groups it touches and the positions that
+    /// widening pulled in are dropped below. Ranges aligned to LANES lose nothing to this.
+    std::vector<Float32> scores;
+    std::vector<Float32> window_minima;
+    for (size_t r = 0; r < num_ranges; ++r)
+    {
+        const size_t begin = ranges[r].begin;
+        const size_t end = std::min<size_t>(ranges[r].end, count);
+        if (begin >= end)
+            continue;
+        if (end > count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "RaBitQIndex: range [{}, {}) is outside the {} indexed vectors", begin, ranges[r].end, count);
+
+        const size_t first_group = begin / LANES;
+        const size_t groups = (end + LANES - 1) / LANES - first_group;
+        scores.resize(groups * LANES);
+        window_minima.resize((groups + MINIMA_WINDOW - 1) / MINIMA_WINDOW);
+
+        scanCodes(
+            data->codes.data() + first_group * words * LANES, groups, words, planes.data(),
+            data->popcounts.data() + first_group * LANES, data->sq_norms.data() + first_group * LANES,
+            data->factors.data() + first_group * LANES,
+            scalars[0], scalars[1], scalars[2], scores.data(), window_minima.data());
+
+        const size_t first = first_group * LANES;
+        for (size_t window = 0; window * MINIMA_WINDOW < groups; ++window)
+        {
+            if (!(window_minima[window] < buffer.threshold()))
+                continue;
+            const size_t from = window * MINIMA_WINDOW * LANES;
+            const size_t to = std::min((window + 1) * MINIMA_WINDOW, groups) * LANES;
+            for (size_t i = from; i < to; ++i)
+                if (const size_t position = first + i; position >= begin && position < end
+                    && scores[i] < buffer.threshold())
+                    buffer.add(scores[i], static_cast<UInt32>(position));
+        }
+    }
+
+    if (buffer.entries.size() > k)
+        buffer.shrinkToK();
+    const size_t written = std::min(k, buffer.entries.size());
+    for (size_t i = 0; i < written; ++i)
+        out[i] = buffer.entries[i].second;
+    return written;
 }
 
 }
