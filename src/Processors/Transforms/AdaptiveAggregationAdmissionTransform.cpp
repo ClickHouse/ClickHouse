@@ -1,9 +1,15 @@
 #include <Processors/Transforms/AdaptiveAggregationAdmissionTransform.h>
+#include <Common/Exception.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 AdaptiveAggregationAdmissionTransform::AdaptiveAggregationAdmissionTransform(
     SharedHeader header, std::shared_ptr<AggregatingTransformParams> params_, AdaptiveAggregationSessionPtr session_)
@@ -51,7 +57,8 @@ IProcessor::Status AdaptiveAggregationAdmissionTransform::prepare()
 void AdaptiveAggregationAdmissionTransform::work()
 {
     const auto info = current_chunk.getChunkInfos().get<StagedChunkInfo>();
-    chassert(info);
+    if (!info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have StagedChunkInfo.");
     params->aggregator.admitStagedChunk(*session, info->chunk, info->use_own_memory_tracker);
     current_chunk.clear();
     has_current_chunk = false;

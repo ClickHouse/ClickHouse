@@ -93,7 +93,7 @@ void Aggregator::executeFrozen(
 
 /// The set counterpart of the frozen kernel. A `GROUP BY` without aggregate functions has no places to
 /// record and no states to advance, so a hit costs nothing beyond the probe and a miss stages the key
-/// alone - which is all a set has to carry.
+/// alone, since a set has no aggregate payload.
 template <typename LocalMethod, typename SharedMethod>
 requires SetAggregationMethod<LocalMethod>
 void NO_INLINE Aggregator::executeFrozenImpl(
@@ -109,6 +109,7 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     std::vector<StagedChunkPtr> & ready_chunks,
     bool all_keys_are_const) const
 {
+    static_assert(SharedMethod::Data::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     Arena scratch_pool;
 
     typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
@@ -178,15 +179,13 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     std::vector<StagedChunkPtr> & ready_chunks,
     bool all_keys_are_const) const
 {
+    static_assert(SharedMethod::Data::NUM_BUCKETS == ADAPTIVE_AGGREGATION_NUM_BUCKETS);
     Arena scratch_pool;
 
     typename LocalMethod::StateNoCache local_find_state(key_columns, key_sizes, aggregation_state_cache);
-    /// Routing needs only the two-level twin's TYPE: the hash is the local table's canonical
-    /// hash (identical to the twin's by construction - the pairing in `executeFrozen` binds a
-    /// method to its own two-level form, which keeps the hash function), and the bucket
-    /// mapping is static. Borrowing the shared table's method instance here would race with a
-    /// pressure spill re-initializing it; the mutable early-drain table must not double as a
-    /// hash-policy object.
+    /// `executeFrozen` pairs the local method with its own two-level form, which has the same
+    /// hash function and a static bucket mapping. Routing uses that type without reading the
+    /// shared table, which a pressure spill can replace concurrently.
 
     /// The kernel runs only while the producer is frozen, and phase transitions happen between
     /// blocks, so the reference stays valid for the whole block.

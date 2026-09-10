@@ -9,6 +9,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -37,6 +38,11 @@ using namespace DB;
 namespace DB::FailPoints
 {
 extern const char adaptive_aggregation_before_spill_budget_wait[];
+}
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
 }
 
 namespace ProfileEvents
@@ -244,6 +250,28 @@ TEST(AdaptiveAggregationPipeline, AcknowledgementFollowsIndependentRegistration)
     EXPECT_FALSE(second.completion.hasData());
     EXPECT_FALSE(first.completion.isFinished());
     EXPECT_FALSE(second.completion.isFinished());
+}
+
+TEST(AdaptiveAggregationPipeline, AdmissionRequiresStagedChunkInfo)
+{
+    auto header = makeHeader();
+    auto params = makeParams(header);
+    auto session = std::make_shared<AdaptiveAggregationSession>();
+    Admission admission(header, params, session);
+    ASSERT_EQ(admission.processor.prepare(), IProcessor::Status::NeedData);
+    admission.producer.push(Chunk(header->getColumns(), 0));
+    ASSERT_EQ(admission.processor.prepare(), IProcessor::Status::Ready);
+    try
+    {
+        admission.processor.work();
+        FAIL() << "Admission accepted a chunk without staged metadata";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+    }
+    EXPECT_EQ(session->backlog.undrainedRecords(), 0);
+    EXPECT_FALSE(admission.producer.canPush());
 }
 
 TEST(AdaptiveAggregationPipeline, CompletionWaitsForPulledPayload)
