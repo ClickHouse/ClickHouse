@@ -53,3 +53,5 @@ primary key must not prune matching rows
 index path	2
 full scan path	2
 exact string constant still prunes	1
+fixed width rows	1
+fixed width rows unindexed	1

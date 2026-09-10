@@ -99,3 +99,11 @@ select 'index path', count() from t_zero_pad_key where a = cast(['V0'] as Array(
 select 'full scan path', count() from t_zero_pad_key where a = materialize(cast(['V0'] as Array(FixedString(3))));
 select 'exact string constant still prunes', count() from t_zero_pad_key where a = ['V0\0'];
 drop table t_zero_pad_key;
+
+-- A fixed-width element stores exactly one spelling per value, so the constant still identifies a
+-- single key value. Pin the rows either way.
+create table t_zero_pad_key_fs (a Array(FixedString(3))) engine = MergeTree order by a settings index_granularity = 1;
+insert into t_zero_pad_key_fs values ([toFixedString('V0', 3)]), ([toFixedString('AA', 3)]), ([toFixedString('ZZ', 3)]);
+select 'fixed width rows', count() from t_zero_pad_key_fs where a = ['V0\0'];
+select 'fixed width rows unindexed', count() from t_zero_pad_key_fs where a = materialize(['V0\0']);
+drop table t_zero_pad_key_fs;
