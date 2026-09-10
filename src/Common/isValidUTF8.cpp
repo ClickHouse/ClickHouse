@@ -298,14 +298,16 @@ UInt8 isValidUTF8SSE(const UInt8 * data, UInt64 len)
             prev_input = input;
             prev_first_len = first_len;
 
-            data += 16;
-            len -= 16;
             return _mm_testz_si128(error, error) != 0;
         };
 
         while (len >= 16) // NOLINT
+        {
             if (!check_packed(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data))))
                 return false;
+            data += 16;
+            len -= 16;
+        }
 
         if (len != 0)
         {
