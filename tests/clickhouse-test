@@ -6827,6 +6827,15 @@ ORDER BY (test_name, callee_offset)
                     attrs=["bold"],
                 )
             )
+            # An HTTP response is an answer from the server: it rejected the
+            # query, it was not unreachable and it is not hung. Print the same
+            # marker the startup probe prints, so that the stress test names
+            # the failure after the rejection and not after a deadlock.
+            if isinstance(e, HTTPError):
+                print(
+                    "Server rejects queries. Cannot get the processlist size: "
+                    + str(e)
+                )
             exit_code.value = 1
 
         processlist = ""

@@ -1109,7 +1109,10 @@ def hung_check_failure_name(hung_check_log: Path) -> str:
     The name is taken from the terminal outcome `clickhouse-test` prints, not
     from any error the log happens to mention along the way: a run whose early
     retries hit the memory tracker but which ended on a refused connection is
-    not the memory-tracker case.
+    not the memory-tracker case. Both places where a rejection is the terminal
+    outcome -- the startup probe, and the processlist query of the hung check
+    itself, which a run that started fine can still be rejected on -- print the
+    same `Server rejects queries.` marker.
     """
     rejected = ""
     try:
@@ -1119,9 +1122,10 @@ def hung_check_failure_name(hung_check_log: Path) -> str:
                 # whatever else the log holds.
                 if "Found hung queries in processlist" in line:
                     return HUNG_CHECK_DEADLOCK
-                # Printed once, after the last retry, and only when that retry
-                # got an answer from the server rather than failing to reach it.
-                if "Server rejects queries. Cannot query the server version:" in line:
+                # Printed once, at the end of the run, and only when the
+                # server answered with an error rather than failing to be
+                # reached at all.
+                if "Server rejects queries." in line:
                     rejected = line
     except OSError as ex:
         logging.warning("Failed to read %s: %s", hung_check_log, ex)
@@ -1131,10 +1135,13 @@ def hung_check_failure_name(hung_check_log: Path) -> str:
         return HUNG_CHECK_DEADLOCK
 
     # Keep the error name, so that a memory tracker above the real usage and a
-    # thread pool that cannot start a thread do not share one row.
-    error = re.search(r"\(([A-Z_0-9]+)\)\s*$", rejected.strip())
-    if error:
-        return f"Server rejects all queries, {error.group(1)}"
+    # thread pool that cannot start a thread do not share one row. The last
+    # such token is the error the server answered with: a server exception
+    # ends with the error name, and the `(version 26.9.1.1)` that can follow
+    # it is lower case and does not match.
+    errors = re.findall(r"\(([A-Z][A-Z_0-9]+)\)", rejected)
+    if errors:
+        return f"Server rejects all queries, {errors[-1]}"
     return "Server rejects all queries"
 
 
