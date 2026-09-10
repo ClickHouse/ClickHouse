@@ -147,6 +147,7 @@ public:
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
         , start_after_set(start_after_.has_value() && !start_after_->empty())
+        , description(fmt::format("Bucket: {}, Prefix: {}", bucket_, path_prefix))
     {
         request->SetBucket(bucket_);
         request->SetPrefix(path_prefix);
@@ -164,6 +165,9 @@ public:
     }
 
 private:
+    /// Not read off `request`: the listing worker mutates and sometimes replaces it while this runs.
+    std::string describeListing() const override { return description; }
+
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
@@ -222,6 +226,7 @@ private:
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
     bool start_after_set;
+    const std::string description;
 };
 
 }
@@ -402,9 +407,10 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         auto result = outcome.GetResult();
         auto objects = result.GetContents();
 
-        if (objects.empty())
-            break;
-
+        /// A page can carry no objects while objects still remain: the scan may stop early
+        /// inside a partition and report `IsTruncated` together with a continuation token.
+        /// `IsTruncated` is the only thing that ends the listing - stopping on an empty page
+        /// would silently drop every object after it.
         for (const auto & object : objects)
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 object.GetKey(),
@@ -416,6 +422,12 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                     .attributes = {},
                     .resolved_path = std::nullopt,
                 }));
+
+        if (objects.empty() && outcome.GetResult().GetIsTruncated())
+            LOG_INFO(
+                LogFrequencyLimiter(log, 30),
+                "Listing returned an empty page while reporting more to come. Bucket: {}, Prefix: {}, Disk: {}",
+                uri.bucket, path, disk_name);
 
         if (max_keys)
         {
@@ -439,12 +451,27 @@ void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exis
                       ProfileEvents::DiskS3DeleteObjects);
 }
 
-void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
+void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects)
 {
     if (objects.empty())
         return;
 
     auto settings_ptr = s3_settings.get();
+
+    Strings successful_keys;
+
+    SCOPE_EXIT({
+        if (successful_objects)
+        {
+            UnorderedSetWithMemoryTracking<std::string_view> successful_keys_set(successful_keys.begin(), successful_keys.end());
+
+            for (const auto & object : objects)
+            {
+                if (successful_keys_set.contains(object.remote_path))
+                    successful_objects->emplace_back(object);
+            }
+        }
+    });
 
     for (const auto & [bucket, objects_in_bucket] : groupByBucket(objects))
     {
@@ -467,7 +494,8 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
         deleteFilesFromS3(client.get(), bucket, keys, if_exists,
                           s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
                           blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
-                          ProfileEvents::DiskS3DeleteObjects);
+                          ProfileEvents::DiskS3DeleteObjects,
+                          &successful_keys);
     }
 }
 
@@ -476,23 +504,28 @@ void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObjectImpl(object, true);
 }
 
-void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void S3ObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
-    removeObjectsImpl(objects, true);
+    removeObjectsImpl(objects, true, successful_objects);
 }
 
 static void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
-    const Strings & object_keys,
+    const StoredObjects & objects,
     const String & tag_key,
-    const String & tag_value
+    const String & tag_value,
+    StoredObjects * successful_objects
 )
 {
     auto log = getLogger("putObjectsTagOnS3");
 
-    for (const String & object_key : object_keys)
+    for (const StoredObject & object : objects)
     {
+        const String & object_key = object.remote_path;
+
         S3::GetObjectTaggingRequest get_request;
         get_request.SetBucket(bucket);
         get_request.SetKey(object_key);
@@ -517,6 +550,9 @@ static void putObjectsTagOnS3(
             != existing_tag_set.end());
         if (present)
         {
+            if (successful_objects)
+                successful_objects->emplace_back(object);
+
             LOG_TRACE(log, "S3 object path {} skipped as it already had the tag {}={}", object_key, tag_key, tag_value);
             continue;
         }
@@ -535,6 +571,9 @@ static void putObjectsTagOnS3(
         if (put_outcome.IsSuccess())
         {
             LOG_TRACE(log, "Tags of S3 object {} updated", object_key);
+
+            if (successful_objects)
+                successful_objects->emplace_back(object);
         }
         else
         {
@@ -546,10 +585,14 @@ static void putObjectsTagOnS3(
 
 }
 
-void S3ObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
+void S3ObjectStorage::tagObjects( /// NOLINT
+    const StoredObjects & objects,
+    const std::string & tag_key,
+    const std::string & tag_value,
+    StoredObjects * successful_objects)
 {
     for (const auto & [bucket, objects_in_bucket] : groupByBucket(objects))
-        putObjectsTagOnS3(client.get(), bucket, collectRemotePaths(objects_in_bucket), tag_key, tag_value);
+        putObjectsTagOnS3(client.get(), bucket, objects_in_bucket, tag_key, tag_value, successful_objects);
 }
 
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
