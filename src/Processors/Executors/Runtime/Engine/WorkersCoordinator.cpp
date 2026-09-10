@@ -4,11 +4,25 @@
 namespace DB
 {
 
+void WorkersCoordinator::ParkingSpot::park()
+{
+    wake_up.wait(false);
+    wake_up.store(false);
+}
+
+void WorkersCoordinator::ParkingSpot::unpark()
+{
+    wake_up.store(true);
+    wake_up.notify_one();
+}
+
 WorkersCoordinator::WorkersCoordinator(TaskScheduler & scheduler_, Poller & poller_, size_t max_workers)
     : scheduler(scheduler_)
     , poller(poller_)
     , is_registered(max_workers, false)
+    , sleeping_spots(max_workers)
 {
+    sleeping_threads.reserve(max_workers);
 }
 
 bool WorkersCoordinator::allIdle(size_t idle_workers) const
@@ -16,10 +30,21 @@ bool WorkersCoordinator::allIdle(size_t idle_workers) const
     return idle_workers == registered_workers && scheduler.total() == 0;
 }
 
+std::optional<size_t> WorkersCoordinator::takeAnySleepingThread()
+{
+    if (sleeping_threads.empty())
+        return std::nullopt;
+
+    size_t worker_id = sleeping_threads.back();
+    sleeping_threads.pop_back();
+    --sleeping_count;
+    return worker_id;
+}
+
 void WorkersCoordinator::wakeOneLocked()
 {
-    if (sleeping_count > 0)
-        have_work.notify_one();
+    if (auto worker_id = takeAnySleepingThread())
+        sleeping_spots[*worker_id].unpark();
     else if (polling_count > 0)
         poller.wakeup();
 }
@@ -27,7 +52,8 @@ void WorkersCoordinator::wakeOneLocked()
 void WorkersCoordinator::stopLocked()
 {
     is_stopped = true;
-    have_work.notify_all();
+    while (auto worker_id = takeAnySleepingThread())
+        sleeping_spots[*worker_id].unpark();
     poller.wakeup();
 }
 
@@ -89,18 +115,30 @@ bool WorkersCoordinator::wait(size_t worker_id)
     }
     else
     {
+        sleeping_threads.push_back(worker_id);
         ++sleeping_count;
-        have_work.wait(lock);
-        --sleeping_count;
+        lock.unlock();
+        sleeping_spots[worker_id].park();
     }
 
     return !is_stopped;
 }
 
-void WorkersCoordinator::wakeOne()
+void WorkersCoordinator::wake(size_t to_wake)
 {
-    std::lock_guard lock(mutex);
-    wakeOneLocked();
+    std::vector<size_t> woken;
+    {
+        std::lock_guard lock(mutex);
+        while (woken.size() < to_wake)
+            if (auto worker_id = takeAnySleepingThread())
+                woken.push_back(*worker_id);
+    }
+
+    for (size_t worker_id : woken)
+        sleeping_spots[worker_id].unpark();
+
+    if (woken.empty() && polling_count > 0)
+        poller.wakeup();
 }
 
 bool WorkersCoordinator::needsPoller() const

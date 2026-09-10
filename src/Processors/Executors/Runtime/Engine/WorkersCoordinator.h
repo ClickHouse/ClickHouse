@@ -4,8 +4,8 @@
 #include <Processors/Executors/Runtime/Engine/TaskScheduler.h>
 
 #include <atomic>
-#include <condition_variable>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -13,7 +13,16 @@ namespace DB
 
 class WorkersCoordinator
 {
+    struct alignas(128) ParkingSpot
+    {
+        std::atomic<bool> wake_up = false;
+
+        void park();
+        void unpark();
+    };
+
     bool allIdle(size_t idle_workers) const;
+    std::optional<size_t> takeAnySleepingThread();
     void wakeOneLocked();
     void stopLocked();
 
@@ -24,7 +33,7 @@ public:
     void leave(size_t worker_id);
 
     bool wait(size_t worker_id);
-    void wakeOne();
+    void wake(size_t to_wake);
     bool needsPoller() const;
 
     void stop();
@@ -37,8 +46,15 @@ private:
     Poller & poller;
 
     mutable std::mutex mutex;
-    std::condition_variable have_work;
+
+    /// What threads are registered in coordinator.
     std::vector<bool> is_registered;
+
+    /// Threads sleeping coordination
+    std::vector<ParkingSpot> sleeping_spots;
+    std::vector<size_t> sleeping_threads;
+
+    /// Statistics
     std::atomic<size_t> registered_workers = 0;
     std::atomic<size_t> idle_count = 0;
     std::atomic<size_t> sleeping_count = 0;
