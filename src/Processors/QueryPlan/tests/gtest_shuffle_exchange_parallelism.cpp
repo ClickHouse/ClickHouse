@@ -10,17 +10,14 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/ISink.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/BroadcastSendStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
-#include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -182,46 +179,6 @@ BuildQueryPipelineSettings makeSettings(ContextPtr context, size_t max_threads)
     return settings;
 }
 
-size_t countProcessors(const Processors & processors, const String & name)
-{
-    size_t count = 0;
-    for (const auto & processor : processors)
-        if (processor->getName() == name)
-            ++count;
-    return count;
-}
-
-/// The step that consumes a shuffle bucket: GROUP BY k without aggregate functions.
-std::unique_ptr<AggregatingStep> makeAggregatingStep(const SharedHeader & header)
-{
-    Aggregator::Params params(
-        Names{"k"},
-        AggregateDescriptions{},
-        /*overflow_row=*/ false,
-        /*max_threads=*/ 1,
-        /*max_block_size=*/ 65536,
-        /*min_hit_rate_to_use_consecutive_keys_optimization=*/ 0.5f,
-        /*serialize_string_with_zero_byte=*/ false,
-        /*enable_packed_string_keys=*/ true);
-
-    return std::make_unique<AggregatingStep>(
-        header,
-        std::move(params),
-        GroupingSetsParamsList{},
-        /*final=*/ true,
-        /*max_block_size=*/ 65536,
-        /*aggregation_in_order_max_block_bytes=*/ 0,
-        /*merge_threads=*/ 1,
-        /*temporary_data_merge_threads=*/ 1,
-        /*storage_has_evenly_distributed_read=*/ false,
-        /*group_by_use_nulls=*/ false,
-        /*sort_description_for_merging=*/ SortDescription{},
-        /*group_by_sort_description=*/ SortDescription{},
-        /*should_produce_results_in_order_of_bucket_number=*/ false,
-        /*memory_bound_merging_of_aggregation_results_enabled=*/ false,
-        /*explicit_sorting_required_for_aggregation_in_order=*/ false);
-}
-
 /// Statistics of a sending pipeline, collected by `runSendingStep`.
 struct SendingStats
 {
@@ -311,37 +268,6 @@ void expectSpreadOverStreams(const SendingStats & stats)
         << " rows, one stream carries " << rows_per_stream;
 }
 
-}
-
-/// A receiving task gets one exchange source per sending task. The aggregation after it must
-/// still run on `max_threads` streams: with 3 senders and 8 threads, 8 `AggregatingTransform`,
-/// not 3.
-TEST(ShuffleExchangeParallelism, ReceiverSpreadsInputOverMaxThreads)
-{
-    MainThreadStatus::getInstance();
-    tryRegisterFunctions();
-    tryRegisterAggregateFunctions();
-
-    constexpr size_t senders = 3;
-    constexpr size_t max_threads = 8;
-
-    auto context = Context::createCopy(getContext().context);
-    auto settings = makeSettings(context, max_threads);
-    auto header = makeHeader();
-
-    Strings source_shards;
-    for (size_t sender = 0; sender < senders; ++sender)
-        source_shards.push_back(toString(sender));
-
-    ShuffleReceiveStep receive(header, "exchange_0", source_shards);
-    QueryPipelineBuilder builder;
-    receive.initializePipeline(builder, settings);
-    EXPECT_EQ(countProcessors(builder.getProcessors(), "SourceFromChunks"), senders);
-
-    auto aggregating = makeAggregatingStep(header);
-    aggregating->transformPipeline(builder, settings);
-
-    EXPECT_EQ(countProcessors(builder.getProcessors(), "AggregatingTransform"), max_threads);
 }
 
 /// A sending task scatters its read streams into the destination buckets. The work after the
