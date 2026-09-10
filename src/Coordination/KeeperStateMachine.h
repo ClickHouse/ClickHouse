@@ -272,6 +272,14 @@ private:
     /// for request.
     mutable std::mutex process_and_responses_lock;
 
+    /// Not used: nuraft calls the `*_ext` versions, which need the `log_entry` rather than just its
+    /// buffer. Overridden to throw so that an accidental call through the base class fails loudly,
+    /// and private so that a call through `KeeperStateMachine` fails to compile. Use
+    /// preCommitEntry, commitEntry, rollbackEntry instead.
+    nuraft::ptr<nuraft::buffer> pre_commit(uint64_t log_idx, nuraft::buffer & data) override;
+    nuraft::ptr<nuraft::buffer> commit(uint64_t log_idx, nuraft::buffer & data) override; /// NOLINT
+    void rollback(uint64_t log_idx, nuraft::buffer & data) override;
+
     static nuraft::ptr<nuraft::buffer> serializeRequestInOldFormat(const KeeperRequestForSession & request_for_session);
 
     KeeperRequestBatchPtr parseRequestInOldFormat(
