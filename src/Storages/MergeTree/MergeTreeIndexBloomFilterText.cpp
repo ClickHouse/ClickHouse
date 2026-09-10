@@ -547,6 +547,16 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
     return negating ? !default_matches : default_matches;
 }
 
+bool indexedKeyIsTextComparable(const DataTypePtr & index_data_type)
+{
+    DataTypePtr key_type = index_data_type;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(key_type.get()))
+        key_type = array_type->getNestedType();
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(key_type.get()))
+        key_type = low_cardinality_type->getDictionaryType();
+    return WhichDataType(key_type).isStringOrFixedString();
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -663,6 +673,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
             /// Same restriction as the `arrayElement` branch: the substituted key is not an `Array`.
             if (map_keys_index && value_data_type.isArray())
+                return false;
+
+            /// The substituted probe is the key serialized as text, while the index tokenizes the key column's
+            /// raw bytes. Those differ for any key type that is not a string, so the probe cannot match.
+            if (map_keys_index && !indexedKeyIsTextComparable(index_data_types[*map_keys_index]))
                 return false;
 
             /// The subcolumn reads the map value type's default for an absent key, as `arrayElement` does.

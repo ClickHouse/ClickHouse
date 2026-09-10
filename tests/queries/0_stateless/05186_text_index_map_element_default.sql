@@ -90,6 +90,40 @@ SELECT count() FROM tab_null WHERE m['abc'] = 'hello' SETTINGS force_data_skippi
 
 DROP TABLE tab_null;
 
+DROP TABLE IF EXISTS tab_ip_key;
+CREATE TABLE tab_ip_key (m Map(IPv6, Nullable(String)), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
+INSERT INTO tab_ip_key VALUES (map(toIPv6('2001:db8:1:2:3:4:5:6'), ''));
+
+-- The map subcolumn spelling probes for the key serialized as text, while the index holds the raw
+-- bytes of the key column, so a key that is not a string cannot be looked up in the index at all.
+SELECT '-- a mapKeys index over a non-String key cannot serve the probe';
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS ignore_data_skipping_indices = 'idx';
+
+-- Assert the disposition: both counts above are the same whether the index is declined or merely
+-- fails to prune, and an absent key answers 0 either way.
+SELECT '-- so it is declined for either spelling and for an absent key';
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('2001:db8:1:2:3:4:5:6')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('dead:beef::1')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab_ip_key WHERE m[toIPv6('dead:beef::1')] = '' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1; -- { serverError INDEX_NOT_USED }
+
+DROP TABLE tab_ip_key;
+
+DROP TABLE IF EXISTS tab_fs_key;
+CREATE TABLE tab_fs_key (m Map(FixedString(4), String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
+INSERT INTO tab_fs_key VALUES (map(toFixedString('abcd', 4), 'hello'));
+
+-- A key filling the whole `FixedString(4)` is the same byte string in the probe and in the index.
+SELECT '-- a FixedString key is that representation, so it stays indexed';
+SELECT count() FROM tab_fs_key WHERE m[toFixedString('abcd', 4)] = 'hello' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
+SELECT count() FROM tab_fs_key WHERE m[toFixedString('abcd', 4)] = 'hello' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1;
+
+DROP TABLE tab_fs_key;
+
 DROP TABLE IF EXISTS tab_values;
 CREATE TABLE tab_values (m Map(String, String), INDEX idx mapValues(m) TYPE ngrambf_v1(3, 512, 3, 0))
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;

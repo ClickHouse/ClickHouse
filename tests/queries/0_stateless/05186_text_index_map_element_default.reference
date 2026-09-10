@@ -38,6 +38,14 @@
 0
 0
 1
+-- a mapKeys index over a non-String key cannot serve the probe
+1
+1
+1
+-- so it is declined for either spelling and for an absent key
+-- a FixedString key is that representation, so it stays indexed
+1
+1
 -- the mapValues carrier reads the same default
 1
 1
