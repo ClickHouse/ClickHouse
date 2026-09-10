@@ -724,6 +724,18 @@ def test_url_archive_path_failover():
     for table_function, expected_sum in table_functions:
         assert node1.query(f"SELECT sum(x) FROM {table_function}", settings=settings).strip() == expected_sum
 
+    for table_function, _ in table_functions[:2]:
+        visible_path = node1.query(f"SELECT DISTINCT _path FROM {table_function}", settings=settings).strip()
+        assert "archivegood.zip::value.tsv" in visible_path
+        assert "archivemissing.zip" not in visible_path
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function} WHERE _path = '{visible_path}'", settings=settings
+        ).strip() == "17"
+        missing_path = visible_path.replace("archivegood.zip", "archivemissing.zip")
+        assert node1.query(
+            f"SELECT count() FROM {table_function} WHERE _path = '{missing_path}'", settings=settings
+        ).strip() == "0"
+
     limited_settings = dict(settings)
     limited_settings["glob_expansion_max_elements"] = 3
     combined_queries = [

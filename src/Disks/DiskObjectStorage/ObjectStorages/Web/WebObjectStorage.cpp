@@ -423,14 +423,32 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
 
     std::exception_ptr last_exception;
     bool has_not_found = false;
-    auto urls = path.read_source_index ? buildURLs(path.getPath(), *path.read_source_index) : buildURLs(path.getPath());
-    for (const auto & url : urls)
+    std::vector<const URL *> url_options;
+    if (path.read_source_index)
+    {
+        if (*path.read_source_index >= url_shards.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *path.read_source_index);
+        for (const auto & option : url_shards[*path.read_source_index])
+            url_options.push_back(&option);
+    }
+    else
+    {
+        for (const auto & shard : url_shards)
+            for (const auto & option : shard)
+                url_options.push_back(&option);
+    }
+
+    for (const auto * url_option : url_options)
     {
         try
         {
-            auto metadata = get_metadata_from_uri(Poco::URI(url, enable_url_encoding));
+            auto metadata = get_metadata_from_uri(Poco::URI(buildURL(*url_option, path.getPath()), enable_url_encoding));
             if (metadata)
+            {
+                if (url_option->path_override)
+                    metadata->resolved_path = *url_option->path_override;
                 return metadata;
+            }
             has_not_found = true;
         }
         catch (...)

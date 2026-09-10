@@ -275,7 +275,8 @@ public:
         NamesAndTypesList hive_columns_ = {},
         String object_namespace_ = {},
         ContextPtr context_ = {},
-        String archive_member_path_ = {});
+        String archive_member_path_ = {},
+        bool filter_after_metadata_ = false);
 
     KeysIterator(
         const RelativePathsWithMetadata & keys_,
@@ -290,7 +291,8 @@ public:
         NamesAndTypesList hive_columns_ = {},
         String object_namespace_ = {},
         ContextPtr context_ = {},
-        String archive_member_path_ = {});
+        String archive_member_path_ = {},
+        bool filter_after_metadata_ = false);
 
     ~KeysIterator() override = default;
 
@@ -318,6 +320,9 @@ private:
     /// A known archive member is part of the user-visible `_path` / `_file` value, although the
     /// iterator itself must fetch the outer archive object.
     const String archive_member_path;
+    /// Path failover determines the user-visible path only after a metadata request succeeds.
+    /// Such predicates must run after that resolution rather than against the first candidate.
+    const bool filter_after_metadata;
 };
 
 /*

@@ -543,7 +543,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             if (is_explicit_archive_member)
                 archive_member_names.assign(indexed_paths.size(), configuration->getPathInArchive());
 
-            if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            /// Path failover resolves the visible path only after metadata probing selects a working
+            /// option. Keep its filter deferred even when all sets are already available; evaluating
+            /// it against the first (possibly missing) path would hide a working fallback.
+            if (!has_path_overrides && VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
                 VirtualColumnUtils::filterByPathOrFile(
@@ -564,7 +567,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             indexed_paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
             file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
-            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{},
+            /*filter_after_metadata=*/has_path_overrides);
     }
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
@@ -2276,7 +2280,8 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     NamesAndTypesList hive_columns_,
     String object_namespace_,
     ContextPtr context_,
-    String archive_member_path_)
+    String archive_member_path_,
+    bool filter_after_metadata_)
     : KeysIterator(
         makeRelativePathsWithMetadata(keys_),
         std::move(object_storage_),
@@ -2290,7 +2295,8 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
         std::move(hive_columns_),
         std::move(object_namespace_),
         std::move(context_),
-        std::move(archive_member_path_))
+        std::move(archive_member_path_),
+        filter_after_metadata_)
 {
 }
 
@@ -2307,7 +2313,8 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     NamesAndTypesList hive_columns_,
     String object_namespace_,
     ContextPtr context_,
-    String archive_member_path_)
+    String archive_member_path_,
+    bool filter_after_metadata_)
     : object_storage(object_storage_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -2320,6 +2327,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , object_namespace(std::move(object_namespace_))
     , context(std::move(context_))
     , archive_member_path(std::move(archive_member_path_))
+    , filter_after_metadata(filter_after_metadata_)
 {
     if (read_keys_)
     {
@@ -2339,13 +2347,10 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
 
         const auto & key = keys[current_index];
 
-        /// The filter could not be applied when the iterator was created, because a set in it was not
-        /// ready yet (see `createFileIterator`); it is ready now, when the pipeline runs. Filter before
-        /// fetching the metadata: probing a filtered-out nonexistent key would throw FILE_DOESNT_EXIST.
-        if (deferred_filter_actions)
+        auto is_filtered_out = [&](const RelativePathWithMetadata & candidate)
         {
-            std::vector<String> filtered_keys({key->relative_path});
-            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, key->relative_path)});
+            std::vector<String> filtered_keys({candidate.relative_path});
+            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, candidate.relative_path)});
             if (!archive_member_path.empty())
                 filter_paths.front() += fmt::format("::{}", archive_member_path);
             std::vector<String> archive_member_names;
@@ -2355,13 +2360,19 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
                 filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
                 /*format_settings=*/std::nullopt,
                 archive_member_path.empty() ? nullptr : &archive_member_names);
-            if (filtered_keys.empty())
-            {
-                if (emit_profile_events)
-                    ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects);
-                continue;
-            }
-        }
+            if (!filtered_keys.empty())
+                return false;
+
+            if (emit_profile_events)
+                ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects);
+            return true;
+        };
+
+        /// Most deferred filters must run before metadata I/O so a filtered-out missing object is not
+        /// probed. Path-level failover is the exception: its visible path is known only after one URL
+        /// option succeeds, so filtering that task against the first candidate would be incorrect.
+        if (deferred_filter_actions && !filter_after_metadata && is_filtered_out(*key))
+            continue;
 
         ObjectMetadata object_metadata{};
         if (!skip_object_metadata)
@@ -2381,13 +2392,19 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             object_metadata.is_fetched = false;
         }
 
+        auto relative_path = *key;
+        if (object_metadata.resolved_path)
+            relative_path.relative_path = *object_metadata.resolved_path;
+
+        if (deferred_filter_actions && filter_after_metadata && is_filtered_out(relative_path))
+            continue;
+
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
 
         if (emit_profile_events)
             ProfileEvents::increment(ProfileEvents::ObjectStorageListedObjects);
 
-        auto relative_path = *key;
         relative_path.metadata = std::move(object_metadata);
         return std::make_shared<ObjectInfo>(std::move(relative_path));
     }
