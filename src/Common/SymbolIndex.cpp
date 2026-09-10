@@ -591,8 +591,10 @@ void collectSymbolsFromMachOImage(
         /// Skip debug symbols (STABS entries)
         if (sym.n_type & N_STAB)
             continue;
-        /// Skip undefined symbols
-        if ((sym.n_type & N_TYPE) == N_UNDF)
+        /// The value of a symbol is an address only when the symbol is defined in a section. For the other
+        /// types it is a constant: an absolute symbol (N_ABS) holds a value such as a bit mask and an
+        /// indirect symbol (N_INDR) holds a string table index.
+        if ((sym.n_type & N_TYPE) != N_SECT)
             continue;
         /// Skip symbols with no address
         if (sym.n_value == 0)
