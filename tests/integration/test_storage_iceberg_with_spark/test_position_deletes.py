@@ -485,8 +485,7 @@ def create_spark_v3_merge_on_read_table(started_cluster_iceberg_with_spark, tabl
     )
 
 
-def upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, table_name: str):
-    storage_type = "local"
+def upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, table_name: str, storage_type: str = "local"):
     default_upload_directory(
         started_cluster_iceberg_with_spark,
         storage_type,
@@ -631,7 +630,8 @@ def test_v3_deletion_vectors_large_cardinality(started_cluster_iceberg_with_spar
     verify_puffin_deletion_vector_exists(
         TABLE_NAME, "Spark Iceberg runtime did not produce Puffin deletion vector files")
 
-    expression = upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME)
+    # The local uploader passes file contents on the command line, which is too small for this data file.
+    expression = upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME, storage_type="s3")
 
     settings = {
         "allow_iceberg_deletion_vectors": 1,
