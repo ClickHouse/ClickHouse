@@ -1,26 +1,14 @@
--- and the step never reaches what its four readers asked for
-1
--- the limit is observed, not naturally small: four readers want 4 x 80 of them
-1
--- a single reader above the limit prefetches the first N substreams, not none
-1
--- and all 80 of them when unlimited
-1
--- a bounded JSON read step prefetches fewer substreams than an unbounded one
-1
--- and a stream that ends returns its capacity: the step submits more than it may hold
-1
--- prefetching does happen on this fixture when the byte bound is not the binding one
-1
--- the memory bound alone stops prefetching, on an encrypted disk
-1
--- a reserved stream may prefetch again in a later batch, without new memory
-1
--- and it took more than one batch: unbounded, all eight streams prefetch in each of them
-1
--- the fixture is packed part storage
-1
--- prefetching does happen through the file view when the byte bound is not the binding one
-1
--- and the memory bound stops prefetching there too, through the file view
-1
+the step never reaches what its four readers asked for	1
+the limit is observed, not naturally small: four readers want 4 x 80 of them	1
+a single reader above the limit prefetches the first N substreams, not none	1
+and all 80 of them when unlimited	1
+a bounded JSON read prefetches fewer substreams than an unbounded one	1
+and the bound is what decides how many: limits 10 apart, counts 10 apart	1
+a stream that ends returns its capacity: the arm submits more than it may hold	1
+prefetching does happen on this fixture when the byte bound is not the binding one	1
+the memory bound alone stops prefetching, on an encrypted disk	1
+a reserved stream may prefetch again in a later batch, without new memory	1
+and it took more than one batch: unbounded, all eight streams prefetch in each of them	1
+the fixture is packed part storage	1
+prefetching does happen through the file view when the byte bound is not the binding one	1
+and the memory bound stops prefetching there too, through the file view	1
