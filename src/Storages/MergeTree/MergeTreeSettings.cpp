@@ -2211,8 +2211,6 @@ Possible values:
 
 - `water_filling`
 - `sainte_lague`
-
-Since ClickHouse 26.8, `compatibility` does not revert the default from `sainte_lague` to `water_filling`; set `water_filling` explicitly to use it.
 )", 0) \
     DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
 Timeout that merge worker thread will use if it is needed to update it's state after immediate action
