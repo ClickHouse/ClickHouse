@@ -827,16 +827,25 @@ private:
     /// How many rows the call starting at `start_idx` should carry, out of `remaining`.
     ///
     /// The cost of a batch is monotone in its row count - adding a row can only grow the payload,
-    /// and can only grow a per-batch dictionary - so "the rows that fit the budget" is a prefix
-    /// and can be bracketed. Each probe measures a candidate exactly and rescales the next one by
-    /// how far it landed from the budget, keeping the largest candidate known to fit and the
-    /// smallest known to overflow, so the bracket shrinks on every step.
+    /// and can only grow a per-batch dictionary - so "the rows that fit the budget" is a prefix and
+    /// can be bracketed. Each probe measures a candidate exactly, keeps the largest candidate known
+    /// to fit and the smallest known to overflow, and picks the next candidate inside that bracket,
+    /// so the bracket shrinks on every step and the walk ends on the real boundary rather than on
+    /// the first prefix that looked full enough.
     ///
-    /// Every candidate is bounded by rows already measured: the walk starts at one row and grows
-    /// by a bounded factor per probe. Nothing is carried over from a previous batch or block,
-    /// because a row count only means something for rows of a known width - a count fitted by
-    /// narrow rows would have the next batch materialize that many wide rows before any
-    /// measurement justified it, recreating the oversized call the split exists to avoid.
+    /// The next candidate follows the marginal cost of a row, taken as the slope between the last
+    /// two measurements, not the average bytes per row of the candidate. The average carries the
+    /// batch-wide part of the payload - framing, a `LowCardinality` dictionary, `Dynamic` and
+    /// `Variant` structure prefixes, and any single wide row already in the prefix - which is paid
+    /// once and does not grow with the rows added next. Dividing by it prices every further row at
+    /// the cost of the whole prefix, so a block whose first row is far wider than the rest would be
+    /// handed to the guest one row per call while hundreds of its rows still fit.
+    ///
+    /// Every candidate is bounded by rows already measured: the walk starts at one row and grows by
+    /// a bounded factor per probe. Nothing is carried over from a previous batch or block, because a
+    /// row count only means something for rows of a known width - a count fitted by narrow rows
+    /// would have the next batch materialize that many wide rows before any measurement justified
+    /// it, recreating the oversized call the split exists to avoid.
     size_t chooseBatchRows(
         const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t remaining, size_t budget) const
     {
@@ -844,25 +853,25 @@ private:
         if (arguments.empty())
             return remaining;
 
-        /// A batch filling this much of its budget is taken as it is: proving it maximal costs
-        /// more serializations than the few rows it could still gain.
-        static constexpr double good_enough_fill = 0.75;
         static constexpr size_t max_probes = 16;
         /// A probe may only ask for this many times the rows the previous probe measured. The
-        /// rescaled count is an extrapolation from a prefix, and a prefix of narrow rows says
-        /// nothing about wider rows later in the block, so growth is paid for by rows already
-        /// materialized. Reaching any batch size still costs a logarithmic number of probes.
+        /// extrapolated count is read off a prefix, and a prefix of narrow rows says nothing about
+        /// wider rows later in the block, so growth is paid for by rows already materialized.
+        /// Reaching any batch size still costs a logarithmic number of probes.
         static constexpr size_t max_growth_per_probe = 4;
 
         /// Probe upwards from a single row, rather than downwards from the whole block. A probe
         /// serializes the candidate, and for a wire that does not carry constness a `ColumnConst`
         /// argument is materialized to do it, so a first probe of the whole block would expand
-        /// exactly the input the splitting exists to rescue. Measuring one row over-states the
-        /// marginal cost, because it carries the whole per-batch state, so the rescaled candidate
-        /// is an undershoot that later probes grow into.
+        /// exactly the input the splitting exists to rescue.
         size_t candidate = 1;
         size_t largest_fitting = 0;
         size_t smallest_overflowing = remaining + 1;
+
+        /// The previous measurement, so the next candidate can be read off a slope. There is no
+        /// previous measurement while `previous_rows` is zero.
+        size_t previous_rows = 0;
+        size_t previous_bytes = 0;
 
         for (size_t probe = 0; probe < max_probes; ++probe)
         {
@@ -870,31 +879,59 @@ private:
             if (measured <= budget)
             {
                 largest_fitting = candidate;
-                if (candidate == remaining || static_cast<double>(measured) >= good_enough_fill * static_cast<double>(budget))
+                if (candidate == remaining)
                     break;
             }
             else
             {
                 smallest_overflowing = candidate;
-                /// A single row past the budget is still passed on its own: the split stops at
-                /// one row per call, and whether the guest can hold that row is for its
-                /// allocator to say.
+                /// A single row past the budget is still passed on its own: the split stops at one
+                /// row per call, and whether the guest can hold that row is for its allocator to say.
                 if (candidate == 1)
                     break;
             }
 
+            /// The boundary is known exactly once the bracket has nothing left between its ends.
             if (largest_fitting + 1 >= smallest_overflowing)
                 break;
 
-            size_t next = measured == 0
-                ? remaining
-                : static_cast<size_t>(static_cast<double>(candidate) * static_cast<double>(budget) / static_cast<double>(measured));
+            /// An empty payload gives no slope to follow, so nothing bounds the batch but the block.
+            if (measured == 0)
+            {
+                candidate = remaining;
+                continue;
+            }
+
+            /// The marginal bytes a row adds. With one measurement in hand the average is all there
+            /// is; it over-states the marginal cost, so the step it proposes is an undershoot, and
+            /// the clamp below still moves the walk on by a row, which buys the second measurement
+            /// the slope needs.
+            Float64 bytes_per_row = static_cast<Float64>(measured) / static_cast<Float64>(candidate);
+            if (previous_rows != 0 && candidate != previous_rows)
+            {
+                const Float64 slope = (static_cast<Float64>(measured) - static_cast<Float64>(previous_bytes))
+                    / (static_cast<Float64>(candidate) - static_cast<Float64>(previous_rows));
+                if (slope > 0.0)
+                    bytes_per_row = slope;
+            }
+            previous_rows = candidate;
+            previous_bytes = measured;
+
+            const Float64 target = static_cast<Float64>(candidate)
+                + (static_cast<Float64>(budget) - static_cast<Float64>(measured)) / bytes_per_row;
+
+            size_t next = 1;
+            if (target >= static_cast<Float64>(remaining))
+                next = remaining;
+            else if (target > 1.0)
+                next = static_cast<size_t>(target);
+
             if (next > candidate)
                 next = std::min(next, candidate * max_growth_per_probe);
-            next = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
-            if (next == candidate)
-                break;
-            candidate = next;
+            /// The bracket both keeps the candidate meaningful and guarantees progress: a candidate
+            /// that fits raises the lower end past itself, one that overflows lowers the upper end
+            /// below itself, and the check above leaves at least one row between the ends.
+            candidate = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
         }
 
         return std::max<size_t>(largest_fitting, 1);
