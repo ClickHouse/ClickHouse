@@ -104,11 +104,8 @@ public:
     /// operation, so this avoids the `DETACH ... SYNC` that would otherwise block on the live table.
     void rebuildObjectStorageClient(ContextPtr rebuild_context);
 
-    /// Whether a setting can be changed via `ALTER TABLE ... MODIFY SETTING`.
+    /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);
-
-    /// Whether a setting can be changed without special migration settings or detached dependencies.
-    static bool isSettingChangeableInPlace(const std::string & name, ObjectStorageQueueMode mode);
 
     /// Generate id for the S3(Azure/etc)Queue commit.
     /// Used for system.s3(azure/etc)_queue_log.
@@ -160,7 +157,7 @@ private:
     size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
-    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
+    std::shared_ptr<ObjectStorageQueueMetadata> files_metadata TSA_GUARDED_BY(mutex);
     StorageObjectStorageConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
 
@@ -189,7 +186,10 @@ private:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const;
+    /// Returns the metadata handle, or nullptr when the table has not started up or has
+    /// already been shut down. The returned handle must stay in scope for as long as anything
+    /// borrowed from it (e.g. its table metadata) is used.
+    std::shared_ptr<ObjectStorageQueueMetadata> tryGetFilesMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
@@ -198,6 +198,7 @@ private:
         FormatParserSharedResourcesPtr parser_shared_resources,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
+        std::shared_ptr<ObjectStorageQueueMetadata> metadata,
         size_t max_block_size,
         ContextPtr local_context,
         bool commit_once_processed,
@@ -213,12 +214,13 @@ private:
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index, UInt64 cycle_epoch);
     /// Apply after_processing action to successfully processed files.
-    void postProcess(const StoredObjects & successful_objects) const;
+    void postProcess(const StoredObjects & successful_objects, const ObjectStorageQueueMetadata & metadata) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
         size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
+        const ObjectStorageQueueMetadata & metadata,
         time_t transaction_start_time,
         const std::string & exception_message = {},
         int error_code = 0) const;

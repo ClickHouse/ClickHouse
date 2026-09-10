@@ -20,9 +20,9 @@ BUGFIX_VALIDATE_CHECK=0
 PREVIOUS_RELEASE_CONFIG=0
 NO_AZURE=0
 KEEPER_INJECT_AUTH=1
-WASM_ENGINE=""
 REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
+BUILD_TYPE_CONFIGS_ONLY=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -45,12 +45,12 @@ while [[ "$#" -gt 0 ]]; do
         --previous-release) PREVIOUS_RELEASE_CONFIG=1 ;;
 
         --no-keeper-inject-auth) KEEPER_INJECT_AUTH=0 ;;
-        --wasm-engine) WASM_ENGINE=$2 && shift ;;
         --remote-database-disk) REMOTE_DATABASE_DISK=1 ;;
         --no-remote-database-disk) REMOTE_DATABASE_DISK=0 ;;
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         --llvm-coverage) LLVM_COVERAGE=1 ;;
+        --build-type-configs-only) BUILD_TYPE_CONFIGS_ONLY=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -92,6 +92,59 @@ function is_fast_build()
     [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
 
+# Print 1 or 0 for a CXX_FLAGS pattern in the installed binary, or fail. An unanswered probe
+# must not read as false: the false arm below installs the config an msan server refuses to
+# start on. `countIf` keeps the query total, since restricting it to the row yields no output.
+function build_option_flag()
+{
+    local description=$1 pattern=$2 value rc=0
+    value=$(clickhouse local --query \
+        "SELECT countIf(name = 'CXX_FLAGS' AND value LIKE '$pattern') > 0 FROM system.build_options") || rc=$?
+    if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
+        echo "install.sh: cannot determine whether this is a $description (exit $rc, output '$value')" >&2
+        return 1
+    fi
+    echo "$value"
+}
+
+# Install the configs whose presence depends on the build flavour of the binary installed right
+# now. Idempotent in both directions, so a tree installed for one build type can be re-decided
+# for another (see --build-type-configs-only).
+function install_build_type_configs()
+{
+    local is_memory_sanitizer is_sanitizer
+    # Resolve both probes before touching either file, so a failing probe cannot leave a
+    # half-adjusted tree.
+    is_memory_sanitizer=$(build_option_flag "MemorySanitizer build" '%-fsanitize=memory%')
+    # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test
+    # for -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on
+    # a bad vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
+    is_sanitizer=$(build_option_flag "sanitizer build" '%-DSANITIZER%')
+
+    # A non-zero global_profiler_* period is rejected by an msan server while it parses its own
+    # settings, so the config must be absent rather than merely unused there.
+    if [ "$is_memory_sanitizer" = "1" ]; then
+        rm -f $DEST_SERVER_PATH/config.d/serverwide_trace_collector.xml
+    else
+        ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
+    fi
+
+    if [ "$is_sanitizer" = "1" ]; then
+        ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
+    else
+        rm -f $DEST_SERVER_PATH/config.d/trace_log_no_symbolize.xml
+    fi
+}
+
+# Re-decide the build-flavour-dependent configs of an already installed tree, leaving the rest
+# of it as it is, for callers that replace the binary underneath it. Must return before the
+# `rm -rf config.d` below, which would otherwise wipe the tree this mode was asked to adjust.
+if [ "$BUILD_TYPE_CONFIGS_ONLY" = "1" ]; then
+    echo "Going to install build-type-dependent test configs into $DEST_SERVER_PATH"
+    install_build_type_configs
+    exit 0
+fi
+
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
 mkdir -p $DEST_SERVER_PATH/users.d/
@@ -104,8 +157,18 @@ mkdir -p $DEST_CLIENT_PATH
 # Patching configs which are symbolic links can affect source files,
 # need to delete links created by previous script versions
 # Also this is generally good (least astonishment principle) not to retain any old configs
+# `system_logs_export.yaml` is the exception: it is not a config of the test suite. The
+# `Distributed` tables of the log export stay in the server metadata, and restoring a queued
+# insert of one resolves the cluster, so a start without the definition aborts (`Code: 701`).
+LOG_EXPORT_CONFIG=system_logs_export.yaml
+if [ -f "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG" ]; then
+    mv "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG" "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG"
+fi
 rm -rf "$DEST_SERVER_PATH"/config.d
 mkdir -p $DEST_SERVER_PATH/config.d/
+if [ -f "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG" ]; then
+    mv "$DEST_SERVER_PATH/$LOG_EXPORT_CONFIG" "$DEST_SERVER_PATH/config.d/$LOG_EXPORT_CONFIG"
+fi
 
 ln -sf $SRC_PATH/config.d/tmp.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/core_dump.yaml $DEST_SERVER_PATH/config.d/
@@ -147,6 +210,12 @@ ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
+# `enable_silk_runtime` and the `silk` section first exist in 26.9, so an older server rejects
+# them as unknown config elements and refuses to start. Gate the drop-in on the installed
+# server's version to keep the upgrade check's previous-release server bootable.
+if check_clickhouse_version 26.9; then
+    ln -sf $SRC_PATH/config.d/silk.xml $DEST_SERVER_PATH/config.d/
+fi
 
 ln -sf $SRC_PATH/config.d/encryption.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/zookeeper_log.xml $DEST_SERVER_PATH/config.d/
@@ -221,14 +290,7 @@ esac
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
-function is_sanitizer_build()
-{
-    [ "$(clickhouse local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
-}
-if is_sanitizer_build; then
-    ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
-fi
+install_build_type_configs
 ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
@@ -283,6 +345,13 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
+# The http_allow_* settings are introduced by this feature and are not present in any
+# released version yet: 26.7 was released without them, so gate on 26.8 (the first version
+# that can contain them) to keep the previous-release server of the upgrade check bootable.
+if check_clickhouse_version 26.8; then
+    ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/http_url_prefix.xml $DEST_SERVER_PATH/config.d/
+fi
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
 fi
@@ -372,8 +441,8 @@ echo "Replacing create_snapshot_on_exit with $value_create_snapshot_on_exit"
 value_latest_logs_cache_size_threshold=$(((RANDOM + 100) * 2048))
 echo "Replacing latest_logs_cache_size_threshold with $value_latest_logs_cache_size_threshold"
 
-value_commit_logs_cache_size_threshold=$(((RANDOM + 100) * 2048))
-echo "Replacing commit_logs_cache_size_threshold with $value_commit_logs_cache_size_threshold"
+value_log_readahead_commit_window_bytes=$(((RANDOM + 100) * 2048))
+echo "Replacing log_readahead_commit_window_bytes with $value_log_readahead_commit_window_bytes"
 
 value=$((RANDOM % 2))
 echo "Replacing digest_enabled_on_commit with $value"
@@ -383,7 +452,7 @@ echo "Replacing nuraft_use_bg_thread_for_snapshot_io with $value_nuraft_use_bg_t
 
 sed -E "s|<create_snapshot_on_exit>[01]</create_snapshot_on_exit>|<create_snapshot_on_exit>$value_create_snapshot_on_exit</create_snapshot_on_exit>|; \
     s|<latest_logs_cache_size_threshold>[[:digit:]]+</latest_logs_cache_size_threshold>|<latest_logs_cache_size_threshold>$value_latest_logs_cache_size_threshold</latest_logs_cache_size_threshold>|; \
-    s|<commit_logs_cache_size_threshold>[[:digit:]]+</commit_logs_cache_size_threshold>|<commit_logs_cache_size_threshold>$value_commit_logs_cache_size_threshold</commit_logs_cache_size_threshold>|; \
+    s|<log_readahead_commit_window_bytes>[[:digit:]]+</log_readahead_commit_window_bytes>|<log_readahead_commit_window_bytes>$value_log_readahead_commit_window_bytes</log_readahead_commit_window_bytes>|; \
     s|<digest_enabled_on_commit>[01]</digest_enabled_on_commit>|<digest_enabled_on_commit>$value</digest_enabled_on_commit>|; \
     s|<nuraft_use_bg_thread_for_snapshot_io>[01]</nuraft_use_bg_thread_for_snapshot_io>|<nuraft_use_bg_thread_for_snapshot_io>$value_nuraft_use_bg_thread_for_snapshot_io</nuraft_use_bg_thread_for_snapshot_io>|" \
     $SRC_PATH/config.d/keeper_port.xml > $DEST_SERVER_PATH/config.d/keeper_port.xml
@@ -556,12 +625,6 @@ fi
 
 ln -sf $SRC_PATH/config.d/wasm_udf.xml $DEST_SERVER_PATH/config.d/
 
-if [ ! -z "$WASM_ENGINE" ]; then
-    # ensure that default entry exists and we correctly replace it
-    grep -q -F ">wasmtime<" $DEST_SERVER_PATH/config.d/wasm_udf.xml || exit 1
-    sed -i "s|>wasmtime<|>${WASM_ENGINE}<|" $DEST_SERVER_PATH/config.d/wasm_udf.xml
-fi
-
 if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; then
     function remove_keeper_config()
     {
@@ -569,6 +632,7 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; the
     }
 
     remove_keeper_config "nuraft_use_bg_thread_for_snapshot_io" "[[:digit:]]\+"
+    remove_keeper_config "log_readahead_commit_window_bytes" "[[:digit:]]\+"
 fi
 
 if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then

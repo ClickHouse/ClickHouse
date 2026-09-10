@@ -1,0 +1,10 @@
+legacy string keys survive cross-block eviction
+1	1
+packed string keys survive cross-block eviction
+1	1
+serialized keys survive cross-block eviction
+1	1
+each family evicted through the heap
+04907_legacy	1
+04907_packed	1
+04907_serialized	1

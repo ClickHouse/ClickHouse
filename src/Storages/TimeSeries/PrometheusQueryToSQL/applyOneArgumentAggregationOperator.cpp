@@ -23,7 +23,10 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for a one-argument aggregation operator.
-    void checkArgumentTypes(const PQT::AggregationOperator * operator_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::AggregationOperator * operator_node,
+        const std::vector<SQLQueryPiece> & arguments,
+        const ConverterContext & context)
     {
         const auto & operator_name = operator_node->operator_name;
 
@@ -45,11 +48,9 @@ namespace
         }
     }
 
-    using TransformASTFunc = ASTPtr (*)(ASTPtr && v, const DataTypePtr & scalar_data_type);
-
     struct ImplInfo
     {
-        TransformASTFunc transform_ast;
+        OneArgumentAggregationTransform transform_ast;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
@@ -81,17 +82,22 @@ namespace
 
             {"count",
              {
-                [](ASTPtr && v, const DataTypePtr &) -> ASTPtr
+                [](ASTPtr && v, const DataTypePtr & scalar_data_type) -> ASTPtr
                 {
                     /// countForEach is special: it returns UInt64 and not Nullable: if all the inputs at any specific position are NULLs,
                     /// countForEach produces 0 at this position instead of NULL. So we need to convert it to NULL with arrayMap.
+                    /// Cast to the scalar type: a subquery like `rate(count(m)[5m:1m])` feeds this grid into a
+                    /// `timeSeries*ToGrid` aggregate, which accepts only floats.
                     return makeASTFunction(
-                        "arrayMap",
+                        "CAST",
                         makeASTFunction(
-                            "lambda",
-                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
-                            makeASTFunction("nullIf", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u))),
-                        makeASTFunction("countForEach", std::move(v)));
+                            "arrayMap",
+                            makeASTFunction(
+                                "lambda",
+                                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                                makeASTFunction("nullIf", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u))),
+                            makeASTFunction("countForEach", std::move(v))),
+                        make_intrusive<ASTLiteral>("Array(Nullable(" + scalar_data_type->getName() + "))"));
                 },
             }},
 
@@ -142,8 +148,15 @@ bool isOneArgumentAggregationOperator(std::string_view operator_name)
 }
 
 
+OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name)
+{
+    const auto * impl_info = getImplInfo(operator_name);
+    return impl_info ? impl_info->transform_ast : nullptr;
+}
+
+
 SQLQueryPiece applyOneArgumentAggregationOperator(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & operator_name = operator_node->operator_name;
     const auto * impl_info = getImplInfo(operator_name);
@@ -183,16 +196,11 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-        /// Drop empty-values rows.
-        /// If the input has no rows then countForEach([]) returns [], but the number of values
-        /// in array must always match the number of steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID),
-        /// so we just drop such rows.
-        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
-
         aggregation_query = builder.getSelectQuery();
     }
 
-    /// Step 2: rename `new_group` back to `group`.
+    /// Step 2: rename `new_group` back to `group` and drop empty grids (a WHERE, so `values` cannot bind to the input column
+    /// under prefer_column_name_to_alias).
     {
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
 
@@ -201,6 +209,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
         builder.select_list.back()->setAlias(ColumnNames::Group);
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        builder.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         res.select_query = builder.getSelectQuery();
     }

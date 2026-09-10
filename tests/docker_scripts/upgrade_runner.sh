@@ -20,7 +20,7 @@ ln -s /repo/tests/ci/get_previous_release_tag.py /usr/bin/get_previous_release_t
 source /repo/tests/docker_scripts/stress_tests.lib
 
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || ( echo "Failed to start minio" && exit 1 ) # to have a proper environment
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_seaweedfs stateless || ( echo "Failed to start seaweedfs" && exit 1 ) # to have a proper environment
 
 bash /repo/ci/jobs/scripts/functional_tests/setup_kafka.sh || { echo "Failed to start Kafka (Redpanda)"; exit 1; }
 
@@ -35,7 +35,20 @@ fi
 echo $previous_release_tag
 
 echo "Clone previous release repository"
-git clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
+
+function clone_previous_release_repository()
+{
+    # A killed clone leaves a `.git`-only directory that every later attempt rejects.
+    rm -rf previous_release_repository
+    # git has no default low-speed bound, so a stalled-but-open connection never ends.
+    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=120 clone https://github.com/ClickHouse/ClickHouse.git --no-tags --progress --branch=$previous_release_tag --no-recurse-submodules --depth=1 previous_release_repository
+}
+
+if ! run_with_retry 3 clone_previous_release_repository; then
+    echo -e "Failed to clone previous release tests$FAIL" >> /test_output/test_results.tsv
+    echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
+    exit 1
+fi
 
 echo "Download clickhouse-server from the previous release"
 mkdir previous_release_package_folder
@@ -58,6 +71,7 @@ fi
 # Check if we cloned previous release repository successfully
 if ! [ "$(ls -A previous_release_repository/tests/queries)" ]
 then
+    echo -e "Failed to clone previous release tests$FAIL" >> /test_output/test_results.tsv
     echo -e 'failure\tFailed to clone previous release tests' > /test_output/check_status.tsv
     exit 1
 elif ! [ "$(ls -A previous_release_package_folder/clickhouse-common-static_*.deb && ls -A previous_release_package_folder/clickhouse-server_*.deb)" ]
@@ -135,6 +149,13 @@ stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_reposit
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
 
+# The full server stacktrace dumps must survive the removal of the phase
+# output folder below.
+for stacktrace_log in tmp_stress_output/sql_stacktraces.log tmp_stress_output/c_stacktraces.log; do
+    if [ -f "$stacktrace_log" ]; then
+        mv "$stacktrace_log" /test_output/
+    fi
+done
 rm -rf tmp_stress_output
 
 # We experienced deadlocks in this command in very rare cases. Let's debug it:
@@ -358,14 +379,23 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       globally, exactly like the `Code: 236 ... Cancelled mutating parts` message that the same cancelled test
 #       mutations emit above. Matching the message rather than the task type also covers the wrapping
 #       `MergeTreeBackgroundExecutor` line of the replicated case in a single entry.
+# `Unexpected const virtual column: _table` (`NO_SUCH_COLUMN_IN_TABLE`, Code: 16) is the same class, from
+#       `04510_mutation_query_plan_only_virtual_columns`, whose `DELETE WHERE _table != ''` mutation is asserted to
+#       fail. Only a mutation command naming `_table` reaches that throw, since a query read fills it from the
+#       storage id, so the column name and the `MergeTreeSequentialSource` read path are matched together below.
 # `NO_SUCH_INTERSERVER_IO_ENDPOINT` is expected during upgrades because replicated tables try to fetch parts
 # from replicas that are being restarted and whose interserver endpoints are temporarily unavailable.
-# `Unknown tokenizer: 'unicode_word'` appears because the `unicode_word` tokenizer was renamed to `asciiCJK`
-#       (with `unicodeWord` as a transitional alias). Tables from old versions using `unicode_word` trigger this
-#       on attach. Narrowed to the exact legacy name so genuinely unsupported tokenizer names are not masked.
 # `Azure::Storage::StorageException.*Not found address of host` is a transient Azure blob DNS resolution failure
 #       for `openbucketforpublicci.blob.core.windows.net`. Filtered via regex in the secondary pipe below to match
 #       both the Azure SDK exception type AND the DNS error together, so non-Azure DNS errors are not masked.
+# `Cluster` + `Code: 198` + a first host label of one repeated character is the deliberately unresolvable
+#       host of `04725_distributed_async_insert_long_directory_name`. Master no longer carries that test, but
+#       this job runs the previous release's copy of the suite, cloned by tag above, and `--fake-drop` makes
+#       its `DROP` a no-op, so the `Remote` table survives into the upgrade restart, where attaching it
+#       resolves the address and logs the failure. The entry is needed until a release without the test is
+#       the previous one. Filtered via regex in the secondary pipe below to require the `Cluster` logger AND
+#       `Code: 198` AND a first host label of 64 or more identical characters, which is past the 63 octets
+#       RFC 1035 permits a label, so a genuine failure to resolve a cluster peer still fails this job.
 # `SystemLogQueue` + `Queue had been full` overflow happens under heavy stress test load and is not a
 #       compatibility bug. Filtered via regex in the secondary pipe below to require both the component name
 #       AND the specific overflow phrase together (the log format is `SystemLogQueue (system.<table>): Queue
@@ -454,6 +484,28 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
 #       expected connection failure. Filtered to require the MySQL component AND the connection-failure
 #       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
+# `is broken and needs manual correction` / `while loading part` + Code 697 (CANNOT_RESTORE_TO_NONENCRYPTED_DISK)
+#       is a benign leftover-state error from the `Backup` database engine. The `03276`/`03277`/`03278`/`03279`
+#       backup-database tests `CREATE DATABASE ... ENGINE = Backup(...)` and drop it, but the upgrade check runs
+#       the client with `--fake-drop` (DROP queries are ignored), so the database survives into the upgrade
+#       restart. When the run randomly enables `--encrypted-storage`, the backed-up parts are encrypted; on
+#       restart the MergeTree part loader reads them through the Backup engine's `DiskBackup` (a non-encrypted
+#       virtual disk), so `BackupImpl::readFileImpl` rejects each encrypted part with Code 697 and the loader logs
+#       it as a broken part. This is expected: an encrypted backup stores already-encrypted bytes and no disk key,
+#       so it can only be read back on an encrypted disk; the Backup DB engine cannot serve it, no crash/data loss.
+#       Scoped to the part-loader wrapper (`is broken and needs manual correction` OR `while loading part`), which
+#       Code 697 only carries on this background Backup-engine read path (`BackupImpl.cpp` readFileImpl, ~912).
+#       The explicit RESTORE-to-disk path (`copyFileToDisk`, ~1038) throws the same message straight to the client
+#       without a part-loader wrapper, so a real regression restoring an encrypted backup to a non-encrypted
+#       destination still surfaces. The scope is database-name-independent, so it covers all four tests regardless
+#       of the surviving DB name (`03279` -> `..._inner_backup_database`; `03277` -> `..._restore`). The follow-up
+#       `Detaching broken part` + `backward incompatibility` cleanup line carries no Code 697 message, so it is
+#       matched by the sibling regex below, scoped to the backup-database DB-name tokens (`backup_database` for
+#       `03276`/`03278`/`03279`, and the full unique test-name prefix
+#       `03277_database_backup_database_file_engine.*_restore` for `03277`) so unrelated broken-part errors are not
+#       masked. `03277`'s restore DB is named `${CLICKHOUSE_TEST_UNIQUE_NAME}_restore`, which embeds the test file
+#       name, so keying on the bare `_restore` token would also swallow real regressions for ordinary restored
+#       objects created by other previous-release tests (e.g. `${TABLE}_restored`, `t_restore_*`).
 # `DDLWorker(rdb_test_...)` + `Error on initialization of rdb_test_...` + `Mapping for table with UUID=... already
 #       exists` + `TABLE_ALREADY_EXISTS` is benign noise from the `--replicated-database` test wrapper during the
 #       upgrade restart. `clickhouse-test --replicated-database` creates each test's database as
@@ -509,6 +561,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse string 'a' as UInt32" \
            -e "Cannot parse string 'b' as UInt32" \
            -e "Cannot parse string 'fail' as Int8" \
+           -e "Unexpected const virtual column: _table: While executing MergeTreeSequentialSource." \
            -e "} <Error> TCPHandler: Code:" \
            -e "} <Error> executeQuery: Code:" \
            -e "Missing columns: 'v3' while processing query: 'v3, k, v1, v2, p'" \
@@ -536,7 +589,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Cannot parse projection test_projection" \
            -e "Key expressions cannot contain subqueries" \
            -e "Expression must be deterministic but it contains non-deterministic part" \
-           -e "Unknown tokenizer: 'unicode_word'" \
            -e "This engine is deprecated and is not supported in transactions" \
            -e "Prevent converting Nullable type to non-Nullable type inside mutation" \
            -e "e.what() = failed to parse response body" \
@@ -548,6 +600,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "_repl_01111_.*Mapping for table with UUID" \
     | grep -av -e "Error on initialization of rdb_test_.*Mapping for table with UUID=.*already exists.*TABLE_ALREADY_EXISTS" \
     | grep -av -e "Azure::Storage::StorageException.*Not found address of host" \
+    | grep -av -e "Cluster: Code: 198.*Not found address of host: \(.\)\1\{63,\}" \
     | grep -av -e "SystemLogQueue.*Queue had been full" \
     | grep -av -e "TraceCollector.*CANNOT_READ_FROM_FILE_DESCRIPTOR" \
     | grep -av -e "while loading statistics.*ILLEGAL_STATISTICS" \
@@ -564,6 +617,10 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
     | grep -av -e "Application: Connection to mysql failed" \
     | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
+    | grep -av -e "is broken and needs manual correction.*is encrypted in the backup, it can be restored only to an encrypted disk" \
+    | grep -av -e "while loading part.*is encrypted in the backup, it can be restored only to an encrypted disk" \
+    | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

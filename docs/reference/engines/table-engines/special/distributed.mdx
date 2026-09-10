@@ -51,9 +51,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name2 [type2],
     ...
 ) ENGINE = Remote(addresses_expr, [db, table, [user [, password], sharding_key]])
+[SETTINGS name = value, ...]
 ```
 
 `RemoteSecure` accepts the same arguments and connects over a secure connection (the secure TCP port is used by default). The arguments are interpreted exactly as for the `remote` and `remoteSecure` table functions, see their description for the supported signatures. The table structure may be omitted, in which case it is inferred from the remote table.
+
+The [settings of the created storage](#distributed-settings), such as `skip_unavailable_shards`, are specified after the engine definition, for example `ENGINE = Remote('127.0.0.1', system, one) SETTINGS skip_unavailable_shards = 1`. Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` clause among their arguments instead, `remote('127.0.0.1', system.one, SETTINGS skip_unavailable_shards = 1)`, because a table function has nowhere else to put it; the engines do not accept that form.
 
 For example:
 

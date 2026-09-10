@@ -13,6 +13,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Common/FullyQualifiedObjectPath.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -24,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -131,6 +133,71 @@ void validateSupportedColumns(
             "Special columns like MATERIALIZED, ALIAS or EPHEMERAL are not supported for {} storage.",
             configuration.getTypeName());
     }
+}
+
+void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name)
+{
+    size_t position = 0;
+    for (const auto & column : schema)
+    {
+        if (column.name.empty())
+            throw Exception(
+                ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                "Column name in {} table schema cannot be empty (field at position {})",
+                lake_name, position);
+        ++position;
+    }
+}
+
+std::string joinPathUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    if (prefix.empty())
+        return path;
+
+    std::string_view key = path;
+    if (key.starts_with("/"))
+        key.remove_prefix(1);
+    return fs::path(prefix) / key;
+}
+
+std::string relativizePathUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    if (prefix.empty())
+        return path;
+
+    return fs::relative(path, prefix).string();
+}
+
+std::string formatObjectPath(
+    const StorageObjectStorageConfiguration & configuration, const std::string & path, bool include_connection_info)
+{
+    if (configuration.supportsFullyQualifiedPaths())
+    {
+        if (const auto qualified = trySplitFullyQualifiedObjectPath(path))
+        {
+            const std::string object_namespace(qualified->object_namespace);
+            return joinPathUnderPrefix(
+                include_connection_info ? configuration.getDataSourceDescriptionForNamespace(object_namespace) : object_namespace,
+                std::string(qualified->key));
+        }
+    }
+
+    return joinPathUnderPrefix(
+        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(), path);
+}
+
+Strings candidateKeysUnderPrefix(const std::string & prefix, const std::string & path)
+{
+    auto relative_path = relativizePathUnderPrefix(prefix, path);
+    if (prefix.empty() || relative_path.empty() || relative_path.starts_with("/"))
+        return {std::move(relative_path)};
+
+    /// A key that keeps a leading separator renders to the same value as the same key without it,
+    /// so both spellings are possible originals of `path`.
+    Strings candidates;
+    candidates.push_back("/" + relative_path);
+    candidates.push_back(std::move(relative_path));
+    return candidates;
 }
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args)
