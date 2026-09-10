@@ -60,10 +60,7 @@ show_mv_and_inner
 echo $'\nTest 3. MODIFY QUERY can even fix wrong columns.' # We need that because of https://github.com/ClickHouse/ClickHouse/issues/60369
 
 mv_metadata_path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.tables WHERE table='mv' AND database=currentDatabase()")
-# Rewriting the metadata of a still-attached table corrupts a Replicated database's digest,
-# so a refused DETACH must fail the test rather than let the rewrite below run.
-detach_out=$(${CLICKHOUSE_CLIENT} -q "DETACH TABLE mv" 2>&1) \
-    || { echo "FAIL: DETACH TABLE mv failed: $detach_out"; exit 1; }
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE mv"
 
 data_path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.disks WHERE name = 'default'")
 

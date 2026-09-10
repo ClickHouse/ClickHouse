@@ -33,10 +33,11 @@ $CLICKHOUSE_CLIENT -m -q "
     INSERT INTO t_restore_fsync_off SELECT number, toString(number), [] FROM numbers(1000);
 "
 
-# Count the physical files RESTORE actually copies (and therefore must fsync): every file in the part
-# except the version-metadata files RESTORE deliberately skips (see restorePartFromBackup:
-# txn_version.txt[.tmp] and metadata_version.txt are not copied). The restored part has the same
-# on-disk file set.
+# Count the physical files RESTORE actually copies (and therefore must fsync). This is the real target,
+# larger than system.parts.files (= checksums entries) - it includes checksums.txt, columns.txt and the
+# zero-byte arr.bin - but excludes the version-metadata files RESTORE deliberately skips (see
+# restorePartFromBackup: txn_version.txt[.tmp] and metadata_version.txt are not copied). The restored
+# part has the same on-disk file set.
 part_path=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_restore_fsync_on' AND active")
 copied_files=$(find "$part_path" -type f \
     ! -name 'txn_version.txt' ! -name 'txn_version.txt.tmp' ! -name 'metadata_version.txt' | wc -l)
@@ -78,8 +79,6 @@ $CLICKHOUSE_CLIENT -m -q "DROP TABLE t_restore_fsync_on SYNC; DROP TABLE t_resto
 # Encrypted incremental restore: files that come entirely from the base backup are copied via
 # getBaseBackup()->copyFileToDisk(..., sync). That branch must forward the encrypted read (else the
 # restore fails with CANNOT_RESTORE_TO_NONENCRYPTED_DISK) and still fsync the files when requested.
-# The table below has the same schema, data and part-layout settings as t_restore_fsync_on, so its
-# part holds the same file set and $copied_files is its restore-copied file count too.
 enc_disk="disk(type = encrypted, disk = disk(type = local, path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}_enc/'), key = '1234567812345678')"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_restore_fsync_enc;
@@ -87,6 +86,7 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS fsync_after_insert = 1, fsync_part_directory = 1, min_bytes_for_wide_part = 0, disk = $enc_disk;
     INSERT INTO t_restore_fsync_enc SELECT number, toString(number), [] FROM numbers(1000);
 "
+enc_files=$($CLICKHOUSE_CLIENT -q "SELECT files FROM system.parts WHERE database = currentDatabase() AND table = 't_restore_fsync_enc' AND active")
 
 # Full backup, then an unchanged incremental backup so every file is served by the base backup.
 $CLICKHOUSE_CLIENT -q "BACKUP TABLE t_restore_fsync_enc TO Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_enc_base')" > /dev/null
@@ -100,7 +100,7 @@ $CLICKHOUSE_CLIENT --query_id "$qid_enc" -q "RESTORE TABLE t_restore_fsync_enc F
 echo "encrypted incremental count: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM t_restore_fsync_enc")"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT --param_query_id "$qid_enc" --param_files "$copied_files" -q "
+$CLICKHOUSE_CLIENT --param_query_id "$qid_enc" --param_files "$enc_files" -q "
     SELECT 'encrypted incremental restore with fsync_after_insert=1, all part files fsynced: ',
            ProfileEvents['FileSync'] >= {files:UInt64}
     FROM system.query_log

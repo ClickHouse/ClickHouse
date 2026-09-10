@@ -93,10 +93,10 @@ public:
 
         const auto & data_k = col_k->getData();
 
-        auto dst_data_column = ColumnUInt64::create();
-        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
-        auto & dst_data = *dst_data_column;
-        auto & dst_offsets = dst_offsets_column->getData();
+        auto dst = ColumnArray::create(ColumnUInt64::create());
+        auto & dst_data = typeid_cast<ColumnUInt64 &>(dst->getData());
+        auto & dst_offsets = dst->getOffsets();
+        dst_offsets.resize(input_rows_count);
 
         /// First calculate array sizes for all rows and save them in Offsets
         UInt64 current_offset = 0;
@@ -146,7 +146,7 @@ public:
             current_offset += size;
         }
 
-        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
+        return dst;
     }
 };
 

@@ -14,7 +14,6 @@
 #    include <Databases/DatabaseFactory.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <mysqlxx/Exception.h>
 #    include <Disks/IDisk.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
@@ -72,38 +71,6 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DATABASE;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-    extern const int ALL_CONNECTION_TRIES_FAILED;
-}
-
-/// Demote only a connection failure to the (unreachable) remote, so that anything else is not
-/// hidden. Must be called from within a catch block: it rethrows the active exception to classify it.
-/// A failed connect through `mysqlxx::PoolWithFailover::get` arrives rewrapped as
-/// `ALL_CONNECTION_TRIES_FAILED`, a direct `mysqlxx::Pool` probe throws `ConnectionFailed` as is,
-/// and a connection dropped mid-query throws `ConnectionLost`.
-LogsLevel mysqlToleratedConnectionFailureLogLevel()
-{
-    try
-    {
-        throw;
-    }
-    catch (const mysqlxx::ConnectionFailed &)
-    {
-        return LogsLevel::warning;
-    }
-    catch (const mysqlxx::ConnectionLost &)
-    {
-        return LogsLevel::warning;
-    }
-    catch (const Exception & e)
-    {
-        return e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED ? LogsLevel::warning : LogsLevel::error;
-    }
-    /// Ok to not report anything here: the exception stays active and the caller logs it at the
-    /// level returned from here.
-    catch (...)
-    {
-        return LogsLevel::error;
-    }
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -138,12 +105,12 @@ DatabaseMySQL::DatabaseMySQL(
     {
         if (attach)
         {
-            tryLogCurrentException("DatabaseMySQL", "", mysqlToleratedConnectionFailureLogLevel());
+            tryLogCurrentException("DatabaseMySQL");
         }
 #if CLICKHOUSE_CLOUD
         else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
         {
-            tryLogCurrentException("DatabaseMySQL", "", mysqlToleratedConnectionFailureLogLevel());
+            tryLogCurrentException("DatabaseMySQL");
         }
 #endif
         else
@@ -226,7 +193,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
                             backQuote(table_name), getCurrentExceptionMessage(true));
         }
 
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", mysqlToleratedConnectionFailureLogLevel());
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     if (!local_tables_cache.contains(table_name))
@@ -352,7 +319,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
                 StorageID(database_name, table_name),
                 std::move(mysql_pool),
                 database_name_in_mysql,
-                TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+                table_name,
                 /* replace_query_ */ false,
                 /* on_duplicate_clause = */ "",
                 ColumnsDescription{columns_name_and_type},
@@ -379,7 +346,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLStreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
+    StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
     auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(result));
 
@@ -645,16 +612,10 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         }
         else
         {
-            /// The TLS credentials are trailing `key = value` arguments; the copy keeps them in the
-            /// stored `CREATE DATABASE` query, where they are masked when it is formatted.
-            ASTs positional_arguments = arguments;
-            configuration.ssl_params = StorageMySQL::extractSSLParamsFromArguments(positional_arguments, args.context);
-
-            if (positional_arguments.size() != 4)
+            if (arguments.size() != 4)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments "
-                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...').");
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
 
 
             arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
@@ -755,49 +716,27 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-## TLS/SSL {#tls-ssl}
-
-The credentials of an encrypted connection to MySQL are passed as [named collection](/concepts/features/configuration/server-config/named-collections) keys (or as key-value arguments):
-
-| Parameter | Description |
-|-----------|-------------|
-| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
-| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
-| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
-
-The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
-
-The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
-
-<a id="data_types-support"></a>
-## Data types support {#data-types-support}
+## Data types support {#data_types-support}
 
 | MySQL                            | ClickHouse                                                   |
 |----------------------------------|--------------------------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](/reference/data-types/int-uint)          |
-| TINYINT                          | [Int8](/reference/data-types/int-uint)           |
-| UNSIGNED SMALLINT                | [UInt16](/reference/data-types/int-uint)         |
-| SMALLINT                         | [Int16](/reference/data-types/int-uint)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/reference/data-types/int-uint)         |
-| INT, MEDIUMINT                   | [Int32](/reference/data-types/int-uint)          |
-| UNSIGNED BIGINT                  | [UInt64](/reference/data-types/int-uint)         |
-| BIGINT                           | [Int64](/reference/data-types/int-uint)          |
-| FLOAT                            | [Float32](/reference/data-types/float)           |
-| DOUBLE                           | [Float64](/reference/data-types/float)           |
-| DATE                             | [Date](/reference/data-types/date)               |
-| DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
-| BINARY                           | [FixedString](/reference/data-types/fixedstring) |
-| POINT                            | [Point](/reference/data-types/geo#point)         |
-| LINESTRING                       | [LineString](/reference/data-types/geo#linestring) |
-| POLYGON                          | [Polygon](/reference/data-types/geo#polygon)     |
-| MULTILINESTRING                  | [MultiLineString](/reference/data-types/geo#multilinestring) |
-| MULTIPOLYGON                     | [MultiPolygon](/reference/data-types/geo#multipolygon) |
-| MULTIPOINT                       | [MultiPoint](/reference/data-types/geo#multipoint) |
-| GEOMETRY                         | [Geometry](/reference/data-types/geo#geometry)   |
+| UNSIGNED TINYINT                 | [UInt8](../../sql-reference/data-types/int-uint.md)          |
+| TINYINT                          | [Int8](../../sql-reference/data-types/int-uint.md)           |
+| UNSIGNED SMALLINT                | [UInt16](../../sql-reference/data-types/int-uint.md)         |
+| SMALLINT                         | [Int16](../../sql-reference/data-types/int-uint.md)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../../sql-reference/data-types/int-uint.md)         |
+| INT, MEDIUMINT                   | [Int32](../../sql-reference/data-types/int-uint.md)          |
+| UNSIGNED BIGINT                  | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| BIGINT                           | [Int64](../../sql-reference/data-types/int-uint.md)          |
+| FLOAT                            | [Float32](../../sql-reference/data-types/float.md)           |
+| DOUBLE                           | [Float64](../../sql-reference/data-types/float.md)           |
+| DATE                             | [Date](../../sql-reference/data-types/date.md)               |
+| DATETIME, TIMESTAMP              | [DateTime](../../sql-reference/data-types/datetime.md)       |
+| BINARY                           | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 
-The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) like all other MySQL data types.
+All other MySQL data types are converted into [String](../../sql-reference/data-types/string.md).
 
-[Nullable](/reference/data-types/nullable) is supported. A spatial column maps to `String` (`Nullable(String)` if it is nullable) instead of a geometric type in three cases: it is declared `GEOMETRYCOLLECTION`; the `geometry` flag is disabled and the type is not `POINT`; or the column is nullable and the type is not `POINT`, since `Point` is the only geometric type that can be nested inside `Nullable`. In all three the string holds the value exactly as MySQL returns it: a 4-byte SRID prefix followed by the WKB payload, so strip those 4 leading bytes before passing it to a WKB decoder.
+[Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
 ## Global variables support {#global-variables-support}
 

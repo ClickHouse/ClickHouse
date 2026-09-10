@@ -112,8 +112,6 @@ parens
 
 timestamp
     : NUMBER
-    | START LEFT_PAREN RIGHT_PAREN
-    | END LEFT_PAREN RIGHT_PAREN
     ;
 
 duration
@@ -132,13 +130,7 @@ instantSelector
     ;
 
 labelMatcher
-    : selectorIdentifier labelMatcherOperator STRING
-    | STRING
-    ;
-
-selectorIdentifier
-    : labelName
-    | STRING
+    : labelName labelMatcherOperator STRING
     ;
 
 labelMatcherOperator
@@ -223,7 +215,7 @@ labelName
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
+    : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
     ;
 
 metricName
@@ -244,8 +236,6 @@ keyword
     | GROUP_RIGHT
     | OFFSET
     | BOOL
-    | START
-    | END
     | AGGREGATION_OPERATOR
     | FUNCTION
     ;

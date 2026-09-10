@@ -1,7 +1,5 @@
 #pragma once
 
-#include <map>
-
 #include <Core/QualifiedTableName.h>
 #include <Server/HTTPHandler.h>
 
@@ -42,9 +40,6 @@ struct PrometheusRequestHandlerConfig
     bool expose_errors = false;
     bool expose_histograms = false;
     bool expose_dimensional_metrics = false;
-
-    /// Constant labels added to every metric exposed by a handler of type Metrics.
-    std::map<String, String> constant_labels;
 
     /// Settings for types APIv1, Query, Write, Read:
     QualifiedTableName time_series_table_name;

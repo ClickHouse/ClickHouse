@@ -66,8 +66,8 @@ Alternative operator syntax: `haystack REGEXP pattern`.
         "SELECT match('abcde', 'b.*d'), match('abcde', '^b.*d$')",
         R"(
 ┌─match('abcde', 'b.*d')─┬─match('abcde', '^b.*d$')─┐
-│                      1 │                        0 │
-└────────────────────────┴──────────────────────────┘
+│                       1 │                         0 │
+└─────────────────────────┴───────────────────────────┘
         )"
     }
     };

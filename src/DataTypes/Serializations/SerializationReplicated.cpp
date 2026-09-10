@@ -231,7 +231,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of rows_offset in Native format: {}. Expected 0", rows_offset);
 
     if (!column->empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Reading into non-empty column ColumnReplicated is not supported in Native format");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading into non-empty column ColumnReplicated is not supported in Native format");
 
     auto mutable_column = column->assumeMutable();
     auto & column_replicated = assert_cast<ColumnReplicated &>(*mutable_column);
@@ -247,7 +247,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     readVarUInt(num_rows, *indexes_stream);
     /// In Native format we always read the whole serialized column.
     if (num_rows != limit)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected number of rows in indexes column in ColumnReplicated in Native format: {}. Expected {}", num_rows, limit);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected number of rows in indexes column in ColumnReplicated in Native format: {}. Expected {}", num_rows, limit);
 
     UInt8 size_of_indexes_type = 0;
     readBinary(size_of_indexes_type, *indexes_stream);
@@ -273,7 +273,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
             SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
             break;
         default:
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected size of index type for ColumnReplicated: {}", UInt32(size_of_indexes_type));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", UInt32(size_of_indexes_type));
     }
 
     settings.path.push_back(Substream::ReplicatedElements);

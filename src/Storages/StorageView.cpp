@@ -1,4 +1,4 @@
-#include <Access/DefinerDependencies.h>
+#include <Access/ViewDefinerDependencies.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -19,20 +19,12 @@
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageView.h>
-#include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/CurrentThread.h>
-
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTQualifiedAsterisk.h>
-#include <Parsers/ASTWindowDefinition.h>
 #include <Common/typeid_cast.h>
 
-#include <Core/Defines.h>
 #include <Core/Settings.h>
 
 #include <QueryPipeline/Pipe.h>
@@ -66,7 +58,6 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
-    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
 }
 
@@ -127,199 +118,6 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
     return false;
 }
 
-bool hasSubquery(const ASTPtr & expr)
-{
-    if (!expr)
-    {
-        return false;
-    }
-    if (expr->as<ASTSubquery>())
-    {
-        return true;
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasSubquery(child))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/// Returns true if the expression contains an aggregate function anywhere in its tree.
-bool hasAggregate(const ASTPtr & expr)
-{
-    if (!expr)
-    {
-        return false;
-    }
-    if (const auto * func = expr->as<ASTFunction>())
-    {
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(func->name))
-        {
-            return true;
-        }
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasAggregate(child))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/// Returns true if the expression contains a scalar subquery or a window function anywhere in its tree.
-bool hasSubqueryOrWindow(const ASTPtr & expr)
-{
-    if (!expr)
-    {
-        return false;
-    }
-    if (expr->as<ASTSubquery>())
-    {
-        return true;
-    }
-    if (const auto * func = expr->as<ASTFunction>())
-    {
-        if (!func->window_name.empty() || func->window_definition)
-        {
-            return true;
-        }
-    }
-    for (const auto & child : expr->children)
-    {
-        if (hasSubqueryOrWindow(child))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/// Returns the underlying storage if the view's inner query is "trivial":
-/// a plain SELECT of columns, expressions, or * from a single table, optionally with a simple WHERE
-/// (no subqueries), and no other transformations. Scalar subqueries, window functions, and aggregate
-/// functions in the SELECT list are not allowed.
-/// Returns nullptr if any condition is not met.
-StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, ContextPtr context)
-{
-    const auto * select_with_union = inner_query->as<ASTSelectWithUnionQuery>();
-    if (!select_with_union || select_with_union->list_of_selects->children.size() != 1)
-    {
-        return nullptr;
-    }
-
-    const auto * select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>();
-    if (!select)
-    {
-        return nullptr;
-    }
-
-    /// Non-deterministic / server-local functions (hostName, nowInBlock, ...) inside the view
-    /// body are intentionally not checked here: the body is read through StorageDistributed::read
-    /// in both the pushdown and non-pushdown paths, so those expressions run on the shards either
-    /// way. Only the outer query needs that gate, applied in PlannerJoinTree.cpp.
-    ///
-    /// A SETTINGS clause in the view body is rejected outright (fail close). Some query-level
-    /// settings (notably `limit` and `offset`) are turned into QueryNode limit/offset by
-    /// QueryTreeBuilder, so a body such as `SELECT id FROM dist SETTINGS limit = 1` would be limited
-    /// once globally on the normal path but once per shard on the pushdown path, changing the
-    /// result. Rather than enumerate every result-changing setting, disqualify any SETTINGS clause.
-    /// GROUP BY ALL and LIMIT BY ALL set boolean flags (group_by_all / limit_by_all) while leaving the
-    /// corresponding expression lists (groupBy() / limitBy()) empty, so the list checks above miss them
-    /// and they must be checked via the flags. Like their explicit counterparts, they aggregate or
-    /// limit per shard under the pushdown instead of once globally on the normal path, changing the
-    /// result. The WITH TOTALS/ROLLUP/CUBE/GROUPING SETS modifiers are likewise aggregation markers,
-    /// and limitByLength()/limitByOffset() carry the N/OFFSET of a LIMIT BY — all rejected fail-close.
-    ///
-    /// ORDER BY ALL differs: the parser populates orderBy() with a placeholder `all` element in
-    /// addition to setting order_by_all, so the orderBy() check above already rejects it (ORDER BY ALL
-    /// with an outer LIMIT would otherwise let the coordinator return a shard-local first row instead
-    /// of the globally first one). order_by_all is still checked here as defense-in-depth in case the
-    /// body AST is ever produced without that placeholder.
-    if (select->with() || select->prewhere()
-        || (select->where() && hasSubquery(select->where()))
-        || select->groupBy() || select->group_by_all
-        || select->group_by_with_totals || select->group_by_with_rollup
-        || select->group_by_with_cube || select->group_by_with_grouping_sets
-        || select->having() || select->qualify()
-        || select->orderBy() || select->order_by_all
-        || select->limitLength() || select->limitOffset()
-        || select->limitBy() || select->limit_by_all
-        || select->limitByLength() || select->limitByOffset()
-        || select->distinct || select->arrayJoinExpressionList().first
-        || select->settings())
-    {
-        return nullptr;
-    }
-
-    const auto * select_expr_list = select->select().get();
-    if (!select_expr_list)
-    {
-        return nullptr;
-    }
-    for (const auto & expr : select_expr_list->children)
-    {
-        if (const auto * asterisk = expr->as<ASTAsterisk>())
-        {
-            /// Column transformers (APPLY/REPLACE/EXCEPT) can carry aggregate, window, or
-            /// non-deterministic expressions, making the view non-trivial.
-            if (asterisk->transformers)
-                return nullptr;
-            continue;
-        }
-        if (const auto * qualified_asterisk = expr->as<ASTQualifiedAsterisk>())
-        {
-            if (qualified_asterisk->transformers)
-                return nullptr;
-            continue;
-        }
-        if (hasSubqueryOrWindow(expr) || hasAggregate(expr))
-        {
-            return nullptr;
-        }
-    }
-
-    const auto * tables = select->tables().get();
-    if (!tables || tables->children.size() != 1)
-    {
-        return nullptr;
-    }
-
-    const auto * table_element = tables->children[0]->as<ASTTablesInSelectQueryElement>();
-    if (!table_element || !table_element->table_expression
-        || table_element->table_join || table_element->array_join)
-    {
-        return nullptr;
-    }
-
-    const auto * table_expr = table_element->table_expression->as<ASTTableExpression>();
-    if (!table_expr || !table_expr->database_and_table_name
-        || table_expr->subquery || table_expr->table_function
-        || table_expr->final || table_expr->sample_size)
-    {
-        return nullptr;
-    }
-
-    const auto * table_id_node = table_expr->database_and_table_name->as<ASTTableIdentifier>();
-    if (!table_id_node)
-    {
-        return nullptr;
-    }
-
-    StorageID storage_id = table_id_node->getTableId();
-    if (storage_id.database_name.empty())
-    {
-        storage_id.database_name = context->getCurrentDatabase();
-    }
-
-    return DatabaseCatalog::instance().tryGetTable(storage_id, context);
-}
-
-
 /** There are no limits on the maximum size of the result for the view.
   *  Since the result of the view is not the result of the entire query.
   *
@@ -332,9 +130,7 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
 
-    /// With plan-based parallel replicas we always build local, so there is no need to disable parallel replicas
-    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree]
-        && !view_settings[Setting::parallel_replicas_plan_based])
+    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree])
     {
         if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
             view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};
@@ -381,7 +177,7 @@ StorageView::StorageView(
         storage_metadata.setSQLSecurity(query.sql_security->as<ASTSQLSecurity &>());
 
     if (storage_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        DefinerDependencies::instance().addDependency(*storage_metadata.definer, table_id_);
+        ViewDefinerDependencies::instance().addViewDependency(*storage_metadata.definer, table_id_);
 
     if (!query.select)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "SELECT query is not specified for {}", getName());
@@ -458,7 +254,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
                         || hasWindowFunctionNodes(query_node.getProjectionNode()))
                         return nullptr;
 
-                    node = query_node.getJoinTreeNode().get();
+                    node = query_node.getJoinTree().get();
                     break;
                 }
                 case QueryTreeNodeType::UNION:
@@ -518,21 +314,6 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     };
 
     return find_storage(inner_query_tree.get());
-}
-
-StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const
-{
-    if (is_parameterized_view || snapshot->metadata->sql_security_type == SQLSecurityType::DEFINER)
-    {
-        return nullptr;
-    }
-    const auto & inner_query = snapshot->metadata->getSelectQuery().inner_query;
-    auto underlying = tryGetTrivialViewUnderlyingStorage(inner_query, context);
-    if (!underlying || !typeid_cast<const StorageDistributed *>(underlying.get()))
-    {
-        return nullptr;
-    }
-    return underlying;
 }
 
 void StorageView::readImpl(
@@ -612,7 +393,7 @@ void StorageView::drop()
 
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
-        DefinerDependencies::instance().removeDependencies(table_id);
+        ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
 void StorageView::alter(
@@ -630,12 +411,12 @@ void StorageView::alter(
         .getDatabase(table_id.database_name)
         ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
-    auto & instance = DefinerDependencies::instance();
+    auto & instance = ViewDefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.removeDependencies(table_id);
+        instance.removeViewDependencies(table_id);
 
     if (new_metadata.sql_security_type == SQLSecurityType::DEFINER)
-        instance.addDependency(*new_metadata.definer, table_id);
+        instance.addViewDependency(*new_metadata.definer, table_id);
 
     setInMemoryMetadata(new_metadata);
 }

@@ -84,7 +84,7 @@ The optional `confidence_level` enables confidence interval calculation.
 **See Also**
 
 - [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
-- [studentTTest function](/reference/functions/aggregate-functions/studentTTest)
+- [studentTTest function](/sql-reference/aggregate-functions/reference/studentttest)
     )";
     FunctionDocumentation::Syntax syntax_studentTTestOneSample = R"(
 studentTTestOneSample([confidence_level])(sample_data, population_mean)

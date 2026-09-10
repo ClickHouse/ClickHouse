@@ -1,15 +1,9 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
-#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context.h>
-#include <Storages/MergeTree/ConditionTemplate.h>
 
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
-#include <base/sleep.h>
+#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 
 namespace CurrentMetrics
 {
@@ -21,8 +15,6 @@ namespace ProfileEvents
     extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
     extern const Event SelectedMarks;
     extern const Event SelectedRanges;
-    extern const Event RuntimeFilterGranulesConsidered;
-    extern const Event RuntimeFilterGranulesDropped;
 }
 
 namespace DB
@@ -33,45 +25,24 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-namespace FailPoints
-{
-    extern const char slowdown_skip_index_read_result_build[];
-}
-
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UsefulSkipIndexes skip_indexes_,
-    ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
+    std::optional<KeyCondition> & key_condition_rpn_template_,
     bool use_for_disjunctions_,
     MarkCachePtr mark_cache_,
     UncompressedCachePtr uncompressed_cache_,
     VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
     MergeTreeReaderSettings reader_settings_,
-    DynamicPredicateBuilder dynamic_predicate_builder_,
-    bool prune_primary_key_,
-    MergeTreeIndices dynamic_skip_indexes_,
-    DynamicSkipIndexFilter dynamic_skip_index_filter_,
-    ContextPtr context_,
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
-    , key_condition_rpn_template(std::move(key_condition_rpn_template_))
+    , key_condition_rpn_template(key_condition_rpn_template_)
     , use_for_disjunctions(use_for_disjunctions_)
     , mark_cache(std::move(mark_cache_))
     , uncompressed_cache(std::move(uncompressed_cache_))
     , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
     , reader_settings(std::move(reader_settings_))
-    , dynamic_predicate_builder(std::move(dynamic_predicate_builder_))
-    , prune_primary_key(prune_primary_key_)
-    , dynamic_skip_indexes(std::move(dynamic_skip_indexes_))
-    , dynamic_skip_index_filter(std::move(dynamic_skip_index_filter_))
-    , context(std::move(context_))
     , log(std::move(log_))
 {
-}
-
-bool MergeTreeSkipIndexReader::hasRuntimeFilters() const
-{
-    /// The dynamic predicate can prune only through the primary key or dynamic skip indexes.
-    return dynamic_predicate_builder && (prune_primary_key || !dynamic_skip_indexes.empty());
 }
 
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns)
@@ -104,8 +75,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
-            index_and_condition.condition_template->generateForPart(part.data_part),
-            key_condition_rpn_template->generateForPart(part.data_part),
+            index_and_condition.condition,
+            key_condition_rpn_template,
             part.data_part,
             ranges,
             part.read_hints,
@@ -130,7 +101,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     if (use_for_disjunctions)
     {
         ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
-                            part.data_part, ranges, key_condition_rpn_template->generateForPart(part.data_part),
+                            part.data_part, ranges, key_condition_rpn_template.value(),
                             partial_eval_results, reader_settings, log);
 
         LOG_DEBUG(log, "Final set of granules after AND/OR processing : {} out of {} in part {}",
@@ -138,80 +109,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
         total_granules = ranges.getNumberOfMarks();
     }
 
-    /// Prune with a predicate known only at read time (e.g. a JOIN's collected keys).
-    if (dynamic_predicate_builder && !ranges.empty())
-    {
-        ActionsDAG predicate_dag;
-        const ActionsDAG::Node * predicate = dynamic_predicate_builder(predicate_dag);
-        if (predicate)
-        {
-            const size_t granules_before = ranges.getNumberOfMarks();
-            ActionsDAGWithInversionPushDown filter_dag(predicate, context, /*boolean_context=*/true);
-
-            if (prune_primary_key)
-            {
-                const auto & primary_key = metadata_snapshot->getPrimaryKey();
-                KeyCondition dynamic_key_condition(filter_dag, context, primary_key);
-
-                RangesInDataPart part_for_pk = part;
-                part_for_pk.ranges = ranges;
-                ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
-                    part_for_pk,
-                    metadata_snapshot,
-                    dynamic_key_condition,
-                    /*part_offset_condition=*/nullptr,
-                    /*total_offset_condition=*/nullptr,
-                    /*exact_ranges=*/nullptr,
-                    /*pk_to_minmax_slot=*/nullptr,
-                    context->getSettingsRef(),
-                    log);
-            }
-
-            MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
-            for (const auto & index_helper : dynamic_skip_indexes)
-            {
-                if (ranges.empty())
-                    break;
-                if (dynamic_skip_index_filter && !dynamic_skip_index_filter(*index_helper))
-                    continue;
-                if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns); !can_use)
-                    continue;
-
-                auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
-                if (!condition || condition->alwaysUnknownOrTrue())
-                    continue;
-
-                auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
-                    index_helper,
-                    condition,
-                    /*key_condition_rpn_template=*/{},
-                    part.data_part,
-                    ranges,
-                    part.read_hints,
-                    reader_settings,
-                    mark_cache.get(),
-                    uncompressed_cache.get(),
-                    vector_similarity_index_cache.get(),
-                    /*use_skip_indexes_for_disjunctions=*/false,
-                    no_disjunctions,
-                    log);
-                ranges = std::move(filtered_ranges);
-            }
-
-            const size_t granules_after = ranges.getNumberOfMarks();
-            ProfileEvents::increment(ProfileEvents::RuntimeFilterGranulesConsidered, granules_before);
-            ProfileEvents::increment(ProfileEvents::RuntimeFilterGranulesDropped, granules_before - granules_after);
-            LOG_DEBUG(log, "Dynamic read-time predicate dropped {}/{} granules in part {}",
-                granules_before - granules_after, granules_before, part.data_part->name);
-        }
-    }
-
     ProfileEvents::increment(ProfileEvents::SelectedMarks, ranges.getNumberOfMarks());
     ProfileEvents::increment(ProfileEvents::SelectedRanges, ranges.size());
-
-    /// Placed before the cancellation check below, so tests can reliably
-    /// cancel the query mid-build and exercise the null-result path.
-    fiu_do_on(FailPoints::slowdown_skip_index_read_result_build, { sleepForMilliseconds(300); });
 
     if (is_cancelled)
         return {};
@@ -496,7 +395,7 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
             if (chunk.chunk.getNumRows() > 0)
             {
                 chassert(chunk.chunk.getColumns().size() == 1);
-                auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+                auto offset_column = chunk.chunk.getColumns()[0]->convertToFullIfNeeded();
                 const auto & offsets = assert_cast<const ColumnUInt64 &>(*offset_column);
 
                 auto add_offsets = [&]<typename Offset>(Offset)
@@ -571,42 +470,6 @@ void MergeTreeProjectionIndexReader::cancel() noexcept
 {
     for (auto && [_, reader] : projection_index_readers)
         reader.cancel();
-}
-
-bool MergeTreeIndexReadResult::canSkipAnyMark() const
-{
-    return skip_index_read_result || projection_index_read_result;
-}
-
-bool MergeTreeIndexReadResult::canSkipMark(size_t mark, const MergeTreeIndexGranularity & index_granularity) const
-{
-    if (skip_index_read_result)
-    {
-        const auto & skip_result = *skip_index_read_result;
-        chassert(mark < skip_result.granules_selected.size());
-
-        if (!skip_result.granules_selected.at(mark))
-            return true;
-
-        if (skip_result.threshold_tracker && skip_result.threshold_tracker->isSet() && skip_result.min_max_index_for_top_k)
-        {
-            auto granule_num = skip_result.min_max_index_for_top_k->granules_map[mark];
-            if (!skip_result.threshold_tracker->isValueInsideThreshold(
-                    skip_result.min_max_index_for_top_k->granules[granule_num].min_or_max_value))
-                return true;
-        }
-    }
-
-    if (projection_index_read_result)
-    {
-        size_t begin = index_granularity.getMarkStartingRow(mark);
-        size_t end = begin + index_granularity.getMarkRows(mark);
-
-        if (projection_index_read_result->rangeAllZero(begin, end))
-            return true;
-    }
-
-    return false;
 }
 
 MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(

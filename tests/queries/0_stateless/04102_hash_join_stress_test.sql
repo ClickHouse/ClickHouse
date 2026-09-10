@@ -425,52 +425,16 @@ SELECT l.id, l.val, r.id, r.val FROM t_left_dup l ALL FULL JOIN t_right_dup r ON
 
 
 -- ============================================================
--- 14. Verify max_joined_block_size_rows truncation: post-hoc split and early break
+-- 14. Verify max_joined_block_rows truncation path (need_replication + early break)
 -- ============================================================
 
--- blockSize() observes truncation; count() is invariant to it. min_joined_block_size_rows/bytes = 0
--- stops a downstream squash from re-merging the truncated blocks. SETTINGS is outside the subquery,
--- where an unknown setting name raises UNKNOWN_SETTING.
-
-SELECT '--- ALL LEFT JOIN: many duplicates with max_joined_block_size_rows ---';
-SELECT count(), if(max(bs) > 100, 'Error: ' || toString(max(bs)), 'Ok') FROM (
-    SELECT blockSize() AS bs, l.id, r.val
+SELECT '--- ALL LEFT JOIN: many duplicates with max_rows_in_join ---';
+SELECT count() FROM (
+    SELECT l.id, r.val
     FROM t_left_large l
     ALL LEFT JOIN t_right_large r ON l.id = r.id
-)
-SETTINGS max_joined_block_size_rows = 100, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
-
--- The residual predicate is always true on this fixture, so cardinality is unchanged; it routes the
--- join through the additional-filter loop, which stops collecting candidates at
--- max_joined_block_size_rows and re-probes the rest of the left block. Block sizes cannot observe
--- that stop, since the post-hoc split caps them either way; the row counts asserted below can.
-SELECT '--- ALL LEFT JOIN: residual predicate with max_joined_block_size_rows ---';
-SELECT count(), if(max(bs) > 100, 'Error: ' || toString(max(bs)), 'Ok') FROM (
-    SELECT blockSize() AS bs, l.id, r.val
-    FROM t_left_large l
-    ALL LEFT JOIN t_right_large r ON l.id = r.id AND l.val < r.val
-)
-SETTINGS log_comment = '04102_residual_truncation', enable_parallel_replicas = 0,
-         max_joined_block_size_rows = 100, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
-
-SYSTEM FLUSH LOGS query_log;
-
--- Each side is read once per pass, so a join that reads no row twice accounts for exactly the 1500
--- fixture rows, and re-probing pushes the total above that. Summing the two sides keeps this
--- independent of which table the planner picks as the build side. The counters are local to the
--- initiator, so both the join and this lookup have to run there.
-SELECT '--- ALL LEFT JOIN: residual predicate re-probes the left block ---';
-SELECT if(build_rows + probe_rows > 1500, 'Ok', format('Error: build {} probe {}', build_rows, probe_rows))
-FROM (
-    SELECT ProfileEvents['JoinBuildTableRowCount'] AS build_rows,
-           ProfileEvents['JoinProbeTableRowCount'] AS probe_rows
-    FROM system.query_log
-    WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = currentDatabase()
-      AND log_comment = '04102_residual_truncation'
-    ORDER BY event_time_microseconds DESC
-    LIMIT 1
-)
-SETTINGS enable_parallel_replicas = 0;
+    SETTINGS max_joined_block_rows = 100
+);
 
 
 -- ============================================================

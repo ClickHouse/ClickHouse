@@ -46,7 +46,7 @@ bool enrichSubscription(
                 continue;
             }
 
-            /// A block is still in flight in the gap (being committed, or not yet fetched): stop, don't skip past it.
+            /// Ask the promoter whether anything in that gap (cursor, part.min_block) is still in flight.
             if (!promoter.canPromote(cursor, part.min_block))
                 break;
 
