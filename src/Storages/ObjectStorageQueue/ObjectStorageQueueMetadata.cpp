@@ -2292,19 +2292,24 @@ bool ObjectStorageQueueMetadata::tryDropFailedFilesOnce(const std::string & comm
         return true;
     }
 
-    /// This attempt's identity, published with its result so a waiting replica can tell this attempt's
-    /// verdict from any other attempt's. `EphemeralNodeHolder` does not hand back the `Stat`, so the
-    /// `czxid` costs one extra read of the node just created - once per command.
-    Coordination::Stat lock_stat;
-    zk_client->get(zookeeper_cleanup_lock_path, &lock_stat);
-    const std::string attempt_id = toString(lock_stat.czxid);
-
     /// Everything below runs pinned to `zk_client`, the session that owns the lock, and without retries.
     /// A hardware error means that session may be gone - and the ephemeral lock with it - so the attempt
     /// gives up rather than continuing on a session that holds nothing. `setAlreadyRemoved` keeps the
     /// holder's destructor from deleting a lock node that by then may belong to another replica.
     try
     {
+        /// This attempt's identity, published with its result so a waiting replica can tell this attempt's
+        /// verdict from any other attempt's. `EphemeralNodeHolder` does not hand back the `Stat`, so the
+        /// `czxid` costs one extra read of the node just created - once per command.
+        ///
+        /// This read is already part of the locked region, which is why it sits inside the `try` rather
+        /// than before it: the session can expire between `tryCreate` and here just as easily as later
+        /// on, and that has to end the attempt and let the caller start a fresh one, not throw out of
+        /// the whole command and skip the remaining attempts.
+        Coordination::Stat lock_stat;
+        zk_client->get(zookeeper_cleanup_lock_path, &lock_stat);
+        const std::string attempt_id = toString(lock_stat.czxid);
+
         return dropFailedFilesUnderLock(zk_client, ephemeral_node, zookeeper_cleanup_lock_path, command_id, attempt_id);
     }
     catch (const Coordination::Exception & e)
