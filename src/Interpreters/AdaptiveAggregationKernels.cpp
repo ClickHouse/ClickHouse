@@ -247,14 +247,6 @@ namespace
                 DB::ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant in the adaptive drain path.");
     }
 
-    /// Emplace one staged key into the table. String-like keys were staged as raw characters
-    /// and are rebuilt here. `key_storage` selects the ownership: at merge time the delayed
-    /// blocks are retained on the shared state until after the merged buckets are converted, so
-    /// string-like keys are emplaced pointing into the staged bytes directly, with no copy; a
-    /// pressure-time drain instead persists them into the arena, because freeing the blocks is
-    /// its purpose. Fixed-size keys were staged as values either way.
-    /// `table` is the bucket's own submap: the records were grouped by the same hash dispatch
-    /// at staging time, so emplacing into it directly skips the per-record two-level routing.
     /// Prefetch the table slot of the record `prefetch_look_ahead` positions ahead of `j`, if
     /// any: hash-organized tables prefetch by the saved routing hash, string tables locate the
     /// slot from the key bytes and the hash. The two drain loops share this so the dispatch
@@ -283,41 +275,7 @@ namespace
             impl.prefetch(keys.keyBytesAt(la), keys.routing_hashes[la]);
     }
 
-    template <typename Key, DB::AdaptiveKeyStorage key_storage, typename Table>
-    void ALWAYS_INLINE emplaceStagedKey(
-        Table & table,
-        const char * key_pos,
-        size_t key_size,
-        size_t routing_hash,
-        DB::Arena & arena,
-        typename Table::LookupResult & it,
-        bool & inserted)
-    {
-        if constexpr (std::is_same_v<Key, std::string_view>)
-        {
-            if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
-                table.emplace(std::string_view(key_pos, key_size), it, inserted, routing_hash);
-            else
-                table.emplace(DB::ArenaKeyHolder{std::string_view(key_pos, key_size), arena}, it, inserted, routing_hash);
-        }
-        else if constexpr (std::is_same_v<Key, PackedStringRef>)
-        {
-            /// The staged routing hash IS the packed key's cached content hash
-            /// (`DefaultHash<PackedStringRef>` returns it), so the rebuild reuses it instead of
-            /// re-hashing the key bytes; `build` consults the functor only for lengths that
-            /// store a hash, which is exactly the range the staged hash was derived from.
-            const auto key = PackedStringRef::build(
-                key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
-            if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
-                table.emplace(key, it, inserted, routing_hash);
-            else
-                table.emplace(DB::ArenaPackedStringHolder{key, arena}, it, inserted, routing_hash);
-        }
-        else
-        {
-            table.emplace(unalignedLoad<Key>(key_pos), it, inserted, routing_hash);
-        }
-    }
+    using DB::AdaptiveAggregationDetail::emplaceStagedKey;
 
     /// Whether the string views the state's key holders hand out point into storage that
     /// outlives the row loop (a batch-serialized buffer or the key column itself) rather than
@@ -1214,17 +1172,59 @@ void Aggregator::drainAdaptiveBucketForMerge(
     for (const auto & block : backlog)
         records_available += block->keys.recordsForBucket(bucket_index);
 
+    AdaptiveBucketCountTopK * count_top_k
+        = dest.adaptive_merge_bucket_topk.empty() ? nullptr : dest.adaptive_merge_bucket_topk[bucket_index].get();
+
     size_t drained = 0;
     visitTwoLevelVariant(
         dest,
         [&](auto & method)
         {
             drained = drainAdaptiveBucketBacklog<AdaptiveKeyStorage::BorrowFromChunk>(
-                method, arena, backlog, bucket_index, records_available, places_scratch, is_cancelled);
+                method, arena, backlog, bucket_index, records_available, places_scratch, is_cancelled, count_top_k);
         });
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, drained);
     shared.backlog.recordDrained(drained);
+}
+
+void Aggregator::seedBucketCountTopK(AggregatedDataVariants & dest, size_t bucket_index) const
+{
+    if (dest.adaptive_merge_bucket_topk.empty())
+        return;
+    auto & tracker = *dest.adaptive_merge_bucket_topk[bucket_index];
+
+    visitTwoLevelVariant(
+        dest,
+        [&](auto & method)
+        {
+            using Method = std::decay_t<decltype(method)>;
+            if constexpr (MapAggregationMethod<Method>)
+            {
+                /// The null-key and low-cardinality shapes keep a count outside the table.
+                if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+                    tracker.complete = false;
+
+                auto & impl = method.data.impls[bucket_index];
+                /// The string hash map exposes no iteration over its cells.
+                if constexpr (requires(const typename std::decay_t<decltype(impl)>::cell_type::value_type & v) { std::decay_t<decltype(impl)>::cell_type::getKey(v); impl.begin(); })
+                {
+                    for (auto it = impl.begin(), end = impl.end(); it != end; ++it)
+                    {
+                        const UInt64 count = getInlineCountState(it->getMapped());
+                        if (tracker.above(count))
+                            tracker.consider(
+                                count,
+                                AdaptiveAggregationDetail::stagedKeyBytesOf<typename Method::Key>(std::decay_t<decltype(impl)>::cell_type::getKey(it->getValue())),
+                                it.getHash());
+                    }
+                }
+                else
+                    tracker.complete = false;
+            }
+            else
+                tracker.complete = false;
+        });
 }
 
 /// Shared by both method kinds: the routing, the reserve sampling and the slicing are the same
@@ -1237,7 +1237,8 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
     size_t bucket_index,
     size_t total_records,
     PaddedPODArray<AggregateDataPtr> & places,
-    std::atomic<bool> & is_cancelled) const
+    std::atomic<bool> & is_cancelled,
+    [[maybe_unused]] AdaptiveBucketCountTopK * count_top_k) const
 {
     auto & impl = method.data.impls[bucket_index];
 
@@ -1322,6 +1323,13 @@ size_t NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
                         getInlineCountState(it->getMapped()) = multiplicities[j];
                     else
                         getInlineCountState(it->getMapped()) += multiplicities[j];
+
+                    if (count_top_k)
+                    {
+                        const UInt64 count = getInlineCountState(it->getMapped());
+                        if (count_top_k->above(count))
+                            count_top_k->consider(count, std::string_view(key_data, key_size), keys.routing_hashes[j]);
+                    }
                 }
             }
         }
@@ -1797,7 +1805,7 @@ size_t Aggregator::drainStagedBatch(
                     continue;
 
                 drained += drainAdaptiveBucketBacklog<AdaptiveKeyStorage::CopyToArena>(
-                    method, table.aggregates_pools.at(b).get(), chunks, b, records, places_scratch, is_cancelled);
+                    method, table.aggregates_pools.at(b).get(), chunks, b, records, places_scratch, is_cancelled, nullptr);
 
                 /// This drain feeds the external path, which never runs the merge-time group
                 /// accounting, so `max_rows_to_group_by` is held against the drain table as it

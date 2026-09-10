@@ -1,4 +1,5 @@
 #pragma once
+#include <Interpreters/AdaptiveBucketCountTopK.h>
 #include <Core/Block_fwd.h>
 #include <Core/Names.h>
 #include <Interpreters/AggregatedData.h>
@@ -484,6 +485,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     /// bucket's drained and merged states free early. States adopted from the producers'
     /// mixed arenas stay in `aggregates_pools` and live until the variants die.
     Arenas adaptive_merge_bucket_arenas;
+    /// Per merged bucket, the tracker of the k largest counts for the bucket-local Top-K conversion
+    /// of a plain `count()` aggregation (see `Aggregator::tracksBucketCountTopK`); empty otherwise.
+    std::vector<std::unique_ptr<AdaptiveBucketCountTopK>> adaptive_merge_bucket_topk;
     const char * getMethodName() const;
     bool isTwoLevel() const;
     bool isConvertibleToTwoLevel() const;

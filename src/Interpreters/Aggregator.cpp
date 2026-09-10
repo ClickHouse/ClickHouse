@@ -2648,7 +2648,10 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     {
         const bool arena_is_bucket_arena = !data_variants.adaptive_merge_bucket_arenas.empty()
             && arena == data_variants.adaptive_merge_bucket_arenas[bucket].get();
-        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes, arena_is_bucket_arena);
+        AdaptiveBucketCountTopK * count_top_k = data_variants.adaptive_merge_bucket_topk.empty()
+            ? nullptr
+            : data_variants.adaptive_merge_bucket_topk[bucket].get();
+        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes, arena_is_bucket_arena, count_top_k);
     }
 
     auto result = convertToBlockImpl(
@@ -2669,7 +2672,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
 /// is needed for the set instantiation to exist; it is never reached.
 template <typename Method>
 requires SetAggregationMethod<Method>
-Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UInt64 *, bool) const
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UInt64 *, bool, AdaptiveBucketCountTopK *) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "The bucket-local Top-K conversion does not support set methods");
 }
@@ -2677,7 +2680,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Ar
 template <typename Method>
 requires MapAggregationMethod<Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
-    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool arena_is_bucket_arena) const
+    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool arena_is_bucket_arena,
+    AdaptiveBucketCountTopK * count_top_k) const
 {
     auto & data = method.data.impls[bucket];
     chassert(params.bucket_top_k_count_index < params.aggregates_size);
@@ -2783,7 +2787,36 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
                 rank_by_arena_rows = false;
 
     bool ranked = false;
-    if (rank_by_arena_rows)
+
+    /// A plain count() whose merged bucket tracked its largest counts (see `AdaptiveBucketCountTopK`):
+    /// the winners are known, only their cells are looked up, and the table is not scanned.
+    if constexpr (requires { data.begin(); })
+    {
+        if (count_top_k && count_top_k->complete && is_simple_count)
+        {
+            for (const auto & entry : count_top_k->entries)
+            {
+                typename std::decay_t<decltype(data)>::LookupResult it;
+                bool inserted = false;
+                AdaptiveAggregationDetail::emplaceStagedKey<typename Method::Key, AdaptiveKeyStorage::BorrowFromChunk>(
+                    data, entry.key.data(), entry.key.size(), entry.hash, *arena, it, inserted);
+                if (inserted)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "A tracked Top-K group is missing from its bucket");
+                consider({count_of(it->getMapped()), it->getKey(), it->getMapped()});
+            }
+            ranked = true;
+
+            /// The statistic wants the materialized size of every key; estimate it from the winners.
+            if (need_full_key_bytes && !top.empty())
+            {
+                for (const auto & candidate : top)
+                    account_key_bytes(candidate.key);
+                key_bytes = key_bytes * data.size() / top.size();
+            }
+        }
+    }
+
+    if (!ranked && rank_by_arena_rows)
     {
         struct Range
         {
@@ -4313,7 +4346,8 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *)
+    Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *,
+    AdaptiveBucketCountTopK *)
     const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
@@ -4330,12 +4364,41 @@ template <typename Method, typename Table>
 requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
-    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
+    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker,
+    AdaptiveBucketCountTopK * count_top_k) const
 {
     if (is_simple_count)
     {
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
             mergeDataNullKeySimpleCount(table_dst, table_src);
+
+        if (count_top_k && !parallel_worker)
+        {
+            /// The tracked merge: the same emplace as `mergeToViaEmplace`, reporting every count.
+            /// The string hash map exposes no iteration over its cells; its tracker stays incomplete.
+            if constexpr (requires(const typename Table::cell_type::value_type & v) { Table::cell_type::getKey(v); table_src.begin(); })
+            {
+                for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
+                {
+                    typename Table::LookupResult res_it;
+                    bool inserted = false;
+                    const auto & key = Table::cell_type::getKey(it->getValue());
+                    table_dst.emplace(key, res_it, inserted, it.getHash());
+                    if (inserted)
+                        getInlineCountState(res_it->getMapped()) = getInlineCountState(it->getMapped());
+                    else
+                        getInlineCountState(res_it->getMapped()) += getInlineCountState(it->getMapped());
+
+                    const UInt64 count = getInlineCountState(res_it->getMapped());
+                    if (count_top_k->above(count))
+                        count_top_k->consider(count, AdaptiveAggregationDetail::stagedKeyBytesOf<typename Method::Key>(key), it.getHash());
+                }
+                table_src.clearAndShrink();
+                return;
+            }
+            else
+                count_top_k->complete = false;
+        }
 
         auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
         {
@@ -4739,15 +4802,17 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         AggregatedDataVariants & current = *data[result_num];
         auto & src = getDataVariant<Method>(current).data.impls[bucket];
         const size_t src_size = src.size();
+        AdaptiveBucketCountTopK * count_top_k
+            = data[0]->adaptive_merge_bucket_topk.empty() ? nullptr : data[0]->adaptive_merge_bucket_topk[bucket].get();
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
-            mergeDataImpl<Method>(dst, src, arena, true, prefetch, is_cancelled);
+            mergeDataImpl<Method>(dst, src, arena, true, prefetch, is_cancelled, nullptr, count_top_k);
         }
         else
 #endif
         {
-            mergeDataImpl<Method>(dst, src, arena, false, prefetch, is_cancelled);
+            mergeDataImpl<Method>(dst, src, arena, false, prefetch, is_cancelled, nullptr, count_top_k);
         }
 
         if constexpr (can_reserve)

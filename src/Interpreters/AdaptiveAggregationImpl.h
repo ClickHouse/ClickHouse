@@ -14,6 +14,10 @@
 #include <Common/PODArray.h>
 #include <Interpreters/AdaptiveAggregation.h>
 #include <Interpreters/Aggregator.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
+#include <base/PackedStringRef.h>
+#include <base/unaligned.h>
 
 namespace DB
 {
@@ -596,5 +600,68 @@ struct StagedChunkPreparation
     Aggregator::NestedColumnsHolder nested_columns_holder;
     Aggregator::AggregateFunctionInstructions instructions;
 };
+
+
+namespace AdaptiveAggregationDetail
+{
+
+/// The byte image of a table key as the adaptive staging stores it: the characters of a
+/// string-like key, the value bytes of a fixed-size key.
+template <typename Key>
+ALWAYS_INLINE std::string_view stagedKeyBytesOf(const Key & key)
+{
+    if constexpr (std::is_same_v<Key, PackedStringRef>)
+        return static_cast<std::string_view>(key);
+    else if constexpr (std::is_same_v<Key, std::string_view>)
+        return key;
+    else
+        return std::string_view(reinterpret_cast<const char *>(&key), sizeof(Key));
+}
+
+/// Emplace one staged key into the table. String-like keys were staged as raw characters
+/// and are rebuilt here. `key_storage` selects the ownership: at merge time the delayed
+/// blocks are retained on the shared state until after the merged buckets are converted, so
+/// string-like keys are emplaced pointing into the staged bytes directly, with no copy; a
+/// pressure-time drain instead persists them into the arena, because freeing the blocks is
+/// its purpose. Fixed-size keys were staged as values either way.
+/// `table` is the bucket's own submap: the records were grouped by the same hash dispatch
+/// at staging time, so emplacing into it directly skips the per-record two-level routing.
+template <typename Key, DB::AdaptiveKeyStorage key_storage, typename Table>
+void ALWAYS_INLINE emplaceStagedKey(
+    Table & table,
+    const char * key_pos,
+    size_t key_size,
+    size_t routing_hash,
+    DB::Arena & arena,
+    typename Table::LookupResult & it,
+    bool & inserted)
+{
+    if constexpr (std::is_same_v<Key, std::string_view>)
+    {
+        if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
+            table.emplace(std::string_view(key_pos, key_size), it, inserted, routing_hash);
+        else
+            table.emplace(DB::ArenaKeyHolder{std::string_view(key_pos, key_size), arena}, it, inserted, routing_hash);
+    }
+    else if constexpr (std::is_same_v<Key, PackedStringRef>)
+    {
+        /// The staged routing hash IS the packed key's cached content hash
+        /// (`DefaultHash<PackedStringRef>` returns it), so the rebuild reuses it instead of
+        /// re-hashing the key bytes; `build` consults the functor only for lengths that
+        /// store a hash, which is exactly the range the staged hash was derived from.
+        const auto key = PackedStringRef::build(
+            key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
+        if constexpr (key_storage == DB::AdaptiveKeyStorage::BorrowFromChunk)
+            table.emplace(key, it, inserted, routing_hash);
+        else
+            table.emplace(DB::ArenaPackedStringHolder{key, arena}, it, inserted, routing_hash);
+    }
+    else
+    {
+        table.emplace(unalignedLoad<Key>(key_pos), it, inserted, routing_hash);
+    }
+}
+
+}
 
 }
