@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Tags: no-random-merge-tree-settings
 
-# Regression test for https://github.com/ClickHouse/ClickHouse/issues/118874: ADVANCED JSON shared data
-# must pack its data streams by min_compress_block_size, not one tiny (~200-byte) block per path/substream.
-# Covers top-level paths and nested Array(JSON) values (both land in the same shared-data streams).
+# Regression test for https://github.com/ClickHouse/ClickHouse/issues/118874: ADVANCED JSON shared data must
+# size its compressed blocks by min_compress_block_size, not one tiny block per path/substream. Uses query_log
+# ProfileEvents (not the .bin files) so it also works on object storage; covers top-level and nested Array(JSON).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-check() # $1 - table name, $2 - JSON-string expression to insert
+check() # $1 - table, $2 - inserted JSON-string expression, $3 - subcolumn read expression, $4 - log_comment
 {
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $1"
     $CLICKHOUSE_CLIENT -q "
@@ -23,21 +23,28 @@ check() # $1 - table name, $2 - JSON-string expression to insert
     $CLICKHOUSE_CLIENT -q "INSERT INTO $1 SELECT $2 FROM numbers(50000) SETTINGS type_json_skip_duplicated_paths = 1"
     $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE $1 FINAL"
 
-    part=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = '$1' AND active ORDER BY name LIMIT 1")
+    $CLICKHOUSE_CLIENT -q "SELECT $3 FROM $1 FORMAT Null SETTINGS log_comment = '$4'"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
-    # Mean uncompressed bytes per compressed block across the shared-data 'data' streams (the bug made this ~200).
-    mean=$(for f in "$part"/json.object_shared_data.*.data.bin; do
-               $CLICKHOUSE_COMPRESSOR --stat < "$f"
-           done | awk '{ n++; s += $2 } END { if (n) print int(s / n); else print 0 }')
+    # Mean uncompressed size of the blocks the read touched: the bug fragmented shared data into ~200-1700 B
+    # blocks, the fix keeps them at min_compress_block_size scale (tens of KB).
+    $CLICKHOUSE_CLIENT -q "
+    SELECT '$1 ' || if(intDiv(ProfileEvents['CompressedReadBufferBytes'], nullIf(ProfileEvents['CompressedReadBufferBlocks'], 0)) >= 4096, 'OK', 'blocks too small')
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = '$4' AND type = 'QueryFinish'
+    ORDER BY event_time_microseconds DESC LIMIT 1"
 
-    [ "$mean" -ge 4096 ] && echo "$1 block size OK" || echo "$1 blocks too small: mean=$mean"
     $CLICKHOUSE_CLIENT -q "DROP TABLE $1"
 }
 
-check t_json_adv_flat "toJSONString(mapFromArrays( \
-    arrayMap(i -> 'key_' || toString(cityHash64(number, i) % 1000), range(8)), \
-    arrayMap(i -> toString(cityHash64(number, i, 1) % 1000), range(8))))"
+check t_json_adv_flat \
+    "toJSONString(mapFromArrays( \
+        arrayMap(i -> 'key_' || toString(cityHash64(number, i) % 1000), range(8)), \
+        arrayMap(i -> toString(cityHash64(number, i, 1) % 1000), range(8))))" \
+    "sum(length(json.key_5::String))" flat_05175
 
-check t_json_adv_nested "toJSONString(map('items', [mapFromArrays( \
-    arrayMap(i -> 'key_' || toString(cityHash64(number, i) % 1000), range(8)), \
-    arrayMap(i -> toString(cityHash64(number, i, 1) % 1000), range(8)))]))"
+check t_json_adv_nested \
+    "toJSONString(map('items', [mapFromArrays( \
+        arrayMap(i -> 'key_' || toString(cityHash64(number, i) % 1000), range(8)), \
+        arrayMap(i -> toString(cityHash64(number, i, 1) % 1000), range(8)))]))" \
+    "sum(length(toString(json.items)))" nested_05175
