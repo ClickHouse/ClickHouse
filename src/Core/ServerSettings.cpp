@@ -1269,7 +1269,7 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
     DECLARE(Bool, use_ddl_workload, false, R"(
-Controls how DDL and administrative queries (CREATE, DROP, ALTER, RENAME, OPTIMIZE, MOVE, GRANT, REVOKE, SYSTEM, ...) participate in workload scheduling. When disabled (default), such queries are exempt from workload query-slot and memory-reservation admission, so they never queue behind regular queries. When enabled, they are admitted under the workload named by the `ddl_workload` query setting instead of `workload`. Note: the default behavior is a change from previous versions, where DDL shared the `workload` setting with regular queries.
+Controls how DDL and administrative queries (CREATE, DROP, ALTER, RENAME, OPTIMIZE, MOVE, GRANT, REVOKE, SYSTEM, ...) participate in workload scheduling. When disabled (default), such queries are exempt from workload query-slot and memory-reservation admission, so they never queue behind regular queries. When enabled, they are admitted under the workload named by the `ddl_workload` query setting instead of `workload`. Note: the default behavior is a change from previous versions, where DDL shared the `workload` setting with regular queries. DDL wrapped by another statement (e.g. `EXECUTE AS <user> <ddl>` or `X PARALLEL WITH Y`) runs as an internal query and is exempt from workload admission regardless of this setting.
 )", 0) \
     DECLARE(Bool, cpu_slot_preemption, true, R"(
 Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.

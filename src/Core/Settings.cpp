@@ -7605,6 +7605,8 @@ Name of workload to be used to access resources
 Name of the workload used to schedule DDL and administrative queries (CREATE, DROP, ALTER, RENAME, OPTIMIZE, MOVE, GRANT, REVOKE, SYSTEM, ...) when the server setting `use_ddl_workload` is enabled. Such queries are then admitted under this workload instead of the `workload` setting, so administrative statements do not compete with regular queries for the same query-slot and memory-reservation limits. Defaults to the `default` workload. Has no effect when `use_ddl_workload` is disabled (then DDL is exempt from workload admission entirely).
 
 `ddl_workload` is an independent setting with its own constraints (which an administrator can configure in a user profile). It is intentionally NOT validated against the constraints placed on `workload`: to restrict which workloads DDL may use, constrain `ddl_workload` itself rather than relying on `workload`'s constraints.
+
+DDL wrapped by another statement — e.g. `EXECUTE AS <user> <ddl>` or `X PARALLEL WITH Y` — runs as an internal query and is therefore exempt from workload admission regardless of this setting.
 )", 0) \
     DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
