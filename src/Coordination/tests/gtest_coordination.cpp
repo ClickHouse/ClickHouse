@@ -1468,6 +1468,11 @@ public:
         std::lock_guard lock(dispatcher.new_session_id_mutex);
         return dispatcher.new_session_id_requests.count(internal_id);
     }
+
+    static void waitForFourLetterCommands(KeeperDispatcher & dispatcher)
+    {
+        dispatcher.waitForFourLetterCommands();
+    }
 };
 
 }
@@ -1748,6 +1753,32 @@ TEST(KeeperDispatcher, PendingSessionIDRequestsFailOnThrowingShutdown)
     }
 
     EXPECT_EQ(DispatcherAccessor::sessionIDWaiterCount(keeper_dispatcher, internal_id), 0u) << "the waiter entry leaked";
+}
+
+TEST(KeeperDispatcher, FourLetterCommandsDrainBeforeShutdown)
+{
+    DB::KeeperDispatcher dispatcher;
+
+    ASSERT_TRUE(dispatcher.tryBeginFourLetterCommand());
+    dispatcher.signalShutdown();
+    EXPECT_FALSE(dispatcher.tryBeginFourLetterCommand())
+        << "shutdown admitted a four-letter command";
+
+    auto commands_drained = std::async(
+        std::launch::async,
+        [&]
+        {
+            DispatcherAccessor::waitForFourLetterCommands(dispatcher);
+        });
+
+    EXPECT_EQ(commands_drained.wait_for(std::chrono::seconds(0)), std::future_status::timeout)
+        << "shutdown did not wait for a running four-letter command";
+
+    dispatcher.finishFourLetterCommand();
+
+    ASSERT_EQ(commands_drained.wait_for(std::chrono::seconds(1)), std::future_status::ready)
+        << "finishing a four-letter command did not unblock shutdown";
+    commands_drained.get();
 }
 
 #endif
