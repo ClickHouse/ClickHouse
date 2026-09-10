@@ -1,10 +1,10 @@
 -- and the step never reaches what its four readers asked for
 1
--- the limit is observed, not naturally small: four readers want 4 x 300 of them
+-- the limit is observed, not naturally small: four readers want 4 x 80 of them
 1
 -- a single reader above the limit prefetches the first N substreams, not none
 1
--- and all 300 of them when unlimited
+-- and all 80 of them when unlimited
 1
 -- a bounded JSON read step prefetches fewer substreams than an unbounded one
 1

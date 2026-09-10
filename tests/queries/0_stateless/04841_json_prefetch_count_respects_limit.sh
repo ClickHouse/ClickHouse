@@ -28,22 +28,26 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # into the read buffer rather than freeing it, so one reservation covers however many times that
 # stream is prefetched. t_batches is the read that observes this across several batches; the wide and
 # JSON fixtures read one granule each, and so prefetch every one of their streams exactly once.
+
+# The statements are grouped into four client invocations. Every prefetch bound below is a per-query
+# setting, so grouping them costs nothing in coverage, and the flaky check runs this file 50 times
+# with one worker per core, where a client startup under a sanitizer outweighs the query it carries.
 ${CLICKHOUSE_CLIENT} -m --query "
-CREATE TABLE t_wide150 ($(seq -f 'c%g Nullable(UInt64)' -s ', ' 1 150)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE t_wide40 ($(seq -f 'c%g Nullable(UInt64)' -s ', ' 1 40)) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 33554432,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_w1/');
 
-CREATE TABLE t_wide150_4parts ($(seq -f 'c%g Nullable(UInt64)' -s ', ' 1 150)) ENGINE = MergeTree ORDER BY tuple()
+CREATE TABLE t_wide40_4parts ($(seq -f 'c%g Nullable(UInt64)' -s ', ' 1 40)) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 33554432,
          ratio_of_defaults_for_sparse_serialization = 1.0,
          disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_w4/');
 
 -- One part per reader and one granule per part, so every reader of the step is alive at once and
 -- prefetches its substreams once: hence the pinned granularity, the 100-row inserts and STOP MERGES.
-SYSTEM STOP MERGES t_wide150_4parts;
+SYSTEM STOP MERGES t_wide40_4parts;
 
--- Plain UInt64, so one substream per column and every substream the same size: eight of them, five
+-- Plain UInt64, so one substream per column and every substream the same size: eight of them, three
 -- granules of 8192 rows, and values a compression codec cannot shrink. A prefetch buffer smaller
 -- than a granule's worth of data therefore leaves data pending after every batch, which is what
 -- makes the reader prefetch the same streams again in the next one.
@@ -78,54 +82,61 @@ SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularit
                      disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_enc/'));
 "
 
-# 150 Nullable columns are 300 prefetchable substreams (data plus null map per column), so one part
-# already offers more substreams than the default limit and four parts offer four times as many.
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t_wide150 SELECT $(seq -f 'number + %g' -s ', ' 1 150) FROM numbers(100)"
-for _ in 1 2 3 4; do
-    ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_wide150_4parts SELECT $(seq -f 'number + %g' -s ', ' 1 150) FROM numbers(100)"
-done
+# 40 Nullable columns are 80 prefetchable substreams (data plus null map per column), so one part
+# already offers more substreams than the limit the reads below set and four parts offer four times
+# as many.
 
-# Many distinct JSON path types expand Object -> Dynamic -> Variant into many substreams. What a read
-# step holds at once is its concurrent readers times the substreams one reader keeps alive, and a JSON
-# reader releases a prefix stream as soon as it is deserialized, so it never holds all of its own: the
-# JSON reads below need eight concurrent readers to demand more than the default limit, which is eight
-# parts read at max_threads 8. The encrypted table needs one column in one part, since its assertion
-# is that nothing is prefetched at all.
-json_value="toJSONString(map('a' || toString(number % 40),
+# One JSON path per row, so as many distinct path types as rows: 20 of them per column, expanded
+# Object -> Dynamic -> Variant into many substreams each. What a read step holds at once is its
+# concurrent readers times the substreams one reader keeps alive, and a JSON reader releases a prefix
+# stream as soon as it is deserialized, so it never holds all of its own: the JSON reads below need
+# eight concurrent readers to demand more than their limit, which is eight parts read at max_threads
+# 8. The encrypted table needs one column in one part, since its assertion is that nothing is
+# prefetched at all.
+json_value="toJSONString(map('a' || toString(number % 20),
         multiIf(number % 4 = 0, toString(number),
                 number % 4 = 1, toString(number / 3),
                 number % 4 = 2, toString(number % 7 = 0),
                 toString(['x', 'y']))))"
-for _ in $(seq 1 8); do
-    ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_json SELECT $json_value, $json_value, $json_value FROM numbers(100)"
-done
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t_json_enc SELECT $json_value FROM numbers(100)"
 
 # sipHash64 rather than `number`: a sequential column compresses into a single buffer whatever its row
 # count, and would then be prefetched once no matter how many granules it spans.
 batched_values=$(seq -f 'sipHash64(number, %g)' -s ', ' 1 8)
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t_batches SELECT $batched_values FROM numbers(40960)"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t_packed SELECT $batched_values FROM numbers(40960)"
 
-# The per-query settings below intentionally override the values the test runner randomizes in:
-# `--allow_repeated_settings` is in effect and the last occurrence wins. The page cache accounts no
-# prefetch memory of its own and reading through the distributed cache replaces the buffer that owns
-# the prefetch allocation, so both are pinned rather than left to the environment; the read pool is a
-# per-query parameter here because the two pools reach the prefetch from different call paths.
+# One INSERT per part: separate statements in one invocation still write separate parts.
+${CLICKHOUSE_CLIENT} -m --query "
+INSERT INTO t_wide40 SELECT $(seq -f 'number + %g' -s ', ' 1 40) FROM numbers(100);
+$(for _ in 1 2 3 4; do
+    echo "INSERT INTO t_wide40_4parts SELECT $(seq -f 'number + %g' -s ', ' 1 40) FROM numbers(100);"
+done)
+$(for _ in $(seq 1 8); do
+    echo "INSERT INTO t_json SELECT $json_value, $json_value, $json_value FROM numbers(20);"
+done)
+INSERT INTO t_json_enc SELECT $json_value FROM numbers(20);
+INSERT INTO t_batches SELECT $batched_values FROM numbers(24576);
+INSERT INTO t_packed SELECT $batched_values FROM numbers(24576);
+"
+
+# The settings below intentionally override the values the test runner randomizes in: a statement's
+# own SETTINGS clause wins over the session, and does not leak into the next statement. The page cache
+# accounts no prefetch memory of its own and reading through the distributed cache replaces the buffer
+# that owns the prefetch allocation, so both are pinned rather than left to the environment; the read
+# pool is a per-query parameter here because the two pools reach the prefetch from different call
+# paths.
 # $1 - allow_prefetched_read_pool_for_remote_filesystem, $2 - filesystem_prefetches_limit,
 # $3 - filesystem_prefetch_max_memory_usage, $4 - max_threads, $5 - log_comment suffix, $6 - query,
 # $7... - extra settings for that one read
-run_query() {
-    local extra_settings=("${@:7}")
-    ${CLICKHOUSE_CLIENT} --query "$6" --log_comment "04841_$5_${CLICKHOUSE_TEST_UNIQUE_NAME}" \
-        --allow_prefetched_read_pool_for_remote_filesystem "$1" \
-        --filesystem_prefetches_limit "$2" --filesystem_prefetch_max_memory_usage "$3" \
-        --remote_filesystem_read_prefetch 1 --remote_filesystem_read_method threadpool \
-        --max_threads "$4" --merge_tree_prefetch_json_shared_data_substreams 1 \
-        --optimize_move_to_prewhere 0 --query_plan_optimize_prewhere 0 \
-        --optimize_functions_to_subcolumns 0 --enable_filesystem_cache 0 \
-        --use_uncompressed_cache 0 --use_page_cache_for_disks_without_file_cache 0 \
-        --read_through_distributed_cache 0 "${extra_settings[@]}" > /dev/null
+read_stmt() {
+    local extra="${*:7}"
+    echo "$6 SETTINGS log_comment = '04841_$5_${CLICKHOUSE_TEST_UNIQUE_NAME}',
+        allow_prefetched_read_pool_for_remote_filesystem = $1,
+        filesystem_prefetches_limit = $2, filesystem_prefetch_max_memory_usage = '$3',
+        remote_filesystem_read_prefetch = 1, remote_filesystem_read_method = 'threadpool',
+        max_threads = $4, merge_tree_prefetch_json_shared_data_substreams = 1,
+        optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+        optimize_functions_to_subcolumns = 0, enable_filesystem_cache = 0,
+        use_uncompressed_cache = 0, use_page_cache_for_disks_without_file_cache = 0,
+        read_through_distributed_cache = 0${extra:+, $extra} FORMAT Null;"
 }
 
 # $1 - log_comment suffix -> a scalar subquery yielding that query's prefetch count
@@ -149,95 +160,94 @@ logged_count_of() {
                ORDER BY event_time_microseconds DESC LIMIT 1))"
 }
 
-wide_read="SELECT * FROM t_wide150 FORMAT Null"
-wide4_read="SELECT * FROM t_wide150_4parts FORMAT Null"
+wide_read="SELECT * FROM t_wide40"
+wide4_read="SELECT * FROM t_wide40_4parts"
 json_read="SELECT count() FROM t_json WHERE
            length(JSONAllPaths(jn1)) + length(JSONAllPaths(jn2)) + length(JSONAllPaths(jn3)) >= 0"
-
-run_query 1 200 '1Gi'  4 'step_default_limit' "$wide4_read"
-run_query 1 0   '10Gi' 4 'step_unlimited'     "$wide4_read"
-run_query 0 200 '1Gi'  4 'plain_pool_limit'   "$wide_read"
-run_query 0 0   '10Gi' 4 'plain_pool_unlim'   "$wide_read"
-run_query 1 50  '1Gi'  8 'json_step_limit'    "$json_read"
-run_query 1 0   '10Gi' 8 'json_step_unlim'    "$json_read"
-run_query 1 0   1      4 'json_enc_bytes'     "SELECT count() FROM t_json_enc WHERE length(JSONAllPaths(jn)) >= 0"
-# Each row below that asserts nothing was prefetched has a companion here that differs only in the
-# byte bound, so that a fixture which stopped prefetching for some unrelated reason fails the pair
-# instead of passing the `= 0` row.
-run_query 1 0   '10Gi' 4 'json_enc_unlim'     "SELECT count() FROM t_json_enc WHERE length(JSONAllPaths(jn)) >= 0"
-
+enc_read="SELECT count() FROM t_json_enc WHERE length(JSONAllPaths(jn)) >= 0"
 # One part read by one thread, and a prefetch buffer well under a granule's worth of data so the
 # reader still has data pending when the next batch starts.
-batched_read="SELECT * FROM t_batches FORMAT Null"
-run_query 0 4 '10Gi' 1 'batched_limit' "$batched_read" --max_read_buffer_size_remote_fs 4096
-run_query 0 0 '10Gi' 1 'batched_unlim' "$batched_read" --max_read_buffer_size_remote_fs 4096
-
+batched_read="SELECT * FROM t_batches"
+packed_read="SELECT * FROM t_packed"
 # The packed reads are on the local disk pinned above, so their prefetches are local-descriptor ones:
 # hence the local read method and the log rather than a ProfileEvents counter. The remote flag is off
 # because the pin puts the part where only the local one is consulted.
-run_query 0 0 1 1 'packed_bytes' "SELECT * FROM t_packed FORMAT Null" \
-    --local_filesystem_read_prefetch 1 --local_filesystem_read_method pread_threadpool \
-    --remote_filesystem_read_prefetch 0 --enable_filesystem_read_prefetches_log 1 \
-    --max_read_buffer_size_local_fs 4096
-run_query 0 0 '10Gi' 1 'packed_unlim' "SELECT * FROM t_packed FORMAT Null" \
-    --local_filesystem_read_prefetch 1 --local_filesystem_read_method pread_threadpool \
-    --remote_filesystem_read_prefetch 0 --enable_filesystem_read_prefetches_log 1 \
-    --max_read_buffer_size_local_fs 4096
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log, filesystem_read_prefetches_log"
+packed_settings="local_filesystem_read_prefetch = 1, local_filesystem_read_method = 'pread_threadpool',
+        remote_filesystem_read_prefetch = 0, enable_filesystem_read_prefetches_log = 1,
+        max_read_buffer_size_local_fs = 4096"
+
+${CLICKHOUSE_CLIENT} -m --query "
+$(read_stmt 1 50 '1Gi'  4 'step_limit'       "$wide4_read")
+$(read_stmt 1 0  '10Gi' 4 'step_unlimited'   "$wide4_read")
+$(read_stmt 0 50 '1Gi'  4 'plain_pool_limit' "$wide_read")
+$(read_stmt 0 0  '10Gi' 4 'plain_pool_unlim' "$wide_read")
+$(read_stmt 1 50 '1Gi'  8 'json_step_limit'  "$json_read")
+$(read_stmt 1 0  '10Gi' 8 'json_step_unlim'  "$json_read")
+$(read_stmt 1 0  '1'    4 'json_enc_bytes'   "$enc_read")
+-- Each row below that asserts nothing was prefetched has a companion read that differs only in the
+-- byte bound, so that a fixture which stopped prefetching for some unrelated reason fails the pair
+-- instead of passing the zero row.
+$(read_stmt 1 0  '10Gi' 4 'json_enc_unlim'   "$enc_read")
+$(read_stmt 0 4  '10Gi' 1 'batched_limit'    "$batched_read" 'max_read_buffer_size_remote_fs = 4096')
+$(read_stmt 0 0  '10Gi' 1 'batched_unlim'    "$batched_read" 'max_read_buffer_size_remote_fs = 4096')
+$(read_stmt 0 0  '1'    1 'packed_bytes'     "$packed_read" "$packed_settings")
+$(read_stmt 0 0  '10Gi' 1 'packed_unlim'     "$packed_read" "$packed_settings")
+SYSTEM FLUSH LOGS query_log, filesystem_read_prefetches_log;
+"
 
 # The readers of one step are created as threads pick their tasks up, so two of them can charge the
 # budget, finish, release it and let the next two charge it again. The cumulative submissions are then
-# a multiple of the limit rather than the limit itself, which is why this row is an inequality: what
-# the bound promises is that no set of readers alive together exceeds it.
-echo "-- and the step never reaches what its four readers asked for"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of step_default_limit) < $(count_of step_unlimited)"
-echo "-- the limit is observed, not naturally small: four readers want 4 x 300 of them"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of step_unlimited) = 1200"
+# a multiple of the limit rather than the limit itself, which is why the first row is an inequality:
+# what the bound promises is that no set of readers alive together exceeds it.
 
-# The pool that prefetches on admission is off for these two, so the reads go through the reader's
-# own path instead. One part on purpose: readers there are created as threads pick tasks up, so with
-# several parts one pair can charge the budget, finish, release it and let the next pair charge it
-# again, which makes the cumulative count a multiple of the limit rather than the limit.
-echo "-- a single reader above the limit prefetches the first N substreams, not none"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of plain_pool_limit) = 200"
-echo "-- and all 300 of them when unlimited"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of plain_pool_unlim) = 300"
+# The pool that prefetches on admission is off for the plain-pool pair, so those reads go through the
+# reader's own path instead. One part on purpose: readers there are created as threads pick tasks up,
+# so with several parts one pair can charge the budget, finish, release it and let the next pair
+# charge it again, which makes the cumulative count a multiple of the limit rather than the limit.
 
 # Both JSON reads are the same fixture at the same max_threads, one bounded and one not, so nothing
-# here is compared against a literal: on a build that does not bound the read step the two submit the
+# there is compared against a literal: on a build that does not bound the read step the two submit the
 # same number. Releasing a prefix stream returns its capacity to the budget, so the bounded count
-# tracks the query's churn instead of settling at the limit, and the limit here is well below the
-# default one to keep the two counts apart by more than that churn.
-# This row is also the file's shared-budget oracle: one budget per reader instead of one per read step
+# tracks the query's churn instead of settling at the limit, and the limit is well below what one
+# read step demands to keep the two counts apart by more than that churn.
+# That row is also the file's shared-budget oracle: one budget per reader instead of one per read step
 # never binds at this limit, and the two counts become equal.
-echo "-- a bounded JSON read step prefetches fewer substreams than an unbounded one"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of json_step_limit) < $(count_of json_step_unlim)"
 
-echo "-- prefetching does happen on this fixture when the byte bound is not the binding one"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of json_enc_unlim) > 0"
-echo "-- the memory bound alone stops prefetching, on an encrypted disk"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of json_enc_bytes) = 0"
-
-# Four of the eight streams get a reservation and keep it, so the bounded read submits four prefetches
-# per batch where the unbounded one submits eight: the two counts divided by 4 and by 8 are the same
-# batch count, cross-multiplied here to stay integral. A saturated budget that stopped the reader after
-# the first batch would leave the bounded count at 4 whatever the second count is. How many batches a
-# granule's data takes is not fixed (compression block sizes are randomized), which is why neither
-# count is compared against a literal; the second row pins that there was more than one batch, since 8
-# would mean the fixture collapsed into one and both counts would agree for the wrong reason.
-echo "-- a reserved stream may prefetch again in a later batch, without new memory"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of batched_limit) * 8 = $(count_of batched_unlim) * 4"
-echo "-- and it took more than one batch: unbounded, all eight streams prefetch in each of them"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of batched_unlim) > 8"
-
-echo "-- the fixture is packed part storage"
-${CLICKHOUSE_CLIENT} --query "SELECT any(part_storage_type) = 'Packed' FROM system.parts
-                              WHERE database = currentDatabase() AND table = 't_packed' AND active"
-echo "-- prefetching does happen through the file view when the byte bound is not the binding one"
-${CLICKHOUSE_CLIENT} --query "SELECT $(logged_count_of packed_unlim) > 0"
-echo "-- and the memory bound stops prefetching there too, through the file view"
-${CLICKHOUSE_CLIENT} --query "SELECT $(logged_count_of packed_bytes) = 0"
-
+# Four of the eight streams get a reservation and keep it, so the bounded batched read submits four
+# prefetches per batch where the unbounded one submits eight: the two counts divided by 4 and by 8 are
+# the same batch count, cross-multiplied to stay integral. A saturated budget that stopped the reader
+# after the first batch would leave the bounded count at 4 whatever the second count is. How many
+# batches a granule's data takes is not fixed (compression block sizes are randomized), which is why
+# neither count is compared against a literal; the following row pins that there was more than one
+# batch, since 8 would mean the fixture collapsed into one and both counts would agree for the wrong
+# reason.
 ${CLICKHOUSE_CLIENT} -m --query "
-DROP TABLE t_wide150; DROP TABLE t_wide150_4parts; DROP TABLE t_json; DROP TABLE t_json_enc;
-DROP TABLE t_batches; DROP TABLE t_packed"
+SELECT '-- and the step never reaches what its four readers asked for';
+SELECT $(count_of step_limit) < $(count_of step_unlimited);
+SELECT '-- the limit is observed, not naturally small: four readers want 4 x 80 of them';
+SELECT $(count_of step_unlimited) = 320;
+SELECT '-- a single reader above the limit prefetches the first N substreams, not none';
+SELECT $(count_of plain_pool_limit) = 50;
+SELECT '-- and all 80 of them when unlimited';
+SELECT $(count_of plain_pool_unlim) = 80;
+SELECT '-- a bounded JSON read step prefetches fewer substreams than an unbounded one';
+SELECT $(count_of json_step_limit) < $(count_of json_step_unlim);
+SELECT '-- prefetching does happen on this fixture when the byte bound is not the binding one';
+SELECT $(count_of json_enc_unlim) > 0;
+SELECT '-- the memory bound alone stops prefetching, on an encrypted disk';
+SELECT $(count_of json_enc_bytes) = 0;
+SELECT '-- a reserved stream may prefetch again in a later batch, without new memory';
+SELECT $(count_of batched_limit) * 8 = $(count_of batched_unlim) * 4;
+SELECT '-- and it took more than one batch: unbounded, all eight streams prefetch in each of them';
+SELECT $(count_of batched_unlim) > 8;
+SELECT '-- the fixture is packed part storage';
+SELECT any(part_storage_type) = 'Packed' FROM system.parts
+       WHERE database = currentDatabase() AND table = 't_packed' AND active;
+SELECT '-- prefetching does happen through the file view when the byte bound is not the binding one';
+SELECT $(logged_count_of packed_unlim) > 0;
+SELECT '-- and the memory bound stops prefetching there too, through the file view';
+SELECT $(logged_count_of packed_bytes) = 0;
+
+DROP TABLE t_wide40; DROP TABLE t_wide40_4parts; DROP TABLE t_json; DROP TABLE t_json_enc;
+DROP TABLE t_batches; DROP TABLE t_packed;
+"
