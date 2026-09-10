@@ -1,9 +1,6 @@
 -- Comma joins are kept as plain JOIN nodes in the query tree; the conversion to INNER JOIN
 -- with the equalities from WHERE happens in the query plan.
 
--- The test runner randomizes this optimization; the plan shapes below depend on it.
-SET query_plan_merge_filter_into_join_condition = 1;
-
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
@@ -49,8 +46,14 @@ SELECT '-- force mode: a comma join without an equi-join condition is an error';
 SELECT count() FROM t1, t2, t3 WHERE t1.a = t3.a SETTINGS cross_to_inner_join_rewrite = 2; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM t1, t2 WHERE t1.a > t2.a SETTINGS cross_to_inner_join_rewrite = 2; -- { serverError INCORRECT_QUERY }
 SELECT count() FROM t1, t2, t3 WHERE t1.a = t2.a AND t2.a = t3.a SETTINGS cross_to_inner_join_rewrite = 2;
-SELECT '-- force mode implies the rewrite even when the optimization is disabled';
+SELECT '-- the rewrite of comma joins does not depend on the optimization for INNER joins';
+SELECT countIf(explain ILIKE '%Type: CROSS%' OR explain ILIKE '%Type: COMMA%'), countIf(explain ILIKE '%Type: INNER%')
+FROM (EXPLAIN actions = 1 SELECT * FROM t1, t2 WHERE t1.a = t2.a SETTINGS query_plan_merge_filter_into_join_condition = 0);
 SELECT count() FROM t1, t2 WHERE t1.a = t2.a SETTINGS cross_to_inner_join_rewrite = 2, query_plan_merge_filter_into_join_condition = 0;
+
+SELECT '-- cross_to_inner_join_rewrite = 0 keeps the cross join';
+SELECT countIf(explain ILIKE '%Type: CROSS%' OR explain ILIKE '%Type: COMMA%'), countIf(explain ILIKE '%Type: INNER%')
+FROM (EXPLAIN actions = 1 SELECT * FROM t1, t2 WHERE t1.a = t2.a SETTINGS cross_to_inner_join_rewrite = 0);
 SELECT '-- explicit CROSS JOIN is never forced';
 SELECT count() FROM t1 CROSS JOIN t2 WHERE t1.a > t2.a SETTINGS cross_to_inner_join_rewrite = 2;
 

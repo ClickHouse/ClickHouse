@@ -416,7 +416,7 @@ ExtractedJoinConditions extractActionsForJoinCondition(
 
 }
 
-size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan::Nodes &  /*nodes*/, const Optimization::ExtraSettings &)
+size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan::Nodes &  /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -436,6 +436,12 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 
     auto kind = join_operator.kind;
     if (kind != JoinKind::Inner && kind != JoinKind::Cross && kind != JoinKind::Comma)
+        return 0;
+
+    /// A comma join with equalities in `WHERE` is an `INNER` join written differently; its rewrite is governed by
+    /// `cross_to_inner_join_rewrite`. `Cross` also comes from the planner itself (e.g. decorrelated subqueries),
+    /// so it follows the optimization setting like `Inner`.
+    if (kind == JoinKind::Comma ? !settings.cross_to_inner_join_rewrite : !settings.merge_filter_into_join_condition)
         return 0;
 
     /// Pushing filter condition into the JOIN can affect the result in case of ANY join.
@@ -509,7 +515,15 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     {
         if (filter_step->removesFilterColumn())
             filter_dag.removeUnusedResult(filter_step->getFilterColumnName());
-        parent_node->step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(filter_dag));
+
+        /// What is left is the columns of the join passed through: no step is needed at all.
+        if (std::ranges::equal(filter_dag.getOutputs(), filter_dag.getInputs()))
+        {
+            parent_node->step = std::move(child_node->step);
+            parent_node->children = std::move(child_node->children);
+        }
+        else
+            parent_node->step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(filter_dag));
     }
     else if (new_filter_column_name)
     {

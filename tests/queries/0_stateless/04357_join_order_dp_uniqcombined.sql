@@ -1,4 +1,3 @@
-SET query_plan_merge_filter_into_join_condition = 1; -- pin (randomized in CI): comma joins get their keys from WHERE through this optimization
 SET query_plan_optimize_join_order_randomize = 0;
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;

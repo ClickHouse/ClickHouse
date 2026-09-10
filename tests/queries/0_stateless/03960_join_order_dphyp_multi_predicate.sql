@@ -4,7 +4,6 @@
 -- be collected by getApplicableExpressions and passed to the cost model.
 -- count() = 3 (all three rows satisfy both predicates simultaneously).
 
-SET query_plan_merge_filter_into_join_condition = 1; -- pin (randomized in CI): comma joins get their keys from WHERE through this optimization
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';

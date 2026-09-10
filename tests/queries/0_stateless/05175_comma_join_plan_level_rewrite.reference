@@ -14,8 +14,11 @@
 5	6	7	8	5	6
 -- force mode: a comma join without an equi-join condition is an error
 1
--- force mode implies the rewrite even when the optimization is disabled
+-- the rewrite of comma joins does not depend on the optimization for INNER joins
+0	1
 2
+-- cross_to_inner_join_rewrite = 0 keeps the cross join
+1	0
 -- explicit CROSS JOIN is never forced
 1
 -- GLOBAL is kept for a cross join

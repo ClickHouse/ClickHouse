@@ -2,7 +2,6 @@
 -- when DPhyp reorders joins. These predicates stay in filter steps and
 -- must not be lost during join reordering.
 
-SET query_plan_merge_filter_into_join_condition = 1; -- pin (randomized in CI): comma joins get their keys from WHERE through this optimization
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';

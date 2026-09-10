@@ -4,7 +4,6 @@
 -- the extra edge closing the cycle is handled correctly.
 -- DPhyp and DPsize must return the same result hash.
 
-SET query_plan_merge_filter_into_join_condition = 1; -- pin (randomized in CI): comma joins get their keys from WHERE through this optimization
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;

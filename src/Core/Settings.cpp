@@ -3915,7 +3915,7 @@ Possible values:
     DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
 Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible.
 
-With the analyzer (`enable_analyzer = 1`, the default) the conversion is done by the query plan optimization `query_plan_merge_filter_into_join_condition`, so values 0 and 1 behave the same. Value 2 throws an error for a comma join that still has no equi-join condition after that optimization. Value 0 disables the rewrite only for the old analyzer.
+With the analyzer (`enable_analyzer = 1`, the default) the rewrite is done in the query plan, together with the join reordering. Value 2 throws an error for a comma join that still has no equi-join condition after the optimizations.
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
 Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.

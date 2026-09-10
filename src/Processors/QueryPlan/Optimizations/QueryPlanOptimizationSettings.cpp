@@ -211,10 +211,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     remove_redundant_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_distinct];
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
+    merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
+    cross_to_inner_join_rewrite = from[Setting::query_plan_enable_optimizations] && from[Setting::cross_to_inner_join_rewrite] != 0;
+    run_merge_filter_into_join_condition = merge_filter_into_join_condition || cross_to_inner_join_rewrite;
     force_comma_join_rewrite = from[Setting::cross_to_inner_join_rewrite] >= 2;
-    /// Forcing the rewrite of comma joins makes no sense without the optimization that performs it.
-    merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations]
-        && (from[Setting::query_plan_merge_filter_into_join_condition] || force_comma_join_rewrite);
     merge_expression_into_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expression_into_join];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];

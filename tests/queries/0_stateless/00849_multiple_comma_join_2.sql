@@ -3,8 +3,7 @@ SET explain_query_plan_default = 'legacy';
 SET enable_optimize_predicate_expression = 0;
 SET convert_query_to_cnf = 0;
 SET cross_to_inner_join_rewrite = 1;
--- The plan shape below depends on these optimizations; the test runner randomizes them.
-SET query_plan_merge_filter_into_join_condition = 1;
+-- The plan shape below depends on join reordering; the test runner randomizes it.
 SET query_plan_optimize_join_order_limit = 10;
 
 DROP TABLE IF EXISTS t1;

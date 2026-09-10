@@ -94,6 +94,10 @@ struct Optimization
         bool short_circuit_function_evaluation_disabled = false;
         bool lower_array_join_function = false;
         bool enable_lazy_columns_replication = false;
+
+        /// See `QueryPlanOptimizationSettings`.
+        bool merge_filter_into_join_condition = true;
+        bool cross_to_inner_join_rewrite = true;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -261,7 +265,7 @@ inline const auto & getOptimizations()
         {tryDeriveNotNullFiltersFromJoin, "deriveNotNullFiltersFromJoin", &QueryPlanOptimizationSettings::derive_not_null_filters_from_joins},
         /// Before the pushdown: a `WHERE` equality turns a cross join into an inner join with keys, and the
         /// pushdown then copies a predicate on a key to both join inputs instead of sinking it into one.
-        {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
+        {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::run_merge_filter_into_join_condition},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryFuseFilterIntoArrayJoin, "fuseFilterIntoArrayJoin", &QueryPlanOptimizationSettings::fuse_filter_into_array_join},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
