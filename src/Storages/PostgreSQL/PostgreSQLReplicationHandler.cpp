@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
@@ -1048,7 +1049,7 @@ void PostgreSQLReplicationHandler::setSetting(const SettingChange & setting)
 
 /// `pos` points at the `"` that opens a quoted identifier; returns the position of the `"` closing it, or
 /// the last position when it is unterminated. A `""` pair inside the identifier is one escaped quote.
-static size_t skipQuotedIdentifier(const String & str, size_t pos)
+static size_t skipQuotedIdentifier(std::string_view str, size_t pos)
 {
     chassert(str[pos] == '"');
     for (++pos; pos < str.size(); ++pos)
@@ -1091,8 +1092,8 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
             ++scan_pos;
         }
 
-        String element = tables_list.substr(name_start, scan_pos - name_start);
-        boost::trim(element);
+        std::string_view element = std::string_view(tables_list).substr(name_start, scan_pos - name_start);
+        element = trimWhitespace(element);
         if (element == quoted_table_name)
         {
             after_name = scan_pos;
@@ -1116,8 +1117,8 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
     if (after_name == std::string::npos)
         return result;
 
-    String column_list = tables_list.substr(after_name);
-    boost::trim(column_list);
+    std::string_view column_list = std::string_view(tables_list).substr(after_name);
+    column_list = trimWhitespace(column_list);
     if (column_list.empty() || column_list[0] != '(')
         return result;
 
@@ -1151,10 +1152,9 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
                 continue;
         }
 
-        String column = column_list.substr(part_start, pos - part_start);
+        String column(trimWhitespace(column_list.substr(part_start, pos - part_start)));
         part_start = pos + 1;
 
-        boost::trim(column);
         /// A quoted element carries the name with its `"` doubled; an unquoted one is a legacy list
         /// element and stands for itself.
         if (column.size() > 1 && column.front() == '"' && column.back() == '"')
