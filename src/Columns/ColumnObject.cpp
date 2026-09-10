@@ -1957,6 +1957,9 @@ void ColumnObject::prepareForSquashing(const ColumnsView & source_columns, size_
     for (auto & [path, column] : typed_paths)
         column->prepareForSquashing(source_columns.project(getObjectTypedPathSourceColumn, &path), factor);
 
+    ColumnRawPtrs source_dynamic_columns;
+    if (!dynamic_paths_ptrs.empty())
+        source_dynamic_columns.reserve(source_columns.size());
     for (const auto & [path, column] : dynamic_paths_ptrs)
     {
         /// ColumnDynamic::prepareForSquashing may not preallocate enough memory for discriminators and offsets
@@ -1965,7 +1968,17 @@ void ColumnObject::prepareForSquashing(const ColumnsView & source_columns, size_
         /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
         /// for all variants inside Dynamic.
         column->reserve(total_size * factor);
-        column->prepareVariantsForSquashing(source_columns.filterProject(getObjectDynamicPathSourceColumnIfExists, &path), factor);
+
+        /// prepareVariantsForSquashing traverses its source columns once to collect variant sizes and then once
+        /// per resulting variant. Materialize this projection so every traversal doesn't repeat the dynamic path lookup.
+        source_dynamic_columns.clear();
+        source_columns.forEach(
+            [&](const IColumn * source_column)
+            {
+                if (const auto * source_dynamic_column = getObjectDynamicPathSourceColumnIfExists(source_column, &path))
+                    source_dynamic_columns.push_back(source_dynamic_column);
+            });
+        column->prepareVariantsForSquashing(source_dynamic_columns, factor);
     }
 }
 
