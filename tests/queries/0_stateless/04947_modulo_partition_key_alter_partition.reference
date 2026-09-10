@@ -7,7 +7,11 @@ wide key	0
 projection render	37528
 projection columns render	tuple()
 merge	1
-part log	1
+part log	MergeParts	37528
+part log	MergePartsStart	37528
+part log	NewPart	37528
+pruned read	1
+pruned plan	1
 out of range	1
 partition id	20200523-37528
 unsigned render	37528
