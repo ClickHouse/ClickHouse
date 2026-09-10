@@ -376,7 +376,7 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
             Inserter<HashMap, KeyGetter>::insertAsof(
                 asof_type, asof_inequality, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys, *asof_column);
         else if constexpr (is_set)
-            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, key_row, pool);
+            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, key_row, pool, result.new_keys);
         else if constexpr (mapped_one)
             result.is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(
                 any_take_last_row, map, key_getter, stored_block_no, key_row, ind, pool, result.new_keys);

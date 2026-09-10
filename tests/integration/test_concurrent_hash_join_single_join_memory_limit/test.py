@@ -32,7 +32,11 @@ def test_single_join_exceeding_limit_is_caught():
         settings={
             "max_threads": 256,
             "join_algorithm": "parallel_hash",
-            "max_memory_usage": "16Mi",
+            "max_memory_usage": "512Ki",
+            # One join's bucket layout is about a megabyte, which fits inside the default
+            # max_untracked_memory, so the thread-local counter has to be flushed on every
+            # allocation for the query's tracker to see the overshoot at all.
+            "max_untracked_memory": 1,
         },
     )
     assert "MEMORY_LIMIT_EXCEEDED" in error

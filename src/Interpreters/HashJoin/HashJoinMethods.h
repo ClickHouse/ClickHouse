@@ -49,10 +49,17 @@ struct Inserter
         return store_row;
     }
 
-    /// A set map holds no reference to a right row, so there is nothing to do beyond adding the key.
-    static ALWAYS_INLINE void insertKeyOnly(HashMap & map, KeyGetter & key_getter, size_t key_row, Arena & pool)
+    /// A set map holds no reference to a right row, so there is nothing to store beyond the key. The
+    /// key still has to be counted: `keys_to_join` is what the hash table size statistics are
+    /// recorded from, and what decides whether the build has more than one distinct key.
+    static ALWAYS_INLINE void insertKeyOnly(
+        HashMap & map,
+        KeyGetter & key_getter,
+        size_t key_row,
+        Arena & pool,
+        size_t & new_keys)
     {
-        key_getter.emplaceKey(map, key_row, pool);
+        new_keys += key_getter.emplaceKey(map, key_row, pool).isInserted();
     }
 
     static ALWAYS_INLINE bool insertAll(
