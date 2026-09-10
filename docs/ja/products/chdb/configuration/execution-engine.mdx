@@ -1,0 +1,369 @@
+---
+title: '実行エンジンの設定'
+sidebarTitle: '実行エンジン'
+slug: /chdb/configuration/execution-engine
+description: 'DataStore の実行エンジン（auto、chdb、pandas）を設定する'
+keywords: ['chdb', 'DataStore', '実行', 'エンジン', 'chdb', 'pandas', 'auto']
+doc_type: 'guide'
+---
+
+DataStore は、異なるバックエンドを使用して操作を実行できます。このガイドでは、実行エンジンの選択を設定し、最適化する方法を説明します。
+
+<div id="engines">
+  ## 利用可能なエンジン
+</div>
+
+| エンジン     | 説明                           | 最適な用途               |
+| -------- | ---------------------------- | ------------------- |
+| `auto`   | 操作ごとに最適なエンジンを自動的に選択          | 一般用途 (デフォルト)        |
+| `chdb`   | すべての操作を ClickHouse SQL 経由で実行 | 大規模データセット、集計        |
+| `pandas` | すべての操作を pandas 経由で実行         | 互換性テスト、pandas 固有の機能 |
+
+<div id="setting">
+  ## エンジンの設定
+</div>
+
+<div id="global">
+  ### グローバル設定
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# オプション1: setメソッドを使用する
+config.set_execution_engine('auto')    # デフォルト
+config.set_execution_engine('chdb')    # ClickHouseを強制
+config.set_execution_engine('pandas')  # pandasを強制
+
+# オプション2: ショートカットを使用する
+config.use_auto()     # 自動選択
+config.use_chdb()     # ClickHouseを強制
+config.use_pandas()   # pandasを強制
+```
+
+<div id="checking">
+  ### 現在のエンジンを確認する
+</div>
+
+```python
+print(config.execution_engine)  # 'auto'、'chdb'、または 'pandas'
+```
+
+***
+
+<div id="auto-mode">
+  ## 自動モード
+</div>
+
+`auto` モード (デフォルト) では、DataStore は各操作に最適なエンジンを選択します。
+
+<div id="auto-chdb">
+  ### chDB で実行される操作
+</div>
+
+* SQL 互換のフィルタリング (`filter()`, `where()`)
+* カラムの選択 (`select()`)
+* ソート (`sort()`, `orderby()`)
+* グループ化と集約 (`groupby().agg()`)
+* 結合 (`join()`, `merge()`)
+* 重複除去 (`distinct()`, `drop_duplicates()`)
+* 件数制限 (`limit()`, `head()`, `tail()`)
+
+<div id="auto-pandas">
+  ### pandas で実行される処理
+</div>
+
+* カスタムの `apply` 関数 (`apply(custom_func)`)
+* カスタム集計を行う複雑なピボットテーブル
+* SQL では表現できない処理
+* 入力がすでに pandas の DataFrame である場合
+
+<div id="auto-example">
+  ### 例
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+config.use_auto()  # デフォルト
+
+ds = pd.read_csv("data.csv")
+
+# chDB (SQL) を使用
+result = (ds
+    .filter(ds['amount'] > 100)   # SQL: WHERE
+    .groupby('region')            # SQL: GROUP BY
+    .agg({'amount': 'sum'})       # SQL: SUM()
+)
+
+# pandas を使用（カスタム関数）
+result = ds.apply(lambda row: complex_calculation(row), axis=1)
+```
+
+***
+
+<div id="chdb-mode">
+  ## chDB Mode
+</div>
+
+すべての操作を ClickHouse SQL 経由で行うよう強制します。
+
+```python
+config.use_chdb()
+```
+
+<div id="chdb-when">
+  ### 使用するケース
+</div>
+
+* 大規模なデータセット (数百万行) の処理
+* 負荷の高い集計ワークロード
+* SQL の最適化を最大限に活用したい場合
+* すべての操作で一貫した動作が求められる場合
+
+<div id="chdb-performance">
+  ### パフォーマンス特性
+</div>
+
+| 操作の種類      | パフォーマンス             |
+| ---------- | ------------------- |
+| GroupBy/集約 | 非常に高い (最大20倍高速)     |
+| 複雑なフィルタリング | 非常に高い               |
+| ソート        | とても高い               |
+| 単純な単一フィルタ  | 高い (わずかなオーバーヘッドあり)  |
+
+<div id="chdb-limitations">
+  ### 制限事項
+</div>
+
+* カスタム Python 関数はサポートされないことがあります
+* pandas 固有の一部機能では変換が必要です
+
+***
+
+<div id="pandas-mode">
+  ## pandas モード
+</div>
+
+すべての操作を pandas 経由で実行します。
+
+```python
+config.use_pandas()
+```
+
+<div id="pandas-when">
+  ### 使用する場面
+</div>
+
+* pandas との互換性をテストする場合
+* pandas 固有の機能を使う場合
+* pandas 関連の問題をデバッグする場合
+* データがすでに pandas 形式になっている場合
+
+<div id="chdb-performance">
+  ### パフォーマンス特性
+</div>
+
+| 操作の種類     | パフォーマンス    |
+| --------- | ---------- |
+| 単純な単一操作   | 良好         |
+| カスタム関数    | 非常に優秀      |
+| 複雑な集計     | chDB より低速  |
+| 大規模データセット | メモリ使用量が大きい |
+
+***
+
+<div id="cross-datastore">
+  ## Cross-DataStore エンジン
+</div>
+
+異なるDataStoreのカラムを組み合わせる操作用に、エンジンを設定します：
+
+```python
+# クロスDataStoreエンジンを設定する
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+```
+
+<div id="auto-example">
+  ### 例
+</div>
+
+```python
+ds1 = pd.read_csv("sales.csv")
+ds2 = pd.read_csv("inventory.csv")
+
+# この操作は2つのDataStoreを対象とします
+result = ds1.join(ds2, on='product_id')
+# cross_datastore_engine設定を使用します
+```
+
+***
+
+<div id="selection-logic">
+  ## エンジンの選択ロジック
+</div>
+
+<div id="decision-tree">
+  ### 自動モードの決定木
+</div>
+
+```text
+操作のリクエスト
+    │
+    ├─ SQLで表現できるか？
+    │      │
+    │      ├─ はい → chDBを使用
+    │      │
+    │      └─ いいえ → pandasを使用
+    │
+    └─ DataStore間の操作か？
+           │
+           └─ cross_datastore_engine設定を使用
+```
+
+<div id="function-override">
+  ### 関数レベルのオーバーライド
+</div>
+
+一部の関数では、エンジン を明示的に指定できます。
+
+```python
+from chdb.datastore.config import function_config
+
+# 特定の関数に特定のエンジンを強制的に使用させる
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper', 'lower')
+```
+
+[Function Config](/ja/products/chdb/configuration/function-config) を参照してください。
+
+***
+
+<div id="performance-comparison">
+  ## 性能比較
+</div>
+
+1,000万行に対するベンチマーク結果:
+
+| 操作               | pandas (ms) | chdb (ms) | 高速化率   |
+| ---------------- | ----------- | --------- | ------ |
+| GroupBy カウント     | 347         | 17        | 19.93x |
+| 複合操作             | 1,535       | 234       | 6.56x  |
+| 複雑なパイプライン        | 2,047       | 380       | 5.39x  |
+| Filter+Sort+Head | 1,537       | 350       | 4.40x  |
+| GroupBy 集計       | 406         | 141       | 2.88x  |
+| 単一フィルター          | 276         | 526       | 0.52x  |
+
+**主なポイント:**
+
+* chDB は集計や複雑なパイプラインで特に高い性能を発揮します
+* シンプルな単一操作では pandas のほうがやや高速です
+* 両方の利点を活かすには `auto` モードを使用してください
+
+***
+
+<div id="best-practices">
+  ## ベストプラクティス
+</div>
+
+<div id="start-with-auto-mode">
+  ### 1. まずは 自動モード を使う
+</div>
+
+```python
+config.use_auto()  # DataStore に判断させる
+```
+
+<div id="profile-before-forcing">
+  ### 2. 強制する前にプロファイリングを行う
+</div>
+
+```python
+config.enable_profiling()
+# ワークロードを実行する
+# プロファイラーレポートで時間がどこに費やされているかを確認する
+```
+
+<div id="force-engine-for-specific-workloads">
+  ### 3. 特定のワークロードに エンジン を強制適用する
+</div>
+
+```python
+# 重い集計ワークロード向け
+config.use_chdb()
+
+# Pandas互換性テスト向け
+config.use_pandas()
+```
+
+<div id="use-explain-to-understand-execution">
+  ### 4. explain() を使って実行内容を把握する
+</div>
+
+```python
+ds = pd.read_csv("data.csv")
+query = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'sum'})
+
+# 生成されるSQLを確認する
+query.explain()
+```
+
+***
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="issue-operation-slower">
+  ### 問題: 動作が予想より遅い
+</div>
+
+```python
+# 現在のエンジンを確認する
+print(config.execution_engine)
+
+# デバッグを有効にして状況を確認する
+config.enable_debug()
+
+# 特定のエンジンを強制的に使用してみる
+config.use_chdb()  # または config.use_pandas()
+```
+
+<div id="issue-unsupported-operation">
+  ### 問題: chdbモードではサポートされていない操作
+</div>
+
+```python
+# 一部のpandasオペレーションはSQLでサポートされていません
+# 解決策: autoモードを使用する
+config.use_auto()
+
+# または、最初に明示的にpandasに変換する
+df = ds.to_df()
+result = df.some_pandas_specific_operation()
+```
+
+<div id="issue-memory-issues">
+  ### 問題: 大量データによるメモリ問題
+</div>
+
+```python
+# すべてのデータをメモリに読み込まないようにchdbエンジンを使用する
+config.use_chdb()
+
+# 早い段階でフィルタリングしてデータサイズを削減する
+result = ds.filter(ds['date'] >= '2024-01-01').to_df()
+
+# 大規模なデータセットで最大スループットを得るには、パフォーマンスモードを使用する
+# パフォーマンスモードでは並列Parquet読み取りとシングルSQL集計が有効になる
+config.use_performance_mode()
+```
+
+<Tip>
+  **パフォーマンスモード**
+
+  大規模な集計ワークロードを実行していて、pandas 出力との厳密な互換性 (行の順序、MultiIndex、dtype の補正) が不要な場合は、[パフォーマンスモード](/ja/products/chdb/configuration/performance-mode)の使用を検討してください。これにより、エンジン は自動的に `chdb` に設定され、pandas 互換性に伴うオーバーヘッドがすべて排除されます。
+</Tip>
