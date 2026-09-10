@@ -2,8 +2,8 @@
 -- first '0' as the whole value and reject a leading '+'. `CSV` and `JSON` have their own overrides in
 -- `SerializationNumber` and route to the tolerant `readIntText`, so every `CSV` row below is the
 -- expected-value oracle for the `TSV` row beside it; `Quoted` has no override and reaches the same unsafe
--- reader as `Escaped` and `Raw`. `TSKV` and `CustomSeparated` need a trailing newline for any value at all,
--- including a plain 42, so the fields here carry one.
+-- reader as `Escaped` and `Raw`, which group 13 witnesses. `TSKV` and `CustomSeparated` need a trailing
+-- newline for any value at all, including a plain 42, so the fields here carry one.
 
 -- 1. Unsigned zero-padded integers with an explicit structure, in all four formats of the family.
 SELECT 'group 1: TSV';
@@ -152,3 +152,35 @@ SELECT * FROM format(TSV, 'a Int64, b Int64', '9\t0\n0\t9\n');
 SELECT 'group 12: whole file reads';
 SELECT count() FROM format(TSV, '-007\n123\n456');
 SELECT count() FROM format(TSV, '+1\n123\n456');
+
+-- 13. The carriers that reach this reader outside the four formats above, one witness each.
+-- `MySQLDump` reads values with the `Quoted` rule; a query parameter other than `_request_body` uses
+-- the `Escaped` rule; a dictionary `null_value` is read with `deserializeWholeText`, which
+-- `SimpleTextSerialization` routes into the same `deserializeText`.
+SELECT 'group 13: MySQLDump, the Quoted rule';
+SELECT * FROM format(MySQLDump, 'a Int64', 'INSERT INTO t VALUES (007),(-007),(+7);');
+SELECT 'group 13: a query parameter';
+SET param_pad = '007';
+SELECT {pad:Int64};
+SET param_plus = '+7';
+SELECT {plus:Int64};
+SELECT 'group 13: a dictionary null_value';
+CREATE TABLE src_04812 (id UInt64, v Int64) ENGINE = Memory;
+INSERT INTO src_04812 VALUES (1, 42);
+CREATE DICTIONARY dict_04812 (id UInt64, v Int64 DEFAULT '007')
+PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'src_04812')) LAYOUT(FLAT()) LIFETIME(0);
+SELECT dictGet('dict_04812', 'v', toUInt64(999));
+DROP DICTIONARY dict_04812;
+DROP TABLE src_04812;
+-- `Values` reaches the reader through the `Quoted` rule, but a value its streaming parser rejects is
+-- re-read by the SQL expression parser, so at default settings these read the same before and after.
+SELECT 'group 13: Values, unchanged at default settings';
+SELECT * FROM format(Values, 'a Int64', '(007),(+007),(-007)');
+-- The one spelling that does move. With template deduction off, a padded or `+`-signed value that
+-- overflows the target used to reach that fallback, which defaulted it to 0 (or raised TYPE_MISMATCH
+-- under `input_format_null_as_default = 0`); the reader now consumes it and wraps, which is what the
+-- unpadded spelling in the third row has always done. This reader has never checked overflow (group 9).
+SELECT 'group 13: Values, an overflowing padded value now wraps like the unpadded one';
+SELECT * FROM format(Values, 'a Int8', '(0128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;
+SELECT * FROM format(Values, 'a Int8', '(+128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;
+SELECT * FROM format(Values, 'a Int8', '(128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;

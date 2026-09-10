@@ -117,3 +117,20 @@ group 11: zero run edges
 group 12: whole file reads
 3
 3
+group 13: MySQLDump, the Quoted rule
+7
+-7
+7
+group 13: a query parameter
+7
+7
+group 13: a dictionary null_value
+7
+group 13: Values, unchanged at default settings
+7
+7
+-7
+group 13: Values, an overflowing padded value now wraps like the unpadded one
+-128
+-128
+-128
