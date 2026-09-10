@@ -26,6 +26,11 @@
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32) || 'a')) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 511) || 'a')) FROM numbers(300000) FORMAT Null</query>
+    <!-- 4-byte code points, the width where losing the kernel below 64 bytes costs most: 63 bytes on
+         the scalar arm against 64 on simdutf. repeat() cannot make 63 from a 4-byte code point, so the
+         63-byte row carries a 3-byte ASCII tail. -->
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 15) || 'aaa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 16))) FROM numbers(3000000) FORMAT Null</query>
     <!-- A leading ASCII run with a non-ASCII tail shorter than 64 bytes: 64 bytes behind an 8-byte head,
          and 148 bytes behind a 96-byte head. An ASCII skip placed ahead of the threshold strips both to
          a sub-64-byte remainder and pays the scalar loop for the tail. -->
