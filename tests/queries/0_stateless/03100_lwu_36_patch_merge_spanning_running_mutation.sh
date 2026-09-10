@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-shared-merge-tree
 # no-parallel: waits on mt_mutate_task_pause_in_prepare, which is PAUSEABLE_ONCE and server wide,
 # so a concurrent test's mutation would consume the pause this test waits for
+# no-shared-merge-tree: the ENGINE = MergeTree DDL is rewritten to SharedMergeTree, whose merge
+# predicate is not the MergeTreeMergePredicate whose fix this test measures
 
 # A mutate task that has already been selected owns a data version that no part carries yet, and
 # KILL MUTATION removes the mutation entry while that task keeps running. The merge predicate of
@@ -17,6 +19,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/mergetree_mutations.lib
 
 set -e
+
+FAILPOINT="mt_mutate_task_pause_in_prepare"
+
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FAILPOINT" 2>/dev/null ||:
+}
+trap cleanup EXIT
 
 function patch_partition_id()
 {
@@ -73,7 +83,7 @@ $CLICKHOUSE_CLIENT --query "
     SET enable_lightweight_update = 1;
     UPDATE t_lwu_patch_span SET c1 = 100 WHERE id = 1;
 
-    SYSTEM ENABLE FAILPOINT mt_mutate_task_pause_in_prepare;
+    SYSTEM ENABLE FAILPOINT $FAILPOINT;
     -- Takes a data version between the two patches, then blocks inside MutateTask::prepare,
     -- before it builds the mutations snapshot at that version.
     ALTER TABLE t_lwu_patch_span UPDATE c2 = 200 WHERE id = 2;"
@@ -108,5 +118,5 @@ $CLICKHOUSE_CLIENT --query "
 count_patch_parts
 
 $CLICKHOUSE_CLIENT --query "
-    SYSTEM DISABLE FAILPOINT mt_mutate_task_pause_in_prepare;
+    SYSTEM DISABLE FAILPOINT $FAILPOINT;
     DROP TABLE t_lwu_patch_span SYNC;"

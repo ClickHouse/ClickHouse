@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-shared-merge-tree
 # no-parallel: enables mt_merge_task_pause_in_prepare_with_patches, which is server wide, so while
 # this test runs it would also hold a concurrent test's merge of patch parts
+# no-shared-merge-tree: the ENGINE = MergeTree DDL is rewritten to SharedMergeTree, which uses
+# neither MergePlainMergeTreeTask, so the failpoint never fires, nor the merge predicate under test
 
 # A merge that applies patch parts takes the data version of its result from those patches, so while
 # that merge runs the version is on no active part. The merge predicate of plain MergeTree used to
 # collect versions from the active parts only, so it allowed a merge of patch parts across that
-# version; the merge then committed its result at exactly that version and every later mutations
-# snapshot for it failed with "Found patch part ... that intersects mutation with version ...".
-# The sibling test 03100_lwu_36 covers the other source of such a version, a running mutate task.
+# version; the merge then committed its result at exactly that version, leaving a patch that spans
+# the data version of a live part, so assertNoPatchesForParts throws for it and DETACH PART, DETACH
+# PARTITION, MOVE PARTITION and REPLACE PARTITION ... FROM all abort with
+# "Found patch part ... that intersects mutation with version ...".
+# The sibling test 03100_lwu_36 covers the other source of such a version, a running mutate task,
+# which instead fails when that task builds its mutations snapshot at its own version.
 # Related: https://github.com/ClickHouse/ClickHouse/issues/116047
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
