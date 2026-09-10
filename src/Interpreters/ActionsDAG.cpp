@@ -33,6 +33,7 @@
 
 #include <algorithm>
 #include <stack>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <base/sort.h>
@@ -2816,6 +2817,31 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
         }
     }
 
+    /// The copy of a child in the second part; a child that stays in the first part is either recomputed (a constant,
+    /// or a lambda, which is not a column and cannot cross as one) or becomes a new input.
+    std::function<Node *(const Node *)> childInSecond = [&](const Node * child) -> Node *
+    {
+        auto & child_data = data[child];
+        if (child_data.to_second)
+            return child_data.to_second;
+        if (child->type == ActionType::COLUMN || WhichDataType(child->result_type).isFunction())
+        {
+            auto & copy = second_nodes.emplace_back(*child);
+            child_data.to_second = &copy;
+            for (auto & captured : copy.children)
+                captured = childInSecond(captured);
+            return &copy;
+        }
+        Node input_node;
+        input_node.type = ActionType::INPUT;
+        input_node.result_type = child->result_type;
+        input_node.result_name = child->result_name;
+        child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
+        if (child->type != ActionType::INPUT)
+            new_inputs.push_back(child);
+        return child_data.to_second;
+    };
+
     /// DFS. Move nodes to one of the DAGs.
     for (const auto & node : nodes)
     {
@@ -2856,32 +2882,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
                     /// Replace children to newly created nodes.
                     for (auto & child : copy.children)
-                    {
-                        auto & child_data = data[child];
-
-                        /// If children is not created, it may be from split part.
-                        if (!child_data.to_second)
-                        {
-                            if (child->type == ActionType::COLUMN) /// Just create new node for COLUMN action.
-                            {
-                                child_data.to_second = &second_nodes.emplace_back(*child);
-                            }
-                            else
-                            {
-                                /// Node from first part is added as new input.
-                                Node input_node;
-                                input_node.type = ActionType::INPUT;
-                                input_node.result_type = child->result_type;
-                                input_node.result_name = child->result_name;
-                                child_data.to_second = &second_nodes.emplace_back(std::move(input_node));
-
-                                if (child->type != ActionType::INPUT)
-                                    new_inputs.push_back(child);
-                            }
-                        }
-
-                        child = child_data.to_second;
-                    }
+                        child = childInSecond(child);
                 }
                 else
                 {
@@ -3101,33 +3102,8 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
         }
     }
 
-    /// A lambda is not a column, so it must not become an output of the lifted part. When its caller stays
-    /// above, keep the lambda and everything built on it above as well.
-    std::unordered_map<const Node *, std::vector<const Node *>> parents;
-    for (const auto & node : nodes)
-        for (const auto * child : node.children)
-            parents[child].push_back(&node);
-    for (bool changed = true; changed;)
-    {
-        changed = false;
-        for (const auto & node : nodes)
-        {
-            if (!split_nodes.contains(&node) || !WhichDataType(node.result_type).isFunction())
-                continue;
-            if (std::ranges::all_of(parents[&node], [&](const Node * parent) { return split_nodes.contains(parent); }))
-                continue;
-            std::vector<const Node *> pending{&node};
-            while (!pending.empty())
-            {
-                const auto * current = pending.back();
-                pending.pop_back();
-                if (split_nodes.erase(current))
-                    pending.insert(pending.end(), parents[current].begin(), parents[current].end());
-            }
-            changed = true;
-        }
-    }
-    return split(split_nodes);
+    auto res = split(split_nodes);
+    return res;
 }
 
 ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
