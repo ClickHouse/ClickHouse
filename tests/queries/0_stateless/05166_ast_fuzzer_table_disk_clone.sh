@@ -7,6 +7,10 @@
 # clone that kept `table_disk` would read the original table's parts under a schema those parts do
 # not satisfy. Both carriers below go through QueryFuzzer::fuzzTableStorage, which drops the setting.
 
+# The fuzzer's registry of live clones is process-global and keyed by the bare table name, so a
+# generically named seed lets the very first mutation wrap the clone around a target another test
+# left behind, erasing the whole storage clause these oracles measure. Hence the per-database names.
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -16,8 +20,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_runs=0 --ast_fuzzer_any_query=0"
 FUZZ="${CLICKHOUSE_CLIENT} --ast_fuzzer_runs=25 --ast_fuzzer_any_query=1 --send_logs_level=fatal"
 
-${CLIENT} --query "DROP VIEW IF EXISTS viewer SYNC"
-${CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
+${CLIENT} --query "DROP VIEW IF EXISTS viewer_${CLICKHOUSE_DATABASE} SYNC"
+${CLIENT} --query "DROP TABLE IF EXISTS reader_${CLICKHOUSE_DATABASE} SYNC"
 ${CLIENT} --query "DROP TABLE IF EXISTS writer SYNC"
 
 disk_path="disks/05166/${CLICKHOUSE_DATABASE}/"
@@ -36,7 +40,7 @@ ${CLIENT} --query "INSERT INTO writer SELECT number FROM numbers(64)"
 
 # Carrier 1: the outer storage clause of a plain CREATE TABLE, over the root `writer` owns.
 ${FUZZ} --query "
-CREATE TABLE reader (key Int32) ENGINE = MergeTree ORDER BY key
+CREATE TABLE reader_${CLICKHOUSE_DATABASE} (key Int32) ENGINE = MergeTree ORDER BY key
 SETTINGS table_disk = true,
   disk = disk(
       read_only = true,
@@ -50,7 +54,7 @@ SETTINGS table_disk = true,
 # Carrier 2: a view's inner engine, reached through create.targets->getInnerEngines(). It needs a
 # root of its own: two plain-rewritable disks cannot share one prefix unless one is read-only.
 ${FUZZ} --query "
-CREATE MATERIALIZED VIEW viewer (key Int32) ENGINE = MergeTree ORDER BY key
+CREATE MATERIALIZED VIEW viewer_${CLICKHOUSE_DATABASE} (key Int32) ENGINE = MergeTree ORDER BY key
 SETTINGS table_disk = true,
   disk = disk(
       name = 05166_viewer_${CLICKHOUSE_DATABASE},
@@ -68,20 +72,20 @@ ${CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLIENT} --query "
 SELECT 'table_clones_attempted', count() > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
-  AND position(query, 'reader__fuzz_') > 0;
+  AND position(query, 'reader_${CLICKHOUSE_DATABASE}__fuzz_') > 0;
 
 SELECT 'table_clones_with_table_disk', count() FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
-  AND position(query, 'reader__fuzz_') > 0
+  AND position(query, 'reader_${CLICKHOUSE_DATABASE}__fuzz_') > 0
   AND match(query, '(^|[^0-9A-Za-z_])table_disk($|[^0-9A-Za-z_])');
 
 SELECT 'view_clones_attempted', count() > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
-  AND position(query, 'viewer__fuzz_') > 0;
+  AND position(query, 'viewer_${CLICKHOUSE_DATABASE}__fuzz_') > 0;
 
 SELECT 'view_clones_with_table_disk', count() FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
-  AND position(query, 'viewer__fuzz_') > 0
+  AND position(query, 'viewer_${CLICKHOUSE_DATABASE}__fuzz_') > 0
   AND match(query, '(^|[^0-9A-Za-z_])table_disk($|[^0-9A-Za-z_])');
 
 -- Only table_disk aliases another table's data, so disk itself has to survive: clearing the whole
@@ -89,20 +93,20 @@ WHERE current_database = currentDatabase() AND query_kind = 'Create'
 -- exists to exercise. A wrap arm may rewrite a clone's storage clause, hence count() > 0.
 SELECT 'table_clones_keep_disk', count() > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
-  AND position(query, 'reader__fuzz_') > 0
+  AND position(query, 'reader_${CLICKHOUSE_DATABASE}__fuzz_') > 0
   AND match(query, '(^|[^0-9A-Za-z_])disk = disk[(]');
 
 SELECT 'view_clones_keep_disk', count() > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
-  AND position(query, 'viewer__fuzz_') > 0
+  AND position(query, 'viewer_${CLICKHOUSE_DATABASE}__fuzz_') > 0
   AND match(query, '(^|[^0-9A-Za-z_])disk = disk[(]');
 
 SELECT 'seed_predicate_live', count() > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
-  AND position(query, 'CREATE TABLE reader ') > 0
+  AND position(query, 'CREATE TABLE reader_${CLICKHOUSE_DATABASE} ') > 0
   AND match(query, '(^|[^0-9A-Za-z_])table_disk($|[^0-9A-Za-z_])');
 "
 
-${CLIENT} --query "DROP VIEW IF EXISTS viewer SYNC"
-${CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
+${CLIENT} --query "DROP VIEW IF EXISTS viewer_${CLICKHOUSE_DATABASE} SYNC"
+${CLIENT} --query "DROP TABLE IF EXISTS reader_${CLICKHOUSE_DATABASE} SYNC"
 ${CLIENT} --query "DROP TABLE IF EXISTS writer SYNC"
