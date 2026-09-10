@@ -1334,44 +1334,64 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    /// Check the TTL as well: it is changeable at runtime and zero disables
-    /// the cleanup (otherwise every node would be treated as stale).
-    if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
-        cleanupPersistentProcessingNodes();
-
-    /// Re-derived per run rather than taken from the members: `tracked_files_limit`,
-    /// `tracked_file_ttl_sec` and `failed_files_ttl_sec` are all alterable at runtime, so a decision
-    /// made once at construction would go stale. The members remain the coarse "could this table ever
-    /// need a sweep" answer that `startup` uses.
-    const bool sweep_processed = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
-    /// `/failed` has two independent controls, and each trims by its own criterion: the count-based
-    /// tracked-files limit, and the time-based `failed_files_ttl_sec`. They are deliberately not
-    /// collapsed into one call - neither overrides the other, and a table may have either, both or
-    /// neither. Both passes run under the same cleanup lock this function already holds.
-    const bool sweep_failed_by_limit = !isExclusive(mode) && table_metadata.hasTrackedFilesLimit();
-    const bool sweep_failed_by_ttl = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
-
-    if (sweep_processed || sweep_failed_by_limit || sweep_failed_by_ttl)
+    /// Everything below runs pinned to `zk_client`, the session that owns the lock, and is not retried.
+    /// A hardware error means that session may be gone - and the ephemeral lock with it - so the sweep
+    /// stops rather than deleting nodes on a session holding nothing, and `setAlreadyRemoved` keeps the
+    /// holder's destructor from removing a lock node that by then may belong to another replica. No
+    /// outer retry is needed here: unlike the user-facing drop, this task is periodic, so the next
+    /// scheduled run is the retry.
+    try
     {
-        if (sweep_processed)
-            cleanupTrackedNodes(zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
+        /// Check the TTL as well: it is changeable at runtime and zero disables
+        /// the cleanup (otherwise every node would be treated as stale).
+        if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
+            cleanupPersistentProcessingNodes(zk_client);
 
-        if (sweep_failed_by_limit)
-            cleanupTrackedNodes(zookeeper_path / "failed", "failed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
+        /// Re-derived per run rather than taken from the members: `tracked_files_limit`,
+        /// `tracked_file_ttl_sec` and `failed_files_ttl_sec` are all alterable at runtime, so a decision
+        /// made once at construction would go stale. The members remain the coarse "could this table ever
+        /// need a sweep" answer that `startup` uses.
+        const bool sweep_processed = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
+        /// `/failed` has two independent controls, and each trims by its own criterion: the count-based
+        /// tracked-files limit, and the time-based `failed_files_ttl_sec`. They are deliberately not
+        /// collapsed into one call - neither overrides the other, and a table may have either, both or
+        /// neither. Both passes run under the same cleanup lock this function already holds.
+        const bool sweep_failed_by_limit = !isExclusive(mode) && table_metadata.hasTrackedFilesLimit();
+        const bool sweep_failed_by_ttl = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
 
-        if (sweep_failed_by_ttl)
-            cleanupTrackedNodes(zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec, 0);
+        if (sweep_processed || sweep_failed_by_limit || sweep_failed_by_ttl)
+        {
+            if (sweep_processed)
+                cleanupTrackedNodes(zk_client, zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
 
-        /// One reconciliation covers both passes: either may have removed terminal nodes, and the
-        /// cache has to stop claiming a file is Failed once its node is gone.
-        if (sweep_failed_by_limit || sweep_failed_by_ttl)
-            reconcileFailedFilesCache();
+            if (sweep_failed_by_limit)
+                cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
+
+            if (sweep_failed_by_ttl)
+                cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec, 0);
+
+            /// One reconciliation covers both passes: either may have removed terminal nodes, and the
+            /// cache has to stop claiming a file is Failed once its node is gone.
+            if (sweep_failed_by_limit || sweep_failed_by_ttl)
+                reconcileFailedFilesCache();
+        }
+    }
+    catch (const Coordination::Exception & e)
+    {
+        if (!Coordination::isHardwareError(e.code))
+            throw;
+
+        LOG_WARNING(log, "Keeper error while holding the cleanup lock: {}. The lock may no longer be ours, "
+                         "so this sweep is abandoned; the next scheduled run will retry.", e.displayText());
+        ephemeral_node->setAlreadyRemoved();
+        return;
     }
 
     LOG_TRACE(log, "Node limits check finished");
 }
 
 void ObjectStorageQueueMetadata::cleanupTrackedNodes(
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
     const std::string & nodes_path,
     std::string_view description,
     UInt64 ttl_seconds,
@@ -1381,11 +1401,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
     Strings nodes;
     Coordination::Error code = {};
-    auto zk_retries = getKeeperRetriesControl(log);
-    zk_retries.retryLoop([&]
-    {
-        code = getZooKeeper()->tryGetChildren(nodes_path, nodes);
-    });
+    code = zk_client->tryGetChildren(nodes_path, nodes);
     if (code != Coordination::Error::ZOK)
     {
         if (code == Coordination::Error::ZNONODE)
@@ -1435,11 +1451,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         LOG_TEST(log, "Fetching info for {} paths", paths.size());
 
         zkutil::ZooKeeper::MultiTryGetResponse response;
-        zk_retries.resetFailures();
-        zk_retries.retryLoop([&]
-        {
-            response = getZooKeeper()->tryGet(paths);
-        });
+        response = zk_client->tryGet(paths);
 
         for (size_t i = 0; i < response.size(); ++i)
         {
@@ -1516,10 +1528,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
     const auto remove_nodes = [&](bool node_limit)
     {
-        zk_retries.retryLoop([&]
-        {
-            code = getZooKeeper()->tryMulti(remove_requests, remove_responses);
-        });
+        code = zk_client->tryMulti(remove_requests, remove_responses);
 
         if (code == Coordination::Error::ZOK)
         {
@@ -1576,11 +1585,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
                 {
                     /// requests with ZRUNTIMEINCONSISTENCY were not processed because the multi request was aborted before
                     /// so we try removing it again without multi requests
-                    zk_retries.resetFailures();
-                    zk_retries.retryLoop([&]
-                    {
-                        code = getZooKeeper()->tryRemove(remove_requests[i]->getPath());
-                    });
+                    code = zk_client->tryRemove(remove_requests[i]->getPath());
                     if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
                     {
                         /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
@@ -2452,7 +2457,7 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
     }
 }
 
-void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
+void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client)
 {
     auto zk_retries = getKeeperRetriesControl(log);
     const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
@@ -2460,10 +2465,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     Strings persistent_processing_nodes;
 
     Coordination::Error code = {};
-    zk_retries.retryLoop([&]
-    {
-        code = getZooKeeper()->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
-    });
+    code = zk_client->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
     if (code != Coordination::Error::ZOK)
     {
         if (code == Coordination::Error::ZNONODE)
@@ -2491,11 +2493,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     auto get_paths = [&]
     {
         zkutil::ZooKeeper::MultiTryGetResponse response;
-        zk_retries.resetFailures();
-        zk_retries.retryLoop([&]
-        {
-            response = getZooKeeper()->tryGet(get_batch);
-        });
+        response = zk_client->tryGet(get_batch);
 
         for (size_t i = 0; i < response.size(); ++i)
         {
@@ -2545,11 +2543,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         const auto & node = node_with_version.first;
         const auto version = node_with_version.second;
         LOG_TRACE(log, "Removing stale processing node: {}", node);
-        zk_retries.resetFailures();
-        zk_retries.retryLoop([&]
-        {
-            code = getZooKeeper()->tryRemove(node, version);
-        });
+        code = zk_client->tryRemove(node, version);
         if (code == Coordination::Error::ZOK)
             ++removed;
         else if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)

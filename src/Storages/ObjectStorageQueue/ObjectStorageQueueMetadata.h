@@ -226,7 +226,7 @@ public:
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
-    void cleanupPersistentProcessingNodes();
+    void cleanupPersistentProcessingNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client);
     void removeFromCacheIfGenerationMatches(const std::string & file_path, const std::unordered_map<std::string, uint64_t> & failed_generations);
     size_t removeStaleFailedCacheEntries(const std::unordered_map<std::string, uint64_t> & failed_generations,
         const std::function<bool(const std::string &)> & path_filter = [](const std::string &) { return true; });
@@ -273,7 +273,12 @@ private:
         size_t & total_deleted,
         std::vector<std::string> & file_paths,
         std::vector<std::pair<size_t, Coordination::Error>> & failed_batches);
-    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description, UInt64 ttl_seconds, UInt64 nodes_limit);
+    /// Both take the client that owns the cleanup lock and do not retry on it: a hardware error may
+    /// mean the session, and with it the lock, is gone, and retrying would delete nodes while another
+    /// replica legitimately holds the lock. The caller abandons the sweep instead; the next scheduled
+    /// run is the retry.
+    void cleanupTrackedNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const std::string & nodes_path, std::string_view description, UInt64 ttl_seconds, UInt64 nodes_limit);
 
     void migrateToBucketsInKeeper(size_t value);
 
