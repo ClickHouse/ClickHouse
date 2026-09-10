@@ -254,6 +254,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     files_to_generate = 1000
     row_num = 10
     total_rows = row_num * files_to_generate
+    buckets_num = 2
 
     for instance in [node, node_2]:
         create_table(
@@ -264,7 +265,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
             files_path,
             additional_settings={
                 "keeper_path": keeper_path,
-                "s3queue_buckets": 2,
+                "s3queue_buckets": buckets_num,
                 "polling_max_timeout_ms": 2000,
                 "polling_backoff_ms": 1000,
                 **({"s3queue_processing_threads_num": 1} if mode == "ordered" else {}),
@@ -322,9 +323,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
     assert len(res1) + len(res2) == total_rows
 
-    # Checking that all engines have made progress
-    assert len(res1) > 0
-    assert len(res2) > 0
+    if mode == "unordered":
+        # Ordered mode has no per-server split, so one server may process every file.
+        assert len(res1) > 0
+        assert len(res2) > 0
 
     assert {tuple(v) for v in res1 + res2} == set([tuple(i) for i in total_values])
 
@@ -333,6 +335,26 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
     assert (
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) == total_rows
+
+    if mode == "ordered":
+        # Work is claimed per bucket, not per server, so every bucket must end up with a
+        # `processed` pointer, written by the commit that empties `processing` after the insert.
+        zk = started_cluster.get_kazoo_client("zoo1")
+        buckets = zk.get_children(f"{keeper_path}/buckets/")
+        assert len(buckets) == buckets_num
+
+        processing_left = (
+            "SELECT processing_nodes_count FROM system.s3_queue_metadata "
+            f"WHERE zookeeper_path ilike '%{keeper_path}%'"
+        )
+        for _ in range(60):
+            if run_query(node, processing_left).strip() == "0":
+                break
+            time.sleep(1)
+        assert run_query(node, processing_left).strip() == "0"
+
+        for bucket in buckets:
+            assert zk.exists(f"{keeper_path}/buckets/{bucket}/processed")
 
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
