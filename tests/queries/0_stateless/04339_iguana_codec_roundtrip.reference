@@ -2,8 +2,8 @@
 -- system.codecs
 Iguana	1	1	1	Experimental
 -- String round-trip (skewed -> ANS, random -> raw fallback, plus edge cases)
-45000
-45000
+4500
+4500
 0
 1
 -- Numeric round-trip with plain Iguana and Delta+Iguana

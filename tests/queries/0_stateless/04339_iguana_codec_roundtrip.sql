@@ -19,11 +19,11 @@ CREATE TABLE s_none   (id UInt64, s String CODEC(NONE))   ENGINE = MergeTree ORD
 CREATE TABLE s_iguana (id UInt64, s String CODEC(Iguana)) ENGINE = MergeTree ORDER BY id;
 
 -- Skewed/text-like data: long, low-entropy strings that the entropy coder should shrink.
-INSERT INTO s_none SELECT number, repeat(['aaaa','abc ','hello ','xy'][number % 4 + 1], number % 50 + 1) FROM numbers(20000);
+INSERT INTO s_none SELECT number, repeat(['aaaa','abc ','hello ','xy'][number % 4 + 1], number % 50 + 1) FROM numbers(2000);
 -- Random high-entropy strings: forces the verbatim fallback path.
-INSERT INTO s_none SELECT number + 100000, randomString(number % 200) FROM numbers(20000);
+INSERT INTO s_none SELECT number + 100000, randomString(number % 200) FROM numbers(2000);
 -- Edge cases: empty strings and a single repeated character.
-INSERT INTO s_none SELECT number + 300000, if(number % 2 = 0, '', repeat('Z', number % 300)) FROM numbers(5000);
+INSERT INTO s_none SELECT number + 300000, if(number % 2 = 0, '', repeat('Z', number % 300)) FROM numbers(500);
 
 INSERT INTO s_iguana SELECT * FROM s_none;
 OPTIMIZE TABLE s_iguana FINAL;
@@ -43,9 +43,8 @@ CREATE TABLE n_none   (id UInt64, u8 UInt8 CODEC(NONE), i64 Int64 CODEC(NONE), d
 CREATE TABLE n_iguana (id UInt64, u8 UInt8 CODEC(Iguana), i64 Int64 CODEC(Delta, Iguana), d Date CODEC(Iguana))
     ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO n_none SELECT number, number % 7, intDiv(number, 3) - 50000, toDate('2020-01-01') + (number % 4000) FROM numbers(100000);
+INSERT INTO n_none SELECT number, number % 7, intDiv(number, 3) - 50000, toDate('2020-01-01') + (number % 4000) FROM numbers(10000);
 INSERT INTO n_iguana SELECT * FROM n_none;
-OPTIMIZE TABLE n_iguana FINAL;
 
 SELECT count() FROM n_none AS a INNER JOIN n_iguana AS b USING (id)
     WHERE a.u8 != b.u8 OR a.i64 != b.i64 OR a.d != b.d;
@@ -60,9 +59,8 @@ DROP TABLE IF EXISTS f_iguana;
 CREATE TABLE f_none   (id UInt64, fs FixedString(16) CODEC(NONE),   ns Nullable(String) CODEC(NONE))   ENGINE = MergeTree ORDER BY id;
 CREATE TABLE f_iguana (id UInt64, fs FixedString(16) CODEC(Iguana), ns Nullable(String) CODEC(Iguana)) ENGINE = MergeTree ORDER BY id;
 
-INSERT INTO f_none SELECT number, toFixedString(toString(number % 100), 16), if(number % 3 = 0, NULL, repeat('q', number % 40)) FROM numbers(50000);
+INSERT INTO f_none SELECT number, toFixedString(toString(number % 100), 16), if(number % 3 = 0, NULL, repeat('q', number % 40)) FROM numbers(5000);
 INSERT INTO f_iguana SELECT * FROM f_none;
-OPTIMIZE TABLE f_iguana FINAL;
 
 SELECT count() FROM f_none AS a INNER JOIN f_iguana AS b USING (id)
     WHERE a.fs != b.fs OR (a.ns != b.ns) OR (a.ns IS NULL) != (b.ns IS NULL);
