@@ -104,7 +104,7 @@ SET dialect = 'logsql'
 _time:5m error | stats by (level) count() as hits | sort by (hits desc)
 ```
 
-See the [LogsQL dialect guide](/guides/logsql) for the supported subset and the differences from VictoriaLogs.
+See the [LogsQL dialect guide](/guides/clickhouse/logsql) for the supported subset and the differences from VictoriaLogs.
 
 ## Trino SQL {#trino-sql}
 
