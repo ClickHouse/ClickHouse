@@ -6,3 +6,7 @@
 0
 -- a wrapped (cache) plain_rewritable disk reports metadata_type
 1
+-- a disk with local metadata reports metadata_type and a populated last_modified
+1
+-- and no row of it is left without one
+0
