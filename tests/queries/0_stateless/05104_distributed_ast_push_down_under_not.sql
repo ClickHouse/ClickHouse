@@ -51,7 +51,9 @@ WHERE NOT (a < 500 AND arrayExists(x -> x < 86, [b])) SETTINGS log_comment = '05
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, countIf(query LIKE '%HAVING%') > 0
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time > now() - 600 AND type = 'QueryFinish' AND is_initial_query = 0
+-- The secondary queries do not carry `current_database`, so match them by the database they read.
+WHERE has(databases, currentDatabase())
+    AND event_date >= yesterday() AND event_time > now() - 600 AND type = 'QueryFinish' AND is_initial_query = 0
     AND log_comment IN ('05104_and', '05104_not') AND query LIKE '%t_push_ast%'
 GROUP BY log_comment ORDER BY log_comment;
 
