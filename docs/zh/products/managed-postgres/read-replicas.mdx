@@ -22,9 +22,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/managed-postgres/read-replica-dialog.webp" alt="只读副本管理对话框" size="md" border />
 
-<div id="managing-read-replicas">
-  ## 管理只读副本
-</div>
+## 管理只读副本 {#managing-read-replicas}
 
 **只读副本** 页面提供两种视图，可通过右上角的 **Flow** 和 **Table** 控件进行切换。
 
@@ -39,43 +37,43 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 要创建新的副本，请在任一视图右上角单击 **Create read replica**。
 
 <div id="why-use-read-replicas">
-  ## 为何使用只读副本
+  ## 为何使用只读副本 {#why-use-read-replicas}
 </div>
 
 <div id="scalability">
-  ### 可扩展性
+  ### 可扩展性 {#scalability}
 </div>
 
 只读副本可将读密集型工作负载分散到多个专用实例上，从而实现数据库的横向扩展。这对于报表查询、分析处理和实时仪表盘尤其有价值，否则这些负载就会与生产环境流量争夺资源。
 
 <div id="isolation">
-  ### 隔离
+  ### 隔离 {#isolation}
 </div>
 
 通过将分析查询和商业智能查询定向到只读副本，可以让主实例专注于写入操作和关键事务工作负载，并保持良好的响应能力。这种隔离可提升整个系统的性能和可预测性。同时，您也无需向分析或报表工具授予写权限——它们可以安全地在副本上运行，而不会有意外修改数据的风险。
 
 <div id="business-continuity">
-  ### 业务连续性
+  ### 业务连续性 {#business-continuity}
 </div>
 
 只读副本在灾难恢复中可发挥关键作用。如果主数据库发生故障，只读副本可以提升为主节点，从而将停机时间和数据丢失降到最低。除了高可用待机节点外，这还提供了额外一层的韧性保障。
 
 <div id="how-read-replicas-work">
-  ## 只读副本的工作原理
+  ## 只读副本的工作原理 {#how-read-replicas-work}
 </div>
 
 ClickHouse Managed Postgres 中的只读副本采用传输 WAL架构，而非流式复制。这种设计旨在尽量降低对主节点数据库的影响。
 
 <div id="wal-shipping-from-object-storage">
-  ### 通过对象存储传输 WAL
+  ### 通过对象存储传输 WAL {#wal-shipping-from-object-storage}
 </div>
 
-当主节点数据库处理事务时，会生成预写日志 (WAL) 记录。这些 WAL 分段会持续归档到对象存储 (S3) 中。只读副本会从对象存储中拉取并重放这些 WAL 分段，以与主节点保持同步。
+当主节点数据库处理事务时，会生成预写日志 (WAL) 记录。这些 WAL 分段会持续归档到对象存储中。只读副本会从对象存储中拉取并重放这些 WAL 分段，以与主节点保持同步。
 
 这种架构不同于[高可用待机节点](/zh/products/managed-postgres/high-availability)，后者通过与主节点的直接连接使用流式复制。
 
 <div id="why-we-chose-this-approach">
-  ### 为什么我们选择这种方式
+  ### 为什么我们选择这种方式 {#why-we-chose-this-approach}
 </div>
 
 我们有意将只读副本设计为从对象存储中读取 WAL，而不是作为流式备用节点直接连接到主节点。这样可以让只读副本与主数据库实现完全隔离：
@@ -85,7 +83,7 @@ ClickHouse Managed Postgres 中的只读副本采用传输 WAL架构，而非流
 * **网络隔离**：只读副本在各自独立的网络环境中运行，并使用单独的连接端点。
 
 <div id="replication-lag-characteristics">
-  ### 复制延迟特性
+  ### 复制延迟特性 {#replication-lag-characteristics}
 </div>
 
 这种架构的代价在于复制延迟。WAL 分段会按固定时间间隔从主节点归档 (通常为每 60 秒一次，或在分段写满时归档，以先发生者为准) 。这意味着在正常情况下，只读副本可能会比主节点滞后数十秒。

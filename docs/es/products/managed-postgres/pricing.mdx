@@ -19,25 +19,19 @@ ClickHouse Managed Postgres se basa en almacenamiento NVMe local, lo que le perm
   Para conocer el precio exacto, usa la [calculadora de precios](https://clickhouse.com/pricing?service=postgres#pricing-calculator) para encontrar la mejor configuración y el mejor precio para tu carga de trabajo.
 </Tip>
 
-<div id="price-performance">
-  ## Relación precio-rendimiento
-</div>
+## Relación precio-rendimiento {#price-performance}
 
 Como el servicio se ejecuta sobre almacenamiento NVMe local, muchas cargas de trabajo pueden lograr una relación precio-rendimiento considerablemente mejor que con las arquitecturas tradicionales de almacenamiento conectado por red. Consulta [PostgresBench](https://postgresbench.clickhouse.com/) para ver comparaciones de benchmark frente a otros proveedores de Postgres con perfiles de hardware similares.
 
 Los clientes pueden llegar a necesitar entre 2 y 4 veces menos cómputo para cargas de trabajo comparables. Estas posibles ganancias de eficiencia deben tenerse en cuenta al comparar precios entre proveedores, aunque las mejoras reales variarán según la carga de trabajo y deben validarse en función de sus aplicaciones específicas.
 
-<div id="pricing-model">
-  ## Modelo de precios
-</div>
+## Modelo de precios {#pricing-model}
 
 El servicio se ejecuta sobre almacenamiento NVMe local, por lo que el precio se basa en la configuración completa de la VM —CPU, memoria y almacenamiento—, en lugar de cobros separados por cómputo y disco.
 
 Hay más de 50 configuraciones disponibles, desde 1 vCPU / 8 GB de RAM / 59 GB de NVMe hasta 96 vCPUs / 768 GB de RAM / 60 TB de almacenamiento NVMe, lo que ofrece flexibilidad tanto para cargas de trabajo de Postgres intensivas en cómputo como para aquellas con altas necesidades de almacenamiento.
 
-<div id="tier-based-pricing">
-  ### Precios por niveles
-</div>
+### Precios por niveles {#tier-based-pricing}
 
 Los precios, las funcionalidades y los límites de recursos varían según el nivel de la organización: [Basic, Scale o Enterprise](/es/products/cloud/features/cloud-tiers). Sin embargo, todos los niveles incluyen las capacidades esenciales del servicio, como Postgres listo para producción sobre almacenamiento NVMe local, CDC nativo hacia ClickHouse y la extensión `pg_clickhouse`.
 
@@ -99,19 +93,15 @@ La siguiente tabla resume las funcionalidades, capacidades y límites incluidos 
   </div>
 </div>
 
-<div id="instance-types">
-  ### Tipos de instancia
-</div>
+### Tipos de instancia {#instance-types}
 
-Las configuraciones de instancia se agrupan en tres categorías para simplificar la selección de infraestructura según las características de la carga de trabajo. No todos los tipos de instancia están disponibles en todas las regiones de AWS.
+Las configuraciones de instancia se agrupan en tres categorías para simplificar la selección de infraestructura según las características de la carga de trabajo. No todos los tipos de instancia están disponibles en todas las regiones. Las familias de instancias que se enumeran a continuación se aplican a AWS. GCP está en Private Preview, y sus tipos de instancia se le comunicarán durante el onboarding.
 
 * **Optimizada para memoria:** Diseñada para cargas de trabajo con uso intensivo de memoria y una proporción de memoria por CPU de 1:8. Admite las familias `r8id` y `r6id` basadas en x86, y las familias `r8gd` y `r6gd` ARM64 (basadas en AWS Graviton). Es la opción más adecuada para grandes conjuntos de trabajo, altas tasas de acierto de caché y cargas de trabajo de bases de datos limitadas por memoria.
 * **Optimizada para almacenamiento:** Diseñada para cargas de trabajo que requieren grandes cantidades de almacenamiento NVMe local sin aumentar la capacidad de cómputo de forma proporcional. Admite las familias `i8g` e `i8ge` ARM64 (basadas en AWS Graviton), y las familias `i7i` e `i7ie` basadas en x86, con configuraciones que ofrecen hasta 60 TB de almacenamiento NVMe local. Es la opción más adecuada para grandes conjuntos de datos, cargas de trabajo de series temporales, almacenamiento de logs y eventos, y cargas de trabajo OLTP con uso intensivo de almacenamiento.
 * **CPU Optimized:** Diseñada para cargas de trabajo con uso intensivo de cómputo y una proporción de memoria por CPU de 1:4. Admite las familias `m8id` y `m6id` basadas en x86, y las familias `m8gd` y `m6gd` ARM64 (basadas en AWS Graviton). Es la opción más adecuada para cargas de trabajo transaccionales de alta concurrencia y consultas limitadas por CPU.
 
-<div id="pricing-calculator">
-  ## Calculadora de precios
-</div>
+## Calculadora de precios {#pricing-calculator}
 
 Usa la [calculadora de precios](https://clickhouse.com/pricing?service=postgres#pricing-calculator) para estimar los costos de despliegue en distintos perfiles de carga de trabajo y configuraciones. Puedes personalizar:
 
@@ -124,20 +114,22 @@ Usa la [calculadora de precios](https://clickhouse.com/pricing?service=postgres#
 
 Esto te permite comparar precios entre más de 50 combinaciones de configuración admitidas y encontrar la opción que mejor se adapte a tu carga de trabajo.
 
-<div id="beta-pricing-highlights">
-  ## Aspectos destacados de los precios beta
-</div>
+## Aspectos destacados de los precios beta {#beta-pricing-highlights}
 
-Durante el período de Beta:
+### Precios de la Public Beta en AWS {#aws-public-beta-pricing}
+
+Durante el período de Beta en AWS:
 
 * El servicio es gratuito hasta que comience la medición del uso el **15 de junio de 2026**
 * El CDC nativo mediante **ClickPipes** está incluido sin costo adicional
 * Actualmente no se aplican cargos por **salida de red** ni por **copias de seguridad**
 * Actualmente, todos los planes incluyen **precios beta con un 50 % de descuento**
 
-<div id="disclaimers">
-  ## Avisos
-</div>
+### Precios de la Private Preview en GCP {#gcp-private-preview-pricing}
+
+ClickHouse Managed Postgres en GCP es gratuito durante la Private Preview. Los precios aplicables una vez finalizada la Private Preview aún se están definiendo. Si necesita más información, póngase en contacto con nosotros para conocer cómo podrían ser los precios finales. Puede inscribirse en la lista de espera de la Private Preview en GCP [aquí](https://clickhouse.com/cloud/postgres#gcp-waitlist).
+
+## Avisos {#disclaimers}
 
 A medida que el producto evoluciona durante la Beta, los precios y el empaquetado pueden ajustarse antes de la disponibilidad general (GA). Tenga en cuenta lo siguiente:
 

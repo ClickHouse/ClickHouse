@@ -24,7 +24,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
     * **第 1 部分：** 上手 NVMe Postgres，体验其性能
     * **第 2 部分：** 通过与 ClickHouse 集成，实现实时分析
 
-    ClickHouse Managed Postgres 目前已在 AWS 的多个区域上线，当前处于 Public Beta 阶段。
+    ClickHouse Managed Postgres 目前已在 AWS 的多个区域上线，当前处于 Public Beta 阶段。GCP 处于私有预览阶段。您可以[在此](https://clickhouse.com/cloud/postgres#gcp-waitlist)加入 GCP 私有预览的等待名单。
 
     **在本快速入门中，您将：**
 
@@ -34,9 +34,9 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
     * 将数据复制到 ClickHouse 进行实时分析
     * 使用 `pg_clickhouse` 直接从 Postgres 查询 ClickHouse
 
-    ## Part 1：NVMe Postgres 入门
+    ## Part 1：NVMe Postgres 入门 {#part-1}
 
-    ### 创建数据库
+    ### 创建数据库 {#create-postgres-database}
 
     要创建新的 ClickHouse Managed Postgres service，请在 Cloud Console 的服务列表中点击 **New service** 按钮，然后即可选择 Postgres 作为数据库类型。
 
@@ -48,7 +48,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     您的 ClickHouse Managed Postgres 实例将在 3 至 5 分钟内完成配置并可投入使用。
 
-    ### 连接到您的数据库
+    ### 连接到您的数据库 {#connect}
 
     在左侧边栏中，您将看到一个 [**Connect** 按钮](/zh/products/managed-postgres/connection)。点击该按钮，即可查看您的连接详情以及多种格式的连接字符串。
 
@@ -56,7 +56,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     复制 `psql` 连接字符串并连接到您的数据库。您也可以使用任何兼容 Postgres 的客户端 (如 DBeaver) 或任何应用程序库。
 
-    ### 体验 NVMe 性能
+    ### 体验 NVMe 性能 {#nvme-performance}
 
     下面来实际感受一下 NVMe 带来的性能提升。首先，在 psql 中启用计时功能，以测量查询执行时间：
 
@@ -154,7 +154,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
         ) AS names;
     ```
 
-    ### 运行数据查询
+    ### 运行数据查询 {#run-queries}
 
     现在我们来运行一些查询，看看采用 NVMe 存储的 Postgres 响应有多快。
 
@@ -231,7 +231,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     ***
 
-    ## 第二部分：使用 ClickHouse 添加实时分析功能
+    ## 第二部分：使用 ClickHouse 添加实时分析功能 {#part-2}
 
     Postgres 擅长处理事务性工作负载 (OLTP) ，而 ClickHouse 则专为大规模数据集上的分析查询 (OLAP) 而生。将两者结合，即可兼得两者之长：
 
@@ -240,7 +240,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     本节介绍如何将 Postgres 数据复制到 ClickHouse 并进行无缝查询。
 
-    ### 设置 ClickHouse 集成
+    ### 设置 ClickHouse 集成 {#setup-integrate-clickhouse}
 
     现在 Postgres 中已有表和数据，接下来将这些表复制到 ClickHouse 以进行分析。首先点击侧边栏中的 **Sync to ClickHouse**，然后点击 **Replicate data in ClickHouse**。
 
@@ -266,7 +266,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     复制过程将随即启动，您将被跳转至集成概览页面。由于这是首次集成，初始基础设施的配置可能需要 2 到 3 分钟。在此期间，我们来了解一下新的 **pg&#95;clickhouse** 扩展。
 
-    ### 从 Postgres 查询 ClickHouse
+    ### 从 Postgres 查询 ClickHouse {#pg-clickhouse-extension}
 
     `pg_clickhouse` 扩展允许您直接在 Postgres 中使用标准 SQL 查询 ClickHouse 数据。这意味着您的应用程序可以将 Postgres 作为统一的查询层，同时处理事务性数据和分析性数据。详情请参阅[完整文档](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction)。
 
@@ -317,7 +317,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
     \det+ organization.*
     ```
 
-    ### 实际体验数据分析功能
+    ### 实际体验数据分析功能 {#analytics-after-integration}
 
     返回集成页面查看状态。此时初始复制应已完成。点击集成名称可查看详细信息。
 
@@ -327,7 +327,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
 
     <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse 中的 ClickHouse Managed Postgres 复制表" size="md" border />
 
-    ### 比较 Postgres 与 ClickHouse 的性能
+    ### 比较 Postgres 与 ClickHouse 的性能 {#performance-comparison}
 
     现在，让我们运行一些分析查询，比较 Postgres 与 ClickHouse 之间的性能差异。请注意，复制表采用 `public_<table_name>` 的命名规范。
 
@@ -412,7 +412,7 @@ import QuickstartCLI from "/snippets/zh/managed-postgres/_quickstart_cli.mdx";
       查询时间会因实例规格、服务之间的网络延迟、数据特征和当前负载而异。
     </Tip>
 
-    ## 清理
+    ## 清理 {#cleanup}
 
     要删除本快速入门中创建的资源：
 

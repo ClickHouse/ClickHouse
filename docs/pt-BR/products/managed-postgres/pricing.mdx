@@ -20,7 +20,7 @@ ClickHouse Managed Postgres é baseado em armazenamento NVMe local, o que permit
 </Tip>
 
 <div id="price-performance">
-  ## Relação preço-desempenho
+  ## Relação preço-desempenho {#price-performance}
 </div>
 
 Como o serviço é executado em armazenamento NVMe local, muitas cargas de trabalho podem atingir uma relação preço-desempenho significativamente melhor do que em arquiteturas tradicionais de armazenamento conectado à rede. Consulte o [PostgresBench](https://postgresbench.clickhouse.com/) para ver benchmarks comparando provedores alternativos de Postgres com perfis de hardware semelhantes.
@@ -28,7 +28,7 @@ Como o serviço é executado em armazenamento NVMe local, muitas cargas de traba
 Os clientes podem precisar de até 2–4× menos compute para cargas de trabalho comparáveis. Esses possíveis ganhos de eficiência devem ser levados em conta ao comparar preços entre provedores, embora os resultados reais variem conforme a carga de trabalho e devam ser validados nas suas aplicações específicas.
 
 <div id="pricing-model">
-  ## Modelo de preços
+  ## Modelo de preços {#pricing-model}
 </div>
 
 O serviço é executado em armazenamento NVMe local, portanto o preço se baseia na configuração completa da VM — CPU, memória e armazenamento, em vez de cobranças separadas por computação e disco.
@@ -36,7 +36,7 @@ O serviço é executado em armazenamento NVMe local, portanto o preço se baseia
 Há mais de 50 configurações disponíveis, que vão de 1 vCPU / 8 GB de RAM / 59 GB de NVMe a 96 vCPUs / 768 GB de RAM / 60 TB de armazenamento NVMe, oferecendo flexibilidade tanto para workloads do Postgres com uso intensivo de computação quanto para workloads com uso intensivo de armazenamento.
 
 <div id="tier-based-pricing">
-  ### Preços por tier
+  ### Preços por tier {#tier-based-pricing}
 </div>
 
 Os preços, os recursos e os limites de recursos variam de acordo com o tier da organização — [Basic, Scale ou Enterprise](/pt-BR/products/cloud/features/cloud-tiers). No entanto, todos os tiers incluem os recursos essenciais do serviço, como Postgres pronto para produção em armazenamento NVMe local, CDC nativo para o ClickHouse e a extensão `pg_clickhouse`.
@@ -99,18 +99,16 @@ A tabela abaixo resume os recursos, as capacidades e os limites incluídos em ca
   </div>
 </div>
 
-<div id="instance-types">
-  ### Tipos de instância
-</div>
+### Tipos de instância {#instance-types}
 
-As configurações de instância são agrupadas em três categorias para simplificar a seleção da infraestrutura com base nas características da carga de trabalho. Nem todos os tipos de instância estão disponíveis em todas as regiões da AWS.
+As configurações de instância são agrupadas em três categorias para simplificar a seleção da infraestrutura com base nas características da carga de trabalho. Nem todos os tipos de instância estão disponíveis em todas as regiões. As famílias de instância listadas abaixo se aplicam à AWS. O GCP está em Private Preview, e seus tipos de instância são compartilhados com você durante o onboarding.
 
 * **Otimizada para memória:** Projetada para cargas de trabalho com uso intensivo de memória, com uma proporção de memória por CPU de 1:8. Compatível com as famílias `r8id` e `r6id` baseadas em x86 e as famílias `r8gd` e `r6gd` ARM64 (baseadas em AWS Graviton). É mais adequada para grandes conjuntos de trabalho, altas taxas de acerto de cache e cargas de trabalho de banco de dados limitadas por memória.
 * **Otimizada para armazenamento:** Projetada para cargas de trabalho que exigem grandes volumes de armazenamento NVMe local sem ampliar a capacidade computacional na mesma proporção. Compatível com as famílias `i8g` e `i8ge` ARM64 (baseadas em AWS Graviton) e as famílias `i7i` e `i7ie` baseadas em x86, com configurações que oferecem até 60 TB de armazenamento NVMe local. É mais adequada para grandes conjuntos de dados, cargas de trabalho de séries temporais, armazenamento de logs e eventos e cargas de trabalho OLTP com uso intensivo de armazenamento.
 * **Otimizada para CPU:** Projetada para cargas de trabalho com uso intensivo de computação, com uma proporção de memória por CPU de 1:4. Compatível com as famílias `m8id` e `m6id` baseadas em x86 e as famílias `m8gd` e `m6gd` ARM64 (baseadas em AWS Graviton). É mais adequada para cargas de trabalho transacionais de alta concorrência e consultas limitadas pela CPU.
 
 <div id="pricing-calculator">
-  ## Calculadora de preços
+  ## Calculadora de preços {#pricing-calculator}
 </div>
 
 Use a [calculadora de preços](https://clickhouse.com/pricing?service=postgres#pricing-calculator) para estimar os custos de implantação em diferentes perfis e configurações de carga de trabalho. Você pode personalizar:
@@ -124,19 +122,23 @@ Use a [calculadora de preços](https://clickhouse.com/pricing?service=postgres#p
 
 Isso permite comparar os preços entre mais de 50 combinações de configuração compatíveis e encontrar a melhor opção para sua carga de trabalho.
 
-<div id="beta-pricing-highlights">
-  ## Destaques da precificação Beta
-</div>
+## Destaques do preço Beta {#beta-pricing-highlights}
 
-Durante o período Beta:
+### Preços do Public Beta na AWS {#aws-public-beta-pricing}
+
+Durante o período Beta na AWS:
 
 * O serviço é gratuito até o início da medição de uso em **15 de junho de 2026**
 * O CDC nativo via **ClickPipes** está incluído sem custo adicional
 * No momento, não há cobranças por **tráfego de saída de rede** nem por **backups**
 * No momento, todos os planos incluem **preços Beta com 50% de desconto**
 
+### Preços do Private Preview no GCP {#gcp-private-preview-pricing}
+
+O ClickHouse Managed Postgres no GCP é gratuito durante o Private Preview. Os preços após o Private Preview ainda estão sendo definidos. Se precisar de mais informações, entre em contato conosco para saber como poderá ser o preço final. Você pode se inscrever na lista de espera do Private Preview no GCP [aqui](https://clickhouse.com/cloud/postgres#gcp-waitlist).
+
 <div id="disclaimers">
-  ## Avisos
+  ## Avisos {#disclaimers}
 </div>
 
 À medida que o produto evolui durante a Beta, os preços e os pacotes podem ser ajustados antes da Disponibilidade Geral (GA). Observe o seguinte:

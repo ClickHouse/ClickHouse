@@ -24,19 +24,19 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
     * **第1部:** NVMe Postgres を使い始め、そのパフォーマンスを体感する
     * **第2部:** ClickHouse と統合してリアルタイム分析を実現する
 
-    ClickHouse Managed Postgres は現在、AWS の複数のリージョンで利用可能であり、パブリックベータ版として提供されています。
+    ClickHouse Managed Postgres は現在、AWS の複数のリージョンで利用可能であり、パブリックベータ版として提供されています。GCP はプライベートプレビューです。GCP プライベートプレビューの順番待ちリストへの登録は[こちら](https://clickhouse.com/cloud/postgres#gcp-waitlist)から行えます。
 
     **このクイックスタートでは、以下を行います：**
 
-    * NVMe による高性能を備えた Managed Postgres インスタンスを作成
+    * NVMe による高性能を備えた ClickHouse Managed Postgres インスタンスを作成
     * 100万件のサンプルイベントを読み込み、NVMe の速度を実際に確認
     * クエリを実行し、低レイテンシのパフォーマンスを体感
     * リアルタイム分析のためにデータを ClickHouse にレプリケート
     * `pg_clickhouse` を使用して、Postgres から ClickHouse に直接クエリ
 
-    ## 第1部: NVMe Postgres を使い始める
+    ## 第1部: NVMe Postgres を使い始める {#part-1}
 
-    ### データベースを作成する
+    ### データベースを作成する {#create-postgres-database}
 
     新しい ClickHouse Managed Postgres サービスを作成するには、Cloud Console のサービス一覧にある **New service** ボタンをクリックします。その後、データベースタイプとして Postgres を選択できます。
 
@@ -46,9 +46,9 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     <Image img="/images/managed-postgres/overview.webp" alt="ClickHouse Managed Postgres の概要" size="md" border />
 
-    ClickHouse Managed Postgres インスタンスは 3～5 分で準備が完了し、使用できるようになります。
+    ClickHouse Managed Postgres インスタンスは 3～5 分でプロビジョニングされ、使用できるようになります。
 
-    ### データベースに接続する
+    ### データベースに接続する {#connect}
 
     左側のサイドバーに[**Connect**ボタン](/ja/products/managed-postgres/connection)が表示されます。クリックすると、接続の詳細と複数の形式の接続文字列を表示できます。
 
@@ -56,7 +56,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     `psql` の接続文字列をコピーして、データベースに接続します。DBeaver などの Postgres 互換クライアントや、任意のアプリケーションライブラリを使用することもできます。
 
-    ### NVMe のパフォーマンスを体感する
+    ### NVMe のパフォーマンスを体感する {#nvme-performance}
 
     NVMe によるパフォーマンスを実際に確認してみましょう。まず、クエリの実行時間を測定できるよう、psql でタイミング計測を有効にします。
 
@@ -154,7 +154,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
         ) AS names;
     ```
 
-    ### データに対してクエリを実行する
+    ### データに対してクエリを実行する {#run-queries}
 
     それでは、NVMe ストレージを使用した場合に Postgres がどれほど高速に応答するか、いくつかのクエリを実行して確認してみましょう。
 
@@ -231,7 +231,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     ***
 
-    ## 第2部: ClickHouse でリアルタイム分析を追加する
+    ## 第2部: ClickHouse でリアルタイム分析を追加する {#part-2}
 
     Postgres はトランザクション系ワークロード (OLTP) に優れている一方、ClickHouse は大規模データセットに対する分析クエリ (OLAP) 向けに特化して設計されています。両者を統合することで、双方の利点を享受できます:
 
@@ -240,7 +240,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     このセクションでは、Postgres のデータを ClickHouse にレプリケーションし、シームレスにクエリを実行する方法を説明します。
 
-    ### ClickHouse 連携のセットアップ
+    ### ClickHouse 連携のセットアップ {#setup-integrate-clickhouse}
 
     Postgres にテーブルとデータが揃ったので、分析のためにテーブルを ClickHouse にレプリケートしましょう。まず、サイドバーの **Sync to ClickHouse** をクリックします。次に、**Replicate data in ClickHouse** をクリックします。
 
@@ -266,7 +266,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     レプリケーションプロセスが開始され、インテグレーションの概要ページに移動します。初回のインテグレーションでは、初期インフラストラクチャのセットアップに2〜3分かかる場合があります。その間に、新しい **pg&#95;clickhouse** 拡張機能を確認してみましょう。
 
-    ### Postgres から ClickHouse をクエリする
+    ### Postgres から ClickHouse をクエリする {#pg-clickhouse-extension}
 
     `pg_clickhouse` 拡張機能を使用すると、Standard SQL を使って Postgres から直接 ClickHouse のデータをクエリできます。これにより、アプリケーションはトランザクションデータと分析データの両方に対して、Postgres を統合クエリレイヤーとして利用できます。詳細については、[完全なドキュメント](/ja/products/managed-postgres/extensions/pg_clickhouse/introduction)を参照してください。
 
@@ -317,7 +317,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
     \det+ organization.*
     ```
 
-    ### 分析機能を実際に確認する
+    ### 分析機能を実際に確認する {#analytics-after-integration}
 
     インテグレーションページに戻って確認しましょう。初期レプリケーションが完了しているはずです。詳細を表示するには、インテグレーション名をクリックしてください。
 
@@ -327,7 +327,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse 内の ClickHouse Managed Postgres レプリケートテーブル" size="md" border />
 
-    ### Postgres と ClickHouse のパフォーマンスを比較する
+    ### Postgres と ClickHouse のパフォーマンスを比較する {#performance-comparison}
 
     次に、いくつかの分析クエリを実行して、Postgres と ClickHouse のパフォーマンスを比較してみましょう。なお、レプリケートされたテーブルは `public_<table_name>` という命名規則を使用します。
 
@@ -412,7 +412,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
       クエリ時間は、インスタンスサイズ、サービス間のネットワーク遅延、データ特性、現在の負荷によって異なります。
     </Tip>
 
-    ## クリーンアップ
+    ## クリーンアップ {#cleanup}
 
     このクイックスタートで作成したリソースを削除するには：
 

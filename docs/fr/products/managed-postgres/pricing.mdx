@@ -20,7 +20,7 @@ ClickHouse Managed Postgres repose sur un stockage NVMe local, ce qui lui permet
 </Tip>
 
 <div id="price-performance">
-  ## Rapport prix/performances
+  ## Rapport prix/performances {#price-performance}
 </div>
 
 Comme le service s’exécute sur un stockage NVMe local, de nombreuses charges de travail peuvent offrir un rapport prix/performances nettement supérieur à celui des architectures traditionnelles de stockage en réseau. Consultez [PostgresBench](https://postgresbench.clickhouse.com/) pour des comparaisons de performances avec d’autres fournisseurs Postgres sur des configurations matérielles similaires.
@@ -28,7 +28,7 @@ Comme le service s’exécute sur un stockage NVMe local, de nombreuses charges 
 Les clients peuvent constater des besoins en calcul jusqu’à 2 à 4× inférieurs pour des charges de travail comparables. Ces gains d’efficacité potentiels doivent être pris en compte lors de la comparaison des tarifs entre fournisseurs, même si les améliorations réelles varient selon la charge de travail et doivent être validées pour vos applications spécifiques.
 
 <div id="pricing-model">
-  ## Modèle de tarification
+  ## Modèle de tarification {#pricing-model}
 </div>
 
 Le service s’appuie sur un stockage NVMe local ; la tarification repose donc sur la configuration complète de la VM — CPU, RAM et stockage — plutôt que sur une facturation distincte de la puissance de calcul et du disque.
@@ -36,7 +36,7 @@ Le service s’appuie sur un stockage NVMe local ; la tarification repose donc s
 Plus de 50 configurations sont disponibles, allant de 1 vCPU / 8 GB de RAM / 59 GB de NVMe à 96 vCPU / 768 GB de RAM / 60 TB de stockage NVMe, ce qui offre une grande flexibilité aussi bien pour les charges de travail Postgres intensives en calcul que pour celles gourmandes en stockage.
 
 <div id="tier-based-pricing">
-  ### Tarification par niveau
+  ### Tarification par niveau {#tier-based-pricing}
 </div>
 
 La tarification, les fonctionnalités et les limites de ressources varient selon le niveau d’organisation — [Basic, Scale ou Enterprise](/fr/products/cloud/features/cloud-tiers) — mais chaque niveau inclut les fonctionnalités essentielles du service, notamment Postgres prêt pour la production sur stockage NVMe local, le CDC natif vers ClickHouse et l’extension `pg_clickhouse`.
@@ -99,18 +99,16 @@ Le tableau ci-dessous résume les fonctionnalités, les capacités et les limite
   </div>
 </div>
 
-<div id="instance-types">
-  ### Types d’instance
-</div>
+### Types d’instance {#instance-types}
 
-Les configurations d’instance sont regroupées en trois catégories afin de simplifier le choix de l’infrastructure en fonction des caractéristiques des charges de travail. Tous les types d’instance ne sont pas disponibles dans toutes les régions AWS.
+Les configurations d’instance sont regroupées en trois catégories afin de simplifier le choix de l’infrastructure en fonction des caractéristiques des charges de travail. Tous les types d’instance ne sont pas disponibles dans toutes les régions. Les familles d’instances listées ci-dessous s’appliquent à AWS. GCP est en Private Preview, et ses types d’instance vous sont communiqués lors de l’onboarding.
 
-* **Optimisées mémoire :** Conçues pour les charges de travail gourmandes en mémoire, avec un ratio mémoire/CPU de 1:8. Prennent en charge les familles `r8id` et `r6id` basées sur x86, ainsi que les familles `r8gd` et `r6gd` ARM64 basées sur AWS Graviton. Elles conviennent particulièrement aux grands ensembles de données actives, aux taux de réussite du cache élevés et aux charges de travail de base de données limitées par la mémoire.
-* **Optimisées stockage :** Conçues pour les charges de travail nécessitant de grandes quantités de stockage NVMe local sans augmenter proportionnellement les ressources de calcul. Prennent en charge les familles `i8g` et `i8ge` ARM64 basées sur AWS Graviton, ainsi que les familles `i7i` et `i7ie` basées sur x86, avec des configurations offrant jusqu’à 60 To de stockage NVMe local. Elles conviennent particulièrement aux grands jeux de données, aux charges de travail de séries temporelles, au stockage des logs et des événements, ainsi qu’aux charges de travail OLTP gourmandes en stockage.
-* **Optimisées CPU :** Conçues pour les charges de travail gourmandes en calcul, avec un ratio mémoire/CPU de 1:4. Prennent en charge les familles `m8id` et `m6id` basées sur x86, ainsi que les familles `m8gd` et `m6gd` ARM64 basées sur AWS Graviton. Elles conviennent particulièrement aux charges de travail transactionnelles à forte concurrence ainsi qu’aux requêtes limitées par le CPU.
+* **Optimisées mémoire :** Conçues pour les charges de travail gourmandes en mémoire, avec un ratio mémoire/CPU de 1:8. Prennent en charge les familles `r8id` et `r6id` basées sur x86, ainsi que les familles `r8gd` et `r6gd` ARM64 basées sur AWS Graviton. Elles conviennent particulièrement aux grands ensembles de données actives, aux taux de réussite du cache élevés et aux charges de travail de base de données limitées par la mémoire.
+* **Optimisées stockage :** Conçues pour les charges de travail nécessitant de grandes quantités de stockage NVMe local sans augmenter proportionnellement les ressources de calcul. Prennent en charge les familles `i8g` et `i8ge` ARM64 basées sur AWS Graviton, ainsi que les familles `i7i` et `i7ie` basées sur x86, avec des configurations offrant jusqu’à 60 To de stockage NVMe local. Elles conviennent particulièrement aux grands jeux de données, aux charges de travail de séries temporelles, au stockage des logs et des événements, ainsi qu’aux charges de travail OLTP gourmandes en stockage.
+* **CPU Optimized :** Conçues pour les charges de travail gourmandes en calcul, avec un ratio mémoire/CPU de 1:4. Prennent en charge les familles `m8id` et `m6id` basées sur x86, ainsi que les familles `m8gd` et `m6gd` ARM64 basées sur AWS Graviton. Elles conviennent particulièrement aux charges de travail transactionnelles à forte concurrence ainsi qu’aux requêtes limitées par le CPU.
 
 <div id="pricing-calculator">
-  ## Calculateur de tarification
+  ## Calculateur de tarification {#pricing-calculator}
 </div>
 
 Utilisez le [calculateur de tarification](https://clickhouse.com/pricing?service=postgres#pricing-calculator) pour estimer les coûts de déploiement selon différents profils de charge et différentes configurations. Vous pouvez personnaliser :
@@ -125,18 +123,26 @@ Utilisez le [calculateur de tarification](https://clickhouse.com/pricing?service
 Cela vous permet de comparer les coûts de plus de 50 combinaisons de configuration prises en charge et de trouver celle qui convient le mieux à votre charge de travail.
 
 <div id="beta-pricing-highlights">
-  ## Points clés de la tarification bêta
+  ## Points clés de la tarification bêta {#beta-pricing-highlights}
 </div>
 
-Pendant la période bêta :
+<div id="aws-public-beta-pricing">
+  ### Tarification de la bêta publique sur AWS {#aws-public-beta-pricing}
+</div>
+
+Pendant la période bêta sur AWS :
 
 * Le service est gratuit jusqu’au début du suivi de l’utilisation, le **15 juin 2026**
 * Le CDC natif via **ClickPipes** est inclus sans frais supplémentaires
-* Aucuns frais ne s’appliquent actuellement au **trafic sortant** ni aux **sauvegardes**
-* Toutes les offres bénéficient actuellement d’une **réduction bêta de 50 %**
+* Aucuns frais ne s’appliquent actuellement au **trafic sortant réseau** ni aux **sauvegardes**
+* Toutes les offres bénéficient actuellement d’une **réduction bêta de 50 %**
+
+### Tarification de la Private Preview sur GCP {#gcp-private-preview-pricing}
+
+ClickHouse Managed Postgres sur GCP est gratuit pendant la Private Preview. La tarification applicable à l&#39;issue de la Private Preview est en cours de finalisation. Si vous souhaitez en savoir plus, contactez-nous pour connaître les tarifs envisagés. Vous pouvez vous inscrire sur la liste d&#39;attente de la Private Preview sur GCP [ici](https://clickhouse.com/cloud/postgres#gcp-waitlist).
 
 <div id="disclaimers">
-  ## Avertissements
+  ## Avertissements {#disclaimers}
 </div>
 
 À mesure que le produit évolue durant la phase Beta, les tarifs et les modalités de packaging peuvent être ajustés avant la disponibilité générale (GA). Veuillez noter les points suivants :

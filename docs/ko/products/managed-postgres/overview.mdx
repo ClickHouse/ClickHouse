@@ -18,9 +18,7 @@ Citus Data, Heroku, Microsoft에서 세계적 수준의 Postgres를 제공한 �
 {/* TODO: Postgres + ClickHouse 통합 아키텍처 다이어그램
     경로: /images/cloud/managed-postgres/architecture-overview.png */}
 
-<div id="nvme-performance">
-  ## NVMe 기반 성능
-</div>
+## NVMe 기반 성능 {#nvme-performance}
 
 대부분의 관리형 Postgres 서비스는 Amazon EBS와 같은 네트워크 연결 스토리지를 사용하며, 디스크에 액세스할 때마다 네트워크 왕복 통신이 필요합니다. 이로 인해 밀리초 단위의 지연 시간이 발생하고 IOPS가 제한되어, 쓰기 비중이 높거나 I/O 집약적인 워크로드에서 병목이 생깁니다.
 
@@ -36,49 +34,48 @@ Postgres 워크로드가 주로 디스크 IOPS와 지연 시간 때문에 성능
   NVMe 디스크에서 Postgres가 얼마나 빠른지 [성능 벤치마크](https://clickhouse.com/blog/postgresbench)에서 알아보십시오.
 </Note>
 
-AWS의 로컬 NVMe 한도는 [메모리 최적화](https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html#mo_instance-store), [스토리지 최적화](https://docs.aws.amazon.com/ec2/latest/instancetypes/so.html#so_instance-store), [CPU 최적화](https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html#gp_instance-store)를 참조하십시오.
+AWS의 로컬 NVMe 한도는 [메모리 최적화](https://docs.aws.amazon.com/ec2/latest/instancetypes/mo.html#mo_instance-store), [스토리지 최적화](https://docs.aws.amazon.com/ec2/latest/instancetypes/so.html#so_instance-store), [CPU 최적화](https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html#gp_instance-store)를 참조하십시오. GCP는 [로컬 SSD 디스크](https://cloud.google.com/compute/docs/disks/local-ssd)를 참조하십시오.
 
-<div id="clickhouse-integration">
-  ## 네이티브 ClickHouse 통합
-</div>
+## 지원되는 클라우드 제공업체 {#supported-cloud-providers}
+
+ClickHouse Managed Postgres는 다음 클라우드 제공업체에서 사용할 수 있습니다:
+
+| 클라우드 제공업체 | 제공 상태           |
+| --------- | --------------- |
+| AWS       | Public Beta     |
+| GCP       | Private Preview |
+
+<Note>
+  GCP의 ClickHouse Managed Postgres는 Private Preview 단계입니다. GCP Private Preview 대기자 명단 신청은 [여기](https://clickhouse.com/cloud/postgres#gcp-waitlist)에서 할 수 있습니다. 자세한 내용은 [발표 글](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview)을 참조하십시오.
+</Note>
+
+## 네이티브 ClickHouse 통합 {#clickhouse-integration}
 
 ClickHouse Managed Postgres는 ClickHouse와 네이티브로 통합되어 복잡한 ETL 파이프라인 없이 트랜잭션과 분석을 함께 활용할 수 있습니다.
 
-<div id="postgres-replication">
-  ### Postgres에서 ClickHouse로 복제
-</div>
+### Postgres에서 ClickHouse로 복제 {#postgres-replication}
 
 [ClickPipes의 Postgres CDC 커넥터](/ko/integrations/clickpipes/postgres/index)를 사용해 Postgres 데이터를 ClickHouse로 복제할 수 있습니다. 이 커넥터는 초기 적재와 지속적인 증분 동기화를 모두 처리하며, 매월 수백 테라바이트의 데이터를 이전하는 수백 곳의 기업 고객 환경에서 안정성이 검증되었습니다.
 
-<div id="pg-clickhouse">
-  ### pg_clickhouse: 통합 쿼리 레이어
-</div>
+### pg_clickhouse: 통합 쿼리 레이어 {#pg-clickhouse}
 
 모든 ClickHouse Managed Postgres 인스턴스에는 [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse) 확장 기능이 기본으로 포함되어 있으며, 이를 통해 Postgres에서 ClickHouse를 직접 쿼리할 수 있습니다. 애플리케이션은 여러 데이터베이스에 연결할 필요 없이 트랜잭션과 분석 워크로드 모두에 대해 Postgres를 통합 쿼리 레이어로 사용할 수 있습니다.
 
 이 확장 기능은 효율적인 실행을 위해 필터, 조인, 세미 조인, 집계, 함수 등을 ClickHouse로 광범위하게 쿼리 pushdown할 수 있도록 지원합니다. 현재 22개의 TPC-H 쿼리 중 14개는 완전히 pushdown되며, 동일한 쿼리를 표준 Postgres에서 실행할 때보다 60배 이상의 성능 향상을 제공합니다.
 
-<div id="enterprise-reliability">
-  ## 엔터프라이즈급 안정성
-</div>
+## 엔터프라이즈급 안정성 {#enterprise-reliability}
 
 ClickHouse Managed Postgres는 운영 환경의 워크로드에 필요한 안정성과 보안 기능을 제공합니다.
 
-<div id="high-availability">
-  ### 고가용성
-</div>
+### 고가용성 {#high-availability}
 
 쿼럼 기반 복제를 사용해 서로 다른 가용 영역에 최대 2개의 대기 레플리카를 구성할 수 있습니다. 이러한 대기 레플리카는 고가용성과 자동 장애 조치에 전용으로 사용되며, 장애 발생 시 데이터베이스를 신속하게 복구할 수 있도록 합니다. 읽기 스케일링을 위해서는 별도의 [읽기 레플리카](/ko/products/managed-postgres/read-replicas)를 프로비저닝할 수 있습니다. 구성에 대한 자세한 내용은 [고가용성](/ko/products/managed-postgres/high-availability) 페이지를 참조하십시오.
 
-<div id="backups">
-  ### 백업 및 복구
-</div>
+### 백업 및 복구 {#backups}
 
 모든 인스턴스에는 포크와 시점 복구를 지원하는 자동 백업이 포함됩니다. 백업은 전체 백업과 객체 스토리지로의 연속적인 WAL 아카이빙을 처리하는 널리 알려진 오픈소스 도구인 [WAL-G](https://github.com/wal-g/wal-g)를 기반으로 수행됩니다.
 
-<div id="security-compliance">
-  ### 보안 및 컴플라이언스
-</div>
+### 보안 및 컴플라이언스 {#security-compliance}
 
 ClickHouse Managed Postgres는 ClickHouse Cloud와 동일한 보안 표준을 충족하도록 설계되었습니다.
 
@@ -86,8 +83,6 @@ ClickHouse Managed Postgres는 ClickHouse Cloud와 동일한 보안 표준을 �
 * **네트워크 보안**: IP 허용 목록, 저장 시 암호화 및 전송 중 암호화(TLS 1.3)
 * **액세스 제어**: 데이터베이스 관리를 위한 전체 슈퍼유저 권한
 
-<div id="open-source">
-  ### 오픈 소스 기반
-</div>
+### 오픈 소스 기반 {#open-source}
 
 Postgres와 ClickHouse는 모두 크고 활발한 커뮤니티를 갖춘 오픈 소스 데이터베이스입니다. `pg_clickhouse` 확장 기능과 PeerDB 기반의 CDC 복제를 비롯한 통합 구성 요소 역시 모두 오픈 소스입니다. 이러한 기반 덕분에 특정 벤더에 종속되지 않고 데이터 스택을 완전히 제어할 수 있으며, 장기적인 유연성도 확보할 수 있습니다.

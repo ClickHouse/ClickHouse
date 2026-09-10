@@ -24,7 +24,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
     * **Part 1:** ابدأ باستخدام NVMe Postgres واختبر أداءه
     * **Part 2:** استفِد من التحليلات في الوقت الفعلي عبر التكامل مع ClickHouse
 
-    ClickHouse Managed Postgres متاح حاليًا على AWS في عدة مناطق وهو في مرحلة Public Beta.
+    ClickHouse Managed Postgres متاح حاليًا على AWS في عدة مناطق وهو في مرحلة Public Beta. أما GCP فهو في مرحلة Private Preview. يمكنك التسجيل في قائمة انتظار Private Preview الخاصة بـ GCP [من هنا](https://clickhouse.com/cloud/postgres#gcp-waitlist).
 
     **في هذا الدليل التمهيدي، ستتعلم:**
 
@@ -34,11 +34,11 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
     * انسخ البيانات إلى ClickHouse لإجراء تحليلات في الوقت الفعلي
     * استعلم من ClickHouse مباشرةً من داخل Postgres باستخدام `pg_clickhouse`
 
-    ## الجزء 1: البدء مع NVMe Postgres
+    ## الجزء 1: البدء مع NVMe Postgres {#part-1}
 
-    ### إنشاء قاعدة بيانات
+    ### إنشاء قاعدة بيانات {#create-postgres-database}
 
-    لإنشاء خدمة ClickHouse Managed Postgres جديدة، انقر على زر **New service** في قائمة الخدمات في Cloud Console. ستتمكن بعد ذلك من اختيار Postgres نوعًا لقاعدة البيانات.
+    لإنشاء خدمة ClickHouse Managed Postgres جديدة، انقر على زر **New service** في قائمة الخدمات في Cloud Console. ستتمكن بعد ذلك من اختيار Postgres كنوع لقاعدة البيانات.
 
     <Image img="/images/managed-postgres/create-service.webp" alt="أنشئ خدمة ClickHouse Managed Postgres" size="md" border />
 
@@ -48,7 +48,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     سيتم توفير مثيل ClickHouse Managed Postgres الخاص بك وسيكون جاهزًا للاستخدام في غضون 3-5 دقائق.
 
-    ### الاتصال بقاعدة البيانات
+    ### الاتصال بقاعدة البيانات {#connect}
 
     في الشريط الجانبي على اليسار، ستجد [**زر الاتصال**](/ar/products/managed-postgres/connection). انقر عليه لعرض تفاصيل الاتصال وسلاسل الاتصال بتنسيقات متعددة.
 
@@ -56,7 +56,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     انسخ سلسلة اتصال `psql` واتصل بقاعدة بياناتك. يمكنك أيضًا استخدام أي عميل متوافق مع Postgres مثل DBeaver، أو أي مكتبة تطبيق.
 
-    ### اختبر أداء NVMe
+    ### اختبر أداء NVMe {#nvme-performance}
 
     لنرَ أداء NVMe عمليًا. أولًا، فعّل التوقيت في psql لقياس زمن تنفيذ الاستعلام:
 
@@ -154,7 +154,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
         ) AS names;
     ```
 
-    ### تشغيل الاستعلامات على بياناتك
+    ### تشغيل الاستعلامات على بياناتك {#run-queries}
 
     الآن لنُشغّل بعض الاستعلامات لنرى مدى سرعة استجابة Postgres مع تخزين NVMe.
 
@@ -231,7 +231,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     ***
 
-    ## الجزء الثاني: إضافة تحليلات فورية مع ClickHouse
+    ## الجزء الثاني: إضافة تحليلات فورية مع ClickHouse {#part-2}
 
     بينما يتفوق Postgres في أعباء العمل المعاملاتية (OLTP)، تم تصميم ClickHouse خصيصًا للاستعلامات التحليلية (OLAP) على مجموعات البيانات الكبيرة. من خلال دمجهما معًا، تحصل على أفضل ما في العالمين:
 
@@ -240,11 +240,11 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     يوضح لك هذا القسم كيفية نسخ بيانات Postgres إلى ClickHouse والاستعلام عنها بسلاسة.
 
-    ### إعداد تكامل ClickHouse
+    ### إعداد تكامل ClickHouse {#setup-integrate-clickhouse}
 
-    بعد أن أصبح لدينا جداول وبيانات في Postgres، دعونا ننسخ الجداول إلى ClickHouse لأغراض التحليلات. نبدأ بالنقر على **مزامنة إلى ClickHouse** في الشريط الجانبي. ثم يمكنك النقر على **مزامنة البيانات في ClickHouse**.
+    بعد أن أصبح لدينا جداول وبيانات في Postgres، دعونا ننسخ الجداول إلى ClickHouse لأغراض التحليلات. نبدأ بالنقر على **مزامنة إلى ClickHouse** في الشريط الجانبي. ثم يمكنك النقر على **نسخ البيانات في ClickHouse**.
 
-    <Image img="/images/managed-postgres/integration-landing.webp" alt="تكامل Managed Postgres فارغ" size="md" border />
+    <Image img="/images/managed-postgres/integration-landing.webp" alt="تكامل ClickHouse Managed Postgres فارغ" size="md" border />
 
     في النموذج التالي، يمكنك إدخال اسم للتكامل الخاص بك واختيار مثيل ClickHouse موجود لنسخ البيانات إليه. إذا لم يكن لديك مثيل ClickHouse بعد، يمكنك إنشاء واحد مباشرةً من هذا النموذج.
 
@@ -266,7 +266,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     ستبدأ عملية النسخ المتماثل، وسيتم نقلك إلى صفحة نظرة عامة على التكامل. بما أن هذا هو التكامل الأول، فقد يستغرق إعداد البنية التحتية الأولية دقيقتين إلى ثلاث دقائق. في هذه الأثناء، دعنا نطلع على الإضافة الجديدة **pg&#95;clickhouse**.
 
-    ### الاستعلام عن ClickHouse من Postgres
+    ### الاستعلام عن ClickHouse من Postgres {#pg-clickhouse-extension}
 
     تتيح إضافة `pg_clickhouse` الاستعلام عن بيانات ClickHouse مباشرةً من Postgres باستخدام SQL القياسي. وهذا يعني أن تطبيقك يمكنه استخدام Postgres كطبقة استعلام موحّدة لكل من البيانات المعاملاتية والتحليلية. راجع [التوثيق الكامل](/ar/products/managed-postgres/extensions/pg_clickhouse/introduction) للتفاصيل.
 
@@ -317,7 +317,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
     \det+ organization.*
     ```
 
-    ### شاهد تحليلاتك عمليًا
+    ### شاهد تحليلاتك عمليًا {#analytics-after-integration}
 
     لنعُد إلى صفحة التكامل. ينبغي أن ترى أن النسخ المتماثل الأولي قد اكتمل. انقر على اسم التكامل لعرض التفاصيل.
 
@@ -327,9 +327,9 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     <Image img="/images/managed-postgres/replicated-tables.webp" alt="الجداول المُكرَّرة لـ ClickHouse Managed Postgres في ClickHouse" size="md" border />
 
-    ### مقارنة أداء Postgres مقابل ClickHouse
+    ### مقارنة أداء Postgres مقابل ClickHouse {#performance-comparison}
 
-    الآن لنُشغّل بعض الاستعلامات التحليلية ونقارن الأداء بين Postgres وClickHouse. لاحظ أن الجداول المكرَّرة تستخدم اصطلاح التسمية `public_<table_name>`.
+    الآن لنُشغّل بعض الاستعلامات التحليلية ونقارن الأداء بين Postgres وClickHouse. لاحظ أن الجداول المكرَّرة تستخدم اصطلاح التسمية `public_<table_name>`.
 
     **الاستعلام 1: أكثر المستخدمين نشاطًا**
 
@@ -412,7 +412,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
       تختلف أزمنة الاستعلامات حسب حجم المثيل، وزمن انتقال الشبكة بين الخدمات، وخصائص البيانات، والحمل الحالي.
     </Tip>
 
-    ## التنظيف
+    ## التنظيف {#cleanup}
 
     لحذف الموارد التي أُنشئت في هذا الدليل التمهيدي:
 

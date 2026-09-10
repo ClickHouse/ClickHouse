@@ -20,7 +20,7 @@ ClickHouse Managed Postgres는 로컬 NVMe 스토리지를 기반으로 구축�
 </Tip>
 
 <div id="price-performance">
-  ## 가격 대비 성능
+  ## 가격 대비 성능 {#price-performance}
 </div>
 
 이 서비스는 로컬 NVMe 스토리지에서 실행되므로, 많은 워크로드에서 기존의 네트워크 연결 스토리지 아키텍처보다 가격 대비 성능이 훨씬 뛰어날 수 있습니다. 유사한 하드웨어 프로필에서 다른 Postgres 서비스 제공업체와의 벤치마크 비교는 [PostgresBench](https://postgresbench.clickhouse.com/)를 참조하십시오.
@@ -28,7 +28,7 @@ ClickHouse Managed Postgres는 로컬 NVMe 스토리지를 기반으로 구축�
 비슷한 워크로드의 경우 필요한 컴퓨트가 최대 2~4배까지 줄어들 수 있습니다. 따라서 서비스 제공업체별 가격을 비교할 때는 이러한 잠재적인 효율성 향상을 고려해야 합니다. 다만 실제 개선 폭은 워크로드에 따라 달라지므로, 사용 중인 구체적인 애플리케이션을 기준으로 검증해야 합니다.
 
 <div id="pricing-model">
-  ## 가격 모델
+  ## 가격 모델 {#pricing-model}
 </div>
 
 이 서비스는 로컬 NVMe 스토리지에서 실행되므로, 가격은 컴퓨트와 디스크를 별도로 청구하는 방식이 아니라 CPU, 메모리, 스토리지를 포함한 전체 VM 구성 기준으로 책정됩니다.
@@ -36,7 +36,7 @@ ClickHouse Managed Postgres는 로컬 NVMe 스토리지를 기반으로 구축�
 1 vCPU / 8 GB RAM / 59 GB NVMe부터 96 vCPU / 768 GB RAM / 60 TB NVMe 스토리지까지, 50개가 넘는 구성을 제공하므로 컴퓨트 집약적인 Postgres 워크로드와 스토리지 사용량이 많은 Postgres 워크로드를 모두 유연하게 지원합니다.
 
 <div id="tier-based-pricing">
-  ### 티어 기반 요금
+  ### 티어 기반 요금 {#tier-based-pricing}
 </div>
 
 요금, 기능, 리소스 한도는 조직 티어([Basic, Scale 또는 Enterprise](/ko/products/cloud/features/cloud-tiers))에 따라 달라지지만, 모든 티어에는 로컬 NVMe 스토리지에서 실행되는 프로덕션급 Postgres, ClickHouse로의 네이티브 CDC, `pg_clickhouse` 확장 기능 등 서비스의 핵심 기능이 포함됩니다.
@@ -100,17 +100,17 @@ ClickHouse Managed Postgres는 로컬 NVMe 스토리지를 기반으로 구축�
 </div>
 
 <div id="instance-types">
-  ### 인스턴스 유형
+  ### 인스턴스 유형 {#instance-types}
 </div>
 
-인스턴스 구성은 워크로드 특성에 따라 인프라를 더 쉽게 선택할 수 있도록 세 가지 범주로 구분됩니다. 모든 AWS 리전에서 모든 인스턴스 유형을 사용할 수 있는 것은 아닙니다.
+인스턴스 구성은 워크로드 특성에 따라 인프라를 더 쉽게 선택할 수 있도록 세 가지 범주로 구분됩니다. 모든 리전에서 모든 인스턴스 유형을 사용할 수 있는 것은 아닙니다. 아래에 나열된 인스턴스 패밀리는 AWS에 적용됩니다. GCP는 비공개 프리뷰 단계이며, 해당 인스턴스 유형은 온보딩 과정에서 안내됩니다.
 
 * **메모리 최적화:** 메모리 대 CPU 비율이 1:8인 메모리 집약적 워크로드를 위해 설계되었습니다. x86 기반 `r8id`, `r6id` 패밀리와 AWS Graviton 기반 ARM64 `r8gd`, `r6gd` 패밀리를 지원합니다. 대규모 작업 집합, 높은 캐시 적중률, 메모리 바운드 데이터베이스 워크로드에 가장 적합합니다.
 * **스토리지 최적화:** 컴퓨트를 그에 비례해 스케일링하지 않고도 대용량 로컬 NVMe 스토리지가 필요한 워크로드를 위해 설계되었습니다. AWS Graviton 기반 ARM64 `i8g`, `i8ge` 패밀리와 x86 기반 `i7i`, `i7ie` 패밀리를 지원하며, 최대 60 TB의 로컬 NVMe 스토리지를 제공하는 구성이 있습니다. 대규모 데이터셋, 시계열 워크로드, 로그 및 이벤트 스토리지, 스토리지 집약적 OLTP 워크로드에 가장 적합합니다.
 * **CPU 최적화:** 메모리 대 CPU 비율이 1:4인 컴퓨트 집약적 워크로드를 위해 설계되었습니다. x86 기반 `m8id`, `m6id` 패밀리와 AWS Graviton 기반 ARM64 `m8gd`, `m6gd` 패밀리를 지원합니다. 높은 동시성의 트랜잭션 워크로드와 CPU 바운드 쿼리에 가장 적합합니다.
 
 <div id="pricing-calculator">
-  ## 요금 계산기
+  ## 요금 계산기 {#pricing-calculator}
 </div>
 
 [요금 계산기](https://clickhouse.com/pricing?service=postgres#pricing-calculator)를 사용하면 다양한 워크로드 프로필과 구성에서 배포 비용을 추정할 수 있습니다. 다음 항목을 사용자 지정할 수 있습니다:
@@ -125,18 +125,26 @@ ClickHouse Managed Postgres는 로컬 NVMe 스토리지를 기반으로 구축�
 이를 통해 지원되는 50개 이상의 구성 조합에서 요금을 비교하고 워크로드에 가장 적합한 구성을 찾을 수 있습니다.
 
 <div id="beta-pricing-highlights">
-  ## 베타 요금 주요 사항
+  ## 베타 요금 주요 사항 {#beta-pricing-highlights}
 </div>
 
-베타 기간 동안:
+<div id="aws-public-beta-pricing">
+  ### AWS Public Beta 요금 {#aws-public-beta-pricing}
+</div>
+
+AWS의 베타 기간 동안:
 
 * 서비스는 **2026년 06월 15일**에 사용량 측정이 시작될 때까지 무료입니다
 * **ClickPipes**를 통한 네이티브 CDC가 추가 비용 없이 제공됩니다
 * 현재 **네트워크 이그레스** 또는 **백업**에는 요금이 부과되지 않습니다
 * 현재 모든 플랜에는 **50% 할인된 베타 요금**이 적용됩니다
 
+### GCP 비공개 프리뷰 요금 {#gcp-private-preview-pricing}
+
+GCP에서 제공되는 ClickHouse Managed Postgres는 비공개 프리뷰 기간 동안 무료입니다. 비공개 프리뷰 종료 이후의 요금은 아직 확정되지 않았습니다. 추가 정보가 필요하시면 문의해 주시기 바랍니다. 최종 요금 수준에 대해 안내해 드립니다. GCP 비공개 프리뷰 대기자 명단 신청은 [여기](https://clickhouse.com/cloud/postgres#gcp-waitlist)에서 하실 수 있습니다.
+
 <div id="disclaimers">
-  ## 유의 사항
+  ## 유의 사항 {#disclaimers}
 </div>
 
 제품은 베타 기간 동안 계속 발전하고 있으므로, 일반 제공(GA)에 앞서 가격 및 패키징이 조정될 수 있습니다. 다음 사항에 유의하십시오.

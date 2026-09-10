@@ -20,7 +20,7 @@ ClickHouse Managed Postgres 基于本地 NVMe 存储构建，因此无需承担�
 </Tip>
 
 <div id="price-performance">
-  ## 性价比
+  ## 性价比 {#price-performance}
 </div>
 
 由于该服务运行在本地 NVMe 存储上，相较于传统的网络附加存储架构，许多工作负载都能实现显著更高的性价比。有关在类似硬件配置下与其他 Postgres 提供商进行基准测试对比的信息，请参阅 [PostgresBench](https://postgresbench.clickhouse.com/)。
@@ -28,7 +28,7 @@ ClickHouse Managed Postgres 基于本地 NVMe 存储构建，因此无需承担�
 对于相当的工作负载，客户所需的计算资源最多可降至原来的 1/2 到 1/4。在比较不同提供商的定价时，应将这些潜在的效率提升考虑在内；不过，实际提升会因工作负载而异，仍需结合您的具体应用进行验证。
 
 <div id="pricing-model">
-  ## 定价模式
+  ## 定价模式 {#pricing-model}
 </div>
 
 该服务运行在本地 NVMe 存储上，因此定价依据完整的 VM 配置——CPU、内存和存储——而不是将 compute 和 disk 分开计费。
@@ -36,7 +36,7 @@ ClickHouse Managed Postgres 基于本地 NVMe 存储构建，因此无需承担�
 提供 50 多种配置，范围从 1 vCPU / 8 GB RAM / 59 GB NVMe 到 96 vCPU / 768 GB RAM / 60 TB NVMe 存储，可灵活满足计算密集型和存储密集型的 Postgres 工作负载需求。
 
 <div id="tier-based-pricing">
-  ### 按层级定价
+  ### 按层级定价 {#tier-based-pricing}
 </div>
 
 定价、功能和资源限制因组织层级而异——[基础版、Scale 或 Enterprise](/zh/products/cloud/features/cloud-tiers)。不过，每个层级都包含该服务的核心能力，包括采用本地 NVMe 存储的生产级 Postgres、原生 CDC 到 ClickHouse，以及 `pg_clickhouse` 扩展。
@@ -99,18 +99,16 @@ ClickHouse Managed Postgres 基于本地 NVMe 存储构建，因此无需承担�
   </div>
 </div>
 
-<div id="instance-types">
-  ### 实例类型
-</div>
+### 实例类型 {#instance-types}
 
-实例配置分为三类，便于根据工作负载特征简化基础设施选型。并非所有 AWS 区域都提供所有实例类型。
+实例配置分为三类，便于根据工作负载特征简化基础设施选型。并非所有区域都提供所有实例类型。下列实例系列适用于 AWS。GCP 处于私有预览阶段，其实例类型将在 onboarding 过程中提供给你。
 
 * **内存优化型：**专为内存密集型工作负载设计，内存与 CPU 配比为 1:8。支持基于 x86 的 `r8id` 和 `r6id` 系列，以及基于 AWS Graviton 的 ARM64 `r8gd` 和 `r6gd` 系列。最适合大型工作集、高缓存命中率以及内存受限的数据库工作负载。
 * **存储优化型：**专为需要大量本地 NVMe 存储、但无需按比例扩展计算资源的工作负载设计。支持基于 AWS Graviton 的 ARM64 `i8g` 和 `i8ge` 系列，以及基于 x86 的 `i7i` 和 `i7ie` 系列，相关配置最多可提供 60 TB 的本地 NVMe 存储。最适合大型数据集、时间序列工作负载、日志与事件存储，以及存储密集型 OLTP 工作负载。
-* **CPU 优化型：**专为计算密集型工作负载设计，内存与 CPU 配比为 1:4。支持基于 x86 的 `m8id` 和 `m6id` 系列，以及基于 AWS Graviton 的 ARM64 `m8gd` 和 `m6gd` 系列。最适合高并发事务型工作负载和 CPU 受限的查询。
+* **CPU 优化：**专为计算密集型工作负载设计，内存与 CPU 配比为 1:4。支持基于 x86 的 `m8id` 和 `m6id` 系列，以及基于 AWS Graviton 的 ARM64 `m8gd` 和 `m6gd` 系列。最适合高并发事务型工作负载和 CPU 受限的查询。
 
 <div id="pricing-calculator">
-  ## 定价计算器
+  ## 定价计算器 {#pricing-calculator}
 </div>
 
 使用[定价计算器](https://clickhouse.com/pricing?service=postgres#pricing-calculator)估算不同工作负载特征和配置下的部署成本。你可以自定义：
@@ -125,18 +123,26 @@ ClickHouse Managed Postgres 基于本地 NVMe 存储构建，因此无需承担�
 这样，你就可以比较 50 多种受支持配置组合的价格，并找到最适合自身工作负载的方案。
 
 <div id="beta-pricing-highlights">
-  ## Beta 价格要点
+  ## 定价要点 {#beta-pricing-highlights}
 </div>
 
-在 Beta 期间：
+<div id="aws-public-beta-pricing">
+  ### AWS Public 定价 {#aws-public-beta-pricing}
+</div>
+
+在 AWS 上的 Beta 期间：
 
 * 在 **2026 年 6 月 15 日** 开始按用量计费之前，该服务免费
 * 通过 **ClickPipes** 提供的原生 CDC 无需额外付费
 * 目前 **网络出站流量** 和 **备份** 均不收费
-* 目前所有套餐均享受 **Beta 期间 5 折价格**
+* 目前所有套餐均享受 **5 折定价**
+
+### GCP 私有预览定价 {#gcp-private-preview-pricing}
+
+在私有预览期间，GCP 上的 ClickHouse Managed Postgres 可免费使用。私有预览结束后的定价方案仍在制定中。如需进一步了解，请联系我们，以获取最终定价的大致情况。您可以[在此](https://clickhouse.com/cloud/postgres#gcp-waitlist)加入 GCP 私有预览的候补名单。
 
 <div id="disclaimers">
-  ## 免责声明
+  ## 免责声明 {#disclaimers}
 </div>
 
 随着产品在 Beta 期间持续演进，在正式进入 General Availability (GA) 前，定价和套餐方案可能还会进一步调整。请注意以下事项：

@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
@@ -18,17 +19,23 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
   [انضم إلى قائمة الانتظار](https://clickhouse.com/cloud/on-demand-compute-waitlist).
 </Note>
 
-On-Demand Compute هو إمكانية في ClickHouse Cloud تمنح الخدمة (أي tenant) موارد compute إضافية للأحمال المدعومة، دون الحاجة إلى تغيير حجم الخدمة أو تجهيز خدمة أخرى. ويجري تنفيذ هذا العمل على workers تابعة لـ ClickHouse خارج موارد compute الخاصة بالخدمة نفسها. وتأتي الـ workers من pool مُدار مشترك بين الـ tenants، إلا أن كل worker يُخصَّص لـ tenant واحد فقط في كل مرة.
+On-Demand Compute هو إمكانية في ClickHouse Cloud تمنح خدمتك السحابية (أي tenant) سعة إضافية وفورية للأحمال المدعومة، دون الحاجة إلى تغيير حجم الخدمة أو تجهيز خدمة أخرى. ويجري تنفيذ هذا العمل على workers تابعة لـ ClickHouse خارج موارد compute الخاصة بخدمتك. وتأتي الـ workers من pool مُدار مشترك بين الـ tenants في الـ region نفسه، إلا أن كل worker يُخصَّص لـ tenant واحد فقط في كل مرة.
 
-خلال الـ private preview، يدعم On-Demand Compute استعلامات `SELECT` المؤهّلة. حيث تُدرج الاستعلام عبر الـ settings، فيخصّص ClickHouse workers من الـ pool لتنفيذه من خلال خدمتك والـ endpoint الحالي. أما background operations فهي جزء من هذه الإمكانية بمفهومها الأوسع، لكنها غير مدعومة في الـ private preview.
+خلال الـ private preview، يدعم On-Demand Compute استعلامات `SELECT` فقط. حيث تُدرج الاستعلام عبر الـ settings على مستوى الاستعلام أو الـ session أو الـ USER، فيخصّص ClickHouse workers من الـ pool لتنفيذه من خلال خدمتك والـ endpoint الحالي.
 
-ويختلف ذلك عن [compute-compute separation](/ar/products/cloud/features/infrastructure/warehouses). فالـ warehouse يوفّر موارد compute مخصّصة وطويلة الأجل عبر خدمات متعددة تتشارك البيانات، بينما يوفّر On-Demand Compute workers مؤقتة من pool مشترك عبر خدمتك الحالية. وخلال الـ private preview، تطلب هذه الموارد على مستوى الاستعلام.
+ويختلف ذلك عن [compute-compute separation](/ar/products/cloud/features/infrastructure/warehouses). فالـ warehouse يوفّر موارد compute مخصّصة وطويلة الأجل عبر خدمات متعددة تتشارك البيانات، بينما يوفّر On-Demand Compute workers مؤقتة من pool مشترك عبر خدمتك الحالية.
+
+تعتمد الحوسبة عند الطلب على إمكانيات جديدة كليًا:
+
+* تنفيذ استعلامات stateless مع الحوسبة عند الطلب
+* [CBO](https://github.com/ClickHouse/ClickHouse/pull/86353) جديد (cost-based optimizer)
+* [distributed query execution](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud) جديد
 
 ## متى تستخدم On-Demand Compute {#when-to-use-on-demand-compute}
 
 خلال private preview، استخدم On-Demand Compute لاستعلامات `SELECT` المؤهلة والمكثفة حوسوبيًا التي ترغب في تشغيلها خارج compute الخاص بـ primary service:
 
-* **الاستعلامات الفورية واستعلامات المحللين:** شغّل استعلامات `SELECT` المكثفة حوسوبيًا على workers إضافيين.
+* **الاستعلامات الفورية والتحليلية:** شغّل استعلامات `SELECT` المكثفة حوسوبيًا على workers إضافيين.
 * **أحمال عمل القراءة غير الحرجة:** انقل عمليات reads المحددة بعيدًا عن primary service.
 * **استعلامات data lake:** استعلم عن بيانات Apache Iceberg أو Delta Lake أو `SharedMergeTree` المدعومة على workers إضافيين.
 * **compute إضافي مؤقت:** اطلب workers للاستعلامات المؤهلة دون إعادة تحجيم primary service.
@@ -37,21 +44,12 @@ On-Demand Compute هو إمكانية في ClickHouse Cloud تمنح الخدم�
 
 ## كيفية العمل {#how-it-works}
 
-```mermaid
-flowchart LR
-  Client[Client] --> Svc[Your ClickHouse Cloud service]
-  Svc -->|plan and coordinate| Pool[Shared worker pool]
-  Pool -->|lease N workers| W[Workers exclusive to your tenant]
-  W -->|read shared storage| Storage[(Object storage / catalog)]
-  W -->|results| Svc
-  Svc --> Client
-```
-
-1. ترسل استعلام `SELECT` مؤهلاً إلى ClickHouse Cloud service الخاصة بك، دون أي تغيير في نقطة النهاية أو المصادقة أو إعدادات RBAC.
-2. تبني الـ service خطة استعلام موزعة وتطلب العدد المحدد من الـ workers من الـ pool المُدار.
-3. يُسند ClickHouse الـ workers المتاحة إلى الـ service الخاصة بك.
-4. تُنفّذ الـ workers مراحل الخطة المُسندة إليها من المخطط الموزع وتقرأ البيانات من وحدات التخزين المدعومة.
-5. تنسّق الـ service الاستعلام وتُعيد النتيجة إلى الـ client.
+1. ترسل استعلام `SELECT` مؤهلاً إلى ClickHouse Cloud service الخاصة بك طالباً عدداً محدداً من الـ workers، دون أي تغيير في نقطة النهاية أو المصادقة أو إعدادات RBAC
+2. يتصل الـ cluster الخاص بك بعد ذلك بالـ pool ويطلب العدد المحدد من الـ workers
+3. يتم lease الـ workers لمدة 60 ثانية على الأقل، وإذا استمر الاستعلام لفترة أطول فسيُجدَّد الـ lease تلقائياً
+4. تستقبل الـ workers الاستعلام وتُنفّذه
+5. تُرسل الاستجابة بعد ذلك إلى الـ client الخاص بك
+6. تُمحى الـ workers.
 
 خلال المعاينة الخاصة، يتمتع كل worker بـ ‏`8 vCPUs` و`32 GiB` من الذاكرة. استخدم `distributed_plan_workers_num` لتحديد عدد الـ workers التي يطلبها الاستعلام.
 
@@ -59,7 +57,7 @@ flowchart LR
 
 ### Settings {#settings}
 
-أضف هذه الإعدادات على مستوى الـ query، أو على المستخدم، أو في settings profile.
+استخدم هذه الإعدادات للبدء في استخدام الحوسبة عند الطلب:
 
 | Setting                        | القيمة المطلوبة      | الغرض                                                                                                                                                            |
 | ------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -84,51 +82,11 @@ WHERE
     AND l_quantity < 24
 SETTINGS
     make_distributed_plan = 1,
-    distributed_plan_workers_num = 3,
+    distributed_plan_workers_num = 5,
     enable_parallel_replicas = 0
 ```
 
-يطلب هذا الـ query ثلاثة workers. ويعتمد عدد الـ workers التي يوفّرها ClickHouse على حدّ المعاينة الخاصة (private preview) وعلى سعة الـ pool المتاحة.
-
-### استئجار الـ worker {#worker-leasing}
-
-يستمر استئجار الـ worker مدة 60 ثانية على الأقل، ويُجدّد ClickHouse الاستئجار تلقائيًا طوال تنفيذ الـ query.
-
-بعد انتهاء الـ query، تظل الـ workers مُخصَّصة للـ service إلى أن تنتهي مدة الاستئجار. ويمكن لأي query مؤهّل آخر من الـ service نفسه إعادة استخدام تلك الـ workers ما دام الاستئجار ساريًا، فلا يحتاج ClickHouse إلى طلب workers جديدة.
-
-وعند انتهاء مدة الاستئجار، يُحرّر ClickHouse الـ workers من الـ service ويُنهيها.
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Your service
-    participant P as Worker pool
-    participant W as 3 workers
-
-    C->>S: SELECT ... workers_num = 3
-    S->>P: Lease 3 workers
-    P->>W: Exclusive lease to this tenant (min 60s)
-    S->>W: Run distributed plan stages
-    W-->>S: Partial results
-    S-->>C: Query result
-    Note over W: Lease continues (idle, still yours)
-```
-
-بعد انتهاء الـ query، تبقى الـ workers الثلاثة مؤجَّرة (leased) للـ tenant الخاص بك لكنها في حالة idle إلى أن تنتهي مدة الـ lease.
-
-```mermaid
-%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%
-flowchart LR
-    Free["Free<br/>In the shared pool"] -->|Query starts| Active["Leased and active"]
-    Active -->|Query finishes| Idle["Leased and idle<br/>Lease remains"]
-    Idle -->|Another query| Active
-    Idle -->|Lease expires| Free
-    Active -->|Lease renewed| Active
-```
-
-إذا أرسلت استعلامًا آخر أثناء استمرار استئجار تلك العناصر العاملة (workers)، فيمكن إعادة استخدامها فورًا (دون بدء بارد).
-
-أما إذا انتهت مدة الاستئجار، فإن ClickHouse يُعيد العناصر العاملة إلى المجمّع (إذ يتم إنهاؤها بدلًا من تركها خاملة في انتظار مستأجر آخر).
+يطلب هذا الـ query خمسة workers. ويعتمد عدد الـ workers التي يوفّرها ClickHouse على حدّ المعاينة الخاصة (private preview) وعلى سعة الـ pool المتاحة.
 
 ### الاستعلامات المتزامنة {#concurrent-queries}
 
@@ -153,34 +111,11 @@ SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 5,
 
 يُنفَّذ هذا الاستعلام على العمال الثلاثة الحاليين إضافةً إلى عاملَين تم استئجارهما حديثًا.
 
-```mermaid
-%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%
-flowchart TB
-    W1["W1 — already leased"]
-    W2["W2 — already leased"]
-    W3["W3 — already leased"]
-    Q1["Query A (3 workers)"] --> W1
-    Q1 --> W2
-    Q1 --> W3
-    Q2["Query B (3 workers)"] --> W1
-    Q2 --> W2
-    Q2 --> W3
-    Q3["Query C (5 workers)"] --> W1
-    Q3 --> W2
-    Q3 --> W3
-    Q3 --> W4[W4 new]
-    Q3 --> W5[W5 new]
-```
-
 ### عندما يتعذّر على الـ pool تلبية الطلب {#pool-capacity}
 
 يقوم توافر الـ workers على مبدأ بذل أقصى جهد ممكن خلال private preview. فإذا كان عدد الـ workers المتاحة أقل من العدد المطلوب، يُنفَّذ الـ query بعدد الـ workers الذي يستطيع ClickHouse تخصيصه. على سبيل المثال، قد يُنفَّذ طلبٌ لخمسة workers بثلاثة فقط.
 
-وإذا تعذّر استئجار أي worker، يفشل الـ query:
-
-```text
-No stateless workers available for tenant 'bronzeaws-cm-72': the discovery service leased none.
-```
+وإذا تعذّر استئجار أي worker، يفشل الـ query.
 
 أعد محاولة تنفيذ الاستعلام. وإذا استمرت المشكلة، فتواصل مع فريق حسابك في ClickHouse — فقد يكون تجمّع المعاينة مستنفدًا أو غير مضبوط الحجم بشكل صحيح.
 
@@ -203,9 +138,32 @@ WHERE query_id = '<YOUR_QUERY_ID>'
   اضبط `log_comment = 'on-demand'` (أو اسم workload) على استعلامات On-Demand لتتمكّن من تصفيتها دون الحاجة إلى تحليل `Settings`.
 </Tip>
 
+```sql
+SELECT
+    sum(l_extendedprice * l_discount) AS revenue
+FROM lineitem
+WHERE
+    l_shipdate >= DATE '1994-01-01'
+    AND l_shipdate < DATE '1994-01-01' + INTERVAL 1 YEAR
+    AND l_discount BETWEEN 0.06 - 0.01 AND 0.06 + 0.01
+    AND l_quantity < 24
+SETTINGS
+    make_distributed_plan = 1,
+    distributed_plan_workers_num = 5,
+    enable_parallel_replicas = 0,
+    log_comment = 'on-demand-private-preview'
+```
+
 ## المناطق المتاحة {#available-regions}
 
-تعمل عمليات On-Demand Compute worker في المنطقة نفسها التي توجد بها خدمة ClickHouse Cloud الخاصة بك. وخلال مرحلة private preview، ستكون هذه الميزة متاحة في البداية لدى عدد محدد من مزوّدي الخدمات السحابية والمناطق. وعند التسجيل في قائمة الانتظار، يمكنك تحديد المزوّد والمنطقة المفضّلين لديك ليتمكن ClickHouse من تقييم مدى استحقاقك.
+الحوسبة عند الطلب إقليمية: تعمل الـ workers في المنطقة نفسها التي يعمل فيها الـ service الخاص بك.
+
+| Cloud | Region    | Notes |
+| ----- | --------- | ----- |
+| AWS   | us-east-1 |       |
+| AWS   | eu-west-1 |       |
+
+إذا لم تكن منطقتك مدرجة، فاطلبها عبر [قائمة الانتظار](https://clickhouse.com/cloud/on-demand-compute-waitlist). وسنُفعّل مزيدًا من المناطق بناءً على الطلب.
 
 ## التسعير {#pricing}
 
@@ -220,76 +178,110 @@ WHERE query_id = '<YOUR_QUERY_ID>'
 تنطبق القيود التالية خلال private preview، وقد تنطبق قيود أخرى. أبلغ عن أي سلوك غير متوقع إلى ClickHouse Support أو إلى account team الخاص بك.
 
 * **استعلامات `SELECT` فقط.** لا تنفّذ الـ workers استعلامات `INSERT`، ولا mutations، ولا DDL، ولا background operations.
-* **البيانات المدعومة.** يدعم private preview كلاً من Apache Iceberg وDelta Lake و`SharedMergeTree`.
+* **الصيغة المدعومة.** يدعم private preview كلاً من Apache Iceberg وDelta Lake و`SharedMergeTree`.
 * **Parallel replicas.** يجب تعطيل parallel replicas.
 * **حجم الـ worker.** يحتوي كل worker على `8 vCPUs` و`32 GiB` من الذاكرة.
 * **الحد الأقصى للـ workers.** يمكن لكل query طلب ما يصل إلى خمسة workers خلال private preview.
 * **سعة المجموعة.** توافر الـ workers يقوم على أفضل جهد ممكن، فقد يحصل الـ query على عدد workers أقل من المطلوب، وإذا لم يتوفر أي worker يفشل الـ query.
-* **الأداء.** يتفاوت الأداء من query إلى آخر، إذ قد يؤدي تخصيص الـ workers والتخطيط الموزع ونقل مراحل الـ plan إلى زيادة الـ latency. وقد يكون أداء بعض أشكال الاستعلامات أدنى من أدائها عند التنفيذ على primary service.
+* **الأداء.** يتفاوت الأداء من query إلى آخر، إذ قد يؤدي تخصيص الـ workers والتخطيط الموزع ونقل مراحل الـ plan إلى زيادة الـ latency. وقد يكون أداء بعض أشكال الاستعلامات أدنى من أدائها عند التنفيذ على primary service (الاستعلامات المعتادة التي تستغرق أقل من ثانية سيكون أداؤها أفضل على الأرجح في الـ cluster الخاص بك)
 * **توافقية الاستعلامات.** لا يستطيع distributed planner تنفيذ كل query plan عن بُعد، وقد تُعيد الاستعلامات غير المدعومة exception من النوع `SUPPORT_IS_DISABLED`.
-
-تشمل حالات الفشل الشائعة ما يلي:
-
-| المجال                                                               | ما يحدث                                                                |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Parallel replicas                                                    | تُرفض؛ عطّل الإعدادات المذكورة أعلاه.                                  |
-| window functions مع `PARTITION BY`                                   | تُرفض غالباً حتى يتمكن الـ planner من إعادة التوزيع وفق partition key. |
-| قراءات جداول `system`                                                | ليست مبنية على تخزين مشترك.                                            |
-| correlated subqueries في بعض الأشكال                                 | قد تُرفض أو تُعاد كتابتها بكفاءة أقل.                                  |
-| projections، وskip indexes عند قراءة البيانات، وتصريف الـ expression | تُعطّل لهذا الـ query بدلاً من إرجاع exception.                        |
 
 ## Roadmap {#roadmap}
 
 يُعدّ On-Demand Compute أساسًا يُبنى عليه. ومن الأعمال الجارية أو المقبلة:
 
-* معالجة القيود المعروفة (فجوات `SUPPORT_IS_DISABLED`).
-* تجمّعات (pools) بأحجام worker مختلفة.
-* تثبيت أداء الاستعلامات مقارنةً بالتنفيذ Stateful.
-* دعم الدمج في الخلفية (background merge).
-* التسعير.
-* معايرة أداة التوسيع التلقائي لتجمّع الـ worker.
-* مقاييس Console والمراقبة.
-* صلاحيات مخصّصة لـ On-Demand Compute.
+* معالجة القيود المعروفة (فجوات `SUPPORT_IS_DISABLED`)
+* تجمّعات (pools) بأحجام worker مختلفة
+* تثبيت أداء الاستعلامات مقارنةً بالتنفيذ Stateful
+* دعم الدمج في الخلفية (background merge)
+* التسعير
+* معايرة أداة التوسيع التلقائي لتجمّع الـ worker
+* الأوبزيرفابيليتي المدمجة
+* صلاحيات مخصّصة لـ On-Demand Compute
+* توسيع أحمال العمل الخاصة ببحيرة البيانات (الكتابة، الـ compaction، إلخ...)
 
-## الأمان {#security}
+## Security {#security}
 
-لا تُغيّر ميزة On-Demand Compute طريقة اتصالك بـ ClickHouse Cloud. إذ تظل العملاء (clients) تُصادق على هويتها لدى الـ service الخاصة بك، ولا تُتيح الـ workers مطلقًا أي query endpoint عام.
+تأتي الـ workers من مجموعة (pool) مُهيّأة مسبقًا تتشاركها الخدمات الموجودة في الـ region نفسه، ولذلك هناك قاعدة واحدة غير قابلة للتفاوض: يخدم الـ worker خدمة واحدة في كل مرة، ولا يُنقل أبدًا من خدمة إلى أخرى.
 
-أما الأدوار (roles) والصلاحيات (permissions) المخصّصة لـ On-Demand فهي غير متاحة في الإصدار التجريبي (راجع [خريطة الطريق](#roadmap)). وإلى حين توفّرها، يستطيع أي شخص قادر على تنفيذ `SELECT` بالإعدادات المذكورة أعلاه على الـ service الخاصة بك استخدام الـ workers، وذلك في حدود QUOTA الإصدار التجريبي.
+لا يتغيّر أي شيء في طريقة وصولك إلى ClickHouse. فما زال العملاء يتصلون بـ service endpoint الخاص بك باستخدام آلية المصادقة الحالية، وخدمتك هي الجهة الوحيدة التي تتواصل مع الـ workers نيابةً عنك. ولا تمتلك الـ workers أي endpoint موجّه للعملاء.
+
+* **خدمة واحدة لكل worker:** يُؤجَّر الـ worker لخدمة واحدة طوال مدة الـ lease، ولا تتشاركه خدمتان في الوقت نفسه أبدًا.
+* **لا إعادة استخدام بين الخدمات:** عند انتهاء الـ lease، يُدمَّر الـ worker ويُستبدل بآخر جديد، ولا يُعاد تخصيصه أبدًا لخدمة أخرى.
+* **لا بيانات دائمة:** لا تحتفظ الـ workers بأي تخزين دائم، ولا تبقى قائمة بعد انتهاء الـ lease.
+* **الـ region نفسه الخاص بخدمتك:** تعمل الـ workers في الـ region نفسه الذي تعمل فيه الخدمة التي تستأجرها، وفقًا لقواعد صارمة لإقامة البيانات.
+* **ضوابط الوصول الحالية لديك تظل سارية:** تتحكّم IP access lists والـ private endpoints في الـ service endpoint الخاص بك تمامًا كما في السابق، ولا تضيف الحوسبة عند الطلب أي endpoint يتعيّن عليك تهيئته أو حمايته.
+* **المصادقة وRBAC الحاليان لديك:** تُنفَّذ الاستعلامات بالمستخدم والصلاحيات نفسها المطبّقة على أي استعلام آخر في خدمتك، ولا تحمل الـ workers أي هوية أو نموذج أذونات منفصل.
+
+### عزل الشبكة {#network-isolation}
+
+أثناء استئجار worker لصالح خدمتك، تسمح المنصة بمرور حركة الشبكة بين ذلك الـ worker وخدمتك، وتحجب كل ما عدا ذلك. ويُطبَّق هذا التقييد على مستوى طبقة الشبكة لا داخل محرك الاستعلام، لذا فهو لا يعتمد على الاستعلام أو إعداداته أو خطة التنفيذ التي يُنتجها المُحسِّن.
+
+<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Network isolation explanation diagram" />
+
+* **خدمتك وحدها تستطيع الوصول إلى الـ workers الخاصة بك.** فالمسار قائم طوال مدة الاستئجار الحالي للـ worker، ولتلك الخدمة وحدها.
+* **لا يمكن الوصول إلى الـ workers غير المُخصَّصة.** فالـ worker الذي ينتظر في المجموعة (pool) لا يملك أي مسار شبكي من أي خدمة أو إليها إلى أن يتم استئجاره.
+* **الـ workers المستأجرة لخدمات مختلفة لا يمكنها الوصول إلى بعضها.** فالـ workers الموجودة داخل استئجار واحد تتبادل فيما بينها مراحل خطة التنفيذ والنتائج الوسيطة، أما الـ workers الموجودة في عمليات استئجار مختلفة فتبقى معزولة عن بعضها، حتى وإن كانت تتشارك المجموعة ذاتها.
+* **يُزال المسار بزوال الـ worker.** فإنهاء الاستئجار يُدمِّر الـ worker، وبذلك يزول الشيء الوحيد الذي كان مسموحًا لحركة الشبكة بالوصول إليه.
+* **مسار الطلبات يبقى ضيّقًا.** تتصل خدمتك بخدمة تخصيص الـ workers لاستئجارها وتجديد استئجارها، وهذا المسار لا يحمل أي بيانات استعلام ويقتصر على واجهة برمجة تطبيقات التخصيص.
+
+### authentication والتخويل الداخلي {#authentication-and-authorization}
+
+يحدد عزل الشبكة ما الذي يمكنه الوصول إلى worker، أما authentication فتحدد ما يُسمح للـ caller بفعله بعد وصوله، ويُطبَّق الأمران بشكل مستقل: على الـ caller أن يستوفي كليهما معًا.
+
+كل connection بين الـ service الخاصة بك وservice تعيين الـ workers والـ workers نفسها هو connection مُوثَّق. لا شيء موثوق به مسبقًا؛ فجميع الـ credentials تُصدرها المنصة وتوزعها لكل lease على حدة.
+
+* **credential واحد لكل worker:** عند lease الـ workers للـ service الخاصة بك، تُصدر المنصة token موقّعًا فريدًا لكل واحد منها. ويعمل كل token مع ذلك الـ worker وحده، ومع الـ service الخاصة بك وحدها.
+* **قصير الأجل ومرتبط بالـ lease:** تنتهي صلاحية الـ tokens بانتهاء الـ lease الذي أصدرها. ويؤدي تجديد الـ lease إلى إصدار tokens جديدة، وبعد انتهاء الـ lease لا تعود tokens الخاصة به تُوثِّق أي شيء.
+* **يتم التحقق منه لدى المنصة:** يقوم الـ worker بـ validate الـ token المُقدَّم إليه لدى service الـ identity في المنصة، بدلًا من الوثوق بأي شيء يرد ضمن الـ request.
+
+| Connection                                        | ما الذي يتم authenticated                                                                                                               |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| الـ service الخاصة بك → service تعيين الـ workers | identity المنصة الخاصة بالـ service لديك، وهي التي تحدد الـ leases التي يمكنها التعامل معها.                                            |
+| الـ service الخاصة بك → worker مُستأجَر لها       | token موقّع محدود النطاق بذلك الـ worker وحده، طوال مدة الـ lease.                                                                      |
+| Worker → worker داخل الـ lease نفسه               | identity المنصة الخاصة بكل worker، إضافة إلى check للتأكد من أن الـ caller لا يزال يحتفظ بـ lease نشط (live) على الـ worker المُستقبِل. |
+
+<Note>
+  هذه الـ credentials داخلية وتخص طريقة تنفيذ ClickHouse Cloud لـ query الخاص بك، ولا تُكشف أبدًا لـ clients الخاصة بك، ولا علاقة لها بكيفية authentication لديك إلى ClickHouse: إذ تواصل الـ clients الاتصال باستخدام الـ credentials الحالية الخاصة بك، وتبقى privileges الخاصة بالـ query خاضعة لـ RBAC الخاص بالـ service لديك.
+</Note>
 
 ## FAQ {#faq}
 
 <AccordionGroup>
-  <Accordion title="هل On-Demand Compute مفتوح المصدر؟">
-    لا. إنها معمارية خاصة بـ ClickHouse Cloud: ClickHouse server ‏(distributed plan)، ومستوى البيانات (مجمّع الـ workers والـ leases)، والـ control plane. الإعداد التجريبي `make_distributed_plan` موجود في ClickHouse، إلا أن مجمّع الـ workers المشترك والتنفيذ عديم الحالة (stateless) متاحان في Cloud فقط.
+  <Accordion title="هل الحوسبة عند الطلب مفتوحة المصدر؟">
+    لا. إنها معمارية خاصة بـ ClickHouse Cloud: ClickHouse server (distributed plan)، ومستوى البيانات (مجموعة العاملين وعقود الاستئجار)، ومستوى التحكم. الإعداد التجريبي `make_distributed_plan` ومُحسِّن CBO موجودان في ClickHouse OSS، لكن مجموعة العاملين المشتركة والتنفيذ عديم الحالة متاحان في Cloud فقط.
   </Accordion>
 
   <Accordion title="هل أحتاج إلى إصدار محدد للانضمام إلى المعاينة الخاصة؟">
-    نعم. سيؤكد لك فريق ClickHouse ما إذا كانت خدمتك تحتاج إلى ترقية قبل الانضمام إلى المعاينة الخاصة. وقد تكون هناك ترقيات إضافية مطلوبة أثناء المعاينة.
+    نعم. الإصدار المستخدم خلال المعاينة الخاصة سيكون بنية مخصصة، وقد تكون هناك حاجة إلى ترقيات إضافية خلال المعاينة.
   </Accordion>
 
   <Accordion title="كيف سيكون التسعير؟">
-    لا توجد رسوم إضافية أثناء المعاينة الخاصة، وذلك ضمن حدود المعاينة. وسيُعلن عن تسعير مراحل الإصدار اللاحقة قبل تطبيق أي رسوم. ومع ذلك، يتبع التسعير الفلسفة نفسها المعتمدة في ClickHouse Cloud: الاحتساب على أساس الـ compute المستخدم، لا على أساس البيانات الممسوحة أو الصفوف المقروءة. وستُنشر الأسعار الدقيقة قبل بدء الإتاحة العامة أو احتساب الرسوم في مرحلة البيتا.
+    ليس لدينا تسعير عام نشاركه في الوقت الحالي، لكن استخدام الميزة مجاني خلال المعاينة الخاصة. ومع ذلك، ستكون فلسفة التسعير مماثلة لفلسفة ClickHouse Cloud: احتساب التكلفة على أساس الحوسبة المستخدمة، لا على أساس البيانات الممسوحة أو الصفوف المقروءة. وستُنشر الأسعار الدقيقة قبل تطبيق التسعير.
   </Accordion>
 
   <Accordion title="هل يمكنني استخدام هذا في الإنتاج؟">
-    يمكنك تشغيل أعباء عمل حقيقية، لكن هذه معاينة خاصة: هناك قيود معروفة وأخرى غير معروفة، ولا يوجد SLO/SLA لتوافر مجمّع الـ workers. تلتزم ClickHouse بدعم المتبنّين الأوائل؛ لذا تعامل معها كمعاينة، لا كضمان للإنتاج.
+    يمكنك تشغيل أحمال عمل حقيقية، لكن هذه معاينة خاصة: هناك قيود معروفة وأخرى غير معروفة، ولا يوجد هدف أو اتفاقية مستوى خدمة لتوافر مجموعة العاملين.
   </Accordion>
 
-  <Accordion title="ما الفرق بين هذا وبين autoscaling لخدمتي؟">
-    يغيّر الـ autoscaling الـ compute المخصص لخدمتك الأساسية. أما On-Demand Compute فيمنح، أثناء المعاينة الخاصة، استعلامات `SELECT` المؤهلة وصولاً مؤقتاً إلى workers من مجمّع مُدار دون تغيير حجم الخدمة الأساسية. فالـ autoscaling يدير سعة الخدمة على نحو مستمر، بينما يوفّر On-Demand Compute موارد compute مؤقتة لأعباء عمل محددة.
-  </Accordion>
-
-  <Accordion title="ما الفرق بين هذا وبين الـ warehouse أو compute-compute separation؟">
-    يوفّر compute-compute separation موارد compute مخصصة عبر خدمات متعددة في ClickHouse Cloud تتشارك البيانات نفسها. أما On-Demand Compute فيوفّر موارد compute مؤقتة من مجمّع مُدار عبر خدمتك الحالية. وأثناء المعاينة الخاصة، يُطلب هذا الـ compute على مستوى الاستعلام. وقد صُممت هذه القدرة بصورتها الأوسع لدعم تنفيذ الاستعلامات والعمليات التي تجري في الخلفية معاً.
+  <Accordion title="كيف يختلف هذا عن التوسع التلقائي لخدمتي؟">
+    يغيّر التوسع التلقائي الحوسبة المخصصة لخدمتك الأساسية. أما الحوسبة عند الطلب، فهي تمنح خلال المعاينة الخاصة استعلامات `SELECT` المؤهَّلة وصولاً مؤقتاً إلى عاملين من مجموعة مُدارة دون تغيير حجم الخدمة الأساسية. فالتوسع التلقائي يدير سعة الخدمة على نحو مستمر، بينما توفّر الحوسبة عند الطلب حوسبة مؤقتة لأحمال عمل محددة.
   </Accordion>
 
   <Accordion title="أين يمكنني طرح الأسئلة؟">
-    اسأل فريق الحساب الخاص بك؛ وسيعرّفك على مدير المنتج المسؤول عن On-Demand Compute.
+    اسأل فريق حسابك؛ وسيعرّفك بمدير المنتج المسؤول عن الحوسبة عند الطلب.
   </Accordion>
 
-  <Accordion title="أين يمكنني الإبلاغ عن الأخطاء البرمجية؟">
-    افتح تذكرة دعم (درجة الخطورة 3) أو أبلغ بها مدير المنتج. وأرفق `query_id` والاستثناء كاملاً.
+  <Accordion title="أين يمكنني الإبلاغ عن الأخطاء؟">
+    افتح تذكرة دعم (الخطورة 3) أو أبلغ بها مدير المنتج، وأرفق `query_id`، ومعرّف خدمتك، والاستثناء الكامل.
+  </Accordion>
+
+  <Accordion title="هل يمكن لخدمة ClickHouse Cloud أخرى الوصول إلى العاملين الذين ينفّذون استعلامي؟">
+    لا. طوال فترة استئجار العامل لخدمتك، تسمح المنصة بحركة المرور بين ذلك العامل وخدمتك فقط، وتحجبها عن كل خدمة أخرى. أما العاملون غير المخصَّصون والعاملون المستأجَرون لخدمة أخرى، فلا يملكون أي مسار شبكي إلى خدمتك. راجع [عزل الشبكة](#network-isolation).
+  </Accordion>
+
+  <Accordion title="هل تُعيد خدمة أخرى استخدام العامل بعد انتهاء استعلامي؟">
+    لا. عند انتهاء عقد الاستئجار، يُدمَّر العامل ويُستبدل بعامل جديد بدلاً من تمريره إلى الخدمة التالية.
   </Accordion>
 
   <Accordion title="هل هذا متاح في ClickHouse BYOC أو ClickHouse Private؟">
