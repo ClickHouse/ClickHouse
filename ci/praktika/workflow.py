@@ -8,13 +8,6 @@ from .utils import Utils
 
 
 class Workflow:
-    # A workflow filter hook normally returns (True, reason) to skip a job or
-    # (False, "") to stay neutral. Returning (False, FILTER_HOOK_FORCE_JOB)
-    # force-includes the job: it is then exempt from the later "filter not
-    # affected jobs" pass, which would otherwise drop it when no changed file
-    # matches its digest_config.
-    FILTER_HOOK_FORCE_JOB = "force"
-
     class Event:
         PULL_REQUEST = "pull_request"
         PUSH = "push"
@@ -65,6 +58,10 @@ class Workflow:
         enable_job_filtering_by_changes: bool = False
         enable_cache: bool = False
         enable_report: bool = False
+        # When true (or when Settings.PRAKTIKA_DEBUG is set), the
+        # praktika-controller's full per-job log is attached to each job's result
+        # for debugging (native engine only).
+        praktika_debug: bool = False
         # do a best effort to merge the PR if all jobs are successful
         enable_automerge: bool = False
         enable_merge_ready_status: bool = False
@@ -74,7 +71,6 @@ class Workflow:
         # workflow/job status via the GitHub Checks API.
         enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False
-        enable_merge_commit: bool = False
         cron_schedules: List[str] = field(default_factory=list)
         inputs: List["Workflow.Config.InputConfig"] = field(default_factory=list)
         pre_hooks: List[Union[str, callable]] = field(default_factory=list)
@@ -185,12 +181,20 @@ class Workflow:
             raise RuntimeError(message)
 
         def _enabled_workflow_config(self):
+            from .settings import Settings
+
             return (
                 self.enable_cache
                 or self.enable_report
                 or self.dockers
                 or self.enable_merge_ready_status
                 or self.pre_hooks
+                # The repo snapshot is built by the Config Workflow, so a native
+                # workflow needs one injected even if it enables nothing else.
+                or (
+                    self.engine == Workflow.Engine.PRAKTIKA
+                    and Settings.ENABLE_S3_REPO_SNAPSHOT
+                )
             )
 
         @dataclass

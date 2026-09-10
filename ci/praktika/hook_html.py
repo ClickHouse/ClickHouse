@@ -112,9 +112,33 @@ class GitCommit:
 
 class HtmlRunnerHooks:
     @classmethod
+    def _report_summary_exists(cls, workflow_name):
+        try:
+            _ResultS3.copy_result_from_s3_with_version(
+                Result.file_name_static(workflow_name)
+            )
+            return True
+        except Exception:
+            return False
+
+    @classmethod
     def push_pending_ci_report(cls, _workflow):
         # generate pending Results for all jobs in the workflow
         env = _Environment.get()
+        # Native path: the orchestrator re-asserts each finished job's row into
+        # this summary, so there is no single "exclusive access" moment. A
+        # duplicate/late Config (e.g. from a restart) must NOT destructively reset
+        # a summary that already holds finished jobs' rows — that wipe left
+        # succeeded jobs PENDING and got them wrongly marked NOT_FINALIZED (see
+        # REPORT_OWNERSHIP.md). Create the summary once; never reset an existing
+        # one. (GitHub Actions keeps the
+        # version=0 reset — there is no orchestrator there to rebuild rows.)
+        if env.ORCHESTRATOR_OWNS_REPORT and cls._report_summary_exists(_workflow.name):
+            print(
+                "CI report summary already exists - not resetting "
+                "(orchestrator owns the per-job rows)"
+            )
+            return
         results = []
         for job in _workflow.jobs:
             if job.name == Settings.CI_CONFIG_JOB_NAME:
@@ -251,15 +275,24 @@ class HtmlRunnerHooks:
                 dropped_result.add_note(ResultInfo.DROPPED_DUE_TO_PREVIOUS_FAILURE + f" [{_job.name}]")
                 new_sub_results.append(dropped_result)
 
+        compute_usage = ComputeUsage().set_usage(
+            runner_str="_".join(_job.runs_on),
+            duration=result.duration,
+            job_name=_job.name,
+        )
+        if env.ORCHESTRATOR_OWNS_REPORT:
+            # The native orchestrator aggregates usage from each job's Result
+            # (result.ext still carries storage_usage/metrics, set above), so the
+            # runner must NOT also contribute it here or the workflow totals would
+            # double-count. Rows and report messages still flow from the runner.
+            storage_usage = None
+            compute_usage = None
+            pipeline_utilization = None
         updated_status = _ResultS3.update_workflow_results(
             new_sub_results=new_sub_results,
             workflow_name=_workflow.name,
             storage_usage=storage_usage,
-            compute_usage=ComputeUsage().set_usage(
-                runner_str="_".join(_job.runs_on),
-                duration=result.duration,
-                job_name=_job.name,
-            ),
+            compute_usage=compute_usage,
             pipeline_utilization=pipeline_utilization,
             report_messages=report_messages,
         )

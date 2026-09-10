@@ -209,6 +209,13 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
         "INSTANCE_LIFE_CYCLE": instance_life_cycle,
         "TRACEBACKS": [],
         "LOCAL_RUN": bool(local_run),
+        # Per-job re-run counter (0 = first attempt); never inherited from an
+        # upstream job's dump, so it lives in the per-runner overrides.
+        "RERUN_COUNT": int(task.get("rerun_count") or 0),
+        # This run is orchestrator-driven, so the orchestrator is the sole writer
+        # of the workflow report summary — job-side report writers stand down (see
+        # orchestrator/REPORT_OWNERSHIP.md). False for local runs.
+        "ORCHESTRATOR_OWNS_REPORT": not bool(local_run),
     }
 
     carried = task.get("environment")
@@ -240,6 +247,7 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
             INSTANCE_LIFE_CYCLE=instance_life_cycle,
             PR_BODY="",
             PR_TITLE=task.get("title", ""),
+            PR_IS_DRAFT=bool(task.get("draft", False)),
             USER_LOGIN=task.get("sender", ""),
             FORK_NAME=head_repo,
             COMMIT_MESSAGE=commit_message,
@@ -257,6 +265,8 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
             },
             WORKFLOW_CONFIG=None,
             LOCAL_RUN=bool(local_run),
+            RERUN_COUNT=int(task.get("rerun_count") or 0),
+            ORCHESTRATOR_OWNS_REPORT=not bool(local_run),
         )
     env.dump()
     return env
@@ -376,6 +386,32 @@ def run_job(task, gh_token=None, local=False):
     # still picks the result up.
     final_bucket = task.get("final_state_s3_bucket", "")
     final_key = task.get("final_state_s3_key", "")
+
+    # Link the controller's full per-job log (clone/restore/dispatch/teardown),
+    # which the controller uploads next to final.json after this process exits.
+    # Same S3 coordinates as final.json, so no extra plumbing.
+    if (
+        task.get("praktika_debug")
+        and result_dict is not None
+        and final_bucket
+        and final_key
+    ):
+        try:
+            from ..settings import Settings
+
+            controller_key = final_key.rsplit("/", 1)[0] + "/praktika_controller.log"
+            endpoint = (Settings.S3_BUCKET_TO_HTTP_ENDPOINT or {}).get(
+                final_bucket, f"{final_bucket}.s3.amazonaws.com"
+            )
+            controller_url = f"https://{endpoint}/{controller_key}"
+            links = result_dict.setdefault("links", [])
+            if controller_url not in links:
+                links.append(controller_url)
+        except Exception as e:
+            print(
+                f"  [warn] failed to add controller-log link: {type(e).__name__}: {e}"
+            )
+
     if final_bucket and final_key and not local:
         try:
             import boto3

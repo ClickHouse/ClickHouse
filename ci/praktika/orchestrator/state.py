@@ -29,6 +29,43 @@ from enum import Enum
 from . import build_job_dag
 from praktika.settings import Settings
 
+# Marks a per-job check's external_id as one the rerun path understands. The
+# lambda parses check_run.external_id on a `rerequested` webhook to recover the
+# exact run_id + job to re-run. Kept in sync with the lambda's copy.
+JOB_CHECK_EXTERNAL_ID_KIND = "praktika_job_check"
+
+
+def _job_check_external_id(run_id, job_name):
+    return json.dumps(
+        {"kind": JOB_CHECK_EXTERNAL_ID_KIND, "run_id": str(run_id), "job": job_name},
+        sort_keys=True,
+    )
+
+
+def load_run_snapshot(run_id):
+    """Read ``runs/<run_id>/state.json`` from S3. Returns the dict or None.
+
+    Used by the resume path (finished-run re-run) to recover the workflow name
+    and per-job terminal state before a WorkflowState is built. Own client so it
+    can run before any WorkflowState exists.
+    """
+    import boto3
+
+    region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+    s3 = boto3.client("s3", region_name=region)
+    key = f"runs/{run_id}/state.json"
+    try:
+        obj = s3.get_object(Bucket=Settings.S3_ARTIFACT_BUCKET, Key=key)
+    except Exception as e:
+        # Only a genuinely absent snapshot is "None" (nothing to resume). A
+        # transient/permission error must propagate so the resume fails as an
+        # INFRA error and the controller retries the message on a fresh
+        # orchestrator — otherwise the finished-run rerun would be silently lost.
+        if _is_missing_s3_key_error(e):
+            return None
+        raise
+    return json.loads(obj["Body"].read())
+
 
 def _queue_prefix():
     project_slug = (getattr(Settings, "PROJECT_SLUG", "") or "").strip()
@@ -77,13 +114,20 @@ HEARTBEAT_TIMEOUT_S = int(getattr(Settings, "HEARTBEAT_TIMEOUT_S", 900) or 900)
 # SQS long-poll any more).
 WAIT_POLL_INTERVAL_S = 10
 
+# Hard cap on how many times one job may be re-run within a single run (per
+# run_id / commit; a new push starts a fresh run at 0). A pure defence backstop:
+# even if a rerun-request key is never consumed (e.g. a delete failure), a job
+# stops being re-dispatched once it hits this many re-runs, so it can never loop
+# forever. Generous enough for real manual re-runs.
+MAX_RERUNS_PER_JOB = int(getattr(Settings, "MAX_RERUNS_PER_JOB", 5) or 5)
+
 
 def _normalize_job_name_for_s3(name):
     """Turn a job name into an S3-safe path segment (mirrors job log path)."""
     return name.replace(" ", "_").replace("/", "_")
 
 
-def _build_check_output(result, rc, instance_id="", report_url="", pool=""):
+def _build_check_output(result, rc, instance_id="", report_url="", pool="", rerun_count=0):
     """Render a job's Result as the ``output`` dict for a check-run
     completion. ``result`` is a ``praktika.Result`` reconstructed from the
     completion payload (the runner ships it in ``final.json``). ``pool`` is
@@ -108,6 +152,10 @@ def _build_check_output(result, rc, instance_id="", report_url="", pool=""):
         if displayed_status == "FAIL":
             displayed_status = "FAILED"
         summary = f"**{displayed_status}**{dur}"
+        if rerun_count:
+            # Backtick the "#N": summary is markdown and a bare #N auto-links to
+            # PR/issue N; inline code is not auto-linked.
+            summary += f" — 🔁 re-run `#{rerun_count}`"
         if report_url:
             summary += f" — [CI Report]({report_url})"
         details = []
@@ -196,10 +244,15 @@ class JobCheckRun:
         return resp.json() if resp.content else {}
 
     @classmethod
-    def queue(cls, token, repo, head_sha, name, output=None):
+    def queue(cls, token, repo, head_sha, name, output=None, external_id=None):
         body = {"name": name, "head_sha": head_sha, "status": "queued"}
         if output is not None:
             body["output"] = output
+        if external_id is not None:
+            # Embeds {run_id, job} so a `check_run.rerequested` webhook can
+            # identify the exact run and job to re-run — see the lambda's
+            # _handle_rerun and JOB_CHECK_EXTERNAL_ID_KIND.
+            body["external_id"] = external_id
         data = cls._api(
             "POST",
             f"https://api.github.com/repos/{repo}/check-runs",
@@ -210,7 +263,8 @@ class JobCheckRun:
 
     @classmethod
     def create_completed(
-        cls, token, repo, head_sha, name, conclusion, output=None, details_url=None
+        cls, token, repo, head_sha, name, conclusion, output=None, details_url=None,
+        external_id=None,
     ):
         """Create a check run already in its terminal state in one POST.
 
@@ -228,6 +282,8 @@ class JobCheckRun:
             body["output"] = output
         if details_url is not None:
             body["details_url"] = details_url
+        if external_id is not None:
+            body["external_id"] = external_id
         data = cls._api(
             "POST",
             f"https://api.github.com/repos/{repo}/check-runs",
@@ -329,6 +385,11 @@ class JobState:
         # Populated by sweep_completions; rendered into the check-run output
         # and retained for AI observation.
         self.result = None
+        # How many times this job has been reset by a manual re-run (partial
+        # rerun). Surfaced in the check output so a reader can tell a re-run
+        # apart from the first attempt; persisted in the run snapshot so it
+        # survives a finished-run resume.
+        self.rerun_count = 0
 
     @property
     def name(self):
@@ -363,9 +424,14 @@ class JobState:
             "title": "QUEUED",
             "summary": f"QUEUED: job dispatched to runner pool `{runs_on}`.",
         }
+        run_id = getattr(ws, "_run_id", None)
+        external_id = (
+            _job_check_external_id(run_id, self.name) if run_id else None
+        )
         try:
             self.check = JobCheckRun.queue(
-                ws._gh_token, ws._repo, ws._head_sha, check_name, output=output
+                ws._gh_token, ws._repo, ws._head_sha, check_name, output=output,
+                external_id=external_id,
             )
         except Exception as e:
             print(
@@ -387,6 +453,7 @@ class JobState:
             return
         check_name = f"{ws.workflow.name} / {self.name}"
         try:
+            run_id = getattr(ws, "_run_id", None)
             self.check = JobCheckRun.create_completed(
                 ws._gh_token,
                 ws._repo,
@@ -395,6 +462,9 @@ class JobState:
                 conclusion,
                 output=output,
                 details_url=details_url,
+                external_id=(
+                    _job_check_external_id(run_id, self.name) if run_id else None
+                ),
             )
         except Exception as e:
             print(
@@ -618,6 +688,15 @@ class WorkflowState:
         # GHA. Later completions overwrite earlier ones — the serialized
         # environment is already cumulative.
         self._environment = None
+        # Repo-snapshot fields, pinned ONCE when the Config Workflow completes.
+        # They must not be read from the mutable self._environment (overwritten by
+        # every job's completion), or a later untrusted PR job could rewrite the
+        # snapshot target and point dependent jobs at an attacker-controlled
+        # snapshot (it controls both the content-hash key and HEAD==snapshot_sha).
+        # Frozen on the first non-empty observation — the Config Workflow is the
+        # DAG root, so it is always the first job to report them.
+        self._snapshot_sha = ""
+        self._repo_snapshot_key = ""
         self.cancelled = (
             False  # set by sweep_cancel() on cancel-request / cancel-before
         )
@@ -651,6 +730,13 @@ class WorkflowState:
         self._runs_s3_prefix = f"runs/{self._run_id}"
         self._cancel_s3_key = f"{self._runs_s3_prefix}/cancel"
         self._cancel_request_s3_key = f"{self._runs_s3_prefix}/cancel-request"
+        # Persisted DAG snapshot (per-job status/check_id + environment +
+        # finalized flag) and the per-run re-run request drop-box. Together they
+        # let a re-run reset a job + downstream and be reconciled whether the
+        # workflow is still running (live sweep_rerun) or already finished
+        # (a fresh orchestrator loads the snapshot). See save_snapshot / sweep_rerun.
+        self._state_s3_key = f"{self._runs_s3_prefix}/state.json"
+        self._rerun_request_prefix = f"{self._runs_s3_prefix}/rerun-request/"
         queue_name = (os.environ.get("PRAKTIKA_CONTROLLER_QUEUE") or "").strip()
         cancel_scope = "base" if queue_name.endswith("-base") else "default"
         self._pr_cancel_before_s3_key = (
@@ -694,6 +780,15 @@ class WorkflowState:
         """
         if not isinstance(workflow_config, dict):
             return
+
+        # Pin the repo-snapshot target once (see __init__). Freeze on the first
+        # non-empty snapshot key — the Config Workflow reports it first — and never
+        # accept changes from a later (untrusted) job's relayed WORKFLOW_CONFIG.
+        if not self._repo_snapshot_key:
+            key = workflow_config.get("repo_snapshot_key") or ""
+            if key:
+                self._snapshot_sha = workflow_config.get("snapshot_sha") or ""
+                self._repo_snapshot_key = key
 
         filtered = workflow_config.get("filtered_jobs") or {}
         cache_success = workflow_config.get("cache_success") or []
@@ -763,6 +858,479 @@ class WorkflowState:
                 f"{type(e).__name__}: {e}"
             )
             return None
+
+    # ------------------------------------------------- snapshot & re-run
+
+    def clear_stale_cancel(self):
+        """Drop the previous generation's cancel markers before a resume.
+
+        A resume reuses the run's S3 prefix. If the original run was cancelled,
+        ``runs/<run_id>/cancel-request`` and the ``runs/<run_id>/cancel`` kill
+        flag still sit there — so without this the resumed orchestrator's first
+        ``sweep_cancel`` (and the runner-side kill-flag watchdog) would cancel
+        the freshly reset job immediately, making a failed job from a cancelled
+        workflow impossible to re-run. Also resets the in-memory flag.
+        """
+        self.cancelled = False
+        if self._s3 is None or self.local_mode:
+            return
+        for key in (self._cancel_request_s3_key, self._cancel_s3_key):
+            try:
+                self._s3.delete_object(Bucket=self._cancel_s3_bucket, Key=key)
+            except Exception as e:
+                print(f"  [warn] could not clear cancel marker {key}: {e}")
+
+    def _resume_lock_s3_key(self):
+        return f"{self._runs_s3_prefix}/resume.lock"
+
+    def delete_resume_lock(self):
+        """Release this run's resume boot-lease (``runs/<run_id>/resume.lock``).
+
+        The lambda claims the lock (atomic conditional create) before enqueuing a
+        resume so only one orchestrator is spawned per finished run; the resume
+        orchestrator drops it once it has published ``finalized=false`` — from
+        there the finalized flag itself is the "a live orchestrator exists"
+        signal. Idempotent + best-effort: a missing lock or an S3 error is fine,
+        because SQS redelivery re-runs a crashed boot, so the lock needs no TTL.
+        """
+        if self._s3 is None or self.local_mode:
+            return
+        try:
+            self._s3.delete_object(
+                Bucket=self._cancel_s3_bucket, Key=self._resume_lock_s3_key()
+            )
+        except Exception as e:
+            print(f"  [warn] could not delete resume lock: {e}")
+
+    def _ensure_report_env(self):
+        """Lazily construct + dump an ``_Environment`` for the orchestrator process
+        so the ``_ResultS3`` report helpers can resolve the report S3 prefix.
+
+        Done lazily (on first ``publish_report``, i.e. after workflow matching)
+        rather than at startup, so it can't change the env that ``_get_workflows``
+        already read. Returns True once a usable env is in place. Best-effort.
+        """
+        if getattr(self, "_report_env_ok", None) is not None:
+            return self._report_env_ok
+        self._report_env_ok = False
+        if self._s3 is None or self.local_mode:
+            return False
+        try:
+            from .._environment import _Environment
+
+            ev = self._event if isinstance(self._event, dict) else {}
+            _Environment(
+                WORKFLOW_NAME=self.workflow.name,
+                JOB_NAME="",
+                REPOSITORY=self._repo or "",
+                BRANCH=ev.get("head_ref", "") or "",
+                SHA=self._head_sha or "",
+                PR_NUMBER=int(self._pr_number or 0),
+                EVENT_TYPE=ev.get("type", "") or "pull_request",
+                EVENT_TIME="",
+                JOB_OUTPUT_STREAM="",
+                EVENT_FILE_PATH="",
+                CHANGE_URL=ev.get("change_url", "") or "",
+                COMMIT_URL="",
+                BASE_BRANCH=ev.get("base_ref", "") or "",
+                RUN_ID=str(self._run_id or ""),
+                RUN_URL="",
+                INSTANCE_TYPE="",
+                INSTANCE_ID="",
+                INSTANCE_LIFE_CYCLE="",
+                PR_BODY="",
+                PR_TITLE=ev.get("title", "") or "",
+                USER_LOGIN=ev.get("sender", "") or "",
+                FORK_NAME=ev.get("head_repo", "") or "",
+                PR_LABELS=list(ev.get("labels", []) or []),
+            ).dump()
+            self._report_env_ok = True
+        except Exception as e:
+            print(f"  [warn] orchestrator report env setup failed: {e}")
+        return self._report_env_ok
+
+    def publish_report(self):
+        """Re-assert completed jobs' rows into the workflow report summary and
+        own the usage aggregates.
+
+        The orchestrator is the authoritative source of each job's outcome (it
+        reads ``final.json``). A job's report row is otherwise written only by the
+        runner's ``post_run``, which runs once — so a destructive summary reset
+        (Config's ``version=0`` ``push_pending_ci_report``, which can be duplicated
+        across attempts) can wipe a finished job's row with nothing to restore it,
+        leaving it PENDING and wrongly marked ``NOT_FINALIZED`` by Finish Workflow.
+        Re-asserting each loop restores truth before Finish Workflow reads it.
+
+        Usage (storage/compute/pipeline) is now owned by the orchestrator on the
+        native path: it is recomputed from every finished job's Result and SET
+        (``replace_usage=True``) each loop — idempotent, so re-publishing can't
+        multiply the totals. The runner's ``post_run`` stops contributing usage
+        (it still writes rows / report messages, and the CIDB insert still reads
+        the totals off the summary). Best-effort — report upkeep never crashes the
+        run.
+        """
+        if self._s3 is None or self.local_mode:
+            return
+        if not getattr(self.workflow, "enable_report", False):
+            return
+        terminal = [
+            (name, js)
+            for name, js in self.jobs.items()
+            if isinstance(js.result, dict)
+        ]
+        if not terminal:
+            return
+        if not self._ensure_report_env():
+            return
+        try:
+            from copy import deepcopy
+
+            from ..host_metrics import HostMetricsCollector
+            from ..result import Result, _ResultS3
+            from ..usage import ComputeUsage, PipelineUtilization, StorageUsage
+
+            rows = [Result.from_dict(deepcopy(js.result)) for _, js in terminal]
+
+            # Recompute the FULL usage aggregate from every finished job's Result
+            # (idempotent — see docstring). storage_usage + metrics ride in each
+            # job's result.ext; compute is derived from its runner + duration.
+            storage = StorageUsage()
+            compute = ComputeUsage()
+            pipeline = PipelineUtilization()
+            has_pipeline = False
+            for name, js in terminal:
+                ext = js.result.get("ext") or {}
+                su = ext.get("storage_usage")
+                if isinstance(su, dict):
+                    storage.merge_with(StorageUsage.from_dict(su))
+                runner_str = "_".join(js.job.runs_on) if js.job.runs_on else ""
+                compute.merge_with(
+                    ComputeUsage().set_usage(
+                        runner_str, js.result.get("duration") or 0, name
+                    )
+                )
+                metrics = ext.get("metrics")
+                if metrics and HostMetricsCollector.qualifies(metrics):
+                    pipeline.merge_with(PipelineUtilization.from_job_metrics(metrics))
+                    has_pipeline = True
+
+            _ResultS3.update_workflow_results(
+                workflow_name=self.workflow.name,
+                new_sub_results=rows,
+                storage_usage=storage,
+                compute_usage=compute,
+                pipeline_utilization=pipeline if has_pipeline else None,
+                replace_usage=True,
+            )
+        except Exception as e:
+            print(f"  [warn] could not re-publish workflow report: {e}")
+
+    def attach_debug_logs(self):
+        """When praktika_debug is set, upload the orchestrator instance's two logs
+        and link them from the TOP-LEVEL workflow result: the bootstrap controller
+        log (clone/TOCTOU/resolve, flushed by the controller before launch) and the
+        orchestrate process log (teed stdout). Best-effort; runs once at the end."""
+        if self._s3 is None or self.local_mode:
+            return
+        if not (
+            Settings.PRAKTIKA_DEBUG or getattr(self.workflow, "praktika_debug", False)
+        ):
+            return
+        if not getattr(self.workflow, "enable_report", False):
+            return
+        if not self._ensure_report_env():
+            return
+        try:
+            from .._environment import _Environment
+            from ..result import _ResultS3
+            from ..s3 import S3
+
+            prefix = f"{Settings.S3_REPORT_BUCKET}/{_Environment.get().get_s3_prefix()}"
+            links = []
+            for fname in ("praktika_controller.log", "praktika_orchestrator.log"):
+                local = f"{Settings.TEMP_DIR}/{fname}"
+                if not os.path.isfile(local):
+                    continue
+                url = S3.copy_file_to_s3(
+                    local_path=local, s3_path=f"{prefix}/{fname}", text=True
+                )
+                if url:
+                    links.append(url)
+            if links:
+                _ResultS3.update_workflow_results(
+                    workflow_name=self.workflow.name, top_links=links
+                )
+                print(f"Attached orchestrator debug logs: {links}")
+        except Exception as e:
+            print(f"  [warn] could not attach orchestrator debug logs: {e}")
+
+    def save_snapshot(self, finalized=False, required=False):
+        """Persist the DAG snapshot to ``runs/<run_id>/state.json``.
+
+        Captures each job's status + reusable check_id and the cumulative
+        environment, plus a ``finalized`` flag that doubles as the liveness
+        signal the lambda reads to decide running-vs-finished (no GitHub API).
+        Cheap PUT; called each loop iteration and at finalize. No-op in local
+        mode / without S3.
+
+        ``required=True`` makes the write mandatory: retry hard and **raise** on
+        ultimate failure so the caller can abort. Used for the resume's
+        pre-dispatch ``finalized=false`` write — if it silently failed, the run's
+        stale ``finalized=true`` snapshot would survive and every reset job's
+        runner would skip its task via the finalized guard, stalling the resume.
+        """
+        if self._s3 is None or self.local_mode:
+            return
+        snap = {
+            "run_id": self._run_id,
+            "workflow_name": self.workflow.name,
+            "repo": self._repo,
+            "head_sha": self._head_sha,
+            "pr_number": self._pr_number,
+            "event_ts": self._event_ts,
+            "finalized": bool(finalized),
+            "updated_at": time.time(),
+            "environment": self._environment,
+            # Persist the pinned repo-snapshot target so a resumed orchestrator
+            # keeps the Config-Workflow-authorized value rather than re-deriving it
+            # from the (mutable) environment snapshot.
+            "snapshot_sha": self._snapshot_sha,
+            "repo_snapshot_key": self._repo_snapshot_key,
+            "jobs": {
+                name: {
+                    "status": js.status.value,
+                    "check_id": js.check.id if js.check is not None else None,
+                    "rc": js.rc,
+                    "non_blocking": js.non_blocking,
+                    "filter_reason": js.filter_reason,
+                    "rerun_count": js.rerun_count,
+                }
+                for name, js in self.jobs.items()
+            },
+        }
+        body = json.dumps(snap).encode("utf-8")
+        # The finalized=True write is the sole durable "no live orchestrator"
+        # signal the lambda routes re-runs on; if it silently fails, the snapshot
+        # stays finalized=false and a later re-run is sent to a dead orchestrator
+        # and lost. So retry the terminal write hard. Per-loop writes stay
+        # best-effort (the next loop rewrites anyway).
+        attempts = 5 if (finalized or required) else 1
+        last_err = None
+        for attempt in range(attempts):
+            try:
+                self._s3.put_object(
+                    Bucket=self._cancel_s3_bucket,
+                    Key=self._state_s3_key,
+                    Body=body,
+                    ContentType="application/json",
+                )
+                return
+            except Exception as e:
+                last_err = e
+                if attempt + 1 < attempts:
+                    time.sleep(min(2 ** attempt, 10))
+        msg = (
+            f"could not save state snapshot "
+            f"(finalized={finalized}): {type(last_err).__name__}: {last_err}"
+        )
+        if required:
+            raise RuntimeError(msg)
+        print(f"  [warn] {msg}")
+
+    def seed_from_snapshot(self, snap):
+        """Rehydrate job statuses / check handles / environment from a snapshot.
+
+        Used by the resume path so a fresh orchestrator picks up a finished
+        run's terminal state instead of starting every job from PENDING. Jobs
+        absent from the snapshot stay PENDING.
+        """
+        if not isinstance(snap, dict):
+            return
+        self._environment = snap.get("environment")
+        # Restore the pinned merge target directly from the snapshot (do not
+        # re-derive from the mutable environment on resume).
+        self._snapshot_sha = snap.get("snapshot_sha") or ""
+        self._repo_snapshot_key = snap.get("repo_snapshot_key") or ""
+        for name, rec in (snap.get("jobs") or {}).items():
+            js = self.jobs.get(name)
+            if js is None or not isinstance(rec, dict):
+                continue
+            try:
+                js.status = JobStatus(rec.get("status"))
+            except ValueError:
+                continue
+            js.rc = rec.get("rc")
+            js.non_blocking = bool(rec.get("non_blocking"))
+            js.filter_reason = rec.get("filter_reason")
+            js.rerun_count = rec.get("rerun_count", 0) or 0
+            check_id = rec.get("check_id")
+            if check_id and self.can_post_checks:
+                check_name = f"{self.workflow.name} / {name}"
+                js.check = JobCheckRun(
+                    self._gh_token, self._repo, check_id, check_name
+                )
+
+    def apply_rerun(self, job_names):
+        """Reset the named jobs (and their FAILED/CANCELLED downstream) to
+        PENDING so the loop re-drives them. Returns the set actually reset.
+
+        Only failed/cancelled dependents are reset — a re-run is for a failed
+        job, whose downstream were cascade-cancelled/failed; dependents that
+        succeeded (or passed via a non-blocking upstream failure) are left as-is.
+        """
+        to_reset = set()
+        frontier = []
+        for name in job_names:
+            if name not in self.jobs or name in to_reset:
+                continue
+            js = self.jobs[name]
+            # Only reset a job that has finished. If it is already PENDING/
+            # QUEUED/RUNNING it is mid-(re-)run from an earlier request, so
+            # resetting again would double-count rerun_count and re-dispatch —
+            # a runaway if a rerun-request key lingers (e.g. delete failed).
+            if js.status not in _TERMINAL:
+                continue
+            # Hard cap: never re-run one job more than MAX_RERUNS_PER_JOB times in
+            # a run. A last-resort bound so a stuck rerun-request can't loop
+            # forever regardless of the consume/guard logic above.
+            if js.rerun_count >= MAX_RERUNS_PER_JOB:
+                print(
+                    f"[RERUN] skip {name!r}: reached max re-runs "
+                    f"({js.rerun_count}/{MAX_RERUNS_PER_JOB})"
+                )
+                continue
+            to_reset.add(name)
+            frontier.append(name)
+        while frontier:
+            cur = frontier.pop()
+            for dep in self._dependents.get(cur, ()):
+                if dep in to_reset:
+                    continue
+                d = self.jobs[dep]
+                # Re-run failed/cancelled downstream, and also any terminal
+                # always_run downstream (e.g. Finish Workflow): those succeed
+                # even when a test fails, so unless they re-run their aggregate
+                # status — merge-readiness, CIDB writeback, post-hooks — stays
+                # stale after a successful re-run of the failed job.
+                if d.status in (JobStatus.FAILURE, JobStatus.CANCELLED) or (
+                    d.job.always_run and d.status in _TERMINAL
+                ):
+                    to_reset.add(dep)
+                    frontier.append(dep)
+        reset_ok = {name for name in to_reset if self._reset_job(name)}
+        return reset_ok
+
+    def _reset_job(self, name):
+        """Reset a finished job to PENDING for re-run. Returns True on success.
+
+        Returns False (and leaves the job untouched) if the stale ``final.json``
+        could not be removed — redispatching then would let ``sweep_completions``
+        immediately finish the new attempt from the *previous* run's completion
+        without it ever running. A missing key counts as removed (S3 delete is
+        idempotent), so this only fails on a real permission/transient error.
+        """
+        js = self.jobs[name]
+        if self._s3 is not None:
+            if not self._delete_run_key(self._final_state_s3_key(name)):
+                print(
+                    f"  [warn] not resetting {name!r}: stale final.json could not "
+                    f"be cleared (would prematurely finish the re-run)"
+                )
+                return False
+            # heartbeat: best-effort — a stale heartbeat only risks a spurious
+            # unresponsive flag, not a wrong result.
+            try:
+                self._s3.delete_object(
+                    Bucket=self._cancel_s3_bucket, Key=self._heartbeat_s3_key(name)
+                )
+            except Exception:
+                pass
+        js.status = JobStatus.PENDING
+        js.rc = None
+        js.non_blocking = False
+        js.result = None
+        js.started_at = None
+        js.finished_at = None
+        js.last_heartbeat_ts = None
+        js.runner_instance_id = None
+        js.last_heartbeat_phase = None
+        js.attempt = 1
+        js.stale_flagged = False
+        js.filter_reason = None
+        js.rerun_count += 1
+        # Post a NEW check run for the re-run instead of reusing the old one.
+        # GitHub does NOT allow un-completing a check: PATCHing a completed check
+        # back to queued/in_progress is silently ignored (status stays
+        # `completed`), so a reused check can't show the re-run going
+        # queued -> in_progress. Dropping js.check makes kick() -> _create_check
+        # POST a fresh check with the same name + external_id {run_id, job}; it
+        # goes queued -> in_progress -> final, and GitHub surfaces the latest
+        # check per name (the previous same-name check collapses). The next
+        # snapshot records the new check_id.
+        js.check = None
+        # Post the fresh QUEUED check now, not at kick() time. The target job is
+        # kicked immediately, but a reset *downstream* job isn't kicked until its
+        # deps finish — so without this its stale failed/cancelled check would
+        # linger for the whole re-run. Posting here (same path kick() uses) shows
+        # every reset job as pending the moment the re-run is applied; each flips
+        # to in_progress when it actually runs. No-op without a GH token.
+        js._create_check()
+        return True
+
+    def _delete_run_key(self, key):
+        """Delete an S3 object; True if removed or already absent, False if the
+        delete failed for another reason (e.g. missing DeleteObject permission)."""
+        try:
+            self._s3.delete_object(Bucket=self._cancel_s3_bucket, Key=key)
+            return True
+        except Exception as e:
+            print(f"  [warn] could not delete {key}: {type(e).__name__}: {e}")
+            return False
+
+    def sweep_rerun(self):
+        """Apply any pending re-run requests dropped under
+        ``runs/<run_id>/rerun-request/`` (lambda writes one per webhook while
+        the run is live). Aggregates the job set, resets it, deletes the
+        requests (consume-once). Returns True if anything was reset.
+        """
+        if self._s3 is None or self.local_mode:
+            return False
+        try:
+            resp = self._s3.list_objects_v2(
+                Bucket=self._cancel_s3_bucket, Prefix=self._rerun_request_prefix
+            )
+        except Exception:
+            return False
+        contents = resp.get("Contents", []) or []
+        if not contents:
+            return False
+        jobs = set()
+        read_keys = []
+        for obj in contents:
+            key = obj["Key"]
+            try:
+                body = self._s3.get_object(Bucket=self._cancel_s3_bucket, Key=key)[
+                    "Body"
+                ].read()
+            except Exception as e:
+                # A key we couldn't read must NOT be deleted — leave it for the
+                # next sweep, else its jobs are lost without ever being applied.
+                print(f"  [warn] could not read rerun-request {key}: {e}")
+                continue
+            read_keys.append(key)
+            for j in (json.loads(body).get("jobs") or []):
+                jobs.add(j)
+        reset = self.apply_rerun(list(jobs)) if jobs else set()
+        # Consume only the requests we successfully read (and thus applied).
+        for key in read_keys:
+            try:
+                self._s3.delete_object(Bucket=self._cancel_s3_bucket, Key=key)
+            except Exception:
+                pass
+        if reset:
+            print(f"[RERUN] reset {sorted(reset)}")
+            self.save_snapshot()
+        return bool(reset)
 
     # ---------------------------------------------------------- liveness
 
@@ -891,6 +1459,7 @@ class WorkflowState:
                         instance_id=js.runner_instance_id or "",
                         report_url=details_url or "",
                         pool=", ".join(js.job.runs_on) if js.job.runs_on else "",
+                        rerun_count=js.rerun_count,
                     )
                 except Exception as e:
                     print(
@@ -1055,6 +1624,15 @@ class WorkflowState:
         failure ``kick()`` fails the job with ``reason`` surfaced on the check —
         nothing else will ever drive it forward.
         """
+        # Repo-snapshot mode: the Config Workflow (first job) builds the snapshot
+        # and these are pinned once when it completes (see apply_workflow_config),
+        # read from immutable state here — NOT from the mutable self._environment —
+        # so a later untrusted job cannot redirect dependent jobs. Empty for the
+        # Config Workflow's own dispatch (nothing pinned yet), so it clones the head
+        # and builds the snapshot; every later job restores that exact tree.
+        snapshot_sha = self._snapshot_sha
+        repo_snapshot_key = self._repo_snapshot_key
+
         task = {
             "type": "job_task",
             "event_type": self._event.get("type", ""),
@@ -1062,23 +1640,39 @@ class WorkflowState:
             "head_repo": self._event.get("head_repo", ""),
             "pr_number": self._event.get("pr_number"),
             "head_sha": self._event.get("head_sha", ""),
+            "snapshot_sha": snapshot_sha,
+            "repo_snapshot_key": repo_snapshot_key,
+            # When set, the controller uploads its full per-job log next to
+            # final.json and the job result links to it (Settings.PRAKTIKA_DEBUG or
+            # the workflow's praktika_debug). Distinct from the runner's "debug"
+            # flag, which appends --debug to the job command.
+            "praktika_debug": bool(
+                Settings.PRAKTIKA_DEBUG
+                or getattr(self.workflow, "praktika_debug", False)
+            ),
             "head_ref": self._event.get("head_ref", ""),
             "base_ref": self._event.get("base_ref", ""),
             "sender": self._event.get("sender", ""),
             "title": self._event.get("title", ""),
             "labels": self._event.get("labels", []),
+            "draft": bool(self._event.get("draft", False)),
             "workflow_name": self.workflow.name,
             "job_name": job_state.name,
             "always_run": bool(job_state.job.always_run),
             "runs_on": list(job_state.job.runs_on) if job_state.job.runs_on else [],
             "cancel_s3_bucket": self._cancel_s3_bucket,
             "cancel_s3_key": self._cancel_s3_key,
+            # Lets the runner skip a task whose run has already finalized (an
+            # orchestrator that has finished won't consume the result) — a guard
+            # against stale/redundant dispatches running pointless work.
+            "state_s3_key": self._state_s3_key,
             "heartbeat_s3_bucket": self._cancel_s3_bucket,
             "heartbeat_s3_key": self._heartbeat_s3_key(job_state.name),
             "heartbeat_interval_s": HEARTBEAT_INTERVAL_S,
             "final_state_s3_bucket": self._cancel_s3_bucket,
             "final_state_s3_key": self._final_state_s3_key(job_state.name),
             "check_run_id": job_state.check.id if job_state.check else None,
+            "rerun_count": job_state.rerun_count,
             "environment": self._environment,
         }
 
