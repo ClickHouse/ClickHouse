@@ -1364,8 +1364,24 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
+            /// Refuse at submission (`dry_run`). At execution, TTL may already be gone —
+            /// `REMOVE TTL` while `MATERIALIZE TTL` was queued, or a crash left an orphan
+            /// mutation against rolled-back metadata. Throwing here retries forever and wedges
+            /// later mutations on the same table (#113615). Skip like a missing MATERIALIZE INDEX.
             if (!metadata_snapshot->hasAnyTTL())
-                throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
+            {
+                if (dry_run)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_QUERY,
+                        "Cannot MATERIALIZE TTL as there is no TTL set for table {}",
+                        source.getStorage()->getStorageID().getNameForLogs());
+
+                LOG_WARNING(
+                    logger,
+                    "No TTL set for table {}, skipping MATERIALIZE TTL",
+                    source.getStorage()->getStorageID().getNameForLogs());
+                continue;
+            }
 
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             bool suitable_for_ttl_optimization = source.getMergeTreeData()
