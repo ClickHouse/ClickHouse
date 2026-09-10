@@ -54,6 +54,12 @@ public:
     bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
+    void setIcebergLocalTimestampPaths(std::unordered_set<String> && iceberg_local_timestamp_paths_)
+    {
+        iceberg_local_timestamp_paths = std::move(iceberg_local_timestamp_paths_);
+    }
+    bool isIcebergLocalTimestampPath(const String & path) const { return iceberg_local_timestamp_paths.contains(path); }
+
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding) const;
 
@@ -64,6 +70,7 @@ private:
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
+    std::unordered_set<String> iceberg_local_timestamp_paths;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;

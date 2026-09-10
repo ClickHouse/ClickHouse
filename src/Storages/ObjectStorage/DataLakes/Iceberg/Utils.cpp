@@ -9,6 +9,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -594,8 +595,12 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::Date32:
             return {"date", true};
         case TypeIndex::DateTime:
+            return {
+                assert_cast<const DataTypeDateTime &>(*type).hasExplicitTimeZone() ? Iceberg::f_timestamptz : Iceberg::f_timestamp, true};
         case TypeIndex::DateTime64:
-            return {"timestamp", true};
+            return {
+                assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone() ? Iceberg::f_timestamptz : Iceberg::f_timestamp,
+                true};
         case TypeIndex::Time:
             return {"time", true};
         case TypeIndex::String:

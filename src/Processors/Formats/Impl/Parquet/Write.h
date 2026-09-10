@@ -87,6 +87,7 @@ struct IcebergOptionality
     bool owned_by_enclosing_nullable = false;
 
     bool isOptional(const String & path) const;
+    bool isLocalTimestamp(const String & path) const;
 };
 
 struct ColumnChunkIndexes

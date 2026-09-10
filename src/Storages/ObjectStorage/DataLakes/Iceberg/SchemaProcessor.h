@@ -111,6 +111,8 @@ public:
     /// Nullable in the ClickHouse type, so a writer emitting Iceberg `required` must consult this.
     static std::unordered_set<String> collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema);
 
+    static std::unordered_set<String> collectIcebergLocalTimestampPaths(Poco::JSON::Array::Ptr schema);
+
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
