@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- The EXPLAIN queries filter plan headers by column name, and parallel replicas add extra plan steps that print the same header.
+
 -- https://github.com/ClickHouse/ClickHouse/issues/118738
 -- With join_use_nulls, a selected right join key is joined on as its Nullable output column, so the right
 -- side carries one column that the join restores from the left key, instead of the plain key plus the
