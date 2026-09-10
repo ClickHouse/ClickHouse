@@ -1,41 +1,35 @@
-<!-- Sweeps isValidUTF8 across both lengths where the validators trade places, 16 and 64, in both the
-     valid and the malformed-at-the-first-byte direction. materialize() keeps the argument out of
-     constant folding, and run_all_queries keeps every length in every run. -->
+<!-- Sweeps isValidUTF8 across the two lengths the dispatch turns on: 8, the word the ASCII pre-pass
+     consumes, and 64, at and above which simdutf validates the remainder. The crossover rows are
+     multibyte on purpose: the pre-pass consumes a pure-ASCII payload down to fewer than 8 bytes, so an
+     ASCII row can never reach simdutf and cannot bracket the threshold. materialize() keeps the
+     argument out of constant folding, and run_all_queries keeps every length in every run.
+     repeat() can only produce multiples of the code point width, so a length that is not a multiple
+     carries an explicit ASCII tail; every multibyte payload still begins with a non-ASCII byte, so the
+     pre-pass consumes nothing and the remainder equals the length. -->
 <test run_all_queries="1">
+    <!-- ASCII: the pre-pass against master's byte-at-a-time loop, nothing else. -->
     <query>SELECT isValidUTF8(materialize(repeat('a', 8))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('a', 16))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('a', 32))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('a', 48))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 63))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 64))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('a', 66))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 22))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('a', 96))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('a', 256))) FROM numbers(300000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 1023))) FROM numbers(300000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 341))) FROM numbers(300000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 65535))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21845))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
-    <!-- The six rows whose payload carries a raw 0xC2, here and below, need the column alias: the folded
-         argument otherwise becomes the result column's name, and the harness's client decodes header
-         strings as strict UTF-8, so the query cannot run at all. -->
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 63))) AS v FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 65534))) AS v FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
-    <query>SELECT isValidUTF8(materialize(repeat('a', 4))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 7))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 4))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 3))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 8))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 14))) AS v FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 15))) AS v FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 16))) AS v FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 62))) AS v FROM numbers(3000000) FORMAT Null</query>
+    <!-- 3-byte code points, dense over [64, 129]: the arm changes between 63 and 64, and simdutf takes a
+         second padded block from 65 upwards, so the per-byte cost peaks just above each multiple of 64. -->
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 18) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21) || 'a')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 32))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 42) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 43))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 341))) FROM numbers(300000) FORMAT Null</query>
+    <!-- 2-byte code points: the same boundaries at a different per-byte scalar cost. -->
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 28))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 16))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('a', 1))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 1))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 1))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 1))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 4))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32) || 'a')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 511) || 'a')) FROM numbers(300000) FORMAT Null</query>
+    <!-- Malformed at offset 0: the scalar loop rejects in constant time while simdutf always checks at
+         least one block, so this row is a bounded cost that no threshold can improve, never a crossover.
+         The alias is required: the folded argument would otherwise become the result column's name, and
+         the harness's client decodes header strings as strict UTF-8. -->
+    <query>SELECT isValidUTF8(materialize('\xFF' || repeat('a', 63))) AS v FROM numbers(3000000) FORMAT Null</query>
 </test>
