@@ -2895,6 +2895,20 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     query_node->getLimitByNode() = limit_by_node;
                 }
 
+                if (query_node->hasLimitAfter())
+                {
+                    auto limit_after_node = query_node->getLimitAfter();
+                    replace_identifiers_in_node(limit_after_node);
+                    query_node->getLimitAfter() = limit_after_node;
+                }
+
+                if (query_node->hasLimitUntil())
+                {
+                    auto limit_until_node = query_node->getLimitUntil();
+                    replace_identifiers_in_node(limit_until_node);
+                    query_node->getLimitUntil() = limit_until_node;
+                }
+
                 if (query_node->hasWindow())
                 {
                     auto window_node = query_node->getWindowNode();
@@ -5772,7 +5786,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 && is_inner_or_semi
                 && !is_asof_inequality_key)
             {
-                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(expression_types[0], expression_types[1]))
+                /// A conversion of the whole key column into this type runs before the join, so it must
+                /// hold every source value: `is_nullable` at the top level, the flag inside a Tuple.
+                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(
+                        expression_types[0], expression_types[1], /* force_support_conversion= */ true))
                 {
                     bool is_nullable = isNullableOrLowCardinalityNullable(expression_types[0]) || isNullableOrLowCardinalityNullable(expression_types[1]);
                     common_type = is_nullable ? makeNullable(subtype) : subtype;
@@ -6513,6 +6530,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasLimit())
         visitor.visit(query_node_typed.getLimit());
 
+    if (query_node_typed.hasLimitAfter())
+        visitor.visit(query_node_typed.getLimitAfter());
+
+    if (query_node_typed.hasLimitUntil())
+        visitor.visit(query_node_typed.getLimitUntil());
+
     if (query_node_typed.hasOffset())
         visitor.visit(query_node_typed.getOffset());
 
@@ -6715,6 +6738,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         convertLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
     }
+
+    if (query_node_typed.hasLimitAfter())
+        resolveExpressionNode(query_node_typed.getLimitAfter(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    if (query_node_typed.hasLimitUntil())
+        resolveExpressionNode(query_node_typed.getLimitUntil(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasOffset())
     {
