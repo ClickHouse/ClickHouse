@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # A `Distributed` sharding key containing `arrayJoin` is rejected when the user states it (see
-# `05175_reject_array_join_in_row_count_slots`), but a table whose sharding key was stored before that
+# `05200_reject_array_join_in_row_count_slots`), but a table whose sharding key was stored before that
 # check existed still has to load: the sharding key is an engine argument that `ALTER` cannot change, so
 # rejecting it while the metadata is read would leave `DROP` as the only way out - and would fail the
 # whole database load rather than the one table. A replayed definition (a short `ATTACH TABLE`, the
