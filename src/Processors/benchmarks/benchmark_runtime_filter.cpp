@@ -29,16 +29,18 @@ namespace
 {
 
 /// This executable is optional low-level diagnostics tooling for isolated runtime-filter paths such as `insert`, `find`,
-/// `merge`, casts, and null-map handling. It intentionally forces some modes below, for example exact-set vs bloom-filter
-/// behavior and adaptive skipping, so it should not be used as evidence for production-default performance. End-to-end
-/// production scenarios, including planner settings, `BuildRuntimeFilterTransform`, `__applyFilter`, query context lookup,
-/// pipeline scheduling, and CI comparison against `master`, belong in XML performance tests.
+/// `merge`, casts, and null-map handling. Most cases instantiate the exact, approximate, or adaptive implementation directly
+/// so the measured work is explicit. A few `RuntimeFilter` and `BuildRuntimeFilterTransform` cases remain as integration
+/// anchors. These benchmarks should not be used as evidence for production-default performance; end-to-end production
+/// scenarios and CI comparison against `master` belong in XML performance tests.
 constexpr Float64 DISABLE_ADAPTIVE_SKIP_THRESHOLD = 2.0;
 constexpr Float64 DEFAULT_ADAPTIVE_SKIP_THRESHOLD = 0.7;
 constexpr UInt64 BLOCKS_TO_SKIP_BEFORE_REENABLING = 30;
 constexpr UInt64 EXACT_VALUES_BYTES_LIMIT = 64 * 1024 * 1024;
 constexpr UInt64 EXACT_VALUES_LIMIT_FOR_EXACT_FILTER = 1'000'000;
-constexpr UInt64 EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER = 1;
+/// The adaptive implementation checks the limit after inserting a whole column. This forces its first non-trivial batch to
+/// transition to Bloom; it does not construct an initially Bloom-backed filter or switch after the first individual value.
+constexpr UInt64 ADAPTIVE_EXACT_VALUES_LIMIT = 1;
 constexpr UInt64 BLOOM_FILTER_BYTES = 512 * 1024;
 constexpr UInt64 BLOOM_FILTER_HASH_FUNCTIONS = 3;
 constexpr Float64 DISABLE_BLOOM_FULLNESS_CHECK = 1.0;
@@ -64,13 +66,6 @@ enum class ValuePattern
 {
     Sequential = 0,
     Mixed = 1,
-};
-
-enum class RuntimeFilterKind
-{
-    ExactContains,
-    ExactNotContains,
-    Approximate,
 };
 
 /// `mix` spreads sequential row numbers across key buckets for non-contiguous benchmark access patterns.
@@ -249,77 +244,26 @@ DataTypePtr lowCardinalityStringType()
     return std::make_shared<DataTypeLowCardinality>(stringType());
 }
 
-UniqueRuntimeFilterPtr makeRuntimeFilter(RuntimeFilterKind kind, const DataTypePtr & type, Float64 adaptive_skip_threshold)
+UniqueRuntimeFilterPtr makeAdaptiveRuntimeFilter(const DataTypePtr & type, Float64 adaptive_skip_threshold)
 {
     const RuntimeFilterConfig config{adaptive_skip_threshold, BLOCKS_TO_SKIP_BEFORE_REENABLING};
-
-    switch (kind)
-    {
-        case RuntimeFilterKind::ExactContains:
-            return std::make_unique<RuntimeFilter>(
-                /*filters_to_merge_=*/0,
-                config,
-                RuntimeFilter::ExactContains(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER));
-        case RuntimeFilterKind::ExactNotContains:
-            return std::make_unique<RuntimeFilter>(
-                /*filters_to_merge_=*/0,
-                config,
-                RuntimeFilter::ExactNotContains(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER));
-        case RuntimeFilterKind::Approximate:
-            return std::make_unique<RuntimeFilter>(
-                /*filters_to_merge_=*/0,
-                config,
-                RuntimeFilter::Adaptive(
-                    type,
-                    BLOOM_FILTER_BYTES,
-                    EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
-                    BLOOM_FILTER_HASH_FUNCTIONS,
-                    DISABLE_BLOOM_FULLNESS_CHECK,
-                    /*distinct_keys_hint_=*/std::nullopt,
-                    /*distinct_keys_hint_matches_filter_key_=*/false));
-    }
-    UNREACHABLE();
+    return std::make_unique<RuntimeFilter>(
+        /*filters_to_merge_=*/0,
+        config,
+        AdaptiveSetRuntimeFilter(
+            type,
+            BLOOM_FILTER_BYTES,
+            ADAPTIVE_EXACT_VALUES_LIMIT,
+            BLOOM_FILTER_HASH_FUNCTIONS,
+            DISABLE_BLOOM_FULLNESS_CHECK,
+            /*distinct_keys_hint_=*/std::nullopt,
+            /*distinct_keys_hint_matches_filter_key_=*/false));
 }
 
-UniqueRuntimeFilterPtr makeMergeDestination(RuntimeFilterKind kind, const DataTypePtr & type, size_t filters_to_merge)
+UniqueRuntimeFilterPtr buildAdaptiveRuntimeFilter(
+    const DataTypePtr & type, const ColumnPtr & build_column, Float64 adaptive_skip_threshold = DISABLE_ADAPTIVE_SKIP_THRESHOLD)
 {
-    const RuntimeFilterConfig config{DISABLE_ADAPTIVE_SKIP_THRESHOLD, BLOCKS_TO_SKIP_BEFORE_REENABLING};
-
-    switch (kind)
-    {
-        case RuntimeFilterKind::ExactContains:
-            return std::make_unique<RuntimeFilter>(
-                filters_to_merge,
-                config,
-                RuntimeFilter::ExactContains(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER));
-        case RuntimeFilterKind::ExactNotContains:
-            return std::make_unique<RuntimeFilter>(
-                filters_to_merge,
-                config,
-                RuntimeFilter::ExactNotContains(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER));
-        case RuntimeFilterKind::Approximate:
-            return std::make_unique<RuntimeFilter>(
-                filters_to_merge,
-                config,
-                RuntimeFilter::Adaptive(
-                    type,
-                    BLOOM_FILTER_BYTES,
-                    EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
-                    BLOOM_FILTER_HASH_FUNCTIONS,
-                    DISABLE_BLOOM_FULLNESS_CHECK,
-                    /*distinct_keys_hint_=*/std::nullopt,
-                    /*distinct_keys_hint_matches_filter_key_=*/false));
-    }
-    UNREACHABLE();
-}
-
-UniqueRuntimeFilterPtr buildRuntimeFilter(
-    RuntimeFilterKind kind,
-    const DataTypePtr & type,
-    const ColumnPtr & build_column,
-    Float64 adaptive_skip_threshold = DISABLE_ADAPTIVE_SKIP_THRESHOLD)
-{
-    auto filter = makeRuntimeFilter(kind, type, adaptive_skip_threshold);
+    auto filter = makeAdaptiveRuntimeFilter(type, adaptive_skip_threshold);
     if (build_column)
         filter->insert(build_column);
     filter->finishInsert();
@@ -336,18 +280,18 @@ void recordRows(benchmark::State & state, size_t rows)
     state.SetItemsProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(rows));
 }
 
-void benchmarkFind(
-    benchmark::State & state, RuntimeFilterKind kind, const DataTypePtr & type, ColumnPtr build_column, ColumnPtr probe_column)
+template <typename Filter>
+void benchmarkFind(benchmark::State & state, const Filter & filter, const DataTypePtr & type, const ColumnPtr & probe_column)
 {
     ensureFunctionsRegistered();
-
-    auto filter = buildRuntimeFilter(kind, type, build_column);
     auto argument = makeArgument(probe_column, type);
 
     for (auto _ [[maybe_unused]] : state)
     {
-        auto result = filter->find(argument);
+        std::optional<size_t> rows_passed;
+        auto result = filter.find(argument, rows_passed);
         benchmark::DoNotOptimize(result);
+        benchmark::DoNotOptimize(rows_passed);
     }
 
     recordRows(state, probe_column->size());
@@ -371,7 +315,7 @@ std::vector<Chunk> splitColumnIntoChunks(const ColumnPtr & column, size_t chunk_
 
 }
 
-static void BM_RuntimeFilterExactContainsFindUInt64(benchmark::State & state)
+static void BM_ExactSetRuntimeFilterContainsFindUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
     const auto rows = static_cast<size_t>(state.range(1));
@@ -380,10 +324,13 @@ static void BM_RuntimeFilterExactContainsFindUInt64(benchmark::State & state)
 
     auto build_column = makeUInt64Column(key_count, key_count, HitRatio::All, ValuePattern::Sequential);
     auto probe_column = makeUInt64Column(rows, key_count, hit_ratio, ValuePattern::Mixed);
-    benchmarkFind(state, RuntimeFilterKind::ExactContains, type, build_column, probe_column);
+    ExactSetRuntimeFilter<false> filter(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+    filter.insert(build_column);
+    filter.finishInsert();
+    benchmarkFind(state, filter, type, probe_column);
 }
 
-static void BM_RuntimeFilterExactNotContainsFindUInt64(benchmark::State & state)
+static void BM_ExactSetRuntimeFilterNotContainsFindUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
     const auto rows = static_cast<size_t>(state.range(1));
@@ -392,10 +339,13 @@ static void BM_RuntimeFilterExactNotContainsFindUInt64(benchmark::State & state)
 
     auto build_column = makeUInt64Column(key_count, key_count, HitRatio::All, ValuePattern::Sequential);
     auto probe_column = makeUInt64Column(rows, key_count, hit_ratio, ValuePattern::Mixed);
-    benchmarkFind(state, RuntimeFilterKind::ExactNotContains, type, build_column, probe_column);
+    ExactSetRuntimeFilter<true> filter(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+    filter.insert(build_column);
+    filter.finishInsert();
+    benchmarkFind(state, filter, type, probe_column);
 }
 
-static void BM_RuntimeFilterExactContainsFindNullableUInt64(benchmark::State & state)
+static void BM_ExactSetRuntimeFilterContainsFindNullableUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
     const auto rows = static_cast<size_t>(state.range(1));
@@ -404,10 +354,13 @@ static void BM_RuntimeFilterExactContainsFindNullableUInt64(benchmark::State & s
 
     auto build_column = makeNullableUInt64Column(key_count, key_count, HitRatio::All, ValuePattern::Sequential, 0);
     auto probe_column = makeNullableUInt64Column(rows, key_count, HitRatio::Half, ValuePattern::Mixed, null_percent);
-    benchmarkFind(state, RuntimeFilterKind::ExactContains, type, build_column, probe_column);
+    ExactSetRuntimeFilter<false> filter(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+    filter.insert(build_column);
+    filter.finishInsert();
+    benchmarkFind(state, filter, type, probe_column);
 }
 
-static void BM_RuntimeFilterApproximateFindUInt64(benchmark::State & state)
+static void BM_ApproximateSetRuntimeFilterFindUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
     const auto rows = static_cast<size_t>(state.range(1));
@@ -416,14 +369,16 @@ static void BM_RuntimeFilterApproximateFindUInt64(benchmark::State & state)
 
     auto build_column = makeUInt64Column(key_count, key_count, HitRatio::All, ValuePattern::Sequential);
     auto probe_column = makeUInt64Column(rows, key_count, hit_ratio, ValuePattern::Mixed);
-    benchmarkFind(state, RuntimeFilterKind::Approximate, type, build_column, probe_column);
+    ApproximateSetRuntimeFilter filter(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+    filter.insert(build_column);
+    benchmarkFind(state, filter, type, probe_column);
 }
 
-/// Not a production path: `BuildRuntimeFilterTransform` only builds a `RuntimeFilter::Adaptive` when
-/// `AdaptiveSetRuntimeFilter::isDataTypeSupported` holds, and it rejects `Nullable(UInt64)`, so a nullable
-/// join key always goes through `RuntimeFilter::ExactContains`. This measures the approximate filter on a
-/// `ColumnNullable` in isolation, as a reference point for the exact nullable benchmark above.
-static void BM_RuntimeFilterApproximateFindNullableUInt64(benchmark::State & state)
+/// Not a production path: `BuildRuntimeFilterTransform` only builds an `AdaptiveSetRuntimeFilter` when
+/// `AdaptiveSetRuntimeFilter::isDataTypeSupported` holds, and it rejects `Nullable(UInt64)`, so a nullable join key goes
+/// through `ExactSetRuntimeFilter`. This directly measures `ApproximateSetRuntimeFilter` on a non-null `ColumnNullable` as
+/// a reference point for the exact nullable benchmark above.
+static void BM_ApproximateSetRuntimeFilterFindNullableUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
     const auto rows = static_cast<size_t>(state.range(1));
@@ -432,10 +387,12 @@ static void BM_RuntimeFilterApproximateFindNullableUInt64(benchmark::State & sta
 
     auto build_column = makeNullableUInt64Column(key_count, key_count, HitRatio::All, ValuePattern::Sequential, 0);
     auto probe_column = makeNullableUInt64Column(rows, key_count, HitRatio::Half, ValuePattern::Mixed, null_percent);
-    benchmarkFind(state, RuntimeFilterKind::Approximate, type, build_column, probe_column);
+    ApproximateSetRuntimeFilter filter(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+    filter.insert(build_column);
+    benchmarkFind(state, filter, type, probe_column);
 }
 
-static void BM_RuntimeFilterApproximateFindString(benchmark::State & state)
+static void BM_ApproximateSetRuntimeFilterFindString(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
     const auto rows = static_cast<size_t>(state.range(1));
@@ -444,10 +401,12 @@ static void BM_RuntimeFilterApproximateFindString(benchmark::State & state)
 
     auto build_column = makeStringColumn(key_count, key_count, HitRatio::All, ValuePattern::Sequential);
     auto probe_column = makeStringColumn(rows, key_count, hit_ratio, ValuePattern::Mixed);
-    benchmarkFind(state, RuntimeFilterKind::Approximate, type, build_column, probe_column);
+    ApproximateSetRuntimeFilter filter(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+    filter.insert(build_column);
+    benchmarkFind(state, filter, type, probe_column);
 }
 
-static void BM_RuntimeFilterApproximateFindLowCardinalityString(benchmark::State & state)
+static void BM_ApproximateSetRuntimeFilterFindLowCardinalityString(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
     const auto rows = static_cast<size_t>(state.range(1));
@@ -456,96 +415,54 @@ static void BM_RuntimeFilterApproximateFindLowCardinalityString(benchmark::State
 
     auto build_column = makeLowCardinalityStringColumn(key_count, key_count, HitRatio::All, ValuePattern::Sequential);
     auto probe_column = makeLowCardinalityStringColumn(rows, key_count, hit_ratio, ValuePattern::Mixed);
-    benchmarkFind(state, RuntimeFilterKind::Approximate, type, build_column, probe_column);
+    ApproximateSetRuntimeFilter filter(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+    filter.insert(build_column);
+    benchmarkFind(state, filter, type, probe_column);
 }
 
-static void BM_RuntimeFilterApproximateBuildUInt64(benchmark::State & state)
+static void BM_ApproximateSetRuntimeFilterBuildUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
-    const auto type = uint64Type();
     auto build_column = makeShuffledUInt64Column(rows);
 
     for (auto _ [[maybe_unused]] : state)
     {
-        auto filter = buildRuntimeFilter(RuntimeFilterKind::Approximate, type, build_column);
-        benchmark::DoNotOptimize(filter);
+        std::optional<ApproximateSetRuntimeFilter> filter;
+        filter.emplace(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+        filter->insert(build_column);
+        benchmark::DoNotOptimize(&*filter);
+
+        state.PauseTiming();
+        filter.reset();
+        state.ResumeTiming();
     }
 
     recordRows(state, rows);
 }
 
-static void BM_RuntimeFilterApproximateBuildString(benchmark::State & state)
+static void BM_ApproximateSetRuntimeFilterBuildString(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
-    const auto type = stringType();
     auto build_column = makeShuffledStringColumn(rows);
 
     for (auto _ [[maybe_unused]] : state)
     {
-        auto filter = buildRuntimeFilter(RuntimeFilterKind::Approximate, type, build_column);
-        benchmark::DoNotOptimize(filter);
+        std::optional<ApproximateSetRuntimeFilter> filter;
+        filter.emplace(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+        filter->insert(build_column);
+        benchmark::DoNotOptimize(&*filter);
+
+        state.PauseTiming();
+        filter.reset();
+        state.ResumeTiming();
     }
 
     recordRows(state, rows);
 }
 
-static void BM_RuntimeFilterApproximateMergeUInt64(benchmark::State & state)
-{
-    const auto filters_to_merge = static_cast<size_t>(state.range(0));
-    const auto keys_per_filter = static_cast<size_t>(state.range(1));
-    const auto type = uint64Type();
-
-    std::vector<UniqueRuntimeFilterPtr> sources;
-    sources.reserve(filters_to_merge);
-    for (size_t filter_index = 0; filter_index < filters_to_merge; ++filter_index)
-    {
-        auto column = makeShuffledUInt64Column(keys_per_filter, static_cast<UInt64>(filter_index) * static_cast<UInt64>(keys_per_filter));
-        sources.push_back(buildRuntimeFilter(RuntimeFilterKind::Approximate, type, column));
-    }
-
-    for (auto _ [[maybe_unused]] : state)
-    {
-        auto destination = makeMergeDestination(RuntimeFilterKind::Approximate, type, filters_to_merge);
-        for (const auto & source : sources)
-            destination->merge(*source);
-        destination->finishInsert();
-        benchmark::DoNotOptimize(destination);
-    }
-
-    recordRows(state, filters_to_merge * keys_per_filter);
-}
-
-static void BM_RuntimeFilterExactMergeUInt64(benchmark::State & state)
-{
-    const auto filters_to_merge = static_cast<size_t>(state.range(0));
-    const auto keys_per_filter = static_cast<size_t>(state.range(1));
-    const auto type = uint64Type();
-
-    std::vector<UniqueRuntimeFilterPtr> sources;
-    sources.reserve(filters_to_merge);
-    for (size_t filter_index = 0; filter_index < filters_to_merge; ++filter_index)
-    {
-        auto column = makeShuffledUInt64Column(keys_per_filter, static_cast<UInt64>(filter_index) * static_cast<UInt64>(keys_per_filter));
-        sources.push_back(buildRuntimeFilter(RuntimeFilterKind::ExactContains, type, column));
-    }
-
-    for (auto _ [[maybe_unused]] : state)
-    {
-        auto destination = makeMergeDestination(RuntimeFilterKind::ExactContains, type, filters_to_merge);
-        for (const auto & source : sources)
-            destination->merge(*source);
-        destination->finishInsert();
-        benchmark::DoNotOptimize(destination);
-    }
-
-    recordRows(state, filters_to_merge * keys_per_filter);
-}
-
-/// Measures only `RuntimeFilter::finishInsert` for the approximate filter. With `EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER`
-/// set to 1 the filter switches to the Bloom representation during `insert`, so `AdaptiveSetRuntimeFilter::finishInsert` runs
-/// `checkApproximateFilterWorthiness` — a popcount scan over the whole `BLOOM_FILTER_BYTES` array whose cost is independent
-/// of the inserted row count. Construction and `insert` are excluded from the timing.
-static void BM_RuntimeFilterFinishInsertApproximateUInt64(benchmark::State & state)
+/// Representative `RuntimeFilter` integration anchors. The first bulk insert is intentionally timed: it first builds an
+/// exact set for the complete column and then migrates that set into Bloom before `finishInsert` checks its worthiness.
+static void BM_RuntimeFilterAdaptiveBuildUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
     const auto type = uint64Type();
@@ -553,12 +470,7 @@ static void BM_RuntimeFilterFinishInsertApproximateUInt64(benchmark::State & sta
 
     for (auto _ [[maybe_unused]] : state)
     {
-        state.PauseTiming();
-        auto filter = makeRuntimeFilter(RuntimeFilterKind::Approximate, type, DISABLE_ADAPTIVE_SKIP_THRESHOLD);
-        filter->insert(build_column);
-        state.ResumeTiming();
-
-        filter->finishInsert();
+        auto filter = buildAdaptiveRuntimeFilter(type, build_column);
         benchmark::DoNotOptimize(filter.get());
 
         state.PauseTiming();
@@ -569,10 +481,112 @@ static void BM_RuntimeFilterFinishInsertApproximateUInt64(benchmark::State & sta
     recordRows(state, rows);
 }
 
-/// Build of the exact filter including `finishInsert`, which selects the `ZERO` / `ONE` / `MANY` lookup fast path.
-/// The row counts cover all three outcomes. Complements `BM_RuntimeFilterApproximateBuild*`, which likewise include
-/// `finishInsert` through `buildRuntimeFilter`.
-static void BM_RuntimeFilterExactContainsBuildUInt64(benchmark::State & state)
+static void BM_RuntimeFilterAdaptiveBuildString(benchmark::State & state)
+{
+    const auto rows = static_cast<size_t>(state.range(0));
+    const auto type = stringType();
+    auto build_column = makeShuffledStringColumn(rows);
+
+    for (auto _ [[maybe_unused]] : state)
+    {
+        auto filter = buildAdaptiveRuntimeFilter(type, build_column);
+        benchmark::DoNotOptimize(filter.get());
+
+        state.PauseTiming();
+        filter.reset();
+        state.ResumeTiming();
+    }
+
+    recordRows(state, rows);
+}
+
+static void BM_ApproximateSetRuntimeFilterMergeUInt64(benchmark::State & state)
+{
+    const auto filters_to_merge = static_cast<size_t>(state.range(0));
+    const auto keys_per_filter = static_cast<size_t>(state.range(1));
+
+    std::vector<std::unique_ptr<ApproximateSetRuntimeFilter>> sources;
+    sources.reserve(filters_to_merge);
+    for (size_t filter_index = 0; filter_index < filters_to_merge; ++filter_index)
+    {
+        auto column = makeShuffledUInt64Column(keys_per_filter, static_cast<UInt64>(filter_index) * static_cast<UInt64>(keys_per_filter));
+        auto source = std::make_unique<ApproximateSetRuntimeFilter>(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+        source->insert(column);
+        sources.push_back(std::move(source));
+    }
+
+    for (auto _ [[maybe_unused]] : state)
+    {
+        std::optional<ApproximateSetRuntimeFilter> destination;
+        destination.emplace(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+        for (const auto & source : sources)
+            destination->mergeFrom(*source);
+        benchmark::DoNotOptimize(&*destination);
+
+        state.PauseTiming();
+        destination.reset();
+        state.ResumeTiming();
+    }
+
+    recordRows(state, filters_to_merge * keys_per_filter);
+}
+
+static void BM_ExactSetRuntimeFilterMergeUInt64(benchmark::State & state)
+{
+    using Filter = ExactSetRuntimeFilter<false>;
+
+    const auto filters_to_merge = static_cast<size_t>(state.range(0));
+    const auto keys_per_filter = static_cast<size_t>(state.range(1));
+    const auto type = uint64Type();
+
+    std::vector<std::unique_ptr<Filter>> sources;
+    sources.reserve(filters_to_merge);
+    for (size_t filter_index = 0; filter_index < filters_to_merge; ++filter_index)
+    {
+        auto column = makeShuffledUInt64Column(keys_per_filter, static_cast<UInt64>(filter_index) * static_cast<UInt64>(keys_per_filter));
+        auto source = std::make_unique<Filter>(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+        source->insert(column);
+        source->finishInsert();
+        sources.push_back(std::move(source));
+    }
+
+    for (auto _ [[maybe_unused]] : state)
+    {
+        std::optional<Filter> destination;
+        destination.emplace(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+        for (const auto & source : sources)
+            destination->mergeFrom(*source);
+        benchmark::DoNotOptimize(&*destination);
+
+        state.PauseTiming();
+        destination.reset();
+        state.ResumeTiming();
+    }
+
+    recordRows(state, filters_to_merge * keys_per_filter);
+}
+
+/// Directly measures the popcount scan used by adaptive finalization to decide whether a Bloom filter is worth using.
+/// Construction and insertion are outside the timed loop; the scanned byte count is independent of the inserted row count.
+static void BM_ApproximateSetRuntimeFilterWorthinessUInt64(benchmark::State & state)
+{
+    const auto rows = static_cast<size_t>(state.range(0));
+    auto build_column = makeShuffledUInt64Column(rows);
+    ApproximateSetRuntimeFilter filter(BLOOM_FILTER_BYTES, BLOOM_FILTER_HASH_FUNCTIONS);
+    filter.insert(build_column);
+
+    for (auto _ [[maybe_unused]] : state)
+    {
+        const bool worth_using = filter.isWorthUsing(DISABLE_BLOOM_FULLNESS_CHECK);
+        benchmark::DoNotOptimize(worth_using);
+    }
+
+    state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(BLOOM_FILTER_BYTES));
+}
+
+/// Build of the concrete exact filter including `finishInsert`, which selects the `ZERO` / `ONE` / `MANY` lookup fast path.
+/// The row counts cover all three outcomes; destruction is excluded from the timing.
+static void BM_ExactSetRuntimeFilterContainsBuildUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
     const auto type = uint64Type();
@@ -580,11 +594,53 @@ static void BM_RuntimeFilterExactContainsBuildUInt64(benchmark::State & state)
 
     for (auto _ [[maybe_unused]] : state)
     {
-        auto filter = buildRuntimeFilter(RuntimeFilterKind::ExactContains, type, build_column);
-        benchmark::DoNotOptimize(filter.get());
+        std::optional<ExactSetRuntimeFilter<false>> filter;
+        filter.emplace(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+        filter->insert(build_column);
+        filter->finishInsert();
+        benchmark::DoNotOptimize(&*filter);
+
+        state.PauseTiming();
+        filter.reset();
+        state.ResumeTiming();
     }
 
     recordRows(state, rows);
+}
+
+/// Isolates exact-to-approximate conversion. Setup fills but does not overflow the exact set; the timed one-row insert crosses
+/// the cardinality limit, finalizes the exact set, allocates the Bloom filter, and rehashes all recorded values into it.
+static void BM_AdaptiveSetRuntimeFilterExactToApproximateTransitionUInt64(benchmark::State & state)
+{
+    const auto exact_rows = static_cast<size_t>(state.range(0));
+    const auto type = uint64Type();
+    auto exact_column = makeShuffledUInt64Column(exact_rows);
+    auto trigger_column = makeShuffledUInt64Column(/*rows=*/1, static_cast<UInt64>(exact_rows));
+
+    for (auto _ [[maybe_unused]] : state)
+    {
+        state.PauseTiming();
+        {
+            AdaptiveSetRuntimeFilter filter(
+                type,
+                BLOOM_FILTER_BYTES,
+                exact_rows,
+                BLOOM_FILTER_HASH_FUNCTIONS,
+                DISABLE_BLOOM_FULLNESS_CHECK,
+                /*distinct_keys_hint_=*/std::nullopt,
+                /*distinct_keys_hint_matches_filter_key_=*/false);
+            filter.insert(exact_column);
+            state.ResumeTiming();
+
+            filter.insert(trigger_column);
+            benchmark::DoNotOptimize(&filter);
+
+            state.PauseTiming();
+        }
+        state.ResumeTiming();
+    }
+
+    recordRows(state, exact_rows + 1);
 }
 
 static void BM_RuntimeFilterAdaptiveSkipApproximateUInt64(benchmark::State & state)
@@ -595,7 +651,7 @@ static void BM_RuntimeFilterAdaptiveSkipApproximateUInt64(benchmark::State & sta
 
     auto build_column = makeUInt64Column(key_count, key_count, HitRatio::All, ValuePattern::Sequential);
     auto probe_column = makeUInt64Column(rows, key_count, HitRatio::All, ValuePattern::Mixed);
-    auto filter = buildRuntimeFilter(RuntimeFilterKind::Approximate, type, build_column, DEFAULT_ADAPTIVE_SKIP_THRESHOLD);
+    auto filter = buildAdaptiveRuntimeFilter(type, build_column, DEFAULT_ADAPTIVE_SKIP_THRESHOLD);
     auto argument = makeArgument(probe_column, type);
 
     for (auto _ [[maybe_unused]] : state)
@@ -607,13 +663,13 @@ static void BM_RuntimeFilterAdaptiveSkipApproximateUInt64(benchmark::State & sta
     recordRows(state, rows);
 }
 
-/// The `InsertOnly` transform benchmarks measure only the per-chunk `transform` path (optional cast plus
-/// `RuntimeFilter::insert`). The end-of-build work of `BuildRuntimeFilterTransform` — `finish` publishing the filter
-/// into `RuntimeFilterLookup::add`, which also runs `finishInsert` — requires a query context with a registered
-/// lookup, so it is exercised only by the XML performance tests (see the note at the top of this file). The
-/// finalization cost itself is measured in isolation by `BM_RuntimeFilterFinishInsertApproximateUInt64` below, and is
-/// included in the `BM_RuntimeFilter*Build*` benchmarks that construct filters through `buildRuntimeFilter`.
-static void BM_RuntimeFilterBuildTransformInsertOnlyUInt64(benchmark::State & state)
+/// The `InsertOnly` transform benchmarks measure the per-chunk `transform` path (optional cast plus
+/// `RuntimeFilter::insert`). They intentionally include the adaptive transition: the first complete chunk is inserted into
+/// the exact set and then migrated to Bloom. The end-of-build work of `BuildRuntimeFilterTransform` — `finish` publishing
+/// the filter into `RuntimeFilterLookup::add`, which also runs `finishInsert` — requires a query context with a registered
+/// lookup, so it is exercised only by the XML performance tests. The underlying Bloom worthiness scan and a complete
+/// adaptive `RuntimeFilter` build are measured separately above.
+static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
     const auto chunk_rows = static_cast<size_t>(state.range(1));
@@ -633,7 +689,7 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyUInt64(benchmark::State & st
                 /*filter_name_=*/"_runtime_filter_benchmark",
                 /*filter_key_=*/String{},
                 /*filters_to_merge_=*/0,
-                EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
+                ADAPTIVE_EXACT_VALUES_LIMIT,
                 BLOOM_FILTER_BYTES,
                 BLOOM_FILTER_HASH_FUNCTIONS,
                 DISABLE_ADAPTIVE_SKIP_THRESHOLD,
@@ -658,7 +714,7 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyUInt64(benchmark::State & st
     recordRows(state, rows);
 }
 
-static void BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64(benchmark::State & state)
+static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyCastUInt32ToUInt64(benchmark::State & state)
 {
     ensureFunctionsRegistered();
 
@@ -681,7 +737,7 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64(benchmark
                 /*filter_name_=*/"_runtime_filter_benchmark",
                 /*filter_key_=*/String{},
                 /*filters_to_merge_=*/0,
-                EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
+                ADAPTIVE_EXACT_VALUES_LIMIT,
                 BLOOM_FILTER_BYTES,
                 BLOOM_FILTER_HASH_FUNCTIONS,
                 DISABLE_ADAPTIVE_SKIP_THRESHOLD,
@@ -706,68 +762,70 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64(benchmark
     recordRows(state, rows);
 }
 
-BENCHMARK(BM_RuntimeFilterExactContainsFindUInt64)
+BENCHMARK(BM_ExactSetRuntimeFilterContainsFindUInt64)
     ->Args({/*key_count=*/0, /*rows=*/65536, /*hit_ratio=*/0})
     ->Args({/*key_count=*/1, /*rows=*/65536, /*hit_ratio=*/100})
     ->Args({/*key_count=*/100, /*rows=*/65536, /*hit_ratio=*/50})
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
-BENCHMARK(BM_RuntimeFilterExactNotContainsFindUInt64)
+BENCHMARK(BM_ExactSetRuntimeFilterNotContainsFindUInt64)
     ->Args({/*key_count=*/100, /*rows=*/65536, /*hit_ratio=*/50})
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
-BENCHMARK(BM_RuntimeFilterExactContainsFindNullableUInt64)
+BENCHMARK(BM_ExactSetRuntimeFilterContainsFindNullableUInt64)
     ->Args({/*key_count=*/1, /*rows=*/65536, /*null_percent=*/0})
     ->Args({/*key_count=*/1, /*rows=*/65536, /*null_percent=*/1})
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/50});
 
-BENCHMARK(BM_RuntimeFilterApproximateFindUInt64)
+BENCHMARK(BM_ApproximateSetRuntimeFilterFindUInt64)
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/0})
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50})
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/100})
     ->Args({/*key_count=*/100000, /*rows=*/65536, /*hit_ratio=*/50});
 
-/// `AdaptiveSetRuntimeFilter` does not support hashing actual NULL values in `ColumnNullable`, and the planner never
-/// selects it for a nullable key (see the comment on the benchmark). Benchmark only the non-null `ColumnNullable`
-/// overhead here; NULL-heavy cases are covered by the exact filter benchmark above.
-BENCHMARK(BM_RuntimeFilterApproximateFindNullableUInt64)->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/0});
+BENCHMARK(BM_ApproximateSetRuntimeFilterFindNullableUInt64)->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/0});
 
-BENCHMARK(BM_RuntimeFilterApproximateFindString)
+BENCHMARK(BM_ApproximateSetRuntimeFilterFindString)
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/0})
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
-BENCHMARK(BM_RuntimeFilterApproximateFindLowCardinalityString)
+BENCHMARK(BM_ApproximateSetRuntimeFilterFindLowCardinalityString)
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/0})
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/50});
 
-BENCHMARK(BM_RuntimeFilterApproximateBuildUInt64)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
+BENCHMARK(BM_ApproximateSetRuntimeFilterBuildUInt64)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
 
-BENCHMARK(BM_RuntimeFilterApproximateBuildString)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
+BENCHMARK(BM_ApproximateSetRuntimeFilterBuildString)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
 
-BENCHMARK(BM_RuntimeFilterApproximateMergeUInt64)
+BENCHMARK(BM_ApproximateSetRuntimeFilterMergeUInt64)
     ->Args({/*filters_to_merge=*/2, /*keys_per_filter=*/10000})
     ->Args({/*filters_to_merge=*/8, /*keys_per_filter=*/10000})
     ->Args({/*filters_to_merge=*/32, /*keys_per_filter=*/10000});
 
-BENCHMARK(BM_RuntimeFilterExactMergeUInt64)
+BENCHMARK(BM_ApproximateSetRuntimeFilterWorthinessUInt64)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
+
+BENCHMARK(BM_ExactSetRuntimeFilterMergeUInt64)
     ->Args({/*filters_to_merge=*/2, /*keys_per_filter=*/1000})
     ->Args({/*filters_to_merge=*/8, /*keys_per_filter=*/1000})
     ->Args({/*filters_to_merge=*/32, /*keys_per_filter=*/1000});
 
+BENCHMARK(BM_ExactSetRuntimeFilterContainsBuildUInt64)->Arg(/*rows=*/0)->Arg(/*rows=*/1)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
+
+BENCHMARK(BM_AdaptiveSetRuntimeFilterExactToApproximateTransitionUInt64)
+    ->Arg(/*exact_rows=*/1)
+    ->Arg(/*exact_rows=*/1024)
+    ->Arg(/*exact_rows=*/8192);
+
+BENCHMARK(BM_RuntimeFilterAdaptiveBuildUInt64)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
+
+BENCHMARK(BM_RuntimeFilterAdaptiveBuildString)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
+
 BENCHMARK(BM_RuntimeFilterAdaptiveSkipApproximateUInt64)->Args({/*key_count=*/10000, /*rows=*/65536});
 
-BENCHMARK(BM_RuntimeFilterFinishInsertApproximateUInt64)->Arg(/*rows=*/10000)->Arg(/*rows=*/100000);
-
-BENCHMARK(BM_RuntimeFilterExactContainsBuildUInt64)
-    ->Arg(/*rows=*/0)
-    ->Arg(/*rows=*/1)
-    ->Arg(/*rows=*/10000)
-    ->Arg(/*rows=*/100000);
-
-BENCHMARK(BM_RuntimeFilterBuildTransformInsertOnlyUInt64)
+BENCHMARK(BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyUInt64)
     ->Args({/*rows=*/10000, /*chunk_rows=*/8192})
     ->Args({/*rows=*/100000, /*chunk_rows=*/8192});
 
-BENCHMARK(BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64)
+BENCHMARK(BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyCastUInt32ToUInt64)
     ->Args({/*rows=*/10000, /*chunk_rows=*/8192})
     ->Args({/*rows=*/100000, /*chunk_rows=*/8192});
