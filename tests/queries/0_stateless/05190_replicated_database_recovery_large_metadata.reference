@@ -1,0 +1,3 @@
+the metadata in ZooKeeper is over the default limit: 1
+the recovery got to creating the table: 1
+and the metadata was not refused for its size: 0
