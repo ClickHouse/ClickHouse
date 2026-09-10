@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// Waits for every producer's admission stream to finish, then adds the ordinary aggregation
+/// Waits for every producer's publication stream to finish, then adds the ordinary aggregation
 /// merge processors to the executing pipeline. Completion ports carry only stream completion.
 class AdaptiveAggregationMergeTransform final : public IProcessor
 {

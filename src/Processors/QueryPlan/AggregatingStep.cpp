@@ -27,7 +27,10 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
-#include <Processors/Transforms/AdaptiveAggregationAdmissionTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationPartitionTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationCoalescingTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationPublishTransform.h>
+#include <Processors/Transforms/AdaptiveAggregatingTransform.h>
 #include <Processors/Transforms/AdaptiveAggregationMergeTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -687,8 +690,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         size_t counter = 0;
         pipeline.addSimpleTransform(
-            [&](const SharedHeader & header)
+            [&](const SharedHeader & header) -> ProcessorPtr
             {
+                if (use_adaptive_aggregator)
+                    return std::make_shared<AdaptiveAggregatingTransform>(header, transform_params, many_data, counter++);
                 return std::make_shared<AggregatingTransform>(
                     header,
                     transform_params,
@@ -704,14 +709,25 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         std::shared_ptr<AdaptiveAggregationMergeTransform> adaptive_merge;
         if (use_adaptive_aggregator)
         {
-            /// Each producer must connect directly to its own admission transform. Renewed port demand
-            /// acknowledges registration and release of the envelope before the producer resumes memory
-            /// checks or finishes. An intervening buffer or resize would break that acknowledgement.
-            /// Registration runs independently per producer; the merge receives only stream completion.
+            /// Each producer owns a partitioning, coalescing, and publication chain. Every stage waits
+            /// for downstream acknowledgement of emitted data before requesting its next input, so
+            /// renewed demand reaches the producer only after ready pieces and pressure flushes are
+            /// published. An intervening buffer or resize would break this contract. Coalescing may
+            /// acknowledge buffered small chunks immediately and flushes them before stream completion.
             pipeline.addSimpleTransform(
-                [&](const SharedHeader & header)
+                [&](const SharedHeader &)
                 {
-                    return std::make_shared<AdaptiveAggregationAdmissionTransform>(header, transform_params, many_data->adaptive_session);
+                    return std::make_shared<AdaptiveAggregationPartitionTransform>(transform_params, many_data->adaptive_session);
+                });
+            pipeline.addSimpleTransform(
+                [&](const SharedHeader &)
+                {
+                    return std::make_shared<AdaptiveAggregationCoalescingTransform>(transform_params, many_data->adaptive_session);
+                });
+            pipeline.addSimpleTransform(
+                [&](const SharedHeader &)
+                {
+                    return std::make_shared<AdaptiveAggregationPublishTransform>(transform_params, many_data->adaptive_session);
                 });
             adaptive_merge = std::make_shared<AdaptiveAggregationMergeTransform>(
                 transform_params, many_data, new_merge_threads, new_temporary_data_merge_threads, dataflow_cache_updater);
@@ -830,7 +846,7 @@ std::unique_ptr<AggregatingProjectionStep> AggregatingStep::convertToAggregating
     if (!canUseProjection())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot aggregate from projection");
 
-    /// The projection pipeline never runs the adaptive admission and never creates the
+    /// The projection pipeline never runs adaptive staging and never creates the
     /// adaptive shared state, so the flag it receives must not claim otherwise: it would only
     /// mis-drive the size-hint branch of `initDataVariantsWithSizeHint`.
     auto params_without_adaptive = params;

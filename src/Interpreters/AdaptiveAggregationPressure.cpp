@@ -171,9 +171,8 @@ static size_t estimateStagedRangeBytesWithKeyCopy(const StagedChunk & chunk, siz
         return bytes + records * sizeof(UInt32);
 
     for (const auto & column : std::get<StagedChunk::AggregatePayload>(chunk.payload).argument_columns)
-        if (column)
-            for (size_t i = begin; i < end; ++i)
-                bytes += column->byteSizeAt(i);
+        for (size_t i = begin; i < end; ++i)
+            bytes += column->byteSizeAt(i);
     return bytes;
 }
 

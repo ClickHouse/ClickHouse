@@ -28,6 +28,7 @@
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
 #include <Interpreters/AdaptiveAggregationExecution.h>
+#include <Interpreters/AdaptiveAggregationChunkInfo.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -808,6 +809,11 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             default: break;
         }
     }
+
+    /// The transport headers depend on the final method choice: a string key's bytes are read from
+    /// the forwarded key column instead of being copied into the recording.
+    if (params.enable_adaptive_aggregator)
+        initializeAdaptiveHeaders(header_);
 
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
     /// method serializes the whole block's keys on state construction, which is pathological for the
@@ -2231,7 +2237,10 @@ bool Aggregator::executeOnBlock(Columns columns,
         memory_tracker_switcher.emplace(memory_tracker.get());
 
     if (execution)
+    {
+        chassert(!execution->hasPendingBlock() && !execution->misses);
         execution->use_own_memory_tracker = use_own_tracker;
+    }
 
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
@@ -2313,9 +2322,10 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// The frozen adaptive path: hits update the local table in place, misses become delayed
         /// records of the shared table.
+        execution->misses = std::make_shared<AdaptiveAggregationMissesInfo>(use_own_tracker);
         executeFrozen(
-            columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(),
-            *adaptive, execution->ready_chunks, all_keys_are_const);
+            row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(),
+            *adaptive, *execution->misses, all_keys_are_const);
     }
     else if (adaptive && adaptive->isLearning() && result.isConvertibleToTwoLevel() && !all_keys_are_const
              && result.sizeWithoutOverflowRow() + (row_end - row_begin) > params.adaptive_aggregator_freeze_threshold)
@@ -2352,15 +2362,15 @@ bool Aggregator::executeOnBlock(Columns columns,
             else
             {
                 freezeAdaptive(result, *adaptive);
+                execution->misses = std::make_shared<AdaptiveAggregationMissesInfo>(use_own_tracker);
                 executeFrozen(
-                    columns,
                     split,
                     row_end,
                     result,
                     key_columns,
                     aggregate_functions_instructions.data(),
                     *adaptive,
-                    execution->ready_chunks,
+                    *execution->misses,
                     /*all_keys_are_const=*/false);
             }
         }
@@ -2372,30 +2382,40 @@ bool Aggregator::executeOnBlock(Columns columns,
         executeImpl(result, row_begin, row_end, key_columns, aggregate_functions_instructions.data(), no_more_keys, all_keys_are_const, overflow_row_ptr);
     }
 
-    bool should_continue = true;
-    if (execution)
-        execution->input_rows = row_end - row_begin;
+    const auto snapshot = getPostBlockSnapshot(result, use_own_tracker);
+    if (!execution)
+        return runPostBlockChecks(result, no_more_keys, snapshot, nullptr);
 
-    /// Ready chunks must be admitted before the memory snapshot. Small pending candidates
-    /// remain in the converter until the coalescing target is reached or pressure or completion flushes them.
-    if (execution && !execution->ready_chunks.empty())
-    {
-        execution->next_step = PostBlockStep::MemoryCheck;
-    }
-    else
-    {
-        should_continue = runPostBlockChecks(
-            PostBlockStep::MemoryCheck, result, no_more_keys, getPostBlockSnapshot(result, use_own_tracker), execution);
-    }
+    execution->input_rows = row_end - row_begin;
 
-    if (execution && execution->hasPendingBlock())
+    /// A block is forwarded to the staging pipeline when it recorded misses, and, under memory
+    /// pressure, when earlier blocks' candidates may still sit in the coalescing buffer: the
+    /// empty forwarding makes the coalescer flush them, so the pressure drain that follows the
+    /// acknowledgement sees every staged record. Every other block runs its checks right away.
+    const bool has_misses = execution->misses && !execution->misses->empty();
+    const bool under_pressure = params.max_bytes_before_external_group_by
+        && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by);
+    if (has_misses)
     {
-        execution->columns = std::move(columns);
-        execution->materialized_columns = std::move(materialized_columns);
-        execution->nested_columns_holder = std::move(nested_columns_holder);
-        execution->instructions = std::move(aggregate_functions_instructions);
+        auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive->phase);
+        frozen.last_recorded_misses = execution->misses->size();
+        frozen.last_recorded_key_bytes = execution->misses->keyBytesRecorded();
     }
-    return should_continue;
+    if (has_misses || (under_pressure && adaptive->has_buffered_staging))
+    {
+        if (!execution->misses)
+            execution->misses = std::make_shared<AdaptiveAggregationMissesInfo>(use_own_tracker);
+        /// The chunk needs the block's row count, so a constant key travels as the constant column
+        /// itself; the build reads the single row of its data column, which is what the kernel probed.
+        if (adaptive_key_column_position)
+            execution->key_column
+                = all_keys_are_const ? columns[*adaptive_key_column_position] : key_columns.front()->getPtr();
+        adaptive->has_buffered_staging = !under_pressure;
+        execution->pending_block = true;
+        return true;
+    }
+    execution->misses.reset();
+    return runPostBlockChecks(result, no_more_keys, snapshot, execution);
 }
 
 Aggregator::PostBlockSnapshot Aggregator::getPostBlockSnapshot(
@@ -2408,121 +2428,92 @@ Aggregator::PostBlockSnapshot Aggregator::getPostBlockSnapshot(
 }
 
 bool Aggregator::runPostBlockChecks(
-    PostBlockStep step, AggregatedDataVariants & result, bool & no_more_keys,
-    const PostBlockSnapshot & snapshot, AdaptiveAggregationExecution * execution) const
+    AggregatedDataVariants & result,
+    bool & no_more_keys,
+    const PostBlockSnapshot & snapshot,
+    AdaptiveAggregationExecution * execution) const
 {
     auto * adaptive = execution ? &execution->producer : nullptr;
-    while (true)
+    if (adaptive && !adaptive->isBaseline())
     {
-        switch (step)
+        if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
         {
-            case PostBlockStep::MemoryCheck:
-            {
-                if (adaptive && !adaptive->isBaseline())
-                {
-                    if (adaptive->session->thaw_all.load(std::memory_order_relaxed))
-                    {
-                        /// The shared verdict returns learning and frozen producers to ordinary insertion.
-                        /// Buffered and admitted records still belong to the drain after this transition.
-                        if (adaptive->isFrozen())
-                            LOG_TRACE(log, "Adaptive aggregation: thawed the local table at {} keys", snapshot.groups);
-                        adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
-                    }
-                    else
-                    {
-                        /// A frozen table stays single-level, updating existing keys and staging misses.
-                        if (adaptive->isLearning())
-                        {
-                            /// Byte-triggered freezing uses this table's buffers and arenas, so other
-                            /// producers' allocations cannot freeze it. Unlike the key-count bound,
-                            /// the byte bound is checked only between blocks.
-                            const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-                                && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
-                            if ((snapshot.groups >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
-                                && result.isConvertibleToTwoLevel())
-                                freezeAdaptive(result, *adaptive);
-                        }
-
-                        if (adaptive->isFrozen())
-                        {
-                            /// Pressure drains staged records and can spill their states. The bounded
-                            /// frozen table stays resident: spilling would convert it to two-level,
-                            /// which its frozen kernel cannot use.
-                            if (params.max_bytes_before_external_group_by
-                                && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by))
-                            {
-                                flushPendingChunks(*execution);
-                                step = PostBlockStep::FrozenPressureDrain;
-                                break;
-                            }
-
-                            return checkLimits(snapshot.groups, no_more_keys);
-                        }
-
-                        /// A stream with many rows but few groups stands down permanently. Staging its
-                        /// small tail cannot pay, and large states benefit from ordinary conversion
-                        /// and parallel merging.
-                        auto & learning = std::get<AdaptiveAggregationProducer::LearningState>(adaptive->phase);
-                        learning.rows_seen += execution->input_rows;
-                        if (learning.rows_seen >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
-                            && snapshot.groups < params.adaptive_aggregator_freeze_threshold)
-                        {
-                            const size_t rows_seen = learning.rows_seen;
-                            adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
-                            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
-                            LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, snapshot.groups);
-                        }
-
-                        /// A learning table can stand down under pressure and spill through the baseline path.
-                        if (params.max_bytes_before_external_group_by
-                            && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by))
-                        {
-                            if (adaptive->isLearning())
-                                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
-                            adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
-                        }
-
-                        if (!adaptive->isBaseline())
-                            return checkLimits(snapshot.groups, no_more_keys);
-                    }
-                }
-
-                /// Any baseline producer can shed the session's backlog under pressure, including
-                /// records staged by other producers. Drain before checking limits: a single-level
-                /// local table cannot spill yet, and spilling it would not free the staged records.
-                /// An initialized session has the shared table needed for this drain.
-                if (adaptive && params.max_bytes_before_external_group_by
-                    && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by)
-                    && adaptive->session->initialized.load(std::memory_order_acquire))
-                {
-                    flushPendingChunks(*execution);
-                    step = PostBlockStep::BaselinePressureDrain;
-                    break;
-                }
-
-                return finishBaselineBlock(result, no_more_keys, snapshot, adaptive);
-            }
-            case PostBlockStep::FrozenPressureDrain:
-                drainStagedChunksUnderMemoryPressure(*adaptive->session);
-                return checkLimits(snapshot.groups, no_more_keys);
-            case PostBlockStep::BaselinePressureDrain:
-                /// Count sweeps that drain records; later blocks can reach this step with an empty backlog.
-                if (drainStagedChunksUnderMemoryPressure(*adaptive->session))
-                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
-                return finishBaselineBlock(result, no_more_keys, snapshot, adaptive);
-            case PostBlockStep::None:
-                UNREACHABLE();
+            /// The shared verdict returns learning and frozen producers to ordinary insertion.
+            /// Buffered and admitted records still belong to the drain after this transition.
+            if (adaptive->isFrozen())
+                LOG_TRACE(log, "Adaptive aggregation: thawed the local table at {} keys", snapshot.groups);
+            adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::RepeatedStagedKeys);
         }
-
-        /// The memory check selected a pressure step and flushed the converter. Run that step
-        /// now if nothing needs admission, otherwise retain its readings until acknowledgement.
-        if (!execution->ready_chunks.empty())
+        else
         {
-            execution->snapshot = snapshot;
-            execution->next_step = step;
-            return true;
+            /// A frozen table stays single-level, updating existing keys and staging misses.
+            if (adaptive->isLearning())
+            {
+                /// Byte-triggered freezing uses this table's buffers and arenas, so other
+                /// producers' allocations cannot freeze it. Unlike the key-count bound,
+                /// the byte bound is checked only between blocks.
+                const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
+                    && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
+                if ((snapshot.groups >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached)
+                    && result.isConvertibleToTwoLevel())
+                    freezeAdaptive(result, *adaptive);
+            }
+
+            if (adaptive->isFrozen())
+            {
+                /// Pressure drains staged records and can spill their states. The bounded
+                /// frozen table stays resident: spilling would convert it to two-level,
+                /// which its frozen kernel cannot use.
+                if (params.max_bytes_before_external_group_by
+                    && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by))
+                {
+                    drainStagedChunksUnderMemoryPressure(*adaptive->session);
+                }
+
+                return checkLimits(snapshot.groups, no_more_keys);
+            }
+
+            /// A stream with many rows but few groups stands down permanently. Staging its
+            /// small tail cannot pay, and large states benefit from ordinary conversion
+            /// and parallel merging.
+            auto & learning = std::get<AdaptiveAggregationProducer::LearningState>(adaptive->phase);
+            learning.rows_seen += execution->input_rows;
+            if (learning.rows_seen >= adaptive_freeze_give_up_row_multiple * params.adaptive_aggregator_freeze_threshold
+                && snapshot.groups < params.adaptive_aggregator_freeze_threshold)
+            {
+                const size_t rows_seen = learning.rows_seen;
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
+                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
+                LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", rows_seen, snapshot.groups);
+            }
+
+            /// A learning table can stand down under pressure and spill through the baseline path.
+            if (params.max_bytes_before_external_group_by
+                && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by))
+            {
+                if (adaptive->isLearning())
+                    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
+            }
+
+            if (!adaptive->isBaseline())
+                return checkLimits(snapshot.groups, no_more_keys);
         }
     }
+
+    /// Any baseline producer can shed the session's backlog under pressure, including
+    /// records staged by other producers. Drain before checking limits: a single-level
+    /// local table cannot spill yet, and spilling it would not free the staged records.
+    /// An initialized session has the shared table needed for this drain.
+    if (adaptive && params.max_bytes_before_external_group_by
+        && snapshot.query_bytes > static_cast<Int64>(params.max_bytes_before_external_group_by)
+        && adaptive->session->initialized.load(std::memory_order_acquire))
+    {
+        if (drainStagedChunksUnderMemoryPressure(*adaptive->session))
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
+    }
+
+    return finishBaselineBlock(result, no_more_keys, snapshot, adaptive);
 }
 
 bool Aggregator::finishBaselineBlock(
@@ -2575,29 +2566,13 @@ bool Aggregator::finishBaselineBlock(
 bool Aggregator::resumeAdaptiveBlock(
     AdaptiveAggregationExecution & execution, AggregatedDataVariants & result, bool & no_more_keys) const
 {
-    chassert(execution.ready_chunks.empty());
-    chassert(execution.hasPendingBlock());
+    chassert(execution.hasPendingBlock() && !execution.misses);
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
     if (execution.use_own_memory_tracker)
         memory_tracker_switcher.emplace(memory_tracker.get());
 
-    const auto step = std::exchange(execution.next_step, PostBlockStep::None);
-    const auto snapshot = step == PostBlockStep::MemoryCheck
-        ? getPostBlockSnapshot(result, execution.use_own_memory_tracker)
-        : execution.snapshot;
-    const bool should_continue = runPostBlockChecks(step, result, no_more_keys, snapshot, &execution);
-
-    if (!execution.hasPendingBlock())
-    {
-        /// Block-local storage is destroyed under the aggregation tracker. The input columns
-        /// are a function parameter in `executeOnBlock`, so their destruction follows the switcher.
-        execution.instructions = AggregateFunctionInstructions{};
-        execution.nested_columns_holder = NestedColumnsHolder{};
-        execution.materialized_columns = Columns{};
-        memory_tracker_switcher.reset();
-        execution.columns = Columns{};
-    }
-    return should_continue;
+    execution.pending_block = false;
+    return runPostBlockChecks(result, no_more_keys, getPostBlockSnapshot(result, execution.use_own_memory_tracker), &execution);
 }
 
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const

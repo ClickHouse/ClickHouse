@@ -35,14 +35,21 @@ namespace DB
 /// statistics, so later runs of the query skip the engagement altogether instead of
 /// re-measuring the stream.
 ///
-/// Transport: each producer synchronously builds owned staged chunks and sends them through a
-/// dedicated admission transform. Admission registers the prepared payload in the shared backlog;
-/// renewed input demand acknowledges that registration. Producers wait for acknowledgement before
-/// their memory checks, pressure drains, and final completion. Admission outputs carry completion
-/// only, so registration remains parallel across producers without waking a central receiver per chunk.
+/// Transport: a frozen producer forwards a block that recorded misses as its aggregate argument
+/// columns (and its key column when the key is a single string, whose bytes are then read in
+/// place), retaining the input row count. The recorded misses (source rows, hashes, buckets, key
+/// bytes or sizes, count multiplicities) travel as chunk metadata. Each producer has a dedicated
+/// chain: partitioning gathers arguments and groups records by bucket, coalescing buffers small
+/// chunks, and publication prepares immutable chunks for the backlog. Coalescing flushes under
+/// memory pressure and at end of input; a block without misses is forwarded only under pressure,
+/// to trigger that flush. Demand propagates back through this chain only after required
+/// publications finish, releasing the input columns before the producer's post-block checks.
+/// Every other block runs its checks in place, exactly as the ordinary path does. Publisher
+/// outputs carry completion only. Partitioning, coalescing, and registration remain parallel
+/// across producers.
 ///
 /// Merge phase: at the end of input every local table converts to two-level. The standard
-/// bucket-parallel merge runs after every admission stream finishes. The task owning bucket b
+/// bucket-parallel merge runs after every publisher finishes. The task owning bucket b
 /// first drains backlog b into that bucket (it is the exclusive owner, so no locks are needed),
 /// then folds the locals' bucket b in as usual.
 ///
@@ -51,20 +58,19 @@ namespace DB
 struct AdaptiveAggregationSession;
 using AdaptiveAggregationSessionPtr = std::shared_ptr<AdaptiveAggregationSession>;
 
-/// Per-transform adaptive phase and its counters, with a converter for recording misses and
-/// buffering owned chunks until they are ready for admission.
+/// Per-transform adaptive phase and its counters.
 struct AdaptiveAggregationProducer;
 
-/// Suspended aggregation state and its outbox, owned by the aggregating processor.
+/// Suspends post-block checks while the staging pipeline processes the block.
 struct AdaptiveAggregationExecution;
 
 /// Owned delayed records grouped by bucket. A chunk can combine records from multiple input
-/// blocks. A chunk becomes immutable after preparation, before it enters the admission port.
+/// blocks. Publication makes a chunk immutable after preparation, before adding it to the backlog.
 struct StagedChunk;
 using StagedChunkPtr = std::shared_ptr<const StagedChunk>;
 using MutableStagedChunkPtr = std::shared_ptr<StagedChunk>;
 
-/// A chunk's owned aggregate-instruction preparation, built by `prepareStagedChunk` before admission.
+/// A chunk's owned aggregate-instruction preparation, built by `prepareStagedChunk` before publication.
 struct StagedChunkPreparation;
 
 /// Who owns a staged key once it is emplaced into a table: the merge-time drain borrows the

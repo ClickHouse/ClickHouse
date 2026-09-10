@@ -7,7 +7,7 @@ namespace DB
 AdaptiveAggregationMergeTransform::AdaptiveAggregationMergeTransform(
     AggregatingTransformParamsPtr params_, ManyAggregatedDataPtr many_data_,
     size_t max_threads_, size_t temporary_data_merge_threads_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
-    : IProcessor({}, {params_->getHeader()})
+    : IProcessor(InputPorts(many_data_->num_producers, Block()), {params_->getHeader()})
     , params(std::move(params_))
     , many_data(std::move(many_data_))
     , session(many_data->adaptive_session)
@@ -15,9 +15,6 @@ AdaptiveAggregationMergeTransform::AdaptiveAggregationMergeTransform(
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , updater(std::move(updater_))
 {
-    const auto & header = outputs.front().getHeader();
-    for (size_t i = 0; i < many_data->num_producers; ++i)
-        inputs.emplace_back(header, this);
 }
 
 IProcessor::Status AdaptiveAggregationMergeTransform::prepare(const UpdatedInputPorts & updated_inputs, const UpdatedOutputPorts &)

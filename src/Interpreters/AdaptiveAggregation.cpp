@@ -1,18 +1,25 @@
 #include <unordered_set>
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerSwitcher.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/AdaptiveAggregationChunkInfo.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
-#include <Interpreters/AdaptiveAggregationExecution.h>
 
 namespace ProfileEvents
 {
     extern const Event AdaptiveAggregationBucketsRetired;
     extern const Event AdaptiveAggregationStagedChunkSplits;
     extern const Event AdaptiveAggregationThaws;
+    extern const Event AdaptiveAggregationStagedBytes;
+    extern const Event AdaptiveAggregationStagedRecords;
+    extern const Event AdaptiveAggregationStagedRecordsMerged;
 }
 
 namespace DB
@@ -69,7 +76,7 @@ StagedChunkPtr Aggregator::prepareStagedChunk(MutableStagedChunkPtr block) const
     {
         prep->aggregate_columns[i].resize(params.aggregates[i].argument_names.size());
         for (size_t j = 0; j < prep->aggregate_columns[i].size(); ++j)
-            prep->aggregate_columns[i][j] = payload.argument_columns[aggregates_positions[i][j]].get();
+            prep->aggregate_columns[i][j] = payload.argument_columns[staged_aggregates_positions[i][j]].get();
         buildAggregateFunctionInstruction(
             i, /*has_sparse_arguments=*/false, prep->aggregate_columns, prep->instructions, prep->nested_columns_holder);
     }
@@ -91,8 +98,7 @@ void Aggregator::initAdaptiveSession(AggregatedDataVariants & local_result, Adap
     shared.initialized.store(true, std::memory_order_release);
 }
 
-void Aggregator::prepareStagedChunks(
-    const AdaptiveAggregationSession & shared, MutableStagedChunkPtr block, std::vector<StagedChunkPtr> & ready_chunks) const
+void Aggregator::publishStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const
 {
     chassert(block->isWellFormed());
 
@@ -101,7 +107,7 @@ void Aggregator::prepareStagedChunks(
     auto pieces = splitStagedChunkAtPartBound(shared, *block);
     if (pieces.empty())
     {
-        ready_chunks.push_back(prepareStagedChunk(std::move(block)));
+        shared.backlog.publish(prepareStagedChunk(std::move(block)));
         return;
     }
 
@@ -115,17 +121,160 @@ void Aggregator::prepareStagedChunks(
     for (auto & piece : pieces)
     {
         chassert(piece->isWellFormed());
-        ready_chunks.push_back(prepareStagedChunk(std::move(piece)));
+        shared.backlog.publish(prepareStagedChunk(std::move(piece)));
     }
 }
 
-void Aggregator::admitStagedChunk(
-    AdaptiveAggregationSession & shared, const StagedChunkPtr & chunk, bool use_own_memory_tracker) const
+ChunkInfo::Ptr AdaptiveAggregationMissesInfo::clone() const
 {
+    auto copy = std::make_shared<AdaptiveAggregationMissesInfo>(use_own_memory_tracker);
+    copy->source_rows.assign(source_rows);
+    copy->hashes.assign(hashes);
+    copy->buckets.assign(buckets);
+    copy->multiplicities.assign(multiplicities);
+    copy->key_bytes.assign(key_bytes);
+    copy->key_offsets.assign(key_offsets);
+    copy->key_sizes.assign(key_sizes);
+    copy->key_bytes_source = key_bytes_source;
+    copy->fixed_key_size = fixed_key_size;
+    copy->constant_key = constant_key;
+    return copy;
+}
+
+void Aggregator::initializeAdaptiveHeaders(const Block & input_header)
+{
+    /// The methods whose hashing state reads keys in place from a `ColumnString`, matching the
+    /// kernels' `adaptive_key_bytes_in_column`. Nullable and low-cardinality string keys are not
+    /// admitted to the adaptive path, so their methods are not listed.
+    using Type = AggregatedDataVariants::Type;
+    if (method_chosen == Type::key_string || method_chosen == Type::key_packed_string)
+        adaptive_key_column_position = input_header.getPositionByName(params.keys.front());
+
+    Block arguments;
+    Block staged;
+    if (is_simple_count)
+        staged.insert({std::make_shared<DataTypeUInt32>(), "multiplicity"});
+    else
+    {
+        for (const auto & positions : aggregates_positions)
+            adaptive_argument_positions.insert(adaptive_argument_positions.end(), positions.begin(), positions.end());
+        std::sort(adaptive_argument_positions.begin(), adaptive_argument_positions.end());
+        adaptive_argument_positions.erase(
+            std::unique(adaptive_argument_positions.begin(), adaptive_argument_positions.end()), adaptive_argument_positions.end());
+        for (const auto position : adaptive_argument_positions)
+        {
+            const auto & column = input_header.getByPosition(position);
+            arguments.insert(column.cloneEmpty());
+            staged.insert({recursiveRemoveLowCardinality(column.type), column.name});
+        }
+        staged_aggregates_positions = aggregates_positions;
+        for (auto & positions : staged_aggregates_positions)
+            for (auto & position : positions)
+                position = std::lower_bound(adaptive_argument_positions.begin(), adaptive_argument_positions.end(), position)
+                    - adaptive_argument_positions.begin();
+    }
+    if (adaptive_key_column_position)
+        arguments.insert(input_header.getByPosition(*adaptive_key_column_position).cloneEmpty());
+    adaptive_argument_header = std::make_shared<const Block>(std::move(arguments));
+    adaptive_staged_header = std::make_shared<const Block>(std::move(staged));
+}
+
+void Aggregator::extractAdaptiveArguments(Chunk & chunk, ColumnPtr key_column) const
+{
+    chassert((key_column != nullptr) == adaptive_key_column_position.has_value());
+    const size_t rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    Columns forwarded;
+    forwarded.reserve(adaptive_argument_positions.size() + adaptive_key_column_position.has_value());
+    for (const auto position : adaptive_argument_positions)
+        forwarded.push_back(std::move(columns[position]));
+    if (key_column)
+        forwarded.push_back(std::move(key_column));
+    chunk.setColumns(std::move(forwarded), rows);
+}
+
+ChunkInfo::Ptr StagedKeysInfo::clone() const
+{
+    auto copy = std::make_shared<StagedKeysInfo>(use_own_memory_tracker);
+    copy->keys.routing_hashes.assign(keys.routing_hashes);
+    copy->keys.key_bytes.assign(keys.key_bytes);
+    copy->keys.key_offsets.assign(keys.key_offsets);
+    copy->keys.fixed_key_size = keys.fixed_key_size;
+    copy->keys.bucket_offsets = keys.bucket_offsets;
+    return copy;
+}
+
+Chunk Aggregator::partitionAdaptiveBlock(AdaptiveAggregationSession & shared, StagedChunkConverter & converter, Chunk chunk) const
+{
+    auto misses = chunk.getChunkInfos().getSafe<AdaptiveAggregationMissesInfo>();
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (use_own_memory_tracker)
+    if (misses->use_own_memory_tracker)
         memory_tracker_switcher.emplace(memory_tracker.get());
-    shared.backlog.publish(chunk);
+
+    Chunk result;
+    if (!misses->empty())
+    {
+        /// The forwarded columns are the arguments followed by the key column when the misses
+        /// read their key bytes from it.
+        const auto & columns = chunk.getColumns();
+        const std::span<const ColumnPtr> arguments(columns.data(), adaptive_argument_positions.size());
+        const IColumn * key_column = adaptive_key_column_position ? columns.back().get() : nullptr;
+        result = converter.build(arguments, key_column, *misses, is_simple_count);
+        const auto info = result.getChunkInfos().get<StagedKeysInfo>();
+        const size_t total = misses->size();
+        size_t batch_bytes = converter.getRecordedKeyBytes();
+        if (is_simple_count)
+            batch_bytes += total * sizeof(UInt32);
+        else
+            for (const auto & column : result.getColumns())
+                if (!column->valuesHaveFixedSize())
+                    batch_bytes += column->byteSize();
+        batch_bytes += total * (sizeof(UInt64) + (info->keys.fixed_key_size ? 0 : sizeof(UInt64)));
+        observeAdaptiveStagedRecords(shared, misses->getHashes(), batch_bytes);
+
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecords, total);
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, total - result.getNumRows());
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, info->keys.key_bytes.size());
+    }
+    else
+    {
+        /// A block without misses is forwarded only under memory pressure, so that the empty
+        /// chunk reaches the coalescer and flushes the candidates it buffered earlier.
+        result = Chunk(adaptive_staged_header->getColumns(), 0);
+        auto info = std::make_shared<StagedKeysInfo>(misses->use_own_memory_tracker);
+        info->keys.key_offsets.push_back(0);
+        result.getChunkInfos().add(std::move(info));
+    }
+    chunk.getChunkInfos().clear();
+    misses.reset();
+    return result;
+}
+
+void Aggregator::publishAdaptiveChunk(AdaptiveAggregationSession & shared, Chunk chunk) const
+{
+    auto info = chunk.getChunkInfos().getSafe<StagedKeysInfo>();
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
+    if (info->use_own_memory_tracker)
+        memory_tracker_switcher.emplace(memory_tracker.get());
+
+    chassert(chunk.getNumRows() != 0 && info->keys.size() == chunk.getNumRows());
+    auto staged = std::make_shared<StagedChunk>();
+    staged->keys = std::move(info->keys);
+    if (is_simple_count)
+    {
+        chassert(chunk.getNumColumns() == 1);
+        auto columns = chunk.mutateColumns();
+        std::get<StagedChunk::CountPayload>(staged->payload).multiplicities
+            = std::move(assert_cast<ColumnUInt32 &>(*columns.front()).getData());
+    }
+    else
+    {
+        chassert(chunk.getNumColumns() == adaptive_argument_positions.size());
+        staged->payload.emplace<StagedChunk::AggregatePayload>().argument_columns = chunk.detachColumns();
+    }
+    chunk.getChunkInfos().clear();
+    info.reset();
+    publishStagedChunk(shared, std::move(staged));
 }
 
 void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & chunk)
@@ -234,13 +383,6 @@ void Aggregator::observeAdaptiveStagedRecords(
                 static_cast<size_t>((repeat - 1.0) * (static_cast<double>(shared.staged_bytes) / static_cast<double>(shared.staged_records))));
         }
     }
-}
-
-void Aggregator::flushPendingChunks(AdaptiveAggregationExecution & execution) const
-{
-    auto & producer = execution.producer;
-    if (auto chunk = producer.converter.flush())
-        prepareStagedChunks(*producer.session, std::move(chunk), execution.ready_chunks);
 }
 
 /// The flushed variants' sizes are meaningless by the time the external path finishes, so a

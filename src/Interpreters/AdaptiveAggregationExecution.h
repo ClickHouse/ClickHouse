@@ -1,41 +1,34 @@
 #pragma once
 
-#include <Interpreters/Aggregator.h>
+#include <Columns/IColumn_fwd.h>
+#include <Interpreters/AdaptiveAggregation.h>
 
 namespace DB
 {
 
-/// Keeps a block's columns and instructions alive while its staged chunks await admission.
-/// The processor transports the outbox and resumes pending checks; only `Aggregator` reads
-/// or changes the suspended block state.
+class AdaptiveAggregationMissesInfo;
+
+/// Suspends a producer's post-block checks until the staging pipeline acknowledges its arguments.
 struct AdaptiveAggregationExecution
 {
-    explicit AdaptiveAggregationExecution(AdaptiveAggregationProducer & producer_) : producer(producer_)
-    {
-    }
+    explicit AdaptiveAggregationExecution(AdaptiveAggregationProducer & producer_) : producer(producer_) {}
 
-    /// Reports whether admission must be followed by `Aggregator::resumeAdaptiveBlock`.
-    bool hasPendingBlock() const { return next_step != Aggregator::PostBlockStep::None; }
+    bool hasPendingBlock() const { return pending_block; }
 
-    /// Prepared chunks awaiting transport and the allocation context to use for their admission.
-    std::vector<StagedChunkPtr> ready_chunks;
-    bool use_own_memory_tracker = false;
+    /// The frozen kernel's recording for the block being forwarded; the producer attaches it to the
+    /// forwarded columns. Null while no block is pending.
+    std::shared_ptr<AdaptiveAggregationMissesInfo> misses;
+
+    /// The key column the frozen kernel probed, when the recording reads key bytes from it: the
+    /// block's key column materialized, or a constant key's single-row data column. Null otherwise.
+    ColumnPtr key_column;
 
 private:
     friend class Aggregator;
-
-    /// The producer outlives its suspended execution state, including cancellation cleanup.
     AdaptiveAggregationProducer & producer;
-    Aggregator::PostBlockStep next_step = Aggregator::PostBlockStep::None;
+    bool pending_block = false;
+    bool use_own_memory_tracker = false;
     size_t input_rows = 0;
-    Aggregator::PostBlockSnapshot snapshot;
-
-    /// These owners remain alive until all post-block checks finish. The resume method releases
-    /// prepared storage under the aggregation tracker and input columns under the caller's tracker.
-    Columns columns;
-    Columns materialized_columns;
-    Aggregator::NestedColumnsHolder nested_columns_holder;
-    Aggregator::AggregateFunctionInstructions instructions;
 };
 
 }

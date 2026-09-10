@@ -64,6 +64,8 @@ class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 struct StagedChunkPreparation;
+class AdaptiveAggregationMissesInfo;
+class StagedChunkConverter;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -273,9 +275,9 @@ public:
     const Params & getParams() const { return params; }
 
     /// Processes one block and returns false when `group_by_overflow_mode = 'break'` stops consumption.
-    /// `execution` is null for ordinary aggregation. Adaptive execution can leave prepared chunks in
-    /// `ready_chunks`; the caller admits them and calls `resumeAdaptiveBlock` while `hasPendingBlock`
-    /// is true, before consuming another block or finishing the producer.
+    /// `execution` is null for ordinary aggregation. Adaptive execution records misses and suspends
+    /// its post-block checks. The caller forwards the block's aggregate arguments, then calls
+    /// `resumeAdaptiveBlock` once acknowledgement arrives, before consuming another block or finishing.
     bool executeOnBlock(Columns columns,
         size_t row_begin, size_t row_end,
         AggregatedDataVariants & result,
@@ -305,18 +307,28 @@ public:
         AdaptiveAggregationSession & shared,
         std::atomic<bool> & is_cancelled) const;
 
-    /// Coalesces buffered chunks, splits them at the pressure bound, and appends prepared pieces
-    /// to the execution outbox for admission.
-    void flushPendingChunks(AdaptiveAggregationExecution & execution) const;
-
-    /// Resumes the post-block checks after the producer's admission port acknowledges publication.
+    /// Resumes post-block checks after the staging pipeline acknowledges the producer's block.
     bool resumeAdaptiveBlock(
         AdaptiveAggregationExecution & execution, AggregatedDataVariants & result, bool & no_more_keys) const;
 
-    /// Publishes a prepared chunk to the session backlog. Uses the aggregation tracker when
-    /// `use_own_memory_tracker` records that context for the producer's publication.
-    void admitStagedChunk(
-        AdaptiveAggregationSession & shared, const StagedChunkPtr & chunk, bool use_own_memory_tracker) const;
+    /// The producer forwards only the distinct aggregate arguments, preserving their input
+    /// representations, followed by the key column the frozen kernel probed when the recorded
+    /// misses read their key bytes from it (`AdaptiveAggregationExecution::key_column`).
+    SharedHeader getAdaptiveArgumentHeader() const { return adaptive_argument_header; }
+    void extractAdaptiveArguments(Chunk & chunk, ColumnPtr key_column) const;
+
+    /// Partitioned chunks contain dense argument columns, or one count-multiplicity column.
+    SharedHeader getAdaptiveStagedHeader() const { return adaptive_staged_header; }
+    bool hasAdaptiveCountPayload() const { return is_simple_count; }
+
+    /// Staging processors charge allocations to the same account selected by the local producer.
+    MemoryTracker * getMemoryTracker() const { return memory_tracker.get(); }
+
+    /// Gathers and partitions recorded misses, observing thaw evidence before coalescing.
+    Chunk partitionAdaptiveBlock(AdaptiveAggregationSession & shared, StagedChunkConverter & converter, Chunk chunk) const;
+
+    /// Assembles a staged chunk, cuts it at the pressure bound, and publishes prepared immutable pieces.
+    void publishAdaptiveChunk(AdaptiveAggregationSession & shared, Chunk chunk) const;
 
     /// The production-time memory valve: claims batches of staged chunks bounded in records
     /// and in bytes under the sweep lock, drains each into a producer-local table outside the
@@ -482,6 +494,16 @@ private:
     const ColumnNumbers keys_positions;
     /// Positions of aggregate function argument columns in the header.
     const ColumnNumbersList aggregates_positions;
+    /// Adaptive transport keeps only distinct arguments, with instruction indexes in that compact layout.
+    ColumnNumbers adaptive_argument_positions;
+    ColumnNumbersList staged_aggregates_positions;
+    /// Set when the key is a single `String` column read in place by the hashing state: the
+    /// producer forwards that column after the arguments, and recorded misses refer to its rows
+    /// instead of copying their key bytes. The position indexes the input header.
+    std::optional<size_t> adaptive_key_column_position;
+    SharedHeader adaptive_argument_header;
+    SharedHeader adaptive_staged_header;
+    void initializeAdaptiveHeaders(const Block & input_header);
     /// Types of key columns from the input header.
     const DataTypes key_types;
     /// Types of aggregate function states (DataTypeAggregateFunction), one per aggregate.
@@ -758,17 +780,16 @@ private:
     /// perform the identical transition.
     void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
-    /// Aggregates frozen-table hits in place and converts misses into chunks grouped by bucket.
-    /// Ready chunks are appended to `ready_chunks` for the processor to send through admission.
+    /// Aggregates frozen-table hits in place and captures miss keys while their hashing-state
+    /// holders are valid. Miss source rows index the argument columns forwarded by the producer.
     void executeFrozen(
-        const Columns & columns,
         size_t row_begin,
         size_t row_end,
         AggregatedDataVariants & result,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        std::vector<StagedChunkPtr> & ready_chunks,
+        AdaptiveAggregationMissesInfo & misses,
         bool all_keys_are_const) const;
 
     template <typename LocalMethod, typename SharedMethod>
@@ -777,13 +798,12 @@ private:
         LocalMethod & local_method,
         std::type_identity<SharedMethod>,
         Arena * aggregates_pool,
-        const Columns & columns,
         size_t row_begin,
         size_t row_end,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        std::vector<StagedChunkPtr> & ready_chunks,
+        AdaptiveAggregationMissesInfo & misses,
         bool all_keys_are_const) const;
 
     /// The set counterpart: with no aggregate functions there are no places to record and no states to
@@ -794,40 +814,15 @@ private:
         LocalMethod & local_method,
         std::type_identity<SharedMethod>,
         Arena * aggregates_pool,
-        const Columns & columns,
         size_t row_begin,
         size_t row_end,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
         AdaptiveAggregationProducer & adaptive,
-        std::vector<StagedChunkPtr> & ready_chunks,
+        AdaptiveAggregationMissesInfo & misses,
         bool all_keys_are_const) const;
 
-    /// Converts recorded misses, observes their pre-deduplication sample, then clears the recording
-    /// buffers. The converter coalesces the candidate, and any ready chunk is prepared for admission.
-    template <typename SharedKey, typename State>
-    void stageDelayedRecords(
-        const Columns & columns,
-        size_t num_rows,
-        AdaptiveAggregationProducer & adaptive,
-        std::vector<StagedChunkPtr> & ready_chunks,
-        State & local_find_state,
-        Arena & scratch_pool,
-        bool counts_only,
-        std::optional<UInt32> key_row_override = std::nullopt) const;
-
-    /// Identifies the next post-block operation. Pressure steps retain the memory readings
-    /// taken before flushing buffered chunks, so admission cannot change the block's decisions.
-    enum class PostBlockStep
-    {
-        None,
-        MemoryCheck,
-        FrozenPressureDrain,
-        BaselinePressureDrain,
-    };
-
-    /// Group count and memory readings shared by all decisions for one block, including checks
-    /// resumed after a pressure flush. The first reading follows admission of the block's ready chunks.
+    /// Shares one group-count and memory snapshot across post-block decisions after staging.
     struct PostBlockSnapshot
     {
         size_t groups = 0;
@@ -838,9 +833,9 @@ private:
     /// Reads group count and both memory accounts before making the block's pressure decisions.
     PostBlockSnapshot getPostBlockSnapshot(const AggregatedDataVariants & result, bool use_own_memory_tracker) const;
 
-    /// Runs synchronous or resumed post-block checks until completion or a request for admission.
+    /// Applies phase transitions, pressure drains, and ordinary limits using the block's snapshot.
     bool runPostBlockChecks(
-        PostBlockStep step, AggregatedDataVariants & result, bool & no_more_keys,
+        AggregatedDataVariants & result, bool & no_more_keys,
         const PostBlockSnapshot & snapshot, AdaptiveAggregationExecution * execution) const;
 
     /// Applies ordinary two-level conversion, group limits, and spilling using the saved readings.
@@ -854,10 +849,8 @@ private:
     void observeAdaptiveStagedRecords(
         AdaptiveAggregationSession & shared, std::span<const UInt64> hashes, size_t batch_bytes) const;
 
-    /// Checks candidate invariants, splits at the pressure part bound, and prepares immutable
-    /// pieces for transport. Shared backlog registration belongs to the admission transform.
-    void prepareStagedChunks(
-        const AdaptiveAggregationSession & shared, MutableStagedChunkPtr block, std::vector<StagedChunkPtr> & ready_chunks) const;
+    /// Splits a ready candidate at the pressure bound, prepares its instructions, and publishes it.
+    void publishStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr chunk) const;
 
     /// Cuts a chunk whose drain is estimated over `adaptivePressurePartBytes` into pieces
     /// along bucket boundaries, each estimated within the bound where a single bucket allows;
@@ -866,7 +859,7 @@ private:
         const AdaptiveAggregationSession & shared, const StagedChunk & chunk) const;
 
     /// Builds aggregate instructions in the chunk's stable storage and returns it as immutable
-    /// for admission. Count payloads require no instruction preparation.
+    /// for backlog publication. Count payloads require no instruction preparation.
     StagedChunkPtr prepareStagedChunk(MutableStagedChunkPtr block) const;
 
     /// Drains one bucket's backlog into `method.data.impls[bucket_index]`. `key_storage`

@@ -82,12 +82,11 @@ struct AdaptiveAggregationSession
         void requeue(const StagedChunkPtr & chunk) { registerChunk(chunk); }
 
         /// Claims every enqueued chunk once and removes its per-bucket registrations atomically.
-        /// The returned references keep chunks alive through draining; admission envelopes may
-        /// also retain them until admission finishes. Chunks published after the collection
-        /// wait for the next sweep or for the merge.
+        /// The returned references keep chunks alive through draining. Chunks published after
+        /// the collection wait for the next sweep or for the merge.
         std::vector<StagedChunkPtr> takeAllForPressureDrain();
 
-        /// Reads the bucket's remaining chunks after all admission streams finish. No publisher
+        /// Reads the bucket's remaining chunks after all publishers finish. No publisher
         /// remains, and the bucket's merge task retains these chunks until conversion because its
         /// table borrows their staged key bytes. Every merge source keeps the session alive.
         const std::vector<StagedChunkPtr> & forMergeBucket(size_t bucket) const { return buckets[bucket].backlog; }
@@ -240,8 +239,8 @@ struct AdaptiveAggregationSession
     std::once_flag init_flag;
     std::atomic<bool> initialized{false};
 
-    /// The thaw sampler (see the tuning constants above). Before admission, the producers
-    /// fold a sparse sample of their staged record hashes in here; repeats of a key collapse
+    /// Admission folds a sparse sample of the recorded hashes into the thaw sampler before
+    /// publishing the chunk. Repeats of a key collapse
     /// onto one entry across all threads, so sampled records per distinct sampled hash estimates
     /// the repeat factor of the staged stream as a whole, independently of how a key's
     /// occurrences spread over the threads.
@@ -258,8 +257,8 @@ struct AdaptiveAggregationSession
     std::atomic<bool> thaw_all{false};
 };
 
-/// Holds a transform's adaptive phase and its counters. Its converter records misses and
-/// buffers owned chunks; phase transitions leave that buffered work available for flushing.
+/// Holds a producer's adaptive phase and counters. Its coalescing transform owns staged buffering,
+/// which remains available for flushing after the producer stands down.
 struct AdaptiveAggregationProducer
 {
     explicit AdaptiveAggregationProducer(AdaptiveAggregationSessionPtr shared_) : session(std::move(shared_)) { }
@@ -281,6 +280,9 @@ struct AdaptiveAggregationProducer
         size_t sampled_rows = 0;
         size_t sampled_hits = 0;
         bool bypass_local_probe = false;
+        /// The previous block's recording sizes, the reservation hint for the next block's recording.
+        size_t last_recorded_misses = 0;
+        size_t last_recorded_key_bytes = 0;
     };
 
     /// Terminal: the thread aggregates exactly as with the feature off, keeping only the
@@ -293,7 +295,7 @@ struct AdaptiveAggregationProducer
             /// many times that many rows, so the stream is repeat-dominated locally.
             TooFewDistinctKeys,
             /// The global thaw: the session-wide staged-key sample proved the whole stream
-            /// repeat-dominated (see `stageDelayedRecords`).
+            /// repeat-dominated (see `observeAdaptiveStagedRecords`).
             RepeatedStagedKeys,
         };
         Reason reason;
@@ -310,7 +312,12 @@ struct AdaptiveAggregationProducer
     void standDown(BaselineState::Reason reason) { phase = BaselineState{.reason = reason}; }
 
     AdaptiveAggregationSessionPtr session;
-    StagedChunkConverter converter;
+
+    /// Whether blocks with recorded misses were forwarded since the last block forwarded under
+    /// memory pressure. The coalescing transform may then hold buffered candidates, and a block
+    /// consumed under pressure is forwarded even without misses so that it flushes them before
+    /// the producer's pressure drain runs.
+    bool has_buffered_staging = false;
 };
 
 struct StagedChunkPreparation

@@ -93,19 +93,50 @@ struct ManyAggregatedData
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
-/// Aggregates one input stream into its own variant in `ManyAggregatedData`. With `final = false`,
+/// Shares local aggregation and final spilling between ordinary and adaptive producers.
+class AggregatingTransformBase : public IProcessor
+{
+public:
+    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
+
+protected:
+    AggregatingTransformBase(
+        SharedHeader input_header, SharedHeader output_header, AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataPtr many_data_, size_t current_variant);
+
+    void consume(Chunk & chunk, AdaptiveAggregationExecution * execution = nullptr);
+    void finishLocalAggregation();
+
+    AggregatingTransformParamsPtr params;
+    ManyAggregatedDataPtr many_data;
+    AggregatedDataVariants & variants;
+
+    /// Stops inserting new keys when the group limit is reached with overflow mode `ANY`.
+    bool no_more_keys = false;
+    bool is_consume_finished = false;
+    Chunk current_chunk;
+    bool read_current_chunk = false;
+
+private:
+    LoggerPtr log = getLogger("AggregatingTransformBase");
+    ColumnRawPtrs key_columns;
+    Aggregator::AggregateColumns aggregate_columns;
+    Stopwatch watch;
+    UInt64 src_rows = 0;
+    UInt64 src_bytes = 0;
+    bool is_consume_started = false;
+    RowsBeforeStepCounterPtr rows_before_aggregation;
+};
+
+/// Aggregates one input stream into its own variant in `ManyAggregatedData`. The last producer
+/// assembles the merge pipeline and forwards its results through a second input. With `final = false`,
 /// result columns hold aggregate states for subsequent merging.
-///
-/// Ordinary aggregation uses the last producer to assemble the merge pipeline and forward its
-/// results through a second input. Adaptive producers instead emit owned staged payloads to a
-/// dedicated admission transform and close their output after admission and local finishing.
-/// `AdaptiveAggregationMergeTransform` owns final assembly after all admission streams finish.
-class AggregatingTransform final : public IProcessor
+class AggregatingTransform final : public AggregatingTransformBase
 {
 public:
     AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
-    /// For Parallel aggregating.
+    /// Aggregates one producer's input and participates in the shared final merge.
     AggregatingTransform(
         SharedHeader header,
         AggregatingTransformParamsPtr params_,
@@ -117,87 +148,25 @@ public:
         bool skip_merging_ = false,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
-    ~AggregatingTransform() override;
-
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
     PipelineUpdate updatePipeline() override;
-    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
-    void onCancel() noexcept override;
-
-protected:
-    void consume(Chunk chunk);
 
 private:
     size_t getGeneratingStepGroup() const;
+    void initGenerate();
 
-    /// To read the data that was flushed into the temporary data file.
+    /// Holds the merge processors before they are added to the pipeline.
     Processors processors;
-
-    AggregatingTransformParamsPtr params;
-    LoggerPtr log = getLogger("AggregatingTransform");
-
-    ColumnRawPtrs key_columns;
-    Aggregator::AggregateColumns aggregate_columns;
-
-    /** Used if there is a limit on the maximum number of rows in the aggregation,
-     *   and if group_by_overflow_mode == ANY.
-     *  In this case, new keys are not added to the set, but aggregation is performed only by
-     *   keys that have already managed to get into the set.
-     */
-    bool no_more_keys = false;
-
-    ManyAggregatedDataPtr many_data;
-    AggregatedDataVariants & variants;
-
-    /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
-    /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
-    /// included header (see `AdaptiveAggregationImpl.h`).
-    std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
-    /// Owns the outbox and the input storage retained while aggregation waits for admission.
-    std::unique_ptr<AdaptiveAggregationExecution> adaptive_execution;
-    /// Indexes the next prepared chunk to send through the admission port.
-    size_t next_ready_chunk = 0;
-
-    /// Final conversion starts after the last buffered chunks have been admitted.
-    enum class AdaptiveFinishStage
-    {
-        NotStarted,
-        AfterFinalFlush,
-        Complete,
-    };
-    AdaptiveFinishStage adaptive_finish_stage = AdaptiveFinishStage::NotStarted;
-
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
-    /// If we aggregate partitioned data merging is not needed.
+    /// Partitioned aggregation can produce its results without merging producer tables.
     bool skip_merging = false;
-
-    /// TODO: calculate time only for aggregation.
-    Stopwatch watch;
-
-    UInt64 src_rows = 0;
-    UInt64 src_bytes = 0;
-
     std::atomic_flag is_generate_initialized;
-    bool is_consume_finished = false;
     bool is_pipeline_created = false;
-
-    Chunk current_chunk;
-    bool read_current_chunk = false;
-
-    bool is_consume_started = false;
-
-    RowsBeforeStepCounterPtr rows_before_aggregation;
-
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-
-    Status prepareAdaptive();
-    void finishLocalAggregation();
-    void finishAdaptiveAggregation();
-    void initGenerate();
 };
 
 /// Assembles the in-memory or external merge after all producers finish. External reader
