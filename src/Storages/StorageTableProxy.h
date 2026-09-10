@@ -96,6 +96,13 @@ public:
 
     bool isView() const override { return false; }
 
+    void cancelBackgroundActivity() override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->cancelBackgroundActivity();
+    }
+
     /// The answers that exist only once the storage does. An observer that walks every table gets
     /// the empty answer rather than loading one.
     template <typename Ask>

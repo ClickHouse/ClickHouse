@@ -456,15 +456,6 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
-/// These engines run their ingestion in a background job that only `startup` starts.
-static bool isPushSourceEngine(const String & engine_name)
-{
-    static const std::unordered_set<std::string_view> push_source_engines
-        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
-
-    return push_source_engines.contains(engine_name);
-}
-
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -478,21 +469,6 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     if (query.as_table_function)
         return false;
 
-    /// A push source starts the background job that feeds its materialized views in its own `startup`,
-    /// which the lazy stand-in never calls: nothing reads such a table directly, so the consumer would
-    /// never start and the ingestion would stall silently until the table is read by hand. Load it
-    /// eagerly, as views are - but only when it really has a materialized view to feed, so that an
-    /// unused source table still costs nothing to load.
-    ///
-    /// `TablesLoader` publishes the view dependencies of everything it is about to load into
-    /// `DatabaseCatalog` before it creates the loading jobs, so the graph is already complete here,
-    /// and it also holds the views of the databases that were loaded earlier. A view created later
-    /// resolves its source table, and that materializes and starts up the stand-in on the spot,
-    /// through `StorageProxy::getStorageSnapshot`.
-    if (query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name)
-        && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
-        return false;
-
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
         return false;
 
@@ -503,6 +479,11 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     /// the real error surfaces from the factory when the table is created.
     const auto * features = StorageFactory::instance().tryGetStorageFeatures(query.storage->engine->name);
     if (!features || !features->supports_deferred_load)
+        return false;
+
+    /// Its background job only feeds views, so a table without any costs nothing to defer. The view graph
+    /// is published before the load jobs run, and a view created later loads its source when it resolves it.
+    if (features->defers_only_without_dependent_views && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
         return false;
 
     /// The columns of a replicated table with no column list would have to be read from ZooKeeper.

@@ -2575,7 +2575,7 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PATH must be specified for SYSTEM FLUSH OBJECT STORAGE QUEUE");
 
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
-    auto * queue = dynamic_cast<StorageObjectStorageQueue *>(table.get());
+    auto queue = castStorage<StorageObjectStorageQueue>(table, StorageResolution::Load);
     if (!queue)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());

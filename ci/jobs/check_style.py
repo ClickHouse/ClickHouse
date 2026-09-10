@@ -910,6 +910,13 @@ DEFERRABLE_STORAGE_CLASSES = (
     "StorageArrowFlight",
     "StorageYTsaurus",
     "StorageBigQuery",
+    "StorageKafka",
+    "StorageKafka2",
+    "StorageFileLog",
+    "StorageRabbitMQ",
+    "StorageNATS",
+    "StorageObjectStorageQueue",
+    "IStreamingStorage",
 )
 
 # Casts on an operand that cannot be a catalog pointer, so no proxy can be in the way.
@@ -986,6 +993,32 @@ def check_storage_casts(files) -> str:
                 "StorageResolution::Load) when the query names this table, or StorageResolution::Peek "
                 "when this walks every table and must not load one. If the pointer cannot come from "
                 "DatabaseCatalog, say why in a `/// NOLINT(storage-cast)` comment."
+            )
+    return "\n".join(violations)
+
+
+def check_deferrable_engines_are_audited(files) -> str:
+    """An engine that sets `supports_deferred_load = true` must have the class it creates in
+    `DEFERRABLE_STORAGE_CLASSES`, otherwise the casts to that class are never checked."""
+    violations = []
+    for path in files:
+        if not path.endswith(".cpp"):
+            continue
+        try:
+            text = _without_comments(pathlib.Path(path).read_text(errors="replace"))
+        except OSError:
+            continue
+        if "supports_deferred_load = true" not in text:
+            continue
+        # The storage a registration returns is the one the catalog hands out, unlike the sinks,
+        # sources and configurations created along the way.
+        registrations = text[text.find("registerStorage"):]
+        created = set(re.findall(r"return\s+std::make_shared<\s*(Storage\w+)\s*>", registrations))
+        for cls in sorted(created - set(DEFERRABLE_STORAGE_CLASSES)):
+            violations.append(
+                f"{path}: `{cls}` is created by an engine that opts into deferred loading, but it is not in "
+                f"DEFERRABLE_STORAGE_CLASSES in ci/jobs/check_style.py, so casts to it are not checked. Add it "
+                f"there, then run the storage_casts and storage_proxy_forwards checks."
             )
     return "\n".join(violations)
 
@@ -1665,6 +1698,15 @@ if __name__ == "__main__":
             run_check_concurrent(
                 check_name=testname,
                 check_function=check_storage_proxy_forwards,
+                files=cpp_files,
+            )
+        )
+    testname = "storage_deferrable_engines_audited"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_deferrable_engines_are_audited,
                 files=cpp_files,
             )
         )

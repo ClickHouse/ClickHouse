@@ -84,6 +84,9 @@ public:
         bool supports_deferred_load = false;
         /// See also IStorage::storesDataOnDisk(). A deferred table answers from here until it loads.
         bool stores_data_on_disk = false;
+        /// The background job only feeds dependent views, so a table that has none is deferred like
+        /// any other, while one that has some is loaded eagerly to keep them fed.
+        bool defers_only_without_dependent_views = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -125,6 +128,7 @@ public:
         .supports_sql_security = false,
         .supports_deferred_load = false,
         .stores_data_on_disk = false,
+        .defers_only_without_dependent_views = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});

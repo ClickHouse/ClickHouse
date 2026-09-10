@@ -154,25 +154,13 @@ def test_convert_to_replicated_finishes(lazy_database):
 
 
 def test_engines_that_work_in_the_background_stay_eager(started_cluster):
-    """Deferring an engine that works in the background, like a message queue, would cancel that
-    work rather than delay it, so opting in is per engine."""
+    """Deferring an engine that works in the background would cancel that work rather than delay it, so
+    opting in is per engine. A message queue only feeds views, so it opts in and is kept eager per table."""
     opted_in = set(
         node.query("SELECT name FROM system.table_engines WHERE supports_deferred_load").split()
     )
-    assert {"MergeTree", "Set", "EmbeddedRocksDB", "Log", "S3", "MySQL", "KeeperMap"} <= opted_in
-    background = {
-        "Kafka",
-        "RabbitMQ",
-        "NATS",
-        "FileLog",
-        "S3Queue",
-        "AzureQueue",
-        "Distributed",
-        "Buffer",
-        "MaterializedPostgreSQL",
-        "MaterializedView",
-        "Dictionary",
-    }
+    assert {"MergeTree", "Set", "EmbeddedRocksDB", "Log", "S3", "MySQL", "KeeperMap", "Kafka", "FileLog", "S3Queue"} <= opted_in
+    background = {"Distributed", "Buffer", "MaterializedPostgreSQL", "MaterializedView", "Dictionary"}
     assert not (opted_in & background), opted_in & background
 
 
@@ -215,12 +203,17 @@ def test_kafka_ingests_after_restart(engine):
             CREATE TABLE {DB}.kafka_src (key UInt64, value UInt64) ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092', kafka_topic_list = '{topic}',
                      kafka_group_name = '{topic}_group', kafka_format = 'JSONEachRow';
+            CREATE TABLE {DB}.kafka_unused (key UInt64, value UInt64) ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092', kafka_topic_list = '{topic}_unused',
+                     kafka_group_name = '{topic}_unused_group', kafka_format = 'JSONEachRow';
             CREATE TABLE {DB}.dest (key UInt64, value UInt64) ENGINE = {engine} ORDER BY key;
             CREATE MATERIALIZED VIEW {DB}.mv TO {DB}.dest AS SELECT key, value FROM {DB}.kafka_src;
             {RELOAD}
             """
         )
         assert loaded("kafka_src") == "1"
+        # Nothing depends on this one, so its consumer would feed nothing and it stays deferred.
+        assert loaded("kafka_unused") == "0"
 
         k.kafka_produce(
             cluster, topic, [json.dumps({"key": i, "value": i * 2}) for i in range(50)]

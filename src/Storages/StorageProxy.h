@@ -223,6 +223,12 @@ public:
 
     /// `INSERT` picks its block size and its parallel path from these.
     bool isDataLake() const override { return getNested()->isDataLake(); }
+    bool isMessageQueue() const override { return getNested()->isMessageQueue(); }
+
+    /// `SYSTEM STOP`, `CANCEL` and `REFRESH` on a named table decide the streaming path from this, then act on the storage.
+    bool isStreamingStorage() const override { return getNested()->isStreamingStorage(); }
+    void cancelBackgroundActivity() override { getNested()->cancelBackgroundActivity(); }
+    void refreshBackgroundActivity() override { getNested()->refreshBackgroundActivity(); }
     bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
     bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
     bool prefersLargeBlocks() const override { return getNested()->prefersLargeBlocks(); }
