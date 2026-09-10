@@ -20,3 +20,14 @@ TTLDropMerge	0	1
 -- Case 7: Rows TTL + GROUP BY TTL is not short-circuited
 TTLDropMerge	100	200
 100
+-- Case 8: Regular merge over fully expired parts
+RegularMerge	0	200
+0
+-- Case 9: pending patch part disables the short-circuit
+RegularMerge	10	1
+10
+-- Case 10: STOP TTL MERGES suppresses the short-circuit
+200
+-- Case 11: MODIFY TTL without materialization still reads the source parts
+RegularMerge	0	200
+0

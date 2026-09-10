@@ -215,6 +215,9 @@ private:
         MergeTreeDataMergerMutator * mutator{nullptr};
         PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
+        /// GROUP BY entries a patched merge must carry across the recalculation step, which would
+        /// otherwise rebuild them without their `ttl_finished` bit. See `prepare()`.
+        std::optional<TTLInfoMap> preserved_group_by_ttl;
         StorageSnapshotPtr storage_snapshot{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
@@ -316,6 +319,9 @@ private:
     {
         bool need_remove_expired_values{false};
         bool force_ttl{false};
+        /// Set when the merge carries patch parts and the table has TTL: the pre-patch infos are
+        /// untrustworthy, so a TTL-blocked merge still recalculates them without removing rows.
+        bool recalculate_ttl_for_patches{false};
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes{};
 
