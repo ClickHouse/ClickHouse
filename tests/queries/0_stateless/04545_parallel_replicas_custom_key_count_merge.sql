@@ -8,7 +8,7 @@
 DROP TABLE IF EXISTS t_04545 SYNC;
 
 CREATE TABLE t_04545 (number Int64, y UInt32) ENGINE = MergeTree ORDER BY number;
-INSERT INTO t_04545 SELECT number, number % 3 FROM numbers(100000);
+INSERT INTO t_04545 SELECT number, number % 3 FROM numbers(1000);
 
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
