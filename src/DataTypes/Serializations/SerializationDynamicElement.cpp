@@ -97,9 +97,11 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
     {
         settings.path.push_back(Substream::DynamicData);
         if (is_null_map_subcolumn)
-            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElementNullMap>(dynamic_element_name, *global_discr);
+            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElementNullMap>(
+                dynamic_element_name, *global_discr, variant_type.getVariants().size());
         else
-            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(nested_serialization, dynamic_element_name, *global_discr);
+            dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(
+                nested_serialization, dynamic_element_name, *global_discr, variant_type.getVariants().size());
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = false;
         settings.path.pop_back();
@@ -113,7 +115,8 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
         dynamic_element_state->variant_serialization = std::make_shared<SerializationVariantElement>(
             shared_variant_serialization,
             ColumnDynamic::getSharedVariantTypeName(),
-            *shared_variant_global_discr);
+            *shared_variant_global_discr,
+            variant_type.getVariants().size());
         dynamic_element_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_element_state->variant_element_state, cache);
         dynamic_element_state->read_from_shared_variant = true;
         settings.path.pop_back();
