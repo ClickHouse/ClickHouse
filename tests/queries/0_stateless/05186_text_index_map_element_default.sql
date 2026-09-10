@@ -17,7 +17,7 @@ SELECT count() FROM tab_ip WHERE m['nokey'] = '::' SETTINGS optimize_functions_t
 SELECT count() FROM tab_ip WHERE m['nokey'] = '::' SETTINGS optimize_functions_to_subcolumns = 1, ignore_data_skipping_indices = 'idx';
 
 SELECT '-- a constant the default cannot satisfy still prunes';
-SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_ip WHERE m['zzz'] = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/1%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_ip WHERE m['zzz'] = 'dead:beef::1') WHERE explain ILIKE '%Granules: 0/1%';
 SELECT count() FROM tab_ip WHERE m['abc'] = '2001:db8:1:2:3:4:5:6' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
 SELECT count() FROM tab_ip WHERE m['abc'] = '2001:db8:1:2:3:4:5:6' SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 1;
 
@@ -55,6 +55,7 @@ INSERT INTO tab_null VALUES (map('abc', 'hello'));
 SELECT '-- a NULL default is not a match, so the index stays usable';
 SELECT count() FROM tab_null WHERE m['nokey'] = '';
 SELECT count() FROM tab_null WHERE m['nokey'] = '' SETTINGS ignore_data_skipping_indices = 'idx';
+SELECT count() FROM tab_null WHERE m['nokey'] = '' SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM tab_null WHERE m['abc'] = 'hello' SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tab_null;
@@ -69,6 +70,19 @@ SELECT count() FROM tab_values WHERE m['nokey'] = '';
 SELECT count() FROM tab_values WHERE m['abc'] = 'hello' SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tab_values;
+
+DROP TABLE IF EXISTS tab_values_ip;
+CREATE TABLE tab_values_ip (m Map(String, IPv6), INDEX idx mapValues(m) TYPE ngrambf_v1(3, 512, 3, 0))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
+INSERT INTO tab_values_ip VALUES (map('abc', toIPv6('2001:db8:1:2:3:4:5:6')));
+
+-- The constant spells the IPv6 default as 15 characters, so the probe has trigrams to build. `'::'`
+-- is shorter than the 3-gram width, which makes the probe empty and the granule survive regardless.
+SELECT '-- the mapValues carrier over a non-String domain';
+SELECT count() FROM tab_values_ip WHERE m['nokey'] = '0:0:0:0:0:0:0:0';
+SELECT count() FROM tab_values_ip WHERE m['nokey'] = '0:0:0:0:0:0:0:0' SETTINGS ignore_data_skipping_indices = 'idx';
+
+DROP TABLE tab_values_ip;
 
 DROP TABLE IF EXISTS tab_token;
 CREATE TABLE tab_token (m Map(String, UInt32), INDEX idx mapKeys(m) TYPE tokenbf_v1(512, 3, 0))

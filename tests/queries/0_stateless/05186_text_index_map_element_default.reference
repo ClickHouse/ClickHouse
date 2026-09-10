@@ -21,8 +21,12 @@
 -- a NULL default is not a match, so the index stays usable
 0
 0
+0
 1
 -- the mapValues carrier reads the same default
+1
+1
+-- the mapValues carrier over a non-String domain
 1
 1
 -- tokenbf_v1 shares the condition class
