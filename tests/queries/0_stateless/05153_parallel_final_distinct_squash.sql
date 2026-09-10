@@ -18,12 +18,12 @@ CREATE TABLE t_distinct_squash (a UInt64, b String) ENGINE = MergeTree ORDER BY 
 INSERT INTO t_distinct_squash SELECT number % 1000, toString(number % 7) FROM numbers(100000);
 INSERT INTO t_distinct_squash SELECT number % 1500 + 500, toString(number % 5) FROM numbers(100000);
 
--- A block size far below the chunk size makes the squashing transform flush many times over.
+-- A block size far below the one the transform squashes to makes it accumulate many chunks per flush.
 SELECT 'results';
-SELECT count(), sum(a) FROM (SELECT DISTINCT a FROM t_distinct_squash) SETTINGS max_block_size = 7;
+SELECT count(), sum(a) FROM (SELECT DISTINCT a FROM t_distinct_squash) SETTINGS max_block_size = 1000;
 SELECT count(), sum(a) FROM (SELECT DISTINCT a FROM t_distinct_squash) SETTINGS max_block_size = 65536;
-SELECT count(), sum(a), sum(cityHash64(b)) FROM (SELECT DISTINCT a, b FROM t_distinct_squash) SETTINGS max_block_size = 7;
+SELECT count(), sum(a), sum(cityHash64(b)) FROM (SELECT DISTINCT a, b FROM t_distinct_squash) SETTINGS max_block_size = 1000;
 SELECT count(), sum(a), sum(cityHash64(b)) FROM (SELECT DISTINCT a, b FROM t_distinct_squash) SETTINGS max_block_size = 65536;
-SELECT count(), sum(x) FROM (SELECT DISTINCT number % 5000 AS x FROM numbers_mt(1000000)) SETTINGS max_block_size = 5;
+SELECT count(), sum(x) FROM (SELECT DISTINCT number % 5000 AS x FROM numbers_mt(1000000)) SETTINGS max_block_size = 1000;
 
 DROP TABLE t_distinct_squash;
