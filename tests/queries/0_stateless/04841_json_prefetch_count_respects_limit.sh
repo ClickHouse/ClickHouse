@@ -57,6 +57,15 @@ SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularit
          disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_b/');
 SYSTEM STOP MERGES t_batches;
 
+-- Lazy materialization re-reads the columns it deferred, in a read step of its own. A sorting key
+-- and three granules are what make the two steps overlap: ordering by the key under a LIMIT reads
+-- one granule and leaves the main step's readers alive on the rest of the part while the second runs.
+CREATE TABLE t_lazy (k UInt64, e1 UInt64, e2 UInt64, l1 UInt64, l2 UInt64, l3 UInt64)
+ENGINE = MergeTree ORDER BY k
+SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 33554432,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}_lz/');
+
 -- Packed part storage routes every file through ReadBufferFromFileView, which keeps the wrapped
 -- buffer's state in itself between operations. On the default disk that buffer is an asynchronous
 -- local-descriptor one, and the size it reports for a prefetch comes from exactly that state, so a
@@ -108,6 +117,8 @@ INSERT INTO t_json SELECT $json_value FROM numbers(20);
 INSERT INTO t_json_enc SELECT $json_value FROM numbers(20);
 INSERT INTO t_batches SELECT $batched_values FROM numbers(24576);
 INSERT INTO t_packed SELECT $batched_values FROM numbers(24576);
+INSERT INTO t_lazy SELECT number, number + 1, number + 2, number + 3, number + 4, number + 5
+FROM numbers(24576);
 "
 
 # The settings below intentionally override the values the test runner randomizes in: a statement's
@@ -160,6 +171,14 @@ enc_read="SELECT count() FROM t_json_enc WHERE length(JSONAllPaths(jn)) >= 0"
 # reader still has data pending when the next batch starts.
 batched_read="SELECT * FROM t_batches"
 packed_read="SELECT * FROM t_packed"
+# The main step reads k, e1 and e2, the lazy one l1, l2 and l3: three substreams each, so at a bound
+# of three neither step alone reaches it and one budget covering both would refuse the second step
+# everything. Read in order is what stops the main step mid-part; lazy materialization needs the
+# analyzer and is off without it, whatever its own setting says. All three are pinned per read because
+# the runner randomizes the first two and the old-analyzer job classes turn the third off by profile.
+lazy_read="SELECT l1, l2, l3 FROM t_lazy WHERE e1 > 0 AND e2 > 0 ORDER BY k LIMIT 1"
+lazy_settings="query_plan_optimize_lazy_materialization = 1, optimize_read_in_order = 1,
+        enable_analyzer = 1"
 # The packed reads are on the local disk pinned above, so their prefetches are local-descriptor ones:
 # hence the local read method and the log rather than a ProfileEvents counter. The remote flag is off
 # because the pin puts the part where only the local one is consulted.
@@ -191,9 +210,14 @@ $(read_stmt 1 0  '1'    1 'json_enc_bytes'   "$enc_read")
 -- instead of passing the zero row.
 $(read_stmt 1 0  '10Gi' 1 'json_enc_unlim'   "$enc_read")
 $(read_stmt 0 4  '10Gi' 1 'batched_limit'    "$batched_read" 'max_read_buffer_size_remote_fs = 4096')
+$(read_stmt 0 0  '14Ki' 1 'batched_bytes'    "$batched_read" 'max_read_buffer_size_remote_fs = 4096')
 $(read_stmt 0 0  '10Gi' 1 'batched_unlim'    "$batched_read" 'max_read_buffer_size_remote_fs = 4096')
 $(read_stmt 0 0  '1'    1 'packed_bytes'     "$packed_read" "$packed_settings")
 $(read_stmt 0 0  '10Gi' 1 'packed_unlim'     "$packed_read" "$packed_settings")
+$(read_stmt 0 3  '10Gi' 1 'lazy_own'         "$lazy_read" "$lazy_settings")
+$(read_stmt 0 2  '10Gi' 1 'lazy_tight'       "$lazy_read" "$lazy_settings")
+$(read_stmt 0 0  '10Gi' 1 'lazy_unlim'       "$lazy_read" "$lazy_settings")
+$(read_stmt 0 0  '1'    1 'lazy_bytes'       "$lazy_read" "$lazy_settings")
 SYSTEM FLUSH LOGS query_log, filesystem_read_prefetches_log;
 "
 
@@ -267,6 +291,12 @@ SELECT 'a reserved stream may prefetch again in a later batch, without new memor
        $(count_of batched_limit) * 8 = $(count_of batched_unlim) * 4;
 SELECT 'and it took more than one batch: unbounded, all eight streams prefetch in each of them',
        $(count_of batched_unlim) > 8;
+-- Every buffer here is 4096 bytes and the bound is three and a half of them, so the fourth is refused
+-- only by bytes counted across the buffers alive together: it fits the bound on its own, and what is
+-- left of the bound once three are held is smaller than it. The bound is deliberately not a multiple
+-- of the buffer size, which is what a candidate tested against the whole bound would pass.
+SELECT 'bytes are counted across the buffers alive together: three of them fit, a fourth does not',
+       $(count_of batched_bytes) * 8 = $(count_of batched_unlim) * 3;
 SELECT 'the fixture is packed part storage',
        (SELECT any(part_storage_type) = 'Packed' FROM system.parts
         WHERE database = currentDatabase() AND table = 't_packed' AND active);
@@ -274,7 +304,22 @@ SELECT 'prefetching does happen through the file view when the byte bound is not
        $(logged_count_of packed_unlim) > 0;
 SELECT 'and the memory bound stops prefetching there too, through the file view',
        $(logged_count_of packed_bytes) = 0;
+-- The analyzer is pinned on the outer statement as well: a subquery may not turn it on below a top
+-- level that has it off, which is an error rather than a differing plan.
+SELECT 'the lazily materialized columns are read by a second step',
+       (SELECT count() FROM (EXPLAIN $lazy_read SETTINGS $lazy_settings)
+        WHERE explain ILIKE '%LazilyReadFromMergeTree%') = 1
+SETTINGS enable_analyzer = 1;
+SELECT 'a budget is per read step: two steps within the bound apiece both prefetch fully',
+       $(count_of lazy_own) = $(count_of lazy_unlim);
+-- The lazy step's own budget carries both bounds, not just the count one.
+SELECT 'the memory bound reaches the lazily materialized step too',
+       $(count_of lazy_bytes) = 0;
+-- Exact, so that a lazy step left with no budget at all fails here: it would prefetch all three of
+-- its substreams next to the main step's two, where a bound of its own refuses one in each step.
+SELECT 'and each step is bounded on its own: two of the three substreams in each',
+       $(count_of lazy_tight) = 4;
 
 DROP TABLE t_wide40; DROP TABLE t_wide40_4parts; DROP TABLE t_json; DROP TABLE t_json_enc;
-DROP TABLE t_batches; DROP TABLE t_packed;
+DROP TABLE t_batches; DROP TABLE t_packed; DROP TABLE t_lazy;
 "

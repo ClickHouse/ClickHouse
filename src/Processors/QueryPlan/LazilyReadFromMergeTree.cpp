@@ -34,7 +34,9 @@ LazilyReadFromMergeTree::LazilyReadFromMergeTree(
     : ISourceStep(std::move(header))
     , max_block_size(max_block_size_)
     , min_marks_for_concurrent_read(min_marks_for_concurrent_read_)
-    , reader_settings(reader_settings_)
+    /// The main step's readers outlive its last chunk, so a budget shared with it would charge this
+    /// step for buffers it does not own and leave it nothing to prefetch within its own bound.
+    , reader_settings(reader_settings_.forSeparateReadStep())
     , mutations_snapshot(std::move(mutations_snapshot_))
     , storage_snapshot(std::move(storage_snapshot_))
     , context(std::move(context_))

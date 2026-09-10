@@ -93,6 +93,9 @@ struct MergeTreeReaderSettings
     /// false (the default), the readers skip the per-granule counter work.
     bool collect_predicate_statistics = false;
 
+    /// The same settings for another read step of the same query, with a prefetch budget of its own.
+    MergeTreeReaderSettings forSeparateReadStep() const;
+
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove
     static MergeTreeReaderSettings createForQuery(const ContextPtr & context, const MergeTreeSettings & storage_settings, const SelectQueryInfo & query_info);

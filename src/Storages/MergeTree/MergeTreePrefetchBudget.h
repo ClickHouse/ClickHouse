@@ -47,6 +47,10 @@ class MergeTreePrefetchBudget
 public:
     MergeTreePrefetchBudget(size_t max_buffers_, size_t max_bytes_);
 
+    /// The same bounds with nothing reserved, for a read step that must not be charged for the
+    /// buffers of another one.
+    std::shared_ptr<MergeTreePrefetchBudget> cloneEmpty() const;
+
     /// Returns a held reservation, or an empty one when either bound is reached. `self` must be the
     /// `shared_ptr` owning this instance (kept alive by the reservation).
     MergeTreePrefetchSlot tryReserve(std::shared_ptr<MergeTreePrefetchBudget> self, size_t bytes);

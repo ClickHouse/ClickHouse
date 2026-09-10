@@ -14,6 +14,11 @@ prefetching does happen through the uncompressed cache when the bound is not bin
 and the memory bound stops prefetching there too, through the uncompressed cache	1
 a reserved stream may prefetch again in a later batch, without new memory	1
 and it took more than one batch: unbounded, all eight streams prefetch in each of them	1
+bytes are counted across the buffers alive together: three of them fit, a fourth does not	1
 the fixture is packed part storage	1
 prefetching does happen through the file view when the byte bound is not the binding one	1
 and the memory bound stops prefetching there too, through the file view	1
+the lazily materialized columns are read by a second step	1
+a budget is per read step: two steps within the bound apiece both prefetch fully	1
+the memory bound reaches the lazily materialized step too	1
+and each step is bounded on its own: two of the three substreams in each	1

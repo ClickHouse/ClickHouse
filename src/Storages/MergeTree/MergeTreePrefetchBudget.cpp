@@ -48,6 +48,11 @@ MergeTreePrefetchBudget::MergeTreePrefetchBudget(size_t max_buffers_, size_t max
 {
 }
 
+std::shared_ptr<MergeTreePrefetchBudget> MergeTreePrefetchBudget::cloneEmpty() const
+{
+    return std::make_shared<MergeTreePrefetchBudget>(max_buffers, max_bytes);
+}
+
 MergeTreePrefetchSlot MergeTreePrefetchBudget::tryReserve(std::shared_ptr<MergeTreePrefetchBudget> self, size_t bytes)
 {
     std::lock_guard lock(mutex);

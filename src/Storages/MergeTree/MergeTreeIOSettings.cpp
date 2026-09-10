@@ -163,6 +163,14 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForQuery(const ContextPtr
     return result;
 }
 
+MergeTreeReaderSettings MergeTreeReaderSettings::forSeparateReadStep() const
+{
+    auto result = *this;
+    if (prefetch_budget)
+        result.prefetch_budget = prefetch_budget->cloneEmpty();
+    return result;
+}
+
 MergeTreeReaderSettings MergeTreeReaderSettings::createForMergeMutation(ReadSettings read_settings)
 {
     MergeTreeReaderSettings result;
