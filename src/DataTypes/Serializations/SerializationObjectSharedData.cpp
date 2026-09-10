@@ -358,6 +358,9 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 paths_substreams_marks.emplace_back();
                 data_serialization_settings.getter = [&](const SubstreamPath & substream_path) -> WriteBuffer *
                 {
+                    /// Start each substream in a new compressed block so a selective read (one path or one
+                    /// subcolumn of a path) doesn't decompress blocks shared with the path's other substreams.
+                    data_stream->next();
                     /// Add new substream and its mark for current path.
                     paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings));
                     paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
@@ -365,12 +368,18 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 };
 
                 SerializeBinaryBulkStatePtr path_state;
+                /// Close the previous path's last substream block so this path's mark starts on a block boundary.
+                data_stream->next();
                 /// Remember the mark of ObjectSharedDataData stream for this path before writing any data.
                 paths_marks.push_back(settings.stream_mark_getter(settings.path));
                 dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
                 dynamic_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, 0, 0, data_serialization_settings, path_state);
                 dynamic_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
             }
+
+            /// Close the last path's block so it isn't merged with the following metadata streams (in
+            /// Compact parts they reuse the same compressed stream).
+            data_stream->next();
 
             /// End ObjectSharedDataData stream.
             settings.path.pop_back();

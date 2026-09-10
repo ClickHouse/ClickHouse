@@ -37,7 +37,18 @@ nullable tuple
 json size path
 2	0	1	1
 2	0	1	1
+tuple element
+1
+1
+tuple element, nested declared first
+1
+1
+variant element
+7
+7
 still optimized
+1
+1
 1
 1
 1

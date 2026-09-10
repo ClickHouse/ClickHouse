@@ -134,8 +134,10 @@ SetPtr FutureSet::getOrderedSetIfAlreadyBuilt(const ContextPtr & context)
 }
 
 
-FutureSetFromStorage::FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_)
-    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_)) {}
+FutureSetFromStorage::FutureSetFromStorage(
+    Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_, bool is_mutable_during_query_)
+    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_))
+    , is_mutable_during_query(is_mutable_during_query_) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
 FutureSet::Hash FutureSetFromStorage::getHash() const { return hash; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
@@ -518,6 +520,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries])
         return nullptr;
 
+    /// Concurrent index analyses may share this set through cloned filter DAGs, and the build mutates
+    /// `set_and_key->set` and `source`. A mutex and not `callOnce` because this build may stop without
+    /// creating the set (e.g. a subquery timeout with `overflow_mode = 'break'`) and then be retried.
+    std::lock_guard lock(inplace_build_mutex);
+
     if (auto set = get())
     {
         if (set->hasExplicitSetElements())
@@ -793,7 +800,8 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, C
 
 FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id)
 {
-    auto from_storage = std::make_shared<FutureSetFromStorage>(key, std::move(ast), std::move(set_), std::move(storage_id));
+    auto from_storage = std::make_shared<FutureSetFromStorage>(
+        key, std::move(ast), std::move(set_), std::move(storage_id), /*is_mutable_during_query_=*/ true);
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
 
     if (!inserted)

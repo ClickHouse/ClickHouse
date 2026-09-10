@@ -26,7 +26,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Common/ColumnsHashing.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -991,11 +991,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
-    /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
-    /// (`unique_key_index.sst`) is opened directly by filesystem path via RocksDB
-    /// `SstFileReader`, which cannot read a file packed inside an archive. Packed
-    /// storage would leave the sidecar existsFile-visible but unopenable, failing
-    /// every subsequent load of the part.
+    /// UNIQUE KEY parts must use Full part storage: load-time rebuild of the
+    /// dense-index sidecar (`unique_key_index.sst`) calls `removeFileIfExists`
+    /// + `writeFile`, but packed storage only supports these through the writer,
+    /// which is not initialized at load/ATTACH time.
     if (metadata_snapshot->hasUniqueKey())
         part_format.storage_type = MergeTreeDataPartStorageType::Full;
 
@@ -1114,14 +1113,23 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
 
+    /// Write the `unique_key_index.sst` in one step: `writeDenseIndexOnInsert`
+    /// records its checksum in `gathered_data.checksums` (so it is covered by
+    /// `CHECK TABLE`, part-size accounting, backup and fetches) and finalizes +
+    /// optionally fsyncs the file inline - before `checksums.txt` is written,
+    /// so a crash cannot leave the checksum durable while the SST is not.
     if (metadata_snapshot->hasUniqueKey())
-        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
+    {
+        SSTIndexWriter::writeDenseIndexOnInsert(
             *data_part_storage,
             metadata_snapshot,
             block,
             perm_ptr,
             context->getSettingsRef()[Setting::unique_key_max_encoded_size],
+            gathered_data.checksums,
+            (*data_settings)[MergeTreeSetting::fsync_after_insert],
             context);
+    }
 
     if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {
@@ -1143,7 +1151,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false, context);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1189,9 +1197,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const MergeTreeData & data,
     Block block,
     const ProjectionDescription & projection,
+    CompressionCodecPtr compression_codec,
     MergeTreeIndices indices,
     bool merge_is_needed,
-    bool try_adaptive_codec)
+    bool try_adaptive_codec,
+    bool use_selected_codec)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1289,7 +1299,24 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, projection_merging_params);
     }
 
-    auto compression_codec = data.getCompressionCodecForPart(metadata_snapshot, 0, {}, time(nullptr)).codec;
+    /// The projection inherits the compression codec chosen for its parent part (passed in by the
+    /// caller) instead of always selecting the size-aware default with a part size of `0`, which
+    /// would pin every projection to `LZ4`. This way a projection of a large `ZSTD(3)` part gets the
+    /// better ratio too, while projections of small parts (and freshly inserted parts) stay on `LZ4`.
+    /// That inheritance is only sound while the parent's codec is a fact. If the parent part lost its
+    /// `default_compression_codec.txt` and the codec was merely recovered from `checksums.txt`
+    /// (`IMergeTreeDataPart::default_codec_is_approximate`), inheriting it would compress this
+    /// projection - written here from scratch - with a guess, and `finalizePartOnDisk` would then
+    /// record that guess in the projection's own codec file as authoritative metadata: a small
+    /// post-flip part whose real default is `LZ4` but which recovers as `ZSTD(1)` would have its
+    /// projection permanently relabelled after one rebuild. Nothing of the parent is reused for the
+    /// projection data, so in that case choose the codec independently, exactly as a fresh write does.
+    if (parent_part->default_codec_is_approximate && !use_selected_codec)
+    {
+        /// Pass empty TTL infos so that `RECOMPRESS` codecs are not selected here, matching the
+        /// insert path; `expected_size` is the same upper bound used for the part format above.
+        compression_codec = data.getCompressionCodecForPart(metadata_snapshot, expected_size, {}, time(nullptr)).codec;
+    }
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block,
@@ -1332,6 +1359,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
+    CompressionCodecPtr compression_codec,
     bool merge_is_needed,
     ContextPtr context)
 {
@@ -1350,6 +1378,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         data,
         std::move(block),
         projection,
+        std::move(compression_codec),
         std::move(indices),
         merge_is_needed,
         /*try_adaptive_codec=*/ false);
@@ -1362,7 +1391,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
+    CompressionCodecPtr compression_codec,
     size_t block_num,
+    bool use_selected_codec,
+    bool is_explicit_recompression,
     ContextPtr context)
 {
     const auto & table_settings = data.getSettings();
@@ -1381,9 +1413,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         data,
         std::move(block),
         projection,
+        std::move(compression_codec),
         std::move(indices),
         /*merge_is_needed=*/ true,
-        /*try_adaptive_codec=*/ true);
+        /*try_adaptive_codec=*/ !is_explicit_recompression,
+        use_selected_codec);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

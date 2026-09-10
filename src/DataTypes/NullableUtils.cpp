@@ -96,22 +96,15 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
             /// Top-level Nullable(...) always contributes to the combined null map
             addNullMap(column_nullable);
 
-            const IColumn * nested_column = &column_nullable->getNestedColumn();
-            column = nested_column;
-
-            /// Special case: Nullable(Tuple(...))
-            /// If the nested column is a tuple, also fold in null maps of nullable tuple elements
-            if (const auto * tuple = checkAndGetColumn<ColumnTuple>(nested_column))
-            {
-                const auto & tuple_columns = tuple->getColumns();
-                for (const auto & element : tuple_columns)
-                {
-                    if (const auto * elem_nullable = checkAndGetColumn<ColumnNullable>(element.get()))
-                    {
-                        addNullMap(elem_nullable);
-                    }
-                }
-            }
+            /** Only the top-level null map says whether the key of a row is NULL. The null maps of the
+              * elements of a `Nullable(Tuple(Nullable(T), ...))` used to be folded in as well, which
+              * made a row whose tuple merely *contains* a NULL a NULL key: the hash-family joins
+              * dropped it, while the merge algorithms - which compare the nested tuples - kept it, so
+              * the result of a join depended on `join_algorithm`, and `IN` never matched such a row.
+              * The NULLs of the elements are part of the key and are compared as any other value,
+              * exactly as they are for a `Tuple(Nullable(T), ...)` that is not wrapped in `Nullable`.
+              */
+            column = &column_nullable->getNestedColumn();
         }
     }
 
