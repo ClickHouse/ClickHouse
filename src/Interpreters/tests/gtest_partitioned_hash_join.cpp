@@ -1868,8 +1868,11 @@ TEST(PartitionedHashJoin, BoundaryProjectionSkippedFirstGroup)
     /// A first group of only skipped rows inserts nothing: the G2 projection is the sketch term, not a
     /// division by zero. The nullable-block integration test above is the real case; this pins the helper.
     EXPECT_EQ(PartitionedHashJoin::boundaryProjection(0, 0, 1000, 10.0, 1.2), static_cast<UInt64>(std::ceil(12.0)));
-    EXPECT_EQ(
-        PartitionedHashJoin::boundaryProjection(50, 100, 200, 80.0, 1.2), std::max(static_cast<UInt64>(std::ceil(96.0)), UInt64{100}));
+    /// Inside the sketch's band the sketch is the projection: 50 keys after half the rows do not become 100.
+    EXPECT_EQ(PartitionedHashJoin::boundaryProjection(50, 100, 200, 80.0, 1.2), static_cast<UInt64>(std::ceil(96.0)));
+    /// Once the exact count has passed the band, the linear extrapolation takes over.
+    EXPECT_EQ(PartitionedHashJoin::boundaryProjection(120, 100, 200, 80.0, 1.2), UInt64{240});
+    EXPECT_EQ(PartitionedHashJoin::boundaryProjection(120, 0, 200, 80.0, 1.2), UInt64{120});
 }
 
 TEST(PartitionedHashJoin, OverflowDuplicatesDoNotForceGrowth)

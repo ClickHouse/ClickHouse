@@ -991,8 +991,17 @@ size_t PartitionedHashJoin::liveChunkBytes() const
 UInt64 PartitionedHashJoin::boundaryProjection(
     UInt64 claimed_total, UInt64 rows_inserted, UInt64 insertable, double hll_estimate, double reserve_safety)
 {
+    /// The sketch saw every build row, so it is the projection while the exact count stays inside its safety
+    /// band. Extrapolating the exact count linearly over the remaining rows overshoots as soon as keys repeat:
+    /// on 200M rows of 25M keys with 8 rows each, every key had appeared after the first group (46% of the
+    /// rows), and the linear term projected 54.6M keys against a max fill of 33.5M - an unforced doubling of
+    /// a table whose sketch was right (measured 2026-09-10). The linear term is only used once the exact count
+    /// has refuted the sketch, because then nothing better is known.
+    const UInt64 sketch = static_cast<UInt64>(std::ceil(hll_estimate * reserve_safety));
+    if (claimed_total <= sketch)
+        return sketch;
     const UInt64 extrapolated = rows_inserted > 0 ? claimed_total * insertable / rows_inserted : 0;
-    return std::max(static_cast<UInt64>(std::ceil(hll_estimate * reserve_safety)), extrapolated);
+    return std::max(claimed_total, extrapolated);
 }
 
 namespace
@@ -1583,9 +1592,16 @@ size_t PartitionedHashJoin::duplicateScratchBytesForRows(size_t rows_in_range, b
         return 0;
     const double f = 1.0 - hll_estimate / static_cast<double>(total_rows);
     const size_t rows_dup = static_cast<size_t>(std::ceil(std::min(1.0, 2.0 * f) * static_cast<double>(rows_in_range)));
+    /// The keys a range appends to are at most the build's distinct keys; the sketch bounds that count, the
+    /// duplicate rows do not. Charging every duplicate row as if it opened a key overcharged a 40M-row range of
+    /// 25M keys by a quarter and cut the groups short (measured 2026-09-10).
+    const size_t distinct = static_cast<size_t>(std::ceil(hll_estimate * reserve_safety));
     if (first_group)
-        return 12 * rows_dup + 4 * static_cast<size_t>(std::ceil(f * static_cast<double>(rows_in_range)));
-    return 28 * rows_dup;
+    {
+        const size_t dup_keys = static_cast<size_t>(std::ceil(f * static_cast<double>(rows_in_range)));
+        return 12 * rows_dup + 4 * std::min(distinct, dup_keys);
+    }
+    return 12 * rows_dup + 16 * std::min(distinct, rows_dup);
 }
 
 size_t PartitionedHashJoin::predictedArenaBytesForTests(bool grouped) const
@@ -1644,10 +1660,49 @@ size_t PartitionedHashJoin::chunkBytesForBlockRange(size_t b0, size_t b1) const
             bytes += fill.rows * sizeof(UInt16);
     }
 
-    /// The pass scratch of the duplicate rows this range brings. First group: 12 bytes per row of a
-    /// duplicated key plus 4 per duplicated key. Later groups: 28 bytes per such row, because a row
-    /// may carry the key's previous word and a `keys` entry.
-    bytes += duplicateScratchBytesForRows(rows_in_range, /*first_group=*/b0 == 0);
+    bytes += duplicateScratchBytesForRange(rows_in_range, /*first_group=*/b0 == 0);
+    return bytes;
+}
+
+size_t PartitionedHashJoin::duplicateScratchBytesForRange(size_t rows_in_range, bool first_group) const
+{
+    if (rows_in_range == 0)
+        return 0;
+
+    /// An owner finishes its scratch after every partition it claims (`finishPassScratch` in the owner wave),
+    /// so at most `workers` partitions of scratch are live at once: the largest ones, in the worst case. A
+    /// partition's rows in the range are estimated from its share of the whole build (`total_bucket_rows`,
+    /// which `partition_order` sorts largest first) at twice the range's row fraction, capped by its total.
+    /// Charging the whole range's duplicate rows instead put 1.5 GB against 94 MB live on a 92M-row range
+    /// and cut the groups short; charging `workers` times the largest partition's total made a Zipf build
+    /// (one key of 8M rows) plan 59 groups (both measured 2026-09-10).
+    const auto & ctx = *post_build_ctx;
+    UInt64 insertable = 0;
+    for (UInt64 rows : total_bucket_rows)
+        insertable += rows;
+    UInt64 top_rows = 0;
+    const size_t live = std::min<size_t>(ctx.workers, ctx.partition_order.size());
+    for (size_t i = 0; i < live; ++i)
+        top_rows += total_bucket_rows[ctx.partition_order[i]];
+    size_t live_rows = top_rows;
+    if (insertable > 0)
+    {
+        const double share = 2.0 * static_cast<double>(rows_in_range) / static_cast<double>(insertable);
+        live_rows = std::min<size_t>(top_rows, static_cast<size_t>(std::ceil(static_cast<double>(top_rows) * share)));
+    }
+    size_t bytes = duplicateScratchBytesForRows(std::min(live_rows, live * rows_in_range), first_group);
+
+    /// The drain's scratch is finished once per group and holds the rows whose owner walk reached its range
+    /// end. Charged at twice the rate seen so far; one row in 1024 before anything was inserted.
+    UInt64 rows_so_far = 0;
+    for (const auto & worker : ctx.worker_state)
+        rows_so_far += worker.inserted_rows;
+    const UInt64 overflow_so_far = ctx.drain_claimed + ctx.drain_appended;
+    size_t drain_rows = rows_in_range / 1024;
+    if (rows_so_far > 0)
+        drain_rows = static_cast<size_t>(std::ceil(
+            2.0 * static_cast<double>(overflow_so_far) / static_cast<double>(rows_so_far) * static_cast<double>(rows_in_range)));
+    bytes += duplicateScratchBytesForRows(std::min(drain_rows, rows_in_range), /*first_group=*/false);
     return bytes;
 }
 

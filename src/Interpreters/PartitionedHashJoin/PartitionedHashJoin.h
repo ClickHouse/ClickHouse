@@ -211,8 +211,8 @@ public:
     template <typename Target>
     bool g1BeforeClaim(Target & target);
 
-    /// Boundary G2 projection (F7): sketch term only when `rows_inserted == 0`, else the max of
-    /// that and the extrapolated distinct count.
+    /// Boundary G2 projection (F7): the sketch term while the exact count is inside its safety band;
+    /// once the count has passed the band, the max of the count and its linear extrapolation.
     static UInt64
     boundaryProjection(UInt64 claimed_total, UInt64 rows_inserted, UInt64 insertable, double hll_estimate, double reserve_safety);
 
@@ -340,6 +340,8 @@ private:
     size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est = 1) const;
     size_t predictedArenaBytes(size_t insertable_rows, bool grouped) const;
     size_t duplicateScratchBytesForRows(size_t rows_in_range, bool first_group) const;
+    /// The scratch a block range needs at once: `workers` live partitions plus the drain's.
+    size_t duplicateScratchBytesForRange(size_t rows_in_range, bool first_group) const;
     /// The table reserve the plan derives from a distinct estimate: safety factor, row clamp, and the
     /// saturation clamp above `2^31` estimated words.
     size_t reserveFor(size_t rows, double distinct_estimate) const;
