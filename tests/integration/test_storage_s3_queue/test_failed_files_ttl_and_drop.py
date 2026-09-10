@@ -2038,9 +2038,21 @@ def test_legacy_metadata_inherits_failed_files_ttl_from_tracked_ttl(started_clus
     # The inherited value, reported by `adjustFromKeeper`: Keeper says `tracked_ttl`, the local
     # setting was never set, so the table adopts Keeper's. Had the fallback not applied, Keeper would
     # have parsed as 0, matched the local 0, and this line would never be emitted.
+    #
+    # The grep pattern deliberately omits the backticks the message puts around the setting name.
+    # `contains_in_log` and `grep_in_log` interpolate the pattern into a double-quoted string that is
+    # then run by `bash -c`, where a backtick opens a command substitution: the setting name would be
+    # executed as a command and replaced by nothing, leaving a pattern that can never match. So grep
+    # for the backtick-free part and match the whole line in Python, where backticks are just text.
     expected = f"Using `failed_files_ttl_sec` from keeper: {tracked_ttl} (local: 0)"
-    assert node.contains_in_log(expected), (
-        f"expected the legacy fallback to be reported in the log: {expected!r}"
+    reported = [
+        line
+        for line in node.grep_in_log("from keeper: ").splitlines()
+        if "failed_files_ttl_sec" in line
+    ]
+    assert any(expected in line for line in reported), (
+        f"expected the legacy fallback to be reported in the log: {expected!r}\n"
+        "`from keeper` lines for this setting instead:\n" + "\n".join(reported[-10:])
     )
 
     node.query(f"DROP TABLE {table_name}")
