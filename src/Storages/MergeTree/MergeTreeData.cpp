@@ -2139,8 +2139,11 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (!filter_dag)
         return {};
 
-    /// Generate valid expressions for filtering
-    bool valid = true;
+    /// Generate valid expressions for filtering.
+    /// The surviving rows are mapped back to parts by their name, so a physical column named
+    /// `_part` shadowing the virtual one - which leaves it out of the block, see
+    /// `getHeaderWithVirtualsForFilter` - makes the filtering by virtual columns unavailable.
+    bool valid = virtual_columns_block.has("_part");
     for (const auto * input : filter_dag->getInputs())
         if (!virtual_columns_block.has(input->result_name))
             valid = false;

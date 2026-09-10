@@ -31,3 +31,18 @@ SELECT count() FROM t_part_virtual WHERE _partition_id = '1';
 SELECT uniqExact(_part) FROM t_part_virtual;
 SELECT count() FROM t_part_virtual;
 DROP TABLE t_part_virtual;
+
+SELECT 'a partitioned table with a shadowing column';
+-- The trivial count optimization identifies the surviving parts by name as well.
+DROP TABLE IF EXISTS t_part_shadow_partitioned;
+CREATE TABLE t_part_shadow_partitioned (`_part` UInt32, k UInt32, x UInt32) ENGINE = MergeTree PARTITION BY k ORDER BY tuple();
+INSERT INTO t_part_shadow_partitioned VALUES (1, 1, 100), (2, 2, 200), (3, 2, 300);
+SELECT count() FROM t_part_shadow_partitioned WHERE _partition_id = '1';
+SELECT count() FROM t_part_shadow_partitioned WHERE _partition_id = 'nonexistent';
+SELECT count() FROM t_part_shadow_partitioned WHERE k = 2;
+SELECT count() FROM t_part_shadow_partitioned WHERE isNull(_part > 0);
+SELECT count() FROM t_part_shadow_partitioned WHERE _part > 1;
+SELECT sum(x) FROM t_part_shadow_partitioned WHERE _partition_id = '2';
+SELECT _part, k, x FROM t_part_shadow_partitioned ORDER BY _part;
+SELECT count() FROM t_part_shadow_partitioned;
+DROP TABLE t_part_shadow_partitioned;
