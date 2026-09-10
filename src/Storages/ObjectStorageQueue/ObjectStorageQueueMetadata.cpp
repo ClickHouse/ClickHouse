@@ -2459,7 +2459,6 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
 
 void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client)
 {
-    auto zk_retries = getKeeperRetriesControl(log);
     const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
 
     Strings persistent_processing_nodes;
