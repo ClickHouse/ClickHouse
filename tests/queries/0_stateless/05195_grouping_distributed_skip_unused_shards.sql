@@ -10,6 +10,13 @@ CREATE TABLE t_05195 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_05195 SELECT number, 'v' FROM numbers(100);
 CREATE TABLE t_05195_dist (id UInt64, value String) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t_05195, id);
 
+-- The shards have to finalize the aggregation for the grouping column to be computed there, which is
+-- what `optimize_distributed_group_by_sharding_key` does for a `GROUP BY` on the sharding key, and the
+-- query has to actually go over the network. Both are pinned here so that randomized settings cannot
+-- silently turn this into a different case: with the sharding-key aggregation off, the initiator merges
+-- the groups of both shards and the `count()` below is 2 instead of 1.
+SET optimize_distributed_group_by_sharding_key = 1, prefer_localhost_replica = 0;
+
 SELECT 'the sharding key';
 SELECT grouping(id), id FROM t_05195_dist GROUP BY id ORDER BY id LIMIT 1;
 SELECT grouping(id), id FROM t_05195_dist GROUP BY id ORDER BY id LIMIT 1 SETTINGS optimize_skip_unused_shards = 1;
