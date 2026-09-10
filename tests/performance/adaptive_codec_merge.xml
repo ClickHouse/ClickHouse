@@ -1,18 +1,33 @@
 <test>
-    <create_query do_not_check_in_pr="113479">
+    <!-- The default codec wins every block. -->
+    <create_query>
         CREATE TABLE adaptive_codec_merge (x UInt64)
         ENGINE = MergeTree ORDER BY tuple()
         SETTINGS enable_adaptive_codec_selection = 1
     </create_query>
+    <!-- Jittered sizes: the size substream goes T64, the short content stream stays on the default codec. -->
+    <create_query>
+        CREATE TABLE adaptive_codec_merge_sizes (s String)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS enable_adaptive_codec_selection = 1
+    </create_query>
 
-    <!-- The default codec wins every block -->
     <fill_query>SYSTEM STOP MERGES adaptive_codec_merge</fill_query>
-    <fill_query>INSERT INTO adaptive_codec_merge SELECT cityHash64(number % 1024) FROM numbers_mt(150000000)</fill_query>
-    <fill_query>SYSTEM START MERGES adaptive_codec_merge</fill_query>
-    <fill_query>OPTIMIZE TABLE adaptive_codec_merge FINAL</fill_query>
+    <fill_query>SYSTEM STOP MERGES adaptive_codec_merge_sizes</fill_query>
 
-    <!-- 1 -> 1 merge -->
+    <fill_query>INSERT INTO adaptive_codec_merge SELECT cityHash64(number % 1024) FROM numbers_mt(150000000)</fill_query>
+    <fill_query>INSERT INTO adaptive_codec_merge_sizes SELECT repeat('a', cityHash64(number) % 8) FROM numbers_mt(50000000)</fill_query>
+
+    <fill_query>SYSTEM START MERGES adaptive_codec_merge</fill_query>
+    <fill_query>SYSTEM START MERGES adaptive_codec_merge_sizes</fill_query>
+
+    <fill_query>OPTIMIZE TABLE adaptive_codec_merge FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE adaptive_codec_merge_sizes FINAL</fill_query>
+
+    <!-- Re-merge of the single part (1 -> 1). -->
     <query>OPTIMIZE TABLE adaptive_codec_merge FINAL</query>
+    <query>OPTIMIZE TABLE adaptive_codec_merge_sizes FINAL</query>
 
     <drop_query>DROP TABLE IF EXISTS adaptive_codec_merge</drop_query>
+    <drop_query>DROP TABLE IF EXISTS adaptive_codec_merge_sizes</drop_query>
 </test>
