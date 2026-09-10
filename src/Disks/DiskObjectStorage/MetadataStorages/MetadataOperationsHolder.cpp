@@ -1,8 +1,15 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 
 #include <exception>
+
+namespace ProfileEvents
+{
+    extern const Event MetadataTransactionRollbacks;
+    extern const Event MetadataTransactionRollbacksFailed;
+}
 
 namespace DB
 {
@@ -14,6 +21,8 @@ extern const int FS_METADATA_ERROR;
 
 void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_reason) noexcept
 {
+    ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
+
     for (int64_t i = until_pos; i >= 0; --i)
     {
         try
@@ -22,6 +31,10 @@ void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_r
         }
         catch (...)
         {
+            /// The operations below this one keep whatever they have written, so object storage may now describe a
+            /// filesystem this process does not have, until the filesystem is next loaded from object storage.
+            ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacksFailed);
+
             state = MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK;
 
             rollback_reason.addMessage(fmt::format("While rolling back operation #{}", i));

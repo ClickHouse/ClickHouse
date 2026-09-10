@@ -14,6 +14,7 @@
 
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 
 #include <base/scope_guard.h>
 
@@ -24,6 +25,11 @@
 #include <filesystem>
 #include <ranges>
 #include <thread>
+
+namespace ProfileEvents
+{
+    extern const Event DiskPlainRewritableUndoStageRetries;
+}
 
 using namespace DB;
 
@@ -3185,4 +3191,88 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveDirectoryUndoStopsRetryingOnShutdown
     metadata = restartMetadataStorage("MoveDirectoryUndoShutdown");
     EXPECT_FALSE(metadata->existsDirectory("A"));
     EXPECT_TRUE(metadata->existsDirectory("MOVED"));
+}
+
+/// An object storage call can write and then report a failure, so `execute` cannot know from its own return values
+/// what it has already changed. Here the copy that publishes the blob under its new key succeeds and the call fails
+/// afterwards; without the reversal converging on the state the transaction started from, the blob would stay, and a
+/// directory with the implicit file list reports whatever blobs sit under its prefix - so a restart would show a file
+/// the transaction never committed.
+TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndoRemovesABlobPublishedByAFailedCall)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("MoveFilePublishedBlob");
+    auto object_storage = getObjectStorage("MoveFilePublishedBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    const auto objects_before = listAllBlobs("MoveFilePublishedBlob");
+
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_after_copy_on_file_move");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_after_copy_on_file_move"));
+
+        auto tx = metadata->createTransaction();
+        tx->moveFile("/A/source", "/A/moved");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(readObject(object_storage, source_blob), "the source file");
+    EXPECT_EQ(listAllBlobs("MoveFilePublishedBlob"), objects_before);
+
+    metadata = restartMetadataStorage("MoveFilePublishedBlob");
+    EXPECT_TRUE(metadata->existsFile("/A/source"));
+    EXPECT_FALSE(metadata->existsFile("/A/moved"));
+}
+
+/// A shutdown has to reach a reversal that is already retrying, on the thread that runs the commit.
+TEST_F(MetadataPlainRewritableDiskTest, UndoStopsRetryingWhenTheDiskShutsDownWhileRetrying)
+{
+    auto metadata = getMetadataStorage("UndoShutdownWhileRetrying");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto retries_before = ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries];
+
+    /// Fires in `rewriteSingleDirectory`, which both the move and its reversal use, so the reversal keeps failing and
+    /// the retry loop cannot finish on its own.
+    FailPointInjection::enableFailPoint("plain_object_storage_write_fail_on_directory_move");
+    SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_write_fail_on_directory_move"));
+
+    std::atomic<bool> commit_threw = false;
+    std::thread committing([&]
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+
+        try
+        {
+            tx->commit(DB::NoCommitOptions{});
+        }
+        catch (...)
+        {
+            commit_threw = true;
+        }
+    });
+
+    /// Wait for the reversal to fail once, so the shutdown lands on a thread that is inside the retry loop.
+    while (ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries] == retries_before)
+        std::this_thread::yield();
+
+    metadata->shutdown();
+    committing.join();
+
+    EXPECT_TRUE(commit_threw);
 }

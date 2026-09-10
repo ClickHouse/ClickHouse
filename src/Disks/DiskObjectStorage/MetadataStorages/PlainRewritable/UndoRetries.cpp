@@ -1,14 +1,25 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoRetries.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <base/types.h>
 
 #include <chrono>
 
+namespace ProfileEvents
+{
+    extern const Event DiskPlainRewritableUndoStageRetries;
+}
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
@@ -33,6 +44,12 @@ void UndoRetries::runStage(const LoggerPtr & log, std::string_view description, 
         }
         catch (...)
         {
+            /// A logical error says that an invariant of this code does not hold, and repeating the stage cannot make
+            /// it hold. It is also how a stage reports the one thing a reversal cannot repair: the blob is gone.
+            if (getCurrentExceptionCode() == ErrorCodes::LOGICAL_ERROR)
+                throw;
+
+            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableUndoStageRetries);
             tryLogCurrentException(log, fmt::format("Attempt {} to {} failed", attempt, description));
 
             std::unique_lock lock(mutex);

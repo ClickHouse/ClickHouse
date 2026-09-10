@@ -31,6 +31,9 @@ namespace DB
   *
   * A shutdown is the only exit. The retries stop, the transaction reports the failure, and the next start loads the
   * filesystem from object storage.
+  *
+  * A stage that throws `LOGICAL_ERROR` is not repeated, because no invariant is repaired by asking again. A stage uses
+  * it to report the one state a reversal cannot leave: the blob it has to restore exists nowhere.
   */
 class UndoRetries
 {
