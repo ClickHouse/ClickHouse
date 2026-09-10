@@ -303,6 +303,7 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
             thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+            thread_group->memory_pressure_monitor.setParent(user_process_list.user_memory_pressure_monitor);
             if (user_process_list.user_temp_data_on_disk)
             {
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings

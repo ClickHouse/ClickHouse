@@ -160,6 +160,12 @@ if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
     set (COMPILER_SUPPORTS_GZ_ZLIB ON)
 endif ()
 
+# Has to precede block_build_time_checks.cmake. `enable_language(CUDA)` runs CMake's own
+# compiler test through `try_compile`, and `FindCUDAToolkit` reaches `find_package(Threads)`,
+# which probes with `check_c_source_compiles`. Both are blocked below, so CUDA gets enabled
+# here for the same reason `project()` enables C/CXX/ASM before the guard is installed.
+include (cmake/cuda.cmake)
+
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
 # version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
@@ -607,22 +613,26 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-# We enable position independent encoding for all build types except build with -flto=thin:
+# Position independent code is enabled on every amd64 and aarch64 build:
 # 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
 # multiple sophisticated problems like linking with sanitizers or linking of rust.
-# 2. Position independent binaries and libraries are a little bit slower, than position dependent. We consider
-# build with -flto=thin as trully "production" build where each % of performance is important.
-# 3. For some unknow reason -flto=thin lead to some other way of linkage. For example for rust libraries build
+# 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
 # we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
 # -flto=thin we have relocation errors like:
 # rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
 #
-# NOTE: -fno-pie disables -fPIC, so that is why we check ENABLE_THINLTO in the branch bellow
-#
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
-if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR ARCH_AARCH64))
+if (ARCH_AMD64 OR ARCH_AARCH64)
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
+
+    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
+    # the compiler driver's default unless the linker is asked explicitly, so ask it.
+    # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
+    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
+    if (OS_LINUX AND NOT USE_MUSL)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+    endif()
 endif()
 
 if (ENABLE_POSITION_INDEPENDENT_BINARY)
@@ -778,7 +788,16 @@ if (FUZZER)
         if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main" OR target MATCHES ".*isal.*"))
             get_target_property(target_type ${target} TYPE)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
-                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                # Targets compiled with -fno-sanitize=all must never be instrumented:
+                # a later -fsanitize=fuzzer-no-link overrides it and re-enables
+                # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
+                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
+                # runs before any coverage runtime exists, so every executable would
+                # crash at startup.
+                get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
+                if (NOT target_compile_options MATCHES "-fno-sanitize=all")
+                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")
