@@ -175,7 +175,7 @@ bool isNamespaceNotFound(const DB::HTTPException & e)
         const auto error = response->getObject("error");
         return error && error->getValue<String>("type") == "NoSuchNamespaceException";
     }
-    catch (...)
+    catch (...) /// Ok: `false` leaves the 404 to be reported by the caller.
     {
         return false;
     }
