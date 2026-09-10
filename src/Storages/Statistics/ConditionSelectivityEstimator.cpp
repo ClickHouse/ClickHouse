@@ -55,11 +55,11 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
         return extractAtomFromTree(metadata, node_, out);
-    }, /* expand_index_hint= */ false).extractRPN();
+    }).extractRPN();
     std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
         return extractAtomFromTree(metadata, node_, out);
-    }, /* expand_index_hint= */ false).extractRPN();
+    }).extractRPN();
     rpn.insert(rpn.end(), prewhere_rpn.begin(), prewhere_rpn.end());
     RPNElement last_rpn;
     last_rpn.function = RPNElement::FUNCTION_AND;
@@ -72,7 +72,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
         return extractAtomFromTree(metadata, node_, out);
-    }, /* expand_index_hint= */ false).extractRPN();
+    }).extractRPN();
     return estimateRelationProfileImpl(rpn, metadata);
 }
 
@@ -95,7 +95,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
         auto rpn = RPNBuilder<RPNElement>(nodes[i], [&](const RPNBuilderTreeNode & node_, RPNElement & out)
         {
             return extractAtomFromTree(metadata, node_, out);
-        }, /* expand_index_hint= */ false).extractRPN();
+        }).extractRPN();
         combined_rpn.insert(combined_rpn.end(), rpn.begin(), rpn.end());
         if (i > 0)
         {
