@@ -82,6 +82,10 @@ any other table in mydb would have only `b=1` policy applied for the user.
 
 Allows creating row policies on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
 
+## Required privileges {#required-privileges}
+
+`CREATE ROW POLICY` requires the [CREATE ROW POLICY](/reference/statements/grant#access-management) privilege on the table the policy is created on. `OR REPLACE` throws away an existing policy of the same name, including which roles it applies to, so it additionally requires the [DROP ROW POLICY](/reference/statements/grant#access-management) privilege on that table. The `DROP ROW POLICY` privilege is required whether or not the policy already exists, so the statement cannot be used to find out which policies exist.
+
 ## Examples {#examples}
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`

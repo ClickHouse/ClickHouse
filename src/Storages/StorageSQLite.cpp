@@ -143,7 +143,7 @@ Pipe StorageSQLite::read(
             column_names,
             storage_snapshot->metadata->getColumns().getOrdinary(),
             IdentifierQuotingStyle::DoubleQuotes,
-            LiteralEscapingStyle::Regular,
+            LiteralEscapingStyle::SQLite,
             "",
             remote_table_or_query.getTableName(),
             context_);
@@ -245,7 +245,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::Regular);
+            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::SQLite);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 1 && maybe_query)

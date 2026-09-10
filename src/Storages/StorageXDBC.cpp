@@ -94,6 +94,12 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
+        /// The bridge protocol only reports the identifier quoting style, not the literal
+        /// escaping dialect of the remote database, so string literals keep the historical
+        /// `Regular` (backslash-escaping) serialization here. Predicates whose literals such
+        /// a database (e.g. PostgreSQL over ODBC) would read differently should not be pushed
+        /// down until the bridge exposes an escaping style; see the dialect-specific handling
+        /// in `transformQueryForExternalDatabase.cpp`.
         LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,

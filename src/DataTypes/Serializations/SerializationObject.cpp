@@ -1430,14 +1430,19 @@ SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB
     return SerializationObjectTypedPath::create(prev, path);
 }
 
-void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const
+void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings)
 {
-    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing || !column.empty())
+    if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing)
         return;
 
+    /// Not restricted to an empty column: rows inserted before the first parsed object (a default for
+    /// an absent field, a null) must not stop the limit from being applied.
     auto & column_object = assert_cast<ColumnObject &>(column);
-    if (*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing < column_object.getMaxDynamicPaths())
-        column_object.setMaxDynamicPaths(*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing);
+    /// Lower the upper bound and not just max_dynamic_paths, otherwise aggregating the parsed data
+    /// raises the limit back.
+    size_t limit = *format_settings.json.max_dynamic_subcolumns_in_json_type_parsing;
+    if (limit < column_object.getMaxDynamicPathsUpperBound() && limit >= column_object.getDynamicPaths().size())
+        column_object.setMaxDynamicPathsUpperBound(limit);
 }
 
 }

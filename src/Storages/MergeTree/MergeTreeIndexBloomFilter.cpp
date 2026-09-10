@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -129,6 +130,24 @@ void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, c
 
 namespace
 {
+
+/// True when the index column is an `Array` and the set holds an empty array. A set column that is
+/// not a `ColumnArray` cannot be inspected, so it counts as holding one.
+bool setHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & set_column, size_t row_size)
+{
+    if (!WhichDataType(index_type).isArray())
+        return false;
+
+    const auto * array_column = checkAndGetColumn<ColumnArray>(set_column.get());
+    if (!array_column)
+        return true;
+
+    for (size_t row = 0; row < row_size; ++row)
+        if (array_column->getSize(row) == 0)
+            return true;
+
+    return false;
+}
 
 ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 {
@@ -577,6 +596,14 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         size_t position = header.getPositionByName(key_node_column_name);
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
+
+        /// An `Array` index holds one hash per element, so a set array is looked up by its elements
+        /// and an empty one has no hash that can stand for it. Contribute no predicate at all: a
+        /// tuple `IN` shares this element, and a sibling component would re-enable the lookup.
+        if ((function_name == "in" || function_name == "globalIn")
+            && setHasEmptyArray(index_type, converted_column, row_size))
+            return false;
+
         out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
 
         if (function_name == "in"  || function_name == "globalIn")
@@ -940,6 +967,32 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
+
+            /// `String`/`FixedString` equality compares zero-padded, so a constant of M bytes matches
+            /// the whole family `value` + trailing '\0'*, while the index holds one hash per exact
+            /// stored value. The index is sound only where that family collapses to a single indexed
+            /// value: a `FixedString(N)` index with `N >= M` pads the constant into the one stored
+            /// form, while a `String` index, or a narrower `FixedString`, leaves the family unbounded
+            /// because `convertFieldToType` pads but never truncates.
+            /// The constant type is unwrapped here because `tryGetConstant` peels only an outer
+            /// `Nullable`. `Variant` and `Dynamic` keep their declared wrapper while handing out the
+            /// nested padded value, so an active `FixedString` alternative is indistinguishable from
+            /// a `String` one and both must be treated as possibly padded.
+            if (isStringOrFixedString(actual_type) && value_field.getType() == Field::Types::String)
+            {
+                const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+                const bool constant_may_be_fixed_string
+                    = which_constant.isFixedString() || which_constant.isVariant() || which_constant.isDynamic();
+                const size_t constant_bytes = value_field.safeGet<String>().size();
+                const auto * fixed_index_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
+
+                if (constant_may_be_fixed_string && !fixed_index_type)
+                    return false;
+
+                if (fixed_index_type && fixed_index_type->getN() < constant_bytes)
+                    return false;
+            }
+
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;

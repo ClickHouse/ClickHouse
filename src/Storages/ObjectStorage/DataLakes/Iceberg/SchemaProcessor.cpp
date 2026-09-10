@@ -12,6 +12,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
@@ -474,6 +475,9 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
 DataTypePtr
 IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
 {
+    /// The schema comes from the table metadata and can be nested arbitrarily deeply.
+    checkStackSize();
+
     String type_name = type->getValue<String>(f_type);
     if (type_name == f_list)
     {
