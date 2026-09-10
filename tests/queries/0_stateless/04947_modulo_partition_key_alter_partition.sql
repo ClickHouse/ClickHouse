@@ -1,6 +1,7 @@
 -- A partition key containing `modulo` whose left operand is unsigned and whose right operand is
--- signed. Every value rendered for such a part (in `system.parts`, `parts_columns`, the projection
--- tables, the part log and the partition pruner) must be the value partition manipulation accepts.
+-- signed. Every value rendered for such a part (in `system.parts`, `parts_columns`,
+-- `projection_parts`, the part log and the partition pruner) must be the value partition manipulation
+-- accepts; `projection_parts_columns` is a control that must keep printing `tuple()`.
 
 CREATE TABLE mod_drop (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (37528 % c0);
 INSERT INTO mod_drop VALUES (167682982);

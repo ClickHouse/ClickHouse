@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Storages/KeyDescription.h>
+#include <Core/Block.h>
 #include <Core/Field.h>
 
 namespace DB
