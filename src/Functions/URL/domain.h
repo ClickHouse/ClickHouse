@@ -10,6 +10,37 @@
 namespace DB
 {
 
+/// RFC 3986, 3.2.2: IPvFuture = "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
+/// A placeholder for IP address formats beyond IPv6, e.g. "[v1.a]".
+inline bool isIPvFuture(const char * begin, const char * end)
+{
+    if (begin >= end || (*begin != 'v' && *begin != 'V'))
+        return false;
+
+    const char * pos = begin + 1;
+    const char * version_start = pos;
+    while (pos < end && isHexDigit(*pos))
+        ++pos;
+    if (pos == version_start)
+        return false;
+
+    if (pos >= end || *pos != '.')
+        return false;
+    ++pos;
+
+    const char * address_start = pos;
+    for (; pos < end; ++pos)
+    {
+        char c = *pos;
+        bool is_unreserved = isAlphaNumericASCII(c) || c == '-' || c == '.' || c == '_' || c == '~';
+        bool is_sub_delim = c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' || c == ')'
+            || c == '*' || c == '+' || c == ',' || c == ';' || c == '=';
+        if (!is_unreserved && !is_sub_delim && c != ':')
+            return false;
+    }
+    return pos > address_start;
+}
+
 inline std::string_view checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
     if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1 || *start_of_host == '.')
@@ -147,6 +178,8 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '&':
         case '~':
         case '%':
+            if (has_open_bracket)
+                continue; /// sub-delims are also valid in IPvFuture's address part; isIPvFuture validates it below
             /// Symbols above are sub-delims in RFC3986 and should be
             /// allowed for userinfo (named identification here).
             ///
@@ -196,8 +229,11 @@ done:
     /// e.g. "user@[::1]:80@evil.com" - so the host itself ends at the bracket, not at `pos`.
     if (has_end_bracket)
     {
+        /// RFC 3986, 3.2.2: IP-literal = "[" ( IPv6address / IPvFuture ) "]"
         unsigned char ipv6_bytes[IPV6_BINARY_LENGTH];
-        if (!parseIPv6Whole(start_of_host, bracket_close_pos, ipv6_bytes))
+        bool is_valid_ip_literal = parseIPv6Whole(start_of_host, bracket_close_pos, ipv6_bytes)
+            || isIPvFuture(start_of_host, bracket_close_pos);
+        if (!is_valid_ip_literal)
             return std::string_view{};
         return std::string_view(start_of_host, bracket_close_pos - start_of_host);
     }
