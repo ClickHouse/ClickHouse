@@ -73,8 +73,7 @@ bool preliminaryDistinctIsUseful(size_t max_threads)
     return max_threads > 1;
 }
 
-/// The min-combination of the absolute and the ratio thresholds, the same as for external `GROUP BY`
-/// (`Aggregator::Params::getMaxBytesBeforeExternalGroupBy`).
+/// Combines enabled absolute and ratio thresholds by taking their minimum.
 static size_t getMaxBytesBeforeExternalDistinct(size_t max_bytes_before_external_distinct, double max_bytes_ratio_before_external_distinct)
 {
     std::optional<size_t> threshold;
@@ -91,7 +90,8 @@ static size_t getMaxBytesBeforeExternalDistinct(size_t max_bytes_before_external
         auto available_system_memory = getMostStrictAvailableSystemMemory();
         if (available_system_memory.has_value())
         {
-            size_t ratio_in_bytes = static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio);
+            /// Zero disables spilling, so an enabled ratio must produce at least a one-byte threshold.
+            const size_t ratio_in_bytes = std::max<size_t>(1, static_cast<size_t>(static_cast<double>(*available_system_memory) * ratio));
             if (threshold)
                 threshold = std::min(threshold.value(), ratio_in_bytes);
             else
