@@ -1,6 +1,7 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
+import signal
 import time
 import uuid
 
@@ -18,6 +19,7 @@ node = cluster.add_instance(
 
 node_distinct = cluster.add_instance(
     "node_distinct",
+    main_configs=["configs/processors_profile_log.xml"],
     stay_alive=True,
 )
 
@@ -138,3 +140,60 @@ def test_distinct_cancellation_releases_temporary_data(start_cluster, cancel_sta
         max_attempts=100,
         delay=0.1,
     )
+
+
+def test_distinct_partial_cancellation_drains_suppression(start_cluster):
+    query_id = str(uuid.uuid4())
+    failpoint = "external_distinct_suppression_run_prepared_pause"
+    branch = (
+        "SELECT concat(toString(number % 8192), repeat('x', 1024)) AS k "
+        "FROM numbers(65536)"
+    )
+    settings = {
+        "max_threads": 1,
+        "max_block_size": 64,
+        "max_bytes_before_external_distinct": "8M",
+        "max_bytes_ratio_before_external_distinct": 0,
+        "max_untracked_memory": 0,
+        "optimize_distinct_in_order": 0,
+        "partial_result_on_first_cancel": 1,
+        "interactive_delay": 1000,
+        "log_processors_profiles": 1,
+    }
+
+    # Single-threaded `UNION DISTINCT` sends both branches directly to the final distinct processor.
+    # Its suppression run spans multiple blocks, and pending input can repeat already-emitted keys.
+    node_distinct.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        request = node_distinct.get_query_request(
+            f"{branch} UNION DISTINCT {branch}", query_id=query_id, settings=settings, timeout=60
+        )
+        node_distinct.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=30)
+        request.process.send_signal(signal.SIGINT)
+        node_distinct.wait_for_log_line(
+            rf"\{{{query_id}\}}.*Received 'Cancel' packet from the client, returning partial result",
+            timeout=20,
+        )
+        node_distinct.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        rows = request.get_answer().splitlines()
+    finally:
+        node_distinct.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        node_distinct.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
+
+    assert 0 < len(rows) < 8192
+    assert len(rows) == len(set(rows))
+
+    # Sources registered after the partial-result request must drain the complete suppression run.
+    node_distinct.query("SYSTEM FLUSH LOGS processors_profile_log")
+    written, read, tail = map(
+        int,
+        node_distinct.query(
+            "SELECT sumIf(input_rows, name = 'BufferingToFileSink'), "
+            "sumIf(output_rows, name = 'BufferingFromFileSource'), "
+            "sumIf(output_rows, name = 'MergeSorterSource') "
+            f"FROM system.processors_profile_log WHERE query_id = '{query_id}'"
+        ).split(),
+    )
+    assert written > settings["max_block_size"]
+    assert read == written
+    assert tail > 0
