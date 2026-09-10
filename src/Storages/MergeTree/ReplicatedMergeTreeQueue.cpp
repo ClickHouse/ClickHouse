@@ -1858,8 +1858,9 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             ignore_max_size = max_source_parts_size == (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
 
-            /// All source parts of a TTL drop merge are expired, so estimateNeededDiskSpace() skips them:
-            /// the merge reserves nothing and writes an empty part. Sizing it out would only stop TTL.
+            /// A TTL drop merge writes an empty part and reserves nothing: all its source parts are expired
+            /// at entry.create_time, the same moment MergeFromLogEntryTask sizes its reservation at (a
+            /// mislabelled entry therefore still gets a full-size reservation). Sizing it out would only stop TTL.
             if (entry.merge_type == MergeType::TTLDrop)
                 ignore_max_size = true;
 
