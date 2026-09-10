@@ -28,6 +28,7 @@ namespace DB
 
 class ASTExpressionList;
 class ASTFunction;
+class ASTIdentifier;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
@@ -43,6 +44,19 @@ struct ASTTableJoin;
 struct ASTWindowDefinition;
 
 class SettingsChanges;
+
+/// All aggregate-function combinator suffixes ClickHouse recognises (see
+/// `AggregateFunctionCombinatorFactory`). Shared between the fuzzer — which
+/// applies the subset it can build valid arguments for — and
+/// `QueryOracleChecker`, which strips suffixes to recognise the base aggregate
+/// name behind fuzzer-produced chains like `first_valueOrNullDistinct`.
+/// Combinator spelling is case-sensitive in ClickHouse (`sumIf` is valid,
+/// `sumif` is not), so these stay PascalCase.
+inline const Strings aggregate_combinator_suffixes = {
+    "If", "Array", "Map", "ForEach", "Distinct", "OrDefault", "OrFill",
+    "OrNull", "Resample", "ArgMin", "ArgMax", "MergeState", "State", "Merge",
+    "SimpleState", "Tuple", "RespectNulls", "IgnoreNulls", "Null",
+};
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -65,6 +79,11 @@ public:
     // This is the only function you have to call -- it will modify the passed
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
+
+    /// When true, reduce probability of structure-destroying mutations
+    /// (removing GROUP BY, WHERE, converting to EXPLAIN) to preserve
+    /// query structure for oracle correctness testing.
+    bool oracle_mode = false;
 
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void notifyQueryFailed(ASTPtr ast);
@@ -181,6 +200,15 @@ private:
     // This field is reset for each fuzzMain() call.
     size_t current_ast_depth = 0;
 
+    // Depth of SELECT-query nesting while fuzzing (1 = inside the outermost
+    // `ASTSelectQuery`). Unlike `current_ast_depth`, this counts only SELECT
+    // nodes, so the oracle-mode guards can reliably recognise the topmost
+    // query — a plain SELECT is wrapped in `ASTSelectWithUnionQuery` and an
+    // expression list, putting the real top-level SELECT at AST depth 3.
+    // Maintained by a `ScopedIncrement` in the `ASTSelectQuery` branch of
+    // `fuzz`, which spans the recursion into the SELECT's children.
+    size_t current_select_nesting = 0;
+
     // Used to track added tables in join clauses
     uint32_t alias_counter = 0;
 
@@ -234,6 +262,7 @@ private:
     NameToNameMap last_query_parameters;
     /// Counter for generating unique injected parameter names (fuzz_param_0, fuzz_param_1, ...).
     uint32_t param_counter = 0;
+    static constexpr uint32_t max_query_parameters = 10;
 
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
@@ -337,6 +366,7 @@ private:
     String makeBraceExpansion();
     String makeRemoteHostDescriptor(bool secure);
     void wrapTableAsDistributed(ASTTableExpression & table);
+    void callTableAsParameterizedView(ASTTableExpression & table);
     void wrapTableAsMerge(ASTTableExpression & table);
     void replaceTableExpressionWithFunction(ASTTableExpression & table, ASTPtr replaced, ASTPtr wrapped);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
@@ -358,6 +388,9 @@ private:
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
     String generateParamValue();
+    ASTPtr makeQueryParameter(const String & type, const String & value);
+    ASTPtr makeLimitExpression(const Field & value);
+    ASTPtr makeParameterizedIdentifier(const ASTIdentifier & ident);
     void checkIterationLimit();
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);

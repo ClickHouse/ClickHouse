@@ -12,6 +12,7 @@
 #include <Coordination/KeeperRequestDispatcher.h>
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperServer.h>
+#include <Common/ZooKeeper/KeeperOverDispatcher.h>
 #include <Coordination/KeeperConstants.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
@@ -46,6 +47,7 @@
 
 namespace DB::CoordinationSetting
 {
+    extern const CoordinationSettingsInt64 snapshot_zstd_compression_level;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
 }
 
@@ -80,6 +82,29 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "<max_requests_batch_size>1</max_requests_batch_size>"
              "<max_requests_append_size>1</max_requests_append_size>"
              "</coordination_settings></keeper_server></clickhouse>"));
+}
+
+TEST(CoordinationSettingsValidation, CommitProfilerRequiresSamplingProfiler)
+{
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+    };
+
+    constexpr auto config = "<clickhouse><keeper_server><coordination_settings>"
+                            "<commit_profiler_real_time_period_ns>1000000</commit_profiler_real_time_period_ns>"
+                            "</coordination_settings></keeper_server></clickhouse>";
+
+#if defined(MEMORY_SANITIZER)
+    /// The sampling profiler is unavailable under `MemorySanitizer`, so accepting this setting
+    /// would make the configured Keeper commit profiler silently do nothing.
+    EXPECT_THROW(load(config), DB::Exception);
+#else
+    EXPECT_NO_THROW(load(config));
+#endif
 }
 
 TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
@@ -138,6 +163,28 @@ TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
                    "<nuraft_snapshot_sync_ctx_timeout_ms>3000000000</nuraft_snapshot_sync_ctx_timeout_ms>"
                    "</coordination_settings></keeper_server></clickhouse>"),
               std::numeric_limits<int32_t>::max());
+}
+
+TEST(CoordinationSettingsParse, SnapshotZstdCompressionLevel)
+{
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return static_cast<Int64>(settings[DB::CoordinationSetting::snapshot_zstd_compression_level]);
+    };
+
+    EXPECT_EQ(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "</coordination_settings></keeper_server></clickhouse>"),
+        DB::DEFAULT_KEEPER_SNAPSHOT_ZSTD_COMPRESSION_LEVEL);
+    EXPECT_EQ(
+        load("<clickhouse><keeper_server><coordination_settings>"
+             "<snapshot_zstd_compression_level>-5</snapshot_zstd_compression_level>"
+             "</coordination_settings></keeper_server></clickhouse>"),
+        -5);
 }
 
 /// The composition that actually reaches NuRaft: config text -> setting -> `raft_params` field.
@@ -1379,6 +1426,47 @@ TEST(KeeperMemorySoftLimitAdmission, MultiClassifiedBySumOfDataSizes)
         makeSetRequest("/table/replicas/r1/host", "hostname"),
         makeSetRequest("/table/replicas", ""),
     })));
+}
+
+TEST(KeeperOverDispatcherMulti, CallbackPromotesFailedMultiAggregateError)
+{
+    using namespace Coordination;
+
+    auto error_response = [](Error error)
+    {
+        auto response = std::make_shared<ZooKeeperErrorResponse>();
+        response->error = error;
+        return response;
+    };
+
+    /// Drive the exact callback KeeperOverDispatcher::multi installs, with the response
+    /// shape KeeperStorage builds for a failed multi, and check what the user callback
+    /// receives as the aggregate error. Fails if multi() stops promoting the failing
+    /// subresponse error.
+    auto aggregate_seen_by_callback = [&](std::vector<Error> sub_errors, Error aggregate)
+    {
+        auto response = std::make_shared<ZooKeeperMultiWriteResponse>();
+        response->error = aggregate;
+        for (auto error : sub_errors)
+            response->responses.push_back(error_response(error));
+
+        Error seen = Error::ZOK;
+        auto callback = KeeperOverDispatcher::promotingMultiCallback([&](const MultiResponse & r) { seen = r.error; });
+        callback(response);
+        return seen;
+    };
+
+    /// Failed multi: aggregate ZOK, the failing op carries the real error, the op after
+    /// it carries ZRUNTIMEINCONSISTENCY. The callback must promote the real error.
+    EXPECT_EQ(
+        aggregate_seen_by_callback({Error::ZOK, Error::ZBADVERSION, Error::ZRUNTIMEINCONSISTENCY}, Error::ZOK),
+        Error::ZBADVERSION);
+    /// A fully successful multi stays ZOK.
+    EXPECT_EQ(aggregate_seen_by_callback({Error::ZOK, Error::ZOK}, Error::ZOK), Error::ZOK);
+    /// ZRUNTIMEINCONSISTENCY is never promoted on its own.
+    EXPECT_EQ(aggregate_seen_by_callback({Error::ZRUNTIMEINCONSISTENCY}, Error::ZOK), Error::ZOK);
+    /// An already-set aggregate error is authoritative and left untouched.
+    EXPECT_EQ(aggregate_seen_by_callback({Error::ZBADVERSION}, Error::ZNONODE), Error::ZNONODE);
 }
 
 TEST(KeeperMemorySoftLimitAdmission, ReadsAndRemovesAreNotMemoryIncreasing)

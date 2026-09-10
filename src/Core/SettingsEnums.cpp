@@ -125,7 +125,7 @@ IMPLEMENT_SETTING_ENUM(DateTimeOutputFormat, ErrorCodes::BAD_ARGUMENTS,
      {"unix_timestamp", FormatSettings::DateTimeOutputFormat::UnixTimestamp}})
 
 IMPLEMENT_SETTING_ENUM(IntervalOutputFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"kusto",     FormatSettings::IntervalOutputFormat::Kusto},
+    {{"kusto",   FormatSettings::IntervalOutputFormat::Kusto},
      {"numeric", FormatSettings::IntervalOutputFormat::Numeric}})
 
 IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
@@ -209,7 +209,8 @@ IMPLEMENT_SETTING_ENUM(Dialect, ErrorCodes::BAD_ARGUMENTS,
      {"prql", Dialect::prql},
      {"promql", Dialect::promql},
      {"polyglot", Dialect::polyglot},
-     {"clickhouse_json", Dialect::clickhouse_json}})
+     {"clickhouse_json", Dialect::clickhouse_json},
+     {"trino", Dialect::trino}})
 
 IMPLEMENT_SETTING_ENUM(ParallelReplicasCustomKeyFilterType, ErrorCodes::BAD_ARGUMENTS,
     {{"default", ParallelReplicasCustomKeyFilterType::DEFAULT},
@@ -346,6 +347,13 @@ IMPLEMENT_SETTING_ENUM(
     {{"throw", GroupArrayActionWhenLimitReached::THROW}, {"discard", GroupArrayActionWhenLimitReached::DISCARD}})
 
 IMPLEMENT_SETTING_ENUM(
+    AsynchronousMetricsKeyValuesMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"key_values", AsynchronousMetricsKeyValuesMode::KeyValues},
+     {"legacy_names", AsynchronousMetricsKeyValuesMode::LegacyNames},
+     {"both", AsynchronousMetricsKeyValuesMode::Both}})
+
+IMPLEMENT_SETTING_ENUM(
     IdentifierQuotingStyle,
     ErrorCodes::BAD_ARGUMENTS,
     {{"Backticks", IdentifierQuotingStyle::Backticks},
@@ -417,7 +425,8 @@ IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
-     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
+     {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES},
+     {"with_missing_columns", MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,

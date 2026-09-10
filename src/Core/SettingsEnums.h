@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -324,6 +325,7 @@ enum class Dialect : uint8_t
     promql,
     polyglot,
     clickhouse_json,
+    trino,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -451,6 +453,8 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
     DISCARD
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
+
+DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 

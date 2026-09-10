@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -37,6 +38,7 @@
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -314,6 +316,7 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
+    std::swap(not_null_filters_derived_left, not_null_filters_derived_right);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -644,41 +647,21 @@ void JoinStepLogicalLookup::optimize(const QueryPlanOptimizationSettings & optim
     child_plan.optimize(optimization_settings);
 }
 
-/// When we have an expression like `a AND b`, it can work even when `a` and `b` are non-boolean values,
-/// because the AND operator will implicitly convert them to booleans. The result will be either boolean or nullable.
-/// In some cases we need to split `a` and `b` into separate expressions, but we want to preserve the same
-/// boolean conversion behavior as if they were still part of the original AND expression.
+/// Splitting `a AND b` into separate conditions loses the boolean conversion `AND` applied to each
+/// side, so a non-boolean one has to be converted explicitly to read the same way.
 static JoinActionRef toBoolIfNeeded(JoinActionRef condition)
 {
     const auto & condition_type = condition.getType();
-    auto output_type = removeNullable(condition_type);
-    WhichDataType which_type(output_type);
-    if (which_type.isUInt8())
+    if (WhichDataType(removeNullable(condition_type)).isUInt8())
         return condition;
 
-    /// A `Nothing`-typed condition (e.g. a non-equi predicate over a column of type Nothing, such as
-    /// the result of `ARRAY JOIN []`) cannot be coerced by `AND`: `and(Nothing, true)` stays `Nothing`
-    /// because Nothing is the bottom type. Cast it to a boolean instead. The column has no values, so the
-    /// predicate matches no rows. removeNullable folds Nullable(Nothing) into Nothing as well.
-    if (which_type.isNothing())
-    {
-        DataTypePtr bool_ty = std::make_shared<DataTypeUInt8>();
-        if (isNullableOrLowCardinalityNullable(condition_type))
-            bool_ty = makeNullable(bool_ty);
-        return JoinActionRef::transform({condition}, [&bool_ty](auto & dag, auto && nodes)
-        {
-            return &dag.addCast(*nodes.at(0), bool_ty, {}, nullptr);
-        });
-    }
+    DataTypePtr bool_type = std::make_shared<DataTypeUInt8>();
+    if (isNullableOrLowCardinalityNullable(condition_type))
+        bool_type = makeNullable(bool_type);
 
-    return JoinActionRef::transform({condition}, [](auto & dag, auto && nodes)
+    return JoinActionRef::transform({condition}, [&bool_type](auto & dag, auto && nodes)
     {
-        JoinActionRef::AddFunction function_and(JoinConditionOperator::And);
-        DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-        auto rhs_column = uint8_ty->createColumnConst(0, 1);
-        const auto & rhs_node = dag.addColumn(std::move(rhs_column), uint8_ty, "true");
-        nodes.push_back(&rhs_node);
-        return function_and(dag, nodes);
+        return &dag.addBooleanCondition(*nodes.at(0), bool_type, nullptr);
     });
 }
 
@@ -729,14 +712,21 @@ struct JoinPlanningContext
 {
     NameViewToNodeMapping actions_after_join_map;
     bool is_storage_join{};
+    bool is_prebuilt_hash_join{};
 };
 
+/** Convert the operands of an equality (or ASOF inequality) predicate in the JOIN ON section to a common type.
+  * `allow_conversion_to_subtype` enables the fallback described in `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
+  * It is not applicable to null-safe comparisons, because there NULL matches NULL,
+  * and to ASOF inequalities, because there the order of the values matters, not only their equality.
+  */
 static void predicateOperandsToCommonType(
     JoinActionRef & left_node,
     JoinActionRef & right_node,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
+    bool allow_conversion_to_subtype)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
@@ -760,21 +750,48 @@ static void predicateOperandsToCommonType(
         return;
 
     DataTypePtr common_type;
+    bool cast_to_subtype = false;
     try
     {
         common_type = getLeastSupertype(DataTypes{left_type, right_type});
     }
     catch (Exception & ex)
     {
-        ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-            left_node.getColumnName(), left_type->getName(),
-            right_node.getColumnName(), right_type->getName());
-        throw;
+        if (allow_conversion_to_subtype)
+        {
+            if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
+            {
+                /// A converted key must report a NULL at the top level; see `removeNullableInsideTuple`.
+                subtype = JoinCommon::removeNullableInsideTuple(subtype);
+
+                /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
+                /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
+                /// applies only when the storage key itself is the subtype, so that only the probe side is converted.
+                /// The comparison ignores the `LowCardinality` and `Nullable` wrappers, same as `JoinCommon::checkTypesOfKeys`:
+                /// the hash table serves a probe key that differs from the build key only in these wrappers as is.
+                if (!planning_context.is_prebuilt_hash_join || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*subtype))
+                    common_type = makeNullable(subtype);
+            }
+        }
+
+        if (!common_type)
+        {
+            ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+                left_node.getColumnName(), left_type->getName(),
+                right_node.getColumnName(), right_type->getName());
+            throw;
+        }
+        cast_to_subtype = true;
     }
 
-    auto cast_transform = [&common_type, &planning_context](auto & dag, auto && nodes)
+    auto cast_transform = [&common_type, &planning_context, cast_to_subtype](auto & dag, auto && nodes)
     {
         auto arg = nodes.at(0);
+        /// The nodes in `actions_after_join_map` are plain `CAST`s (from `buildJoinUsingCondition`),
+        /// which wrap the values that are out of the range of the target type instead of turning them into NULL,
+        /// so they cannot be reused as the key conversions for the subtype fallback.
+        if (cast_to_subtype)
+            return &dag.addAccurateCastOrNull(*arg, common_type, {}, nullptr);
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
@@ -797,9 +814,22 @@ static void predicateOperandsToCommonType(
         }
     };
 
-    if (planning_context.is_storage_join)
+    if (planning_context.is_prebuilt_hash_join)
     {
-        if (!right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
+        /// A `Join` table engine keeps the key declared by its storage. Under the subtype fallback
+        /// the check above guarantees that a prebuilt hash table uses the subtype modulo the
+        /// `LowCardinality` and `Nullable` wrappers, so its key must not be rewritten at all.
+        if (!cast_to_subtype && !right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
+            cast_right_node();
+    }
+    else if (planning_context.is_storage_join
+        && (!cast_to_subtype || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type))))
+    {
+        /// A direct dictionary lookup accepts its declared key type for an ordinary promotion or
+        /// a subtype fallback where only the probe needs an accurate conversion. In particular,
+        /// a nullable probe key does not require converting the dictionary key to `Nullable`,
+        /// which would turn it into a derived expression and disable the direct algorithm.
+        if (!removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type)))
             cast_right_node();
     }
     else
@@ -828,8 +858,10 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
 
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
+        predicateOperandsToCommonType(
+            lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors,
+            /* allow_conversion_to_subtype= */ !null_safe_comparison);
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
             /**
@@ -978,7 +1010,11 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     for (size_t i = 0; i < keys.size(); ++i)
     {
         auto & [predicate_op, lhs, rhs] = keys[i];
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
+        /// The subtype fallback is not applicable: the IEJoin key conditions are inequalities,
+        /// where the order of the values matters, not only their equality.
+        predicateOperandsToCommonType(
+            lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors,
+            /* allow_conversion_to_subtype= */ false);
 
         description.operators[i] = predicate_op;
         description.key_names_left.push_back(lhs.getColumnName());
@@ -1406,6 +1442,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     JoinPlanningContext planning_context;
     planning_context.is_storage_join = bool(prepared_join_storage);
+    planning_context.is_prebuilt_hash_join = bool(prepared_join_storage.storage_join);
     for (const auto * node : actions_after_join)
     {
         if (node->type == ActionsDAG::ActionType::ALIAS)
@@ -1498,7 +1535,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
             found_asof_predicate_it = it;
 
-            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors);
+            predicateOperandsToCommonType(
+                lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors,
+                /* allow_conversion_to_subtype= */ false);
 
             used_expressions.push_back(lhs);
             used_expressions.push_back(rhs);
@@ -1507,8 +1546,18 @@ static QueryPlanNode buildPhysicalJoinImpl(
             table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
         }
         if (found_asof_predicate_it == join_expression.end())
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
-                formatJoinCondition(join_expression));
+        {
+            /// The equality predicates have already been taken out of `join_expression` by the loop above,
+            /// so for the common mistake - `ASOF JOIN ... ON l.a = r.a`, with no inequality at all - what is
+            /// left to print is nothing, and the message used to end in ", in .".
+            const auto remaining_condition = formatJoinCondition(join_expression);
+            /// Equality predicates are optional for an ASOF join, so mention them only when there are some.
+            const bool has_equality_keys = table_join_clauses.front().keysCount() != 0;
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "ASOF join requires one inequality predicate (<, <=, > or >=) in the JOIN ON expression{}{}",
+                has_equality_keys ? ", in addition to the equality predicates" : "",
+                remaining_condition.empty() ? "" : fmt::format(", but only found: {}", remaining_condition));
+        }
 
         join_expression.erase(found_asof_predicate_it);
     }
@@ -1525,10 +1574,19 @@ static QueryPlanNode buildPhysicalJoinImpl(
             used_expressions.push_back(left_pre_filter_condition);
         }
 
-        if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
+        /// A `StorageJoin` right side is a prebuilt join read by stored column name rather than a
+        /// stream, so no query-specific filter can be evaluated over it. The other two terms negate
+        /// `build_mixed_join_expression` below, so such a condition becomes a post-join filter.
+        const bool right_condition_is_applied_after_join
+            = prepared_join_storage.storage_join && !is_disjunctive_condition && canPushDownFromOn(join_operator);
+
+        if (!right_condition_is_applied_after_join)
         {
-            table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-            used_expressions.push_back(right_pre_filter_condition);
+            if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
+            {
+                table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+                used_expressions.push_back(right_pre_filter_condition);
+            }
         }
     }
 
@@ -2274,6 +2332,8 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+    result_step->not_null_filters_derived_left = not_null_filters_derived_left;
+    result_step->not_null_filters_derived_right = not_null_filters_derived_right;
 
     return result_step;
 }
