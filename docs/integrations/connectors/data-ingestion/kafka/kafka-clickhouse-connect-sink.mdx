@@ -443,7 +443,7 @@ message TwoRecords {
 }
 ```
 
-From CH version 26.1 onwards, this schema is supported when `allow_experimental_nullable_tuple_type=1` (see [this documentation page](/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
+From ClickHouse version 26.9 onwards, this schema is supported by default. In versions 26.1 to 26.8 it requires the setting `allow_experimental_nullable_tuple_type = 1` (see [this documentation page](/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
 
 ### JSON schema support {#json-schema-support}
 

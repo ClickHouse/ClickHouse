@@ -54,8 +54,8 @@ GTEST_TEST(NestedUtils, collect)
 
 /// An EMPTY sample block (no rows, so no nulls) is what schema planning uses, e.g.
 /// `StorageHive::read`, so the type it yields must equal the one a null-carrying data block yields.
-/// The gtest has no global context, so `allow_nullable_tuple_in_extracted_subcolumns` reads as its
-/// default off: a TUPLE element stays plain, a deeper SCALAR leaf is `Nullable`.
+/// The gtest has no global context, so `allow_nullable_tuple_in_extracted_subcolumns` reads as
+/// disabled: a TUPLE element stays plain, a deeper SCALAR leaf is `Nullable`.
 GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlock)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
@@ -143,8 +143,9 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTupleWithNullRowKeepsPlanned
 }
 
 /// An element DECLARED `Nullable(Tuple(...))` is genuinely nullable, so its real NULL rows must
-/// survive extraction even with `allow_nullable_tuple_in_extracted_subcolumns` off (its default
-/// here), unlike a wrapping synthesized from an outer struct null map, which the setting governs.
+/// survive extraction even with `allow_nullable_tuple_in_extracted_subcolumns` disabled (as it reads
+/// here without a global context), unlike a wrapping synthesized from an outer struct null map, which
+/// the setting governs.
 GTEST_TEST(NestedUtils, extractGenuinelyNullableTupleDescendantStaysNullable)
 {
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
