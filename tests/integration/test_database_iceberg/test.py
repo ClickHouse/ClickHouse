@@ -70,7 +70,6 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
-
 def list_namespaces(started_cluster):
     base_url_local = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}/v1"
     response = requests.get(f"{base_url_local}/namespaces")
