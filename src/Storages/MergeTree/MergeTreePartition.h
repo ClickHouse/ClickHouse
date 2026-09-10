@@ -65,6 +65,14 @@ struct MergeTreePartition
 
     /// Make a modified partition key with substitution from modulo to moduloLegacy. Used in paritionPruner.
     static KeyDescription adjustPartitionKey(const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+
+    /// Same, for a caller that has no metadata snapshot yet because the virtuals such a snapshot would
+    /// carry are what it is computing.
+    static KeyDescription adjustPartitionKey(
+        const KeyDescription & partition_key,
+        const ColumnsDescription & columns,
+        const VirtualColumnsDescription & virtuals,
+        const ContextPtr & context);
 };
 
 }

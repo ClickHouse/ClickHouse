@@ -540,7 +540,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     }
 
     metadata.setColumns(std::move(metadata_columns));
-    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key));
+    /// `partition_key` is the parent's, and a read through this projection materializes the parent's
+    /// partition values, so the produced key is derived from the parent's columns.
+    metadata.setVirtuals(MergeTreeData::createVirtuals(partition_key, columns, query_context));
 
     /// Initialize implicit-minmax skip indices from the effective projection-level MergeTree settings
     /// (defaults from the projection index plus any user-supplied WITH SETTINGS overrides).

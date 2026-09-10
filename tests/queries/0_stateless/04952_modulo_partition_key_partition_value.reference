@@ -1,0 +1,8 @@
+wrong-value	Tuple(Int32)	(-1294967296)
+wrong-value agrees with the part	-1294967296
+reader	Tuple(Int128)	(37528)
+filter	1
+negative	(-1)
+projection	10	(37528)
+widening	Tuple(Int16)	(45)
+narrow	Tuple(Int32)	(528)

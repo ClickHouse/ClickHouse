@@ -784,7 +784,8 @@ MergeTreeData::MergeTreeData(
     , background_moves_assignee(*this, table_id_, BackgroundJobsAssignee::Type::Moving, getContext())
     , background_streaming_assignee(*this, table_id_, BackgroundJobsAssignee::Type::Streaming, getContext())
 {
-    metadata_.setVirtuals(createVirtuals(metadata_.hasPartitionKey() ? &metadata_.partition_key : nullptr));
+    metadata_.setVirtuals(createVirtuals(
+        metadata_.hasPartitionKey() ? &metadata_.partition_key : nullptr, metadata_.columns, getContext()));
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
     const auto settings = getSettings();
@@ -862,7 +863,8 @@ MergeTreeData::MergeTreeData(
     };
 }
 
-VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * partition_key)
+VirtualColumnsDescription MergeTreeData::createVirtuals(
+    const KeyDescription * partition_key, const KeyDescription * produced_partition_key)
 {
     VirtualColumnsDescription desc;
 
@@ -881,13 +883,28 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * p
     desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader, /*deterministic=*/ false);
 
     if (partition_key && partition_key->sample_block.columns() > 0)
-        desc.addEphemeral(PartitionValueColumn::name, PartitionValueColumn::type(partition_key), "Value (a tuple) of a PARTITION BY expression", VirtualsMaterializationPlace::Reader);
+        desc.addEphemeral(
+            PartitionValueColumn::name,
+            PartitionValueColumn::type(*partition_key, produced_partition_key ? *produced_partition_key : *partition_key),
+            "Value (a tuple) of a PARTITION BY expression",
+            VirtualsMaterializationPlace::Reader);
 
     desc.addPersistent(RowExistsColumn::name, RowExistsColumn::type, nullptr, "Persisted mask created by lightweight delete that show whether row exists or is deleted");
     desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "Persisted original number of block that was assigned at insert");
     desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "Persisted original number of row in block that was assigned at insert");
 
     return desc;
+}
+
+VirtualColumnsDescription MergeTreeData::createVirtuals(
+    const KeyDescription * partition_key, const ColumnsDescription & columns, const ContextPtr & local_context)
+{
+    if (!partition_key)
+        return createVirtuals(nullptr);
+
+    const auto produced_partition_key
+        = MergeTreePartition::adjustPartitionKey(*partition_key, columns, createVirtuals(nullptr), local_context);
+    return createVirtuals(partition_key, &produced_partition_key);
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const

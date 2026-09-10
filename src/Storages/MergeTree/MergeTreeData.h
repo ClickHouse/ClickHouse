@@ -1613,7 +1613,15 @@ public:
 
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
-    static VirtualColumnsDescription createVirtuals(const KeyDescription * partition_key);
+    /// `produced_partition_key`, when given, is the key that computes and persists the stored partition
+    /// values, which can differ from the declared `PARTITION BY` (@sa
+    /// `MergeTreePartition::adjustPartitionKey`); `_partition_value` is then typed so it can hold them.
+    static VirtualColumnsDescription createVirtuals(
+        const KeyDescription * partition_key, const KeyDescription * produced_partition_key = nullptr);
+
+    /// Same, deriving the produced key. Use wherever `_partition_value` is materialized from a part.
+    static VirtualColumnsDescription createVirtuals(
+        const KeyDescription * partition_key, const ColumnsDescription & columns, const ContextPtr & local_context);
 
     /// Load/unload primary keys of all data parts
     void loadPrimaryKeys() const;
