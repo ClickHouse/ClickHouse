@@ -37,10 +37,17 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_retry_file_released_by_another_processor(started_cluster):
+@pytest.mark.parametrize("enable_hash_ring_filtering", [0, 1])
+def test_retry_file_released_by_another_processor(
+    started_cluster, enable_hash_ring_filtering
+):
     """
     A file whose `processing` node is held by another processor must stay retriable:
     that node is not final, its owner can release the file without committing it.
+
+    Both claim paths consult the file status cache: the plain one for a single file
+    (`trySetProcessing`) and the batched one of the hash ring mode
+    (`prepareSetProcessingRequests`), so both are checked.
     """
     node = started_cluster.instances["instance"]
 
@@ -64,9 +71,7 @@ def test_retry_file_released_by_another_processor(started_cluster):
         additional_settings={
             "keeper_path": keeper_path,
             "processing_state_cache_ttl_seconds": ttl_seconds,
-            # The plain (non-batched) claim path, which is where the file status
-            # cache is consulted for a single file.
-            "enable_hash_ring_filtering": 0,
+            "enable_hash_ring_filtering": enable_hash_ring_filtering,
             "polling_min_timeout_ms": 100,
             "polling_max_timeout_ms": 1000,
             "polling_backoff_ms": 0,

@@ -31,7 +31,8 @@ ColumnsDescription StorageSystemObjectStorageQueueMetadataCache<type>::getColumn
             "A non-null `processing_by_another_server_time` means that the `Processing` status belongs to a processor of another server"},
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file started"},
         {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file ended"},
-        {"exception", std::make_shared<DataTypeString>(), "Exception which happened during processing"},
+        {"exception", std::make_shared<DataTypeString>(), "Exception which happened during processing. "
+            "Always the one of the last attempt of this server, never the one which keeper stores for the file"},
         {"processing_by_another_server_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
             "Non-null if the `Processing` status was not set by a processor of this server, but observed in keeper, "
             "which means that the file is being processed elsewhere: the time of that observation. "

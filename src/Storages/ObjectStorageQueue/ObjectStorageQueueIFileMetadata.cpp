@@ -55,31 +55,53 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapse
     get_object_time_ms = elapsed_ms;
 }
 
-void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
+void ObjectStorageQueueIFileMetadata::FileStatus::resetAttempt()
 {
-    state = FileStatus::State::Processing;
-    processing_start_time = now();
-    foreign_processing_time = 0;
+    processing_start_time = {};
     processing_end_time = {};
     processed_rows = 0;
+    foreign_processing_time = 0;
     std::lock_guard lock(last_exception_mutex);
     last_exception = {};
 }
 
-void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor()
+void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
-    foreign_processing_time = now();
+    resetAttempt();
+    processing_start_time = now();
     state = FileStatus::State::Processing;
+}
+
+void ObjectStorageQueueIFileMetadata::FileStatus::onStateObservedInKeeper(State observed_state)
+{
+    if (observed_state == FileStatus::State::Processing)
+    {
+        /// Keep the data of the last attempt of this server (processed rows, timings, exception):
+        /// the file is being processed elsewhere, so there is nothing to show instead of it,
+        /// and `foreign_processing_time` tells the two apart.
+        foreign_processing_time = now();
+        state = observed_state;
+        return;
+    }
+
+    /// The file was committed as `Processed` or `Failed` by whoever held it. A state we did
+    /// not have before is not what the last attempt of this server ended with, so neither
+    /// its data nor the marker of the state it replaces may be shown next to it.
+    if (state.exchange(observed_state) != observed_state)
+        resetAttempt();
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
+    /// This server committed the file, so it is not held by anyone anymore.
+    foreign_processing_time = 0;
     state = FileStatus::State::Processed;
     chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
+    foreign_processing_time = 0;
     state = FileStatus::State::Failed;
     if (!processing_end_time)
         setProcessingEndTime();
@@ -95,11 +117,6 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
     processing_end_time = {};
     processed_rows = 0;
     retries = 0;
-}
-
-void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
-{
-    state = state_;
 }
 
 std::string ObjectStorageQueueIFileMetadata::FileStatus::getException() const
@@ -335,17 +352,20 @@ bool ObjectStorageQueueIFileMetadata::hasNonProcessableState() const
 
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
+    /// An optimization for local parallel processing.
+    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
+    if (!processing_lock.try_lock())
+        return {};
+
+    /// Under the lock, as `prepareSetProcessingRequests` does: a processor of this server
+    /// takes the file and sets its state while holding the lock, so a check made before
+    /// taking it can miss that and go on to ask keeper about a file we are processing.
     if (hasNonProcessableState())
     {
         LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
                  path, file_status->state.load(), file_status->retries.load(), max_loading_retries);
         return false;
     }
-
-    /// An optimization for local parallel processing.
-    std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
-    if (!processing_lock.try_lock())
-        return {};
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
@@ -405,10 +425,7 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
         if (file_state.has_value() && file_state.value() != FileStatus::State::None)
         {
             LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state.value());
-            if (file_state.value() == FileStatus::State::Processing)
-                file_status->onProcessingByAnotherProcessor();
-            else
-                file_status->updateState(file_state.value());
+            file_status->onStateObservedInKeeper(file_state.value());
         }
     }
 }

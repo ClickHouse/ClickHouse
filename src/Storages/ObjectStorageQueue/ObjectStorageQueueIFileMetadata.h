@@ -34,13 +34,13 @@ public:
         /// Set how much time it took to list this object from s3.
         void setGetObjectTime(size_t elapsed_ms);
         void onProcessing();
-        /// Called when keeper says that the file is being processed by a processor
-        /// which does not share this file status, i.e. one of another server.
-        void onProcessingByAnotherProcessor();
+        /// Called with the state which keeper has for the file, when this server failed to take
+        /// it for processing. The state was not set through this file status, but a `Failed`
+        /// state can still come from a node which this server created.
+        void onStateObservedInKeeper(State observed_state);
         void onProcessed();
         void reset();
         void onFailed(const std::string & exception);
-        void updateState(State state_);
 
         std::string getException() const;
 
@@ -53,11 +53,15 @@ public:
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
         std::atomic<UInt64> get_object_time_ms = 0;
-        /// If the `Processing` state was not set by a processor of this table, but observed
-        /// in keeper, the moment of that observation. Zero if the state is owned locally.
+        /// Non-zero only while `state` is a `Processing` state which was observed in keeper
+        /// instead of being set by a processor of this server: the time of that observation.
         std::atomic<time_t> foreign_processing_time = 0;
 
     private:
+        /// Forget everything the previous state left behind: the data of the processing
+        /// attempt of this server (rows, timings, exception) and `foreign_processing_time`.
+        void resetAttempt();
+
         mutable std::mutex last_exception_mutex;
         std::string last_exception;
     };
