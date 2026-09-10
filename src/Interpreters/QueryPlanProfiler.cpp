@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Stopwatch.h>
 #include <Core/Settings.h>
@@ -74,10 +75,24 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
     if (!settings[Setting::log_query_plans])
         return false;
 
+    /// From here on the query asked for its plan, so every remaining way of saying no leaves the
+    /// `query_plan` column empty with nothing on the surface to explain it. Say why. The reasons
+    /// below are the ones a user can act on; the two above are not, and the secondary-query case is
+    /// by design -- the initial query logs the plan for all of them -- so none of those speak.
+    const auto declined = [](const char * reason)
+    {
+        LOG_TRACE(
+            getLogger("QueryPlanProfiler"),
+            "Not storing the query plan in 'system.query_log' even though setting `log_query_plans`"
+            " is true, because {}.",
+            reason);
+        return false;
+    };
+
     /// The plan is stored on the `system.query_log` row, so without that row there is nowhere to
     /// put it and capturing would be pure cost.
     if (!settings[Setting::log_queries])
-        return false;
+        return declined("setting `log_queries` is false, so the query writes no row to store it on");
 
     if (context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
@@ -86,9 +101,12 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
     /// decided before the interpreter exists: that is the last moment at which it still reaches
     /// the planner.
     if (!isSupportedQuery(ast))
-        return false;
+        return declined("only `SELECT` queries have their plan captured");
 
-    return settings[Setting::allow_experimental_analyzer];
+    if (!settings[Setting::allow_experimental_analyzer])
+        return declined("setting `allow_experimental_analyzer` is false and the old analyzer cannot capture plans");
+
+    return true;
 }
 
 void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
