@@ -11,14 +11,14 @@
     <fill_query>
         INSERT INTO promql_set_operators_and_ts (metric_name, tags, time_series)
         SELECT
-            if(number &lt; 4000, 'foo', 'bar'),
-            map('instance', toString(number % 4000)),
-            arrayMap(step -> (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000), range(300))
-        FROM numbers_mt(8000)
+            if(number &lt; 100000, 'foo', 'bar'),
+            map('instance', toString(number % 100000)),
+            arrayMap(step -> (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000), range(30))
+        FROM numbers_mt(200000)
     </fill_query>
 
-    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_and_ts', 'sum by (instance) (last_over_time(foo[10])) and sum by (instance) (last_over_time(bar[10]))', 100, 3090, 10) FORMAT Null</query>
-    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_and_ts', 'sum by (instance) (last_over_time(foo[10])) and on(instance) sum by (instance) (last_over_time(bar[10]))', 100, 3090, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_and_ts', 'sum by (instance) (last_over_time(foo[10])) and sum by (instance) (last_over_time(bar[10]))', 100, 390, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_and_ts', 'sum by (instance) (last_over_time(foo[10])) and on(instance) sum by (instance) (last_over_time(bar[10]))', 100, 390, 10) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_set_operators_and_ts</drop_query>
 </test>
