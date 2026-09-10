@@ -297,12 +297,7 @@ def test_v3_deletion_vectors_table_function(
         run_on_cluster=run_on_cluster,
         table_function=True)
 
-    # Must read data files; SELECT count() uses metadata optimization and skips delete transforms.
-    default_behavior_error = instance.query_and_get_error(f"SELECT min(id) FROM {expression}")
-    assert "Iceberg v3 deletion vectors are not enabled. Set allow_iceberg_deletion_vectors = 1" in default_behavior_error
-
     settings = {
-        "allow_iceberg_deletion_vectors": 1,
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 90))
@@ -329,12 +324,9 @@ def test_v3_deletion_vectors_named_local_table(started_cluster_iceberg_with_spar
         started_cluster_iceberg_with_spark,
         format_version=3)
 
-    settings = {
-        "allow_iceberg_deletion_vectors": 1,
-    }
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(10, 90))
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 80
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE id < 15", settings=settings)) == 5
+    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}")) == list(range(10, 90))
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE id < 15")) == 5
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
@@ -360,7 +352,6 @@ def test_v3_deletion_vectors_reject_clickhouse_mutations(started_cluster_iceberg
         format_version=3)
 
     settings = {
-        "allow_iceberg_deletion_vectors": 1,
         "allow_insert_into_iceberg": 1,
     }
     for mutation in [
@@ -426,11 +417,8 @@ def test_v3_deletion_vectors_apply_only_to_referenced_data_file(started_cluster_
         format_version=3,
         table_function=True)
 
-    settings = {
-        "allow_iceberg_deletion_vectors": 1,
-    }
-    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 200))
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 100", settings=settings)) == 100
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(10, 200))
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE id >= 100")) == 100
 
 
 @pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
@@ -455,7 +443,6 @@ def test_mixed_v2_position_deletes_and_v3_deletion_vectors(started_cluster_icebe
         table_function=True)
 
     settings = {
-        "allow_iceberg_deletion_vectors": 1,
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 90))
@@ -507,7 +494,6 @@ def test_v3_deletion_vectors_trivial_count(started_cluster_iceberg_with_spark):
     expression = upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME)
 
     settings = {
-        "allow_iceberg_deletion_vectors": 1,
         "optimize_trivial_count_query": 1,
     }
     assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == 80
@@ -528,7 +514,6 @@ def test_v3_deletion_vectors_partitioned_table(started_cluster_iceberg_with_spar
     expression = upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME)
 
     settings = {
-        "allow_iceberg_deletion_vectors": 1,
         "use_iceberg_partition_pruning": 1,
     }
     expected = [x for x in range(0, 100) if x % 7 != 0]
@@ -554,16 +539,13 @@ def test_v3_deletion_vectors_time_travel(started_cluster_iceberg_with_spark):
 
     expression = upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME)
 
-    settings = {
-        "allow_iceberg_deletion_vectors": 1,
-    }
     assert get_array(instance.query(
-        f"SELECT id FROM {expression} SETTINGS iceberg_snapshot_id = {snapshot_before_delete}", settings=settings
+        f"SELECT id FROM {expression} SETTINGS iceberg_snapshot_id = {snapshot_before_delete}"
     )) == list(range(0, 50))
     assert get_array(instance.query(
-        f"SELECT id FROM {expression} SETTINGS iceberg_snapshot_id = {snapshot_after_delete}", settings=settings
+        f"SELECT id FROM {expression} SETTINGS iceberg_snapshot_id = {snapshot_after_delete}"
     )) == list(range(10, 50))
-    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(10, 50))
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(10, 50))
 
 
 def test_v3_deletion_vectors_after_update_and_merge(started_cluster_iceberg_with_spark):
@@ -579,11 +561,8 @@ def test_v3_deletion_vectors_after_update_and_merge(started_cluster_iceberg_with
 
     expression = upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME)
 
-    settings = {
-        "allow_iceberg_deletion_vectors": 1,
-    }
-    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(0, 40))
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE data = 'updated'", settings=settings)) == 10
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(0, 40))
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE data = 'updated'")) == 10
 
     spark.sql(f"CREATE TABLE {SOURCE_NAME} (id bigint, data string) USING iceberg")
     spark.sql(f"INSERT INTO {SOURCE_NAME} select id, 'merged' from range(35, 45)")
@@ -596,9 +575,9 @@ def test_v3_deletion_vectors_after_update_and_merge(started_cluster_iceberg_with
     )
     upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME)
 
-    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(0, 45))
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE data = 'merged'", settings=settings)) == 10
-    assert int(instance.query(f"SELECT count() FROM {expression} WHERE data = 'updated'", settings=settings)) == 10
+    assert get_array(instance.query(f"SELECT id FROM {expression}")) == list(range(0, 45))
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE data = 'merged'")) == 10
+    assert int(instance.query(f"SELECT count() FROM {expression} WHERE data = 'updated'")) == 10
 
     spark.sql(f"DROP TABLE {SOURCE_NAME}")
 
@@ -620,7 +599,6 @@ def test_v3_deletion_vectors_large_cardinality(started_cluster_iceberg_with_spar
     expression = upload_and_get_v3_table_function(started_cluster_iceberg_with_spark, TABLE_NAME, storage_type="s3")
 
     settings = {
-        "allow_iceberg_deletion_vectors": 1,
         "use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps,
     }
     assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == 50000

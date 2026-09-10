@@ -27,14 +27,12 @@
 
 namespace DB::Setting
 {
-extern const SettingsBool allow_iceberg_deletion_vectors;
 extern const SettingsNonZeroUInt64 max_block_size;
 }
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
-extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace DB::Iceberg
@@ -62,12 +60,6 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
 
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
-    if (iceberg_object_info->info.deletion_vector.has_value()
-        && !context->getSettingsRef()[Setting::allow_iceberg_deletion_vectors].value)
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "Iceberg v3 deletion vectors are not enabled. Set allow_iceberg_deletion_vectors = 1.");
-
     /// Create filter on the data object to get interested rows
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
     ASTPtr where_ast = makeASTFunction(
