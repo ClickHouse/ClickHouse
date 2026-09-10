@@ -1,0 +1,7 @@
+rows	100
+the mutation is interrupted mid-swap: 1
+the replacement is staged and the window is marked: mut.bin mut.commit 
+the rows the mutation kept are there	50	50	99
+and nothing is left staged: 0
+after a mutation that completes	25	75	99
+and after a reload	25	75	99

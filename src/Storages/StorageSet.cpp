@@ -272,6 +272,32 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 }
 
 
+void StorageSetOrJoinBase::finishInterruptedMutation()
+{
+    if (!disk->existsFile(path + mutation_commit_file_name))
+        return;
+
+    if (disk->existsFile(path + mutation_data_file_name))
+    {
+        /// The replacement is still staged, so the old files - however many of them are left - are
+        /// the ones the mutation was in the middle of removing, and the staged file holds the rows
+        /// it kept. Finish the swap.
+        LOG_INFO(getLogger("StorageSetOrJoinBase"), "Finishing the mutation of {} that was interrupted", path);
+
+        std::vector<std::string> files;
+        disk->listFiles(path, files);
+        for (const auto & file_name : files)
+        {
+            if (file_name.ends_with(".bin"))
+                disk->removeFileIfExists(path + file_name);
+        }
+
+        disk->replaceFile(path + mutation_data_file_name, path + "1.bin");
+    }
+
+    disk->removeFileIfExists(path + mutation_commit_file_name);
+}
+
 void StorageSetOrJoinBase::restore()
 {
     if (!disk->existsDirectory(fs::path(path) / "tmp"))
@@ -279,6 +305,8 @@ void StorageSetOrJoinBase::restore()
         disk->createDirectories(fs::path(path) / "tmp");
         return;
     }
+
+    finishInterruptedMutation();
 
     static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
