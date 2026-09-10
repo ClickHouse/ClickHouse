@@ -57,7 +57,10 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
         auto [node, chain_root] = stack.back();
         stack.pop_back();
 
-        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        /// Only a read that announces to the coordinator has a mode to agree on. A read the fragment
+        /// performs entirely on this node - a small joined table, say - is nobody's business but this
+        /// replica's, and restricting it would cost an ordering for nothing.
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()); reading && reading->isParallelReadingFromReplicas())
             reading->restrictFixedColumns(QueryPlanOptimizations::collectFixedColumnNames(*chain_root));
 
         for (size_t i = 0; i < node->children.size(); ++i)
