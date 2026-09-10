@@ -558,10 +558,10 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
                     for (size_t row = 0; row < num_rows; ++row)
                         did_not_fit_data[row] = null_after_cast[row] && !(source_nullable && source_nullable->isNullAt(row));
 
-                    auto original_null_map = source_nullable
+                    ColumnPtr original_null_map = source_nullable
                         ? source_nullable->getNullMapColumnPtr()
                         : ColumnUInt8::create(num_rows, UInt8(0));
-                    result = ColumnNullable::create(casted_nullable.getNestedColumnPtr(), std::move(original_null_map));
+                    result = ColumnNullable::create(casted_nullable.getNestedColumnPtr(), original_null_map);
                     add_non_member_rows(std::move(did_not_fit));
                 }
                 else
