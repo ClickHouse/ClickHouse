@@ -145,11 +145,8 @@ public:
         settings_changes = std::move(settings_changes_);
     }
 
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
+    /// Set table expression modifiers and update the storage snapshot metadata accordingly
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
     QueryTreeNodeType getNodeType() const override
     {

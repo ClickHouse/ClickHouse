@@ -15,9 +15,7 @@ CREATE TABLE test (v Variant(UInt64, String), d Dynamic) ENGINE = MergeTree ORDE
 INSERT INTO test VALUES (42, 42), ('42', '42');
 -- A toString around a Variant key is kept, not unwrapped to the raw Variant.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT v FROM test LIMIT 1 BY toString(v);
-SELECT __table1.v AS v
-FROM default.test AS __table1
-LIMIT _CAST(1, \'UInt64\') BY toString(__table1.v)
+SELECT __table1.v AS v\nFROM default.test AS __table1\nLIMIT _CAST(1, \'UInt64\') BY toString(__table1.v)
 -- The two distinct Variant values share the string '42', so keeping toString(v) groups them into one
 -- partition. The result is the same with the optimization on and off.
 SELECT count() FROM (SELECT v FROM test LIMIT 1 BY toString(v));
@@ -26,9 +24,7 @@ SELECT count() FROM (SELECT v FROM test LIMIT 1 BY toString(v)) SETTINGS optimiz
 1
 -- The same guard applies to a Dynamic key.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT d FROM test LIMIT 1 BY toString(d);
-SELECT __table1.d AS d
-FROM default.test AS __table1
-LIMIT _CAST(1, \'UInt64\') BY toString(__table1.d)
+SELECT __table1.d AS d\nFROM default.test AS __table1\nLIMIT _CAST(1, \'UInt64\') BY toString(__table1.d)
 SELECT count() FROM (SELECT d FROM test LIMIT 1 BY toString(d));
 1
 SELECT count() FROM (SELECT d FROM test LIMIT 1 BY toString(d)) SETTINGS optimize_injective_functions_in_limit_by = 0;

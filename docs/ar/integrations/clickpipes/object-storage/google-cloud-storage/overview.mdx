@@ -44,7 +44,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يفترض GCS ClickPipe أن الملفات تُضاف إلى الحاوية بترتيب معجمي، ويعتمد على هذا الترتيب الضمني لإدخال الملفات بشكل تسلسلي. وهذا يعني أن أي ملف جديد **يجب** أن يكون أكبر معجميًا من آخر ملف تم إدخاله. على سبيل المثال، ستُدخَل الملفات المسماة `file1`، `file2`، و `file3` بشكل تسلسلي، ولكن إذا أُضيف `file 0` جديد إلى الحاوية، فسيتم **تجاهله** لأن اسم الملف ليس أكبر معجميًا من آخر ملف تم إدخاله.
 
-في هذا الوضع، يُجري GCS ClickPipe تحميلًا أوليًا لكل **الملفات** في المسار المحدد، ثم يفحص الملفات الجديدة على فاصل زمني قابل للتهيئة (افتراضيًا، كل 30 ثانية). **لا يمكن** بدء الإدخال من ملف محدد أو من نقطة زمنية معينة — إذ ستقوم ClickPipes دائمًا بتحميل جميع الملفات الموجودة في المسار المحدد.
+في هذا الوضع، يُجري GCS ClickPipe تحميلًا أوليًا لكل **الملفات** في المسار المحدد، ثم يفحص الملفات الجديدة على فاصل زمني قابل للتهيئة (افتراضيًا، كل 30 ثانية). لبدء الإدخال المستمر بعد ملف محدد، هيّئ **البدء بعد**. ستتخطى ClickPipes الملفات التي تكون أقل من القيمة المُهيأة أو مساوية لها معجميًا، وتتابع إدخال الملفات الأحدث من تلك النقطة.
 
 <div id="continuous-ingestion-any-order">
   #### أي ترتيب
@@ -60,7 +60,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   الوضع غير المرتب **غير** مدعوم للحاويات العامة. ويتطلب مصادقة **حساب الخدمة** واشتراك [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) متصلًا بالحاوية.
 </Note>
 
-في هذا الوضع، يجري GCS ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يستمع إلى إشعارات `OBJECT_FINALIZE` عبر اشتراك Pub/Sub التي تطابق المسار المحدد. سيتم **تجاهل** أي رسالة لملف تمت رؤيته سابقًا، أو لملف لا يطابق المسار، أو لحدث من نوع مختلف. **لا يمكن** بدء الإدخال من ملف محدد أو من نقطة زمنية معينة — إذ سيحمّل ClickPipes دائمًا جميع الملفات في المسار المحدد.
+في هذا الوضع، يجري GCS ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يستمع إلى إشعارات `OBJECT_FINALIZE` عبر اشتراك Pub/Sub التي تطابق المسار المحدد. سيتم **تجاهل** أي رسالة لملف تمت رؤيته سابقًا، أو لملف لا يطابق المسار، أو لحدث من نوع مختلف. لإدخال الملفات التي يتم تسليمها عبر الاشتراك فقط، فعّل **تخطي التحميل الأولي**. عند تفعيله، يتخطى ClickPipes الفحص الأولي للملفات الموجودة في المسار المحدد ويعالج فقط الملفات التي يتم تسليمها عبر اشتراك Pub/Sub.
 
 <div id="file-pattern-matching">
   ### مطابقة أنماط الملفات
@@ -165,9 +165,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### الوصول إلى الشبكة
 </div>
 
-تستخدم ClickPipes الخاصة بـ GCS مسارين منفصلين للشبكة، أحدهما لاكتشاف البيانات الوصفية والآخر لاستيعاب البيانات: خدمة ClickPipes وخدمة ClickHouse Cloud، على التوالي. إذا كنت تريد تهيئة طبقة إضافية من أمان الشبكة (على سبيل المثال، لأسباب تتعلق بالامتثال)، **فيجب تهيئة الوصول إلى الشبكة لكلا المسارين**.
+تستخدم GCS ClickPipe مسارين منفصلين للشبكة، أحدهما لاكتشاف البيانات الوصفية والآخر لاستيعاب البيانات: خدمة ClickPipes وخدمة ClickHouse Cloud، على التوالي. إذا كنت تريد تهيئة طبقة إضافية من أمان الشبكة (على سبيل المثال، لأسباب تتعلق بالامتثال)، **فيجب تهيئة الوصول إلى الشبكة لكلا المسارين**.
 
-* بالنسبة إلى **التحكم في الوصول المستند إلى IP**، يجب أن تسمح [قواعد تصفية IP](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) الخاصة بحاوية GCS لديك بعناوين IP الثابتة الخاصة بمنطقة خدمة ClickPipes والمُدرجة [هنا](/ar/integrations/clickpipes/home#list-of-static-ips)، وكذلك [عناوين IP الثابتة](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) الخاصة بخدمة ClickHouse Cloud. للحصول على عناوين IP الثابتة الخاصة بمنطقة ClickHouse Cloud لديك، افتح الطرفية وشغّل:
+* بالنسبة إلى **التحكم بالوصول المستند إلى IP**، يجب أن تسمح [قواعد تصفية IP](https://docs.cloud.google.com/storage/docs/ip-filtering-overview) الخاصة بحاوية GCS لديك بعناوين IP الثابتة الخاصة بمنطقة خدمة ClickPipes والمُدرجة [هنا](/ar/integrations/clickpipes/networking/static-ips)، وكذلك [عناوين IP الثابتة](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) الخاصة بخدمة ClickHouse Cloud. للحصول على عناوين IP الثابتة الخاصة بمنطقة ClickHouse Cloud لديك، افتح الطرفية وشغّل:
 
   ```bash
   # استبدل <your-region> بمنطقة ClickHouse Cloud الخاصة بك
@@ -180,18 +180,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة استخدامك تتطلب مزيدًا من الضبط الدقيق، فيمكنك تعديل الإعدادات التالية:
 
-| Setting                              | Default value | Description                                                                                                                                   |
-| ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB          | عدد البايتات المطلوب معالجتها في دفعة insert واحدة.                                                                                           |
-| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات المطلوب معالجتها في دفعة insert واحدة.                                                                               |
-| `Max threads`                        | auto(3)       | [الحد الأقصى لعدد سلاسل التنفيذ المتزامنة](/ar/reference/settings/session-settings#max_threads) لمعالجة الملفات.                              |
-| `Max insert threads`                 | 1             | [الحد الأقصى لعدد سلاسل تنفيذ insert المتزامنة](/ar/reference/settings/session-settings#max_insert_threads) لمعالجة الملفات.                  |
-| `Min insert block size bytes`        | 1GB           | [الحد الأدنى لحجم البايتات في الكتلة](/ar/reference/settings/session-settings#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.         |
-| `Max download threads`               | 4             | [الحد الأقصى لعدد سلاسل تنفيذ التنزيل المتزامنة](/ar/reference/settings/session-settings#max_download_threads).                               |
-| `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفترة الانتظار قبل إدراج البيانات في عنقود ClickHouse.                                                                       |
-| `Parallel distributed insert select` | 2             | [إعداد Parallel distributed insert select](/ar/reference/settings/session-settings#parallel_distributed_insert_select).                       |
-| `Parallel view processing`           | false         | ما إذا كان سيتم تمكين الدفع إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عقد متعددة.                                                                                         |
+| Setting                              | Default value | Description                                                                                                                                            |
+| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Max insert bytes`                   | 10GB          | عدد البايتات المطلوب معالجتها في دفعة إدراج واحدة.                                                                                                     |
+| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات المطلوب معالجتها في دفعة إدراج واحدة.                                                                                         |
+| `Max threads`                        | auto(3)       | [الحد الأقصى لعدد سلاسل التنفيذ المتزامنة](/ar/reference/settings/session-settings/max-threads#max_threads) لمعالجة الملفات.                           |
+| `Max insert threads`                 | 1             | [الحد الأقصى لعدد سلاسل تنفيذ إدراج المتزامنة](/ar/reference/settings/session-settings/max-insert#max_insert_threads) لمعالجة الملفات.                 |
+| `Min insert block size bytes`        | 1GB           | [الحد الأدنى لحجم البايتات في الكتلة](/ar/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.       |
+| `Max download threads`               | 4             | [الحد الأقصى لعدد سلاسل تنفيذ التنزيل المتزامنة](/ar/reference/settings/session-settings/max-download#max_download_threads).                           |
+| `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفترة الانتظار قبل إدراج البيانات في عنقود ClickHouse.                                                                                |
+| `البدء بعد`                          | None          | للإدخال المستمر المرتب، يتخطى الملفات التي تسبق اسم الملف أو المسار المحدد أو تساويه وفق الترتيب المعجمي.                                            |
+| `تخطي التحميل الأولي`                | false         | للإدخال المستمر غير المرتب، يتخطى الفحص الأولي للملفات الموجودة ويعالج فقط إشعارات الكائنات من اشتراك Pub/Sub المُكوَّن.                             |
+| `Parallel distributed insert select` | 2             | [إعداد Parallel distributed insert select](/ar/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                       |
+| `Parallel view processing`           | false         | ما إذا كان سيتم تمكين الدفع إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings/parallel#parallel_view_processing). |
+| `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عقد متعددة.                                                                                                  |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة لـ ClickPipes" size="lg" border />
 

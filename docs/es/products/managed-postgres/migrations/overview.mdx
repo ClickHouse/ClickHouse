@@ -3,7 +3,7 @@ slug: /cloud/managed-postgres/migrations/overview
 sidebarTitle: 'Descripción general'
 title: 'Migración de datos a ClickHouse Managed Postgres'
 description: 'Compare las cuatro opciones de migración a ClickHouse Managed Postgres y elija la que mejor se adapte a su base de datos de origen y a sus requisitos de tiempo de inactividad.'
-keywords: ['managed postgres', 'migración', 'migración de postgres', 'clickpipes', 'peerdb', 'pg_restore', 'replicación lógica']
+keywords: ['managed postgres', 'migración', 'migración de postgres', 'clickpipes', 'peerdb', 'pg_dump', 'pg_restore', 'replicación lógica']
 doc_type: 'guide'
 ---
 
@@ -11,7 +11,7 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-overview-beta" />
 
-Puedes migrar a Managed Postgres de cuatro maneras distintas. La opción más adecuada
+Puedes migrar a ClickHouse Managed Postgres de cuatro maneras distintas. La opción más adecuada
 depende de si necesitas replicación continua, del origen desde el que
 estás migrando y de cuánto tiempo de inactividad puede tolerar tu aplicación durante
 el cambio.
@@ -19,9 +19,9 @@ el cambio.
 | Método                                                                                     | Replicación continua (CDC) | Dónde se ejecuta             | Ideal para                                                                                         |
 | ------------------------------------------------------------------------------------------ | -------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------- |
 | [ClickPipes](/es/products/managed-postgres/migrations/clickpipes)                             | Sí                         | consola de ClickHouse Cloud  | La mayoría de las migraciones: asistente guiado con carga inicial y CDC listos para usar           |
-| [PeerDB](/es/products/managed-postgres/migrations/peerdb)                                     | Sí                         | Self-hosted (Docker)         | Orígenes o flujos de trabajo que no cubre la UI de ClickPipes                                      |
+| [PeerDB](/es/products/managed-postgres/migrations/peerdb)                                     | Sí                         | Autohospedado (Docker)       | Orígenes o flujos de trabajo que no cubre la UI de ClickPipes                                      |
 | [pg&#95;dump and pg&#95;restore](/es/products/managed-postgres/migrations/pg_dump-pg_restore) | No                         | Tu máquina local             | Migraciones puntuales de datasets pequeños o estáticos donde el tiempo de inactividad es aceptable |
-| [replicación lógica](/es/products/managed-postgres/migrations/logical-replication)           | Sí                         | Postgres de origen y destino | Control directo sobre la replicación nativa de Postgres, sin herramientas de terceros              |
+| [replicación lógica](/es/products/managed-postgres/migrations/logical-replication)            | Sí                         | Postgres de origen y destino | Control directo sobre la replicación nativa de Postgres, sin herramientas de terceros              |
 
 <div id="clickpipes">
   ## ClickPipes
@@ -80,4 +80,4 @@ cubren errores habituales y los pasos de recuperación.
   ## Migración desde Supabase
 </div>
 
-Si estás migrando desde Supabase, consulta la [guía de migración de Supabase a Managed Postgres](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) para ver un procedimiento paso a paso.
+Si estás migrando desde Supabase, consulta la [guía de migración de Supabase a ClickHouse Managed Postgres](https://github.com/iskakaushik/supa-auth-migrate/blob/main/MIGRATION.md) para ver un procedimiento paso a paso.

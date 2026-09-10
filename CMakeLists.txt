@@ -123,6 +123,17 @@ add_library(global-libs INTERFACE)
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
 
+option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
+if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)
+    set (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN "${CMAKE_BINARY_DIR}/SilkThreadLocalStorageSanitizerPass.so")
+    execute_process (COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}" bash "${CMAKE_SOURCE_DIR}/utils/silk-thread-local-storage-sanitizer/build.sh" "${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}" COMMAND_ERROR_IS_FATAL ANY)
+endif ()
+if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
+    add_compile_definitions (SILK_THREAD_LOCAL_STORAGE_SANITIZER=1)
+endif ()
+
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
@@ -148,6 +159,12 @@ set (COMPILER_SUPPORTS_GZ_ZLIB OFF)
 if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
     set (COMPILER_SUPPORTS_GZ_ZLIB ON)
 endif ()
+
+# Has to precede block_build_time_checks.cmake. `enable_language(CUDA)` runs CMake's own
+# compiler test through `try_compile`, and `FindCUDAToolkit` reaches `find_package(Threads)`,
+# which probes with `check_c_source_compiles`. Both are blocked below, so CUDA gets enabled
+# here for the same reason `project()` enables C/CXX/ASM before the guard is installed.
+include (cmake/cuda.cmake)
 
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
@@ -568,6 +585,8 @@ elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
+elseif (OS_WASM)
+    include(cmake/wasm/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -629,6 +648,15 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
 endif ()
 
+# Full RELRO (relocation read-only): '-z now' resolves all dynamic relocations at startup and '-z relro'
+# then maps the global offset table read-only, so an arbitrary write cannot redirect a call through it.
+# Resolving everything at startup costs nothing here because we link dynamically only against libc
+# and we forbid dlopen (see programs/main.cpp).
+# Not on Darwin: ld64 does not accept '-z' options.
+if (NOT OS_DARWIN)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+endif ()
+
 if (ENABLE_TESTS)
     message (STATUS "Unit tests are enabled")
 else()
@@ -660,6 +688,11 @@ function (add_native_target TARGET)
 endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+# We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
+if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)
+    message (FATAL_ERROR "SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN is set, but silk is not built in this configuration (disable with -DENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER=OFF)")
+endif ()
 
 # We can only include XRay flags and defines once we know that we're building LLVM
 if (ENABLE_XRAY)
@@ -760,7 +793,16 @@ if (FUZZER)
         if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main" OR target MATCHES ".*isal.*"))
             get_target_property(target_type ${target} TYPE)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
-                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                # Targets compiled with -fno-sanitize=all must never be instrumented:
+                # a later -fsanitize=fuzzer-no-link overrides it and re-enables
+                # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
+                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
+                # runs before any coverage runtime exists, so every executable would
+                # crash at startup.
+                get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
+                if (NOT target_compile_options MATCHES "-fno-sanitize=all")
+                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
+                endif()
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")
