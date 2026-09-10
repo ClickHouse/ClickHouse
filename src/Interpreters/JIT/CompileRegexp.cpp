@@ -712,7 +712,8 @@ RegexpJITMatcher getRegexpJITMatcher(
 
     /// A compiled matcher only pays off if the compiled-expression cache hands it to the next call: with
     /// no cache every call would pay a full LLVM compile under one process-wide lock. Stay on RE2.
-    if (!CompiledExpressionCacheFactory::instance().tryGetCache())
+    auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache();
+    if (!compiled_expression_cache)
         return {};
 
     ParseFlags flags;
@@ -740,21 +741,13 @@ RegexpJITMatcher getRegexpJITMatcher(
     std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
-        if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+        auto [entry, _] = compiled_expression_cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
         {
-            auto [entry, _] = cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
-            {
-                auto compiled = compileMatcher(*program);
-                compiled_here = true;
-                return compiled;
-            });
-            holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
-        }
-        else
-        {
-            holder = compileMatcher(*program);
+            auto compiled = compileMatcher(*program);
             compiled_here = true;
-        }
+            return compiled;
+        });
+        holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
     }
     catch (...)
     {
