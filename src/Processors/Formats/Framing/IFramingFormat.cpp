@@ -15,6 +15,11 @@
 #include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 
+namespace ProfileEvents
+{
+    extern const Event FramingServiceBytes;
+}
+
 namespace DB
 {
 
@@ -29,6 +34,30 @@ namespace FailPoints
     extern const char framing_throw_during_payload_reset[];
     extern const char framing_pump_logs_throw[];
     extern const char framing_exception_packet_throw[];
+}
+
+namespace
+{
+
+/// Counts the bytes a framed service packet (progress, log, profile_events) adds to the response, so
+/// that a client can subtract its own progress-reporting traffic from the `NetworkSendBytes` it also
+/// sees, instead of showing it as query IO. Mirrors `CountServiceBytes` in `TCPHandler`.
+class CountServiceBytes
+{
+public:
+    explicit CountServiceBytes(const WriteBuffer & buffer_) : buffer(buffer_), bytes_before(buffer_.count()) {}
+    ~CountServiceBytes()
+    {
+        const size_t bytes_after = buffer.count();
+        if (bytes_after > bytes_before)
+            ProfileEvents::increment(ProfileEvents::FramingServiceBytes, bytes_after - bytes_before);
+    }
+
+private:
+    const WriteBuffer & buffer;
+    const size_t bytes_before;
+};
+
 }
 
 IFramingFormat::IFramingFormat(WriteBuffer & out_, const FormatSettings & format_settings_)
@@ -90,7 +119,10 @@ void IFramingFormat::onProgress(const Progress & progress)
     if (finalized || failClosedAfterPartialWrite())
         return;
 
-    emitToOut([&] { writeProgressPacket(progress); });
+    {
+        CountServiceBytes service_bytes(out);
+        emitToOut([&] { writeProgressPacket(progress); });
+    }
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
     flushOut();
@@ -136,7 +168,10 @@ void IFramingFormat::finalize()
     /// example, in `BlockIO::onFinish` (a query-log write) after `flushQueryProgress` - and writing
     /// them would make the failed stream carry a success-style tail before the `exception`.
     if (has_final_progress && exception_message.empty())
+    {
+        CountServiceBytes service_bytes(out);
         emitToOut([&] { writeProgressPacket(final_progress); });
+    }
 
     if (!exception_message.empty())
     {
@@ -264,6 +299,7 @@ void IFramingFormat::pumpLogs()
 
     Block block = InternalTextLogsQueue::getSampleBlock();
     block.setColumns(std::move(logs_columns));
+    CountServiceBytes service_bytes(out);
     emitToOut([&] { writeLogsPacket(block); });
 }
 
@@ -281,7 +317,10 @@ void IFramingFormat::pumpProfileEvents(bool force)
 
     Block block = ProfileEvents::getProfileEvents(host_name, profile_events_queue, profile_events_snapshots);
     if (block.rows() != 0)
+    {
+        CountServiceBytes service_bytes(out);
         emitToOut([&] { writeProfileEventsPacket(block); });
+    }
 
     profile_events_watch.restart();
 }
