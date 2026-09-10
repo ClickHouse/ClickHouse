@@ -289,6 +289,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 *this,
+                processing_state_cache_ttl_seconds,
                 zookeeper_name,
                 log);
     }
