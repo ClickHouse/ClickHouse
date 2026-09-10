@@ -79,15 +79,21 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
     auto sort_description = getCollationAwareSortPrefixInColumns(children_properties[ordered_child].sort_description, key_names);
 
     /// Keep the key columns that reach the output under their own, unambiguous name. The legacy planner lets
-    /// both inputs carry a column of the same name and renames the right one on the way out, so a name found in
-    /// the other input may denote a different column in the output.
+    /// both inputs carry a column of the same name - `JOIN ... USING (k)` is the common shape - and renames
+    /// the copy of the right side out of the way (`TableJoin::renamedRightColumnName`), so a name carried by
+    /// both inputs denotes the column of the left side in the output. That is the ordered column itself when
+    /// the left side is the ordered one, and a different column when the right side is: there the ordered key
+    /// reaches the output under its renamed name, which is not the name we are sorted by.
+    const bool ordered_side_is_left = ordered_child == algorithm_left_child;
     const auto & output_header = *join_step.getOutputHeader();
     const auto & other_input_header = *join_step.getInputHeaders()[1 - ordered_child];
     size_t num_columns_in_output = 0;
     for (; num_columns_in_output < sort_description.size(); ++num_columns_in_output)
     {
         const auto & name = sort_description[num_columns_in_output].column_name;
-        if (!output_header.has(name) || other_input_header.has(name))
+        if (!output_header.has(name))
+            break;
+        if (other_input_header.has(name) && (!ordered_side_is_left || table_join.renamedRightColumnName(name) == name))
             break;
     }
     sort_description.resize(num_columns_in_output);
