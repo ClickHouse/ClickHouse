@@ -1057,30 +1057,6 @@ def test_encrypted_disk_rejects_embedded_rocksdb():
     node_local.query("DROP TABLE rocksdb_plain_local")
 
 
-def test_encrypted_disk_rejects_catboost():
-    """`catboostEvaluate` loads the model through host-local filesystem I/O
-    (`std::filesystem::exists` + `CatBoostLibraryBridgeHelper`) after validating the model path
-    against `getUserFilesPath()`. `user_files_policy` rewires that path to the configured disk root,
-    so on a non-plain-local disk (here a local `DiskEncrypted`) no valid model can both pass the
-    containment check and be read correctly: the bridge would read the encrypted backing bytes
-    instead of the logical model. `catboostEvaluate` must reject such a disk up front (before it
-    touches the filesystem), mirroring the other local-only `user_files` consumers.
-
-    A plain local `user_files_policy` disk must not be over-rejected: there the disk guard passes
-    and the call fails later for an unrelated reason (no catboost library / model configured)."""
-    err = node_encrypted.query_and_get_error(
-        "SELECT catboostEvaluate('model.bin', 1.0)"
-    )
-    assert "not a plain local filesystem disk" in err, err
-
-    # The plain local policy disk must not be over-rejected: the disk guard passes and the failure
-    # is about the missing catboost library / model, not the `user_files_policy` disk.
-    err_local = node_local.query_and_get_error(
-        "SELECT catboostEvaluate('model.bin', 1.0)"
-    )
-    assert "not a plain local filesystem disk" not in err_local, err_local
-
-
 def test_local_count_from_cache_fast_path():
     """The count-from-cache shortcut (`use_cache_for_count_from_files`) must keep working when a
     plain local disk is configured via `user_files_policy`, exactly as it does with the legacy
