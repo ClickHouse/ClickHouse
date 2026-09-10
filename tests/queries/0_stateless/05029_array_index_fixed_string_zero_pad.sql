@@ -2,8 +2,9 @@
 --
 -- `equals` treats trailing zero bytes of a `FixedString` as padding, so
 -- `toFixedString('V0', 3) = toFixedString('V0', 4)` and `toFixedString('V0', 3) = 'V0\0'`.
--- `has`, `indexOf`, `countEqual` and `indexOfAssumeSorted` must agree with `equals`, and must
--- give the same answer whether the array argument is constant or materialized.
+-- `has`, `indexOf`, `countEqual`, `indexOfAssumeSorted`, `hasAny`, `hasAll` and `hasSubstr` must
+-- agree with `equals`, and must give the same answer whether the array argument is constant or
+-- materialized.
 --
 -- Every expected value below is the value `arrayExists` / `arrayFirstIndex` / `arrayCount`
 -- already return for the same operands. Each row prints the constant and the materialized
@@ -127,11 +128,57 @@ select 'interior zero not collapsed',
     has([toFixedString('a\0b', 3)], toFixedString('ab', 3)),
     has(materialize([toFixedString('a\0b', 3)]), toFixedString('ab', 3));
 
--- has must equal arrayExists over the same operands, which is what the issue asks for.
+-- `hasAny`, `hasAll` and `hasSubstr` share one comparison with `has` and must not disagree with it
+-- on the same operands. Every array argument here is a one-element array, so all four reduce to the
+-- same question. Both a constant and a materialized haystack, since that is the split the issue is
+-- about, and neither is otherwise covered for these three functions.
+select 'hasAny hasAll hasSubstr';
+select 'fs4 needle, const',
+    hasAny([toFixedString('V0', 3)], [toFixedString('V0', 4)]),
+    hasAll([toFixedString('V0', 3)], [toFixedString('V0', 4)]),
+    hasSubstr([toFixedString('V0', 3)], [toFixedString('V0', 4)]);
+select 'fs4 needle, materialized',
+    hasAny(materialize([toFixedString('V0', 3)]), [toFixedString('V0', 4)]),
+    hasAll(materialize([toFixedString('V0', 3)]), [toFixedString('V0', 4)]),
+    hasSubstr(materialize([toFixedString('V0', 3)]), [toFixedString('V0', 4)]);
+select 'str_padded needle, const',
+    hasAny([toFixedString('V0', 3)], ['V0\0']),
+    hasAll([toFixedString('V0', 3)], ['V0\0']),
+    hasSubstr([toFixedString('V0', 3)], ['V0\0']);
+select 'str_padded needle, materialized',
+    hasAny(materialize([toFixedString('V0', 3)]), ['V0\0']),
+    hasAll(materialize([toFixedString('V0', 3)]), ['V0\0']),
+    hasSubstr(materialize([toFixedString('V0', 3)]), ['V0\0']);
+-- Negative control: plain `String` against plain `String` is length-sensitive for these too.
+select 'str vs str_padded must differ, hasAny',
+    hasAny(['V0'], ['V0\0']),
+    hasAny(materialize(['V0']), ['V0\0']);
+
+-- Every search function must equal `arrayExists` over the same operands, which is what the issue
+-- asks for. Comparing against `arrayExists` rather than a literal means no expected value is baked
+-- in: if the padding rule itself is ever redefined, these rows track it instead of going stale.
 select 'agreement with arrayExists';
-select 'const array',
-    has([toFixedString('V0', 3)], toFixedString('V0', 4))
-        = arrayExists(x -> x = toFixedString('V0', 4), [toFixedString('V0', 3)]);
-select 'materialized array',
-    has(materialize([toFixedString('V0', 3)]), 'V0\0')
-        = arrayExists(x -> x = 'V0\0', materialize([toFixedString('V0', 3)]));
+select 'has, const',        has([toFixedString('V0', 3)], toFixedString('V0', 4))
+    = arrayExists(x -> x = toFixedString('V0', 4), [toFixedString('V0', 3)]);
+select 'has, materialized',  has(materialize([toFixedString('V0', 3)]), 'V0\0')
+    = arrayExists(x -> x = 'V0\0', materialize([toFixedString('V0', 3)]));
+select 'has, str elem',      has(['ab'], toFixedString('ab', 3))
+    = arrayExists(x -> x = toFixedString('ab', 3), ['ab']);
+select 'has, tuple elem',    has([tuple(toFixedString('V0', 3))], tuple('V0\0'))
+    = arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]);
+select 'has, nullable elem',
+    has(cast([toFixedString('V0', 3), null], 'Array(Nullable(FixedString(3)))'), toFixedString('V0', 4))
+    = arrayExists(x -> x = toFixedString('V0', 4), cast([toFixedString('V0', 3), null], 'Array(Nullable(FixedString(3)))'));
+select 'indexOf, const',     (indexOf([toFixedString('V0', 3)], toFixedString('V0', 4)) > 0)
+    = arrayExists(x -> x = toFixedString('V0', 4), [toFixedString('V0', 3)]);
+select 'countEqual, const',  (countEqual([toFixedString('V0', 3)], toFixedString('V0', 4)) > 0)
+    = arrayExists(x -> x = toFixedString('V0', 4), [toFixedString('V0', 3)]);
+select 'indexOfAssumeSorted, const',
+    (indexOfAssumeSorted([toFixedString('V0', 3)], toFixedString('V0', 4)) > 0)
+    = arrayExists(x -> x = toFixedString('V0', 4), [toFixedString('V0', 3)]);
+select 'hasAny, const',      hasAny([toFixedString('V0', 3)], [toFixedString('V0', 4)])
+    = arrayExists(x -> x = toFixedString('V0', 4), [toFixedString('V0', 3)]);
+select 'hasAny, materialized', hasAny(materialize([toFixedString('V0', 3)]), ['V0\0'])
+    = arrayExists(x -> x = 'V0\0', materialize([toFixedString('V0', 3)]));
+select 'has over a map',     has(map(toFixedString('V0', 3), 1), toFixedString('V0', 4))
+    = arrayExists(x -> x = toFixedString('V0', 4), mapKeys(map(toFixedString('V0', 3), 1)));

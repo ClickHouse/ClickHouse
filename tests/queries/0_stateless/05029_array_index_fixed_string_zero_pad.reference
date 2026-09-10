@@ -45,6 +45,21 @@ same width different content	0	0
 same width same content	1	1
 interior zero preserved	1	1
 interior zero not collapsed	0	0
+hasAny hasAll hasSubstr
+fs4 needle, const	1	1	1
+fs4 needle, materialized	1	1	1
+str_padded needle, const	1	1	1
+str_padded needle, materialized	1	1	1
+str vs str_padded must differ, hasAny	0	0
 agreement with arrayExists
-const array	1
-materialized array	1
+has, const	1
+has, materialized	1
+has, str elem	1
+has, tuple elem	1
+has, nullable elem	1
+indexOf, const	1
+countEqual, const	1
+indexOfAssumeSorted, const	1
+hasAny, const	1
+hasAny, materialized	1
+has over a map	1
