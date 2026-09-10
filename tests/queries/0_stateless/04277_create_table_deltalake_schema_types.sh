@@ -89,10 +89,12 @@ rm -rf "$TABLE_PATH"
 # (Code: 48 = NOT_IMPLEMENTED): `UInt64` (exceeds Delta's signed 64-bit `long`), `Decimal` with precision
 # above 38, and `LowCardinality` (no Delta equivalent). An unnamed `Tuple` is also rejected: Delta `struct`
 # fields are always named, so it would be persisted with synthesized names and read back as a named Tuple.
+# A `Nullable` directly around a complex type (`Array`/`Map`/`Tuple`) is rejected too: the outer nullable
+# bit is dropped on read-back (element-level `Nullable` is fine and preserved).
 # Compatible types (`UInt8`, `FixedString`, `Date`, `DateTime`, ...) are instead accepted and mapped to a
 # wider/looser Delta type - see the compatible-types test.
 echo "rejections:"
-for spec in "UInt64" "Decimal(50, 2)" "LowCardinality(String)" "DateTime('UTC')" "DateTime64(6, 'UTC')" "Tuple()" "Array(Tuple())" "Tuple(Int32, String)" "Array(Tuple(Int32, String))"; do
+for spec in "UInt64" "Decimal(50, 2)" "LowCardinality(String)" "DateTime('UTC')" "DateTime64(6, 'UTC')" "Tuple()" "Array(Tuple())" "Tuple(Int32, String)" "Array(Tuple(Int32, String))" "Nullable(Array(Int32))" "Nullable(Map(String, Int64))" "Nullable(Tuple(a Int32, b String))"; do
     reject_path="${TABLE_PATH}_reject"
     rm -rf "$reject_path"
     if $CLICKHOUSE_CLIENT --query "
