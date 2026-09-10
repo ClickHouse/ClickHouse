@@ -107,7 +107,6 @@ TEST(LazyFrontier, RecomputesAValueTheFilterAlreadyUsed)
     /// ORDER BY a.
     const auto frontier = chooseLazyFrontier(*merged, {outputPosition(*merged, "a")}, {true});
 
-    EXPECT_TRUE(frontier.eager_outputs.empty());
     EXPECT_TRUE(frontier.defersAnything());
 
     /// `a + b` is computed below the LIMIT for the filter, and is not carried across: it is recomputed
@@ -160,10 +159,9 @@ TEST(LazyFrontier, CarriesANonDeterministicValue)
     ASSERT_TRUE(random_in_merged != nullptr);
     EXPECT_TRUE(frontier.carried.contains(random_in_merged));
     EXPECT_FALSE(frontier.recomputed_after_merge.contains(random_in_merged));
-    EXPECT_FALSE(frontier.recomputed_under_mask[0].contains(random_in_merged));
 
-    /// Nothing was left eager for want of a placement.
-    EXPECT_TRUE(frontier.eager_outputs.empty());
+    /// No join here, so nothing is gated by one.
+    EXPECT_TRUE(frontier.recomputed_under_mask.empty());
 
     /// The heavy column has nothing to do with it and is still read for the surviving rows only.
     const auto * heavy_input = merged->sources.front().inputs[2];
@@ -188,9 +186,11 @@ TEST(LazyFrontier, KeepsEverythingEagerWithoutALazySource)
     EXPECT_FALSE(frontier.defersAnything());
     EXPECT_TRUE(frontier.lazily_read_inputs[0].empty());
 
-    /// Every column but the sort key stayed eager; that one is carried across the LIMIT as always.
-    EXPECT_EQ(frontier.eager_outputs, std::vector<size_t>({1, 2}));
-    EXPECT_EQ(frontier.carried, NodeSet{merged->getOutputs()[0]});
+    /// Every column crosses the LIMIT as a column of its own, computed below it as before.
+    const auto & outputs = merged->getOutputs();
+    EXPECT_EQ(frontier.carried, NodeSet(outputs.begin(), outputs.end()));
+    for (const auto * output : outputs)
+        EXPECT_TRUE(frontier.eager.contains(output));
 }
 
 /// A value nothing below the LIMIT used is computed above it for the first time, so even a
@@ -220,5 +220,4 @@ TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueLate)
     ASSERT_TRUE(random_in_merged != nullptr);
     EXPECT_TRUE(frontier.recomputed_after_merge.contains(random_in_merged));
     EXPECT_FALSE(frontier.carried.contains(random_in_merged));
-    EXPECT_TRUE(frontier.eager_outputs.empty());
 }
