@@ -44,6 +44,8 @@ namespace FailPoints
     extern const char plain_object_storage_copy_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
+    extern const char plain_object_storage_fail_on_directory_move_undo[];
+    extern const char plain_object_storage_fail_on_file_move_undo[];
 }
 
 namespace
@@ -140,7 +142,8 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     std::shared_ptr<FsSnapshot> fs_tree_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_)
+    std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_)
     : recursive(recursive_)
     , path(std::move(path_))
     , directory_remote_path(std::move(directory_remote_path_))
@@ -148,6 +151,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
 {
     chassert(path.empty() || path.string().ends_with('/'));
     chassert(metrics);
@@ -203,13 +207,17 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
 {
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory creation for path '{}'", path);
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation");
+    LOG_TRACE(log, "Reversing directory creation for path '{}'", path);
 
-    if (write_attempted)
+    if (!write_attempted)
+        return;
+
+    undo_retries->runStage(log, fmt::format("remove the metadata of the directory '{}'", path), [&]
     {
         auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
         object_storage->removeObjectIfExists(StoredObject(metadata_object_key, path));
-    }
+    });
 }
 
 MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
@@ -218,13 +226,15 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     std::shared_ptr<FsSnapshot> fs_tree_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_)
+    std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
 {
     chassert(path_from.empty() || path_from.string().ends_with('/'));
     chassert(path_to.empty() || path_to.string().ends_with('/'));
@@ -327,7 +337,8 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 {
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation");
+    LOG_TRACE(log, "Reversing directory move from '{}' to '{}'", path_from, path_to);
 
     for (const auto & [subdir, remote_info] : from_tree_info)
     {
@@ -337,8 +348,20 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
         if (!changed_paths.contains(sub_path_from))
             continue;
 
-        auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/std::nullopt);
-        rewriteSingleDirectory(sub_path_to, sub_path_from, remote_info.value(), *write_buf);
+        /// One stage per directory, so a marker that is back under its old path is never rewritten again.
+        undo_retries->runStage(log, fmt::format("restore the metadata of the directory '{}'", sub_path_from), [&]
+        {
+            /// Injected here rather than in `rewriteSingleDirectory`, which the forward pass calls first: a fault there
+            /// can never leave a move half reversed.
+            fiu_do_on(FailPoints::plain_object_storage_fail_on_directory_move_undo,
+            {
+                throw Exception(
+                    ErrorCodes::FAULT_INJECTED, "Injecting fault when reversing the move from '{}' to '{}'", sub_path_to, sub_path_from);
+            });
+
+            auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/std::nullopt);
+            rewriteSingleDirectory(sub_path_to, sub_path_from, remote_info.value(), *write_buf);
+        });
     }
 }
 
@@ -347,12 +370,14 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     std::shared_ptr<FsSnapshot> fs_tree_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_)
+    std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_)
     : path(std::move(path_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
 {
     chassert(path.empty() || path.string().ends_with('/'));
     chassert(metrics);
@@ -385,19 +410,23 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
     if (!remove_attempted)
         return;
 
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Reversing directory removal for '{}'", path);
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation");
+    LOG_TRACE(log, "Reversing directory removal for '{}'", path);
 
-    auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
-    auto metadata_object = StoredObject(metadata_object_key, path);
+    undo_retries->runStage(log, fmt::format("restore the metadata of the directory '{}'", path), [&]
+    {
+        auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
+        auto metadata_object = StoredObject(metadata_object_key, path);
 
-    auto buf = object_storage->writeObject(
-        metadata_object,
-        WriteMode::Rewrite,
-        /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
-        /*settings*/ DB::getWriteSettings());
-    writeString(serializePrefixPath(path.string(), info), *buf);
-    buf->finalize();
+        auto buf = object_storage->writeObject(
+            metadata_object,
+            WriteMode::Rewrite,
+            /*object_attributes*/ std::nullopt,
+            /*buf_size*/ 128,
+            /*settings*/ DB::getWriteSettings());
+        writeString(serializePrefixPath(path.string(), info), *buf);
+        buf->finalize();
+    });
 }
 
 MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
@@ -408,6 +437,7 @@ MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlai
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_,
     StoredObjects & removed_objects_)
     : path(std::move(path_))
     , object(std::move(object_))
@@ -416,6 +446,7 @@ MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlai
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
     , removed_objects(removed_objects_)
 {
     chassert(metrics);
@@ -467,8 +498,13 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo()
     if (!prefix_path_written)
         return;
 
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path);
-    writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation");
+    LOG_TRACE(log, "Reversing the metadata rewrite for the directory of '{}'", path);
+
+    undo_retries->runStage(log, fmt::format("restore the metadata of the directory of the file '{}'", path), [&]
+    {
+        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+    });
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::finalize()
@@ -488,6 +524,7 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_,
     StoredObjects & removed_objects_)
     : path(std::move(path_))
     , if_exists(if_exists_)
@@ -495,6 +532,7 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     , object_storage(object_storage_)
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
     , removed_objects(removed_objects_)
 {
     chassert(metrics);
@@ -550,20 +588,37 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 {
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation");
+
     if (prefix_path_written)
     {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path);
-        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+        LOG_TRACE(log, "Reversing the metadata rewrite for the directory of '{}'", path);
+
+        undo_retries->runStage(log, fmt::format("restore the metadata of the directory of the file '{}'", path), [&]
+        {
+            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path).parent_path(), previous_directory_info.value());
+        });
+
         return;
     }
 
     if (!copy_started)
         return;
 
+    /// The restore and the removal of the temporary copy are separate stages, so the copy is never dropped
+    /// before the blob is back under its own key.
     if (remove_started)
-        object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
+    {
+        undo_retries->runStage(log, fmt::format("restore the blob of the file '{}'", path), [&]
+        {
+            object_storage->copyObject(StoredObject(remote_tmp_path), StoredObject(remote_source_path), getReadSettings(), getWriteSettings());
+        });
+    }
 
-    object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+    undo_retries->runStage(log, fmt::format("remove the temporary copy of the blob of the file '{}'", path), [&]
+    {
+        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
+    });
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize()
@@ -588,13 +643,15 @@ MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlain
     std::shared_ptr<FsSnapshot> fs_tree_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_)
+    std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
 {
     chassert(metrics);
 }
@@ -640,22 +697,27 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
 {
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation");
+
     if (prefix_path_written)
     {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"), "Reversing the metadata rewrite for the directory of '{}'", path_to);
-        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+        LOG_TRACE(log, "Reversing the metadata rewrite for the directory of '{}'", path_to);
+
+        undo_retries->runStage(log, fmt::format("restore the metadata of the directory of the file '{}'", path_to), [&]
+        {
+            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+        });
     }
 
     if (!copy_attempted)
         return;
 
-    LOG_WARNING(
-        getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"),
-        "Removing file '{}' that was copied from '{}",
-        path_to,
-        path_from);
+    LOG_WARNING(log, "Removing file '{}' that was copied from '{}", path_to, path_from);
 
-    object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    undo_retries->runStage(log, fmt::format("remove the copy of the file '{}'", path_to), [&]
+    {
+        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    });
 }
 
 MetadataStorageFromPlainObjectStorageHardLinkOperation::MetadataStorageFromPlainObjectStorageHardLinkOperation(
@@ -664,13 +726,15 @@ MetadataStorageFromPlainObjectStorageHardLinkOperation::MetadataStorageFromPlain
     std::shared_ptr<FsSnapshot> fs_tree_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_)
+    std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
 {
     chassert(metrics);
 }
@@ -709,8 +773,13 @@ void MetadataStorageFromPlainObjectStorageHardLinkOperation::undo()
     if (!prefix_path_written)
         return;
 
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageHardLinkOperation"), "Reversing the hard link '{}' to '{}'", path_to, path_from);
-    writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageHardLinkOperation");
+    LOG_TRACE(log, "Reversing the hard link '{}' to '{}'", path_to, path_from);
+
+    undo_retries->runStage(log, fmt::format("restore the metadata of the directory of the hard link '{}'", path_to), [&]
+    {
+        writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info.value());
+    });
 }
 
 MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlainObjectStorageMoveFileOperation(
@@ -721,6 +790,7 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_,
     StoredObjects & removed_objects_)
     : replaceable(replaceable_)
     , path_from(std::move(path_from_))
@@ -729,6 +799,7 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
     , removed_objects(removed_objects_)
 {
     chassert(metrics);
@@ -858,15 +929,27 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 {
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation");
+
     if (metadata_only_move)
     {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"), "Reversing the metadata rewrite for the move from '{}' to '{}'", path_from, path_to);
+        LOG_TRACE(log, "Reversing the metadata rewrite for the move from '{}' to '{}'", path_from, path_to);
 
         if (prefix_path_written_to)
-            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info_to.value());
+        {
+            undo_retries->runStage(log, fmt::format("restore the metadata of the directory of the file '{}'", path_to), [&]
+            {
+                writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_to).parent_path(), previous_directory_info_to.value());
+            });
+        }
 
         if (prefix_path_written_from)
-            writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_from).parent_path(), previous_directory_info_from.value());
+        {
+            undo_retries->runStage(log, fmt::format("restore the metadata of the directory of the file '{}'", path_from), [&]
+            {
+                writeDirectoryMetadata(*object_storage, *layout, normalizePath(path_from).parent_path(), previous_directory_info_from.value());
+            });
+        }
 
         return;
     }
@@ -874,38 +957,58 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     const auto read_settings = getReadSettings();
     const auto write_settings = getWriteSettings();
 
+    /// Every blob this reverses is a stage of its own. A temporary copy is dropped only in the stage that follows the
+    /// one which put the blob back, so a later failure never leaves the reversal without the copy it still needs.
     if (moved_file)
     {
-        LOG_WARNING(
-            getLogger("MetadataStorageFromPlainObjectStorageMoveFileOperation"),
-            "Removing file '{}' that was moved (replaceable = {}) from '{}",
-            path_to,
-            replaceable,
-            path_from);
+        LOG_WARNING(log, "Removing file '{}' that was moved (replaceable = {}) from '{}", path_to, replaceable, path_from);
 
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        undo_retries->runStage(log, fmt::format("remove the file '{}' that the move created", path_to), [&]
+        {
+            object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+        });
     }
 
     if (moved_existing_source_file)
     {
-        object_storage->copyObject(
-            /*object_from=*/StoredObject(tmp_remote_path_from),
-            /*object_to=*/StoredObject(remote_path_from),
-            read_settings,
-            write_settings);
+        undo_retries->runStage(log, fmt::format("restore the blob of the source file '{}'", path_from), [&]
+        {
+            object_storage->copyObject(
+                /*object_from=*/StoredObject(tmp_remote_path_from),
+                /*object_to=*/StoredObject(remote_path_from),
+                read_settings,
+                write_settings);
+        });
 
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        undo_retries->runStage(log, fmt::format("remove the temporary copy of the blob of the source file '{}'", path_from), [&]
+        {
+            object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
+        });
     }
 
     if (moved_existing_target_file)
     {
-        object_storage->copyObject(
-            /*object_from=*/StoredObject(tmp_remote_path_to),
-            /*object_to=*/StoredObject(remote_path_to),
-            read_settings,
-            write_settings);
+        undo_retries->runStage(log, fmt::format("restore the blob of the replaced target file '{}'", path_to), [&]
+        {
+            /// The last stage of the reversal. A retry that started over would copy from the temporary object the
+            /// previous stage has already removed.
+            fiu_do_on(FailPoints::plain_object_storage_fail_on_file_move_undo,
+            {
+                throw Exception(
+                    ErrorCodes::FAULT_INJECTED, "Injecting fault when reversing the move from '{}' to '{}'", path_from, path_to);
+            });
 
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+            object_storage->copyObject(
+                /*object_from=*/StoredObject(tmp_remote_path_to),
+                /*object_to=*/StoredObject(remote_path_to),
+                read_settings,
+                write_settings);
+        });
+
+        undo_retries->runStage(log, fmt::format("remove the temporary copy of the blob of the replaced target file '{}'", path_to), [&]
+        {
+            object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
+        });
     }
 }
 
@@ -938,18 +1041,20 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
+    UndoRetriesPtr undo_retries_,
     StoredObjects & removed_objects_)
     : path(std::move(path_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
     , metrics(std::move(metrics_))
+    , undo_retries(std::move(undo_retries_))
     , removed_objects(removed_objects_)
     , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
     chassert(metrics);
     tmp_path = getRandomASCIIString(16);
-    move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", fs_tree, object_storage, layout, metrics);
+    move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", fs_tree, object_storage, layout, metrics, undo_retries);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()

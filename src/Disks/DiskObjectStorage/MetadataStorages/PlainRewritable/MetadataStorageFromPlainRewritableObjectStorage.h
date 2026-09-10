@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoRetries.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
@@ -80,6 +81,9 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
+    /// Stops the retries of the `undo` of a transaction that is failing right now. See `UndoRetries`.
+    void shutdown() override;
+
     /// Will reload in-memory structure from scratch.
     void dropCache() override;
     void refresh(UInt64 not_sooner_than_milliseconds) override;
@@ -103,6 +107,7 @@ public:
 private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
     /// Real hard links require the explicit form of `prefix.path`, which older servers cannot read,

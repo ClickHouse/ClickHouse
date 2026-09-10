@@ -15,6 +15,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
 
+#include <base/scope_guard.h>
+
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
@@ -3054,3 +3056,133 @@ TEST(PlainRewritablePrefixPath, ExplicitForm)
     EXPECT_THROW(parsePrefixPath("A/\nfiles: 1\na\tb\tx\n"), Exception);
 }
 
+/// Reversing a directory move rewrites one `prefix.path` marker per directory, and each of those is a separate object
+/// storage write. When one of them fails, object storage keeps describing the move while the in-memory filesystem
+/// still describes the state before it, because a failed transaction never publishes its snapshot. The state of
+/// object storage is unknown at that point, so the reversal repeats the write that failed instead of giving up.
+TEST_F(MetadataPlainRewritableDiskTest, MoveDirectoryUndoRetriesUntilItSucceeds)
+{
+    auto metadata = getMetadataStorage("MoveDirectoryUndoRetries");
+    auto object_storage = getObjectStorage("MoveDirectoryUndoRetries");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto a_path = createMetadataObjectPath(metadata, "A");
+    const auto ab_path = createMetadataObjectPath(metadata, "A/B");
+
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_on_directory_move_undo");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_on_directory_move_undo"));
+
+        /// The move rewrites both markers; the failing file move is what makes the transaction roll back afterwards.
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    /// The first attempt to restore a marker failed, and the retry put it back.
+    EXPECT_EQ(readObject(object_storage, a_path), "A/");
+    EXPECT_EQ(readObject(object_storage, ab_path), "A/B/");
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("MOVED"));
+
+    metadata = restartMetadataStorage("MoveDirectoryUndoRetries");
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("MOVED"));
+}
+
+/// Reversing a file move restores several objects, and it removes the temporary copy of an object once that object is
+/// back under its own key. A retry that started the reversal over would copy from a temporary object that an earlier
+/// stage has already removed, so every stage is retried where it failed.
+TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndoRetriesTheFailedStageOnly)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("MoveFileUndoRetries");
+    auto object_storage = getObjectStorage("MoveFileUndoRetries");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    const auto target_blob = metadata->getStorageObjects("/A/target").front().remote_path;
+    const auto objects_before = listAllBlobs("MoveFileUndoRetries");
+
+    {
+        /// The move copies both blobs aside and removes the target, and then fails before it can put the source in
+        /// place. The reversal restores the source, drops its temporary copy, and only then restores the target.
+        FailPointInjection::enableFailPoint("plain_object_storage_copy_fail_on_file_move");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_copy_fail_on_file_move"));
+
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_on_file_move_undo");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_on_file_move_undo"));
+
+        auto tx = metadata->createTransaction();
+        tx->replaceFile("/A/source", "/A/target");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(readObject(object_storage, source_blob), "the source file");
+    EXPECT_EQ(readObject(object_storage, target_blob), "the target file");
+
+    /// Nothing else is left behind: the temporary copies the reversal used are gone.
+    EXPECT_EQ(listAllBlobs("MoveFileUndoRetries"), objects_before);
+
+    metadata = restartMetadataStorage("MoveFileUndoRetries");
+    EXPECT_TRUE(metadata->existsFile("/A/source"));
+    EXPECT_TRUE(metadata->existsFile("/A/target"));
+}
+
+/// A shutdown is the only thing that stops the retries. Object storage is then left holding a part of a transaction
+/// that is reported as failed, and the next start loads the filesystem from object storage.
+TEST_F(MetadataPlainRewritableDiskTest, MoveDirectoryUndoStopsRetryingOnShutdown)
+{
+    auto metadata = getMetadataStorage("MoveDirectoryUndoShutdown");
+    auto object_storage = getObjectStorage("MoveDirectoryUndoShutdown");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto a_path = createMetadataObjectPath(metadata, "A");
+
+    metadata->shutdown();
+
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_on_directory_move_undo");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_on_directory_move_undo"));
+
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    /// The single attempt failed and nothing retried it, so the marker still describes the move.
+    EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
+
+    metadata = restartMetadataStorage("MoveDirectoryUndoShutdown");
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED"));
+}

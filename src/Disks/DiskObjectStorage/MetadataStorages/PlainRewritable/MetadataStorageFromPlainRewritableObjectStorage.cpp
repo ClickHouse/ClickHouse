@@ -310,6 +310,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_, bool hard_links_enabled_)
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
+    , undo_retries(std::make_shared<UndoRetries>())
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , hard_links_enabled(hard_links_enabled_)
@@ -322,6 +323,11 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
 MetadataTransactionPtr MetadataStorageFromPlainRewritableObjectStorage::createTransaction()
 {
     return std::make_shared<MetadataStorageFromPlainRewritableObjectStorageTransaction>(*this);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::shutdown()
+{
+    undo_retries->shutdown();
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
@@ -518,6 +524,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataF
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 
@@ -538,7 +545,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
@@ -558,7 +566,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
@@ -571,7 +580,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
@@ -591,6 +601,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(cons
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 
@@ -604,7 +615,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
@@ -618,6 +630,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 
@@ -637,7 +650,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
             commit_snapshot,
             metadata_storage.object_storage,
             metadata_storage.layout,
-            metadata_storage.metrics));
+            metadata_storage.metrics,
+            metadata_storage.undo_retries));
         return;
     }
 
@@ -650,7 +664,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to)
@@ -689,6 +704,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 
@@ -704,6 +720,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(con
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 

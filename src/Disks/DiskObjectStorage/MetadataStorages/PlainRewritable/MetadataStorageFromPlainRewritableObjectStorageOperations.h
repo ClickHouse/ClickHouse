@@ -6,6 +6,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/Preconditions.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoRetries.h>
 
 #include <filesystem>
 #include <memory>
@@ -47,6 +48,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
 
     bool write_attempted = false;
 
@@ -58,7 +60,8 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_);
 
     void execute() override;
     void undo() override;
@@ -73,6 +76,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
     std::unordered_set<std::string> changed_paths;
@@ -87,7 +91,8 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_);
 
     void execute() override;
     void undo() override;
@@ -101,6 +106,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
 
     DirectoryRemoteInfo info;
     bool remove_attempted = false;
@@ -111,7 +117,8 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_);
 
     void execute() override;
     void undo() override;
@@ -131,6 +138,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
     StoredObjects & removed_objects;
 
     std::optional<DirectoryRemoteInfo> previous_directory_info;
@@ -146,6 +154,7 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_,
         StoredObjects & removed_objects_);
 
     void execute() override;
@@ -162,6 +171,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
     StoredObjects & removed_objects;
 
     /// A file of a directory with the implicit file list, whose blob is not shared, is removed together with its blob:
@@ -186,6 +196,7 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_,
         StoredObjects & removed_objects_);
 
     void execute() override;
@@ -205,6 +216,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
@@ -219,7 +231,8 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_);
 
     void execute() override;
     void undo() override;
@@ -237,6 +250,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
 
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
@@ -248,7 +262,8 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_);
+        std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_);
 
     void execute() override;
     void undo() override;
@@ -273,6 +288,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
     StoredObjects & removed_objects;
 
     bool metadata_only_move{false};
@@ -300,6 +316,7 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_,
         StoredObjects & removed_objects_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
@@ -334,6 +351,7 @@ private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableLayout> layout;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoRetriesPtr undo_retries;
     StoredObjects & removed_objects;
 
     const LoggerPtr log;
@@ -351,6 +369,7 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
+        UndoRetriesPtr undo_retries_,
         StoredObjects & removed_objects_);
 
     void execute() override;
