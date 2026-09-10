@@ -3044,6 +3044,8 @@ void ClientBase::processParsedSingleQuery(
             /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
             SettingsChanges changes = set_query->changes;
             replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
+            const bool sync_request_timeout_changed = changes.tryGet("sync_request_timeout")
+                || std::ranges::find(set_query->default_settings, "sync_request_timeout") != set_query->default_settings.end();
 
             /// Save all changes in settings to avoid losing them if the connection is lost.
             for (const auto & change : changes)
@@ -3052,7 +3054,10 @@ void ClientBase::processParsedSingleQuery(
                     client_context->applySettingChange(change);
             }
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
-            connection_parameters.timeouts.withSyncRequestTimeout(client_context->getSettingsRef()[Setting::sync_request_timeout]);
+            updateConnectionSyncRequestTimeout();
+            if (sync_request_timeout_changed)
+                getClientConfiguration().setString(
+                    "sync_request_timeout", client_context->getSettingsRef()[Setting::sync_request_timeout].toString());
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
@@ -3962,6 +3967,21 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     return added_new_setting;
 }
 
+void ClientBase::updateConnectionSyncRequestTimeout()
+{
+    const Settings & settings = client_context->getSettingsRef();
+    if (settings[Setting::apply_settings_from_server] && !settings.isChanged("sync_request_timeout"))
+    {
+        if (const auto * value = settings_from_server.tryGet("sync_request_timeout"))
+        {
+            connection_parameters.timeouts.withSyncRequestTimeout(SettingFieldSeconds{*value});
+            return;
+        }
+    }
+
+    connection_parameters.timeouts.withSyncRequestTimeout(settings[Setting::sync_request_timeout]);
+}
+
 void ClientBase::applySettingsFromServerIfNeeded()
 {
     const Settings & settings = client_context->getSettingsRef();
@@ -3978,6 +3998,8 @@ void ClientBase::applySettingsFromServerIfNeeded()
     }
 
     client_context->applySettingsChanges(changes_to_apply);
+    if (changes_to_apply.tryGet("sync_request_timeout"))
+        connection_parameters.timeouts.withSyncRequestTimeout(settings[Setting::sync_request_timeout]);
 }
 
 void ClientBase::startKeystrokeInterceptorIfExists()
