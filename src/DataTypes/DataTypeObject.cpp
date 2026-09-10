@@ -13,6 +13,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
 #include <Interpreters/castColumn.h>
+#include <Common/DateLUT.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
@@ -121,12 +122,15 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
 {
+    /// Typed `DateTime` children without an explicit timezone capture the current session timezone.
+    const auto * timezone = &DateLUT::instance();
     const bool is_default = settings == SerializationInfoSettings{};
     {
         std::lock_guard lock(serializations_mutex);
-        if (is_default && default_serialization)
+        if (is_default && default_serialization && default_serialization_timezone == timezone)
             return default_serialization;
-        if (!is_default && nondefault_serialization && nondefault_serialization_settings == settings)
+        if (!is_default && nondefault_serialization && nondefault_serialization_settings == settings
+            && nondefault_serialization_timezone == timezone)
             return nondefault_serialization;
     }
 
@@ -152,14 +156,18 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
     std::lock_guard lock(serializations_mutex);
     if (is_default)
     {
-        if (!default_serialization)
+        if (!default_serialization || default_serialization_timezone != timezone)
+        {
             default_serialization = std::move(serialization);
+            default_serialization_timezone = timezone;
+        }
         return default_serialization;
     }
-    if (!nondefault_serialization || nondefault_serialization_settings != settings)
+    if (!nondefault_serialization || nondefault_serialization_settings != settings || nondefault_serialization_timezone != timezone)
     {
         nondefault_serialization = std::move(serialization);
         nondefault_serialization_settings = settings;
+        nondefault_serialization_timezone = timezone;
     }
     return nondefault_serialization;
 }

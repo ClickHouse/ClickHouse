@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -206,6 +207,34 @@ TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
                 auto dates = type->getSubcolumn("d.:`DateTime`", column->getPtr());
                 EXPECT_EQ((*dates)[0].safeGet<UInt64>(), expected_timestamp);
             }
+        }
+    }
+}
+
+TEST(DataTypesCache, ReusedJSONTypeFollowsSessionTimezone)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+    auto type = DataTypeFactory::instance().get("JSON(d DateTime, n Array(DateTime64(3)))");
+    SerializationInfoSettings nondefault_settings;
+    nondefault_settings.choose_kind = true;
+    SerializationPtr previous_default;
+    SerializationPtr previous_nondefault;
+    for (const auto * initial_timezone : {"UTC", "Asia/Tokyo"})
+    {
+        auto context = makeQueryContext(initial_timezone, initial_timezone);
+        auto scope = QueryScope::create(context);
+        for (const auto * session_timezone : {initial_timezone, "Europe/Amsterdam"})
+        {
+            context->setSetting("session_timezone", String(session_timezone));
+            auto default_serialization = type->getDefaultSerialization();
+            auto nondefault_serialization = type->getSerialization(nondefault_settings);
+            EXPECT_NE(default_serialization, previous_default);
+            EXPECT_NE(nondefault_serialization, previous_nondefault);
+            EXPECT_EQ(default_serialization, type->getDefaultSerialization());
+            EXPECT_EQ(nondefault_serialization, type->getSerialization(nondefault_settings));
+            previous_default = default_serialization;
+            previous_nondefault = nondefault_serialization;
         }
     }
 }

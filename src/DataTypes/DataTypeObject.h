@@ -8,6 +8,8 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 
+class DateLUTImpl;
+
 namespace DB
 {
 
@@ -96,7 +98,9 @@ private:
 
     mutable std::mutex serializations_mutex;
     mutable SerializationPtr default_serialization;
+    mutable const DateLUTImpl * default_serialization_timezone = nullptr;
     mutable SerializationPtr nondefault_serialization;
+    mutable const DateLUTImpl * nondefault_serialization_timezone = nullptr;
     mutable SerializationInfoSettings nondefault_serialization_settings;
 
     SchemaFormat schema_format;
