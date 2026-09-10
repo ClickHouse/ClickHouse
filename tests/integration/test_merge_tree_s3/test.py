@@ -566,8 +566,8 @@ def test_partial_cancel_in_s3_subquery(
         node.query(f"SYSTEM NOTIFY FAILPOINT {s3_failpoint}")
         answer, error = request.get_answer_and_error()
         if subquery_kind != "scalar" and finish == "partial":
-            assert error == "", error
-            assert answer.strip() == "0", answer
+            assert answer == "", answer
+            assert "QUERY_WAS_CANCELLED" in error, error
     finally:
         for failpoint in (s3_failpoint, cancel_failpoint):
             node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
@@ -587,17 +587,14 @@ def test_partial_cancel_in_s3_subquery(
         f"WHERE query_id='{query_id}' AND type!='QueryStart'"
     ).strip().split("\t", 1)
     assert final_events == events
-    if subquery_kind != "scalar" and finish == "partial":
-        assert final_type == "QueryFinish"
-    else:
-        # Scalar and ordered-set execution can happen before the outer query starts.
-        assert final_type in ("ExceptionBeforeStart", "ExceptionWhileProcessing")
-        if subquery_kind == "scalar" or finish in ("second-cancel", "kill"):
-            expected_code = 735 if subquery_kind == "scalar" or finish == "second-cancel" else 394
-            assert node.query(
-                "SELECT exception_code FROM system.query_log "
-                f"WHERE query_id='{query_id}' AND type!='QueryStart'"
-            ).strip() == str(expected_code)
+    # Scalar and ordered-set execution can happen before the outer query starts.
+    assert final_type in ("ExceptionBeforeStart", "ExceptionWhileProcessing")
+    if subquery_kind == "scalar" or finish in ("partial", "second-cancel", "kill"):
+        expected_code = 735 if subquery_kind == "scalar" or finish == "second-cancel" else 394
+        assert node.query(
+            "SELECT exception_code FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type!='QueryStart'"
+        ).strip() == str(expected_code)
 
     # Reuse the exact cache keys: neither the partial subquery nor its outer query
     # may poison the shared caches. A second complete execution can use the cache.
