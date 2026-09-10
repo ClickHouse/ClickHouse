@@ -1809,12 +1809,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
 
             /// When the right side is a single column and the left side is kept as one key,
-            /// regular IN does not unpack the left value: the whole left value is one set key, and
-            /// `Set::execute` accurately casts it to the right column type before probing (so
-            /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
-            /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
+            /// regular `IN` does not unpack the left value: the whole left value is one set key, and
+            /// `Set::execute` accurately casts it to the right column type before probing, including
+            /// parsing text fields as numbers. The `equals` predicate built by this rewrite
             /// compares element-wise over a common supertype instead and cannot reproduce those
-            /// semantics, so skip the rewrite for this shape and fall through to the regular IN
+            /// semantics, so skip the rewrite for this shape and fall through to the regular `IN`
             /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
             /// The mutated clones are discarded; the regular path re-resolves the original
             /// arguments and flattens/validates them again itself.
