@@ -2061,7 +2061,7 @@ def test_timeseries(started_cluster):
         SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
-        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
+        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family;
         """,
         settings={"allow_experimental_time_series_table": 1}
     )

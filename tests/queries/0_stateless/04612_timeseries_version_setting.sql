@@ -26,7 +26,7 @@ SELECT extract(create_table_query, 'version = (\d+)')
     FROM system.tables WHERE database = currentDatabase() AND name = 'ts_version';
 
 SELECT '--- the version cannot be altered ---';
-ALTER TABLE ts_version MODIFY SETTING version = 2; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE ts_version MODIFY SETTING version = 1; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE ts_version RESET SETTING version; -- { serverError NOT_IMPLEMENTED }
 
 SELECT '--- altering another setting does not drop the version or other settings from the metadata ---';

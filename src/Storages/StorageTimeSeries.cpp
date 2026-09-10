@@ -975,7 +975,7 @@ The _metrics_ table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
-| `metric_family_name` | [x] | `String` | `String` or `LowCardinality(String)` | The name of a metric family |
+| `metric_family` | [x] | `String` | `String` or `LowCardinality(String)` | The name of a metric family. In tables of versions before 2 this column is named `metric_family_name` (see [Schema versioning](#schema-versioning)) |
 | `type` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The type of a metric family, one of "counter", "gauge", "summary", "stateset", "histogram", "gaugehistogram" |
 | `unit` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The unit used in a metric |
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
@@ -1003,7 +1003,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 1, recent_samples_ttl_seconds = 345600
+SETTINGS version = 2, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1029,12 +1029,12 @@ TAGS INNER COLUMNS
 TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 METRICS INNER COLUMNS
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
-METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family
 ```
 
 So the columns were generated automatically and also there are four inner target tables with their own column definitions
@@ -1091,13 +1091,13 @@ SETTINGS allow_dimensions_outside_sorting_key = 1, index_granularity = 8192
 ```sql
 CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
-    `metric_family_name` String,
+    `metric_family` String,
     `type` LowCardinality(String),
     `unit` LowCardinality(String),
     `help` String
 )
 ENGINE = ReplacingMergeTree
-ORDER BY metric_family_name
+ORDER BY metric_family
 SETTINGS index_granularity = 8192
 ```
 
@@ -1122,7 +1122,9 @@ The types of the `id`, timestamp and value columns and the replication type of t
 The outer column list is regenerated and not copied.
 
 A table created by an older version of ClickHouse can be used as `existing_table`: the new table gets the current
-structure, e.g. the current `id` type and default identifier expression.
+structure, e.g. the current `id` type and default identifier expression, and the customized parts copied from
+`existing_table` are adjusted to it, e.g. a customized `metric_family_name` column of the [metrics](#metrics-table) table
+and the engine keys referring to it are renamed to `metric_family`.
 
 ## Adjusting types of columns {#adjusting-column-types}
 
@@ -1289,14 +1291,14 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `version` | UInt64 | 1 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 2 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 1) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 2) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version. `CREATE TABLE ... AS other_table` doesn't copy the version of the other table, see [Creating a table AS existing table](#create-as).
@@ -1311,6 +1313,13 @@ the `promql` dialect, and the Prometheus HTTP query API):
   create a new `TimeSeries` table, copy the data with an `INSERT ... SELECT` query, and replace the old table with the new one.
 - If the version is too old to write into, `INSERT` queries and the Prometheus remote-write protocol are rejected, while `SELECT` queries still work.
 - If the version is too old for the server at all, every query over the table (except `SHOW CREATE TABLE`, `DETACH` and `DROP`) is rejected.
+
+The versions differ in the structure of the target tables:
+
+- version 0: tables created before the `version` setting was introduced;
+- version 1: the `version` setting was introduced;
+- version 2: the column `metric_family_name` of the [metrics](#metrics-table) table was renamed to `metric_family`,
+  the name of the corresponding outer column. Tables of older versions keep the old name and stay readable and writable.
 
 # Functions {#functions}
 

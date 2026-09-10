@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/StorageID.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -39,6 +40,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <base/EnumReflection.h>
 #include <algorithm>
 #include <optional>
@@ -701,7 +703,8 @@ namespace
                 if (has_default || codec)
                     return false;
 
-                if ((name == TimeSeriesColumnNames::MetricFamilyName) || (name == TimeSeriesColumnNames::Help))
+                const char * metric_family_column_name = getMetricFamilyColumnNameInMetricsTable(settings[TimeSeriesSetting::version]);
+                if ((name == metric_family_column_name) || (name == TimeSeriesColumnNames::Help))
                     return type_name == "String";
 
                 if ((name == TimeSeriesColumnNames::Type) || (name == TimeSeriesColumnNames::Unit))
@@ -870,7 +873,7 @@ namespace
             {
                 if (engine_name != "ReplacingMergeTree")
                     return;
-                if (sorting_key_equals("metric_family_name"))
+                if (sorting_key_equals(getMetricFamilyColumnNameInMetricsTable(settings[TimeSeriesSetting::version])))
                     inner_engine.reset(inner_engine.order_by);
                 break;
             }
@@ -1013,7 +1016,8 @@ namespace
 
             case ViewTarget::Metrics:
             {
-                add_column_if_missing(TimeSeriesColumnNames::MetricFamilyName, makeASTDataType("String"));
+                const char * metric_family_column_name = getMetricFamilyColumnNameInMetricsTable(time_series_settings[TimeSeriesSetting::version]);
+                add_column_if_missing(metric_family_column_name, makeASTDataType("String"));
                 add_column_if_missing(TimeSeriesColumnNames::Type, makeASTDataType("LowCardinality", makeASTDataType("String")));
                 add_column_if_missing(TimeSeriesColumnNames::Unit, makeASTDataType("LowCardinality", makeASTDataType("String")));
                 add_column_if_missing(TimeSeriesColumnNames::Help, makeASTDataType("String"));
@@ -1357,7 +1361,7 @@ namespace
         /// A declared MergeTree engine without keys gets the same keys as a generated one.
         auto needs_sorting_key = [&] { return is_merge_tree() && !inner_engine.order_by && !inner_engine.primary_key; };
 
-        /// A key of one column is written without a tuple, e.g. `ORDER BY metric_family_name`.
+        /// A key of one column is written without a tuple, e.g. `ORDER BY metric_family`.
         auto set_sorting_key = [&](ASTs key_columns)
         {
             ASTPtr sorting_key;
@@ -1516,7 +1520,10 @@ namespace
                     set_engine("ReplacingMergeTree");
 
                 if (needs_sorting_key())
-                    set_sorting_key({make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName)});
+                {
+                    const char * metric_family_column_name = getMetricFamilyColumnNameInMetricsTable(settings[TimeSeriesSetting::version]);
+                    set_sorting_key({make_intrusive<ASTIdentifier>(metric_family_column_name)});
+                }
                 break;
             }
 
@@ -1661,7 +1668,8 @@ namespace
 
             case ViewTarget::Metrics:
             {
-                check_column_is_string(TimeSeriesColumnNames::MetricFamilyName);
+                const char * metric_family_column_name = getMetricFamilyColumnNameInMetricsTable(time_series_settings[TimeSeriesSetting::version]);
+                check_column_is_string(metric_family_column_name);
                 check_column_is_string(TimeSeriesColumnNames::Type);
                 check_column_is_string(TimeSeriesColumnNames::Unit);
                 check_column_is_string(TimeSeriesColumnNames::Help);
@@ -1670,6 +1678,41 @@ namespace
 
             default:
                 UNREACHABLE();
+        }
+    }
+
+    /// Renames the column of the "metrics" inner table which contains the name of a metric family in the columns and
+    /// the engine copied from the old table, if the versions of the old table and of this table name that column
+    /// differently (see `getMetricFamilyColumnNameInMetricsTable`). The engine keeps its keys referring to the column.
+    void renameMetricFamilyColumnCopiedFromOldTable(
+        ASTColumns * inner_columns, ASTStorage * inner_engine, const TimeSeriesSettings & old_settings, const TimeSeriesSettings & new_settings)
+    {
+        String old_name = getMetricFamilyColumnNameInMetricsTable(old_settings[TimeSeriesSetting::version]);
+        String new_name = getMetricFamilyColumnNameInMetricsTable(new_settings[TimeSeriesSetting::version]);
+        if (old_name == new_name)
+            return;
+
+        RenameColumnData rename_data{old_name, new_name};
+        RenameColumnVisitor rename_visitor(rename_data);
+
+        if (inner_columns && inner_columns->columns)
+        {
+            for (auto & column : inner_columns->columns->children)
+            {
+                auto & column_declaration = column->as<ASTColumnDeclaration &>();
+                if (column_declaration.name == old_name)
+                    column_declaration.name = new_name;
+            }
+            /// The expressions of the columns (e.g. a DEFAULT expression) can refer to the renamed column.
+            ASTPtr columns_ast = inner_columns->columns;
+            rename_visitor.visit(columns_ast);
+        }
+
+        if (inner_engine)
+        {
+            /// The keys of the engine (e.g. `ORDER BY (metric_family_name, type)`) can refer to the renamed column.
+            for (auto & child : inner_engine->children)
+                rename_visitor.visit(child);
         }
     }
 
@@ -1749,14 +1792,17 @@ namespace
             if ((kind == ViewTarget::RecentSamples) && (new_settings[TimeSeriesSetting::recent_samples_ttl_seconds] == 0))
                 continue;
 
+            boost::intrusive_ptr<ASTColumns> copied_inner_columns;
+            boost::intrusive_ptr<ASTStorage> copied_inner_engine;
+
             if (!hasTargetTableID(create_query, kind) && !hasInnerColumns(create_query, kind))
             {
                 if (auto * old_inner_columns = old_create_query.getTargetInnerColumns(kind))
                 {
-                    auto new_inner_columns = boost::static_pointer_cast<ASTColumns>(old_inner_columns->clone());
-                    removeInnerColumnsDisabledByNewSettings(*new_inner_columns, kind, old_settings, new_settings);
-                    removeGeneratedInnerColumns(*new_inner_columns, kind, old_settings);
-                    create_query.setTargetInnerColumns(kind, new_inner_columns);
+                    copied_inner_columns = boost::static_pointer_cast<ASTColumns>(old_inner_columns->clone());
+                    removeInnerColumnsDisabledByNewSettings(*copied_inner_columns, kind, old_settings, new_settings);
+                    removeGeneratedInnerColumns(*copied_inner_columns, kind, old_settings);
+                    create_query.setTargetInnerColumns(kind, copied_inner_columns);
                 }
             }
 
@@ -1775,10 +1821,17 @@ namespace
                 }
                 else if (const auto * old_inner_engine = old_create_query.getTargetInnerEngine(kind))
                 {
-                    auto new_inner_engine = boost::static_pointer_cast<ASTStorage>(old_inner_engine->clone());
-                    removeGeneratedInnerEngine(*new_inner_engine, kind, old_settings);
-                    create_query.setTargetInnerEngine(kind, new_inner_engine);
+                    copied_inner_engine = boost::static_pointer_cast<ASTStorage>(old_inner_engine->clone());
+                    removeGeneratedInnerEngine(*copied_inner_engine, kind, old_settings);
+                    create_query.setTargetInnerEngine(kind, copied_inner_engine);
                 }
+            }
+
+            /// The customized parts copied from the old table can refer to a column which this table names differently.
+            if (kind == ViewTarget::Metrics)
+            {
+                renameMetricFamilyColumnCopiedFromOldTable(
+                    copied_inner_columns.get(), copied_inner_engine.get(), old_settings, new_settings);
             }
         }
     }

@@ -88,7 +88,7 @@ def setup():
         # Metrics target keeps one entry per family in each data part).
         node.query(
             "CREATE TABLE prometheus_multi ENGINE=TimeSeries "
-            "METRICS INNER ENGINE=MergeTree ORDER BY metric_family_name"
+            "METRICS INNER ENGINE=MergeTree ORDER BY metric_family"
         )
         # Send/insert the same metadata twice to get duplicate rows (in separate data parts)
         # in the Metrics target tables: the endpoint must deduplicate them.
@@ -96,7 +96,7 @@ def setup():
             send_test_metadata()
             node.query(
                 "INSERT INTO TABLE FUNCTION timeSeriesMetrics(prometheus_multi) "
-                "(metric_family_name, type, unit, help) VALUES "
+                "(metric_family, type, unit, help) VALUES "
                 "('multi_metric', 'counter', '', 'The first help text'), "
                 "('multi_metric', 'counter', '', 'The second help text')"
             )

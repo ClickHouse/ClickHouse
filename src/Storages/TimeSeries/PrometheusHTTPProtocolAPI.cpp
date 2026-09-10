@@ -687,6 +687,9 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
+    /// The name of the column with the name of a metric family in the Metrics target table depends on the table version.
+    const char * metric_family_column_name = getMetricFamilyColumnNameInMetricsTable(time_series_storage->getVersion());
+
     /// The Metrics target table may declare its columns as String, LowCardinality(String) or Nullable(String),
     /// so normalize them to plain strings with NULL meaning an empty string.
     auto normalize_column = [](const char * column_name)
@@ -710,13 +713,13 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     if (limit_per_metric > 0)
         group_uniq_array = addParametersToAggregateFunction(std::move(group_uniq_array), make_intrusive<ASTLiteral>(limit_per_metric));
 
-    auto metric_family = normalize_column(TimeSeriesColumnNames::MetricFamilyName);
+    auto metric_family = normalize_column(metric_family_column_name);
     metric_family->setAlias("metric_family");
     auto metadata_entries = makeASTFunction("arraySort", std::move(group_uniq_array));
     metadata_entries->setAlias("metadata");
 
-    /// SELECT ifNull(toString(metric_family_name), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
-    /// FROM timeSeriesMetrics(database, table) [WHERE metric_family_name = metric]
+    /// SELECT ifNull(toString(metric_family), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
+    /// FROM timeSeriesMetrics(database, table) [WHERE metric_family = metric]
     /// GROUP BY ... ORDER BY ... [LIMIT limit]
     PrometheusQueryToSQL::SelectQueryBuilder builder;
     builder.select_list.push_back(std::move(metric_family));
@@ -730,11 +733,11 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     if (!metric_param.empty())
         builder.where = makeASTFunction(
             "equals",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName),
+            make_intrusive<ASTIdentifier>(metric_family_column_name),
             make_intrusive<ASTLiteral>(metric_param));
 
-    builder.group_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
-    builder.order_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
+    builder.group_by.push_back(normalize_column(metric_family_column_name));
+    builder.order_by.push_back(normalize_column(metric_family_column_name));
     builder.order_direction = 1;
 
     /// LIMIT 0 returns an empty result, matching how Prometheus handles `limit=0`.
