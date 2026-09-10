@@ -2058,7 +2058,7 @@ Result:
 
 **See Also**
 
-- [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST) functio
+- [CAST](/reference/functions/regular-functions/type-conversion-functions#CAST) function
 
 ## cast_string_to_date_time_mode {#cast_string_to_date_time_mode} 
 
@@ -2091,7 +2091,7 @@ See also:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "Add setting to allow converting String to Dynamic through parsing"}]}]}/>
 
-Use types inference during String to Dynamic conversio
+Use types inference during String to Dynamic conversion
 
 ## cast_string_to_variant_use_inference {#cast_string_to_variant_use_inference} 
 
@@ -2215,7 +2215,7 @@ For instance, if a Parquet file contains multiple row groups, enabling `bucket` 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Enable collecting hash table statistics to optimize memory allocatio
+Enable collecting hash table statistics to optimize memory allocation
 
 ## collect_hash_table_stats_during_joins {#collect_hash_table_stats_during_joins} 
 
@@ -2223,7 +2223,7 @@ Enable collecting hash table statistics to optimize memory allocatio
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1"},{"label": "New setting."}]}]}/>
 
-Enable collecting hash table statistics to optimize memory allocatio
+Enable collecting hash table statistics to optimize memory allocation
 
 ## compatibility {#compatibility} 
 
@@ -4246,13 +4246,13 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumptio
+Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 
 ## enable_software_prefetch_in_aggregation {#enable_software_prefetch_in_aggregation} 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Enable use of software prefetch in aggregatio
+Enable use of software prefetch in aggregation
 
 ## enable_software_prefetch_in_join {#enable_software_prefetch_in_join} 
 
@@ -7688,7 +7688,7 @@ Possible values:
 
 <SettingsInfoBlock type="UInt64" default_value="128" />
 
-Maximal number of partitions in table to apply optimizatio
+Maximal number of partitions in table to apply optimization
 
 ## max_os_cpu_wait_time_ratio_to_throw {#max_os_cpu_wait_time_ratio_to_throw} 
 
@@ -8108,7 +8108,7 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1000000000000"},{"label": "Enable optimisation for bigger tables."}]}, {"id": "row-2","items": [{"label": "22.12"},{"label": "100000000"},{"label": "This optimizes performance"}]}]}/>
 
-For how many elements it is allowed to preallocate space in all hash tables in total before aggregatio
+For how many elements it is allowed to preallocate space in all hash tables in total before aggregation
 
 ## max_size_to_preallocate_for_joins {#max_size_to_preallocate_for_joins} 
 
@@ -8116,7 +8116,7 @@ For how many elements it is allowed to preallocate space in all hash tables in t
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "100000000"},{"label": "New setting."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "1000000000000"},{"label": "Enable optimisation for bigger tables."}]}]}/>
 
-For how many elements it is allowed to preallocate space in all hash tables in total before joi
+For how many elements it is allowed to preallocate space in all hash tables in total before join
 
 ## max_skip_unavailable_shards_num {#max_skip_unavailable_shards_num} 
 
@@ -9149,7 +9149,7 @@ When enabled and aggregation in order is active, pushes LIMIT into the aggregati
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT sectio
+Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
 
 ## optimize_and_compare_chain {#optimize_and_compare_chain} 
 
@@ -9283,7 +9283,7 @@ only when col is of String or FixedString type.
 
 Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
 - indices in simple filtering expressions
-- cross to inner join optimizatio
+- cross to inner join optimization
 
 ## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns} 
 
@@ -9321,7 +9321,7 @@ Optimize GROUP BY when all keys in block are constant
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Eliminates functions of other keys in GROUP BY sectio
+Eliminates functions of other keys in GROUP BY section
 
 ## optimize_if_chain_to_multiif {#optimize_if_chain_to_multiif} 
 
@@ -9341,7 +9341,7 @@ Replaces string-type arguments in If and Transform to enum. Disabled by default 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.1"},{"label": "1"},{"label": "Replace injective functions by it's arguments in GROUP BY section in analyzer"}]}]}/>
 
-Replaces injective functions by it's arguments in GROUP BY sectio
+Replaces injective functions by it's arguments in GROUP BY section
 
 ## optimize_injective_functions_in_limit_by {#optimize_injective_functions_in_limit_by} 
 
@@ -9389,13 +9389,13 @@ Optimize `SELECT ... LIMIT N BY <cols>` queries when `<cols>` (in any order) for
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
-The minimum length of the expression `expr = x1 OR ... expr = xN` for optimizatio
+The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization
 
 ## optimize_min_inequality_conjunction_chain_length {#optimize_min_inequality_conjunction_chain_length} 
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
-The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimizatio
+The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization
 
 ## optimize_move_to_prewhere {#optimize_move_to_prewhere} 
 
@@ -10059,7 +10059,7 @@ Allow parallel replicas to execute the outer query of a simple view over `MergeT
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "300"},{"label": "Separate connection timeout for parallel replicas queries"}]}]}/>
 
-The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query executio
+The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 
 ## parallel_replicas_count {#parallel_replicas_count} 
 
@@ -10139,7 +10139,7 @@ If true, ClickHouse will use parallel replicas algorithm also for non-replicated
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}]}]}/>
 
-Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_pla
+Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline} 
 
@@ -10484,7 +10484,7 @@ If it is set to a non-empty string, ClickHouse will try to apply specified proje
 
 Possible values:
 
-- string: name of preferred projectio
+- string: name of preferred projection
 
 ## prefetch_buffer_size {#prefetch_buffer_size} 
 
@@ -11363,7 +11363,7 @@ Minimal number of parts to read to run preliminary merge step during multithread
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1"},{"label": "Use buffering before merging while reading in order of primary key"}]}]}/>
 
-Use buffering before merging while reading in order of primary key. It increases the parallelism of query executio
+Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
 
 ## read_in_order_use_virtual_row {#read_in_order_use_virtual_row} 
 
@@ -11707,7 +11707,7 @@ Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optim
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation"}]}]}/>
 
-When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregatio
+When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
 
 ## s3_allow_multipart_copy {#s3_allow_multipart_copy} 
 
@@ -12048,31 +12048,31 @@ Use schema from cache for URL with last modification time validation (for URLs w
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Use cache in schema inference while using azure table functio
+Use cache in schema inference while using azure table function
 
 ## schema_inference_use_cache_for_file {#schema_inference_use_cache_for_file} 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Use cache in schema inference while using file table functio
+Use cache in schema inference while using file table function
 
 ## schema_inference_use_cache_for_hdfs {#schema_inference_use_cache_for_hdfs} 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Use cache in schema inference while using hdfs table functio
+Use cache in schema inference while using hdfs table function
 
 ## schema_inference_use_cache_for_s3 {#schema_inference_use_cache_for_s3} 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Use cache in schema inference while using s3 table functio
+Use cache in schema inference while using s3 table function
 
 ## schema_inference_use_cache_for_url {#schema_inference_use_cache_for_url} 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Use cache in schema inference while using url table functio
+Use cache in schema inference while using url table function
 
 ## secondary_indices_enable_bulk_filtering {#secondary_indices_enable_bulk_filtering} 
 
@@ -12487,7 +12487,7 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Allow to split intersecting parts ranges into layers during FINAL optimization"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "1"},{"label": "Allow to split intersecting parts ranges into layers during FINAL optimization"}]}]}/>
 
-Split intersecting parts ranges into layers during FINAL optimizatio
+Split intersecting parts ranges into layers during FINAL optimization
 
 ## split_parts_ranges_into_intersecting_and_non_intersecting_final {#split_parts_ranges_into_intersecting_and_non_intersecting_final} 
 
@@ -12495,7 +12495,7 @@ Split intersecting parts ranges into layers during FINAL optimizatio
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "1"},{"label": "Allow to split parts ranges into intersecting and non intersecting during FINAL optimization"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "1"},{"label": "Allow to split parts ranges into intersecting and non intersecting during FINAL optimization"}]}]}/>
 
-Split parts ranges into intersecting and non intersecting during FINAL optimizatio
+Split parts ranges into intersecting and non intersecting during FINAL optimization
 
 ## splitby_max_substrings_includes_remaining_string {#splitby_max_substrings_includes_remaining_string} 
 
@@ -12748,7 +12748,7 @@ This can be useful if you're trying to understand the impact on users when chang
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Throw exception if unsupported query is used inside transactio
+Throw exception if unsupported query is used inside transaction
 
 ## timeout_before_checking_execution_speed {#timeout_before_checking_execution_speed} 
 
@@ -13725,13 +13725,13 @@ Wait for committed changes to become actually visible in the latest snapshot
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-If true wait for processing of asynchronous insertio
+If true wait for processing of asynchronous insertion
 
 ## wait_for_async_insert_timeout {#wait_for_async_insert_timeout} 
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
-Timeout for waiting for processing asynchronous insertio
+Timeout for waiting for processing asynchronous insertion
 
 ## wait_for_part_commit_in_dependent_materialized_views {#wait_for_part_commit_in_dependent_materialized_views} 
 
