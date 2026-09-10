@@ -72,7 +72,7 @@ void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     const auto fill_description = extractWithFillColumns(sort_description);
 
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&, fill_description](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return std::make_shared<FillingNoopTransform>(header, fill_description);
