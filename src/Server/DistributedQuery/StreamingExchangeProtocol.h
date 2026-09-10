@@ -98,8 +98,9 @@ namespace StreamingExchangeProtocol
     /// serializer and a source that hands out packets output it; the deserializer takes it.
     const SharedHeader & packetStreamHeader();
 
-    /// The leading fields of a Data packet body, read without deserializing the block. An
-    /// end-of-stream packet that carries rows is rejected here, as `readDataPacketBody` rejects it.
+    /// The fields of a Data packet body that come before the block, read without deserializing the
+    /// block. A source that hands packets on drops the end-of-stream marker after this read, so the
+    /// marker is checked completely here: no rows, no columns and nothing after the fields.
     struct DataPacketPrefix
     {
         bool end_of_stream = false;

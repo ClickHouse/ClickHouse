@@ -165,10 +165,18 @@ DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size, const
     DataPacketPrefix prefix;
     prefix.end_of_stream = flags & 1;
     readVarUInt(prefix.num_rows, in);
-    /// The end-of-stream packet is not handed on, so rows in it would be lost.
-    if (prefix.end_of_stream && prefix.num_rows != 0)
+    UInt64 num_columns = 0;
+    readVarUInt(num_columns, in);
+    if (flags & 2)
+    {
+        UInt64 chunk_num = 0;
+        readVarUInt(chunk_num, in);
+    }
+
+    if (prefix.end_of_stream && (prefix.num_rows != 0 || num_columns != 0 || !in.eof()))
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-            "Final data packet on exchange stream {} carries {} rows; it must be empty", stream_name, prefix.num_rows);
+            "Final data packet on exchange stream {} is not the empty end-of-stream marker: {} rows, {} columns, {} bytes after the fields",
+            stream_name, prefix.num_rows, num_columns, in.available());
     return prefix;
 }
 
@@ -186,11 +194,12 @@ DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const Str
     if (has_aggregated_chunk_info)
         readVarUInt(chunk_num, body);
 
-    /// The end-of-stream packet is empty. One carrying rows would have them dropped once the stream
-    /// is finished, so reject it as a protocol violation.
-    if (end_of_stream && num_rows != 0)
+    /// The end-of-stream packet is empty. One carrying rows or columns would have them dropped once
+    /// the stream is finished, so reject it as a protocol violation.
+    if (end_of_stream && (num_rows != 0 || num_columns != 0))
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-            "Final data packet on exchange stream {} carries {} rows; it must be empty", stream_name, num_rows);
+            "Final data packet on exchange stream {} is not the empty end-of-stream marker: {} rows, {} columns",
+            stream_name, num_rows, num_columns);
 
     /// A data packet must carry exactly the header's columns, or values would be dropped while the
     /// row count is kept. A header-less stream (e.g. SELECT count()) sends rows with zero columns.
