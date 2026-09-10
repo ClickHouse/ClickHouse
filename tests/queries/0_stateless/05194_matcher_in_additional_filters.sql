@@ -34,8 +34,7 @@ CREATE ROW POLICY OR REPLACE p_05194 ON t_05194 USING COLUMNS('b') > 5 TO ALL;
 SELECT 'row policy, filtering', count() FROM t_05194;
 DROP ROW POLICY p_05194 ON t_05194;
 
--- A matcher is still rejected where the expression must be a constant: a `VALUES` field is resolved
--- against the target table too, but a matcher cannot produce a constant there.
-INSERT INTO t_05194 (a, b) VALUES (*, 1); -- { serverError UNSUPPORTED_METHOD }
+-- A matcher is still rejected where the expression must be a constant, which
+-- `05051_values_format_names_the_missing_delimiter` pins for a `VALUES` field.
 
 DROP TABLE t_05194;
