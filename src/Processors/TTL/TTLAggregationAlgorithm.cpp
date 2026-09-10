@@ -154,9 +154,6 @@ void TTLAggregationAlgorithm::execute(Block & block)
     }
     else
     {
-        if (block.rows())
-            saw_rows = true;
-
         const auto & column_names = header.getNames();
         MutableColumns aggregate_columns = header.cloneEmptyColumns();
 
@@ -344,11 +341,11 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
 {
-    /// The recomputed info covers every row this merge writes, even when it stays empty because
-    /// their TTL is 0; only a rule no row reached keeps the pre-merge info, which is all there is.
-    const auto & ttl_info = saw_rows ? new_ttl_info : old_ttl_info;
-    data_part->ttl_infos.group_by_ttl[description.result_column] = ttl_info;
-    data_part->ttl_infos.updatePartMinMaxTTL(ttl_info);
+    /// The recomputed info covers exactly the rows this merge writes, zero bounds included; when the
+    /// rule saw none, the merge writes none. Keeping the pre-merge info instead would leave a part
+    /// emptied by an earlier rows TTL looking due for this rollup rule forever.
+    data_part->ttl_infos.group_by_ttl[description.result_column] = new_ttl_info;
+    data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
 }
 
 }

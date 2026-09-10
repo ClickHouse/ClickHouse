@@ -681,9 +681,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// on the merged part. The maxima are reset; the rows-WHERE entries are dropped wholesale,
     /// because their ttl_finished bit survives recalculation (TTLDeleteAlgorithm marks finished
     /// off the old max and update() never clears it, hiding the part from later TTL passes).
-    /// GROUP BY entries are deliberately left alone: TTLAggregationAlgorithm falls back to the old
-    /// info when no row reaches the rule, so clearing them can yield a part with no GROUP BY bound
-    /// at all - the infinite-rollup shape 04501 pins. The TTL step is forced even
+    /// GROUP BY entries are deliberately left alone: they hold the only copy of `ttl_finished`,
+    /// which the recalculation step below cannot rebuild, and `preserved_group_by_ttl` is
+    /// snapshotted from them just below. The TTL step is forced even
     /// for a part that did not look due before the patch; when the TTL blocker is active the rows
     /// must survive, so the pipeline recalculates the infos instead. Recompression/move infos are
     /// likewise ignored where they drive the output codec and the reserved destination.
