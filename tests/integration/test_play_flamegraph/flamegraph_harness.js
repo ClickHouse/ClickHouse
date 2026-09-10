@@ -48,11 +48,13 @@ async function main()
         + extract('const TT_FALLBACK_OTHER', 'async function getQueryUnderCursor(')
         + extract('function profilerPeriodNs(', 'const MAX_FLAME_NODES')
         + extract('async function postImpl(', '    targetResultEl.queryText = query;')
-        + extract('        if (profile_traces && (', '        const fetch_options =')
-        + '\nreturn {url: use_framing ? framing_url : url, profile_traces}; }\n'
+        + '\nlet response;\n'
+        + extract('        if (profile_traces && (', '        /// Detect image results')
+        + '\nreturn {...response, profile_traces}; }\n'
         + '({detectFramingSetting, postImpl})', {
             tokenizeOrNull: async () => null,
-            default_format: 'JSONCompactStringsEachRowWithNamesAndTypes',
+            fetch: async (url, options) => ({url, options}),
+            default_format: 'JSONStringsEachRowWithProgress',
             framed_default_format: 'JSONCompactStringsEachRowWithNamesAndTypes',
         });
     const request = (query, params = {}, enabled = true) => requestApi.postImpl(
@@ -123,7 +125,45 @@ async function main()
         'framing_output_format = $fmt$EventStream$fmt$',
         "framing_output_format = 'None', framing_output_format = 'EventStream'",
     ])
-        assert.equal((await request(`SELECT 1 SETTINGS ${clause}`)).profile_traces, true, clause);
+    {
+        for (const enabled of [false, true])
+        {
+            const query = `SELECT 1 SETTINGS ${clause}`;
+            const result = await request(query, {}, enabled);
+            checkRequest(result, query, enabled, 'None');
+        }
+    }
+    function checkRequest(result, query, profiling, framing, logs = true, format = 'JSONCompactStringsEachRowWithNamesAndTypes')
+    {
+        const params = new URL(result.url).searchParams;
+        assert.equal(result.options.method, 'POST');
+        assert.equal(result.options.body, query);
+        assert.equal(result.profile_traces, profiling, query);
+        assert.deepEqual(params.getAll('framing_output_format'), [framing], query);
+        assert.deepEqual(params.getAll('default_format'), [format], query);
+        assert.deepEqual(params.getAll('send_logs_level'), logs ? ['trace'] : [], query);
+        assert.deepEqual(params.getAll('send_profile_traces'), profiling ? ['1'] : [], query);
+        for (const name of ['query_profiler_cpu_time_period_ns', 'query_profiler_real_time_period_ns'])
+            assert.deepEqual(params.getAll(name), profiling ? ['1000000'] : [], `${query}: ${name}`);
+    }
+    for (const enabled of [false, true])
+    {
+        checkRequest(await request('SELECT 1', {}, enabled), 'SELECT 1', enabled, 'EventStream');
+        for (const value of ['0', 'DEFAULT'])
+        {
+            const query = `SELECT 1 SETTINGS framing_output_format = 'EventStream', send_profile_traces = ${value}`;
+            checkRequest(await request(query, {}, enabled), query, false, 'None');
+        }
+    }
+    const sessionQuery = "SELECT 1 SETTINGS framing_output_format = 'EventStream', send_logs_level = 'none'";
+    const sessionResult = await requestApi.postImpl(
+        sessionTab, 1, sessionQuery, {}, {}, {}, '', {url: 'http://fixture/?session_id=logs'}, 0);
+    checkRequest(sessionResult, sessionQuery, true, 'None');
+    assert.equal(new URL(sessionResult.url).searchParams.get('session_id'), 'logs');
+    const packetQuery = "SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'";
+    checkRequest(await request(packetQuery, {}, false), packetQuery, false, 'None', false);
+    const chartQuery = 'SELECT 1 FORMAT JSONCompactColumns';
+    checkRequest(await request(chartQuery, {}, false), chartQuery, false, 'None', false, 'JSONStringsEachRowWithProgress');
     for (const query of [
         "SELECT 1 SETTINGS framing_output_format = 'None'",
         'SELECT 1 SETTINGS framing_output_format = DEFAULT',
@@ -133,7 +173,7 @@ async function main()
         "SELECT 1 FORMAT JSONCompactColumns SETTINGS framing_output_format = 'EventStream'",
     ])
         await assert.rejects(request(query), /framing/, query);
-    console.log('PASS explicit EventStream supports Flame while incompatible framing and chart formats remain rejected');
+    console.log('PASS explicit EventStream preserves logs and request settings while incompatible framing and chart formats remain rejected');
 
     const api = vm.runInNewContext(extract('const MAX_FLAME_NODES', 'async function getServerStatus')
         + extract('function makeEventStreamHandler(', '/// Parse one SSE event block')

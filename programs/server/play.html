@@ -11148,6 +11148,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// stream instead. A query-level `SETTINGS framing_output_format = ...` clause is applied after
     /// the URL parameters, so a query that intentionally chooses a framing still overrides this.
     url += '&framing_output_format=None&default_format=' + (user_framing ? framed_default_format : default_format);
+    if (user_event_stream) url += '&send_logs_level=trace';
 
     targetResultEl.queryText = query;
 
