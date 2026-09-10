@@ -1,0 +1,18 @@
+primary key
+Key range tracking: 1
+skip index
+Key range tracking: 1
+no index
+Key range tracking: 0
+not a MergeTree probe side
+Key range tracking: 0
+setting off
+Key range tracking: 0
+two filters in one query
+BuildRuntimeFilter (Build runtime join filter on __table2.k)
+Key range tracking: 1
+BuildRuntimeFilter (Build runtime join filter on __table3.k)
+Key range tracking: 0
+results
+10
+10

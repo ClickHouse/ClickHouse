@@ -1,4 +1,6 @@
 #include <memory>
+#include <unordered_set>
+#include <vector>
 #include <Columns/ColumnConst.h>
 #include <Common/assert_cast.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -650,6 +652,46 @@ void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const Query
             continue;
 
         read_step->addJoinRuntimeFilterIndexAnalysisOnDataRead(id_field.safeGet<String>(), key_arg->result_name, key_arg->result_type);
+    }
+}
+
+void disableUnusedRuntimeFilterKeyRangeTracking(QueryPlan::Node & root)
+{
+    /// Collect the rendezvous keys of the runtime filters that some probe-side read really consumes,
+    /// and the build steps, in one walk over the final plan. It has to be the final plan: the read
+    /// step a descriptor was registered on can be replaced afterwards (parallel replicas, distributed
+    /// reads), and then nothing consumes the filter any more.
+    std::unordered_set<String> consumed_filter_keys;
+    std::vector<BuildRuntimeFilterStep *> build_steps;
+
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        QueryPlan::Node * node = stack.back();
+        stack.pop_back();
+
+        if (auto * read_step = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            for (const auto & descriptor : read_step->getJoinRuntimeFiltersForIndexAnalysis())
+                consumed_filter_keys.insert(descriptor.filter_id);
+        }
+        else if (auto * build_step = typeid_cast<BuildRuntimeFilterStep *>(node->step.get()))
+        {
+            build_steps.push_back(build_step);
+        }
+
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    /// Tracking the build-side key range costs an extra `getExtremes` pass over every build chunk, so
+    /// it is worth it only for a filter whose probe side registered a descriptor for it. Without this,
+    /// enabling `enable_join_runtime_filters_index_analysis` would slow down every join whose key is
+    /// neither in the primary key nor covered by a `minmax`, `set` or `bloom_filter` skip index.
+    for (auto * build_step : build_steps)
+    {
+        if (!consumed_filter_keys.contains(build_step->getFilterKey()))
+            build_step->disableKeyRangeTracking();
     }
 }
 

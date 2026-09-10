@@ -863,6 +863,11 @@ void optimizeTreeSecondPass(
 
     considerEnablingParallelReplicas(optimization_settings, root, query_plan);
 
+    /// The plan is final here, so this is the first point where it is known which runtime filters a
+    /// read really consumes for granule pruning. Drop the build-side key range tracking of the rest.
+    if (join_runtime_filters_were_added && optimization_settings.enable_join_runtime_filters_index_analysis)
+        disableUnusedRuntimeFilterKeyRangeTracking(root);
+
     /// Run after every optimization that can rewrite aggregation, sorting, projections,
     /// distributed fragments, or parallel replicas. This placement makes the pass a pure
     /// admission check: no later optimization needs to retract the heap or its synthetic sort.

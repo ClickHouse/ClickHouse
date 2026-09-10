@@ -227,6 +227,10 @@ size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryP
 /// Try to prune LHS table granules using JoinRuntimeFilter & index analysis
 void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Turn off build-side key range tracking for the runtime filters that no read consumes for index
+/// analysis. Must run on the final plan, after every pass that can replace a read step.
+void disableUnusedRuntimeFilterKeyRangeTracking(QueryPlan::Node & root);
+
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 

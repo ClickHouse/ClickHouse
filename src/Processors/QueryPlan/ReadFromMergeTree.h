@@ -314,6 +314,13 @@ public:
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
 
+    /// The runtime filters this read actually consumes for granule pruning. Empty when no join key of
+    /// this read is prunable, which is what tells the build side that tracking the key range is useless.
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
+    {
+        return join_runtime_filters_for_index_analysis;
+    }
+
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,

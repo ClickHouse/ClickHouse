@@ -16,7 +16,7 @@
          few granules. `sparse`: 10 keys spread over the whole table, kept exactly, so pruning
          happens by an IN set instead of a range. `all`: every 50th key, too many to keep
          exactly and the range covers the whole table, so nothing can be pruned and the query
-         only pays for the second index analysis pass. -->
+         only pays for the dynamic skip index analysis on data read. -->
     <fill_query>INSERT INTO dim SELECT 30000000 + number, 'range' FROM numbers(100000)</fill_query>
     <fill_query>INSERT INTO dim SELECT number * 5000000 + 1, 'sparse' FROM numbers(10)</fill_query>
     <fill_query>INSERT INTO dim SELECT number * 50, 'all' FROM numbers(1000000)</fill_query>
@@ -51,6 +51,18 @@
 
     <query>
         SELECT sum(f.v) FROM fact AS f INNER JOIN dim AS d ON f.k = d.k WHERE d.tag = 'all'
+        SETTINGS enable_join_runtime_filters_index_analysis = 1
+    </query>
+
+    <!-- The join key is not prunable on the probe side, so nothing can be pruned and nothing may be
+         tracked on the build side either: both queries must cost the same. -->
+    <query>
+        SELECT sum(f.k) FROM fact AS f INNER JOIN dim AS d ON f.v = d.k WHERE d.tag = 'sparse'
+        SETTINGS enable_join_runtime_filters_index_analysis = 0
+    </query>
+
+    <query>
+        SELECT sum(f.k) FROM fact AS f INNER JOIN dim AS d ON f.v = d.k WHERE d.tag = 'sparse'
         SETTINGS enable_join_runtime_filters_index_analysis = 1
     </query>
 
