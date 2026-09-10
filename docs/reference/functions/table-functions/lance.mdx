@@ -1,6 +1,6 @@
 ---
-description: 'Provides a read-only table-like interface to Lance datasets in Amazon S3.'
-sidebar_label: 'lance'
+description: 'Provides a read-only table-like interface to Lance datasets in local storage or Amazon S3.'
+sidebarTitle: 'lance'
 sidebar_position: 91
 slug: /sql-reference/table-functions/lance
 title: 'lance'
@@ -9,13 +9,25 @@ doc_type: 'reference'
 
 # lance Table Function {#lance-table-function}
 
-The `lanceS3` table function provides a read-only table-like interface to existing [Lance](https://lancedb.github.io/lance/) datasets stored in Amazon S3 or S3-compatible object storage.
+The `lanceLocal` and `lanceS3` table functions provide a read-only interface to existing [Lance](https://lancedb.github.io/lance/) datasets. Use `lanceLocal` for local storage and `lanceS3` for Amazon S3 or S3-compatible object storage.
 
-`lanceS3` reads existing Lance datasets. It does not create datasets, write data, build indexes, or perform vector search.
+`lanceLocal` and `lanceS3` read existing Lance datasets. They do not create datasets, write data, build indexes, or perform vector search.
+
+Enable the experimental table functions before using them, including `lanceS3Cluster`:
+
+```sql
+SET allow_experimental_lance = 1;
+```
+
+The setting defaults to `0` and must also be enabled for queries executed on cluster workers.
 
 ## Syntax {#syntax}
 
 ```sql
+lanceLocal(path_to_dataset)
+
+lanceLocal(path_to_dataset, SETTINGS disk = 'disk_name')
+
 lanceS3(url [, NOSIGN | access_key_id, secret_access_key [, session_token]])
 
 lanceS3(named_collection[, option=value [,..]])
@@ -40,6 +52,10 @@ The arguments for `lanceS3` follow the same S3 argument rules as other S3 data l
 - `SETTINGS disk = 'disk_name'` — Read through an S3 object-storage disk defined in server configuration.
 - `cluster_name` — (cluster form only) Name of a cluster used to distribute fragment packs across nodes.
 
+### Local arguments {#local-arguments}
+
+`lanceLocal` takes the path to an existing dataset directory, including its manifests and data files. Use an absolute path on the host running ClickHouse, readable by the server process or by `clickhouse-local`. With `SETTINGS disk = 'disk_name'`, the path is relative to a configured local disk. The files must be accessible to the process executing the query.
+
 ## Cluster reads {#cluster-reads}
 
 `lanceS3Cluster` is an experimental extension that splits a pinned Lance dataset into fragment packs on the initiator and assigns packs to workers (same pattern as `icebergS3Cluster` / `s3Cluster`).
@@ -55,13 +71,13 @@ Named arguments such as `access_key_id`, `secret_access_key`, `session_token`, `
 
 ## Returned value {#returned-value}
 
-`lanceS3` returns a table whose schema is inferred from the Lance dataset version selected at query analysis time.
+`lanceLocal`, `lanceS3`, and `lanceS3Cluster` return a table whose schema is inferred from the Lance dataset version selected at query analysis time.
 
 The dataset version is pinned in the query metadata. Reads use the pinned version, so execution does not drift to a newer Lance dataset version while the query is running. If the pinned version is removed before the query finishes, the query returns an exception instead of reading the latest version.
 
 ## Data types {#data-types}
 
-`lanceS3` recursively converts the following Arrow types stored by Lance:
+The Lance table functions recursively convert the following Arrow types stored by Lance:
 
 | Arrow type | ClickHouse type |
 |---|---|
@@ -86,6 +102,18 @@ ClickHouse cannot represent a container-level `NULL` for `Array` or `Map`. A nul
 `Date64`, dictionary, union, run-end encoded, Arrow extension, and other unlisted types are rejected with an `Unsupported Lance column` exception. `Date64` is rejected because it has no lossless date-only ClickHouse mapping.
 
 ## Examples {#examples}
+
+Read a local Lance dataset:
+
+```sql
+SELECT * FROM lanceLocal('/var/lib/clickhouse/user_files/datasets/example.lance');
+```
+
+Read through a configured local disk:
+
+```sql
+SELECT * FROM lanceLocal('example.lance', SETTINGS disk = 'lance_local_disk');
+```
 
 Read a Lance dataset using explicit credentials:
 
@@ -136,13 +164,13 @@ FROM lanceS3('dataset.lance', SETTINGS disk = 'lance_s3_disk');
 
 ## Virtual columns {#virtual-columns}
 
-`lanceS3` supports the file-like virtual columns provided by the object-storage read path, including `_path`, `_file`, `_size`, `_time`, and `_etag`.
+`lanceLocal` and `lanceS3` support the file-like virtual columns provided by the object-storage read path, including `_path`, `_file`, `_size`, `_time`, and `_etag`.
 
 For data lake reads, `_data_lake_snapshot_version` contains the Lance dataset version used by the query.
 
 ## Limitations {#limitations}
 
-- `lanceS3` is read-only.
+- `lanceLocal`, `lanceS3`, and `lanceS3Cluster` are read-only.
 - Creating new Lance datasets from ClickHouse is not supported.
 - Writing to Lance datasets is not supported.
 - Lance indexes and vector search are not supported.
@@ -150,6 +178,6 @@ For data lake reads, `_data_lake_snapshot_version` contains the Lance dataset ve
 
 ## See also {#see-also}
 
-- [`LanceS3` table engine](/engines/table-engines/integrations/lance)
+- [`LanceLocal` / `LanceS3` table engines](/engines/table-engines/integrations/lance)
 - [`s3` table function](/sql-reference/table-functions/s3)
 - [`icebergS3` table function](/sql-reference/table-functions/iceberg)

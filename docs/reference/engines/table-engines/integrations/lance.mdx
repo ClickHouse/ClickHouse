@@ -1,6 +1,6 @@
 ---
-description: 'This engine provides a read-only integration with existing Lance datasets in Amazon S3.'
-sidebar_label: 'Lance'
+description: 'This engine provides a read-only integration with existing Lance datasets in local storage or Amazon S3.'
+sidebarTitle: 'Lance'
 sidebar_position: 96
 slug: /engines/table-engines/integrations/lance
 title: 'Lance table engine'
@@ -9,9 +9,17 @@ doc_type: 'reference'
 
 # Lance Table Engine {#lance-table-engine}
 
-The `LanceS3` table engine provides a read-only integration with existing [Lance](https://lancedb.github.io/lance/) datasets stored in Amazon S3 or S3-compatible object storage.
+The `LanceLocal` and `LanceS3` table engines provide a read-only integration with existing [Lance](https://lancedb.github.io/lance/) datasets. Use `LanceLocal` for local storage and `LanceS3` for Amazon S3 or S3-compatible object storage.
 
-`LanceS3` mounts existing Lance datasets. It does not create datasets, write data, build indexes, or perform vector search.
+`LanceLocal` and `LanceS3` mount existing Lance datasets. They do not create datasets, write data, build indexes, or perform vector search.
+
+Enable the experimental engines before creating tables:
+
+```sql
+SET allow_experimental_lance = 1;
+```
+
+The setting defaults to `0`. Existing tables can still be attached and read when it is disabled.
 
 ## Create table {#create-table}
 
@@ -35,6 +43,21 @@ ENGINE = LanceS3('dataset.lance')
 SETTINGS disk = 'lance_s3_disk';
 ```
 
+Using a local dataset:
+
+```sql
+CREATE TABLE lance_local_table
+ENGINE = LanceLocal('/var/lib/clickhouse/user_files/datasets/example.lance');
+```
+
+Using a configured local disk:
+
+```sql
+CREATE TABLE lance_local_table
+ENGINE = LanceLocal('example.lance')
+SETTINGS disk = 'lance_local_disk';
+```
+
 The Lance dataset must already exist. When no columns are specified, ClickHouse infers the table schema from the Lance dataset.
 
 ## Engine arguments {#engine-arguments}
@@ -51,9 +74,13 @@ The arguments for `LanceS3` follow the same S3 argument rules as other S3 data l
 
 Named arguments and named collection fields such as `region`, `no_sign_request`, and `use_environment_credentials` are routed through the existing S3 configuration path.
 
+### Local engine arguments {#local-engine-arguments}
+
+`LanceLocal(path)` takes the path to an existing dataset directory, including its manifests and data files. Use an absolute path on the host running ClickHouse, readable by the server process or by `clickhouse-local`. With `SETTINGS disk = 'disk_name'`, the path is relative to the configured local disk. Every server reading the table must have access to the dataset.
+
 ## Explicit schema {#explicit-schema}
 
-`LanceS3` supports an explicit table schema when it is compatible with the inferred Lance dataset schema:
+`LanceLocal` and `LanceS3` support an explicit table schema when it is compatible with the inferred Lance dataset schema:
 
 ```sql
 CREATE TABLE lance_table
@@ -75,7 +102,7 @@ Container-level `NULL` values in `Array` and `Map` are rejected because ClickHou
 
 ## Snapshot state {#snapshot-state}
 
-`LanceS3` captures the current Lance dataset version through `DataLakeTableStateSnapshot` during query analysis. Reads use the saved `Lance::TableStateSnapshot`, so query execution uses a consistent dataset version even if the dataset is updated concurrently. If the pinned version is removed before the query finishes, the query returns an exception instead of reading the latest version.
+`LanceLocal` and `LanceS3` capture the current Lance dataset version through `DataLakeTableStateSnapshot` during query analysis. Reads use the saved `Lance::TableStateSnapshot`, so query execution uses a consistent dataset version even if the dataset is updated concurrently. If the pinned version is removed before the query finishes, the query returns an exception instead of reading the latest version.
 
 The virtual column `_data_lake_snapshot_version` exposes the Lance dataset version used by the query.
 
@@ -139,12 +166,12 @@ Related `ProfileEvents`: `LanceFragmentsListed`, `LanceFragmentPacks`, `LanceFra
 
 ## Limitations {#limitations}
 
-- `LanceS3` is read-only.
+- `LanceLocal` and `LanceS3` are read-only.
 - Creating new Lance datasets from ClickHouse is not supported.
 - Writing to Lance datasets is not supported.
 - Lance indexes and vector search are not supported.
 - Unsupported Lance or Arrow types fail with an `Unsupported Lance column` exception.
-- Non-S3 disks are rejected with `BAD_ARGUMENTS`.
+- `LanceS3` requires an S3 disk; `LanceLocal` requires a local disk. Other disk types are rejected with `BAD_ARGUMENTS`.
 
 ## Cluster table function {#cluster-table-function}
 
@@ -152,6 +179,6 @@ For multi-node parallel reads, use [`lanceS3Cluster`](/sql-reference/table-funct
 
 ## See also {#see-also}
 
-- [`lanceS3` / `lanceS3Cluster` table functions](/sql-reference/table-functions/lance)
+- [`lanceLocal` / `lanceS3` / `lanceS3Cluster` table functions](/sql-reference/table-functions/lance)
 - [`S3` table engine](/engines/table-engines/integrations/s3)
 - [`IcebergS3` table engine](/engines/table-engines/integrations/iceberg)
