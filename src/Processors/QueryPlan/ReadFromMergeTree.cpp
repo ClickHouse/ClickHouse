@@ -607,6 +607,9 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
     /// virtual columns that only this task map materializes.
     parallel_replicas_step->index_read_tasks = index_read_tasks;
+    /// Same for the read-in-order restriction: the step being replaced may already be held to the
+    /// columns the replicas also fix, and the replacement reads the same data for the same fragment.
+    parallel_replicas_step->fixed_columns_the_replicas_also_have = fixed_columns_the_replicas_also_have;
     return parallel_replicas_step;
 }
 
@@ -4461,6 +4464,14 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    /// Carry over the read-in-order restriction for the same reason. The parallel-replicas local
+    /// fragment is optimized by its own nested `optimize` run, which materializes subplan references -
+    /// cloning reads - before it looks for a read to order. A clone that lost the restriction could
+    /// order itself off the pushed condition the replicas do not have, which is what setting it
+    /// prevents. No query reaches that combination today - the only subplan references come from
+    /// correlated subqueries, which disable parallel replicas - so this carries the invariant rather
+    /// than fixing an observable failure.
+    cloned_step->fixed_columns_the_replicas_also_have = fixed_columns_the_replicas_also_have;
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }
