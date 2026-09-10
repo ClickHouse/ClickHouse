@@ -2614,13 +2614,36 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             existing_part = getActiveContainingPart(entry.new_part_name);
 
         /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-        if (existing_part && getZooKeeper()->exists(fs::path(replica_path) / "parts" / existing_part->name))
+        if (existing_part)
         {
-            if (!is_get_or_attach || entry.source_replica != replica_name)
-                LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
-                    entry.new_part_name, existing_part->name);
+            if (getZooKeeper()->exists(fs::path(replica_path) / "parts" / existing_part->name))
+            {
+                if (!is_get_or_attach || entry.source_replica != replica_name)
+                    LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
+                        entry.new_part_name, existing_part->name);
 
-            return true;
+                return true;
+            }
+
+            /** The part is in the working set but has no node in ZooKeeper, a state crash recovery can
+              * leave behind. Executing the entry cannot get out of it: a fetch downloads the whole
+              * part from a peer and then `renameTempPartAndReplaceImpl` throws `DUPLICATE_DATA_PART`
+              * for the part that is already there, and nothing in the retry path reconciles the two,
+              * so the entry is retried forever - the queue never drains and every round downloads the
+              * part again. The part check thread is what reconciles it: it adds the missing node when
+              * the local part is intact, and detaches the part when it is not, after which this entry
+              * is either skipped above or has nothing in its way. The entry stays in the queue
+              * meanwhile: the exponential backoff of a failed entry keeps its retries apart, and a
+              * retry costs nothing now that it fetches nothing.
+              */
+            enqueuePartForCheck(existing_part->name);
+
+            throw Exception(
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED,
+                "Part {} exists locally but has no node in ZooKeeper. Enqueued it for check; the log entry {} for part {} will be retried",
+                existing_part->name,
+                entry.znode_name,
+                entry.new_part_name);
         }
     }
 
