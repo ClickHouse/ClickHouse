@@ -137,14 +137,18 @@ void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
         coordinator.stop();
     }
     coordinator.leave(worker_id);
-    --workers_count;
 }
 
 void WorkerPool::run()
 {
     auto slot = cpu_slots->acquire();
     ++workers_count;
+
+    if (const size_t initial_tasks = scheduler.queued(); initial_tasks > 1)
+        grow(initial_tasks - 1);
+
     runSlot(std::move(slot), nullptr);
+    --workers_count;
 }
 
 void WorkerPool::runUntil(std::atomic_bool * yield_flag)
@@ -157,27 +161,34 @@ void WorkerPool::runUntil(std::atomic_bool * yield_flag)
 
     ++workers_count;
     runSlot(single_slot, yield_flag);
+    --workers_count;
 }
 
-void WorkerPool::grow()
+void WorkerPool::grow(size_t threads_needed)
 {
-    if (!pool || workers_count >= max_threads || coordinator.idle() > 0 || scheduler.queued() == 0)
+    if (!pool || threads_needed == 0 || workers_count >= max_threads)
         return;
 
-    std::unique_lock lock(spawn_mutex, std::try_to_lock);
-    if (!lock || workers_count >= max_threads)
-        return;
+    std::lock_guard lock(spawn_mutex);
 
-    if (requested_threads < workers_count + 1)
+    const size_t target = std::min(max_threads, workers_count + threads_needed);
+    if (requested_threads < target)
     {
-        requested_threads = workers_count + 1;
+        requested_threads = target;
         cpu_slots->setMax(requested_threads);
     }
 
-    auto slot = cpu_slots->tryAcquire();
-    if (!slot)
-        return;
+    while (workers_count < target)
+    {
+        if (auto slot = cpu_slots->tryAcquire())
+            spawn(std::move(slot));
 
+        return;
+    }
+}
+
+void WorkerPool::spawn(AcquiredSlotPtr slot)
+{
     ++workers_count;
     try
     {
@@ -185,6 +196,7 @@ void WorkerPool::grow()
         {
             ThreadGroupSwitcher switcher(thread_group, ThreadName::QUERY_ASYNC_EXECUTOR);
             runSlot(my_slot, nullptr);
+            --workers_count;
         });
     }
     catch (...)

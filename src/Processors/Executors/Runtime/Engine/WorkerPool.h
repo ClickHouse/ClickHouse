@@ -20,6 +20,7 @@ struct MemoryReservation;
 class WorkerPool
 {
     void runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag);
+    void spawn(AcquiredSlotPtr slot);
 
 public:
     WorkerPool(TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_, size_t max_threads_, bool concurrency_control);
@@ -27,7 +28,7 @@ public:
 
     void run();
     void runUntil(std::atomic_bool * yield_flag);
-    void grow();
+    void grow(size_t threads_needed);
     void stop();
 
 private:
