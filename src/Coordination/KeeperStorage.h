@@ -322,8 +322,7 @@ public:
         int64_t session_id,
         int64_t commit_zxid,
         bool produce_response) = 0;
-    /// Call after calling processOneRequest for all requests in batch (except ones that don't need
-    /// transactions, like SessionID).
+    /// Call after calling processOneRequest for all requests in batch.
     void endProcessBatch(const KeeperRequestBatch & batch);
 
     /// Convenience wrapper for tools and tests: commit a single request as a batch of one.
