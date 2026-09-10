@@ -135,11 +135,13 @@ public:
                 // Node deactivation is usually done in dequeueRequest(), but we do not want to
                 // do extra call to active() on every request just to make sure there was no update().
                 // There is no interface method to do deactivation, so we do the following trick.
-                // removeChild(this) resets our own `parent` member to nullptr (via setParentNode()),
-                // so keep a local copy to re-attach through afterwards.
+                // removeChild(this) nulls our `parent` (via setParentNode), so re-attach through a saved local.
                 ISchedulerNode * parent_node = parent;
                 parent_node->removeChild(this);
                 parent_node->attachChild(self); // This call is the only reason we have `recursive_mutex`
+                // Drop any activation a concurrent finishRequest queued under the old limit; otherwise it
+                // would re-activate us under the new (lower) limit and admit one request over the bound.
+                cancelActivation();
             }
         }
     }
