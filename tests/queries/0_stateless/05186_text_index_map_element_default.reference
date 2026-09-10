@@ -29,6 +29,14 @@
 1
 1
 1
+-- a map key is a literal, not a pattern
+1
+1
+1
+1
+-- and the same key under a pattern the value satisfies
+1
+1
 -- hasAny and hasAll reach the same substitution
 1
 1

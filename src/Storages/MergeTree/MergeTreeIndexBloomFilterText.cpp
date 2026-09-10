@@ -610,6 +610,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
+    bool substituted_map_key = false;
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
 
@@ -644,6 +645,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                     return false;
 
                 key_index = map_keys_index;
+                substituted_map_key = true;
 
                 auto unwrapped_const_type = removeLowCardinality(const_type);
                 if (!const_value.isNull())
@@ -688,6 +690,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             {
                 key_index = map_keys_index;
                 const_value = serialized_key;
+                substituted_map_key = true;
             }
             else
             {
@@ -816,6 +819,17 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
+        out.bloom_filter = std::make_unique<BloomFilter>(params);
+        const auto & value = const_value.safeGet<String>();
+        tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        return true;
+    }
+    /// The `mapKeys` probe is the map key, a literal. A pattern tokenizer would consume its escape
+    /// characters and build a probe the index cannot hold, pruning the granule that has the key.
+    if (substituted_map_key && (function_name == "like" || function_name == "notLike" || function_name == "match"))
+    {
+        out.key_column = *key_index;
+        out.function = function_name == "notLike" ? RPNElement::FUNCTION_NOT_EQUALS : RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         const auto & value = const_value.safeGet<String>();
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);

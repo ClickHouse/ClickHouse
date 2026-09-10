@@ -65,6 +65,30 @@ SELECT count() FROM tab_str WHERE m['abc'] = 'hello' SETTINGS force_data_skippin
 
 DROP TABLE tab_str;
 
+DROP TABLE IF EXISTS tab_key_escape;
+CREATE TABLE tab_key_escape (m Map(String, Nullable(String)), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
+INSERT INTO tab_key_escape VALUES (map('abc\\+def', ''));
+
+SELECT '-- a map key is a literal, not a pattern';
+SELECT count() FROM tab_key_escape WHERE m['abc\\+def'] LIKE '' SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM tab_key_escape WHERE m['abc\\+def'] LIKE '' SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM tab_key_escape WHERE match(m['abc\\+def'], '') SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM tab_key_escape WHERE match(m['abc\\+def'], '') SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE tab_key_escape;
+
+DROP TABLE IF EXISTS tab_key_escape_str;
+CREATE TABLE tab_key_escape_str (m Map(String, String), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
+INSERT INTO tab_key_escape_str VALUES (map('abc\\+def', 'zzz'));
+
+SELECT '-- and the same key under a pattern the value satisfies';
+SELECT count() FROM tab_key_escape_str WHERE m['abc\\+def'] LIKE '%zzz%' SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM tab_key_escape_str WHERE m['abc\\+def'] LIKE '%zzz%' SETTINGS optimize_functions_to_subcolumns = 1;
+
+DROP TABLE tab_key_escape_str;
+
 DROP TABLE IF EXISTS tab_arr;
 CREATE TABLE tab_arr (m Map(String, Array(String)), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
 ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
