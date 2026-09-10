@@ -1196,9 +1196,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         }
         else if (!prefer_left_table)
         {
-            if (scope.allow_ambiguous_join_tree_identifier)
+            if (scope.ambiguous_join_tree_identifier)
             {
-                scope.join_tree_identifier_is_ambiguous = true;
+                *scope.ambiguous_join_tree_identifier = true;
                 return {};
             }
 
@@ -1702,9 +1702,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
         }
-        else if (scope.allow_ambiguous_join_tree_identifier)
+        else if (scope.ambiguous_join_tree_identifier)
         {
-            scope.join_tree_identifier_is_ambiguous = true;
+            *scope.ambiguous_join_tree_identifier = true;
             return {};
         }
         else

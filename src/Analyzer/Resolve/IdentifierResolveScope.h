@@ -227,12 +227,11 @@ struct IdentifierResolveScope
     /// True while resolving a JOIN ON expression.
     bool resolving_join_on_expression = false;
 
-    /** While `allow_ambiguous_join_tree_identifier` is set, join tree resolution of an expression identifier
-      * that is ambiguous between joined tables sets `join_tree_identifier_is_ambiguous` and returns an empty result
-      * instead of throwing `AMBIGUOUS_IDENTIFIER`.
+    /** When set, join tree resolution of an expression identifier that is ambiguous between joined tables
+      * sets the flag and returns an empty result instead of throwing `AMBIGUOUS_IDENTIFIER`.
+      * The caller decides whether another resolution path (aliases) can take over.
       */
-    bool allow_ambiguous_join_tree_identifier = false;
-    bool join_tree_identifier_is_ambiguous = false;
+    bool * ambiguous_join_tree_identifier = nullptr;
 
     /// Subquery depth
     size_t subquery_depth = 0;
