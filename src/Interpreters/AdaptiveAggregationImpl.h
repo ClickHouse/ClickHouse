@@ -42,59 +42,33 @@ constexpr size_t adaptive_drain_prefetch_look_ahead = 16;
 /// less than a million rows).
 constexpr size_t adaptive_freeze_give_up_row_multiple = 16;
 
-/// The thaw guard, for the failure the give-up cannot see: the table filled and froze, but
-/// the stream behind it keeps repeating the same missing keys instead of bringing rare ones.
-/// Staged misses are supposed to be rare keys, each staged about once. A key's first staged
-/// record is the price of storing it once, repaid by the merge working on deduplicated keys;
-/// every repeat is bytes the baseline would have absorbed as a cheap in-place update. The
-/// verdict therefore weighs the repeats by the records' bytes: the stream thaws once the
-/// wasted staged bytes per distinct key, (repeat factor - 1) * bytes per record, exceed the
-/// bound. The repeat factor is estimated over a shared sparse sample of staged hashes.
-/// Repeats of a key collapse onto one sample entry across all threads, so the estimate does
-/// not depend on how a key's occurrences spread over the threads. The weighting separates the shapes by how
-/// much a repeat costs. A near-unique stream has repeat ~ 1, so its wasted bytes are ~ 0 and
-/// it can never fire, no matter how heavy its records are. A stream of narrow fixed-width
-/// records pays ~ 24 bytes per repeat (a numeric key plus the bookkeeping), so it crosses the
-/// bound only past repeat ~ 13, where the pathological mid-cardinality streams live. A stream
-/// of wide keys or wide string arguments pays the whole record per repeat, so ~ 100-byte
-/// records cross already at repeat ~ 4. The bound of 300 splits the measured shapes: every
-/// shape that wants the thaw wastes at least ~ 440 bytes per key (a 90-byte string key at
-/// repeat ~ 3, a 90-byte string argument at repeat ~ 5, high-repeat count streams land in the
-/// kilobytes), and every shape that wins when kept engaged wastes at most ~ 275 (fixed-width
-/// arguments up to repeat ~ 12.5, count streams far below). `adaptive_thaw_min_staged_records`
-/// is the evidence floor before the verdict may fire. It is in records rather than bytes
-/// because the repeat estimate's confidence comes from the number of sampled observations.
+/// Controls thawing when the estimated bytes spent on repeated staging exceed the per-key bound.
+/// The shared hash sample estimates repetition across all producers. The byte-weighted threshold
+/// tests `(repeat factor - 1) * bytes per record`, so a wider payload tolerates fewer repetitions.
+/// The estimate treats the first record per distinct key as necessary storage and excludes it.
+/// `adaptive_thaw_min_staged_records` provides an evidence floor before the verdict can fire;
+/// its unit is records because confidence depends on sampled observations rather than byte volume.
 constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
 constexpr size_t adaptive_thaw_min_staged_records = 524'288;
 constexpr size_t adaptive_thaw_wasted_bytes_per_key = 300;
 
-/// A drain table is detached and written only once it holds at least this many keys, so the
-/// spilled parts stay reasonably sized instead of one tiny file per chunk; the same floor
-/// sizes the batch a pressure sweep claims for a producer-local drain. A key count cannot
-/// bound memory on its own - a million wide keys with their states is hundreds of megabytes -
-/// so it is paired with a byte bound derived from the query's own external-aggregation
-/// threshold (see `Aggregator::adaptivePressurePartBytes`), whichever comes first.
+/// Sets the shared drain table's key-count threshold and the producer-local batch's staged-record
+/// target, keeping spilled parts large enough to amortize file and reader overhead. The byte bound
+/// from `Aggregator::adaptivePressurePartBytes` can trigger a spill earlier for large keys or states.
 constexpr size_t adaptive_pressure_spill_min_keys = 1'000'000;
-/// The floor under that byte bound. A part smaller than this is a false economy: a drain table
-/// carries an arena per bucket, so below a few tens of megabytes its footprint is mostly chunk
-/// padding rather than keys, and every extra part costs a reader with its own deserialization
-/// arena at merge time. Measured on a 3M-key external `GROUP BY` spilling at 20 MB, the peak is
-/// a U in this bound - 200 MB of peak at 8 MiB (90 parts), 150 MB at 32 MiB (26 parts), 200 MB
-/// again at 64 MiB (15 parts) - so the middle is where the residue and the readers balance.
+/// Keeps parts large enough to amortize the per-bucket tables and arenas, and each spilled part's
+/// merge reader. Smaller parts reduce the current drain's footprint but increase merge-time overhead.
 constexpr size_t adaptive_pressure_min_part_bytes = 32 << 20;
-/// The in-flight concurrency budget for detached tables awaiting serialization, across the
-/// session (roughly four floor-sized tables). It bounds how much detached work exists at
-/// once, not memory exactly: a reservation is corrected upward once the table is built, and
-/// `allocatedBytes` cannot see heap owned internally by complex aggregate states. The finish
-/// drain ignores the budget because it must leave nothing behind. Like the key floor it is a
-/// ceiling that the external-aggregation threshold narrows where it is set (see
-/// `Aggregator::adaptivePressureDetachedBytesBudget`).
+/// Caps the reservation budget for detached tables awaiting serialization across the session.
+/// `Aggregator::adaptivePressureDetachedBytesBudget` can lower it using the external-aggregation
+/// threshold. Reservations increase to cover the built table's footprint and observed allocation
+/// growth; an oversized reservation is allowed when no bytes are already reserved. The finish
+/// drain writes sequentially without this budget.
 constexpr size_t adaptive_pressure_detached_bytes_budget = 256 << 20;
 
 struct AdaptiveAggregationSession
 {
     /// The 256 per-bucket chunk backlogs and the locking that keeps publication atomic.
-    /// TODO (nihalzp): Consider using a lock-free queue for the backlog, to avoid contention on the mutex.
     class StagedBacklog
     {
     public:
@@ -113,12 +87,9 @@ struct AdaptiveAggregationSession
         /// wait for the next sweep or for the merge.
         std::vector<StagedChunkPtr> takeAllForPressureDrain();
 
-        /// The bucket's remaining chunks, read without the mutex: production is over by the
-        /// time the merge tasks run (completion of every admission stream ordered registration
-        /// before the merge sources were created), and the chunks deliberately stay put - the
-        /// merge emplaces keys that point into their staged bytes, so they must live until the
-        /// merged buckets are converted, and the session (owned by every merge source) is
-        /// exactly that lifetime.
+        /// Reads the bucket's remaining chunks after all admission streams finish. No publisher
+        /// remains, and the bucket's merge task retains these chunks until conversion because its
+        /// table borrows their staged key bytes. Every merge source keeps the session alive.
         const std::vector<StagedChunkPtr> & forMergeBucket(size_t bucket) const { return buckets[bucket].backlog; }
 
         /// Drains report their actual progress, so a cancelled drain does not discount records
@@ -173,10 +144,8 @@ struct AdaptiveAggregationSession
     /// by `pressure_sweep_mutex`, like the table itself.
     size_t early_drain_tracked_bytes = 0;
 
-    /// Serializes pressure sweeps: one sweeper at a time sheds memory, and a single sweeper
-    /// needs no per-bucket coordination; merge-time drains run after the finish barrier and
-    /// need none either. Producers over the trigger block on it deliberately - pausing
-    /// production is the backpressure that lets the sweep win.
+    /// Guards backlog claims and updates to the shared drain table. Full batches drain into local
+    /// tables after releasing this lock; merge-time drains run after production finishes.
     std::mutex pressure_sweep_mutex;
     /// Reservations of detached-table bytes against the budget the caller passes in,
     /// released as their writes finish. Guarded by a mutex with a condition variable so a
@@ -254,9 +223,8 @@ struct AdaptiveAggregationSession
         AdaptiveAggregationSession * session = nullptr;
         size_t bytes = 0;
     };
-    /// Set when the query is cancelled (see `cancel`). The pressure sweeps check it between
-    /// chunks and buckets, so a dying query does not wait out a full sweep - which can include
-    /// spilling gigabytes to disk - before it stops.
+    /// Set when the query is cancelled (see `cancel`). Pressure sweeps check between chunks and
+    /// buckets so cancellation can stop a sweep before it drains and spills the remaining backlog.
     std::atomic<bool> cancelled{false};
 
     /// Stops the sweeps at their next check and wakes any producer waiting for spill budget;

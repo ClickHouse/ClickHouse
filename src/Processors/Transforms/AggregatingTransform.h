@@ -74,8 +74,7 @@ struct ManyAggregatedData
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
 
-    /// Fixed producer slots, independent of the routing-table variant appended during final
-    /// assembly. Ordinary aggregation counts finishers; adaptive aggregation uses port completion.
+    /// Sets the merge transform's input count before final assembly can append the shared drain table.
     const size_t num_producers;
 
     /// Set when the adaptive aggregation is enabled for this aggregation (see
@@ -158,6 +157,7 @@ private:
     std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
     /// Owns the outbox and the input storage retained while aggregation waits for admission.
     std::unique_ptr<AdaptiveAggregationExecution> adaptive_execution;
+    /// Indexes the next prepared chunk to send through the admission port.
     size_t next_ready_chunk = 0;
 
     /// Final conversion starts after the last buffered chunks have been admitted.

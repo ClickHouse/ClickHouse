@@ -348,7 +348,7 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
 
     /// Apply the aggregate functions to the delayed rows only: the slice is a contiguous row
     /// range of the compacted argument columns and of `places`, so the standard executor
-    /// applies to it directly - one compiled row loop for the compiled functions, a batch pass
+    /// applies to it directly: one compiled row loop for the compiled functions, and a batch pass
     /// per remaining function.
     executeAggregateInstructions(
         bucket_arena,

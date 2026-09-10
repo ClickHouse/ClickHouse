@@ -1,7 +1,6 @@
 #include <unordered_set>
 
 #include <Columns/IColumn.h>
-#include <Common/Arena.h>
 #include <Common/FailPoint.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/ProfileEvents.h>
@@ -31,6 +30,8 @@ bool AdaptiveAggregationSession::SpillReservation::reserveOrWait(
     session_.detached_spill_cv.wait(lock, [&]
     {
         const bool ready = fits(session_, bytes_, budget_) || session_.cancelled.load(std::memory_order_relaxed);
+        /// The pause holds `detached_spill_mutex`; tests must resume it before calling `cancel`
+        /// or changing a reservation, since those operations acquire the same mutex.
         if (!ready)
             fiu_do_on(FailPoints::adaptive_aggregation_before_spill_budget_wait,
                 FailPointInjection::notifyPauseAndWaitForResume(FailPoints::adaptive_aggregation_before_spill_budget_wait););
