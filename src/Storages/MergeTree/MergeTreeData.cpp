@@ -11868,17 +11868,20 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     if (!command.isDropOrRename() || unfinished_mutations.empty())
         return;
 
-    NameSet affected_column_names{command.column_name};
-    if (command.type == AlterCommand::DROP_COLUMN && (*getSettings())[MergeTreeSetting::share_nested_offsets])
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    const bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    /// Expand a `Nested` group name to the physical columns it covers, so that a command naming the
+    /// group and a command naming one member are recognised as touching the same storage columns.
+    auto expand = [&](const String & name)
     {
-        const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-        if (metadata_snapshot->columns.hasNested(command.column_name))
-        {
-            affected_column_names.clear();
-            for (const auto & nested_column : metadata_snapshot->columns.getNested(command.column_name))
-                affected_column_names.emplace(nested_column.name);
-        }
-    }
+        const Names expanded = getColumnNamesAffectedByDrop(metadata_snapshot->columns, name, share_nested_offsets);
+        return NameSet(expanded.begin(), expanded.end());
+    };
+
+    NameSet affected_column_names{command.column_name};
+    if (command.type == AlterCommand::DROP_COLUMN)
+        affected_column_names = expand(command.column_name);
 
     auto throw_exception = [] (
         const std::string & mutation_name,
@@ -11915,7 +11918,18 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
             {
                 const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
 
-                if (affected_column_names.contains(mutation_command.column_name))
+                /// The unfinished mutation may itself name a whole `Nested` group, so expand both
+                /// sides before comparing. A group-wide `CLEAR COLUMN n` and a later `DROP COLUMN n.a`
+                /// touch the same physical columns even though the raw names differ.
+                if (mutation_command.type == MutationCommand::Type::DROP_COLUMN
+                    || mutation_command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    const NameSet mutation_column_names = expand(mutation_command.column_name);
+                    if (std::ranges::any_of(
+                            mutation_column_names, [&](const auto & name) { return affected_column_names.contains(name); }))
+                        throw_exception(mutation_name, action, "column", command.column_name);
+                }
+                else if (affected_column_names.contains(mutation_command.column_name))
                     throw_exception(mutation_name, action, "column", command.column_name);
 
                 auto alter = mutation_command.ast();

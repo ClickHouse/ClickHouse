@@ -113,3 +113,53 @@ FORMAT Null;
 
 SYSTEM START MERGES nested_drop_unfinished_mutation;
 DROP TABLE nested_drop_unfinished_mutation;
+
+DROP VIEW IF EXISTS nested_drop_unflattened_mv;
+DROP TABLE IF EXISTS nested_drop_unflattened_source;
+
+SET flatten_nested = 0;
+
+CREATE TABLE nested_drop_unflattened_source
+(
+    n Nested(a UInt64, b UInt64),
+    x UInt64
+)
+ENGINE = MergeTree
+ORDER BY x;
+
+CREATE MATERIALIZED VIEW nested_drop_unflattened_mv
+ENGINE = Null
+AS SELECT `n.a` FROM nested_drop_unflattened_source;
+
+ALTER TABLE nested_drop_unflattened_source DROP COLUMN n; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+
+DROP VIEW nested_drop_unflattened_mv;
+DROP TABLE nested_drop_unflattened_source;
+
+SET flatten_nested = 1;
+
+DROP TABLE IF EXISTS nested_drop_unfinished_clear;
+
+CREATE TABLE nested_drop_unfinished_clear
+(
+    `n.a` UInt64,
+    `n.b` UInt64,
+    x UInt64
+)
+ENGINE = MergeTree
+ORDER BY x;
+
+INSERT INTO nested_drop_unfinished_clear VALUES (1, 10, 100);
+SYSTEM STOP MERGES nested_drop_unfinished_clear;
+ALTER TABLE nested_drop_unfinished_clear CLEAR COLUMN n SETTINGS alter_sync = 0;
+
+ALTER TABLE nested_drop_unfinished_clear DROP COLUMN `n.a`; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE nested_drop_unfinished_clear RENAME COLUMN `n.a` TO `n.c`; -- { serverError BAD_ARGUMENTS }
+
+KILL MUTATION
+WHERE database = currentDatabase() AND table = 'nested_drop_unfinished_clear'
+SYNC
+FORMAT Null;
+
+SYSTEM START MERGES nested_drop_unfinished_clear;
+DROP TABLE nested_drop_unfinished_clear;

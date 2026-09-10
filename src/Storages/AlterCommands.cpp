@@ -2535,7 +2535,12 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
 
 Names getColumnNamesAffectedByDrop(const ColumnsDescription & columns, const String & column_name, bool share_nested_offsets)
 {
-    if (share_nested_offsets && !columns.has(column_name) && columns.hasNested(column_name))
+    if (!share_nested_offsets)
+        return {column_name};
+
+    /// With `flatten_nested = 1` the group is stored as the flattened columns `<name>.*` and there is
+    /// no column named `<name>`, so the name denotes the whole group.
+    if (!columns.has(column_name) && columns.hasNested(column_name))
     {
         Names nested_column_names;
         for (const auto & nested_column : columns.getNested(column_name))
@@ -2543,7 +2548,13 @@ Names getColumnNamesAffectedByDrop(const ColumnsDescription & columns, const Str
         return nested_column_names;
     }
 
-    return {column_name};
+    /// With `flatten_nested = 0` the group is one real column, but a materialized view selects its
+    /// members by their full names (`<name>.<member>`), and dependent-view keys record those names
+    /// verbatim. Dropping the storage column removes the members too, so report them as well.
+    Names names{column_name};
+    for (const auto & subcolumn : columns.getSubcolumns(column_name))
+        names.push_back(subcolumn.name);
+    return names;
 }
 
 }
