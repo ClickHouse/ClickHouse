@@ -28,3 +28,23 @@ invalid values are still reported
 a referenced default value is still processed
 1
 2
+the s2 family over a LowCardinality argument
+1
+1
+1
+a referenced NULL is not evaluated either
+2024-01-01 00:00:00
+\N
+2024-01-01 00:00:00
+\N
+167772161
+\N
+60310
+\N
+1024
+\N
+5
+\N
+1
+\N
+invalid values behind a NULL-containing dictionary are still reported

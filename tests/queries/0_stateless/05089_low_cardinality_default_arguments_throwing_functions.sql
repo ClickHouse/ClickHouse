@@ -46,3 +46,25 @@ SELECT h3ToParent(materialize(toLowCardinality(toUInt64(1))), 1) SETTINGS functi
 SELECT 'a referenced default value is still processed';
 SELECT IPv4StringToNumOrNull(materialize(toLowCardinality(''))) IS NULL;
 SELECT count() FROM (SELECT IPv4StringToNumOrDefault(toLowCardinality(arrayJoin(['', '10.0.0.1']))));
+
+SELECT 'the s2 family over a LowCardinality argument';
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT s2CellsIntersect(materialize(toLowCardinality(geoToS2(37.0, 55.0))), geoToS2(37.0, 55.0));
+SELECT s2CapContains(materialize(toLowCardinality(geoToS2(37.0, 55.0))), 1.0, geoToS2(37.0, 55.0));
+SELECT s2RectContains(geoToS2(36.0, 54.0), geoToS2(38.0, 56.0), materialize(toLowCardinality(geoToS2(37.0, 55.0))));
+
+SELECT 'a referenced NULL is not evaluated either';
+-- The nested column behind a NULL holds the type's default value, and `defaultImplementationForNulls`
+-- used to run the function over those rows before masking them out. A function that declines
+-- `canBeExecutedOnDefaultArguments` must not be executed on them - with a mixed NULL / non-NULL
+-- dictionary the reserved default is gone but a *referenced* NULL remains.
+SELECT parseDateTime(x, '%Y-%m-%d') FROM (SELECT arrayJoin([NULL, '2024-01-01']) :: Nullable(String) AS x) ORDER BY ALL;
+SELECT parseDateTime(x, '%Y-%m-%d') FROM (SELECT arrayJoin([NULL, '2024-01-01']) :: LowCardinality(Nullable(String)) AS x) ORDER BY ALL;
+SELECT IPv4StringToNum(x) FROM (SELECT arrayJoin([NULL, '10.0.0.1']) :: LowCardinality(Nullable(String)) AS x) ORDER BY ALL;
+SELECT toModifiedJulianDay(x) FROM (SELECT arrayJoin([NULL, '2024-01-01']) :: LowCardinality(Nullable(String)) AS x) ORDER BY ALL;
+SELECT parseReadableSize(x) FROM (SELECT arrayJoin([NULL, '1 KiB']) :: LowCardinality(Nullable(String)) AS x) ORDER BY ALL;
+SELECT h3GetResolution(x) FROM (SELECT arrayJoin([NULL, 599686042433355775]) :: LowCardinality(Nullable(UInt64)) AS x) ORDER BY ALL;
+SELECT s2CellsIntersect(x, geoToS2(37.0, 55.0)) FROM (SELECT arrayJoin([NULL, geoToS2(37.0, 55.0)]) :: LowCardinality(Nullable(UInt64)) AS x) ORDER BY ALL;
+
+SELECT 'invalid values behind a NULL-containing dictionary are still reported';
+SELECT parseDateTime(x, '%Y-%m-%d') FROM (SELECT arrayJoin([NULL, 'nonsense']) :: LowCardinality(Nullable(String)) AS x); -- { serverError CANNOT_PARSE_DATETIME }

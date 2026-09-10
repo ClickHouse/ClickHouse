@@ -126,12 +126,16 @@ protected:
       * Useful when executing on LowCardinality dictionary, which contains default value even if
       * none of the rows use it.
       *
-      * *Not* useful when executing on Nullable columns. The value behind a NULL is
-      * not necessarily default. E.g.:
+      * Also used when executing on Nullable columns: `createBlockWithNestedColumns` leaves the rows
+      * behind a NULL untouched, so a function that declines this contract is not executed on them
+      * either - they are filtered out first, and their result is masked out as NULL anyway. This
+      * means the nested value under a NULL is not observable for such a function, e.g.:
       *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
       *   ┌──x─┐
       *   │ 42 │
       *   └────┘
+      * still holds for `plus` (which accepts the contract), while a declining function such as
+      * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
