@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},
+            {"allow_parallel_final_distinct", false, true, "New setting to run the final `DISTINCT` on all threads by hash-partitioning its input by the `DISTINCT` columns instead of merging the streams into one."},
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},
