@@ -5,7 +5,11 @@
 -- already have that carve-out.
 
 DROP TABLE IF EXISTS t_max_table_size_rows;
-CREATE TABLE t_max_table_size_rows (p UInt8, id UInt64, s String) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+-- Prevent regular background merges (by the max size of merged parts) so that the small parts of
+-- partition 1 survive until `OPTIMIZE`, which ignores this setting, merges them - otherwise the test
+-- could pass on the background merge path without ever exercising the over-limit merge.
+CREATE TABLE t_max_table_size_rows (p UInt8, id UInt64, s String) ENGINE = MergeTree PARTITION BY p ORDER BY id
+    SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
 
 -- partition 0: one big part; partition 1: five small parts
 INSERT INTO t_max_table_size_rows SELECT 0, number, 'x' FROM numbers(5000);
@@ -16,6 +20,9 @@ INSERT INTO t_max_table_size_rows SELECT 1, number + 60, 'd' FROM numbers(20);
 INSERT INTO t_max_table_size_rows SELECT 1, number + 80, 'e' FROM numbers(20);
 
 ALTER TABLE t_max_table_size_rows MODIFY SETTING max_table_size_rows = 1000;
+
+-- All five parts of partition 1 are still there, so `OPTIMIZE` below really has to merge them.
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_max_table_size_rows' AND active AND partition = '1';
 
 -- Compacting partition 1 keeps the row count, so it is allowed.
 OPTIMIZE TABLE t_max_table_size_rows PARTITION 1 FINAL;
