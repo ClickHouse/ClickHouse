@@ -27,10 +27,16 @@ ColumnsDescription StorageSystemObjectStorageQueueMetadataCache<type>::getColumn
         {"file_path", std::make_shared<DataTypeString>(), "File path of a file which is being processed"},
         {"file_name", std::make_shared<DataTypeString>(), "File name of a file which is being processed"},
         {"rows_processed", std::make_shared<DataTypeUInt64>(), "Currently processed number of rows"},
-        {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed"},
+        {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed. "
+            "A non-null `processing_by_another_server_time` means that the `Processing` status belongs to a processor of another server"},
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file started"},
         {"processing_end_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file ended"},
         {"exception", std::make_shared<DataTypeString>(), "Exception which happened during processing"},
+        {"processing_by_another_server_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+            "Non-null if the `Processing` status was not set by a processor of this server, but observed in keeper, "
+            "which means that the file is being processed elsewhere: the time of that observation. "
+            "In this case `rows_processed`, `processing_start_time`, `processing_end_time` and `exception` "
+            "describe the last attempt of this server to process the file, not the ongoing processing"},
     };
 }
 
@@ -70,6 +76,11 @@ void StorageSystemObjectStorageQueueMetadataCache<type>::fillData(MutableColumns
                 res_columns[i++]->insertDefault();
 
             res_columns[i++]->insert(file_status->getException());
+
+            if (file_status->foreign_processing_time)
+                res_columns[i++]->insert(file_status->foreign_processing_time.load());
+            else
+                res_columns[i++]->insertDefault();
         }
     }
 }

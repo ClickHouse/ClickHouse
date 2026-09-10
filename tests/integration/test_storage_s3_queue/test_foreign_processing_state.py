@@ -98,12 +98,24 @@ def test_retry_file_released_by_another_processor(started_cluster):
         # even after the cached state expires and keeper is rechecked.
         time.sleep(3 * ttl_seconds)
         assert get_count() == files_to_generate - 1
+        # Its `Processing` status is marked as belonging to the other processor,
+        # so that the per-attempt columns of this table are not read as its own progress.
         assert (
             node.query(
-                f"SELECT status FROM system.s3queue_metadata_cache"
+                f"SELECT status, processing_by_another_server_time IS NOT NULL"
+                f" FROM system.s3queue_metadata_cache"
                 f" WHERE zookeeper_path = '{keeper_path}' AND file_path = '{held_file}'"
             ).strip()
-            == "Processing"
+            == "Processing\t1"
+        )
+        # A file processed by this table is not marked as such.
+        assert (
+            node.query(
+                f"SELECT count() FROM system.s3queue_metadata_cache"
+                f" WHERE zookeeper_path = '{keeper_path}' AND file_path != '{held_file}'"
+                f" AND processing_by_another_server_time IS NOT NULL"
+            ).strip()
+            == "0"
         )
 
         # The other processor released the file without committing it.

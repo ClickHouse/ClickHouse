@@ -68,8 +68,6 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor()
 {
-    /// Keep the per-attempt data (processed rows, timings, exception): it belongs to this
-    /// table, while the `Processing` state was observed in keeper.
     foreign_processing_time = now();
     state = FileStatus::State::Processing;
 }
