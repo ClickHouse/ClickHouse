@@ -69,6 +69,9 @@ $CLICKHOUSE_CLIENT -q "SELECT name, create_query FROM system.resources ORDER BY 
 user="user04409_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user}"
 $CLICKHOUSE_CLIENT -q "CREATE USER ${user} NOT IDENTIFIED"
+# Reading a Disk(...) backup requires READ ON DISK (the SOURCES grant model). Grant it up front so the
+# checks below isolate the WORKLOAD / RESOURCE privileges this PR adds, not the backup engine's disk access.
+$CLICKHOUSE_CLIENT -q "GRANT READ ON DISK TO ${user}"
 
 # Drop the entities so that a successful RESTORE below actually re-creates them.
 $CLICKHOUSE_CLIENT -m -q "
@@ -124,6 +127,7 @@ $CLICKHOUSE_CLIENT -q "SELECT create_query FROM system.workloads WHERE name = 'd
 user_replace="user04409_replace_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS ${user_replace}"
 $CLICKHOUSE_CLIENT -q "CREATE USER ${user_replace} NOT IDENTIFIED"
+$CLICKHOUSE_CLIENT -q "GRANT READ ON DISK TO ${user_replace}"
 $CLICKHOUSE_CLIENT -q "GRANT CREATE WORKLOAD, CREATE RESOURCE ON *.* TO ${user_replace}"
 echo '--- replace-restore without DROP WORKLOAD/RESOURCE is denied (missing grants reported) ---'
 $CLICKHOUSE_CLIENT --user "${user_replace}" -q "RESTORE TABLE system.workloads, TABLE system.resources FROM ${backup_name} SETTINGS create_workloads_and_resources = 'replace'" 2>&1 \
