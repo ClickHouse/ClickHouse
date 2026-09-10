@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Common/typeid_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Columns/ColumnsNumber.h>
@@ -26,17 +27,17 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 
     auto description = ColumnsDescription
     {
-        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether this query comes directly from user or was issues by ClickHouse server in a scope of distributed query execution."},
+        {"is_initial_query", std::make_shared<DataTypeUInt8>(), "Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries."},
 
         {"user", std::make_shared<DataTypeString>(), "The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the default user. The field contains the username for a specific query, not for a query that this query initiated."},
         {"query_id", std::make_shared<DataTypeString>(), "Query ID, if defined."},
         {"address", DataTypeFactory::instance().get("IPv6"), "The IP address the query was made from. The same for distributed processing. To track where a distributed query was originally made from, look at system.processes on the query requestor server."},
         {"port", std::make_shared<DataTypeUInt16>(), "The client port the query was made from."},
 
-        {"initial_user", std::make_shared<DataTypeString>(), "Name of the user who ran the initial query (for distributed query execution)."},
-        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query (for distributed query execution)."},
-        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address that the parent query was launched from."},
-        {"initial_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the parent query."},
+        {"initial_user", std::make_shared<DataTypeString>(), "Name of the user who ran the initial query in the same query chain."},
+        {"initial_query_id", std::make_shared<DataTypeString>(), "ID of the initial query in the same query chain."},
+        {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address from which the initial query in the same query chain was launched."},
+        {"initial_port", std::make_shared<DataTypeUInt16>(), "Client port from which the initial query in the same query chain was launched."},
 
         {"interface", std::make_shared<DataTypeUInt8>(), "The interface which was used to send the query. TCP = 1, HTTP = 2, GRPC = 3, MYSQL = 4, POSTGRESQL = 5, LOCAL = 6, TCP_INTERSERVER = 7."},
 
@@ -94,6 +95,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     ProcessList::Info info = context->getProcessList().getInfo(true, true, true);
+    const bool show_secrets = canDisplaySecrets(context);
 
     for (const auto & process : info)
     {
@@ -114,7 +116,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(UInt64(process.client_info.interface));
 
         res_columns[i++]->insert(process.client_info.os_user);
-        res_columns[i++]->insert(process.client_info.client_hostname);
+        res_columns[i++]->insert(process.client_info.getClientHostName());
         res_columns[i++]->insert(process.client_info.client_name);
         res_columns[i++]->insert(process.client_info.client_agent);
         res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
@@ -169,7 +171,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
             IColumn * column = res_columns[i++].get();
 
             if (process.query_settings)
-                process.query_settings->dumpToMapColumn(column, true);
+                process.query_settings->dumpToMapColumn(column, true, show_secrets);
             else
             {
                 column->insertDefault();

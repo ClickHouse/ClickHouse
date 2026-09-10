@@ -877,8 +877,16 @@ protected:
                 join->kind,
                 join->strictness,
                 join->data->maps.front(),
-                join->preferUseMapsAll(),
-                [&](auto kind, auto strictness, auto & map) { chunk = createChunk<kind, strictness>(map); }))
+                join->getMapsKind(),
+                [&](auto kind, auto strictness, auto & map)
+                {
+                    /// `StorageJoin` reads the right rows back out of the maps, so it never stores them
+                    /// in a map that keeps none.
+                    if constexpr (SetJoinMaps<decltype(map)>)
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageJoin cannot read rows from a set map");
+                    else
+                        chunk = createChunk<kind, strictness>(map);
+                }))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JOIN strictness");
         return chunk;
     }

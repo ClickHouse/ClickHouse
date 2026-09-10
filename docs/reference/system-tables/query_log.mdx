@@ -25,8 +25,31 @@ ClickHouse does not delete data from the table automatically. See [Introduction]
 
 The `system.query_log` table registers two kinds of queries:
 
-1.  Initial queries that were run directly by the client.
-2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
+1.  Initial (top-level) queries.
+2.  Child queries that were initiated by other queries, including queries for distributed execution and internal subqueries such as view evaluation. For these queries, information about the original initial query is shown in the `initial_*` columns.
+
+<Tip>
+**Filter initial queries by default**
+
+Generally, add `is_initial_query = 1` whenever you query `system.query_log`. This excludes child queries so individual processing steps are not counted separately from the initial query. This filter does not imply that a query was submitted by a client, because server-internal work can also be an initial query.
+
+Use `initial_query_id` instead when you need to trace an initial query together with child queries that preserve its ID. The initial query has the same value for `initial_query_id` and `query_id`, while child queries in the same chain keep the initial query's `initial_query_id` and have their own `query_id`. Not all work spawned by an initial query is correlated this way: server-dispatched work can start a new initial-query chain with a new `initial_query_id`, as with remote [`QueryRunner`](/reference/engines/table-engines/special/query-runner#cluster-mode) dispatches.
+
+```sql
+SELECT
+    hostname,
+    type,
+    query_id,
+    initial_query_id,
+    is_initial_query,
+    query
+FROM system.query_log
+WHERE initial_query_id = '<query_id_of_initial_query>'
+ORDER BY event_time_microseconds;
+```
+
+If correlated child queries can run on other nodes, query `system.query_log` on every node, for example with [`clusterAllReplicas`](/reference/functions/table-functions/cluster).
+</Tip>
 
 Each query creates one or two rows in the `query_log` table, depending on the status (see the `type` column) of the query:
 
@@ -70,19 +93,19 @@ You can use the [log_formatted_queries](/reference/settings/session-settings/log
 - `exception_code` ([Int32](/reference/data-types/int-uint)) — Code of an exception.
 - `exception` ([String](/reference/data-types/string)) — Exception message.
 - `stack_trace` ([String](/reference/data-types/string)) — Stack trace. An empty string, if the query was completed successfully.
-- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Query type. Possible values: 1 — query was initiated by the client, 0 — query was initiated by another query as part of distributed query execution.
+- `is_initial_query` ([UInt8](/reference/data-types/int-uint)) — Whether the query is initial. Possible values: 1 — an initial (top-level) query, 0 — a child query initiated by another query, including queries for distributed execution and internal subqueries.
 - `connection_address` ([IPv6](/reference/data-types/ipv6)) — The client IP address from which the connection was made. When connected through a proxy, this will be the address of the proxy.
 - `connection_port` ([UInt16](/reference/data-types/int-uint)) — The client port from which the connection was made. When connected through a proxy, this will be the port of the proxy.
 - `user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who initiated the current query.
 - `query_id` ([String](/reference/data-types/string)) — ID of the query.
 - `address` ([IPv6](/reference/data-types/ipv6)) — IP address that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the address of the client instead of the proxy.
 - `port` ([UInt16](/reference/data-types/int-uint)) — The client port that was used to make the query. When connected through a proxy and `auth_use_forwarded_address` is set, this will be the port of the client instead of the proxy.
-- `initial_user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who ran the initial query (for distributed query execution).
-- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query (for distributed query execution).
-- `initial_address` ([IPv6](/reference/data-types/ipv6)) — IP address that the parent query was launched from.
-- `initial_port` ([UInt16](/reference/data-types/int-uint)) — The client port that was used to make the parent query.
-- `initial_query_start_time` ([DateTime](/reference/data-types/datetime)) — Initial query starting time (for distributed query execution).
-- `initial_query_start_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — Initial query starting time with microseconds precision (for distributed query execution).
+- `initial_user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who ran the initial query in the same query chain.
+- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query in the same query chain.
+- `initial_address` ([IPv6](/reference/data-types/ipv6)) — IP address from which the initial query in the same query chain was launched.
+- `initial_port` ([UInt16](/reference/data-types/int-uint)) — Client port from which the initial query in the same query chain was launched.
+- `initial_query_start_time` ([DateTime](/reference/data-types/datetime)) — Start time of the initial query in the same query chain.
+- `initial_query_start_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — Start time of the initial query in the same query chain, with microsecond precision.
 - `authenticated_user` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the user who was authenticated in the session.
 - `interface` ([UInt8](/reference/data-types/int-uint)) — Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP.
 - `is_secure` ([UInt8](/reference/data-types/int-uint)) — The flag whether a query was executed over a secure interface
@@ -142,7 +165,13 @@ You can use the [log_formatted_queries](/reference/settings/session-settings/log
 **Basic example**
 
 ```sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT *
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_start_time DESC
+LIMIT 1
+FORMAT Vertical;
 ```
 
 ```text

@@ -70,7 +70,7 @@ ClickHouse で効率的にデータをインジェストするには、適切な
 | [CustomSeparatedIgnoreSpacesWithNamesAndTypes](/ja/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpacesWithNamesAndTypes) | ✔  | ✗  |
 | [CustomSeparatedWithNames](/ja/reference/formats/CustomSeparated/CustomSeparatedWithNames)                                         | ✔  | ✔  |
 | [CustomSeparatedWithNamesAndTypes](/ja/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)                         | ✔  | ✔  |
-| [HiveText](/ja/reference/formats/HiveText)                                                                                         | ✔  | ✗  |
+| [HiveText](/ja/reference/formats/HiveText)                                                                                         | ✔  | ✔  |
 | [SQLInsert](/ja/reference/formats/SQLInsert)                                                                                       | ✗  | ✔  |
 | [Values](/ja/reference/formats/Values)                                                                                             | ✔  | ✔  |
 | [Vertical](/ja/reference/formats/Vertical)                                                                                         | ✗  | ✔  |
@@ -171,15 +171,15 @@ JSON固有の追加設定については、[JSON format settings](/ja/reference/
 [batch mode](/ja/concepts/features/interfaces/client#batch-mode) でクライアントを使用する場合は、セキュリティ上の理由により、スキーマへのパスは相対パスでなければなりません。
 
 [HTTP interface](/ja/concepts/features/interfaces/http) 経由でデータを入力または出力する場合、フォーマットスキーマで指定するファイル名は、
-サーバー設定の [format&#95;schema&#95;path](/ja/reference/settings/server-settings/settings#format_schema_path)
+サーバー設定の [format&#95;schema&#95;path](/ja/reference/settings/server-settings/settings/format#format_schema_path)
 で指定されたディレクトリに配置する必要があります。
 
 <div id="skippingerrors">
   ## エラーのスキップ
 </div>
 
-`CSV`、`TabSeparated`、`TSKV`、`JSONEachRow`、`Template`、`CustomSeparated`、`Protobuf` などの一部のフォーマットでは、パースエラーが発生しても不正な行をスキップし、次の行の先頭からパースを続行できます。[input&#95;format&#95;allow&#95;errors&#95;num](/ja/reference/settings/formats#input_format_allow_errors_num) と
-[input&#95;format&#95;allow&#95;errors&#95;ratio](/ja/reference/settings/formats#input_format_allow_errors_ratio) の設定を参照してください。
+`CSV`、`TabSeparated`、`TSKV`、`JSONEachRow`、`Template`、`CustomSeparated`、`Protobuf` などの一部のフォーマットでは、パースエラーが発生しても不正な行をスキップし、次の行の先頭からパースを続行できます。[input&#95;format&#95;allow&#95;errors&#95;num](/ja/reference/settings/formats/input-format#input_format_allow_errors_num) と
+[input&#95;format&#95;allow&#95;errors&#95;ratio](/ja/reference/settings/formats/input-format#input_format_allow_errors_ratio) の設定を参照してください。
 制限事項:
 
 * `JSONEachRow` では、パースエラーが発生すると改行 (または EOF) までのすべてのデータがスキップされるため、エラーを正しくカウントするには、行が `\n` で区切られている必要があります。
