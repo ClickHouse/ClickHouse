@@ -22,6 +22,9 @@ ALTER TABLE t_prune_alias DELETE WHERE p < r;
 -- A deterministic predicate is still pruned.
 ALTER TABLE t_prune_alias DELETE WHERE p = 1;
 
+-- The mutation entry is written to ZooKeeper by the `ALTER`, but it becomes visible in
+-- `system.mutations` only after the replica pulls it, so pull it explicitly instead of racing.
+SYSTEM SYNC REPLICA t_prune_alias PULL;
 SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_prune_alias' ORDER BY mutation_id;
 
@@ -33,6 +36,9 @@ PARTITION BY p ORDER BY x;
 INSERT INTO t_prune_alias_ok (p, x) VALUES (1, 1), (2, 2);
 SYSTEM STOP REPLICATION QUEUES t_prune_alias_ok;
 ALTER TABLE t_prune_alias_ok DELETE WHERE q = 2;
+-- The mutation entry is written to ZooKeeper by the `ALTER`, but it becomes visible in
+-- `system.mutations` only after the replica pulls it, so pull it explicitly instead of racing.
+SYSTEM SYNC REPLICA t_prune_alias_ok PULL;
 SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_prune_alias_ok' ORDER BY mutation_id;
 
@@ -46,6 +52,9 @@ PARTITION BY p ORDER BY x;
 INSERT INTO t_prune_alias_qualified (p, x) VALUES (1, 1), (2, 2);
 SYSTEM STOP REPLICATION QUEUES t_prune_alias_qualified;
 ALTER TABLE t_prune_alias_qualified DELETE WHERE p < t_prune_alias_qualified.r;
+-- The mutation entry is written to ZooKeeper by the `ALTER`, but it becomes visible in
+-- `system.mutations` only after the replica pulls it, so pull it explicitly instead of racing.
+SYSTEM SYNC REPLICA t_prune_alias_qualified PULL;
 SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_prune_alias_qualified' ORDER BY mutation_id;
 
@@ -59,6 +68,9 @@ PARTITION BY p ORDER BY x;
 INSERT INTO t_prune_alias_subcolumn (p, x) VALUES (1, 1), (2, 2);
 SYSTEM STOP REPLICATION QUEUES t_prune_alias_subcolumn;
 ALTER TABLE t_prune_alias_subcolumn DELETE WHERE p < r.a;
+-- The mutation entry is written to ZooKeeper by the `ALTER`, but it becomes visible in
+-- `system.mutations` only after the replica pulls it, so pull it explicitly instead of racing.
+SYSTEM SYNC REPLICA t_prune_alias_subcolumn PULL;
 SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_prune_alias_subcolumn' ORDER BY mutation_id;
 
@@ -73,6 +85,9 @@ PARTITION BY toYYYYMM(d) ORDER BY x;
 INSERT INTO t_prune_default (d, x) VALUES ('2026-01-15', 1), ('2026-02-15', 2);
 SYSTEM STOP REPLICATION QUEUES t_prune_default;
 ALTER TABLE t_prune_default DELETE WHERE d = '2026-01-15';
+-- The mutation entry is written to ZooKeeper by the `ALTER`, but it becomes visible in
+-- `system.mutations` only after the replica pulls it, so pull it explicitly instead of racing.
+SYSTEM SYNC REPLICA t_prune_default PULL;
 SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_prune_default' ORDER BY mutation_id;
 
