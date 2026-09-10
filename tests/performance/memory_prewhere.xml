@@ -1,0 +1,28 @@
+<test>
+    <create_query>
+        CREATE TABLE mem_prewhere (k UInt64, filt UInt64, s1 String, s2 String, s3 String, v UInt64)
+        ENGINE = Memory SETTINGS compress = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO mem_prewhere
+        SELECT
+            number,
+            number,
+            randomPrintableASCII(50),
+            randomPrintableASCII(100),
+            randomPrintableASCII(200),
+            rand()
+        FROM numbers_mt(20000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+
+    <!-- A selective condition on a narrow column: the wide string columns must not be
+         decompressed for the blocks the condition eliminates. -->
+    <query tag='selective, clustered'>SELECT s1, s2, s3 FROM mem_prewhere WHERE filt BETWEEN 1000000 AND 1000100 FORMAT Null</query>
+    <query tag='selective, count'>SELECT count() FROM mem_prewhere WHERE filt = 1000000</query>
+    <query tag='explicit PREWHERE'>SELECT v FROM mem_prewhere PREWHERE filt BETWEEN 1000000 AND 1001000 FORMAT Null</query>
+    <query tag='trivial count'>SELECT count() FROM mem_prewhere</query>
+
+    <drop_query>DROP TABLE IF EXISTS mem_prewhere</drop_query>
+</test>

@@ -12,6 +12,9 @@ namespace DB
 
 class QueryPipelineBuilder;
 
+struct MemorySourceFilter;
+using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
+
 class ReadFromMemoryStorageStep final : public SourceStepWithFilter
 {
 public:
@@ -46,6 +49,10 @@ private:
     StoragePtr storage;
     size_t num_streams;
     bool delay_read_for_global_sub_queries;
+
+    /// In-source filtering (row-level security filter, PREWHERE) from `query_info`,
+    /// or nullptr when there is nothing to apply.
+    MemorySourceFilterPtr makeSourceFilter(const NamesAndTypesList & physical_columns) const;
 
     Pipe makePipe();
 };

@@ -2549,7 +2549,26 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
 {
     /// Here we actually need storage snapshot of all nested tables.
     /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
-    return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
+    return traverseTablesUntil([&](const auto & table)
+    {
+        if (!table->supportsTrivialCountOptimization(nullptr, ctx))
+            return true;
+
+        /// A row policy of a source table is applied while building the child read plan
+        /// (`RowPolicyData` in `createChildrenPlans`), which happens after the trivial count
+        /// decision, and it is not reflected in the table's `totalRows`. Counting the rows from
+        /// metadata would return the count of the rows the policy hides as well.
+        /// The row policy of the `Merge` table itself is checked by the caller. A matched `Alias`
+        /// table, which `createChildrenPlans` reads through to its target and whose target's row
+        /// policy therefore applies too, does not need a check of its own: `StorageAlias` declines
+        /// the trivial count for the snapshot-less check above.
+        const auto source_table_id = table->getStorageID();
+        if (!source_table_id.hasDatabase())
+            return false;
+        auto row_policy_filter = ctx->getRowPolicyFilter(
+            source_table_id.getDatabaseName(), source_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const

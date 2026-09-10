@@ -935,12 +935,16 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
+                /// The parts are only there for a storage of the `MergeTree` family, and they are
+                /// only used by its condition selectivity estimator. Other storages that allow
+                /// moving conditions to `PREWHERE` either have no snapshot data at all or have
+                /// their own type of it (`StorageMemory`), so the type has to be checked.
                 RangesInDataParts parts_for_estimator;
-                if (storage_snapshot->data)
+                if (const auto * merge_tree_snapshot_data
+                    = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
                 {
-                    const auto & parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
-                    if (parts)
-                        parts_for_estimator = *parts;
+                    if (merge_tree_snapshot_data->parts)
+                        parts_for_estimator = *merge_tree_snapshot_data->parts;
                 }
 
                 /// Just attempting to read statistics files on disk can increase query latencies.
