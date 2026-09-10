@@ -1,0 +1,3 @@
+oversized const does not force a batch of one row: 1	all rows processed: 1
+const argument keeps its declared type: 1	all rows processed: 1
+materialized wide argument still splits: 1	all rows processed: 1

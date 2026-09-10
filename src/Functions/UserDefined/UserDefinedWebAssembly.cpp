@@ -806,9 +806,13 @@ private:
     /// What comes back here is the stream the guest is really handed - framing, wrapping and
     /// shared state included - so the budget below is compared against the actual size rather
     /// than against a bound on it.
-    size_t measureBatchBytes(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
+    size_t measureBatchBytes(
+        const ColumnsWithTypeAndName & arguments,
+        size_t start_idx,
+        size_t length,
+        const std::vector<size_t> & declared_positions = {}) const
     {
-        auto block = getArgumentsBlock(arguments, start_idx, length);
+        auto block = getArgumentsBlock(arguments, start_idx, length, declared_positions);
         NullWriteBuffer measure_buf;
         auto measure_out
             = context->getOutputFormat(serialization_format, measure_buf, block.cloneEmpty());
@@ -822,6 +826,32 @@ private:
         measure_out->write(block);
         measure_out->finalize();
         return measure_buf.count();
+    }
+
+    /// The bytes a batch pays whatever its row count.
+    ///
+    /// A `ColumnConst` argument is one stored row broadcast to the batch, and a wire that carries
+    /// constness writes that row once, so the argument costs the same at one row as at a whole
+    /// block. Measuring the const arguments on their own prices exactly that part - and prices a
+    /// merely wide first row, which is a row like any other and does shrink out of a batch, at
+    /// nothing. On a wire that does not carry constness `getArgumentsBlock` materializes the
+    /// argument, and what comes back is the cost of its one row, which is the truth there.
+    size_t measureConstArgumentBytes(const ColumnsWithTypeAndName & arguments, size_t start_idx) const
+    {
+        ColumnsWithTypeAndName const_arguments;
+        std::vector<size_t> declared_positions;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (arguments[i].column && isColumnConst(*arguments[i].column))
+            {
+                const_arguments.push_back(arguments[i]);
+                declared_positions.push_back(i);
+            }
+        }
+
+        if (const_arguments.empty())
+            return 0;
+        return measureBatchBytes(const_arguments, start_idx, 1, declared_positions);
     }
 
     /// How many rows the call starting at `start_idx` should carry, out of `remaining`.
@@ -885,10 +915,19 @@ private:
             else
             {
                 smallest_overflowing = candidate;
-                /// A single row past the budget is still passed on its own: the split stops at one
-                /// row per call, and whether the guest can hold that row is for its allocator to say.
                 if (candidate == 1)
+                {
+                    /// When what does not fit is the part of the batch that no row count changes,
+                    /// no row count brings the call inside the budget: splitting then re-pays the
+                    /// same bytes once per call and takes from the guest whatever it amortizes
+                    /// across a call. Hand it the whole block instead - exceeding the budget once
+                    /// beats exceeding it on every call of a one-row split.
+                    if (measureConstArgumentBytes(arguments, start_idx) >= budget)
+                        return remaining;
+                    /// Otherwise it is the row itself that does not fit, and it is still passed on
+                    /// its own: whether the guest can hold it is for its allocator to say.
                     break;
+                }
             }
 
             /// The boundary is known exactly once the bracket has nothing left between its ends.
@@ -1010,19 +1049,30 @@ private:
         return result_column;
     }
 
-    Block getArgumentsBlock(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
+    /// `declared_positions` says where each entry of `arguments` sits in the function's declared
+    /// argument list. It is empty when `arguments` is that list in order, and is given only when a
+    /// caller passes a subset of the arguments - the declared type and name of an argument are
+    /// looked up by its declared position, not by where it happens to land in `arguments`.
+    Block getArgumentsBlock(
+        const ColumnsWithTypeAndName & arguments,
+        size_t start_idx,
+        size_t length,
+        const std::vector<size_t> & declared_positions = {}) const
     {
         const auto & declared_arguments = user_defined_function->getArguments();
         Block arguments_block;
         for (size_t i = 0; i < arguments.size(); ++i)
         {
+            const size_t declared_idx = declared_positions.empty() ? i : declared_positions[i];
             /// Cut first, materialize second: `ColumnConst::cut` is O(1), while materializing
             /// the whole block first would make the per-row measurement O(rows^2). A wire that
             /// encodes constness itself keeps the wrapper instead of materializing at all.
             ColumnPtr column = arguments[i].column->cut(start_idx, length);
             if (!preserve_const_columns)
                 column = column->convertToFullColumnIfConst();
-            String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
+            String column_name = declared_idx < argument_names.size() && !argument_names[declared_idx].empty()
+                ? argument_names[declared_idx]
+                : arguments[i].name;
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
             /// as 1 byte by RowBinary instead of 4, causing the WASM module to read garbage.
@@ -1031,7 +1081,7 @@ private:
             /// single `0xff` byte, so a guest reading a declared `Int32` has no way to tell them
             /// apart. Always cast here regardless of format until the wire carries real logical
             /// type and signedness information.
-            const DataTypePtr & declared_type = declared_arguments[i];
+            const DataTypePtr & declared_type = declared_arguments[declared_idx];
             if (!arguments[i].type->equals(*declared_type))
                 column = castColumn(ColumnWithTypeAndName(column, arguments[i].type, column_name), declared_type);
             arguments_block.insert(ColumnWithTypeAndName(column, declared_type, column_name));
