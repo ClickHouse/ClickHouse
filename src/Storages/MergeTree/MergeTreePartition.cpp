@@ -365,9 +365,8 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
     return res;
 }
 
-void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, WriteBuffer & out, const FormatSettings & format_settings) const
+void MergeTreePartition::serializeText(const Block & partition_key_sample, WriteBuffer & out, const FormatSettings & format_settings) const
 {
-    const auto & partition_key_sample = metadata_snapshot->getPartitionKey().sample_block;
     size_t key_size = partition_key_sample.columns();
 
     // In some cases we create empty parts and then value is empty.
@@ -401,13 +400,38 @@ void MergeTreePartition::serializeText(StorageMetadataPtr metadata_snapshot, Wri
     }
 }
 
-String MergeTreePartition::serializeToString(StorageMetadataPtr metadata_snapshot) const
+String MergeTreePartition::serializeToString(const Block & partition_key_sample) const
 {
     static FormatSettings format_settings{};
 
     WriteBufferFromOwnString out;
-    serializeText(metadata_snapshot, out, format_settings);
+    serializeText(partition_key_sample, out, format_settings);
     return out.str();
+}
+
+String MergeTreePartition::serializeToString(const IMergeTreeDataPart & part) const
+{
+    PartitionKeySamples partition_key_samples;
+    return serializeToString(partition_key_samples.get(part));
+}
+
+const Block & PartitionKeySamples::get(const IMergeTreeDataPart & part)
+{
+    if (part.info.isPatch())
+    {
+        patch_sample = part.getMetadataSnapshot()->getPartitionKey().sample_block;
+        return patch_sample;
+    }
+
+    if (table != &part.storage)
+    {
+        auto context = part.storage.getContext();
+        const auto metadata = part.storage.getInMemoryMetadataPtr(context, false);
+        table_sample = MergeTreePartition::adjustPartitionKey(metadata, context).sample_block;
+        table = &part.storage;
+    }
+
+    return table_sample;
 }
 
 void MergeTreePartition::load(const IMergeTreeDataPart & part)

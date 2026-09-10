@@ -20,6 +20,7 @@ SELECT 'complex key', count() FROM mod_complex;
 -- The partition value is hashed into the partition ID once it no longer fits 8 bytes.
 CREATE TABLE mod_wide (c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(37528, 'UInt64') % c0);
 INSERT INTO mod_wide VALUES (167682982);
+SELECT 'wide render', partition FROM system.parts WHERE database = currentDatabase() AND table = 'mod_wide' AND active;
 ALTER TABLE mod_wide DROP PARTITION 37528;
 SELECT 'wide key', count() FROM mod_wide;
 DROP TABLE mod_wide;
@@ -38,6 +39,7 @@ SELECT 'partition id', partition_id FROM system.parts WHERE database = currentDa
 -- Keys where the result signedness is the same either way, and keys with no `modulo` at all.
 CREATE TABLE mod_unsigned (c0 UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (37528 % c0);
 INSERT INTO mod_unsigned VALUES (167682982);
+SELECT 'unsigned render', partition FROM system.parts WHERE database = currentDatabase() AND table = 'mod_unsigned' AND active;
 ALTER TABLE mod_unsigned DROP PARTITION 37528;
 SELECT 'unsigned column', count() FROM mod_unsigned;
 
@@ -50,3 +52,13 @@ CREATE TABLE mod_none (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION B
 INSERT INTO mod_none VALUES (167682982);
 ALTER TABLE mod_none DROP PARTITION 37528;
 SELECT 'no modulo', count() FROM mod_none;
+
+-- `moduloLegacy`'s result type is signed where `modulo`'s is unsigned, so the stored value must be rendered
+-- with the same key that produced it: the rendered value is the one `DROP PARTITION` accepts.
+CREATE TABLE mod_narrow (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(3000000000, 'UInt64') % c0);
+INSERT INTO mod_narrow VALUES (-5);
+SELECT 'narrow render', partition FROM system.parts WHERE database = currentDatabase() AND table = 'mod_narrow' AND active;
+ALTER TABLE mod_narrow DROP PARTITION 3000000000; -- { serverError ARGUMENT_OUT_OF_BOUND }
+ALTER TABLE mod_narrow DROP PARTITION -1294967296;
+SELECT 'narrow round-trip', count() FROM mod_narrow;
+DROP TABLE mod_narrow;

@@ -50,7 +50,7 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
 
         if (!is_valid)
         {
-            auto partition_str = part.partition.serializeToString(part.getMetadataSnapshot());
+            auto partition_str = part.partition.serializeToString(partition_key.sample_block);
             LOG_TRACE(getLogger("PartitionPruner"), "Partition {} gets pruned", partition_str);
         }
     }

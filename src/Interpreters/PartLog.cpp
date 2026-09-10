@@ -261,6 +261,7 @@ bool PartLog::addNewPartsImpl(
             return false;
 
         auto query_id = CurrentThread::getQueryId();
+        PartitionKeySamples partition_key_samples;
 
         for (size_t i = 0; i < parts.size(); ++i)
         {
@@ -285,7 +286,7 @@ bool PartLog::addNewPartsImpl(
                 element.table_name = table_id.table_name;
                 element.table_uuid = table_id.uuid;
                 element.partition_id = part->info.getPartitionId();
-                element.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+                element.partition = part->partition.serializeToString(partition_key_samples.get(*part));
                 element.part_name = part->name;
                 element.disk_name = part->getDataPartStorage().getDiskName();
                 element.path_on_disk = part->getDataPartStorage().getFullPath();
