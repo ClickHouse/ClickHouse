@@ -5114,16 +5114,19 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             /// part and drops the per-part `unique_key_index.sst`, regardless of
             /// which column is targeted. Reject it on UNIQUE KEY tables, but only
             /// when it would actually rewrite a part: the target must be an existing
-            /// physical (stored) column. `CLEAR COLUMN missing IF EXISTS` and CLEAR
-            /// of a non-stored column are no-ops (`hasPhysical` is false for both),
-            /// so they fall through to normal handling. CLEAR of a UK column falls
+            /// physical (stored) column, nested-aware — a flattened Nested parent
+            /// like `n` is a stored target even though the physical columns are its
+            /// members `n.x` / `n.y` (the same `n.*` range the mutation path
+            /// expands the command to). `CLEAR COLUMN missing IF EXISTS` and CLEAR
+            /// of a non-stored column are no-ops, so they fall through to normal
+            /// handling. CLEAR of a UK column falls
             /// through to the ALTER_OF_COLUMN_IS_FORBIDDEN guard below. Note the
             /// mutation-path guard in `checkMutationIsPossible` never sees CLEAR
             /// COLUMN — it is dispatched as an AlterCommand, not a mutation — so this
             /// is the effective chokepoint.
             if (command.type == AlterCommand::DROP_COLUMN && command.clear
                 && !uk_set.contains(command.column_name)
-                && old_metadata.columns.hasPhysical(command.column_name))
+                && old_metadata.columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, command.column_name))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
                     "the whole part is rewritten regardless of which column is targeted, so the "
