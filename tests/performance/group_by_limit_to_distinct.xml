@@ -1,0 +1,17 @@
+<test>
+    <!-- Aggregate-free `GROUP BY ... LIMIT n` is rewritten into `SELECT DISTINCT ... LIMIT n`,
+         which stops reading the input once `n` distinct groups are produced instead of
+         aggregating the entire input (https://github.com/ClickHouse/ClickHouse/issues/110047).
+         The key has low cardinality so the rewritten query terminates after the first blocks,
+         while the baseline processes all 100M rows. -->
+
+    <query tag="rewritten">SELECT number % 1000 AS k FROM numbers_mt(100000000) GROUP BY k LIMIT 5 FORMAT Null SETTINGS optimize_group_by_limit_to_distinct = 1</query>
+    <query tag="baseline">SELECT number % 1000 AS k FROM numbers_mt(100000000) GROUP BY k LIMIT 5 FORMAT Null SETTINGS optimize_group_by_limit_to_distinct = 0</query>
+
+    <!-- Adversarial case: the key cardinality (500) is below LIMIT + OFFSET (1000), so the
+         rewritten query never terminates early and consumes the whole input through DISTINCT.
+         The threshold on LIMIT + OFFSET bounds the distinct set by min(cardinality, 1000),
+         so this must stay at parity with the aggregation, not regress. -->
+    <query tag="ndv_below_limit_rewritten">SELECT number % 500 AS k FROM numbers_mt(100000000) GROUP BY k LIMIT 1000 FORMAT Null SETTINGS optimize_group_by_limit_to_distinct = 1</query>
+    <query tag="ndv_below_limit_baseline">SELECT number % 500 AS k FROM numbers_mt(100000000) GROUP BY k LIMIT 1000 FORMAT Null SETTINGS optimize_group_by_limit_to_distinct = 0</query>
+</test>

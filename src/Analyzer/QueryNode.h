@@ -109,6 +109,14 @@ public:
         settings_changes.clear();
     }
 
+    /// Get query node settings changes for modification.
+    /// Changes recorded here are serialized into the query's `SETTINGS` clause by `toAST()`,
+    /// which is what carries them to remote replicas; the query node's mutable context does not.
+    SettingsChanges & getMutableSettingsChanges()
+    {
+        return settings_changes;
+    }
+
     /// Returns true if query node is subquery, false otherwise
     bool isSubquery() const
     {
