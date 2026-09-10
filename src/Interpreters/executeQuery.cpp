@@ -57,6 +57,7 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
+#include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Formats/FormatFactory.h>
@@ -102,6 +103,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingsSecrets.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -170,6 +172,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool allow_experimental_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -240,13 +243,11 @@ namespace Setting
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsFloat min_os_cpu_wait_time_ratio_to_throw;
     extern const SettingsFloat max_os_cpu_wait_time_ratio_to_throw;
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_table;
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
-    extern const SettingsUInt64Auto insert_quorum;
-    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsString format;
     extern const SettingsString output_format;
@@ -281,7 +282,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
-    extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
     extern const int QUERY_IS_PROHIBITED;
 }
@@ -551,7 +551,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
-        elem.formatted_query = query_ast->formatWithSecretsOneLine();
+        elem.formatted_query = query_ast->formatForLogging();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
@@ -592,16 +592,15 @@ QueryLogElement logQueryStart(
         else if (interpreter)
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
 
-        if (settings[Setting::log_query_settings])
-            elem.query_settings = context->getSettingsRef().changedToMap();
-
         elem.log_comment = settings[Setting::log_comment];
         if (elem.log_comment.size() > settings[Setting::max_query_size])
             elem.log_comment.resize(settings[Setting::max_query_size]);
 
         if (elem.type >= settings[Setting::log_queries_min_type] && !settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
-            if (!settings[Setting::log_query_settings] && settings[Setting::log_query_settings].changed)
+            if (settings[Setting::log_query_settings])
+                elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+            else if (settings[Setting::log_query_settings].changed)
                 LOG_TRACE(
                     getLogger("executeQuery"),
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
@@ -810,6 +809,11 @@ static void logQueryFinishImpl(
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
+            /// Unset unless the QUERY_START row was logged and built them already. Settings cannot change
+            /// while the query runs, so building them here gives the same values.
+            if (settings[Setting::log_query_settings] && !elem.query_settings)
+                elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+
             if (auto query_log = context->getQueryLog())
                 query_log->add([&](QueryLogElement & e) { e = elem; });
         }
@@ -839,7 +843,9 @@ static void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+                String value = convertFieldToString(change.value);
+                CoreSettings::maskSettingValue(change.name, change.value, value);
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), value);
             }
         }
         query_span->finish(time);
@@ -947,6 +953,9 @@ void logQueryException(
     if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
         && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
     {
+        if (settings[Setting::log_query_settings] && !elem.query_settings)
+            elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
+
         if (auto query_log = context->getQueryLog())
             query_log->add([&](QueryLogElement & e) { e = elem; });
     }
@@ -1000,7 +1009,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = ast->formatWithSecretsOneLine();
+            elem.formatted_query = ast->formatForLogging();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1025,7 +1034,7 @@ void logExceptionBeforeStart(
         elem.tid = txn->tid;
 
     if (settings[Setting::log_query_settings])
-        elem.query_settings = settings.changedToMap();
+        elem.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
     if (settings[Setting::calculate_text_stack_trace])
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
@@ -2314,8 +2323,8 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::promql && !parse_as_internal)
         {
-            if (!settings[Setting::allow_experimental_time_series_table])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
+            if (!settings[Setting::enable_time_series_table])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'enable_time_series_table')");
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
@@ -2333,6 +2342,37 @@ static BlockIO executeQueryImpl(
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::trino && !parse_as_internal)
+        {
+            /// Like `ParserPolyglotQuery`, `ParserTrinoQuery` handles SET queries and
+            /// the feature gate internally so users can always switch the dialect back.
+            ParserTrinoQuery parser(
+                max_query_size,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                end,
+                settings[Setting::allow_experimental_trino_dialect],
+                settings[Setting::allow_settings_after_format_in_insert],
+                settings[Setting::implicit_select]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// Settings that align the query semantics with Trino: outer joins
+            /// produce NULLs (not type defaults), set operations use the numeric
+            /// supertype (not `Variant`), and the analyzer is required - the
+            /// column alias lists (`AS t (x, y)`) and the type resolution the
+            /// translation relies on do not work without it.
+            /// They are applied to the context rather than injected into the
+            /// query text, so that they also hold for a query that carries its
+            /// own `SETTINGS` clause and for wrappers such as `INSERT ... SELECT`
+            /// or `EXPLAIN SELECT`. An explicit `SETTINGS` clause is applied
+            /// afterwards and still wins.
+            if (!out_ast->as<ASTSetQuery>())
+            {
+                context->setSetting("join_use_nulls", true);
+                context->setSetting("use_variant_as_common_type", false);
+                context->setSetting("enable_analyzer", true);
+            }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !parse_as_internal)
         {
@@ -2903,12 +2943,6 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
             if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-
-            auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
-            if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_PARAMETER,
-                    "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum or set insert_quorum_parallel=1 or do not use async inserts");
 
             quota = context->getQuota();
             if (quota)

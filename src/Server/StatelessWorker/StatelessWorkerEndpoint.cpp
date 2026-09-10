@@ -255,6 +255,7 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
                 response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
                 task_status.status = "Failed";
                 task_status.error_message = status.message;
+                task_status.error_code = status.error_code;
                 break;
             }
             case StatelessTaskExecutor::UnknownTaskId:
