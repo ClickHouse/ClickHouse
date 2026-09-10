@@ -16,7 +16,7 @@ namespace DB
 class Worker
 {
     std::optional<Task> pickTask();
-    void runTask(Task task);
+    size_t runTask(Task task);
     void runPrepare(ProcessorState & state);
     void prepareRound(ProcessorState & state, std::unique_lock<std::mutex> round_lock);
     void runWork(ProcessorState & state);

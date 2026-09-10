@@ -39,7 +39,7 @@ bool canAddInfoToException(const Exception & exception)
 
 thread_local std::vector<InputPort *> pending_inputs;
 thread_local std::vector<OutputPort *> pending_outputs;
-thread_local std::vector<Task> ready_tasks;
+thread_local std::vector<Task> found_tasks;
 thread_local std::vector<IProcessor *> finished_processors;
 
 }
@@ -70,12 +70,21 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
     while (auto task = pickTask())
     {
-        if (coordinator.idle() > 0)
-            if (scheduler.hasTasksForOthers(worker_id) || coordinator.needsPoller())
-                coordinator.wakeOne();
+        if (coordinator.needsPoller())
+            coordinator.wake(1);
 
-        pool.grow();
-        runTask(*task);
+        const size_t threads_needed = runTask(*task);
+
+        if (threads_needed > 0)
+        {
+            const size_t idle_threads = coordinator.idle();
+
+            if (idle_threads > 0)
+                coordinator.wake(threads_needed);
+
+            if (threads_needed > idle_threads)
+                pool.grow(threads_needed - idle_threads);
+        }
 
         if (pipeline.hasReadyForRemoval())
             pipeline.removeReady();
@@ -110,8 +119,10 @@ std::optional<Task> Worker::pickTask()
     }
 }
 
-void Worker::runTask(Task task)
+size_t Worker::runTask(Task task)
 {
+    found_tasks.clear();
+
     switch (task.kind)
     {
         case Task::Kind::Prepare:
@@ -128,6 +139,11 @@ void Worker::runTask(Task task)
             runUpdatePipeline(*task.state);
             break;
     }
+
+    for (const auto & found : found_tasks | std::views::reverse)
+        scheduler.push(found, worker_id);
+
+    return found_tasks.empty() ? 0 : found_tasks.size() - 1;
 }
 
 void Worker::notifyOwner(ProcessorState & owner)
@@ -137,7 +153,7 @@ void Worker::notifyOwner(ProcessorState & owner)
     {
         case ProcessorLock::Status::Idle:
             owner.lock.setExecuting();
-            scheduler.push(Task{.state = &owner, .kind = Task::Kind::Prepare}, worker_id);
+            found_tasks.push_back(Task{.state = &owner, .kind = Task::Kind::Prepare});
             return;
         case ProcessorLock::Status::Executing:
             owner.processor->onUpdatePorts();
@@ -174,7 +190,6 @@ void Worker::runPrepare(ProcessorState & state)
 {
     pending_inputs.clear();
     pending_outputs.clear();
-    ready_tasks.clear();
     finished_processors.clear();
 
     {
@@ -193,9 +208,6 @@ void Worker::runPrepare(ProcessorState & state)
         for (; processed_inputs < pending_inputs.size(); ++processed_inputs)
             visitNeighbour(*pending_inputs[processed_inputs]);
     }
-
-    for (const auto & task : ready_tasks | std::views::reverse)
-        scheduler.push(task, worker_id);
 
     for (auto * processor : finished_processors)
         pipeline.recordAsFinished(*processor);
@@ -239,7 +251,7 @@ void Worker::prepareRound(ProcessorState & state, std::unique_lock<std::mutex>)
 
         case IProcessor::Status::Ready:
             state.lock.setExecuting();
-            ready_tasks.push_back(Task{.state = &state, .kind = Task::Kind::Work});
+            found_tasks.push_back(Task{.state = &state, .kind = Task::Kind::Work});
             return;
 
         case IProcessor::Status::Async:
@@ -256,7 +268,7 @@ void Worker::prepareRound(ProcessorState & state, std::unique_lock<std::mutex>)
 
         case IProcessor::Status::UpdatePipeline:
             state.lock.setExecuting();
-            scheduler.push(Task{.state = &state, .kind = Task::Kind::UpdatePipeline}, worker_id);
+            found_tasks.push_back(Task{.state = &state, .kind = Task::Kind::UpdatePipeline});
             return;
     }
 }
@@ -339,7 +351,7 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
 void Worker::runAsyncReady(ProcessorState & state)
 {
     state.processor->onAsyncJobReady();
-    scheduler.push(Task{.state = &state, .kind = Task::Kind::Work}, worker_id);
+    found_tasks.push_back(Task{.state = &state, .kind = Task::Kind::Work});
 }
 
 void Worker::runUpdatePipeline(ProcessorState & requester)
@@ -357,10 +369,9 @@ void Worker::runUpdatePipeline(ProcessorState & requester)
     if (pipeline.cancelled())
         return;
 
-    for (auto * state : updated | std::views::reverse)
+    found_tasks.push_back(Task{.state = &requester, .kind = Task::Kind::Prepare});
+    for (auto * state : updated)
         notifyOwner(*state);
-
-    scheduler.push(Task{.state = &requester, .kind = Task::Kind::Prepare}, worker_id);
 }
 
 }
