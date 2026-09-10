@@ -423,7 +423,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
         if (objects.empty() && outcome.GetResult().GetIsTruncated())
             LOG_INFO(
-                limited_log,
+                LogFrequencyLimiter(log, 30),
                 "Listing returned an empty page while reporting more to come. Bucket: {}, Prefix: {}, Disk: {}",
                 uri.bucket, path, disk_name);
 

@@ -62,8 +62,6 @@ protected:
     RelativePathsWithMetadata current_batch;
     RelativePathsWithMetadata::iterator current_batch_iterator;
     std::atomic<size_t> accumulated_size = 0;
-    /// Throttled: a store may return empty pages for long stretches.
-    LogSeriesLimiterPtr limited_log;
 };
 
 

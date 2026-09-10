@@ -18,7 +18,6 @@ IObjectStorageIteratorAsync::IObjectStorageIteratorAsync(
     ThreadName thread_name)
     : list_objects_pool(threads_metric, threads_active_metric, threads_scheduled_metric, 1)
     , list_objects_scheduler(threadPoolCallbackRunnerUnsafe<BatchAndHasNext>(list_objects_pool, thread_name))
-    , limited_log(std::make_shared<LogSeriesLimiter>(getLogger("ObjectStorageIteratorAsync"), 1, 30))
 {
 }
 
@@ -92,7 +91,7 @@ void IObjectStorageIteratorAsync::nextBatch()
             /// Correct to follow, but indistinguishable from a listing that under-reports, which
             /// is how #109751 was reached twice. Leave a trace.
             LOG_INFO(
-                limited_log,
+                LogFrequencyLimiter(getLogger("ObjectStorageIteratorAsync"), 30),
                 "Listing returned an empty page while reporting more to come, following the token. {}",
                 describeListing());
         }

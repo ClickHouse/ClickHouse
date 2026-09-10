@@ -50,7 +50,6 @@ private:
         , s3_capabilities(s3_capabilities_)
         , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
-        , limited_log(std::make_shared<LogSeriesLimiter>(log, 1, 30))
         , for_disk_s3(for_disk_s3_)
         , credentials_refresh_callback(credentials_refresh_callback_)
     {
@@ -184,8 +183,6 @@ private:
     const ObjectStorageKeyGeneratorPtr key_generator;
 
     LoggerPtr log;
-    /// Throttled: a store may report empty pages for long stretches.
-    LogSeriesLimiterPtr limited_log;
 
     const bool for_disk_s3;
     S3CredentialsRefreshCallback credentials_refresh_callback;
