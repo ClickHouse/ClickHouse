@@ -376,7 +376,7 @@ Every row below is generated from the engine's type matrix and proven by an inte
 | `TIMESTAMP_MS` | `DateTime64(3)` |  |
 | `TIMESTAMP` | `DateTime64(6)`, `DateTime` | DateTime keeps whole seconds; DateTime64(6) keeps all six digits |
 | `TIMESTAMP_NS` | `DateTime64(9)` |  |
-| `TIMESTAMPTZ` | `DateTime64(6)` | stored as the same UTC instant; the zone is dropped and the column's own zone governs rendering |
+| `TIMESTAMPTZ` | `DateTime64(6)`, `DateTime` | stored as the same UTC instant; the zone is dropped and the column's own zone governs rendering; DateTime keeps whole seconds |
 | `BOOLEAN[]` | `Array(Bool)` |  |
 | `TINYINT[]` | `Array(Int8)` |  |
 | `SMALLINT[]` | `Array(Int16)` |  |
