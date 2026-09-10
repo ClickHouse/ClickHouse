@@ -20,14 +20,15 @@ namespace DB
   * `CAST(FixedString AS String)` removes the padding from only the operand it converts. The declared
   * types are the only place the rule is visible, which is what these functions expose.
   *
-  * Callers: the `arrayIndex.h` functions (`has`, `indexOf`, `countEqual`, `indexOfAssumeSorted`),
-  * and `MergeTreeIndexBloomFilter`, which must agree with them or it prunes granules holding rows
-  * the function would match.
+  * Callers: `FunctionComparison`, which compares an `Array`, a `Map` or a `Tuple` through a cast to
+  * the common type of its operands; the `arrayIndex.h` functions (`has`, `indexOf`, `countEqual`,
+  * `indexOfAssumeSorted`); and `MergeTreeIndexBloomFilter`, which must agree with them or it prunes
+  * granules holding rows the function would match.
   */
 
 /// Whether comparing values of these two types ignores trailing zero bytes. Recurses into `Tuple`,
-/// which `equals` decomposes element-wise, but not into `Array` or `Map`, which `equals` compares
-/// through a lossy cast and so does not apply the rule to.
+/// `Array` and `Map`, so a `FixedString` nested at any depth is compared the same way as a
+/// top-level one.
 bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & right);
 
 /// Whether a search constant of this type is subject to the rule, and so has no single canonical
@@ -55,7 +56,7 @@ inline std::string_view stripTrailingZeros(std::string_view value)
 }
 
 /// Rewrites every `String` value reachable in `column` into its canonical form, recursing through
-/// `Const`, `Nullable` and `Tuple` — matching `zeroPaddedStringComparison`.
+/// `Const`, `Nullable`, `Tuple`, `Array` and `Map` — matching `zeroPaddedStringComparison`.
 /// Apply to both operands after a cast to their common type, which strips all trailing '\0' from
 /// FixedString but leaves String untouched.
 ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePtr & type);

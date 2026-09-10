@@ -84,8 +84,25 @@ struct CountEqualAction
 namespace Impl
 {
 
-/// Field-level equality honouring the zero-padding rule. Recurses into `Tuple` so a `FixedString`
-/// inside one is compared the same way as a top-level one, matching `equals`.
+/// Field-level equality honouring the zero-padding rule. Recurses into `Tuple`, `Array` and `Map`
+/// so a `FixedString` nested at any depth is compared the same way as a top-level one, matching
+/// `equals`.
+inline bool fieldsEqual(const Field & left, const Field & right, bool zero_padded);
+
+/// Element-wise equality of the two vectors backing a `Tuple`, an `Array` or a `Map` Field.
+template <typename T>
+bool fieldVectorsEqual(const T & left, const T & right)
+{
+    if (left.size() != right.size())
+        return false;
+
+    for (size_t i = 0; i < left.size(); ++i)
+        if (!fieldsEqual(left[i], right[i], true))
+            return false;
+
+    return true;
+}
+
 inline bool fieldsEqual(const Field & left, const Field & right, bool zero_padded)
 {
     if (!zero_padded)
@@ -95,22 +112,15 @@ inline bool fieldsEqual(const Field & left, const Field & right, bool zero_padde
         return stripTrailingZeros(left.safeGet<String>()) == stripTrailingZeros(right.safeGet<String>());
 
     if (left.getType() == Field::Types::Tuple && right.getType() == Field::Types::Tuple)
-    {
-        const auto & left_tuple = left.safeGet<Tuple>();
-        const auto & right_tuple = right.safeGet<Tuple>();
-        if (left_tuple.size() != right_tuple.size())
-            return false;
+        return fieldVectorsEqual(left.safeGet<Tuple>(), right.safeGet<Tuple>());
 
-        for (size_t i = 0; i < left_tuple.size(); ++i)
-            if (!fieldsEqual(left_tuple[i], right_tuple[i], true))
-                return false;
+    if (left.getType() == Field::Types::Array && right.getType() == Field::Types::Array)
+        return fieldVectorsEqual(left.safeGet<Array>(), right.safeGet<Array>());
 
-        return true;
-    }
+    /// A `Map` Field is a vector of two-element `Tuple`s, each handled by the branch above.
+    if (left.getType() == Field::Types::Map && right.getType() == Field::Types::Map)
+        return fieldVectorsEqual(left.safeGet<Map>(), right.safeGet<Map>());
 
-    /// No `Array` or `Map` case: `zeroPaddedStringComparison` does not apply the rule to their
-    /// elements, because `equals` does not either. `accurateEquals` below compares them exactly,
-    /// which is what `equals` does for those types.
     return accurateEquals(left, right);
 }
 

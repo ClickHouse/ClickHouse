@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -39,14 +40,16 @@ bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & ri
         return false;
     }
 
-    /// Deliberately not recursed into. `equals` compares an `Array` or a `Map` through a cast to
-    /// their common type, which drops the padding of only the operand it converts, so it does not
-    /// apply the rule to their elements: `[toFixedString('V0', 3)] = ['V0\0']` is 0 while
-    /// `toFixedString('V0', 3) = 'V0\0'` is 1. Recursing here would make these functions disagree
-    /// with `equals` in the opposite direction. `Tuple` above is different: `equals` decomposes it
-    /// element-wise with the element types intact, so the rule does reach a `FixedString` inside it.
-    if (typeid_cast<const DataTypeArray *>(left_decayed.get()) || typeid_cast<const DataTypeMap *>(left_decayed.get()))
-        return false;
+    const auto * left_array = typeid_cast<const DataTypeArray *>(left_decayed.get());
+    const auto * right_array = typeid_cast<const DataTypeArray *>(right_decayed.get());
+    if (left_array && right_array)
+        return zeroPaddedStringComparison(left_array->getNestedType(), right_array->getNestedType());
+
+    const auto * left_map = typeid_cast<const DataTypeMap *>(left_decayed.get());
+    const auto * right_map = typeid_cast<const DataTypeMap *>(right_decayed.get());
+    if (left_map && right_map)
+        return zeroPaddedStringComparison(left_map->getKeyType(), right_map->getKeyType())
+            || zeroPaddedStringComparison(left_map->getValueType(), right_map->getValueType());
 
     return isStringOrFixedString(left_decayed) && isStringOrFixedString(right_decayed)
         && (isFixedString(left_decayed) || isFixedString(right_decayed));
@@ -100,6 +103,15 @@ ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePt
         return ColumnConst::create(
             stripTrailingZerosInStrings(column_const->getDataColumnPtr(), type), column_const->size());
 
+    if (const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        /// Values differing only in trailing zeros collapse onto one, which a dictionary must not
+        /// hold twice, so the canonical form of a `LowCardinality` column is a full one. Both
+        /// operands of a comparison are canonicalised together, so they stay the same shape.
+        return stripTrailingZerosInStrings(
+            column->convertToFullColumnIfLowCardinality(), type_low_cardinality->getDictionaryType());
+    }
+
     if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
     {
         const auto & column_nullable = assert_cast<const ColumnNullable &>(*column);
@@ -116,6 +128,21 @@ ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePt
         for (size_t i = 0; i < element_types.size(); ++i)
             elements[i] = stripTrailingZerosInStrings(column_tuple.getColumnPtr(i), element_types[i]);
         return ColumnTuple::create(std::move(elements));
+    }
+
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        const auto & column_array = assert_cast<const ColumnArray &>(*column);
+        return ColumnArray::create(
+            stripTrailingZerosInStrings(column_array.getDataPtr(), type_array->getNestedType()),
+            column_array.getOffsetsPtr());
+    }
+
+    if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        const auto & column_map = assert_cast<const ColumnMap &>(*column);
+        return ColumnMap::create(
+            stripTrailingZerosInStrings(column_map.getNestedColumnPtr(), type_map->getNestedType()));
     }
 
     if (isString(type))

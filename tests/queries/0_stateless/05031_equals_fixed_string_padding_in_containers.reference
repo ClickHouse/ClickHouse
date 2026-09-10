@@ -1,0 +1,55 @@
+scalar and tuple reference
+fs3 = str_padded	1
+tuple	1
+str = str_padded	0
+containers
+array	1
+array str_short	1
+array of tuple	1
+nested array	1
+map key	1
+map value	1
+array of map	1
+widths
+fs3 vs fs4	1
+fs4 vs str_padded	1
+str element, fs needle	1
+operators
+eq	1
+ne	0
+lt	0
+le	1
+gt	0
+ge	1
+materialized
+array	1
+array both	1
+map	1
+nested array	1
+low cardinality and nullable
+lc element	1
+lc materialized	1
+nullable element	1
+null stays null	0
+negative controls
+str vs str_padded	0
+str prefix	0
+interior zero preserved	1
+interior zero not collapsed	0
+different content	0
+different length arrays	0
+element order	0
+long values
+long match	1
+long no match	0
+agreement with has and arrayExists
+nested has	1	1	1
+nested indexOf	1	1
+map element has	1	1
+short needle nested array	1	1	1
+short needle map	1	1	1
+short needle array of tuple	1	1
+primary key must not prune matching rows
+index path	2
+full scan path	2
+exact string constant still prunes	1

@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/ComparisonOrderDomain.h>
@@ -1455,6 +1456,17 @@ private:
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
+
+        /// The common type of a `FixedString` and a `String` is `String`, and the cast to it removes
+        /// the padding from the `FixedString` operand while leaving the `String` operand as it is.
+        /// That is a canonicalisation of one operand only, so without the step below an `Array`, a
+        /// `Map` or a `Tuple` holding a `FixedString` would compare unequal to one holding the same
+        /// value written out with its trailing zeros. See `zeroPaddedStringComparison`.
+        if (zeroPaddedStringComparison(c0.type, c1.type))
+        {
+            c0_converted = stripTrailingZerosInStrings(c0_converted, common_type);
+            c1_converted = stripTrailingZerosInStrings(c1_converted, common_type);
+        }
 
         return executeGenericIdenticalTypes(c0_converted.get(), c1_converted.get());
     }
