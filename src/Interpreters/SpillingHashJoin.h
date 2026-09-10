@@ -167,8 +167,10 @@ private:
 
     void switchToGraceHashJoin();
     /// Shared by the fill-path switch and the post-barrier `MustSpill` arm. The latter must not call
-    /// `switchToGraceHashJoin`, which drains fill lanes the barrier has already consumed.
-    void createGraceJoin();
+    /// `switchToGraceHashJoin`, which drains fill lanes the barrier has already consumed. A non-zero
+    /// `initial_buckets_hint` raises the starting bucket count above the configured minimum;
+    /// `GraceHashJoin` rounds it to a power of two and clamps it to the maximum.
+    void createGraceJoin(size_t initial_buckets_hint = 0);
     void tryConvertSlots();
     void tryConvertFillLanes();
 

@@ -8,6 +8,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 namespace ProfileEvents
 {
 extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
@@ -253,10 +255,10 @@ bool SpillingHashJoin::addCollectedBlock(const Block & block, bool check_limits,
     return hash_join->addBlockToJoin(block, check_limits);
 }
 
-void SpillingHashJoin::createGraceJoin()
+void SpillingHashJoin::createGraceJoin(size_t initial_buckets_hint)
 {
     grace_join = std::make_shared<GraceHashJoin>(
-        initial_num_buckets,
+        std::max(initial_buckets_hint, initial_num_buckets),
         max_num_buckets,
         table_join,
         left_sample_block,
@@ -388,13 +390,25 @@ void SpillingHashJoin::onBuildPhaseFinish()
             if (plan == PartitionedHashJoin::PostBuildPlan::MustSpill)
             {
                 ProfileEvents::increment(ProfileEvents::JoinSpillingHashJoinSwitchedToGraceJoin);
+
+                /// `GraceHashJoin` spills a bucket once its in-memory join reaches half the threshold
+                /// (`hasMemoryOverflow`), so that is the per-bucket capacity. The barrier knows the
+                /// exact row and distinct-key totals; sizing the bucket count from them up front
+                /// avoids the rehash cascade that would otherwise release and re-scatter the same
+                /// rows once per doubling.
+                const size_t in_memory_estimate = partitioned_join->graceInMemoryEstimateBytes();
+                const size_t bucket_capacity = max_bytes_before_external_join / 2;
+                const size_t buckets_hint = bucket_capacity ? (in_memory_estimate + bucket_capacity - 1) / bucket_capacity : 0;
                 LOG_DEBUG(
                     log,
-                    "Post-build gate: resident data does not fit ({} bytes, {} rows), switching to GraceHashJoin",
+                    "Post-build gate: resident data does not fit ({} bytes, {} rows), switching to GraceHashJoin "
+                    "(estimated {} bytes in memory, {} initial buckets)",
                     partitioned_join->getTotalByteCount(),
-                    partitioned_join->getTotalRowCount());
+                    partitioned_join->getTotalRowCount(),
+                    in_memory_estimate,
+                    buckets_hint);
 
-                createGraceJoin();
+                createGraceJoin(buckets_hint);
 
                 /// The barrier already consumed every fill lane, so a late helper finds nothing to
                 /// convert - but it must still find a `grace_join` to convert into.
@@ -402,13 +416,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
 
                 partitioned_join->dropFillAuxiliary();
                 partitioned_join->beginStoredBlockDrain();
-                while (true)
-                {
-                    Block block = partitioned_join->releaseNextStoredBlock();
-                    if (block.empty())
-                        break;
-                    chosen_join->addBlockToJoin(block, /*check_limits=*/false);
-                }
+                partitioned_join->drainStoredBlocksInto(*chosen_join);
                 state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
             }
             else

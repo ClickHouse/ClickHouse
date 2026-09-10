@@ -10,9 +10,11 @@
 #include <Interpreters/TableJoin.h>
 #include <base/getL1CacheSize.h>
 #include <base/getL2CacheSize.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
 
 #include <fmt/ranges.h>
@@ -20,6 +22,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <mutex>
 #include <shared_mutex>
 
 namespace ProfileEvents
@@ -29,6 +32,13 @@ extern const Event PartitionedHashJoinBuildFillMicroseconds;
 extern const Event PartitionedHashJoinProbeMicroseconds;
 extern const Event PartitionedHashJoinPartitions;
 extern const Event PartitionedHashJoinLeafRows;
+}
+
+namespace CurrentMetrics
+{
+extern const Metric PartitionedHashJoinPoolThreads;
+extern const Metric PartitionedHashJoinPoolThreadsActive;
+extern const Metric PartitionedHashJoinPoolThreadsScheduled;
 }
 
 namespace DB
@@ -583,6 +593,14 @@ size_t PartitionedHashJoin::predictedResidentBytes() const
     return bytes + predictedTableAndArenaBytes(rows, liveDistinctEstimate(), /*grouped=*/false);
 }
 
+size_t PartitionedHashJoin::graceInMemoryEstimateBytes() const
+{
+    const auto & data = storedData();
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    const size_t distinct = std::max(static_cast<size_t>(std::llround(hll_estimate)), 1uz);
+    return data.allocated_size + data.nullmaps_allocated_size + predictedTableAndArenaBytes(rows, distinct, /*grouped=*/false);
+}
+
 StepAnalysisReport PartitionedHashJoin::getAnalysisReport() const
 {
     if (delegate_mode)
@@ -770,6 +788,62 @@ Block PartitionedHashJoin::releaseNextStoredBlock()
     if (data.columns.empty())
         leaf_join->data.reset();
     return out;
+}
+
+void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
+{
+    chassert(stored_blocks_released);
+
+    const size_t blocks = leaf_join->data ? leaf_join->data->columns.size() : 0;
+    const size_t workers = std::min(num_threads, blocks);
+    if (workers <= 1)
+    {
+        for (Block block = releaseNextStoredBlock(); !block.empty(); block = releaseNextStoredBlock())
+            target.addBlockToJoin(block, /*check_limits=*/false);
+        return;
+    }
+
+    /// The pop is a deque front and a few counters, so one mutex serializes it cheaply; the scatter,
+    /// compression and write inside `target.addBlockToJoin` run in parallel.
+    std::mutex pop_mutex;
+    auto drain = [&]
+    {
+        while (true)
+        {
+            Block block;
+            {
+                std::lock_guard lock(pop_mutex);
+                block = releaseNextStoredBlock();
+            }
+            if (block.empty())
+                return;
+            target.addBlockToJoin(block, /*check_limits=*/false);
+        }
+    };
+
+    ThreadPool pool(
+        CurrentMetrics::PartitionedHashJoinPoolThreads,
+        CurrentMetrics::PartitionedHashJoinPoolThreadsActive,
+        CurrentMetrics::PartitionedHashJoinPoolThreadsScheduled,
+        /*max_threads_*/ workers,
+        /*max_free_threads_*/ 0,
+        /*queue_size_*/ workers);
+    try
+    {
+        for (size_t w = 0; w < workers; ++w)
+            pool.scheduleOrThrow(
+                [&drain, thread_group = CurrentThread::getGroup()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
+                    drain();
+                });
+        pool.wait();
+    }
+    catch (...)
+    {
+        pool.wait();
+        throw;
+    }
 }
 
 }

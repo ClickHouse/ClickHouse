@@ -104,6 +104,12 @@ public:
     /// which is the currently allocated amount and feeds `max_bytes_in_join` and `EXPLAIN`.
     size_t predictedResidentBytes() const;
 
+    /// Bytes the stored rows would take once loaded into a single in-memory join: the row store as it
+    /// stands plus the ungrouped table and arena prediction from the barrier's exact totals. On the
+    /// `MustSpill` path `SpillingHashJoin` divides this by the grace per-bucket cap to pick the initial
+    /// bucket count, instead of letting `GraceHashJoin` discover it through 1 -> 2 -> 4 rehashes.
+    size_t graceInMemoryEstimateBytes() const;
+
     StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
@@ -270,6 +276,10 @@ public:
     void beginStoredBlockDrain();
     /// Pops one row-store block. An empty Block means the row store is gone.
     Block releaseNextStoredBlock();
+    /// Feeds every remaining row-store block to `target` from up to `num_threads` workers. Call after
+    /// `beginStoredBlockDrain`; `target.addBlockToJoin` must accept concurrent callers, which
+    /// `GraceHashJoin` does.
+    void drainStoredBlocksInto(IJoin & target);
 
 private:
     friend class NotJoinedPartitioned;
