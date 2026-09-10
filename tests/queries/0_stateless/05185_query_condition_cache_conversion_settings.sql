@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- no-parallel: the query condition cache is server-wide and this test drops it.
+
 -- The query condition cache keys a granule verdict by a hash of the filter expression, which named
 -- the conversion function and its result type but not the settings the conversion captured when it
 -- was built. Two sessions that differ only in `precise_float_parsing` therefore shared one key, and
