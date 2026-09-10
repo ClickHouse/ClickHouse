@@ -1,0 +1,13 @@
+1. Length postprocessor with splitByNonAlpha.
+1
+1
+1
+1
+1
+1
+0
+2. Preprocessor strips UUIDs that splitByNonAlpha would split into short tokens.
+0
+0
+2
+1
