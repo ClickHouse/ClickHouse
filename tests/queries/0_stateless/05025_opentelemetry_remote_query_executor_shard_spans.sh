@@ -237,12 +237,15 @@ ${CLICKHOUSE_CLIENT} -q "
 # server's EndOfStream, but the fragment did not deliver its full result, so the span must not
 # be OK: it stays UNSET, tagged `clickhouse.cancelled` with the reason `limit`. Checked on the
 # asynchronous path (fiber span) and on the synchronous path (span closed by finish() itself).
-# distributed_push_down_limit=0 keeps the LIMIT on the initiator, otherwise each shard would
-# apply it and finish with EndOfStream on its own. The remote read is slowed down to 0.1 s per
-# 10-row block, so the shards are still far from EndOfStream when the initiator cancels.
+# The LIMIT is also pushed down to the shards, so each shard streams 20 one-row blocks, one
+# every 0.2 s, and finishes on its own after 4 s. The initiator has its 20 rows from the two
+# shards together after ~2 s, and cancels both while they are still streaming. (A shard that
+# has not sent anything yet cannot be cancelled this way: its source waits on the socket and
+# is not re-scheduled until data arrives, hence the row-by-row streaming instead of one slow
+# block.)
 ${CLICKHOUSE_CLIENT} -q "drop table if exists limit_src"
 ${CLICKHOUSE_CLIENT} -q "drop table if exists dist_limit_src"
-${CLICKHOUSE_CLIENT} -q "create table limit_src (number UInt64) engine = MergeTree order by number as select number from numbers(1000)"
+${CLICKHOUSE_CLIENT} -q "create view limit_src as select number from numbers(20)"
 ${CLICKHOUSE_CLIENT} -q "create table dist_limit_src (number UInt64) engine = Distributed(test_cluster_two_shards, currentDatabase(), limit_src)"
 
 for async_socket in 1 0; do
@@ -255,12 +258,10 @@ for async_socket in 1 0; do
         --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
         --async_socket_for_remote="$async_socket" \
         --prefer_localhost_replica=0 \
-        --distributed_push_down_limit=0 \
-        --optimize_move_to_prewhere=0 \
-        --max_block_size=10 \
-        --function_sleep_max_microseconds_per_block=10000000 \
+        --max_block_size=1 \
+        --max_threads=1 \
         --query_id "$limit_query_id" \
-        --query "select * from dist_limit_src where sleepEachRow(0.01) = 0 limit 1 format Null"
+        --query "select * from dist_limit_src where sleepEachRow(0.2) = 0 limit 20 format Null"
 
     poll_spans "$(fragment_counts_query "$trace_id" "$limit_query_id")" "2 2 2 2 2" || exit 1
 
