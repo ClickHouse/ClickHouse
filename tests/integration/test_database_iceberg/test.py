@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import re
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +23,7 @@ from pyiceberg.table.sorting import SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
+    LongType,
     NestedField,
     StringType,
     StructType,
@@ -1700,6 +1702,97 @@ def test_delete_on_lazy_initialized_table(started_cluster):
     )
 
     assert node.query(f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "0\n"
+
+
+def test_catalog_cache_concurrent_first_use(started_cluster):
+    """Cached StorageObjectStorage must be initialized before concurrent publication."""
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    suffix = uuid.uuid4().hex
+    namespace = f"cache_race_{suffix}"
+    table_name = f"table_{suffix}"
+    database = f"catalog_cache_{suffix}"
+    catalog.create_namespace(namespace)
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    table = create_table(
+        catalog,
+        namespace,
+        table_name,
+        schema=schema,
+        partition_spec=PartitionSpec(),
+        sort_order=SortOrder(),
+    )
+    table.append(pa.table({"id": pa.array([1], type=pa.int64())}))
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        database,
+        additional_settings={
+            "catalog_cache_staleness_ms": 600000,
+            "catalog_cache_max_entries": 100,
+        },
+    )
+    table_ref = f"{database}.`{namespace}.{table_name}`"
+
+    try:
+        for _ in range(3):
+            node.query("SYSTEM CLEAR DATALAKE CATALOG CACHE")
+            # Materialize and cache the StoragePtr without executing a table read.
+            assert node.query(
+                "SELECT count() FROM system.tables "
+                f"WHERE database = '{database}' AND endsWith(name, '{table_name}') "
+                "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
+            ) == "1\n"
+
+            barrier = threading.Barrier(64)
+
+            def first_read(_):
+                barrier.wait(timeout=30)
+                return node.query(f"SELECT count() FROM {table_ref} SETTINGS max_threads=1")
+
+            with ThreadPoolExecutor(max_workers=64) as executor:
+                assert list(executor.map(first_read, range(64))) == ["1\n"] * 64
+            assert node.query("SELECT 1") == "1\n"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {database}")
+
+
+def test_catalog_cache_auth_change_invalidates_storage(started_cluster):
+    node = started_cluster.instances["node1"]
+    catalog = load_catalog_impl(started_cluster)
+    name = "cache_settings_" + uuid.uuid4().hex
+    catalog.create_namespace(name)
+    table = create_table(
+        catalog, name, "t",
+        schema=Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False)),
+        partition_spec=PartitionSpec(), sort_order=SortOrder(),
+    )
+    table.append(pa.table({"id": pa.array([1], type=pa.int64())}))
+    create_clickhouse_iceberg_database(
+        started_cluster, node, name,
+        additional_settings={
+            "catalog_cache_staleness_ms": 600000,
+            "auth_header": "Authorization: Bearer before",
+        },
+    )
+    query = f"SELECT sum(id) FROM {name}.`{name}.t`"
+
+    def event(query_id, event_name):
+        node.query("SYSTEM FLUSH LOGS query_log")
+        return int(node.query(
+            f"SELECT ProfileEvents['{event_name}'] FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type='QueryFinish'"
+        ))
+
+    try:
+        assert node.query(query) == "1\n"
+        assert node.query(query, query_id=name + "_hit") == "1\n"
+        assert event(name + "_hit", "DataLakeCatalogCacheHits") > 0
+        node.query(f"ALTER DATABASE {name} MODIFY SETTING auth_header='Authorization: Bearer after'")
+        assert node.query(query, query_id=name + "_miss") == "1\n"
+        assert event(name + "_miss", "DataLakeCatalogCacheMisses") > 0
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {name}")
 
 
 def test_writes_schema_evolution(started_cluster):
