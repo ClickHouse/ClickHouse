@@ -19,8 +19,8 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/TableNode.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Parsers/ASTFunction.h>
-#include <Poco/String.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
@@ -242,27 +242,6 @@ private:
 
 }
 
-namespace
-{
-
-/// `arrayJoin` (and its alias `unnest`) is the one function that changes the number of rows, while a
-/// projection part is written alongside the parent part row by row: `ProjectionDataSink` rejects a block
-/// with more rows than the parent with a `LOGICAL_ERROR`, so such a projection makes every insert fail.
-bool astContainsArrayJoin(const IAST & ast)
-{
-    if (const auto * function = ast.as<ASTFunction>())
-        if (function->name == "arrayJoin" || Poco::toLower(function->name) == "unnest")
-            return true;
-
-    for (const auto & child : ast.children)
-        if (astContainsArrayJoin(*child))
-            return true;
-
-    return false;
-}
-
-}
-
 ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
@@ -327,8 +306,16 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
     if (isFreshTableDefinition(mode, attach_short_syntax))
     {
-        if (projection_definition->query && astContainsArrayJoin(*projection_definition->query))
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection '{}' cannot contain array joins", result.name);
+        /// `arrayJoin` is the one function that changes the number of rows, while a projection part is
+        /// written alongside the parent part row by row: `ProjectionDataSink` rejects a block with more
+        /// rows than the parent with a `LOGICAL_ERROR`, so such a projection makes every insert fail.
+        /// The check runs on the raw AST, so it also has to look through the two indirections the
+        /// analyzer would have resolved later: the `unnest` alias (resolved by canonical name, so the
+        /// verdict does not depend on `normalize_function_names`) and a SQL UDF body that is inlined
+        /// into the projection query when it is built. `expressionContainsArrayJoin` does both.
+        if (expressionContainsArrayJoin(projection_definition->query))
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Projection '{}' cannot contain arrayJoin, because it changes the number of rows", result.name);
 
         static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
             "index_granularity",

@@ -4,6 +4,7 @@
 #include <Access/Common/AccessFlags.h>
 
 #include <Databases/IDatabase.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 #include <Disks/IDisk.h>
 
@@ -76,6 +77,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -282,21 +284,12 @@ ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, Con
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
-void checkShardingKeyExistsAndIsNumeric(
-    const ASTPtr & sharding_key_ast, ContextPtr context, const NamesAndTypesList & columns, bool loading_from_existing_metadata)
+void checkShardingKeyExistsAndIsNumeric(const ASTPtr & sharding_key_ast, ContextPtr context, const NamesAndTypesList & columns)
 {
     if (!sharding_key_ast)
         return;
 
     auto sharding_expr = buildShardingKeyExpression(sharding_key_ast, context, columns, true);
-
-    /// `arrayJoin` is the one action that changes the number of rows, while the shard selector built from
-    /// the sharding key is applied positionally to the block being inserted: the insert either fails with
-    /// "Size of selector ... doesn't match size of column" or, when the sizes happen to agree, routes rows
-    /// by an unrelated row's array element. Existing metadata still loads.
-    if (!loading_from_existing_metadata && sharding_expr->hasArrayJoin())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Sharding expression cannot contain array joins");
-
     const Block & block = sharding_expr->getSampleBlock();
 
     if (block.columns() != 1)
@@ -446,6 +439,7 @@ StorageDistributed::StorageDistributed(
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
     LoadingStrictnessLevel mode,
+    bool is_fresh_definition,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
     bool is_remote_function_,
@@ -483,9 +477,30 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
+        /// `arrayJoin` is the one function that changes the number of rows, while the shard selector
+        /// built from the sharding key is applied positionally to the block being inserted: the insert
+        /// either fails with "Size of selector ... doesn't match size of column" or, when the sizes
+        /// happen to agree, routes rows by an unrelated row's array element.
+        ///
+        /// Only a definition the user supplies now is rejected. A definition that is replayed - a short
+        /// `ATTACH TABLE t`, the tables of an `ATTACH DATABASE`, a `Replicated` database's
+        /// `SECONDARY_CREATE`, a `RESTORE`, server startup - is read back from metadata that already
+        /// exists, and rejecting it there would make the table (or the whole database) unloadable
+        /// instead of failing the one insert that is actually broken. The size mismatch in
+        /// `DistributedSink` remains the backstop for such a table, and `ALTER TABLE ... MODIFY QUERY`
+        /// is not available for an engine argument, so the way out is `DETACH` plus a fresh `ATTACH`
+        /// with a corrected key.
+        ///
+        /// The raw AST is what gets checked, so the two indirections the analyzer would have resolved
+        /// later are looked through as well: the `unnest` alias (matched by canonical name, so the
+        /// verdict does not depend on `normalize_function_names`, which is off for secondary queries)
+        /// and a SQL UDF body that is inlined when the expression is built.
+        if (is_fresh_definition && expressionContainsArrayJoin(sharding_key_))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Sharding expression cannot contain arrayJoin, because it changes the number of rows");
+
         /// Check that sharding_key exists in the table and has numeric type.
-        checkShardingKeyExistsAndIsNumeric(
-            sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), isLoadingFromExistingMetadata(mode));
+        checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
         /// Building the expression analyzes (and may rewrite) the sharding key: e.g. the analyzer const-folds
@@ -1595,8 +1610,10 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
-    checkShardingKeyExistsAndIsNumeric(
-        sharding_key, local_context, new_metadata.columns.getAllPhysical(), /*loading_from_existing_metadata=*/ false);
+    /// The sharding key itself is an engine argument and cannot be altered, so it is only revalidated
+    /// against the new columns here; the `arrayJoin` rejection stays where the definition is introduced
+    /// (the constructor), so an unrelated `ALTER` on a table created before that check does not throw.
+    checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
 
 void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
@@ -2343,7 +2360,8 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
-            args.mode);
+            args.mode,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     },
     {
         .supports_settings = true,
@@ -2782,6 +2800,7 @@ void registerStorageRemote(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
             std::move(parsed.cluster),
             std::move(parsed.remote_table_function_ptr),
             /* is_remote_function_ = */ true);
