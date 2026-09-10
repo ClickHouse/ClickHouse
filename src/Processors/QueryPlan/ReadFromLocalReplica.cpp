@@ -1,3 +1,5 @@
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -29,6 +31,24 @@ QueryPlanPtr ReadFromLocalParallelReplicaStep::extractQueryPlan()
     auto qp = std::move(query_plan);
     query_plan.reset();
     return qp;
+}
+
+void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
+{
+    if (!query_plan || !query_plan->isInitialized())
+        return;
+
+    const auto own = QueryPlanOptimizations::collectFixedColumnNames(*query_plan->getRootNode());
+    std::vector<QueryPlan::Node *> stack{query_plan->getRootNode()};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+            reading->restrictFixedColumns(own);
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
 }
 
 void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)

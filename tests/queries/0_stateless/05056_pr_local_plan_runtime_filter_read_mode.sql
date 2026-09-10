@@ -60,9 +60,9 @@ JOIN b_rf_read_mode AS bb ON x.a = bb.a;
 
 SELECT 'runtime filter conjoined with an ordinary condition';
 -- A view's own `ORDER BY` puts the sort inside the fragment, where an equality on the sort key prefix
--- would make the read go in order. The two conditions arrive merged into one `Filter`, so the runtime
--- filter half is taken out and pushed on its own while `tenant = 5` stays above the fragment - pushing
--- both would leave the initiator reading `InOrder` against the replicas' `Default`.
+-- would make the read go in order. The two conditions arrive merged into one `Filter` and both go in
+-- - the equality prunes the local read like any other condition - but the fragment derives no ordering
+-- from either, so the initiator still reads `Default` alongside the replicas.
 DROP TABLE IF EXISTS t2_rf_read_mode;
 DROP VIEW IF EXISTS v_rf_read_mode;
 CREATE TABLE t2_rf_read_mode (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
@@ -71,6 +71,9 @@ INSERT INTO t2_rf_read_mode SELECT number % 100, number FROM numbers(10000);
 CREATE VIEW v_rf_read_mode AS SELECT * FROM t2_rf_read_mode ORDER BY ts;
 
 SET optimize_read_in_order = 1, optimize_aggregation_in_order = 0;
+-- The section is about the two conditions arriving as one merged `Filter`, so pin the merging: left
+-- apart, the runtime filter reaches the read as its own step instead of the read's own annotation.
+SET query_plan_merge_filters = 1;
 
 SELECT replaceAll(replaceRegexpOne(explain, '^[^A-Za-z]*', ''), currentDatabase(), 'default') AS step
 FROM (
@@ -78,7 +81,8 @@ FROM (
     SELECT v.ts FROM v_rf_read_mode AS v JOIN b_rf_read_mode AS bb ON v.tenant = bb.a
     WHERE v.tenant = 5 LIMIT 5
 )
-WHERE explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%' OR explain LIKE '%Filter column%';
+WHERE explain LIKE '%Read type%' OR explain LIKE '%Runtime filters:%'
+   OR explain LIKE '%Filter column%' OR explain LIKE '%Prewhere filter column%';
 
 SELECT v.ts FROM v_rf_read_mode AS v JOIN b_rf_read_mode AS bb ON v.tenant = bb.a
 WHERE v.tenant = 5 ORDER BY v.ts LIMIT 5;

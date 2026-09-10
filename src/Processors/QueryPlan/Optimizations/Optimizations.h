@@ -329,6 +329,11 @@ void resolvePlannerOnlyFilters(QueryPlan::Node & node, const QueryPlanOptimizati
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
 
+/// Names of the columns the filters already inside `root` fix to a single value, by the same rule
+/// read-in-order itself uses. Taken before a condition from outside is pushed in, this is what the
+/// replicas' own copy of the fragment will fix as well.
+NameSet collectFixedColumnNames(const QueryPlan::Node & root);
+
 /// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
 /// AST. Mirrors how join steps get their keys. No-op unless collect_hash_table_stats_during_aggregation.
