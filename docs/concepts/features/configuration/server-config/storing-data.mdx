@@ -493,12 +493,12 @@ Authentication parameters (the disk will try all available methods **and** Manag
 
 | Parameter                            | Description                                                                 |
 |--------------------------------------|-----------------------------------------------------------------------------|
-| `s3_max_single_part_upload_size`     | Maximum size of a single block upload to Blob Storage.                      |
+| `max_single_part_upload_size`        | Maximum size of a single block upload to Blob Storage.                      |
 | `min_bytes_for_seek`                 | Minimum size of a seekable region.                                          |
 | `max_single_read_retries`            | Maximum number of attempts to read a chunk of data from Blob Storage.       |
 | `max_single_download_retries`        | Maximum number of attempts to download a readable buffer from Blob Storage. |
 | `thread_pool_size`                   | Maximum number of threads for `IDiskRemote` instantiation.                  |
-| `s3_max_inflight_parts_for_one_file` | Maximum number of concurrent put requests for a single object.              |
+| `max_inflight_parts_for_one_file`    | Maximum number of concurrent put requests for a single object.              |
 
 #### Other parameters {#azure-blob-storage-other-parameters}
 
@@ -693,8 +693,7 @@ These settings should be defined in the disk configuration section.
 | `max_size`                            | Size    | -          | **Required**. Maximum cache size in bytes or readable format (e.g., `10Gi`). Files are evicted using LRU policy when the limit is reached. Supports `ki`, `Mi`, `Gi` formats (since v22.10). |
 | `cache_on_write_operations`           | Boolean | `false`    | Enables write-through cache for `INSERT` queries and background merges. Can be overridden per query with `enable_filesystem_cache_on_write_operations`.                                      |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`    | Enables per-query cache size limits based on `max_query_cache_size`.                                                                                                                         |
-| `enable_cache_hits_threshold`         | Boolean | `false`    | When enabled, data is cached only after being read multiple times.                                                                                                                           |
-| `cache_hits_threshold`                | Integer | `0`        | Number of reads required before data is cached (requires `enable_cache_hits_threshold`).                                                                                                     |
+| `cache_hits_threshold`                | Integer | `0`        | Deprecated setting. Number of reads required before data is cached.                                                                                                                          |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Skips cache for large read ranges.                                                                                                                                                           |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | Read range size that triggers cache bypass (requires `enable_bypass_cache_with_threshold`).                                                                                                  |
 | `max_file_segment_size`               | Size    | `8Mi`      | Maximum size of a single cache file in bytes or readable format.                                                                                                                             |
@@ -1046,11 +1045,7 @@ SETTINGS storage_policy='web';
 
 #### Optional parameters {#optional-parameters-web}
 
-| Parameter                           | Description                                                                  | Default Value   |
-|-------------------------------------|------------------------------------------------------------------------------|-----------------|
-| `min_bytes_for_seek`                | The minimal number of bytes to use seek operation instead of sequential read | `1` MB          |
-| `remote_fs_read_backoff_threashold` | The maximum wait time when trying to read data for remote disk               | `10000` seconds |
-| `remote_fs_read_backoff_max_tries`  | The maximum number of attempts to read with backoff                          | `5`             |
+The `web` disk type reads only the `endpoint` parameter. There are no optional parameters.
 
 If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](/reference/settings/session-settings/http#http_connection_timeout), [http_receive_timeout](/reference/settings/session-settings/http#http_receive_timeout), [keep_alive_timeout](/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
