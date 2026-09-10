@@ -136,7 +136,7 @@ void IStorageCluster::read(
     /// packet is stripped in `ReadFromCluster::updateSettings`, but `query_to_send` is also serialized via
     /// `formatWithSecretsOneLine()` with its `SETTINGS` clause intact, which would otherwise leak those
     /// names to shards (and trip `UNKNOWN_SETTING` on an older shard in a rolling upgrade).
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+    ClusterProxy::prepareSecondaryQueryAST(query_to_send);
 
     auto this_ptr = std::static_pointer_cast<IStorageCluster>(shared_from_this());
 

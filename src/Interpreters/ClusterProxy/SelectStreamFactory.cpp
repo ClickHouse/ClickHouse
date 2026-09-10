@@ -178,7 +178,7 @@ void SelectStreamFactory::createForShardImpl(
         /// shard during a rolling upgrade; the inter-server settings packet is stripped separately in
         /// `updateSettings`. The local plan (`emplace_local_stream`) keeps the unstripped `query_ast`.
         auto forwarded_query = query_ast->clone();
-        stripInitiatorOnlySettingsFromQuery(forwarded_query);
+        prepareSecondaryQueryAST(forwarded_query);
 
         const auto & settings = context->getSettingsRef();
 
