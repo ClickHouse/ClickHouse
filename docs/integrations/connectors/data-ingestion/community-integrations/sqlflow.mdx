@@ -326,6 +326,24 @@ pipeline:
       table: bluesky_posts
 ```
 
+Save it as `bluesky.yml` and run it. No `SQLFLOW_KAFKA_BROKERS` here: the source is the WebSocket, and the only variable the pipeline reads is the DSN.
+
+```bash
+docker run --rm \
+  -v "$(pwd)":/conf \
+  -e SQLFLOW_CLICKHOUSE_DSN \
+  turbolytics/sql-flow:v1.1.0 \
+  run /conf/bluesky.yml --max-msgs=2000
+```
+
+Add `--network` as in the Kafka example if ClickHouse runs in Docker on the same machine. With the binary instead of the image:
+
+```bash
+sqlflow run bluesky.yml --max-msgs=2000
+```
+
+The firehose delivers about 50 posts a second, so 2,000 messages take under a minute. Then:
+
 ```sql
 SELECT lang, count() AS posts
 FROM (SELECT arrayJoin(langs) AS lang FROM bluesky_posts)
