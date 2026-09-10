@@ -21,6 +21,19 @@ SELECT count() FROM t_pruning_eval_error WHERE p != 1 AND intDiv(1, p - 1) > 0 S
 SELECT count() FROM t_pruning_eval_error WHERE p != 1 AND intDiv(1, p - 1) > 0 SETTINGS use_constant_folding_in_index_analysis = 1;
 SELECT count() FROM t_pruning_eval_error WHERE p != 1 AND intDiv(1, p - 1) > 0 SETTINGS optimize_use_implicit_projections = 0;
 
+SELECT 'repeated failing chain';
+-- The transformed key is cached per `(function, index column)` and the entry is shared by every
+-- range of a part, so a range whose endpoint cannot be evaluated is followed by ranges that look
+-- that entry up. Publishing the entry before computing it left a null column behind on the way out,
+-- and the next lookup dereferenced it. Two atoms over the same chain, and a primary key that puts
+-- the failing boundary in the middle of many ranges, exercise that lookup.
+SELECT count() FROM t_pruning_eval_error WHERE p != 1 AND intDiv(1, p - 1) > 0 AND intDiv(1, p - 1) < 100 SETTINGS use_skip_indexes = 0;
+DROP TABLE IF EXISTS t_pruning_eval_error_repeat;
+CREATE TABLE t_pruning_eval_error_repeat (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+INSERT INTO t_pruning_eval_error_repeat SELECT number FROM numbers(64);
+SELECT count() FROM t_pruning_eval_error_repeat WHERE k != 1 AND intDiv(1, k - 1) > 0 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_pruning_eval_error_repeat WHERE k != 1 AND intDiv(1, k - 1) > 0 SETTINGS use_skip_indexes = 0, merge_tree_coarse_index_granularity = 2;
+
 SELECT 'primary key';
 DROP TABLE IF EXISTS t_pruning_eval_error_pk;
 CREATE TABLE t_pruning_eval_error_pk (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
@@ -37,5 +50,6 @@ SELECT count() FROM t_pruning_still_works WHERE p = 2;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT b FROM t_pruning_still_works WHERE p = 2) WHERE explain LIKE '%Parts: 1/3%';
 
 DROP TABLE t_pruning_eval_error;
+DROP TABLE t_pruning_eval_error_repeat;
 DROP TABLE t_pruning_eval_error_pk;
 DROP TABLE t_pruning_still_works;
