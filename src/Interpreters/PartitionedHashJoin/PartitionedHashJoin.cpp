@@ -37,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 extern const int SET_SIZE_LIMIT_EXCEEDED;
@@ -85,15 +86,17 @@ PartitionedHashJoin::PartitionedHashJoin(
     , any_take_last_row(any_take_last_row_)
     , num_threads(std::max<size_t>(1, num_threads_))
     , max_bytes_before_external_join(max_bytes_before_external_join_)
-    , leaf_join(std::make_unique<HashJoin>(
-          table_join,
-          right_sample_block,
-          any_take_last_row,
-          /*reserve_num_=*/0,
-          /*instance_id_=*/"",
-          /*is_concurrent_hash_join_=*/false,
-          /*stats_collecting_params_=*/HashJoinStatsCollectingParams{},
-          /*allow_set_maps_=*/false))
+    , grow_budget(max_bytes_before_external_join_)
+    , leaf_join(
+          std::make_unique<HashJoin>(
+              table_join,
+              right_sample_block,
+              any_take_last_row,
+              /*reserve_num_=*/0,
+              /*instance_id_=*/"",
+              /*is_concurrent_hash_join_=*/false,
+              /*stats_collecting_params_=*/HashJoinStatsCollectingParams{},
+              /*allow_set_maps_=*/false))
     , delegate_mode(!table_join->oneDisjunct())
     , maps_variant_index(leaf_join->data->maps.empty() ? 1 : leaf_join->data->maps.front().index())
     , max_fanout_per_pass(table_join->partitionedHashJoinMaxFanoutPerPass())
@@ -381,11 +384,16 @@ void PartitionedHashJoin::decidePartitionPlan()
 {
     const HashJoin::Type type = leaf_join->data->type;
 
-    /// The table is sized once, from the sketch over the whole input at the standard 50% max fill; it
-    /// never grows (see `reserveFor` for the saturation clamp and `checkCapacityGuard` for the guard).
+    /// The table is sized from the sketch over the whole input at the standard 50% max fill; it
+    /// may grow during post-build (section 4) when the estimate was low.
     const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
     const size_t reserve = reserveFor(rows, hll_estimate);
     size_degree = SharedJoinMaps::sizeDegree(maps_variant_index, type, reserve);
+    if (size_degree > 32)
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "PartitionedHashJoin: a table of degree {} would exceed the 2^31 distinct-key cap (size_degree <= 32)",
+            size_degree);
 
     /// ASOF stays single-partition: its mapped values are per-key sorted vectors whose insert wants the
     /// original row order, and that sorting dominates the build, so partitioning the equi-key table

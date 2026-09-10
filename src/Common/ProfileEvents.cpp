@@ -472,9 +472,10 @@
     M(PartitionedHashJoinLeafRows, "Number of right-side rows fed into partitioned_hash JOIN hash-table inserts.", ValueType::Number) \
     M(PartitionedHashJoinHashTableBytes, "Bytes of the one shared hash-table buffer of a partitioned_hash JOIN build, sized once from the distinct-key sketch.", ValueType::Bytes) \
     M(PartitionedHashJoinOverflowRows, "Number of partitioned_hash JOIN build rows whose owner walk reached the end of its partition's cell range and that were inserted by the serial drain with the global mask instead.", ValueType::Number) \
-    M(PartitionedHashJoinDuplicateRunBytes, "Arena bytes a partitioned_hash JOIN build spent on duplicate-key storage (pairs, contiguous runs, run-list descriptors and links).", ValueType::Bytes) \
+    M(PartitionedHashJoinDuplicateRunBytes, "Arena bytes a partitioned_hash JOIN build spent on duplicate-key storage (exact spans and range headers).", ValueType::Bytes) \
     M(PartitionedHashJoinTeardownMicroseconds, "Time spent destroying a partitioned_hash JOIN's heavy state (the shared hash table, build arenas, the stored-blocks row store), measured in the destructor.", ValueType::Microseconds) \
     M(PartitionedHashJoinScatterGroups, "Number of contiguous build-block ranges the partitioned_hash JOIN post-build scatter was split into to bound its transient (1 means the whole build was scattered at once).", ValueType::Number) \
+    M(PartitionedHashJoinTableResizes, "Number of times a partitioned_hash JOIN shared hash table grew during post-build.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \

@@ -33,6 +33,8 @@ public:
 
     RangeCommittedBuffer(const RangeCommittedBuffer &) = delete;
     RangeCommittedBuffer & operator=(const RangeCommittedBuffer &) = delete;
+    RangeCommittedBuffer(RangeCommittedBuffer && other) noexcept;
+    RangeCommittedBuffer & operator=(RangeCommittedBuffer && other) noexcept;
 
     char * data() const { return ptr; }
     size_t size() const { return bytes; }
@@ -42,6 +44,8 @@ public:
     void commit(size_t offset, size_t len);
 
 private:
+    void reset();
+
     char * ptr = nullptr;
     size_t bytes = 0;
     size_t alignment = 0;

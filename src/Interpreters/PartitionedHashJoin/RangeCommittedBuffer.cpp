@@ -70,6 +70,40 @@ RangeCommittedBuffer::RangeCommittedBuffer(size_t bytes_)
 
 RangeCommittedBuffer::~RangeCommittedBuffer()
 {
+    reset();
+}
+
+RangeCommittedBuffer::RangeCommittedBuffer(RangeCommittedBuffer && other) noexcept
+    : ptr(other.ptr)
+    , bytes(other.bytes)
+    , alignment(other.alignment)
+    , committed(other.committed.load(std::memory_order_relaxed))
+{
+    other.ptr = nullptr;
+    other.bytes = 0;
+    other.alignment = 0;
+    other.committed.store(0, std::memory_order_relaxed);
+}
+
+RangeCommittedBuffer & RangeCommittedBuffer::operator=(RangeCommittedBuffer && other) noexcept
+{
+    if (this != &other)
+    {
+        reset();
+        ptr = other.ptr;
+        bytes = other.bytes;
+        alignment = other.alignment;
+        committed.store(other.committed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        other.ptr = nullptr;
+        other.bytes = 0;
+        other.alignment = 0;
+        other.committed.store(0, std::memory_order_relaxed);
+    }
+    return *this;
+}
+
+void RangeCommittedBuffer::reset()
+{
     if (!ptr)
         return;
     __real_free(ptr);
@@ -79,6 +113,10 @@ RangeCommittedBuffer::~RangeCommittedBuffer()
         auto trace = CurrentMemoryTracker::free(static_cast<Int64>(accounted));
         trace.onFree(ptr, accounted);
     }
+    ptr = nullptr;
+    bytes = 0;
+    alignment = 0;
+    committed.store(0, std::memory_order_relaxed);
 }
 
 void RangeCommittedBuffer::commit(size_t offset, size_t len)

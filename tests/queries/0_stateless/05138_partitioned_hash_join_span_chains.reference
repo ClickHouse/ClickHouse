@@ -1,0 +1,21 @@
+dups 8, inner all	1
+dups 8, left all	1
+dups 8, right all	1
+dups 8, full all	1
+dups 8, inner any (key checksum)	1
+dups 8, left semi	1
+dups 8, left anti	1
+dups 8, string keys	1
+zero key, inner all	1
+dups 1, inner all	1
+dups 2, inner all	1
+dups 3, inner all	1
+dups 300, inner all	1
+dups 40000 one key, inner all	1
+32767-row key, inner all	1
+32767-row key, partitioned_hash rows	32767
+chains across 777-row blocks, inner all	1
+grouped scatter, inner all	1
+grouped scatter in memory	1
+32767-row key: exact span bytes	1
+grouped scatter groups	1

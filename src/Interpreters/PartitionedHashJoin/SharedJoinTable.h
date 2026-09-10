@@ -8,7 +8,9 @@
 #include <Common/HashTable/HashTableKeyHolder.h>
 
 #include <bit>
+#include <optional>
 #include <variant>
+#include <vector>
 
 namespace DB
 {
@@ -47,10 +49,10 @@ ALWAYS_INLINE inline UInt64 sharedJoinMix(size_t hash_value)
     return static_cast<UInt64>(hash_value) * 0x9E3779B97F4A7C15ULL;
 }
 
-/** One open-addressing table for the whole build, sized once at the barrier and never grown. Its cell
-  * buffer is split into `2^partition_bits` contiguous ranges of `2^range_bits` cells; a partition owns
-  * its range during the parallel build and nothing else (see `PartitionedHashJoin`). The probe is the
-  * standard linear walk over one `{buf, mask}` pair, wrapping at the end of the buffer.
+/** One open-addressing table for the whole build. Its cell buffer is split into `2^partition_bits`
+  * contiguous ranges of `2^range_bits` cells; a partition owns its range during the parallel build.
+  * The table may grow in place during post-build (a new buffer, same object, same partition bits).
+  * The probe is the standard linear walk over one `{buf, mask}` pair, wrapping at the end of the buffer.
   *
   * `Cell` and `Hash` are exactly the standard join map's, taken from `HashJoin::MapsTemplate`, so the
   * cells this table holds are bit-identical to `HashJoin`'s and every key getter works on it unchanged:
@@ -93,7 +95,7 @@ public:
     /// Validated before any member derives a shift or a buffer size from it.
     static size_t checkedSizeDegree(size_t size_degree_, size_t partition_bits_)
     {
-        if (size_degree_ == 0 || size_degree_ >= 64 || partition_bits_ > size_degree_)
+        if (size_degree_ == 0 || size_degree_ > 32 || partition_bits_ > size_degree_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "SharedJoinTable: bad geometry, size degree {} with {} partition bits", size_degree_, partition_bits_);
         return size_degree_;
     }
@@ -178,11 +180,68 @@ public:
     {
         keyHolderPersistKey(key_holder);
         const auto & key = keyHolderGetKey(key_holder);
-        Cell * cell = buf + pos;
+        return claimPersisted(buf + pos, key, hash_value);
+    }
+
+    /// Places an already-persisted key into `cell` of either the live buffer or a rehash buffer.
+    ALWAYS_INLINE Cell * claimPersisted(Cell * cell, const Key & key, size_t hash_value)
+    {
         chassert(cell->isZero(state));
         new (cell) Cell(key, state);
         cell->setHash(hash_value);
         return cell;
+    }
+
+    size_t cellHash(const Cell * cell) const { return cell->getHash(static_cast<const Hash &>(*this)); }
+
+    /// In-place rehash onto a larger buffer. `beginRehash` allocates the new geometry; the caller
+    /// writes into it through `newCellAt` / `newPlace` / `commitNewRange`; `adoptRehash` swaps it in
+    /// and releases the old buffer without running cell destructors.
+    void beginRehash(size_t new_degree)
+    {
+        const size_t degree = checkedSizeDegree(new_degree, partition_bits);
+        new_size_degree = degree;
+        new_mask = (1uz << degree) - 1;
+        new_range_bits = degree - partition_bits;
+        new_buffer.emplace((1uz << degree) * sizeof(Cell));
+        new_buf = reinterpret_cast<Cell *>(new_buffer->data());
+        new_range_committed.assign(partitions(), 0);
+    }
+
+    ALWAYS_INLINE size_t newPlace(size_t hash_value) const { return sharedJoinMix(hash_value) >> (64 - new_size_degree); }
+    ALWAYS_INLINE size_t newNext(size_t pos) const { return (pos + 1) & new_mask; }
+    ALWAYS_INLINE size_t newRangeBegin(size_t partition) const { return partition << new_range_bits; }
+    ALWAYS_INLINE size_t newRangeEnd(size_t partition) const { return (partition + 1) << new_range_bits; }
+    ALWAYS_INLINE size_t newCellCount() const { return new_mask + 1; }
+    ALWAYS_INLINE Cell * newCellAt(size_t pos) { return new_buf + pos; }
+    ALWAYS_INLINE const Cell * newCellAt(size_t pos) const { return new_buf + pos; }
+
+    void commitNewRange(size_t partition)
+    {
+        if (new_range_committed[partition])
+            return;
+        new_buffer->commit(newRangeBegin(partition) * sizeof(Cell), (1uz << new_range_bits) * sizeof(Cell));
+        new_range_committed[partition] = 1;
+    }
+
+    bool newRangeIsCommitted(size_t partition) const { return new_range_committed[partition]; }
+
+    void adoptRehash()
+    {
+        /// The old cells' mapped values were moved out. Skip their destructors; move-assigning
+        /// `buffer` frees the old reservation and its tracker charge.
+        Cell * next = reinterpret_cast<Cell *>(new_buffer->data());
+        buffer = std::move(*new_buffer);
+        new_buffer.reset();
+        buf = next;
+        size_degree = new_size_degree;
+        mask = new_mask;
+        range_bits = new_range_bits;
+        new_buf = nullptr;
+        new_size_degree = 0;
+        new_mask = 0;
+        new_range_bits = 0;
+        new_range_committed.clear();
     }
 
     /// Claims the zero-value cell; its mapped value is default-constructed, as in `emplaceIfZero`.
@@ -237,6 +296,13 @@ private:
     Cell * buf;
     size_t m_size = 0;
     HashTableNoState state;
+
+    std::optional<RangeCommittedBuffer> new_buffer;
+    Cell * new_buf = nullptr;
+    size_t new_size_degree = 0;
+    size_t new_mask = 0;
+    size_t new_range_bits = 0;
+    std::vector<UInt8> new_range_committed;
 };
 
 template <typename T>

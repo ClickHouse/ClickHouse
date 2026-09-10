@@ -20,6 +20,9 @@
 #include <algorithm>
 #include <cmath>
 #include <deque>
+#include <limits>
+#include <new>
+#include <vector>
 
 namespace ProfileEvents
 {
@@ -33,6 +36,7 @@ extern const Event PartitionedHashJoinOverflowRows;
 extern const Event PartitionedHashJoinDuplicateRunBytes;
 extern const Event PartitionedHashJoinScatterGroups;
 extern const Event PartitionedHashJoinTeardownMicroseconds;
+extern const Event PartitionedHashJoinTableResizes;
 }
 
 namespace CurrentMetrics
@@ -47,7 +51,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LIMIT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_JOIN_KEYS;
 }
@@ -57,40 +60,11 @@ namespace
 
 constexpr size_t locator_piece_rows = 32768; /// locator synthesis scratch stays L2-resident
 
-/** Per-worker scratch for the duplicate rows of the pass in progress. A key's first duplicate of the pass
-  * turns its cell word into a scratch marker naming a pass-local key id; every later row of the key appends
-  * its ref under that id. At the pass's finish the writer reserves each key's slots (a pair, a run, a node
-  * of a list) and the rows are placed straight into them in insertion order, then every marked cell gets
-  * its final word back. Nothing reads a marked cell before the finish: the probe waits for publication and
-  * a key belongs to one owner per pass.
-  */
-struct TailScratch
+size_t ceilDiv(size_t a, size_t b)
 {
-    /// The pass-local key ids and the offsets into `staged` are 32-bit, so one pass (one partition's rows
-    /// of one group, or the whole build on the single-partition plan, or all drained overflow rows) must
-    /// stay below 2^32 rows; `checkPassRowLimit` throws before such a pass writes anything.
-    static constexpr size_t MAX_PASS_ROWS = 1uz << 32;
-
-    PaddedPODArray<UInt32> tail_key; /// per duplicate row: its pass-local key id
-    PaddedPODArray<UInt64> tail_ref; /// per duplicate row: its ref word
-    PaddedPODArray<UInt32> tail_count; /// per key id: rows of this pass
-    PaddedPODArray<UInt64> tail_cell; /// per key id: the address of the cell's mapped value
-    PaddedPODArray<UInt64> tail_prev_word; /// per key id: the word the cell held before this pass, then its final word
-    PaddedPODArray<UInt64 *> dest; /// per key id, at finish: the next slot of the span the writer reserved
-    PaddedPODArray<UInt32> left; /// per key id, at finish: slots left in that span
-
-    size_t keys() const { return tail_count.size(); }
-    size_t rows() const { return tail_ref.size(); }
-
-    void clear()
-    {
-        tail_key.clear();
-        tail_ref.clear();
-        tail_count.clear();
-        tail_cell.clear();
-        tail_prev_word.clear();
-    }
-};
+    chassert(b > 0);
+    return a / b + (a % b != 0);
+}
 
 /** Rows an owner's walk reached its range end with: the key (persisted, so the chunk can be freed), its
   * hash and its ref. One buffer per partition, written by the partition's owner, read by the serial
@@ -103,6 +77,8 @@ struct OverflowBuffer
     PaddedPODArray<UInt64> refs;
 
     size_t rows() const { return refs.size(); }
+
+    size_t allocatedBytes() const { return keys.allocated_bytes() + hashes.allocated_bytes() + refs.allocated_bytes(); }
 
     template <typename Key>
     void push(const Key & key, UInt64 hash, UInt64 ref)
@@ -144,27 +120,11 @@ ALWAYS_INLINE void initMapped(Mapped & mapped, UInt64 ref)
     }
 }
 
-[[noreturn]] void throwPassRowLimit(size_t rows, const char * what)
-{
-    throw Exception(
-        ErrorCodes::LIMIT_EXCEEDED,
-        "PartitionedHashJoin: {} of {} rows exceeds the {} rows one build pass can hold",
-        what,
-        rows,
-        TailScratch::MAX_PASS_ROWS);
-}
-
-/// Once per pass, before any row of it is inserted.
-ALWAYS_INLINE void checkPassRowLimit(size_t rows, const char * what)
-{
-    if (unlikely(rows >= TailScratch::MAX_PASS_ROWS))
-        throwPassRowLimit(rows, what);
-}
-
 /// A later row of a key: `RowRef` keeps the first row, or the last under `any_take_last_row`;
 /// `RowRefList` defers to the pass's finish through the scratch.
 template <typename Mapped>
-ALWAYS_INLINE void appendRowToMapped(Mapped & mapped, UInt64 ref, TailScratch & scratch, bool any_take_last_row, bool & all_unique)
+ALWAYS_INLINE void
+appendRowToMapped(Mapped & mapped, UInt64 ref, PassScratch & scratch, bool any_take_last_row, bool & all_unique, UInt32 bucket)
 {
     all_unique = false;
     if constexpr (std::is_same_v<Mapped, RowRef>)
@@ -175,80 +135,8 @@ ALWAYS_INLINE void appendRowToMapped(Mapped & mapped, UInt64 ref, TailScratch & 
     else
     {
         static_assert(std::is_same_v<Mapped, RowRefList>);
-        UInt32 key_id;
-        if (mapped.isScratchMarker())
-        {
-            key_id = static_cast<UInt32>(mapped.scratchKeyId());
-            ++scratch.tail_count[key_id];
-        }
-        else
-        {
-            key_id = static_cast<UInt32>(scratch.tail_count.size());
-            scratch.tail_count.push_back(1);
-            scratch.tail_cell.push_back(reinterpret_cast<UInt64>(&mapped));
-            scratch.tail_prev_word.push_back(mapped.word);
-            mapped = RowRefList::makeScratchMarker(key_id);
-        }
-        scratch.tail_key.push_back(key_id);
-        scratch.tail_ref.push_back(ref);
+        appendRow(mapped, ref, bucket, scratch);
     }
-}
-
-/// The pass's finish: every key's refs of this pass become one contiguous run appended to the key's
-/// word (a pair, a run, or one more node of a list), and the scratch marker leaves the cell. The writer
-/// reserves each key's slots first, then the rows are placed straight into them in insertion order - one
-/// copy, as the reference's placement into its tails array - and the cells get their final words last,
-/// prefetched in batches.
-void finishTailScratch(TailScratch & scratch, DuplicateRunWriter & writer)
-{
-    const size_t keys = scratch.keys();
-    if (keys == 0)
-        return;
-    /// Guaranteed by `checkPassRowLimit` on every pass; the per-key counters below are 32-bit.
-    if (scratch.rows() >= TailScratch::MAX_PASS_ROWS)
-        throwPassRowLimit(scratch.rows(), "the duplicate rows of a build pass");
-
-    scratch.dest.resize(keys);
-    scratch.left.resize(keys);
-    const auto reserve_next = [&](size_t key) ALWAYS_INLINE
-    {
-        RowRefList word = RowRefList::fromWord(scratch.tail_prev_word[key]);
-        const DuplicateRunWriter::Span span = writer.reserve(word, scratch.tail_count[key]);
-        scratch.tail_prev_word[key] = word.word;
-        scratch.dest[key] = span.refs;
-        scratch.left[key] = static_cast<UInt32>(span.count);
-        scratch.tail_count[key] -= static_cast<UInt32>(span.count);
-    };
-    for (size_t key = 0; key < keys; ++key)
-        reserve_next(key);
-
-    const size_t rows = scratch.rows();
-    for (size_t row = 0; row < rows; ++row)
-    {
-        const UInt32 key = scratch.tail_key[row];
-        /// The writer hands out fewer slots than asked when a block fills up to its link slot before it
-        /// chains, when a tail node's free slots take only part of the rows, or when a link word's count
-        /// field is full: reserve the rest, still in order.
-        if (scratch.left[key] == 0) [[unlikely]]
-            reserve_next(key);
-        *scratch.dest[key]++ = scratch.tail_ref[row];
-        --scratch.left[key];
-    }
-
-    static constexpr size_t batch_size = 32;
-    for (size_t base = 0; base < keys; base += batch_size)
-    {
-        const size_t batch = std::min(batch_size, keys - base);
-        for (size_t index = 0; index < batch; ++index)
-            __builtin_prefetch(reinterpret_cast<const void *>(scratch.tail_cell[base + index]), 1, 3); /// NOLINT(performance-no-int-to-ptr)
-        for (size_t index = 0; index < batch; ++index)
-        {
-            const size_t key = base + index;
-            chassert(scratch.tail_count[key] == 0 && scratch.left[key] == 0);
-            *reinterpret_cast<RowRefList *>(scratch.tail_cell[key]) = RowRefList::fromWord(scratch.tail_prev_word[key]); /// NOLINT(performance-no-int-to-ptr)
-        }
-    }
-    scratch.clear();
 }
 
 /// What one section insert into the shared table works with, shared by the sequential loop, the AMAC
@@ -262,7 +150,7 @@ struct InsertTarget
 
     Table & table;
     Cell * cells;
-    TailScratch & scratch;
+    PassScratch & scratch;
     OverflowBuffer & overflow;
     /// The range this pass may write, and whether the walk wraps at the buffer end (single partition,
     /// one writer) or hands rows at `range_end` to the overflow (parallel owners).
@@ -275,26 +163,34 @@ struct InsertTarget
     UInt32 asof_block_no = 0;
     const HashJoin * join = nullptr;
 
+    PartitionedHashJoin * owner = nullptr;
+    std::vector<UInt64> * claimed_per_partition = nullptr;
+    UInt64 * drain_claimed = nullptr;
+    SpanWriter * writer = nullptr;
+    size_t * scratch_high_water = nullptr;
+    size_t partition = 0;
+    UInt64 fold_base = 0;
+    bool single_partition_pass = false;
+
     UInt64 claimed = 0;
     bool all_unique = true;
 
-    ALWAYS_INLINE void claimed_one()
-    {
-        ++claimed;
-        /// Single-writer wrapping walks have no barrier before which the capacity guard could run, so they
-        /// check per claim: the table must keep an empty cell for every walk to terminate.
-        if (wrap && claimed > table.maxFill()) [[unlikely]]
-            throwCapacity();
-    }
+    ALWAYS_INLINE void claimed_one() { ++claimed; }
 
-    [[noreturn]] void throwCapacity() const
+    void foldClaimed()
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "PartitionedHashJoin: the shared hash table of {} cells received more than {} distinct keys; the size estimate that "
-            "created it was too low",
-            table.cellCount(),
-            table.maxFill());
+        if (!claimed_per_partition)
+            return;
+        if (single_partition_pass)
+        {
+            (*claimed_per_partition)[0] = claimed;
+            return;
+        }
+        const UInt64 delta = claimed - fold_base;
+        (*claimed_per_partition)[partition] += delta;
+        if (drain_claimed)
+            *drain_claimed += delta;
+        fold_base = claimed;
     }
 
     ALWAYS_INLINE void initFirst(Mapped & mapped, UInt64 ref, size_t row)
@@ -308,7 +204,7 @@ struct InsertTarget
             initMapped(mapped, ref);
     }
 
-    ALWAYS_INLINE void appendLater(Mapped & mapped, UInt64 ref, size_t row)
+    ALWAYS_INLINE void appendLater(Mapped & mapped, UInt64 ref, size_t row, UInt32 bucket)
     {
         if constexpr (mapped_asof)
         {
@@ -316,7 +212,7 @@ struct InsertTarget
             mapped->insert(*asof_column, asof_block_no, row);
         }
         else
-            appendRowToMapped(mapped, ref, scratch, any_take_last_row, all_unique);
+            appendRowToMapped(mapped, ref, scratch, any_take_last_row, all_unique, bucket);
     }
 
     /// The zero key has one cell outside the buffer, and by construction only one partition's chunk
@@ -331,16 +227,23 @@ struct InsertTarget
             Cell * cell = table.claimZero(hash);
             initFirst(cell->getMapped(), ref, row);
         }
+        else if constexpr (std::is_same_v<Mapped, RowRefList>)
+        {
+            all_unique = false;
+            appendRowZero(table.zeroValue()->getMapped(), ref, scratch);
+        }
         else
-            appendLater(table.zeroValue()->getMapped(), ref, row);
+            appendLater(table.zeroValue()->getMapped(), ref, row, /*bucket=*/0);
     }
 
     /// The owner walk from the home cell. Returns false when the row reached the range end and was
-    /// handed to the overflow.
+    /// handed to the overflow. Wrapping targets run G1 before this walk (11.3 `beforeWalk`).
     template <typename KeyHolder>
     ALWAYS_INLINE bool insertFromHome(KeyHolder && key_holder, size_t hash, UInt64 ref, size_t row)
     {
         const auto & key = keyHolderGetKey(key_holder);
+        if (wrap && owner)
+            owner->g1BeforeClaim(*this);
         size_t pos = table.place(hash);
         chassert(pos >= range_begin && pos < range_end);
         while (true)
@@ -355,7 +258,7 @@ struct InsertTarget
             }
             if (table.keyEquals(cell, key, hash))
             {
-                appendLater(cell->getMapped(), ref, row);
+                appendLater(cell->getMapped(), ref, row, static_cast<UInt32>(pos));
                 return true;
             }
             if (wrap)
@@ -467,7 +370,7 @@ struct OwnerAmacInsertPolicy
         }
         if (target.table.keyEquals(cell, key, hash))
         {
-            target.appendLater(cell->getMapped(), refWordAt(row), row);
+            target.appendLater(cell->getMapped(), refWordAt(row), row, static_cast<UInt32>(pos));
             return AmacStepResult::Done;
         }
         size_t next_pos;
@@ -540,7 +443,7 @@ void insertSectionShared(
     /// to a per-key sorted lookup is not a one-cell fused action.
     if constexpr (!mapped_asof && amac_join_supported<KeyGetter, Table>)
     {
-        if (use_amac && rows >= amac_min_rows && rows < amac_inactive_row)
+        if (use_amac && !target.wrap && rows >= amac_min_rows && rows < amac_inactive_row)
         {
             OwnerAmacInsertPolicy<KeyGetter, Table> policy{
                 .target = target,
@@ -612,7 +515,7 @@ void insertSectionFixed(
     UInt32 block_no,
     const UInt8 * skip_bytes,
     Arena & pool,
-    TailScratch & scratch,
+    PassScratch & scratch,
     bool any_take_last_row,
     UInt64 & claimed,
     bool & all_unique)
@@ -677,7 +580,7 @@ void insertSectionFixed(
                 ++claimed;
             }
             else
-                appendRowToMapped(mapped, ref, scratch, any_take_last_row, all_unique);
+                appendRowToMapped(mapped, ref, scratch, any_take_last_row, all_unique, static_cast<UInt32>(emplace_result.getKey()));
         }
     }
 }
@@ -697,6 +600,8 @@ void drainPartitionOverflow(InsertTarget<Table> & target, UInt64 & appended)
         const Key key = overflow.template keyAt<Key>(i);
         const size_t hash = overflow.hashes[i];
         const UInt64 ref = overflow.refs[i];
+        if (target.owner)
+            target.owner->g1BeforeClaim(target);
         size_t pos = target.table.place(hash);
         while (true)
         {
@@ -711,7 +616,7 @@ void drainPartitionOverflow(InsertTarget<Table> & target, UInt64 & appended)
             }
             if (target.table.keyEquals(cell, key, hash))
             {
-                target.appendLater(cell->getMapped(), ref, 0);
+                target.appendLater(cell->getMapped(), ref, 0, static_cast<UInt32>(pos));
                 ++appended;
                 break;
             }
@@ -777,19 +682,10 @@ void emplaceSizedBuildArena(std::deque<Arena> & arenas, size_t predicted_bytes)
     arenas.emplace_back(predicted_bytes, /*growth_factor_=*/2, predicted_bytes);
 }
 
-void accumulate(DuplicateRunWriter::Stats & into, const DuplicateRunWriter::Stats & from)
+void accumulate(SpanWriter::Stats & into, const SpanWriter::Stats & from)
 {
-    into.pairs += from.pairs;
-    into.runs += from.runs;
-    into.descriptors += from.descriptors;
-    into.appended_nodes += from.appended_nodes;
-    into.small_blocks += from.small_blocks;
-    into.in_place_fills += from.in_place_fills;
-    into.moved_refs += from.moved_refs;
-    into.arena_bytes += from.arena_bytes;
-    into.slack_slots += from.slack_slots;
+    into += from;
 }
-
 }
 
 /// The stages communicate through exact per-bucket offsets: bucket `p` holds worker `w`'s stripe at
@@ -839,8 +735,9 @@ struct PartitionedHashJoin::PostBuildContext
         PaddedPODArray<UInt64> locator_piece;
         PaddedPODArray<UInt32> locator_piece32;
         /// The owner's duplicate writer over its own arena, and its pass scratch.
-        std::optional<DuplicateRunWriter> writer;
-        TailScratch tail_scratch;
+        std::optional<SpanWriter> writer;
+        PassScratch scratch;
+        size_t scratch_used_high_water = 0;
         bool all_values_unique = true;
         UInt64 inserted_rows = 0;
     };
@@ -855,11 +752,13 @@ struct PartitionedHashJoin::PostBuildContext
     std::atomic<UInt32> partition_claim{0};
 
     /// The drain's writer (over the last arena), scratch and counters.
-    std::optional<DuplicateRunWriter> drain_writer;
-    TailScratch drain_scratch;
+    std::optional<SpanWriter> drain_writer;
+    PassScratch drain_scratch;
+    size_t drain_scratch_used_high_water = 0;
     UInt64 drain_claimed = 0;
     UInt64 drain_appended = 0;
     bool drain_all_unique = true;
+    UInt64 rehash_listed = 0;
 
     /// Set for the range currently being scattered. `blockStripe` divides this span among workers.
     size_t block_begin = 0;
@@ -882,7 +781,7 @@ void PartitionedHashJoin::decideAmacEngagement()
     /// The same heuristics that enable the standard loops' software prefetch: the user toggle plus
     /// the table size past the L2 threshold, below which the cell reads hit anyway and pipelining them
     /// costs more than it saves.
-    amac_build_engaged = amac_enabled && leaf_join->enableSoftwarePrefetch() && ht_total_bytes > getMinBytesForPrefetchInJoin();
+    amac_build_engaged = amac_enabled && bits > 0 && leaf_join->enableSoftwarePrefetch() && ht_total_bytes > getMinBytesForPrefetchInJoin();
 }
 
 void PartitionedHashJoin::insertPartitionSection(
@@ -919,24 +818,54 @@ void PartitionedHashJoin::insertPartitionSection(
             InsertTarget<Table> target{ \
                 .table = table, \
                 .cells = table.cells(), \
-                .scratch = state.tail_scratch, \
+                .scratch = state.scratch, \
                 .overflow = overflow, \
                 .range_begin = wrap ? 0 : table.rangeBegin(partition), \
                 .range_end = wrap ? table.cellCount() : table.rangeEnd(partition), \
                 .wrap = wrap, \
                 .any_take_last_row = any_take_last_row, \
-                .join = leaf_join.get()}; \
+                .join = leaf_join.get(), \
+                .owner = this, \
+                .claimed_per_partition = &ctx.claimed_per_partition, \
+                .drain_claimed = nullptr, \
+                .writer = &*state.writer, \
+                .scratch_high_water = &state.scratch_used_high_water, \
+                .partition = partition == single_partition ? 0 : partition, \
+                .fold_base = claimed, \
+                .single_partition_pass = wrap && partition == single_partition}; \
             target.claimed = claimed; \
             insertSectionShared<KeyGetter, Table>( \
-                target, key_columns, key_sizes, rows, locators, narrow_locators_data, block_no, skip_bytes, arena, enable_prefetch, amac_build_engaged); \
+                target, \
+                key_columns, \
+                key_sizes, \
+                rows, \
+                locators, \
+                narrow_locators_data, \
+                block_no, \
+                skip_bytes, \
+                arena, \
+                enable_prefetch, \
+                amac_build_engaged && !wrap); \
             claimed = target.claimed; \
             state.all_values_unique = state.all_values_unique && target.all_unique; \
         } \
         else \
         { \
             insertSectionFixed<KeyGetter, Table>( \
-                table, *leaf_join, key_columns, key_sizes, rows, locators, narrow_locators_data, block_no, skip_bytes, arena, \
-                state.tail_scratch, any_take_last_row, claimed, state.all_values_unique); \
+                table, \
+                *leaf_join, \
+                key_columns, \
+                key_sizes, \
+                rows, \
+                locators, \
+                narrow_locators_data, \
+                block_no, \
+                skip_bytes, \
+                arena, \
+                state.scratch, \
+                any_take_last_row, \
+                claimed, \
+                state.all_values_unique); \
         } \
         break; \
     }
@@ -947,6 +876,345 @@ void PartitionedHashJoin::insertPartitionSection(
                         ErrorCodes::UNSUPPORTED_JOIN_KEYS,
                         "Unsupported JOIN keys for the partitioned join (type: {})",
                         leaf_join->data->type);
+            }
+        },
+        shared_maps->maps);
+}
+
+size_t PartitionedHashJoin::finishPassScratch(PassScratch & scratch, SpanWriter & writer)
+{
+    if (scratch.empty())
+        return 0;
+    const size_t used = scratch.usedBytes();
+    const HashJoin::Type type = leaf_join->data->type;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        Table & table = *shape_maps.TYPE; \
+        if constexpr (std::is_same_v<typename Table::mapped_type, RowRefList>) \
+        { \
+            if constexpr (is_shared_join_table<Table>) \
+            { \
+                RowRefList * zero = scratch.zero_items.empty() ? nullptr : &table.zeroValue()->getMapped(); \
+                writer.finish(scratch, [&](UInt32 bucket) -> RowRefList & { return table.cells()[bucket].getMapped(); }, zero); \
+            } \
+            else \
+            { \
+                writer.finish(scratch, [&](UInt32 bucket) -> RowRefList & { return table.data()[bucket].getMapped(); }); \
+            } \
+        } \
+        else \
+        { \
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: duplicate scratch on a map that does not store lists"); \
+        } \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default:
+                    throw Exception(
+                        ErrorCodes::UNSUPPORTED_JOIN_KEYS,
+                        "Unsupported JOIN keys for the partitioned join (type: {})",
+                        leaf_join->data->type);
+            }
+        },
+        shared_maps->maps);
+    return used;
+}
+
+template <typename Target>
+bool PartitionedHashJoin::g1BeforeClaim(Target & target)
+{
+    if (!target.wrap || target.claimed < target.table.cellCount() - 1)
+        return false;
+    chassert(target.writer);
+    const size_t used = finishPassScratch(target.scratch, *target.writer);
+    if (target.scratch_high_water)
+        *target.scratch_high_water = std::max(*target.scratch_high_water, used);
+    target.foldClaimed();
+    grow(target.claimed, target.claimed + 1, GrowReason::G1);
+    target.cells = target.table.cells();
+    target.range_end = target.table.cellCount();
+    return true;
+}
+
+size_t PartitionedHashJoin::residentBytes() const
+{
+    size_t bytes = getTotalByteCount();
+    if (!post_build_ctx)
+        return bytes;
+    chassert(liveChunkBytes() == 0);
+    const auto & ctx = *post_build_ctx;
+    for (const auto & overflow : ctx.overflow)
+        bytes += overflow.allocatedBytes();
+    for (const auto & worker : ctx.worker_state)
+        bytes += worker.scratch.allocatedBytes();
+    bytes += ctx.drain_scratch.allocatedBytes();
+    return bytes;
+}
+
+size_t PartitionedHashJoin::liveChunkBytes() const
+{
+    if (!post_build_ctx)
+        return 0;
+    const auto & ctx = *post_build_ctx;
+    size_t bytes = 0;
+    for (const auto & loc : ctx.locators)
+        bytes += loc.size() * sizeof(UInt64);
+    for (const auto & loc : ctx.locators32)
+        bytes += loc.size() * sizeof(UInt32);
+    for (const auto & route : ctx.routes)
+        bytes += route.size() * sizeof(UInt16);
+    auto add_col = [&](const auto & col)
+    {
+        if (col)
+            bytes += col->byteSize();
+    };
+    for (const auto & column_pieces : ctx.pieces)
+        for (const auto & worker_pieces : column_pieces)
+            for (const auto & piece : worker_pieces)
+                add_col(piece);
+    for (const auto & column_pieces : ctx.refined_pieces)
+        for (const auto & piece : column_pieces)
+            add_col(piece);
+    for (const auto & column_out : ctx.fixed_out)
+        for (const auto & piece : column_out)
+            add_col(piece);
+    return bytes;
+}
+
+UInt64 PartitionedHashJoin::boundaryProjection(
+    UInt64 claimed_total, UInt64 rows_inserted, UInt64 insertable, double hll_estimate, double reserve_safety)
+{
+    const UInt64 extrapolated = rows_inserted > 0 ? claimed_total * insertable / rows_inserted : 0;
+    return std::max(static_cast<UInt64>(std::ceil(hll_estimate * reserve_safety)), extrapolated);
+}
+
+namespace
+{
+
+template <typename Mapped>
+void placeMapped(Mapped & dest, Mapped && src)
+{
+    new (&dest) Mapped(std::move(src));
+}
+
+}
+
+template <typename Table>
+void PartitionedHashJoin::growSharedTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved)
+{
+    using Cell = typename Table::cell_type;
+    using Key = typename Table::key_type;
+    using Mapped = typename Table::mapped_type;
+
+    auto & ctx = *post_build_ctx;
+    const size_t D = table.sizeDegree();
+    size_t Dn = D + 1;
+    if (reason == GrowReason::G2)
+    {
+        while (Dn <= 32 && Table::maxFillFor(Dn) < projected)
+            ++Dn;
+    }
+
+    const size_t need = (1uz << Dn) * sizeof(Cell);
+    const size_t entry_bytes = sizeof(Key) + sizeof(size_t) + sizeof(Mapped);
+    /// The rehash lists hold the keys resident outside their partition's range (every drain claim, an upper
+    /// bound) plus the crossings of the rehash walks. Measured on 2026-09-10 (100M unique, 200M x 8 duplicates,
+    /// 1024 partitions): 109 to 832 overflow rows per build against a 65536 allowance, so 64 per partition is
+    /// loose by two orders of magnitude and costs 2 MiB of budget at 1024 partitions. Kept as is.
+    const size_t allowance = entry_bytes * (ctx.drain_claimed + ctx.rehash_listed + 64 * partitions);
+    const bool refused = Dn > 32 || (grow_budget != 0 && residentBytes() + need + allowance + extra_reserved > grow_budget);
+    if (refused)
+    {
+        if (reason == GrowReason::G1)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "PartitionedHashJoin: the shared hash table of {} cells cannot grow to hold a projection of {} distinct keys "
+                "(need {}, resident {}); the size estimate that created it was too low",
+                table.cellCount(),
+                projected,
+                ReadableSize(need),
+                ReadableSize(residentBytes()));
+        /// A skipped quality grow is expected under a tight budget; it is not a user-facing warning.
+        LOG_DEBUG(
+            log,
+            "PartitionedHashJoin: skipping a load-factor grow; projection {}, current fill {}/{}, need {}",
+            projected,
+            occupied,
+            table.cellCount(),
+            ReadableSize(need));
+        ++stats.load_factor_grow_skipped;
+        return;
+    }
+
+    struct RehashEntry
+    {
+        Key key;
+        size_t hash;
+        Mapped mapped;
+    };
+    std::vector<std::vector<RehashEntry>> lists(std::max(ctx.workers, 1uz));
+
+    table.beginRehash(Dn);
+
+    auto rehashPartition = [&](size_t p, std::vector<RehashEntry> & list)
+    {
+        table.commitNewRange(p);
+        const size_t begin = table.rangeBegin(p);
+        const size_t end = table.rangeEnd(p);
+        const size_t new_end = table.newRangeEnd(p);
+        for (size_t pos = begin; pos < end; ++pos)
+        {
+            Cell * cell = table.cellAt(pos);
+            if (table.isEmptyCell(cell))
+                continue;
+            const size_t hash = table.cellHash(cell);
+            const Key key = Cell::getKey(cell->getValue());
+            Mapped mapped = std::move(cell->getMapped());
+            if (table.partitionOf(hash) != p)
+            {
+                list.push_back(RehashEntry{key, hash, std::move(mapped)});
+                continue;
+            }
+            size_t np = table.newPlace(hash);
+            bool placed = false;
+            while (np < new_end)
+            {
+                Cell * nc = table.newCellAt(np);
+                if (table.isEmptyCell(nc))
+                {
+                    table.claimPersisted(nc, key, hash);
+                    placeMapped(nc->getMapped(), std::move(mapped));
+                    placed = true;
+                    break;
+                }
+                ++np;
+            }
+            if (!placed)
+                list.push_back(RehashEntry{key, hash, std::move(mapped)});
+        }
+    };
+
+    if (partitions == 1)
+        rehashPartition(0, lists[0]);
+    else
+    {
+        std::atomic<UInt32> claim{0};
+        std::atomic<UInt64> unused_us{0};
+        runPostBuildWave(
+            *post_build_pool,
+            ctx.workers,
+            [&](size_t w)
+            {
+                while (true)
+                {
+                    const UInt32 i = claim.fetch_add(1, std::memory_order_relaxed);
+                    if (i >= partitions)
+                        break;
+                    const size_t p = ctx.partition_order[i];
+                    rehashPartition(p, lists[w]);
+                }
+            },
+            unused_us);
+    }
+
+    for (const auto & list : lists)
+        ctx.rehash_listed += list.size();
+
+    for (auto & list : lists)
+    {
+        for (auto & entry : list)
+        {
+            size_t np = table.newPlace(entry.hash);
+            while (!table.isEmptyCell(table.newCellAt(np)))
+                np = table.newNext(np);
+            Cell * nc = table.newCellAt(np);
+            table.claimPersisted(nc, entry.key, entry.hash);
+            placeMapped(nc->getMapped(), std::move(entry.mapped));
+        }
+    }
+
+    for (size_t p = 0; p < partitions; ++p)
+        if (!table.newRangeIsCommitted(p))
+            table.commitNewRange(p);
+
+#ifndef NDEBUG
+    UInt64 seen = 0;
+    for (size_t pos = 0; pos < table.newCellCount(); ++pos)
+        seen += !table.isEmptyCell(table.newCellAt(pos));
+    if (seen != occupied)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: rehash wrote {} occupied cells, expected {}", seen, occupied);
+#endif
+
+    table.adoptRehash();
+    ht_total_bytes = need;
+    size_degree = Dn;
+    stats.table_size_degree = Dn;
+    stats.table_cells = table.cellCount();
+    stats.predictions_exact = false;
+    ++stats.table_resizes;
+    ProfileEvents::increment(ProfileEvents::PartitionedHashJoinTableResizes);
+    ctx.range_committed.assign(partitions, 1);
+    decideAmacEngagement();
+}
+
+void PartitionedHashJoin::grow(UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved)
+{
+    if (!shared_maps || !post_build_ctx)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: grow called without a table");
+
+    const HashJoin::Type type = leaf_join->data->type;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        if constexpr (is_shared_join_table<Table>) \
+            growSharedTable(*shape_maps.TYPE, occupied, projected, reason, extra_reserved); \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default: break;
+            }
+        },
+        shared_maps->maps);
+}
+
+void PartitionedHashJoin::maybeGrowForLoadFactor(UInt64 projected, size_t extra_reserved)
+{
+    UInt64 occupied = 0;
+    for (UInt64 c : post_build_ctx->claimed_per_partition)
+        occupied += c;
+
+    const HashJoin::Type type = leaf_join->data->type;
+    std::visit(
+        [&](auto & shape_maps)
+        {
+            switch (type)
+            {
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: { \
+        using Table = typename decltype(shape_maps.TYPE)::element_type; \
+        if constexpr (is_shared_join_table<Table>) \
+        { \
+            if (projected > shape_maps.TYPE->maxFill()) \
+                grow(occupied, projected, GrowReason::G2, extra_reserved); \
+        } \
+        break; \
+    }
+                APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+                default: break;
             }
         },
         shared_maps->maps);
@@ -995,7 +1263,8 @@ void PartitionedHashJoin::runPostBuildPhase()
         ProfileEvents::PartitionedHashJoinDuplicateRunBytes, stats.owner_duplicates.arena_bytes + stats.drain_duplicates.arena_bytes);
 
     /// For the next run of this query and for the planner's consumers. Published, never consumed for
-    /// sizing: the table cannot grow, and a cached count would be data-independent.
+    /// sizing this build: a grow during post-build has already happened, and a cached count would be
+    /// data-independent.
     if (stats_collecting_params.isCollectionAndUseEnabled())
     {
         PartitionedHashJoinEntry entry;
@@ -1086,6 +1355,8 @@ size_t PartitionedHashJoin::reserveFor(size_t rows, double distinct_estimate) co
     /// The safety factor covers the sketch's error; the row clamp says a table cannot hold more keys
     /// than rows. Above 2^31 estimated words the 32-bit sketch is saturating, so the exact upper bound
     /// takes over: at most a 2x over-reservation, only for builds already holding 64 GiB of cells.
+    if (reserve_override_for_tests)
+        return *reserve_override_for_tests;
     const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * reserve_safety);
     const size_t rows_bound = std::max<size_t>(rows, 1);
     if (scaled >= 2147483648.0)
@@ -1114,9 +1385,8 @@ bool PartitionedHashJoin::postBuildSinglePartition()
     chassert(build_arenas.empty());
     emplaceSizedBuildArena(build_arenas, predictedArenaBytes(insertable_rows, post_build_plan == PostBuildPlan::Grouped));
     emplaceSizedBuildArena(build_arenas, 0);
-    const bool grouped = false;
-    ctx.worker_state[0].writer.emplace(build_arenas[0], grouped);
-    ctx.drain_writer.emplace(build_arenas[1], grouped);
+    ctx.worker_state[0].writer.emplace(build_arenas[0]);
+    ctx.drain_writer.emplace(build_arenas[1]);
 
     std::visit(
         [&](auto & shape_maps)
@@ -1162,11 +1432,14 @@ bool PartitionedHashJoin::postBuildSinglePartition()
         fill.skip_bytes = {};
         fill.routes = {};
     }
-    finishTailScratch(ctx.worker_state[0].tail_scratch, *ctx.worker_state[0].writer);
+    auto & worker0 = ctx.worker_state[0];
+    worker0.scratch_used_high_water = std::max(worker0.scratch_used_high_water, finishPassScratch(worker0.scratch, *worker0.writer));
+    stats.scratch_used_high_water = worker0.scratch_used_high_water;
     chassert(ctx.overflow[0].rows() == 0);
 
     stats.inserted_rows = ctx.worker_state[0].inserted_rows;
     stats.owner_duplicates = ctx.worker_state[0].writer->stats();
+    maybeGrowForLoadFactor(claimedTotal());
     publishTableSize(ctx);
     return ctx.worker_state[0].all_values_unique;
 }
@@ -1206,11 +1479,13 @@ void PartitionedHashJoin::publishTableSize(const PostBuildContext & ctx)
         },
         shared_maps->maps);
     stats.distinct_keys = distinct;
+    if (post_build_ctx)
+        stats.claimed_per_partition = post_build_ctx->claimed_per_partition;
 }
 
-/// Debug and sanitizer builds only: the published table must carry no scratch marker (every pass finished
-/// its tail) and its duplicate layout must account for every inserted row. A leaked marker would otherwise
-/// read as an empty key in the release build - silent row loss.
+/// Debug and sanitizer builds only: the published table must carry no build-time word (every pass
+/// finished its scratch) and its duplicate layout must account for every inserted row. A leaked
+/// `TAG_COUNT` / `TAG_FILL*` would otherwise read as an empty key in the release build - silent row loss.
 template <typename Table>
 void PartitionedHashJoin::verifyPublishedTable(const Table & table) const
 {
@@ -1222,9 +1497,9 @@ void PartitionedHashJoin::verifyPublishedTable(const Table & table) const
         const auto visit_cell = [&](const auto * cell, size_t position)
         {
             const RowRefList & mapped = cell->getMapped();
-            if (mapped.isScratchMarker())
+            if (mapped.isCount() || mapped.isFill())
                 throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a scratch marker survived publication in cell {}", position);
+                    ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a build-time word survived publication in cell {}", position);
             rows += mapped.rows();
         };
         if (table.hasZero())
@@ -1247,14 +1522,14 @@ void PartitionedHashJoin::verifyPublishedTable(const Table & table) const
 #endif
 }
 
-size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped) const
+size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est_) const
 {
     const size_t distinct_keys = std::max(distinct, 1uz);
     const size_t reserve = reserveFor(rows, static_cast<double>(distinct_keys));
     size_t bytes = SharedJoinMaps::predictedBufferBytes(maps_variant_index, leaf_join->data->type, reserve);
 
     /// `maps_variant_index == 1` is `MapsAll` (`RowRefList`). Unique keys stay inline in the cell
-    /// word; only this shape keeps duplicate runs in the arena, at 8 bytes per row of a duplicated
+    /// word; only this shape keeps duplicate spans in the arena, at 8 bytes per row of a duplicated
     /// key. `preferUseMapsAll` is still false at the gate - the ALL-to-RightAny promotion has not run -
     /// so the variant index is what actually keeps the runs. LEFT/INNER Any/Semi/Anti use `MapsOne`
     /// and hold no run.
@@ -1270,21 +1545,19 @@ size_t PartitionedHashJoin::predictedTableAndArenaBytes(size_t rows, size_t dist
         const double multiplicity = static_cast<double>(rows) / static_cast<double>(distinct_keys);
         if (multiplicity > reserve_safety)
         {
+            /// Every row of a duplicated key lives in the arena, the once-inline row included.
             bytes += sizeof(UInt64) * rows;
-            /// Grouped scatter appends each group's rows of a key as its own run, so a key whose rows arrive
-            /// in several groups costs more than its refs: up to 8 rows it holds them in one 64-byte block
-            /// (the unfilled slots are the cost; two rows are a pair, exact), beyond that it chains a
-            /// descriptor, a link word and one partially filled block (plan section 6, at most 88 bytes).
-            /// The number of duplicated keys bounds the keys that can span groups.
-            if (grouped)
+            /// Grouped scatter writes a 16-byte header for every later-group range. `groups_est_` is
+            /// computed from the ungrouped floor so this term cannot feed back into itself.
+            if (grouped && groups_est_ > 1)
             {
-                const size_t duplicated_keys = std::min(distinct_keys, rows > distinct_keys ? rows - distinct_keys : 0);
-                size_t extra_per_key = 88;
-                if (multiplicity <= 2.0)
-                    extra_per_key = 0;
-                else if (multiplicity < 8.0)
-                    extra_per_key = 64 - 8 * static_cast<size_t>(multiplicity);
-                bytes += extra_per_key * duplicated_keys;
+                const size_t dup_rows = rows > distinct_keys ? rows - distinct_keys : 0;
+                const size_t dup_keys = std::min(distinct_keys, dup_rows);
+                const size_t extra_groups = groups_est_ - 1;
+                size_t headers = dup_rows;
+                if (dup_keys != 0 && extra_groups <= std::numeric_limits<size_t>::max() / dup_keys)
+                    headers = std::min(dup_rows, dup_keys * extra_groups);
+                bytes += 16 * headers;
             }
         }
     }
@@ -1297,10 +1570,32 @@ size_t PartitionedHashJoin::predictedArenaBytes(size_t insertable_rows, bool gro
     /// drift. Variable-length keys are copied into the arena; that total is measured once before the
     /// first range is scattered, because a consumed range has dropped its key columns.
     const size_t distinct = std::max(static_cast<size_t>(std::llround(hll_estimate)), 1uz);
-    const size_t tables_and_runs = predictedTableAndArenaBytes(insertable_rows, distinct, grouped);
+    const size_t tables_and_runs = predictedTableAndArenaBytes(insertable_rows, distinct, grouped, grouped ? groups_est : 1uz);
     const size_t tables = SharedJoinMaps::predictedBufferBytes(maps_variant_index, leaf_join->data->type, reserveFor(insertable_rows, static_cast<double>(distinct)));
     chassert(tables_and_runs >= tables);
     return tables_and_runs - tables + generic_key_bytes;
+}
+
+size_t PartitionedHashJoin::duplicateScratchBytesForRows(size_t rows_in_range, bool first_group) const
+{
+    const size_t total_rows = accumulated_rows.load(std::memory_order_relaxed);
+    if (total_rows == 0 || hll_estimate >= static_cast<double>(total_rows) || rows_in_range == 0)
+        return 0;
+    const double f = 1.0 - hll_estimate / static_cast<double>(total_rows);
+    const size_t rows_dup = static_cast<size_t>(std::ceil(std::min(1.0, 2.0 * f) * static_cast<double>(rows_in_range)));
+    if (first_group)
+        return 12 * rows_dup + 4 * static_cast<size_t>(std::ceil(f * static_cast<double>(rows_in_range)));
+    return 28 * rows_dup;
+}
+
+size_t PartitionedHashJoin::predictedArenaBytesForTests(bool grouped) const
+{
+    return predictedArenaBytes(accumulated_rows.load(std::memory_order_relaxed), grouped);
+}
+
+size_t PartitionedHashJoin::predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const
+{
+    return duplicateScratchBytesForRows(rows_in_range, first_group);
 }
 
 /// Total bytes of the prepared key columns across the whole build. Measured while every block still
@@ -1349,14 +1644,10 @@ size_t PartitionedHashJoin::chunkBytesForBlockRange(size_t b0, size_t b1) const
             bytes += fill.rows * sizeof(UInt16);
     }
 
-    /// The pass scratch of the duplicate rows this range brings: `tail_key` and `tail_ref` per row plus
-    /// the per-key arrays, amortised to 16 bytes per duplicate row, estimated from the build's ratio.
-    const size_t total_rows = accumulated_rows.load(std::memory_order_relaxed);
-    if (total_rows > 0 && hll_estimate < static_cast<double>(total_rows))
-    {
-        const double duplicate_fraction = 1.0 - hll_estimate / static_cast<double>(total_rows);
-        bytes += static_cast<size_t>(16.0 * duplicate_fraction * static_cast<double>(rows_in_range));
-    }
+    /// The pass scratch of the duplicate rows this range brings. First group: 12 bytes per row of a
+    /// duplicated key plus 4 per duplicated key. Later groups: 28 bytes per such row, because a row
+    /// may carry the key's previous word and a `keys` entry.
+    bytes += duplicateScratchBytesForRows(rows_in_range, /*first_group=*/b0 == 0);
     return bytes;
 }
 
@@ -1530,11 +1821,15 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
     for (UInt64 rows : total_bucket_rows)
         insertable += rows;
 
-    /// What must be resident whatever the scatter schedule is.
+    /// What must be resident whatever the scatter schedule is. The grouped arena term needs `groups_est`,
+    /// which is computed from this ungrouped floor so the header charge cannot feed back into itself.
     const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/false);
-    const size_t floor_bytes_grouped = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/true);
     const size_t tables = ht_total_bytes;
     const size_t chunk_all = build_blocks.empty() ? 0 : chunkBytesForBlockRange(0, build_blocks.size());
+    const size_t headroom_for_groups
+        = max_bytes_before_external_join > floor_bytes + tables ? max_bytes_before_external_join - floor_bytes - tables : 1;
+    groups_est = std::max(1uz, ceilDiv(chunk_all, headroom_for_groups));
+    const size_t floor_bytes_grouped = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/true);
 
     /// The ungrouped scatter does not hold the whole chunk alongside the whole table: the owner of a
     /// partition commits its range and frees that partition's chunk in the same claim, so the two trade
@@ -1547,6 +1842,16 @@ PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
     /// dominates the table; where the table dominates, grouping would ADD `chunk / g` on top of it and be
     /// strictly worse than the ungrouped scatter. The floor as the ranges get finer is one block's chunk.
     const size_t grouped_floor = floor_bytes_grouped + tables + (build_blocks.empty() ? 0 : chunkBytesForBlockRange(0, 1));
+
+    gate_terms = PostBuildGateTerms{
+        .floor_bytes = floor_bytes,
+        .floor_bytes_grouped = floor_bytes_grouped,
+        .tables = tables,
+        .chunk_all = chunk_all,
+        .groups_est = groups_est,
+        .peak_ungrouped = peak_ungrouped,
+        .grouped_floor = grouped_floor,
+    };
 
     if (peak_ungrouped <= max_bytes_before_external_join)
         post_build_plan = PostBuildPlan::Fits;
@@ -1695,7 +2000,10 @@ void PartitionedHashJoin::runGroupStages(size_t block_begin, size_t block_end)
     UInt64 group_overflow = 0;
     for (const auto & overflow : ctx.overflow)
         group_overflow += overflow.rows();
-    drainOverflow(ctx, checkCapacityGuard(ctx));
+    maybeGrowForLoadFactor(
+        claimedTotal() + group_overflow,
+        ctx.block_end < build_blocks.size() ? chunkBytesForBlockRange(ctx.block_end, ctx.block_end + 1) : 0);
+    drainOverflow(ctx);
     const UInt64 drain_wall_us = stage_watch.elapsedMicroseconds();
 
     const auto to_ms = [](UInt64 us) { return static_cast<double>(us) / 1000.0; };
@@ -1738,27 +2046,43 @@ bool PartitionedHashJoin::postBuildPartitioned()
         preparePostBuildContext();
 
     auto & ctx = *post_build_ctx;
-    const bool grouped = post_build_plan == PostBuildPlan::Grouped;
     for (size_t w = 0; w < ctx.workers; ++w)
-        ctx.worker_state[w].writer.emplace(build_arenas[w], grouped);
-    ctx.drain_writer.emplace(build_arenas[ctx.workers], grouped);
+        ctx.worker_state[w].writer.emplace(build_arenas[w]);
+    ctx.drain_writer.emplace(build_arenas[ctx.workers]);
 
     size_t groups = 0;
     size_t b = 0;
     while (b < build_blocks.size())
     {
+        if (groups > 0)
+        {
+            UInt64 rows_so_far = 0;
+            for (const auto & worker : ctx.worker_state)
+                rows_so_far += worker.inserted_rows;
+            UInt64 insertable = 0;
+            for (UInt64 rows : total_bucket_rows)
+                insertable += rows;
+            const UInt64 projected = boundaryProjection(claimedTotal(), rows_so_far, insertable, hll_estimate, reserve_safety);
+            maybeGrowForLoadFactor(projected, chunkBytesForBlockRange(b, b + 1));
+        }
+
         size_t end = b + 1;
+        size_t used_at_plan = 0;
+        size_t chunk = 0;
+        size_t one_block = 0;
+        size_t resident_at_plan = 0;
         if (max_bytes_before_external_join == 0 || post_build_plan == PostBuildPlan::Fits)
         {
             end = build_blocks.size();
         }
         else
         {
-            /// `getTotalByteCount` is actuals (row store, remaining routes, committed table, arenas).
-            /// Uncommitted ranges and the still-unallocated duplicate runs are charged from the gate's
-            /// predictions so the first range is not sized as if those bytes were free. They are
-            /// allocated during the range, not before it.
-            size_t used = getTotalByteCount();
+            /// `residentBytes` is actuals (row store, remaining routes, committed table, arenas,
+            /// overflow buffers, scratch capacity). Uncommitted ranges and the still-unallocated
+            /// duplicate runs are charged from the gate's predictions so the first range is not sized
+            /// as if those bytes were free.
+            resident_at_plan = residentBytes();
+            size_t used = resident_at_plan;
             const size_t committed = shared_maps->getBufferSizeInBytes(leaf_join->data->type);
             if (ht_total_bytes > committed)
                 used += ht_total_bytes - committed;
@@ -1779,7 +2103,9 @@ bool PartitionedHashJoin::postBuildPartitioned()
             /// bounded by its row count, so the overshoot is at most that block. The threshold
             /// triggers spilling; `max_memory_usage` is the cap. This path is only for when the
             /// actuals drifted past the gate's prediction.
-            const size_t chunk = chunkBytesForBlockRange(b, end);
+            chunk = chunkBytesForBlockRange(b, end);
+            used_at_plan = used;
+            one_block = chunkBytesForBlockRange(b, b + 1);
             if (chunk > headroom)
                 LOG_DEBUG(
                     log,
@@ -1789,6 +2115,7 @@ bool PartitionedHashJoin::postBuildPartitioned()
                     ReadableSize(headroom));
         }
         runGroupStages(b, end);
+        stats.scatter_group_ranges.push_back({b, end, chunk, used_at_plan, one_block, resident_at_plan});
         b = end;
         ++groups;
     }
@@ -1802,18 +2129,21 @@ bool PartitionedHashJoin::postBuildPartitioned()
     stats.scatter_groups = std::max<size_t>(groups, 1);
     ProfileEvents::increment(ProfileEvents::PartitionedHashJoinScatterGroups, stats.scatter_groups);
 
-    post_build_pool.reset();
-
     bool all_values_unique = ctx.drain_all_unique;
     for (const auto & worker : ctx.worker_state)
     {
         all_values_unique &= worker.all_values_unique;
         stats.inserted_rows += worker.inserted_rows;
         accumulate(stats.owner_duplicates, worker.writer->stats());
+        stats.scratch_used_high_water = std::max(stats.scratch_used_high_water, worker.scratch_used_high_water);
     }
+    stats.scratch_used_high_water = std::max(stats.scratch_used_high_water, ctx.drain_scratch_used_high_water);
     stats.drain_duplicates = ctx.drain_writer->stats();
     stats.drain_claimed_keys = ctx.drain_claimed;
     stats.drain_appended_rows = ctx.drain_appended;
+    /// G2 before publication may rehash through the owner wave; the pool has to outlive that grow.
+    maybeGrowForLoadFactor(claimedTotal());
+    post_build_pool.reset();
     publishTableSize(ctx);
     return all_values_unique;
 }
@@ -1841,17 +2171,16 @@ void PartitionedHashJoin::commitRange(size_t partition)
     post_build_ctx->range_committed[partition] = 1;
 }
 
-UInt64 PartitionedHashJoin::checkCapacityGuard(const PostBuildContext & ctx) const
+UInt64 PartitionedHashJoin::claimedBufferCells() const
 {
-    /// The cells the owners claimed plus the zero cell are distinct keys, so they are bounded by the
-    /// sketch margin that sized the table (or by the exact row count above the saturation zone): a trip
-    /// here is a derivation bug and must surface as an exception rather than a spinning drain. The
-    /// overflow rows are NOT counted: a duplicated key whose walk reached its range end hands every one
-    /// of its rows to the overflow, so their number bounds nothing. The drain guards each cell it
-    /// claims instead (`InsertTarget::claimed_one` on a wrapping target), starting from this total.
     UInt64 claimed = 0;
-    for (UInt64 c : ctx.claimed_per_partition)
+    for (UInt64 c : post_build_ctx->claimed_per_partition)
         claimed += c;
+    return claimed;
+}
+
+bool PartitionedHashJoin::tableHasZero() const
+{
     bool has_zero = false;
     std::visit(
         [&](auto & shape_maps)
@@ -1872,27 +2201,21 @@ UInt64 PartitionedHashJoin::checkCapacityGuard(const PostBuildContext & ctx) con
             }
         },
         shared_maps->maps);
-    const UInt64 total = claimed + (has_zero ? 1 : 0);
-    const size_t max_fill = SharedJoinTable<UInt64, HashMapCell<UInt64, RowRef, HashCRC32<UInt64>>, HashCRC32<UInt64>, HashTableGrowerWithPrecalculation<>>::maxFillFor(size_degree);
-    if (total > max_fill)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "PartitionedHashJoin: the shared hash table of {} cells received {} distinct keys, more than its max fill of {}; the "
-            "size estimate that created it was too low",
-            1uz << size_degree,
-            total,
-            max_fill);
-    return total;
+    return has_zero;
 }
 
-void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx, UInt64 claimed_with_zero)
+UInt64 PartitionedHashJoin::claimedTotal() const
 {
+    return claimedBufferCells() + (tableHasZero() ? 1 : 0);
+}
+
+void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx)
+{
+    if (before_drain_hook_for_tests)
+        before_drain_hook_for_tests();
+
     const HashJoin::Type type = leaf_join->data->type;
     UInt64 drained = 0;
-    size_t overflow_total = 0;
-    for (const auto & buffer : ctx.overflow)
-        overflow_total += buffer.rows();
-    checkPassRowLimit(overflow_total, "the overflow rows of a build group");
     for (size_t partition = 0; partition < partitions; ++partition)
     {
         OverflowBuffer & overflow = ctx.overflow[partition];
@@ -1910,6 +2233,7 @@ void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx, UInt64 claimed_w
         if constexpr (is_shared_join_table<Table>) \
         { \
             Table & table = *shape_maps.TYPE; \
+            const UInt64 seed = claimedBufferCells(); \
             InsertTarget<Table> target{ \
                 .table = table, \
                 .cells = table.cells(), \
@@ -1919,14 +2243,18 @@ void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx, UInt64 claimed_w
                 .range_end = table.cellCount(), \
                 .wrap = true, \
                 .any_take_last_row = any_take_last_row, \
-                .join = leaf_join.get()}; \
-            /* The running distinct total, so `claimed_one` guards every drained claim against max fill. */ \
-            target.claimed = claimed_with_zero; \
+                .join = leaf_join.get(), \
+                .owner = this, \
+                .claimed_per_partition = &ctx.claimed_per_partition, \
+                .drain_claimed = &ctx.drain_claimed, \
+                .writer = &*ctx.drain_writer, \
+                .scratch_high_water = &ctx.drain_scratch_used_high_water, \
+                .partition = partition, \
+                .fold_base = seed, \
+                .single_partition_pass = false}; \
+            target.claimed = seed; \
             drainPartitionOverflow(target, ctx.drain_appended); \
-            const UInt64 newly_claimed = target.claimed - claimed_with_zero; \
-            claimed_with_zero = target.claimed; \
-            ctx.claimed_per_partition[partition] += newly_claimed; \
-            ctx.drain_claimed += newly_claimed; \
+            target.foldClaimed(); \
             ctx.drain_all_unique = ctx.drain_all_unique && target.all_unique; \
         } \
         break; \
@@ -1939,7 +2267,8 @@ void PartitionedHashJoin::drainOverflow(PostBuildContext & ctx, UInt64 claimed_w
             },
             shared_maps->maps);
     }
-    finishTailScratch(ctx.drain_scratch, *ctx.drain_writer);
+    ctx.drain_scratch_used_high_water
+        = std::max(ctx.drain_scratch_used_high_water, finishPassScratch(ctx.drain_scratch, *ctx.drain_writer));
     stats.overflow_rows += drained;
 }
 
@@ -2405,7 +2734,6 @@ void PartitionedHashJoin::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
             commitRange(partition);
 
         const UInt64 partition_rows = ctx.bucket_rows[partition];
-        checkPassRowLimit(partition_rows, "a partition's rows in one build group");
         auto release_chunk = [&]
         {
             if (narrow_locators)
@@ -2493,7 +2821,7 @@ void PartitionedHashJoin::ownerWaveWorker(PostBuildContext & ctx, size_t worker)
         }
 
         /// The pass's duplicates become runs while the partition's cells are still warm.
-        finishTailScratch(state.tail_scratch, *state.writer);
+        state.scratch_used_high_water = std::max(state.scratch_used_high_water, finishPassScratch(state.scratch, *state.writer));
         state.inserted_rows += partition_rows;
         ProfileEvents::increment(ProfileEvents::PartitionedHashJoinLeafRows, partition_rows);
 

@@ -7,7 +7,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/DuplicateRuns.h>
+#include <Interpreters/PartitionedHashJoin/DuplicateSpans.h>
 #include <Interpreters/PartitionedHashJoin/SharedJoinTable.h>
 #include <Common/Arena.h>
 #include <Common/Logger.h>
@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -41,15 +42,16 @@ class TableJoin;
   *
   * - Fill accumulates right-side blocks per lane untouched. Per row it computes the map hash, saves the
   *   top 16 bits of the mixed hash as the row's route, and feeds a per-lane sketch. Nothing is inserted.
-  * - The build barrier merges the sketches, sizes the table once (50% max fill, never grown) and picks
+  * - The build barrier merges the sketches, sizes the table at the standard 50% max fill, and picks
   *   the partition count: the smallest power of two whose range fits private L2, at least one range per
   *   worker. The route's top `bits` name a row's partition, and by construction its home cell lies in
-  *   that partition's range.
+  *   that partition's range. The table may later double in place when a wrapping insert would take the
+  *   last empty cell, or at a quiescent point when the fill would exceed 50%.
   * - Post-build scatters only the key columns plus a row locator into per-partition chunks (payload
   *   stays in the shared row store), then workers claim partitions largest-first and insert: a walk that
   *   stops at the range end, a private overflow buffer for the rows that would cross it, and after the
   *   barrier one thread drains the overflow with the global mask and wraparound. Duplicates of a key are
-  *   stored inline, as a pair, or as contiguous runs (`DuplicateRunWriter`).
+  *   stored inline, as an exact run, or as a newest-first chain of ranges (`SpanWriter`).
   * - Probe hashes each row once and walks the table from its home cell. Above the engagement threshold
   *   this runs as two passes per block - an AMAC find ring out of order, then an in-order pass over its
   *   results - and below it as the plain loop. Either way the emit, replication offsets, used flags and
@@ -166,18 +168,53 @@ public:
         UInt64 drain_claimed_keys = 0;
         UInt64 drain_appended_rows = 0;
         /// Duplicate storage written by the owner waves and by the drain.
-        DuplicateRunWriter::Stats owner_duplicates;
-        DuplicateRunWriter::Stats drain_duplicates;
+        SpanWriter::Stats owner_duplicates;
+        SpanWriter::Stats drain_duplicates;
         /// Contiguous build-block ranges the post-build scatter was split into. 1 means the whole
         /// build was scattered at once.
         size_t scatter_groups = 1;
+        struct BlockRange
+        {
+            size_t begin = 0;
+            size_t end = 0;
+            /// Bytes the group was sized with (`chunkBytesForBlockRange` and the resident set at that
+            /// moment). Zero when the plan did not size groups against a budget.
+            size_t chunk_bytes = 0;
+            size_t used_bytes = 0;
+            /// `chunkBytesForBlockRange(begin, begin + 1)` at sizing time: the one-block overshoot
+            /// R2.10 reserves at the previous boundary, and the bound `GroupSizedAfterGrowth` checks.
+            size_t one_block_chunk_bytes = 0;
+            /// `residentBytes` at the start of sizing, before predicted arena and uncommitted table
+            /// are added. `GroupSizedAfterGrowth` bounds this plus the chunk.
+            size_t resident_bytes = 0;
+        };
+        std::vector<BlockRange> scatter_group_ranges;
+        /// Per-partition claimed buffer cells at publication, excluding the zero cell.
+        std::vector<UInt64> claimed_per_partition;
+        /// Peak logical occupancy of any one pass scratch (`PassScratch::usedBytes`).
+        size_t scratch_used_high_water = 0;
+        /// Table growth (section 4). Zero until a grow runs; `load_factor_grow_skipped` counts G2
+        /// refusals under budget.
+        UInt64 table_resizes = 0;
+        UInt64 load_factor_grow_skipped = 0;
     };
 
     BuildStats getBuildStats() const;
 
-    /// Shrinks the reserve safety factor so the table is undersized, which SQL cannot force reliably.
-    /// The build must then fail the capacity guard with an exception rather than hang.
+    /// Shrinks the reserve safety factor so the table is undersized. Growth then restores the fill,
+    /// or a G1 refusal throws `LOGICAL_ERROR` when the budget cannot pay for the doubling.
     void setReserveSafetyFactorForTests(double factor) { reserve_safety = factor; }
+    void setReserveOverrideForTests(size_t reserve) { reserve_override_for_tests = reserve; }
+    void setGrowBudgetForTests(size_t bytes) { grow_budget = bytes; }
+    void setBeforeDrainHookForTests(std::function<void()> hook) { before_drain_hook_for_tests = std::move(hook); }
+    /// G1: wrapping inserts call this before the walk of every row (11.3 `beforeWalk`).
+    template <typename Target>
+    bool g1BeforeClaim(Target & target);
+
+    /// Boundary G2 projection (F7): sketch term only when `rows_inserted == 0`, else the max of
+    /// that and the extrapolated distinct count.
+    static UInt64
+    boundaryProjection(UInt64 claimed_total, UInt64 rows_inserted, UInt64 insertable, double hll_estimate, double reserve_safety);
 
     /// Pins both phases onto the sequential loops, so tests can cross-check the ring against them.
     void setAmacEnabledForTests(bool value) { amac_enabled = value; }
@@ -203,6 +240,23 @@ public:
         MustSpill, /// even the resident data does not fit; the caller must switch to grace
     };
     PostBuildPlan planPostBuild();
+
+    /// Terms `planPostBuild` used for the grouped/ungrouped verdict. Filled only on the partitioned
+    /// path (`bits > 0` and a non-zero budget). `groups_est` is computed from the ungrouped floor
+    /// (no header term), then passed into the grouped arena prediction.
+    struct PostBuildGateTerms
+    {
+        size_t floor_bytes = 0;
+        size_t floor_bytes_grouped = 0;
+        size_t tables = 0;
+        size_t chunk_all = 0;
+        size_t groups_est = 1;
+        size_t peak_ungrouped = 0;
+        size_t grouped_floor = 0;
+    };
+    PostBuildGateTerms getPostBuildGateTermsForTests() const { return gate_terms; }
+    size_t predictedArenaBytesForTests(bool grouped) const;
+    size_t predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const;
 
     size_t getNumFillLanes() const;
     /// Drops per-block fill transients that GraceHashJoin re-derives from the stored block. Call
@@ -281,9 +335,11 @@ private:
 
     /// Bytes the table and the duplicate storage will need for `rows` build rows holding `distinct`
     /// distinct keys. The post-build gate evaluates this with exact counts; the fill evaluates it with
-    /// the running sketch estimate.
-    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped) const;
+    /// the running sketch estimate. `groups_est` is 1 for the ungrouped call and for the fill-phase
+    /// gate; the grouped call receives the value `planPostBuild` computed from the ungrouped floor.
+    size_t predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est = 1) const;
     size_t predictedArenaBytes(size_t insertable_rows, bool grouped) const;
+    size_t duplicateScratchBytesForRows(size_t rows_in_range, bool first_group) const;
     /// The table reserve the plan derives from a distinct estimate: safety factor, row clamp, and the
     /// saturation clamp above `2^31` estimated words.
     size_t reserveFor(size_t rows, double distinct_estimate) const;
@@ -306,9 +362,24 @@ private:
     /// The owner wave: workers claim partitions largest-first and fill their ranges (section 4.3 of
     /// the design); then the capacity guard and the serial drain of every partition's overflow.
     void ownerWaveWorker(PostBuildContext & ctx, size_t worker);
-    /// Returns the distinct keys claimed so far (owner cells plus the zero cell), the drain's starting total.
-    UInt64 checkCapacityGuard(const PostBuildContext & ctx) const;
-    void drainOverflow(PostBuildContext & ctx, UInt64 claimed_with_zero);
+    bool tableHasZero() const;
+    UInt64 claimedBufferCells() const;
+    UInt64 claimedTotal() const;
+    void drainOverflow(PostBuildContext & ctx);
+    enum class GrowReason : UInt8
+    {
+        G1,
+        G2,
+    };
+    size_t residentBytes() const;
+    size_t liveChunkBytes() const;
+    void grow(UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
+    template <typename Table>
+    void growSharedTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved = 0);
+    void maybeGrowForLoadFactor(UInt64 projected, size_t extra_reserved = 0);
+    /// Finishes one pass's scratch into spans. Returns the scratch's logical occupancy just before
+    /// the finish (0 when the scratch was empty), so callers can fold a per-worker high water.
+    size_t finishPassScratch(PassScratch & scratch, SpanWriter & writer);
     template <typename Table>
     void verifyPublishedTable(const Table & table) const;
     /// Accounts and pre-faults one partition's cell range (see `RangeCommittedBuffer`).
@@ -374,6 +445,10 @@ private:
     const size_t num_threads;
     /// Zero disables the gate; post-build is the ungrouped scatter.
     const size_t max_bytes_before_external_join;
+    /// Same as the constructor budget unless a test lifts or tightens it for a G1/G2 refusal.
+    size_t grow_budget = 0;
+    std::optional<size_t> reserve_override_for_tests;
+    std::function<void()> before_drain_hook_for_tests;
 
     /// Owns everything the emit machinery needs: block preparation, the saved block sample, the
     /// shared row store, the used flags, the output samples. Its own map stays empty and the shared
@@ -432,7 +507,7 @@ private:
     /// `(block_no << 16) | row_no` and is decoded at insert, halving the largest scatter transient.
     bool narrow_locators = false;
 
-    /// The one table. `build_arenas` hold the string keys and the duplicate runs the cells point at,
+    /// The one table. `build_arenas` hold the string keys and the duplicate spans the cells point at,
     /// so they must outlive it: one arena per build worker plus one for the drain.
     std::unique_ptr<SharedJoinMaps> shared_maps;
     std::deque<Arena> build_arenas;
@@ -446,6 +521,10 @@ private:
     /// the keys are variable-length, which is when they are copied into the arena.
     size_t generic_key_bytes = 0;
     PostBuildPlan post_build_plan = PostBuildPlan::Fits;
+    /// Number of groups the budget implies, from the ungrouped floor (section 5.1 / 11.7). 1 until
+    /// `planPostBuild` computes it, and 1 on the fill-phase and ungrouped paths.
+    size_t groups_est = 1;
+    PostBuildGateTerms gate_terms;
     /// After `beginStoredBlockDrain` the row store is being drained and this instance must not be
     /// used except for `releaseNextStoredBlock`.
     bool stored_blocks_released = false;
