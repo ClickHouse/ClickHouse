@@ -6,7 +6,7 @@
 1
 -- and all 300 of them when unlimited
 1
--- a JSON read step prefetches fewer substreams under a limit than without one
+-- a JSON read step at the default limit prefetches fewer substreams than an unbounded one
 1
 -- the memory bound alone stops prefetching, on an encrypted disk
 1
