@@ -1379,6 +1379,18 @@ arrow::Status ArrowFlightServer::DoAction(
                 }
             };
 
+            auto to_error_value = [](const DB::Exception & e)
+            {
+                if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::SYNTAX_ERROR)
+                    return arrow::flight::SetSessionOptionErrorValue::kInvalidValue;
+                else if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+                    return arrow::flight::SetSessionOptionErrorValue::kInvalidName;
+                else
+                    return arrow::flight::SetSessionOptionErrorValue::kUnspecified;
+            };
+
+            SettingsChanges changes;
+            std::vector<String> names_to_reset;
             for (const auto & [setting, value] : request.session_options)
             {
                 if (!isValidIdentifier(setting))
@@ -1389,36 +1401,46 @@ arrow::Status ArrowFlightServer::DoAction(
                     continue;
                 }
 
+                /// std::monostate means "reset to default" (SET setting = DEFAULT). The value it lands
+                /// on follows the `compatibility` of the context it resets, which the call below checks.
+                if (std::holds_alternative<std::monostate>(value))
+                {
+                    names_to_reset.push_back(setting);
+                    continue;
+                }
+
+                SettingChange change{setting, Field{std::visit(to_string_value, value)}};
                 try
                 {
-                    if (std::holds_alternative<std::monostate>(value))
-                    {
-                        /// std::monostate means "reset to default" (SET setting = DEFAULT). The value it lands
-                        /// on follows the `compatibility` of the context it resets, which the call checks.
-                        session_context->applySettingsChangesAndResets({}, {setting}, SettingSource::QUERY);
-                    }
-                    else
-                    {
-                        auto string_value = std::visit(to_string_value, value);
-                        SettingChange change{setting, Field{string_value}};
-                        query_context->checkSettingsConstraints(change, SettingSource::QUERY);
-                        session_context->applySettingsChangesAndResets(SettingsChanges{change}, {}, SettingSource::QUERY);
-                    }
+                    /// Per option, against the state the request starts from, so what only this option can
+                    /// be wrong about - its name, its value, its own constraint - is reported against it,
+                    /// and the rest of the request proceeds without it. Checking here rather than on the
+                    /// applied state is what a `SET` naming the same settings does too.
+                    query_context->checkSettingsConstraints(change, SettingSource::QUERY);
                 }
                 catch (DB::Exception & e)
                 {
-                    auto error_value = [&]()
-                    {
-                        if (e.code() == ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED || e.code() == ErrorCodes::SYNTAX_ERROR)
-                            return arrow::flight::SetSessionOptionErrorValue::kInvalidValue;
-                        else if (e.code() == ErrorCodes::UNKNOWN_SETTING)
-                            return arrow::flight::SetSessionOptionErrorValue::kInvalidName;
-                        else
-                            return arrow::flight::SetSessionOptionErrorValue::kUnspecified;
-                    }();
-
-                    result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{error_value};
+                    result.errors[setting] = arrow::flight::SetSessionOptionsResult::Error{to_error_value(e)};
+                    continue;
                 }
+                changes.push_back(std::move(change));
+            }
+
+            try
+            {
+                /// One request is one statement, the way `SET a = ..., b = ...` is: it is judged by the state
+                /// it leaves behind. Applied one option at a time, a value a `compatibility` among them
+                /// derives is judged before the option overriding it, so the order of the map would decide.
+                session_context->applySettingsChangesAndResets(changes, names_to_reset, SettingSource::QUERY);
+            }
+            catch (DB::Exception & e)
+            {
+                /// The refusal leaves nothing the request asked for in place, so none of its options was set.
+                const auto error = arrow::flight::SetSessionOptionsResult::Error{to_error_value(e)};
+                for (const auto & change : changes)
+                    result.errors[change.name] = error;
+                for (const auto & name : names_to_reset)
+                    result.errors[name] = error;
             }
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
