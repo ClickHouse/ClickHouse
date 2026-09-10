@@ -1410,9 +1410,8 @@ String QueryFuzzer::nextFuzzedTableName(const String & full_name)
 void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
 {
     /// `table_disk` points the disk at this table's own data instead of the database's, so a renamed
-    /// clone of this definition reads the parts of the table being fuzzed while declaring the mutated
-    /// column list and sorting key below, which those parts do not satisfy. Without it the clone
-    /// stores its own data under its own path.
+    /// clone would read the parts of the table it was cloned from under the mutated column list and
+    /// sorting key its caller applies. Without the setting the clone stores its own data.
     if (storage.settings)
     {
         std::erase_if(storage.settings->changes, [](const SettingChange & change) { return change.name == "table_disk"; });
