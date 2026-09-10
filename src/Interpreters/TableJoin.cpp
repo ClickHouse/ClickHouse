@@ -81,9 +81,11 @@ namespace Setting
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
+    extern const SettingsBool legacy_join_size_limits_trigger_spilling;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
+    extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
 }
 
@@ -227,10 +229,12 @@ TableJoin::TableJoin(
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
     , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
     , enable_software_prefetch_in_join(settings[Setting::enable_software_prefetch_in_join])
+    , legacy_join_size_limits_trigger_spilling(settings[Setting::legacy_join_size_limits_trigger_spilling])
     , max_bytes_before_external_join(JoinSettings::getMaxBytesBeforeExternalJoin(
           settings[Setting::max_bytes_before_external_join],
           settings[Setting::max_bytes_ratio_before_external_join]))
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
+    , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
@@ -263,8 +267,10 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
     , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
     , enable_software_prefetch_in_join(settings.enable_software_prefetch_in_join)
+    , legacy_join_size_limits_trigger_spilling(settings.legacy_join_size_limits_trigger_spilling)
     , max_bytes_before_external_join(settings.getEffectiveMaxBytesBeforeExternalJoin())
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
+    , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
