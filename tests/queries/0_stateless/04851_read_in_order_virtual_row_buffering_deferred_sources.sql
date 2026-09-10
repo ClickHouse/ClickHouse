@@ -6,12 +6,12 @@
 
 -- Regression test for `read_in_order_use_virtual_row` combined with
 -- `read_in_order_use_buffering`. A filtered `ORDER BY pk LIMIT n` query cannot push the
--- limit into reading, so `BufferChunksTransform` is inserted before the merge. Buffering
--- must not defeat the deferral of the sources behind virtual rows: after delivering a
--- virtual row, `BufferChunksTransform` must not read ahead into its buffer until the
--- merge actually demands data from that source. Otherwise every deferred source would
--- read speculatively regardless of the read-ahead window, inflating reads and peak
--- memory on filtered `LIMIT` queries.
+-- limit into reading, so `VirtualRowReadAheadTransform` (which owns the buffering on the
+-- virtual-row path) is inserted before the merge. Buffering must not defeat the deferral
+-- of the sources behind virtual rows: after delivering a virtual row, the transform must
+-- not read ahead on that lane until the merge actually demands data from it. Otherwise
+-- every deferred source would read speculatively regardless of the read-ahead window,
+-- inflating reads and peak memory on filtered `LIMIT` queries.
 
 create table tab (x UInt64, v UInt8) engine = MergeTree order by x;
 
@@ -35,9 +35,9 @@ settings read_in_order_use_virtual_row = 1, read_in_order_use_buffering = 1,
 
 system flush logs query_log, processors_profile_log;
 
--- Assert that the buffered path was actually exercised (`BufferChunks` present), that
--- every part engaged the virtual row, that only the front source delivered data, and
--- that the seven deferred sources read nothing at all.
+-- Assert that the read-ahead path was actually exercised (`VirtualRowReadAhead`
+-- present), that every part engaged the virtual row, that only the front source
+-- delivered data, and that the seven deferred sources read nothing at all.
 WITH
     (
         SELECT query_id
@@ -48,10 +48,10 @@ WITH
     ) AS id
 SELECT
     countIf(name like '%VirtualRowTransform%') AS virtual_rows,
-    countIf(name = 'BufferChunks') AS buffer_transforms,
+    countIf(name = 'VirtualRowReadAhead') AS read_ahead_transforms,
     countIf(name like '%MergeTreeSelect%' and output_rows > 0) AS sources_delivering_data,
     countIf(name like '%MergeTreeSelect%' and output_rows = 0) AS deferred_sources_left_unread
 from system.processors_profile_log where event_date >= (today() - 1) and query_id = id
-    and (name like '%MergeTreeSelect%' or name like '%VirtualRowTransform%' or name = 'BufferChunks');
+    and (name like '%MergeTreeSelect%' or name like '%VirtualRowTransform%' or name = 'VirtualRowReadAhead');
 
 drop table tab;

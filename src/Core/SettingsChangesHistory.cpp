@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"read_in_order_virtual_row_prefetch_window", -1, -1, "New setting to control the read-ahead window for sources deferred behind virtual rows in read-in-order merges."},
+            {"read_in_order_use_virtual_row_per_block", false, true, "Emit a virtual row after each block during read-in-order by default: `VirtualRowReadAheadTransform` now uses per-block boundaries to keep speculative reads bounded while filters discard rows unevenly across parts."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},
