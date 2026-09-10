@@ -347,8 +347,9 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
+    bool flat_namespaces_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, /* flat_namespaces */false, context_)
+    : RestCatalog(warehouse_, base_url_, auth_scope_, oauth_server_uri_, oauth_server_use_request_body_, flat_namespaces_, context_)
 {
     CatalogState initial_state;
     initial_state.tenant_id = onelake_tenant_id;

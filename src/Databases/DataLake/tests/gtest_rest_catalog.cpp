@@ -474,6 +474,30 @@ TEST(RestCatalog, FlatNamespacesSettingIgnoresEchoedParent)
     EXPECT_EQ(restCatalogNamespaces(CatalogShape::ParentIgnoringEcho, /* flat_namespaces */true), ICatalog::Namespaces{"gold"});
 }
 
+TEST(RestCatalog, OneLakeFlatNamespacesSettingSkipsSubNamespaceListing)
+{
+    RestCatalogTestServer server(CatalogShape::ParentRejecting);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"",
+        /* onelake_client_secret */"",
+        /* bearer_token */"token-1",
+        /* refresh_token */"",
+        /* auth_scope */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        /* flat_namespaces */true,
+        context);
+
+    EXPECT_FALSE(catalog.empty());
+    EXPECT_EQ(catalog.getNamespaces(), ICatalog::Namespaces{"namespace"});
+}
+
 TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
 {
     RestCatalogTestServer server(CatalogShape::TopLevelTable);
@@ -525,6 +549,7 @@ TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     TableMetadata metadata;
@@ -653,6 +678,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     const auto snapshot_before = catalog.getStateSnapshot();
@@ -713,6 +739,7 @@ TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
                 /* auth_scope */ "",
                 /* oauth_server_uri */ "",
                 /* oauth_server_use_request_body */ false,
+                /* flat_namespaces */ false,
                 context);
         },
         DB::ErrorCodes::BAD_ARGUMENTS);
@@ -753,6 +780,7 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
         /* auth_scope */"https://storage.azure.com/.default",
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
         context);
 
     const auto requests_after_construction = server.tokenRequests();
@@ -794,6 +822,7 @@ TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
             /* auth_scope */"https://storage.azure.com/.default",
             /* oauth_server_uri */server.getUrl() + "/token",
             /* oauth_server_use_request_body */true,
+            /* flat_namespaces */false,
             context);
         /// ADD_FAILURE (rather than FAIL) does not return from the test, so the
         /// profile event check below is reached on every path; FAIL would make
@@ -828,6 +857,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
         /* auth_scope */"https://storage.azure.com/.default",
         /* oauth_server_uri */server.getUrl() + "/token",
         /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;
