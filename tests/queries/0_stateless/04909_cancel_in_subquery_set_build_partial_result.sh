@@ -62,10 +62,10 @@ wait $client_pid
 if grep -q -F "Not-ready Set" "$CLIENT_ERR"; then
     echo "FAIL: an unbuilt set reached the filter"
     cat "$CLIENT_ERR"
-elif [ ! -s "$CLIENT_ERR" ]; then
-    echo "the partial set build completed"
+elif grep -q -F "QUERY_WAS_CANCELLED" "$CLIENT_ERR"; then
+    echo "the incomplete set is rejected"
 else
-    echo "FAIL: the partial set build failed"
+    echo "FAIL: the incomplete set produced an unexpected result"
     cat "$CLIENT_ERR"
 fi
 
@@ -115,10 +115,10 @@ wait $client_pid
 if grep -q -F "Not-ready Set" "$CLIENT_ERR"; then
     echo "FAIL: an unbuilt ordered set reached the filter"
     cat "$CLIENT_ERR"
-elif [ ! -s "$CLIENT_ERR" ]; then
-    echo "the partial ordered-set build completed"
+elif grep -q -F "QUERY_WAS_CANCELLED" "$CLIENT_ERR"; then
+    echo "the incomplete ordered set is rejected"
 else
-    echo "FAIL: the partial ordered-set build failed"
+    echo "FAIL: the incomplete ordered set produced an unexpected result"
     cat "$CLIENT_ERR"
 fi
 

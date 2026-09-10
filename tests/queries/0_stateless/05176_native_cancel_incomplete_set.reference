@@ -1,0 +1,4 @@
+analyzer 0, IN: incomplete set rejected
+analyzer 0, NOT IN: incomplete set rejected
+analyzer 1, IN: incomplete set rejected
+analyzer 1, NOT IN: incomplete set rejected
