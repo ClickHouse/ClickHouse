@@ -243,7 +243,12 @@ int64_t MetadataStorageFromCacheObjectStorage::getDeadBlobsQueueEstimate()
 
 bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
 {
-    return underlying->hasDeadBlobsQueue();
+    /// This must not be delegated to the wrapped storage: this wrapper has a queue of its own. Every commit
+    /// moves the blobs that the wrapped storage removed into `objects_to_remove`, so that the blob killer
+    /// drops the stale cache entries for them. That is exactly what a cached `plain` or `plain_rewritable`
+    /// disk needs, where blob paths are not random and a new file reuses the path of a deleted one.
+    /// A read-only storage never removes anything, so nothing is ever queued for it.
+    return !underlying->isReadOnly();
 }
 
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
