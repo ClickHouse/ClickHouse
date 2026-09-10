@@ -1745,6 +1745,53 @@ def test_partition_scope_element_excluding_data_contributes_no_partitions():
     instance.query("DROP DATABASE partition_scope_excluded_db")
 
 
+def test_partition_scope_unsupported_engine_rejected_even_when_data_excluded():
+    """Naming a partition of an engine that has none must be refused however the data is left out.
+
+    The partition-support check used to sit behind the `should_backup_data` early return, so every
+    way of leaving a table's data out of the backup also skipped the check. `EXCEPT DATA FROM TABLE`
+    on a single-object element is one such way - it is stored as the element's `except_data` flag,
+    so one element can both name a partition and exclude the data - and `Log` does not support
+    partitions, so the backup succeeded and silently ignored the `PARTITION` clause.
+
+    `structure_only` is another such way, and is checked here too: the validation now fires there as
+    well, which is a deliberate change to behaviour that predates `EXCEPT DATA`.
+    """
+    instance.query("DROP DATABASE IF EXISTS partition_scope_unsupported_db")
+    instance.query("CREATE DATABASE partition_scope_unsupported_db")
+    instance.query(
+        "CREATE TABLE partition_scope_unsupported_db.log_t (id UInt64) ENGINE = Log"
+    )
+    instance.query("INSERT INTO partition_scope_unsupported_db.log_t VALUES (1)")
+
+    # Control: without any exclusion the check has always fired, and must keep firing.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE partition_scope_unsupported_db.log_t PARTITION '1' "
+            f"TO {new_backup_name()}"
+        )
+    assert "doesn't support partitions" in str(exc_info.value), str(exc_info.value)
+
+    # Excluding the data must not buy the query a pass.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE partition_scope_unsupported_db.log_t PARTITION '1' "
+            f"EXCEPT DATA FROM TABLE partition_scope_unsupported_db.log_t "
+            f"TO {new_backup_name()}"
+        )
+    assert "doesn't support partitions" in str(exc_info.value), str(exc_info.value)
+
+    # Neither must `structure_only`, which reaches the same early return by another route.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"BACKUP TABLE partition_scope_unsupported_db.log_t PARTITION '1' "
+            f"TO {new_backup_name()} SETTINGS structure_only = 1"
+        )
+    assert "doesn't support partitions" in str(exc_info.value), str(exc_info.value)
+
+    instance.query("DROP DATABASE partition_scope_unsupported_db")
+
+
 def test_partition_scope_whole_table_element_wins_over_partitioned_element():
     """An element asking for the whole table must not be narrowed by a later partitioned element.
 

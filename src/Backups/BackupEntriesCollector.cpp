@@ -650,13 +650,15 @@ void BackupEntriesCollector::gatherTablesMetadata()
     {
         res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, rmv_replace_target_ids);
 
-        if (!res_table_info.should_backup_data)
-            continue;
-
         const auto & database_info = database_infos.at(qualified_name.database);
 
         /// Only a single-table element can name partitions, so the engines that cannot back them up are
         /// validated against those elements alone.
+        ///
+        /// Validated before `should_backup_data` is acted on, so it holds however the data came to be left
+        /// out - `EXCEPT DATA FROM TABLE`, `structure_only`, or a refreshable materialized view target.
+        /// Naming a partition of an engine that has none is a user error in each of those cases, and
+        /// answering it by silently ignoring the clause is worse than refusing the query.
         auto it = database_info.tables.find(qualified_name.table);
         if (it != database_info.tables.end() && it->second.anyElementNamedPartitions() && res_table_info.storage
             && !res_table_info.storage->supportsBackupPartition())
@@ -667,6 +669,10 @@ void BackupEntriesCollector::gatherTablesMetadata()
                 res_table_info.storage->getName(),
                 tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
         }
+
+        /// An excluded table contributes no partitions, so the scope below is left unset for it.
+        if (!res_table_info.should_backup_data)
+            continue;
 
         res_table_info.partitions = database_info.partitionsWithData(qualified_name.table);
     }
