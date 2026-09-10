@@ -18,10 +18,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 QUERY="SELECT number FROM numbers(10000000000) WHERE materialize(0) = 1"
 URL="${CLICKHOUSE_URL}&max_execution_time=1&timeout_overflow_mode=break&max_threads=2&max_rows_to_read=0&max_bytes_to_read=0"
 
-${CLICKHOUSE_CURL} -sS "$URL" -d "$QUERY FORMAT JSON" > "${CLICKHOUSE_TMP}/05077.json"
+${CLICKHOUSE_CURL} -sS "$URL" -d "$QUERY FORMAT JSON" > "${CLICKHOUSE_TMP}/05178.json"
 ${CLICKHOUSE_LOCAL} --query "
     SELECT isValidJSON(response) AS valid_json, JSONExtractUInt(response, 'rows') AS rows, JSONHas(response, 'statistics', 'rows_read') AS has_statistics
-    FROM (SELECT (SELECT * FROM file('${CLICKHOUSE_TMP}/05077.json', RawBLOB)) AS response)
+    FROM (SELECT (SELECT * FROM file('${CLICKHOUSE_TMP}/05178.json', RawBLOB)) AS response)
     FORMAT TSVWithNames"
 
 ${CLICKHOUSE_CURL} -sS "$URL" -d "$QUERY FORMAT XML" | grep -o -E '<rows>[0-9]+</rows>|<rows_read>|</result>'
