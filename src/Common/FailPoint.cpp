@@ -225,6 +225,7 @@ static struct InitFiu
     PAUSEABLE(storage_merge_tree_background_clear_old_parts_pause) \
     PAUSEABLE(storage_merge_create_children_plans_pause) \
     PAUSEABLE(storage_merge_schema_inference_pause) \
+    PAUSEABLE(storage_merge_schema_inference_table_pause) \
     PAUSEABLE_ONCE(storage_shared_merge_tree_mutate_pause_before_wait) \
     PAUSEABLE(database_replicated_startup_pause) \
     ONCE(keeper_leader_sets_invalid_digest) \

@@ -117,6 +117,7 @@ namespace FailPoints
 {
     extern const char storage_merge_create_children_plans_pause[];
     extern const char storage_merge_schema_inference_pause[];
+    extern const char storage_merge_schema_inference_table_pause[];
 }
 
 namespace ErrorCodes
@@ -307,18 +308,25 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
     /// One deeply nested column's substream walk takes seconds. Unlike `createChildrenPlans` below, which
     /// keeps the tables it reached, this throws even in `break` mode: `CREATE TABLE ... AS merge(...)`
     /// persists the inferred schema, so a truncated one is a wrong structure, not a smaller result.
-    const std::function<void()> check_cancellation = [inner = makeCancellationCheck("merge")]
+    const auto check_cancellation = makeCancellationCheck("merge");
+    const std::function<void()> check_cancellation_in_column = [&check_cancellation]
     {
-        if (inner)
-            inner();
+        if (check_cancellation)
+            check_cancellation();
         FailPointInjection::pauseFailPoint(FailPoints::storage_merge_schema_inference_pause);
     };
-    CancellationBudget budget(check_cancellation);
+    CancellationBudget budget(check_cancellation_in_column);
 
-    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context, &budget](auto && t)
+    traverseTablesUntilImpl(query_context, ignore_self, database_name_or_regexp, [&table_num, &access, &res, max_tables_to_look, &query_context, &budget, &check_cancellation](auto && t)
     {
         if (!t)
             return false;
+
+        /// The budget above is only charged when a table contributes a new or a widened column, so once the
+        /// schema stops changing it is this check that observes the query's limits.
+        if (check_cancellation)
+            check_cancellation();
+        FailPointInjection::pauseFailPoint(FailPoints::storage_merge_schema_inference_table_pause);
 
         const auto storage_id = t->getStorageID();
         if (!access->isGranted(AccessType::SHOW_TABLES, storage_id.database_name, storage_id.table_name))

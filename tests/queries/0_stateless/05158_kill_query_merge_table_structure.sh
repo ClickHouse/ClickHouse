@@ -12,11 +12,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 FP="storage_merge_schema_inference_pause"
+FP_TABLE="storage_merge_schema_inference_table_pause"
 KILL_QID="merge_structure_kill_${CLICKHOUSE_DATABASE}_$$"
 BREAK_QID="merge_structure_break_${CLICKHOUSE_DATABASE}_$$"
+TABLE_QID="merge_structure_table_${CLICKHOUSE_DATABASE}_$$"
 
-# Every poll below happens inside ONE column's substream walk, so a checkpoint that only ran between
-# source tables or between columns could not stop any of the arms. Depth 8 polls 181 times.
+# The two channels are separate so that each arm can only be stopped by the checkpoint it is about:
+# every ${FP} poll happens inside ONE column's substream walk, which a per-table checkpoint could not
+# stop, and the ${FP_TABLE} arm's tables are far too cheap to reach a ${FP} poll. Depth 8 polls 181 times.
 DEEP="Int32"
 for _ in $(seq 1 8); do DEEP="Array(Map(String, Tuple(a ${DEEP}, b ${DEEP})))"; done
 # A type whose substream tree is one long path yields a single stream callback, so it is the shape
@@ -33,7 +36,8 @@ function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "
         SYSTEM DISABLE FAILPOINT ${FP};
-        KILL QUERY WHERE query_id IN ('${KILL_QID}', '${BREAK_QID}') FORMAT Null;
+        SYSTEM DISABLE FAILPOINT ${FP_TABLE};
+        KILL QUERY WHERE query_id IN ('${KILL_QID}', '${BREAK_QID}', '${TABLE_QID}') FORMAT Null;
     " 2>/dev/null ||:
     wait 2>/dev/null ||:
 }
@@ -185,3 +189,56 @@ $CLICKHOUSE_CLIENT --query "
     SELECT count() FROM system.detached_parts
     WHERE database = currentDatabase() AND table = 'parts0';
 "
+
+# ---- KILL QUERY has to land between two source tables ----
+# These two tables are identical, so the second one adds no column and widens none: the per-column
+# checkpoint is unreachable for it and only the per-table one can stop the traversal. Their `Int32`
+# column is also far too cheap to reach a per-column poll, so ${FP} stays out of this arm entirely.
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS same0;
+    DROP TABLE IF EXISTS same1;
+    CREATE TABLE same0 (k UInt32, c Int32) ENGINE = MergeTree ORDER BY k;
+    CREATE TABLE same1 (k UInt32, c Int32) ENGINE = MergeTree ORDER BY k;
+    SYSTEM ENABLE FAILPOINT ${FP_TABLE};
+"
+
+$CLICKHOUSE_CLIENT --query_id="${TABLE_QID}" --query "
+    DESCRIBE TABLE merge(currentDatabase(), '^same[01]\$') FORMAT Null
+" > /dev/null 2> "${CLICKHOUSE_TMP}/05158_table.err" &
+TABLE_PID=$!
+
+# The first pause is same0's, before its metadata is fetched. The KILL lands while the thread sits
+# there and the NOTIFY resumes it without disabling, so same1's pause would still be observable.
+if ! timeout 30 $CLICKHOUSE_CLIENT --query "
+        SYSTEM WAIT FAILPOINT ${FP_TABLE} PAUSE;
+        KILL QUERY WHERE query_id = '${TABLE_QID}' FORMAT Null;
+        SYSTEM NOTIFY FAILPOINT ${FP_TABLE};
+    " > /dev/null 2>&1; then
+    echo "FAIL: structure inference never polled between source tables"
+fi
+
+# same1 is one iteration away, so a traversal that ignores the cancellation pauses again within
+# microseconds of the resume. Only status 124 means it stopped, the expected outcome.
+table_wait_rc=0
+timeout 3 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${FP_TABLE} PAUSE" > /dev/null 2>&1 || table_wait_rc=$?
+if [ "$table_wait_rc" -eq 0 ]; then
+    echo "FAIL: the traversal reached the next source table after the query was cancelled"
+elif [ "$table_wait_rc" -eq 124 ]; then
+    echo "cancelled: structure inference stopped between source tables"
+else
+    echo "FAIL: the wait failed with status ${table_wait_rc}"
+fi
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${FP_TABLE}"
+timeout 30 tail --pid="${TABLE_PID}" -f /dev/null
+wait "${TABLE_PID}" 2>/dev/null ||:
+
+# 394 is QUERY_WAS_CANCELLED. Without this the arm would also pass if the traversal had finished the
+# schema and the query had died of something else after it.
+if grep -q 'Code: 394' "${CLICKHOUSE_TMP}/05158_table.err"; then
+    echo "the cancelled DESCRIBE failed with QUERY_WAS_CANCELLED"
+else
+    echo "FAIL: the cancelled DESCRIBE did not fail with QUERY_WAS_CANCELLED:"
+    cat "${CLICKHOUSE_TMP}/05158_table.err"
+fi
+rm -f "${CLICKHOUSE_TMP}/05158_table.err"
