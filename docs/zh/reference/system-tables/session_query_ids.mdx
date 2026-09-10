@@ -1,0 +1,77 @@
+---
+description: '系统表，包含当前会话中已执行查询的 query id。'
+keywords: ['system table', 'session_query_ids', 'query_id', 'session']
+sidebarTitle: 'system.session_query_ids'
+slug: /operations/system-tables/session_query_ids
+title: 'system.session_query_ids'
+doc_type: 'reference'
+---
+
+## 描述 {#description}
+
+包含当前会话中已执行查询的 query id，按执行顺序排列。可借助它在 [`system.query_log`](/zh/reference/system-tables/query_log) 中查找“我刚刚运行的那些查询”，而无需在客户端指定 `query_id`，也无需用 `log_comment` 为查询打标签。
+
+其内容的作用域为会话级：每个会话只能看到自己的历史记录，其他会话的查询绝不会出现。
+
+query id 在查询*开始*时即被记录，因此：
+
+* 当前正在运行的查询从该表中查询数据时，其自身已可见。
+* 失败的查询同样会被记录 —— 获取刚刚失败查询的 id 正是一个主要用例。
+
+内部查询 (如系统日志刷写等) 不会被记录。distributed 查询在远端 shard 上运行的子查询也不会被记录 —— 只有发起的那个查询会出现在 initiator 的会话中。
+
+## 列 {#columns}
+
+* `sequence_number` ([UInt64](/zh/reference/data-types/int-uint)) — 该查询在会话中的位置，单调递增。
+* `query_id` ([String](/zh/reference/data-types/string)) — 查询 id，可与 `system.query_log` 进行连接。
+
+## 各接口的会话范围 {#session-scoping-per-interface}
+
+* **原生/TCP 连接** (ClickHouse 客户端、各类驱动) 以及 **`clickhouse-local`**：会话即连接，因此历史记录会累积该连接上的所有查询，包括客户端一次调用中执行的多条查询。
+* **带 `session_id` 参数的 HTTP**：只要请求传入相同的 `session_id`，历史记录就会在这些请求之间保留，直到会话过期。
+* **不带 `session_id` 的 HTTP**：每个请求自成一个会话，因此该表始终只显示当前查询。
+
+## 历史记录大小 {#history-size}
+
+历史记录是一个环形缓冲区，其大小受会话设置 `session_query_ids_history_size` (默认 `1000`) 限制；当历史记录超过该大小时，最旧的条目会被优先淘汰。将其设为 `0` 则禁用记录；此前已记录的条目仍会保留在表中，直到被 TRUNCATE 或淘汰。
+
+该设置在查询开始时、解析查询之前读取，因此查询自身的 `SETTINGS` 子句不会影响该查询是否被记录；请改用 `SET`、HTTP URL 参数或 settings profile。
+
+## TRUNCATE {#truncate}
+
+`TRUNCATE TABLE system.session_query_ids` 会清除当前会话的历史记录。序列计数器不会重置，因此在同一会话内 `sequence_number` 的值不会被重复使用。
+
+## Example {#example}
+
+运行几个查询，然后从 [`system.query_log`](/zh/reference/system-tables/query_log) 中拉取它们的详细信息：
+
+```sql
+SELECT 1 FORMAT Null;
+SELECT 2 FORMAT Null;
+
+SELECT * FROM system.session_query_ids;
+```
+
+```text
+┌─sequence_number─┬─query_id─────────────────────────────┐
+│               1 │ 4c9e97a3-b806-4a5c-9a94-5a614c3d0b3f │
+│               2 │ 8f9a2f59-30d3-4f8e-b3a1-6a0c1a4d3e2b │
+│               3 │ f2b1c4d8-7e6a-4b5c-8d9e-0a1b2c3d4e5f │
+└─────────────────┴──────────────────────────────────────┘
+```
+
+当前查询在开始时即被记录，因此它显示为最后一条记录。通过连接 `system.query_log`，可以获取时间戳、status 以及所有其他详细信息：
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+
+SELECT query_id, type, query, query_duration_ms
+FROM system.query_log
+WHERE query_id IN (SELECT query_id FROM system.session_query_ids)
+ORDER BY event_time_microseconds;
+```
+
+## 参见 {#see-also}
+
+* [`system.query_log`](/zh/reference/system-tables/query_log) — 已执行查询的详细信息
+* `session_query_ids_history_size` 设置

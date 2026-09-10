@@ -1140,6 +1140,7 @@
         "ko/reference/system-tables/schema_inference_cache",
         "ko/reference/system-tables/server_settings",
         "ko/reference/system-tables/session_log",
+        "ko/reference/system-tables/session_query_ids",
         "ko/reference/system-tables/settings",
         "ko/reference/system-tables/settings_changes",
         "ko/reference/system-tables/settings_profile_elements",

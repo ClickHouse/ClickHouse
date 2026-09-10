@@ -413,14 +413,13 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 필요하지 않습니다. 대신 메타데이터는 S3에 저장됩니다.
 `s3_plain` 디스크 유형과 달리, `s3_plain_rewritable`는 머지를 실행할 수
 있으며 `INSERT` 작업을 지원합니다.
-테이블 복제는 지원되지 않습니다.
-[뮤테이션](/ko/reference/statements/alter/index#mutations)과 `ALTER` 작업은
-디스크가 `enable_hard_links`로 구성된 경우에만 지원됩니다. 아래를 참고하세요.
+[뮤테이션](/ko/reference/statements/alter/index#mutations)과 테이블 복제는 지원되지 않습니다.
 
-이 디스크 유형의 사용 사례 중 하나는 비복제 `MergeTree` 테이블입니다. `s3`
-디스크 유형도 비복제 `MergeTree` 테이블에 적합하지만, 테이블의 로컬 메타데이터가
-필요하지 않다면 `s3_plain_rewritable`
-디스크 유형을 선택할 수 있습니다. 예를 들어 시스템 테이블에 유용할 수 있습니다.
+이 디스크 유형의 사용 사례 중 하나는 복제되지 않은 `MergeTree` 테이블입니다. `s3`
+디스크 유형도 복제되지 않은 `MergeTree` 테이블에 적합하지만, 테이블의 로컬 메타데이터가
+필요하지 않고 지원되는 작업이 제한적이라는 점을 수용할 수 있다면 `s3_plain_rewritable`
+디스크 유형을 선택할 수 있습니다. 예를 들어 시스템 테이블에
+유용할 수 있습니다.
 
 구성:
 
@@ -446,27 +445,6 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 `24.5`부터는 `plain_rewritable` 메타데이터 타입을 사용해
 모든 객체 스토리지 디스크(`s3`, `azure`, `local`)를 구성할 수 있습니다.
-
-#### plain rewritable 디스크에서의 하드 링크 {#plain-rewritable-hard-links}
-
-`MergeTree` 테이블의 `ALTER` 작업과 뮤테이션은 변경되지 않은 파일을 복사하지 않고
-하드 링크를 통해 파트와 뮤테이션 이후의 파트 간에 공유합니다.
-`enable_hard_links` 설정(기본값 `0`)을 사용하면 `plain_rewritable` 메타데이터를 가진
-디스크가 실제 하드 링크를 생성할 수 있으며, 이를 통해 다음 작업이 가능해집니다:
-
-```xml
-<s3_plain_rewritable>
-    <type>s3_plain_rewritable</type>
-    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
-</s3_plain_rewritable>
-```
-
-하드 링크를 사용하면 디렉터리의 메타데이터에 해당 디렉터리의 파일 목록이 그 파일을 저장하는 객체의 키와 함께 명시적으로 기록되므로, 어떤 파일이 다른 디렉터리의 prefix 아래에 저장된 객체를 참조할 수 있습니다. 활성화하기 전에 다음 사항을 고려하십시오.
-
-* `26.9` 이전 버전의 서버는 이러한 형태의 디렉터리를 읽을 수 없습니다. 이러한 디렉터리가 있는 디스크는 다운그레이드 후에 읽을 수 없으며, 이전 버전의 서버와 공유할 수도 없습니다. 하드 링크가 한 번도 생성된 적 없는 디렉터리는 기존 layout을 유지하므로, 하드 링크를 생성하는 첫 작업(mutation, `ALTER`, `FREEZE` 또는 Backup)이 발생하기 전까지는 이전 버전의 서버에서도 디스크를 계속 읽을 수 있습니다. 설정을 다시 끄더라도 이미 변환된 디렉터리가 원래 형태로 되돌아가지는 않습니다.
-* 마지막 링크가 제거된 객체는 두 단계에 걸쳐 삭제됩니다. 먼저 디렉터리의 메타데이터가 재작성되고, 그 후에 객체가 삭제됩니다. 그 사이에 서버가 강제 종료되면 객체가 버킷에 남은 채 어디에서도 참조되지 않는 상태가 되므로, 수동으로 삭제해야 합니다.
 
 ### Azure Blob Storage 사용하기 {#azure-blob-storage}
 

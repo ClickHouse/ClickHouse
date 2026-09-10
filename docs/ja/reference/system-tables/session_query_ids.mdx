@@ -1,0 +1,77 @@
+---
+description: '現在のセッションで実行されたクエリのクエリ ID を格納するシステムテーブル。'
+keywords: ['system table', 'session_query_ids', 'query_id', 'session']
+sidebarTitle: 'system.session_query_ids'
+slug: /operations/system-tables/session_query_ids
+title: 'system.session_query_ids'
+doc_type: 'reference'
+---
+
+## Description {#description}
+
+現在のセッションで実行されたクエリのクエリ ID を、実行順に格納します。`query_id` をクライアント側で割り当てたり、`log_comment` でクエリにタグを付けたりしなくても、[`system.query_log`](/ja/reference/system-tables/query_log) から「たった今実行したクエリ」を探せます。
+
+内容はセッション単位のスコープを持ちます。各セッションからは自身の履歴のみが見え、他のセッションのクエリが現れることはありません。
+
+クエリ ID はクエリの*開始*時に記録されます。そのため:
+
+* 現在実行中のクエリは、このテーブルに対して SELECT を実行した時点ですでに現れます。
+* 失敗したクエリも記録されます。たった今失敗したクエリの ID を取得することは、主要なユースケースの 1 つです。
+
+内部クエリ (システムログのフラッシュなど) は記録されません。分散クエリがリモート分片上で実行するサブクエリも記録されず、イニシエーターのセッションに開始元のクエリのみが現れます。
+
+## カラム {#columns}
+
+* `sequence_number` ([UInt64](/ja/reference/data-types/int-uint)) — セッション内におけるクエリの位置。単調増加します。
+* `query_id` ([String](/ja/reference/data-types/string)) — クエリ ID。`system.query_log` と結合できます。
+
+## インターフェイスごとのセッションスコープ {#session-scoping-per-interface}
+
+* **ネイティブ/TCP接続** (`clickhouse-client`、ドライバー) および **`clickhouse-local`**: セッションは接続そのものであるため、複数クエリを実行するクライアント呼び出しも含め、その接続内のすべてのクエリにわたって履歴が蓄積されます。
+* **`session_id` パラメータを指定したHTTP**: 同じ `session_id` を渡すリクエストの間では、セッションが期限切れになるまで履歴が保持されます。
+* **`session_id` を指定しないHTTP**: リクエストごとに独立したセッションとなるため、テーブルには常に現在のクエリのみが表示されます。
+
+## 履歴のサイズ {#history-size}
+
+履歴はリングバッファであり、そのサイズはセッション設定 `session_query_ids_history_size` (デフォルトは `1000`) によって制限されます。履歴がこのサイズを超えると、最も古いエントリから順に追い出されます。`0` に設定すると記録が無効になります。それ以前に記録されたエントリは、TRUNCATE されるか追い出されるまでテーブルに残ります。
+
+この設定はクエリの開始時、クエリがパースされる前に読み取られます。そのため、クエリ自身の `SETTINGS` 句は、そのクエリが記録されるかどうかには影響しません。代わりに `SET`、HTTP URL パラメータ、または SETTINGS PROFILE を使用してください。
+
+## TRUNCATE {#truncate}
+
+`TRUNCATE TABLE system.session_query_ids` は、現在のセッションの履歴をクリアします。シーケンスカウンターはリセットされないため、`sequence_number` の値がセッション内で再利用されることはありません。
+
+## 例 {#example}
+
+いくつかクエリを実行し、その詳細を [`system.query_log`](/ja/reference/system-tables/query_log) から取得します:
+
+```sql
+SELECT 1 FORMAT Null;
+SELECT 2 FORMAT Null;
+
+SELECT * FROM system.session_query_ids;
+```
+
+```text
+┌─sequence_number─┬─query_id─────────────────────────────┐
+│               1 │ 4c9e97a3-b806-4a5c-9a94-5a614c3d0b3f │
+│               2 │ 8f9a2f59-30d3-4f8e-b3a1-6a0c1a4d3e2b │
+│               3 │ f2b1c4d8-7e6a-4b5c-8d9e-0a1b2c3d4e5f │
+└─────────────────┴──────────────────────────────────────┘
+```
+
+現在のクエリは開始時点で記録されるため、最後のエントリとして表示されます。タイムスタンプ、status、その他すべての詳細は、`system.query_log` と結合することで取得できます。
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+
+SELECT query_id, type, query, query_duration_ms
+FROM system.query_log
+WHERE query_id IN (SELECT query_id FROM system.session_query_ids)
+ORDER BY event_time_microseconds;
+```
+
+## 関連項目 {#see-also}
+
+* [`system.query_log`](/ja/reference/system-tables/query_log) — 実行されたクエリの詳細
+* `session_query_ids_history_size` 設定

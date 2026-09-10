@@ -1140,6 +1140,7 @@
         "ru/reference/system-tables/schema_inference_cache",
         "ru/reference/system-tables/server_settings",
         "ru/reference/system-tables/session_log",
+        "ru/reference/system-tables/session_query_ids",
         "ru/reference/system-tables/settings",
         "ru/reference/system-tables/settings_changes",
         "ru/reference/system-tables/settings_profile_elements",

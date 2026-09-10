@@ -417,16 +417,15 @@ Comme le type de disque `s3_plain`, il ne nécessite pas de stockage supplément
 fichiers de métadonnées. À la place, les métadonnées sont stockées dans S3.
 Contrairement au type de disque `s3_plain`, `s3_plain_rewritable` permet d’exécuter des merges
 et prend en charge les opérations `INSERT`.
-La réplication des tables n’est pas prise en charge.
-Les [mutations](/fr/reference/statements/alter/index#mutations) et les opérations `ALTER`
-ne sont prises en charge que si le disque est configuré avec `enable_hard_links`, voir ci-dessous.
+Les [mutations](/fr/reference/statements/alter/index#mutations) et la réplication des tables ne sont pas prises en charge.
 
 Un cas d’usage de ce type de disque concerne les tables `MergeTree` non répliquées. Bien que
 le type de disque `s3` convienne aux tables `MergeTree` non répliquées, vous pouvez opter pour
 le type de disque `s3_plain_rewritable` si vous n’avez pas besoin de métadonnées locales
-pour la table. Cela peut être utile, par exemple, pour les tables système.
+pour la table et acceptez un ensemble d’opérations limité. Cela peut
+être utile, par exemple, pour les tables système.
 
-Configuration :
+Configuration :
 
 ```xml
 <s3_plain_rewritable>
@@ -450,28 +449,6 @@ est égal à
 
 À partir de `24.5`, il est possible de configurer n’importe quel disque de stockage objet
 (`s3`, `azure`, `local`) avec le type de métadonnées `plain_rewritable`.
-
-#### Hard links sur les disques plain rewritable {#plain-rewritable-hard-links}
-
-Les opérations `ALTER` et les mutations d&#39;une table `MergeTree` partagent les fichiers inchangés
-entre une part et la part mutée qui lui succède au moyen de hard links, plutôt que de les
-copier. Le paramètre `enable_hard_links` (`0` par défaut) permet à un disque doté des
-métadonnées `plain_rewritable` de créer de véritables hard links, ce qui débloque ces
-opérations :
-
-```xml
-<s3_plain_rewritable>
-    <type>s3_plain_rewritable</type>
-    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
-    <use_environment_credentials>1</use_environment_credentials>
-    <enable_hard_links>1</enable_hard_links>
-</s3_plain_rewritable>
-```
-
-Un hard link fait en sorte que les métadonnées d&#39;un répertoire listent explicitement ses fichiers, ainsi que les keys des objets qui les stockent, de sorte qu&#39;un fichier puisse référencer un objet stocké sous le prefix d&#39;un autre répertoire. Prenez en compte les points suivants avant de l&#39;activer :
-
-* Les serveurs antérieurs à `26.9` ne peuvent pas lire un répertoire sous cette forme. Un disque comportant de tels répertoires n&#39;est plus lisible après un downgrade et ne peut pas être partagé avec des serveurs plus anciens. Les répertoires qui n&#39;ont jamais comporté de hard links conservent le layout précédent : un disque reste donc lisible par les serveurs plus anciens jusqu&#39;à la première opération créant un hard link — une mutation, un `ALTER`, un `FREEZE` ou un Sauvegarde. Désactiver de nouveau le SETTING ne rétablit pas le format des répertoires existants.
-* Un objet dont le dernier lien est supprimé est effacé en deux étapes : les métadonnées du répertoire sont d&#39;abord réécrites, puis l&#39;objet est supprimé. Si le serveur est arrêté entre les deux, l&#39;objet subsiste dans le bucket sans être référencé par quoi que ce soit et doit donc être supprimé manuellement.
 
 ### Utilisation d’Azure Blob Storage {#azure-blob-storage}
 

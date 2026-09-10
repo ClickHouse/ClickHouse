@@ -1,0 +1,77 @@
+---
+description: '현재 세션에서 실행된 쿼리의 쿼리 ID를 담고 있는 시스템 테이블입니다.'
+keywords: ['system table', 'session_query_ids', 'query_id', 'session']
+sidebarTitle: 'system.session_query_ids'
+slug: /operations/system-tables/session_query_ids
+title: 'system.session_query_ids'
+doc_type: 'reference'
+---
+
+## 설명 {#description}
+
+현재 세션에서 실행된 쿼리의 쿼리 id를 실행 순서대로 담고 있습니다. 클라이언트 측에서 `query_id`를 지정하거나 `log_comment`로 쿼리에 태그를 달지 않고도 [`system.query_log`](/ko/reference/system-tables/query_log)에서 &quot;방금 실행한 쿼리&quot;를 찾는 데 사용할 수 있습니다.
+
+내용은 세션 범위로 한정됩니다. 각 세션은 자신의 이력만 볼 수 있으며, 다른 세션의 쿼리는 나타나지 않습니다.
+
+쿼리 id는 쿼리가 *시작될* 때 기록됩니다. 따라서:
+
+* 현재 실행 중인 쿼리는 이 테이블을 SELECT하는 시점에 이미 조회됩니다.
+* 실패한 쿼리도 기록됩니다. 방금 실패한 쿼리의 id를 확인하는 것이 대표적인 활용 사례입니다.
+
+내부 쿼리(시스템 로그 플러시 등)는 기록되지 않습니다. 분산 쿼리가 원격 세그먼트에서 실행하는 하위 쿼리도 기록되지 않으며, 이를 시작한 쿼리만 해당 노드의 세션에 나타납니다.
+
+## 컬럼 {#columns}
+
+* `sequence_number` ([UInt64](/ko/reference/data-types/int-uint)) — 세션 내 쿼리의 위치로, 단조 증가합니다.
+* `query_id` ([String](/ko/reference/data-types/string)) — 쿼리 ID로, `system.query_log`와 조인할 수 있습니다.
+
+## 인터페이스별 세션 범위 {#session-scoping-per-interface}
+
+* **네이티브/TCP 연결**(`clickhouse-client`, 드라이버) 및 **`clickhouse-local`**: 세션이 곧 연결이므로, 다중 쿼리 클라이언트 호출을 포함해 해당 연결의 모든 쿼리에 걸쳐 이력이 누적됩니다.
+* **`session_id` 매개변수를 사용하는 HTTP**: 동일한 `session_id`를 전달하는 요청 간에는 세션이 만료될 때까지 이력이 유지됩니다.
+* **`session_id`를 사용하지 않는 HTTP**: 각 요청이 곧 하나의 세션이므로, 테이블에는 현재 쿼리만 표시됩니다.
+
+## 이력 크기 {#history-size}
+
+이력은 세션 설정 `session_query_ids_history_size`(기본값 `1000`)로 크기가 제한되는 링 버퍼입니다. 이력이 이 크기를 초과하면 가장 오래된 항목부터 제거됩니다. 값을 `0`으로 설정하면 기록이 비활성화되며, 이전에 기록된 항목은 TRUNCATE되거나 제거될 때까지 테이블에 남아 있습니다.
+
+이 설정은 쿼리가 파싱되기 전인 쿼리 시작 시점에 읽히므로, 해당 쿼리 자체의 `SETTINGS` 절은 그 쿼리의 기록 여부에 영향을 주지 않습니다. 대신 `SET`, HTTP URL 매개변수 또는 SETTINGS PROFILE을 사용하십시오.
+
+## TRUNCATE {#truncate}
+
+`TRUNCATE TABLE system.session_query_ids`는 현재 세션의 이력을 지웁니다. 시퀀스 카운터는 초기화되지 않으므로 하나의 세션 내에서 `sequence_number` 값이 재사용되는 일은 없습니다.
+
+## 예시 {#example}
+
+쿼리를 몇 개 실행한 다음, [`system.query_log`](/ko/reference/system-tables/query_log)에서 해당 쿼리의 세부 정보를 조회합니다:
+
+```sql
+SELECT 1 FORMAT Null;
+SELECT 2 FORMAT Null;
+
+SELECT * FROM system.session_query_ids;
+```
+
+```text
+┌─sequence_number─┬─query_id─────────────────────────────┐
+│               1 │ 4c9e97a3-b806-4a5c-9a94-5a614c3d0b3f │
+│               2 │ 8f9a2f59-30d3-4f8e-b3a1-6a0c1a4d3e2b │
+│               3 │ f2b1c4d8-7e6a-4b5c-8d9e-0a1b2c3d4e5f │
+└─────────────────┴──────────────────────────────────────┘
+```
+
+현재 쿼리는 시작 시점에 기록되므로 마지막 항목으로 표시됩니다. timestamp, status를 비롯한 나머지 세부 정보는 `system.query_log`와 조인하여 확인할 수 있습니다:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+
+SELECT query_id, type, query, query_duration_ms
+FROM system.query_log
+WHERE query_id IN (SELECT query_id FROM system.session_query_ids)
+ORDER BY event_time_microseconds;
+```
+
+## 관련 항목 {#see-also}
+
+* [`system.query_log`](/ko/reference/system-tables/query_log) — 실행된 쿼리의 세부 정보
+* `session_query_ids_history_size` 설정
