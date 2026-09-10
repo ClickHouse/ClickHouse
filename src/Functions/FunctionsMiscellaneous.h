@@ -100,35 +100,76 @@ private:
     SignaturePtr signature;
 };
 
-/// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
-/// Checks a predicate over every function of a lambda body. A lambda inherits the properties of the
-/// functions it calls: without this, a non-deterministic call inside the body (e.g.
-/// `arrayExists(x -> rand(x) % 2 = 0, arr)`) is invisible to the consumers of those properties, and a
-/// filter holding it is moved across an aggregation or a JOIN, where it is evaluated a different
-/// number of times.
-inline bool lambdaBodySatisfies(const ActionsDAG & dag, bool (*predicate)(const IFunctionBase &))
+/// Whether the function a column stands for and the functions of its captured columns all satisfy the predicate.
+/// This is about a `ColumnFunction`, which is what constant folding turns a lambda without non-constant
+/// captured columns into; a lambda nested in it becomes one of its captured columns.
+template <typename Predicate>
+bool allColumnFunctions(const IColumn & column, const Predicate & predicate)
 {
-    for (const auto & node : dag.getNodes())
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && !predicate(*node.function_base))
+    const IColumn * data = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(data))
+        data = &column_const->getDataColumn();
+
+    const auto * column_function = typeid_cast<const ColumnFunction *>(data);
+    if (!column_function)
+        return true;
+
+    if (!predicate(*column_function->getFunction()))
+        return false;
+
+    for (const auto & captured : column_function->getCapturedColumns())
+        if (captured.column && !allColumnFunctions(*captured.column, predicate))
+            return false;
+
+    return true;
+}
+
+/// Whether every function a node stands for satisfies the predicate: the function of a FUNCTION node, or, for a
+/// COLUMN node holding a constant-folded lambda, the lambda and the lambdas nested in it.
+template <typename Predicate>
+bool allNodeFunctions(const ActionsDAG::Node & node, const Predicate & predicate)
+{
+    if (node.type == ActionsDAG::ActionType::FUNCTION)
+        return predicate(*node.function_base);
+
+    if (node.type == ActionsDAG::ActionType::COLUMN && node.column)
+        return allColumnFunctions(*node.column, predicate);
+
+    return true;
+}
+
+/// Whether every function in the body of a lambda satisfies the predicate. Nested lambdas are covered by
+/// recursion through their own `FunctionCapture` or `FunctionExpression`.
+template <typename Predicate>
+bool allLambdaBodyFunctions(const ExpressionActions & expression_actions, const Predicate & predicate)
+{
+    for (const auto & inner_node : expression_actions.getActionsDAG().getNodes())
+        if (!allNodeFunctions(inner_node, predicate))
             return false;
     return true;
 }
 
-inline bool lambdaBodyIsDeterministic(const ActionsDAG & dag)
+/// A lambda is exactly as deterministic and as stateful as the functions in its body.
+/// Without this, a higher-order function like `arrayExists(x -> rand() % 2 = 0, arr)` looks like an
+/// ordinary deterministic function, and an optimization that moves expressions across a row-multiplying
+/// step such as `ARRAY JOIN` (`liftUpArrayJoin`, filter pushdown) changes how many times the
+/// non-deterministic function is drawn.
+inline bool isLambdaBodyDeterministic(const ExpressionActions & expression_actions)
 {
-    return lambdaBodySatisfies(dag, [](const IFunctionBase & function) { return function.isDeterministic(); });
+    return allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return function.isDeterministic(); });
 }
 
-inline bool lambdaBodyIsDeterministicInScopeOfQuery(const ActionsDAG & dag)
+inline bool isLambdaBodyDeterministicInScopeOfQuery(const ExpressionActions & expression_actions)
 {
-    return lambdaBodySatisfies(dag, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+    return allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
 }
 
-inline bool lambdaBodyIsStateful(const ActionsDAG & dag)
+inline bool isLambdaBodyStateful(const ExpressionActions & expression_actions)
 {
-    return !lambdaBodySatisfies(dag, [](const IFunctionBase & function) { return !function.isStateful(); });
+    return !allLambdaBodyFunctions(expression_actions, [](const IFunctionBase & function) { return !function.isStateful(); });
 }
 
+/// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
 class FunctionExpression final : public IFunctionBase
 {
 public:
@@ -162,14 +203,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool isDeterministic() const override { return lambdaBodyIsDeterministic(expression_actions->getActionsDAG()); }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return lambdaBodyIsDeterministicInScopeOfQuery(expression_actions->getActionsDAG());
-    }
-
-    bool isStateful() const override { return lambdaBodyIsStateful(expression_actions->getActionsDAG()); }
+    bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
+    bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
+    bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return capture->return_type; }
@@ -329,18 +365,9 @@ public:
         return true;
     }
 
-    /// A lambda is deterministic only if every function in its inner DAG is. Without this, a
-    /// non-deterministic call inside a lambda body (e.g. `arrayExists(x -> rand(x) % 2 = 0, arr)`) is
-    /// invisible to the consumers of these flags, and a filter holding it is moved across an
-    /// aggregation or a JOIN, where it is then evaluated a different number of times.
-    bool isDeterministic() const override { return lambdaBodyIsDeterministic(expression_actions->getActionsDAG()); }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return lambdaBodyIsDeterministicInScopeOfQuery(expression_actions->getActionsDAG());
-    }
-
-    bool isStateful() const override { return lambdaBodyIsStateful(expression_actions->getActionsDAG()); }
+    bool isDeterministic() const override { return isLambdaBodyDeterministic(*expression_actions); }
+    bool isDeterministicInScopeOfQuery() const override { return isLambdaBodyDeterministicInScopeOfQuery(*expression_actions); }
+    bool isStateful() const override { return isLambdaBodyStateful(*expression_actions); }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
