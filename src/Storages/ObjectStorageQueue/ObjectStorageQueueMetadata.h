@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -82,6 +83,7 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
+        size_t persistent_processing_node_abandoned_reclaim_ttl_seconds_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
         size_t metadata_cache_size_elements_);
@@ -132,7 +134,8 @@ public:
     /// allows to manage metadata of a concrete file.
     FileMetadataPtr getFileMetadata(
         const std::string & path,
-        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {},
+        const std::string & active_registry_id = {});
 
     /// Register table in keeper metadata.
     /// active = false:
@@ -156,6 +159,9 @@ public:
     void unregisterNonActive(const StorageID & storage_id, bool remove_metadata_if_no_registered);
     Strings getRegistered(bool active);
 
+    /// Return the exact ephemeral registry child used by this table during this server-process lifetime.
+    static std::string getActiveRegistryID(const StorageID & storage_id);
+
     /// According to current *active* registered tables,
     /// check using a hash ring which table would process these paths.
     /// Leave only those paths which need to be processed by current table.
@@ -175,7 +181,8 @@ public:
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser);
     /// Acquire (take unique ownership of) bucket for processing.
-    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(
+        const Bucket & bucket, const std::string & active_registry_id);
 
     const String & getZooKeeperName() const { return zookeeper_name; }
     std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper() const { return getZooKeeper(log, zookeeper_name); }
@@ -197,6 +204,19 @@ public:
 
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
+    size_t getPersistentProcessingNodeAbandonedReclaimTTLSeconds() const
+    {
+        return persistent_processing_node_abandoned_reclaim_ttl_seconds.load();
+    }
+    size_t getPersistentProcessingNodeRefreshIntervalSeconds() const
+    {
+        const size_t ttl_seconds = persistent_processing_node_ttl_seconds.load();
+        const size_t reclaim_ttl_seconds = persistent_processing_node_abandoned_reclaim_ttl_seconds.load();
+        const size_t lease_seconds = ttl_seconds && reclaim_ttl_seconds
+            ? std::min(ttl_seconds, reclaim_ttl_seconds)
+            : std::max(ttl_seconds, reclaim_ttl_seconds);
+        return lease_seconds ? std::max<size_t>(1, lease_seconds / 4) : 0;
+    }
 
     size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
 
@@ -221,8 +241,6 @@ private:
     void updateRegistry(const DB::Strings & registered_);
 
     /// Get ID for the specified table which is used for active tables.
-    static std::string getProcessorID(const StorageID & storage_id);
-
     ObjectStorageQueueTableMetadata table_metadata;
     const ObjectStorageType storage_type;
     const ObjectStorageQueueMode mode;
@@ -242,6 +260,7 @@ private:
     std::atomic<size_t> cleanup_interval_max_ms;
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
+    std::atomic<size_t> persistent_processing_node_abandoned_reclaim_ttl_seconds;
 
     /// Watermarks for the pipeline-lag metrics, see updateNewestSeenTimestamp().
     /// Keyed by `StorageID::getFullTableName()`, because this metadata object can be

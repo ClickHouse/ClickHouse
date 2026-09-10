@@ -25,6 +25,9 @@
 #include <Interpreters/DDLTask.h>
 #include <shared_mutex>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 
 
 namespace ProfileEvents
@@ -111,6 +114,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     size_t cleanup_interval_max_ms_,
     bool use_persistent_processing_nodes_,
     size_t persistent_processing_nodes_ttl_seconds_,
+    size_t persistent_processing_node_abandoned_reclaim_ttl_seconds_,
     size_t keeper_multiread_batch_size_,
     size_t metadata_cache_size_bytes_,
     size_t metadata_cache_size_elements_)
@@ -124,11 +128,14 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
     , cleanup_failed_files(table_metadata.hasTrackedFilesLimit())
-    , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
+    , cleanup_processing_files(
+        use_persistent_processing_nodes_
+        && (persistent_processing_nodes_ttl_seconds_ || persistent_processing_node_abandoned_reclaim_ttl_seconds_))
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
     , use_persistent_processing_nodes(use_persistent_processing_nodes_)
     , persistent_processing_node_ttl_seconds(persistent_processing_nodes_ttl_seconds_)
+    , persistent_processing_node_abandoned_reclaim_ttl_seconds(persistent_processing_node_abandoned_reclaim_ttl_seconds_)
     , buckets_num(table_metadata_.getBucketsNum())
     , log(getLogger(fmt::format(
         "StorageObjectStorageQueue({}{})",
@@ -236,7 +243,8 @@ void ObjectStorageQueueMetadata::shutdown()
 
 ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileMetadata(
     const std::string & path,
-    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
+    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info,
+    const std::string & active_registry_id)
 {
     chassert(metadata_ref_count);
     auto [file_status, _] = local_file_statuses.getOrSet(
@@ -256,6 +264,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                active_registry_id,
                 zookeeper_name,
                 bucketing_mode,
                 partitioning_mode,
@@ -269,6 +278,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 table_metadata.loading_retries,
                 *metadata_ref_count,
                 use_persistent_processing_nodes,
+                active_registry_id,
                 zookeeper_name,
                 log);
     }
@@ -330,10 +340,16 @@ std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing()
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
-ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
+ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket, const std::string & active_registry_id)
 {
     return ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
-        zookeeper_path, bucket, use_persistent_processing_nodes, persistent_processing_node_ttl_seconds, zookeeper_name, log);
+        zookeeper_path,
+        bucket,
+        active_registry_id,
+        use_persistent_processing_nodes,
+        persistent_processing_node_ttl_seconds,
+        zookeeper_name,
+        log);
 }
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
@@ -624,6 +640,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                     table_metadata.loading_retries,
                     noop,
                     /* use_persistent_processing_nodes */false, /// Processing nodes will not be created.
+                    /* active_registry_id */ "",
                     zookeeper_name,
                     table_metadata.getBucketingMode(),
                     table_metadata.getPartitioningMode(),
@@ -660,11 +677,18 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
 namespace
 {
+    const std::string & getServerProcessSessionID()
+    {
+        static const std::string process_session_id = toString(UUIDHelpers::generateV4());
+        return process_session_id;
+    }
+
     struct Info
     {
         std::string hostname;
         std::string table_id;
         std::string server_uuid;
+        std::string server_process_session_id;
 
         size_t version = 1;
 
@@ -680,6 +704,7 @@ namespace
             self.hostname = DNSResolver::instance().getHostName();
             self.table_id = storage_id.hasUUID() ? toString(storage_id.uuid) : storage_id.getFullTableName();
             self.server_uuid = toString(ServerUUID::get());
+            self.server_process_session_id = getServerProcessSessionID();
             return self;
         }
 
@@ -689,6 +714,7 @@ namespace
             hash.update(hostname);
             hash.update(table_id);
             hash.update(server_uuid);
+            hash.update(server_process_session_id);
             return hash.get128();
         }
 
@@ -747,7 +773,7 @@ void ObjectStorageQueueMetadata::updateNewestCommittedTimestamp(time_t timestamp
 
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)
 {
-    const auto id = getProcessorID(storage_id);
+    const auto id = getActiveRegistryID(storage_id);
     const auto table_path = zookeeper_path / "registry" / id;
     const auto self = Info::create(storage_id);
 
@@ -881,7 +907,7 @@ Strings ObjectStorageQueueMetadata::getRegistered(bool active)
 void ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id)
 {
     const auto registry_path = zookeeper_path / "registry";
-    const auto table_path = registry_path / getProcessorID(storage_id);
+    const auto table_path = registry_path / getActiveRegistryID(storage_id);
 
     Coordination::Error code = {};
     getKeeperRetriesControl(log).retryLoop([&] { code = getZooKeeper()->tryRemove(table_path); });
@@ -1137,7 +1163,7 @@ private:
     size_t nodes_num{};
 };
 
-std::string ObjectStorageQueueMetadata::getProcessorID(const StorageID & storage_id)
+std::string ObjectStorageQueueMetadata::getActiveRegistryID(const StorageID & storage_id)
 {
     return toString(Info::create(storage_id).hash());
 }
@@ -1148,7 +1174,7 @@ void ObjectStorageQueueMetadata::filterOutForProcessor(Strings & paths, const St
     if (active_servers.empty() || !active_servers_hash_ring)
         return;
 
-    const auto self = getProcessorID(storage_id);
+    const auto self = getActiveRegistryID(storage_id);
     Strings result;
     for (auto & path : paths)
     {
@@ -1274,9 +1300,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    /// Check the TTL as well: it is changeable at runtime and zero disables
-    /// the cleanup (otherwise every node would be treated as stale).
-    if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
+    /// Both settings are changeable at runtime and zero disables the corresponding cleanup condition.
+    if (cleanup_processing_files
+        && (persistent_processing_node_ttl_seconds || persistent_processing_node_abandoned_reclaim_ttl_seconds))
         cleanupPersistentProcessingNodes();
 
     if (table_metadata.hasTrackedFilesLimit())
@@ -1516,6 +1542,8 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
             use_persistent_processing_nodes = change.value.safeGet<bool>();
         if (change.name == "persistent_processing_node_ttl_seconds")
             persistent_processing_node_ttl_seconds = change.value.safeGet<UInt64>();
+        if (change.name == "persistent_processing_node_abandoned_reclaim_ttl_seconds")
+            persistent_processing_node_abandoned_reclaim_ttl_seconds = change.value.safeGet<UInt64>();
     }
 }
 
@@ -1536,7 +1564,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         if (code == Coordination::Error::ZNONODE)
         {
             LOG_TEST(log, "Path {} does not exist", zookeeper_persistent_processing_path.string());
-            return;
+            persistent_processing_nodes.clear();
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", magic_enum::enum_name(code));
@@ -1552,8 +1580,14 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         }
     }
 
-    auto current_time = getCurrentTime();
-    std::vector<std::pair<String, int32_t>> nodes_to_remove;
+    const auto current_time = getCurrentTime();
+    struct NodeToRemove
+    {
+        String path;
+        int32_t version;
+        String absent_registry_id;
+    };
+    std::vector<NodeToRemove> nodes_to_remove;
     Strings get_batch;
     auto get_paths = [&]
     {
@@ -1571,13 +1605,47 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
                 LOG_TEST(log, "Failed to fetch node metadata {}", get_batch[i]);
                 continue;
             }
+            if (response[i].error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException::fromPath(response[i].error, get_batch[i]);
 
+            const auto node_mtime = response[i].stat.mtime / 1000;
+            const size_t ttl_seconds = persistent_processing_node_ttl_seconds.load();
+            const size_t reclaim_ttl_seconds = persistent_processing_node_abandoned_reclaim_ttl_seconds.load();
             LOG_TEST(
-                log, "Node: {}, mtime: {}, ttl sec: {}, current time: {}",
-                get_batch[i], response[i].stat.mtime, persistent_processing_node_ttl_seconds.load(), current_time);
+                log,
+                "Node: {}, mtime: {}, ttl sec: {}, reclaim ttl sec: {}, current time: {}",
+                get_batch[i],
+                response[i].stat.mtime,
+                ttl_seconds,
+                reclaim_ttl_seconds,
+                current_time);
 
-            if (response[i].stat.mtime / 1000 + persistent_processing_node_ttl_seconds < current_time)
-                nodes_to_remove.emplace_back(get_batch[i], response[i].stat.version);
+            if (ttl_seconds && node_mtime + ttl_seconds < current_time)
+            {
+                nodes_to_remove.push_back({get_batch[i], response[i].stat.version, {}});
+                continue;
+            }
+
+            if (!reclaim_ttl_seconds || node_mtime + reclaim_ttl_seconds >= current_time)
+                continue;
+
+            try
+            {
+                Poco::JSON::Parser parser;
+                const auto json = parser.parse(response[i].data).extract<Poco::JSON::Object::Ptr>();
+                const auto active_registry_id = json->optValue<String>("active_registry_id", "");
+                if (!active_registry_id.empty())
+                    nodes_to_remove.push_back({get_batch[i], response[i].stat.version, active_registry_id});
+            }
+            catch (...)
+            {
+                /// Legacy or malformed claims are intentionally left to the long TTL cleanup.
+                LOG_WARNING(
+                    log,
+                    "Cannot read active registry ID from persistent processing node {}: {}",
+                    get_batch[i],
+                    getCurrentExceptionMessage(false));
+            }
         }
         get_batch.clear();
     };
@@ -1607,22 +1675,50 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     }
 
     size_t removed = 0;
-    for (const auto & node_with_version : nodes_to_remove)
+    for (const auto & node_to_remove : nodes_to_remove)
     {
-        const auto & node = node_with_version.first;
-        const auto version = node_with_version.second;
-        LOG_TRACE(log, "Removing stale processing node: {}", node);
+        LOG_TRACE(log, "Removing stale processing node: {}", node_to_remove.path);
         zk_retries.resetFailures();
-        zk_retries.retryLoop([&]
+        if (node_to_remove.absent_registry_id.empty())
         {
-            code = getZooKeeper()->tryRemove(node, version);
-        });
-        if (code == Coordination::Error::ZOK)
-            ++removed;
-        else if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
-            LOG_TRACE(log, "Processing node {} was already removed or recreated, skipping", node);
+            zk_retries.retryLoop([&]
+            {
+                code = getZooKeeper()->tryRemove(node_to_remove.path, node_to_remove.version);
+            });
+        }
         else
-            throw zkutil::KeeperException::fromPath(code, node);
+        {
+            zk_retries.retryLoop([&]
+            {
+                auto zk_client = getZooKeeper();
+                Coordination::Requests requests;
+                zkutil::addCheckNotExistsRequest(
+                    requests,
+                    *zk_client,
+                    zookeeper_path / "registry" / node_to_remove.absent_registry_id);
+                requests.push_back(zkutil::makeRemoveRequest(node_to_remove.path, node_to_remove.version));
+                Coordination::Responses responses;
+                code = zk_client->tryMulti(requests, responses);
+            });
+        }
+        if (code == Coordination::Error::ZOK)
+        {
+            ++removed;
+            if (!node_to_remove.absent_registry_id.empty())
+            {
+                LOG_INFO(
+                    log,
+                    "Removed abandoned processing node {} after active registry entry {} remained absent",
+                    node_to_remove.path,
+                    node_to_remove.absent_registry_id);
+            }
+        }
+        else if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
+            LOG_TRACE(log, "Processing node {} was already removed or recreated, skipping", node_to_remove.path);
+        else if (code == Coordination::Error::ZNODEEXISTS && !node_to_remove.absent_registry_id.empty())
+            LOG_TRACE(log, "Active registry entry {} returned, keeping processing node {}", node_to_remove.absent_registry_id, node_to_remove.path);
+        else
+            throw zkutil::KeeperException::fromPath(code, node_to_remove.path);
     }
 
     LOG_DEBUG(log, "Removed {}/{} stale processing nodes", removed, nodes_to_remove.size());

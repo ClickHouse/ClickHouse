@@ -355,6 +355,7 @@ def test_alter_settings(started_cluster):
         cleanup_interval_min_ms=34500,
         cleanup_interval_max_ms=45600,
         persistent_processing_node_ttl_seconds=89,
+        persistent_processing_node_abandoned_reclaim_ttl_seconds=77,
         commit_on_select=true,
         deduplication_v2=false,
         metadata_cache_size_bytes=12345,
@@ -382,6 +383,7 @@ def test_alter_settings(started_cluster):
         "cleanup_interval_min_ms": 34500,
         "cleanup_interval_max_ms": 45600,
         "persistent_processing_node_ttl_seconds": 89,
+        "persistent_processing_node_abandoned_reclaim_ttl_seconds": 77,
         "metadata_cache_size_bytes": 12345,
         "metadata_cache_size_elements": 54321,
     }
