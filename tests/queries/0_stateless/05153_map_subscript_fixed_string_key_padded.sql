@@ -238,6 +238,25 @@ SELECT 'S34 control, bloom_filter explicit key subcolumn already matched unindex
        (SELECT count() FROM t_bloom_key WHERE m.key_a = 7 SETTINGS use_skip_indexes = 1),
        (SELECT count() FROM t_bloom_key WHERE m.key_a = 7 SETTINGS use_skip_indexes = 0);
 
+-- S35/S36: S33 compares counts on a table whose every granule holds the key, so it cannot tell a
+-- padded key from an index that declined this spelling altogether - both answer 8. These use the
+-- mixed-key table, where a working index selects half the granules: S35 fails with INDEX_NOT_USED if
+-- the spelling is declined, and S36 reads 0 if nothing between everything and nothing was pruned.
+SELECT 'S35 control, text index forced for the explicit key subcolumn', count() FROM t_text_mixed
+WHERE m.key_a = 7 SETTINGS force_data_skipping_indices = 'idx_tm';
+
+SELECT 'S36 text index prunes granules for the explicit key subcolumn', max((sel > 0) AND (sel < tot))
+FROM (
+    SELECT toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) AS sel,
+           toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)')) AS tot
+    FROM (
+        EXPLAIN indexes = 1 SELECT count() FROM t_text_mixed
+        WHERE m.key_a = 7
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, parallel_replicas_local_plan = 1
+    )
+    WHERE explain LIKE '%Granules:%'
+);
+
 DROP TABLE t_fixed_key;
 DROP TABLE t_lc_fixed_key;
 DROP TABLE t_string_key;

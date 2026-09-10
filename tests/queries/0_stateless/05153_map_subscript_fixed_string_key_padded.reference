@@ -33,3 +33,5 @@ S31 control, text index prunes every granule for an over-wide subscript	1
 S32 control, bloom_filter prunes every granule for an over-wide subscript	1
 S33 text index, explicit key subcolumn, indexed count matches unindexed	8	8
 S34 control, bloom_filter explicit key subcolumn already matched unindexed	8	8
+S35 control, text index forced for the explicit key subcolumn	4
+S36 text index prunes granules for the explicit key subcolumn	1
