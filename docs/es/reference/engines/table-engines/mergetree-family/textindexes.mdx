@@ -549,8 +549,7 @@ Los tokens de búsqueda que el posprocesamiento convierte en una cadena vacía s
 | [hasAll](/es/reference/functions/regular-functions/array-functions#hasAll)                                 | sí                                                          | `array`                                                                           | sí                         |
 
 ¹ `LIKE` y `match` usan lectura directa como indicación para los tokenizadores listados; de lo contrario, recurren a una búsqueda exhaustiva.
-Además, `LIKE` admite la evaluación mediante un dictionary scan (habilitada mediante `use_text_index_like_evaluation_by_dictionary_scan`) para los tokenizadores `splitByNonAlpha` y `array` sin preprocesador ni posprocesamiento.
-Un patrón `%value%` es entonces una *lectura directa (sin indicación)*, mientras que los patrones `value%` y `%value` siguen siendo una indicación; véase [consultas LIKE/ILIKE](#like-ilike-queries-perf).
+Además, `LIKE` admite la evaluación mediante un dictionary scan (habilitada mediante `use_text_index_like_evaluation_by_dictionary_scan`) para los tokenizadores `splitByNonAlpha` y `array` sin preprocesador ni posprocesamiento; véase la sección [consultas LIKE/ILIKE](#like-ilike-queries-perf) más abajo.
 
 ² `ILIKE` solo es compatible mediante la evaluación con un dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizador `splitByNonAlpha` o `array`).
 No hay fallback al uso del índice como indicación para los patrones que el dictionary scan no admite: si la configuración está deshabilitada o el tokenizador no está en el conjunto compatible, el índice no se usa para `ILIKE`.
@@ -1410,12 +1409,14 @@ Cuando el patrón de una consulta LIKE/ILIKE es `%<caracteres-alfanuméricos-sin
 
 El uso que se da al resultado del escaneo del Diccionario depende de dónde esté anclado el needle:
 
-* `%value%` coincide con una fila si y solo si coincide con alguno de los tokens de esa fila, por lo que el índice resuelve la consulta por sí solo: una [lectura directa (sin hint)](#direct-read) que elimina el predicate original.
-* `value%` y `%value` anclan el needle al valor completo, mientras que el escaneo del Diccionario solo puede anclarlo a un token, de modo que el scan devuelve un superset de las filas coincidentes y se utiliza como una [lectura directa a modo de hint](#direct-read).
+* `%value%` coincide con una fila si y solo si coincide con alguno de los tokens de esa fila, por lo que el índice resuelve la consulta por sí solo: una [lectura directa (sin pista)](#direct-read) que elimina el predicado original.
+* `value%` y `%value` anclan el needle al valor completo, mientras que el escaneo del Diccionario solo puede anclarlo a un token, de modo que el scan devuelve un superset de las filas coincidentes y se utiliza como una [lectura directa como pista](#direct-read).
 
 Ese mismo escaneo del Diccionario atiende a `startsWith(col, 'value')` y `endsWith(col, 'value')` cuando el needle no contiene ningún token completo que buscar.
 Esta es la vía que sigue en realidad la mayoría de los patrones `value%` y `%value`, ya que la pasada del analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/es/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (habilitada de forma predeterminada) reescribe `col LIKE 'value%'` como `startsWith(col, 'value')` y `col LIKE '%value'` como `endsWith(col, 'value')`.
 Los needles que abarcan varios tokens siguen usando los tokens completos del needle y no necesitan un escaneo del Diccionario.
+
+Como caso especial, si el tokenizador del índice es `array`, entonces *cualquier* patrón es apto para la optimización: anclas, signos de puntuación, wildcards `_`, varios needles separados por `%` y metacharacters escapados.
 
 Cuando la optimización está habilitada, las consultas LIKE/ILIKE deberían ser considerablemente más rápidas que un escaneo completo de tabla. No obstante, cuando el patrón coincide con la mayoría de los tokens del Diccionario, el rendimiento puede ser peor que el de un escaneo completo de tabla. Por suerte, existe un mecanismo de fallback para evitarlo.
 

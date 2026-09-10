@@ -549,8 +549,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 | [hasAll](/ko/reference/functions/regular-functions/array-functions#hasAll)                                 | 예                            | `array`                                                                           | 예       |
 
 ¹ `LIKE`와 `match`는 나열된 토크나이저에서 힌트로 직접 읽기를 사용하며, 그렇지 않으면 브루트 포스(전체 스캔)으로 폴백됩니다.
-또한 `LIKE`는 전처리기나 후처리기 없이 `splitByNonAlpha` 및 `array` 토크나이저에 대해 dictionary scan을 통한 평가도 지원합니다(`use_text_index_like_evaluation_by_dictionary_scan`으로 활성화).
-이때 `%value%` 패턴은 *직접 읽기(힌트 없이)*가 되며, `value%` 및 `%value` 패턴은 힌트로 남습니다. [LIKE/ILIKE 쿼리](#like-ilike-queries-perf)를 참조하십시오.
+또한 `LIKE`는 전처리기나 후처리기 없이 `splitByNonAlpha` 및 `array` 토크나이저에 대해 dictionary scan을 통한 평가도 지원합니다(`use_text_index_like_evaluation_by_dictionary_scan`으로 활성화). 아래 [LIKE/ILIKE 쿼리](#like-ilike-queries-perf) 섹션을 참조하십시오.
 
 ² `ILIKE`는 dictionary scan을 통한 평가로만 지원됩니다(`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` 또는 `array` 토크나이저).
 dictionary scan이 지원하지 않는 패턴에 대해 인덱스를 힌트로 사용하는 폴백은 없습니다. 즉, 설정이 비활성화되어 있거나 토크나이저가 지원되는 집합에 없으면 `ILIKE`에는 인덱스가 사용되지 않습니다.
@@ -1406,7 +1405,7 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 ### LIKE/ILIKE 쿼리 {#like-ilike-queries-perf}
 
-LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` 또는 `%<alpha-numeric-characters-without-spaces>` 형태이고 text index 토크나이저가 `splitByNonAlpha` 또는 `array`이면, ClickHouse는 inverted index를 활용해 LIKE/ILIKE 쿼리를 크게 가속합니다. 이때 ClickHouse는 full-table scan 대신 inverted index 딕셔너리를 스캔하여 일치하는 패턴을 찾습니다.
+LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`, `<alpha-numeric-characters-without-spaces>%` 또는 `%<alpha-numeric-characters-without-spaces>` 형태이고 텍스트 인덱스 토크나이저가 `splitByNonAlpha` 또는 `array`이면, ClickHouse는 inverted index를 활용해 LIKE/ILIKE 쿼리를 크게 가속합니다. 이때 ClickHouse는 full-table scan 대신 inverted index 딕셔너리를 스캔하여 일치하는 패턴을 찾습니다.
 
 딕셔너리 scan의 결과를 어떻게 활용하는지는 needle이 어디에 고정되는지에 따라 달라집니다:
 
@@ -1416,6 +1415,8 @@ LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`, `<alp
 needle에 검색할 완전한 토큰이 없을 때는 `startsWith(col, 'value')`와 `endsWith(col, 'value')`에도 동일한 딕셔너리 scan이 사용됩니다.
 분석기 패스 [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ko/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix)(기본적으로 enabled)가 `col LIKE 'value%'`를 `startsWith(col, 'value')`로, `col LIKE '%value'`를 `endsWith(col, 'value')`로 재작성하므로, 대부분의 `value%` 및 `%value` 패턴은 실제로 이 경로를 거칩니다.
 여러 토큰에 걸쳐 있는 needle은 needle의 완전한 토큰을 그대로 사용하므로 딕셔너리 scan이 필요하지 않습니다.
+
+특수한 경우로, 인덱스 토크나이저가 `array`이면 *모든* 패턴이 이 최적화 대상이 됩니다. 앵커, 구두점, `_` wildcard, `%`로 구분된 여러 needle, escaped metacharacter가 모두 포함됩니다.
 
 이 최적화를 활성화하면 LIKE/ILIKE 쿼리가 full-table scan보다 훨씬 빨라집니다. 다만 패턴이 딕셔너리 토큰 대부분과 일치하는 경우에는 오히려 full-table scan보다 성능이 떨어질 수 있습니다. 다행히 이를 방지하는 폴백 메커니즘이 마련되어 있습니다.
 

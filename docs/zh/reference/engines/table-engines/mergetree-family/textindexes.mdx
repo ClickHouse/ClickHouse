@@ -548,8 +548,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 | [hasAll](/zh/reference/functions/regular-functions/array-functions#hasAll)                                 | 是                       | `array`                                                                           | 是      |
 
 ¹ 对于列出的分词器，`LIKE` 和 `match` 会将直接读取作为提示使用；否则会回退为穷举扫描。
-此外，对于不带预处理器或后处理器的 `splitByNonAlpha` 和 `array` 分词器，`LIKE` 还支持通过字典扫描进行求值 (通过 `use_text_index_like_evaluation_by_dictionary_scan` 启用) 。
-此时 `%value%` 模式属于 *直接读取 (不使用提示)&#x20;*，而 `value%` 和 `%value` 模式仍作为提示使用，参见 [LIKE/ILIKE 查询](#like-ilike-queries-perf)。
+此外，对于不带预处理器或后处理器的 `splitByNonAlpha` 和 `array` 分词器，`LIKE` 还支持通过字典扫描进行求值 (通过 `use_text_index_like_evaluation_by_dictionary_scan` 启用) ，参见下文 [LIKE/ILIKE 查询](#like-ilike-queries-perf) 一节。
 
 ² `ILIKE` 仅支持通过字典扫描进行求值 (`use_text_index_like_evaluation_by_dictionary_scan = 1`，且分词器为 `splitByNonAlpha` 或 `array`) 。
 对于字典扫描不支持的模式，不会回退到将索引用作提示的方式：如果该设置被禁用，或分词器不在支持范围内，则不会对 `ILIKE` 使用索引。
@@ -1416,11 +1415,13 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 大多数 `value%` 和 `%value` 模式实际上都会走这条路径，因为 analyzer 的 [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/zh/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) 阶段 (默认启用) 会把 `col LIKE 'value%'` 重写为 `startsWith(col, 'value')`，把 `col LIKE '%value'` 重写为 `endsWith(col, 'value')`。
 跨多个标记的 needle 仍会使用 needle 中的完整标记，无需 dictionary scan。
 
-启用该 optimization 后，LIKE/ILIKE 查询应显著快于全表扫描。但当模式匹配了字典中的大部分标记时，性能可能反而不如全表扫描。好在系统提供了 fallback 机制来避免这种情况。
+作为一种特殊情况，如果索引分词器为 `array`，则 *任何* 模式都符合该优化的条件：包括锚定、标点符号、`_` 通配符、多个由 `%` 分隔的 needle 以及转义的元字符。
+
+启用该优化后，LIKE/ILIKE 查询应显著快于全表扫描。但当模式匹配了字典中的大部分标记时，性能可能反而不如全表扫描。好在系统提供了 fallback 机制来避免这种情况。
 
 `value%` 或 `%value` 模式的加速来自跳过粒度，因此效果取决于匹配行的分布方式。如果 needle 在每个粒度中都有匹配行，就无法 prune 掉任何数据，查询在原本就要执行的 full scan 之外还要额外承担 dictionary scan 的开销。对于此类 workload，应禁用 [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/zh/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)。
 
-该 optimization 由以下设置控制：
+该优化由以下设置控制：
 
 * [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/zh/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
@@ -1429,7 +1430,7 @@ fallback 机制由以下两个设置控制：
 * [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/zh/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/zh/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-该 optimization 仅支持 `like`、`ilike`、`startsWith` 和 `endsWith` 函数。
+该优化仅支持 `like`、`ilike`、`startsWith` 和 `endsWith` 函数。
 
 ### 简单计数查询 {#count-queries-perf}
 

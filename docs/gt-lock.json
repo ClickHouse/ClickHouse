@@ -7,36 +7,36 @@
       "versionId": "a372f4e7d54d9b799344f85fa77a6c684c792c8951b74039b53becd67db973b4",
       "translations": {
         "ja": {
-          "updatedAt": "2026-09-10T03:17:26.442Z",
+          "updatedAt": "2026-09-10T09:16:03.611Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-10T03:17:27.178Z",
+          "updatedAt": "2026-09-10T09:16:04.146Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-10T03:17:27.360Z",
+          "updatedAt": "2026-09-10T09:16:04.272Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-10T03:17:26.260Z",
+          "updatedAt": "2026-09-10T09:16:03.440Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-10T03:17:27.538Z",
+          "updatedAt": "2026-09-10T09:16:04.400Z",
           "fileName": "docs.json",
           "postProcessHash": "f07d8f7452f70e9a869365bb490fda10d57c3654a431fa77949df04dff8ede02"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-10T03:17:26.799Z",
+          "updatedAt": "2026-09-10T09:16:03.889Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-10T03:17:26.620Z",
+          "updatedAt": "2026-09-10T09:16:03.753Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-10T03:17:26.980Z",
+          "updatedAt": "2026-09-10T09:16:04.015Z",
           "fileName": "docs.json"
         }
       },
@@ -87334,47 +87334,47 @@
     },
     {
       "fileId": "aa2cf12758c94e9cc9c6ccdf36c67298cbc02e781bfc8522aedc5d39a5e5cfe9",
-      "versionId": "cc63786775be049a568cdf264f1ad440ec4540882c21771323d094ef7da670a7",
+      "versionId": "21c7ee728f2e494daa06c90206a1540641e1d26987ca276abee2f0cdcfc88c72",
       "translations": {
-        "ru": {
-          "updatedAt": "2026-09-04T19:36:35.323Z",
-          "fileName": "ru/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "d472dafbbc85448cdc582fa51eeaa2a01ded6bdf0bc7481cd0a21ecd14f73bf8"
-        },
         "pt-BR": {
-          "updatedAt": "2026-09-04T19:36:35.325Z",
+          "updatedAt": "2026-09-10T09:16:07.756Z",
           "fileName": "pt-BR/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "344a9de0b056a0ac2b17650e4f64a9ffc7b8196db3a3272b37fd0a919a6a8b15"
+          "postProcessHash": "65b4e12e071601472d2318f70a02dd86013c1275fe6d124966d9ced7aea3f027"
         },
         "es": {
-          "updatedAt": "2026-09-04T19:36:35.325Z",
+          "updatedAt": "2026-09-10T09:16:07.757Z",
           "fileName": "es/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "ec32db26d0847744bf432e8aebfcd7559ba8c23d0d5fd0d74abf1ca1cb8a157c"
+          "postProcessHash": "b368c1af717f046633aa352a6095569075db456f82bb0d7f534db9d7f6b9231f"
+        },
+        "ru": {
+          "updatedAt": "2026-09-10T09:16:07.758Z",
+          "fileName": "ru/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "2e3514cb49425e916a7aea6574890ba9a7f11e4e40160a8fb311042cac504288"
         },
         "zh": {
-          "updatedAt": "2026-09-04T19:36:35.326Z",
+          "updatedAt": "2026-09-10T09:16:07.759Z",
           "fileName": "zh/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "8d562ac110b578685cfb30918ed1d837df427c86565db83c8db94998c0ecd313"
-        },
-        "ja": {
-          "updatedAt": "2026-09-04T19:36:35.326Z",
-          "fileName": "ja/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "7b085beb6dcc0b22a5106e2ce115ea0a2b5ac37fe6fef41d6d04354053bcea65"
-        },
-        "fr": {
-          "updatedAt": "2026-09-04T19:36:35.327Z",
-          "fileName": "fr/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "35b7ac9af451916a58359d59eec93d7bce99c3348c78621908c9f875f2a22f59"
+          "postProcessHash": "37063ac4350d3ac1834f92d2a29941faafef90980dca41f7e4d487bcbdcfb70c"
         },
         "ko": {
-          "updatedAt": "2026-09-04T19:36:35.328Z",
+          "updatedAt": "2026-09-10T09:16:07.760Z",
           "fileName": "ko/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "653b9e6a033cdd0c4d47ae0971379f646b8fef97fe9686b42b29c78414b47da9"
+          "postProcessHash": "f0d2fa5851a6514c267e40aa57f15c5727a0651a89f5d687b9a8acb7fb10e77a"
+        },
+        "ja": {
+          "updatedAt": "2026-09-10T09:16:07.760Z",
+          "fileName": "ja/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "8850edbcf64750da1a7814ad3f344d124fcb7b94190d35df6d8494d45845decb"
+        },
+        "fr": {
+          "updatedAt": "2026-09-10T09:16:07.761Z",
+          "fileName": "fr/reference/engines/table-engines/mergetree-family/textindexes.mdx",
+          "postProcessHash": "ab8780c91cfb6a992045e840d97e975ebf6519e3b9931f0576578050d5aa9d44"
         },
         "ar": {
-          "updatedAt": "2026-09-04T19:36:35.329Z",
+          "updatedAt": "2026-09-10T09:16:07.762Z",
           "fileName": "ar/reference/engines/table-engines/mergetree-family/textindexes.mdx",
-          "postProcessHash": "703d20c6f37e3ea672dd204a1e62577f5bab3e95ad7374ee36a834ac5bc109c1"
+          "postProcessHash": "19572e859c4ef8e235468869c1b4f3b731378376414a298b81d990e7e4a5b394"
         }
       },
       "fileName": "reference/engines/table-engines/mergetree-family/textindexes.mdx"

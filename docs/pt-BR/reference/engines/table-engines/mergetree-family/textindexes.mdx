@@ -549,8 +549,7 @@ Os tokens de busca que o pós-processador mapeia para uma string vazia são igno
 | [hasAll](/pt-BR/reference/functions/regular-functions/array-functions#hasAll)                                 | sim                                                   | `array`                                                                           | sim                     |
 
 ¹ `LIKE` e `match` usam leitura direta como dica para os tokenizadores listados; caso contrário, recorrem a uma varredura por força bruta.
-Além disso, `LIKE` oferece suporte à avaliação por varredura de dicionário (habilitada por `use_text_index_like_evaluation_by_dictionary_scan`) para os tokenizadores `splitByNonAlpha` e `array`, sem pré-processador nem pós-processador.
-Nesse caso, um padrão `%value%` é uma *leitura direta (sem dica)*, enquanto os padrões `value%` e `%value` permanecem como dica; consulte [consultas LIKE/ILIKE](#like-ilike-queries-perf).
+Além disso, `LIKE` oferece suporte à avaliação por varredura de dicionário (habilitada por `use_text_index_like_evaluation_by_dictionary_scan`) para os tokenizadores `splitByNonAlpha` e `array`, sem pré-processador nem pós-processador; consulte a seção [consultas LIKE/ILIKE](#like-ilike-queries-perf) abaixo.
 
 ² `ILIKE` é compatível apenas por meio da avaliação por varredura de dicionário (`use_text_index_like_evaluation_by_dictionary_scan = 1`, tokenizador `splitByNonAlpha` ou `array`).
 Não há fallback para usar o índice como dica nos padrões que a varredura de dicionário não suporta: se a configuração estiver desabilitada ou o tokenizador não estiver no conjunto compatível, o índice não será usado para `ILIKE`.
@@ -1416,6 +1415,8 @@ A forma como o resultado do dictionary scan é usado depende de onde a needle es
 O mesmo dictionary scan atende `startsWith(col, 'value')` e `endsWith(col, 'value')` quando a needle não possui um token completo para pesquisar.
 Esse é o caminho que a maioria dos patterns `value%` e `%value` realmente segue, pois a passagem do analyzer [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/pt-BR/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (habilitada por padrão) reescreve `col LIKE 'value%'` como `startsWith(col, 'value')` e `col LIKE '%value'` como `endsWith(col, 'value')`.
 Needles que abrangem vários tokens continuam usando os tokens completos da needle e dispensam o dictionary scan.
+
+Como caso especial, se o tokenizer do índice for `array`, então *qualquer* pattern se qualifica para a otimização: âncoras, pontuação, wildcards `_`, várias needles separadas por `%` e metacaracteres escapados.
 
 Quando a otimização está habilitada, as consultas LIKE/ILIKE tendem a ser significativamente mais rápidas que um full-table scan. No entanto, quando o pattern corresponde à maioria dos tokens do dicionário, o desempenho pode ser pior do que o de um full-table scan. Felizmente, existe um mecanismo de fallback para evitar isso.
 

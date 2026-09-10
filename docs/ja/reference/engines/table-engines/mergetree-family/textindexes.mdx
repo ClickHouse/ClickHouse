@@ -549,8 +549,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 | [hasAll](/ja/reference/functions/regular-functions/array-functions#hasAll)                                 | はい                          | `array`                                                                           | はい         |
 
 ¹ `LIKE` と `match` は、記載されたトークナイザーではヒントとして direct read を使用し、それ以外では 総当たりスキャン にフォールバックします。
-`LIKE` はさらに、プリプロセッサやポストプロセッサを使わない `splitByNonAlpha` および `array` トークナイザーに対して、辞書スキャンによる評価もサポートします (`use_text_index_like_evaluation_by_dictionary_scan` で有効化) 。
-この場合、`%value%` パターンは *direct read (ヒントなし)&#x20;*&#x20;となり、`value%` および `%value` パターンはヒントのままです。[LIKE/ILIKE クエリ](#like-ilike-queries-perf) を参照してください。
+`LIKE` はさらに、プリプロセッサやポストプロセッサを使わない `splitByNonAlpha` および `array` トークナイザーに対して、辞書スキャンによる評価もサポートします (`use_text_index_like_evaluation_by_dictionary_scan` で有効化) 。以下の [LIKE/ILIKE クエリ](#like-ilike-queries-perf) のセクションを参照してください。
 
 ² `ILIKE` は、辞書スキャンによる評価でのみサポートされます (`use_text_index_like_evaluation_by_dictionary_scan = 1`、`splitByNonAlpha` または `array` トークナイザー) 。
 辞書スキャンがサポートしないパターンについて、索引をヒントとして使うフォールバックはありません。設定が無効になっている場合、またはトークナイザーがサポート対象外の場合、`ILIKE` では索引は使用されません。
@@ -1411,11 +1410,13 @@ LIKE/ILIKE のクエリパターンが `%<alpha-numeric-characters-without-space
 辞書スキャンの結果をどう利用するかは、needle がどこにアンカーされているかによって決まります。
 
 * `%value%` は、その行のいずれかのトークンに一致する場合にのみ行に一致します。そのため索引だけでクエリを判定でき、元の述語を除去する [direct read (hint なし) ](#direct-read) となります。
-* `value%` と `%value` は needle を値全体にアンカーしますが、辞書スキャンはトークン単位でしかアンカーできません。そのためスキャンは一致する行の superset を返し、[hint としての direct read](#direct-read) に利用されます。
+* `value%` と `%value` は needle を値全体にアンカーしますが、辞書スキャンはトークン単位でしかアンカーできません。そのためスキャンは一致する行の superset を返し、[ヒントとしての direct read](#direct-read) に利用されます。
 
 この同じ辞書スキャンは、needle に検索できる完全なトークンが存在しない場合の `startsWith(col, 'value')` と `endsWith(col, 'value')` にも使われます。
 アナライザのパスである [optimize&#95;rewrite&#95;like&#95;perfect&#95;affix](/ja/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (デフォルトで有効) が `col LIKE 'value%'` を `startsWith(col, 'value')` に、`col LIKE '%value'` を `endsWith(col, 'value')` に rewrite するため、実際にはほとんどの `value%` および `%value` パターンがこの経路をたどります。
 複数のトークンにまたがる needle は needle の完全なトークンをそのまま使用するため、辞書スキャンは不要です。
+
+特別なケースとして、索引のトークナイザーが `array` の場合は、*あらゆる* パターンがこの最適化の対象となります。アンカー、句読点、`_` の wildcard、`%` で区切られた複数の needle、escape された metacharacter などがすべて含まれます。
 
 この最適化が有効な場合、LIKE/ILIKE クエリはフルテーブルスキャンよりも大幅に高速になります。ただし、パターンが辞書内のほとんどのトークンに一致する場合は、フルテーブルスキャンより性能が低下することがあります。幸い、これを防ぐための fallback の仕組みがあります。
 
