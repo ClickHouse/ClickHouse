@@ -426,25 +426,16 @@ private:
     /// Add an attribute to whichever span covers the fragment. No-op when the fragment is not traced.
     void addFragmentSpanAttribute(OpenTelemetry::SpanAttribute attribute) noexcept;
 
-    /// Record the fragment's outcome on whichever span covers it: writes the detached synchronous-path span to the span log,
-    /// or buffers the status onto the read context fiber span, which is applied when the fiber exits.
-    /// The status follows a three-state model: OK only for a fragment that delivered its full result
-    /// (`EndOfStream`), ERROR for a genuine failure, UNSET plus an explaining attribute otherwise
-    /// (`clickhouse.cancelled`, `clickhouse.replica_unavailable`, `clickhouse.span_truncated`).
+    /// Record the fragment's outcome on whichever span covers it.
     void finishFragmentSpan(OpenTelemetry::SpanStatus status, String status_message = {}) noexcept;
 
-    /// Tag the fragment span as cancelled by the initiator: `clickhouse.cancelled = 1` and
-    /// `clickhouse.cancel_reason = reason`. The status stays UNSET (neither success nor failure).
-    /// Does not close the span; idempotent, and a no-op once an outcome is recorded.
+    /// Tag the fragment span as cancelled by the initiator: `clickhouse.cancelled = 1` and`clickhouse.cancel_reason = reason`.
     void markFragmentCancelled(std::string_view reason) noexcept;
 
-    /// Record a shard failure tolerated by `skip_unavailable_shards` as ERROR on the fragment
-    /// span, tagged with the `clickhouse.shard_skipped` attribute.
+    /// Record a shard failure tolerated by `skip_unavailable_shards`
     void finishFragmentSpanForSkippedShard(String status_message) noexcept;
 
-    /// Close the fragment span of a parallel replica that became unavailable: its work is
-    /// reassigned by the coordinator, so the fragment neither delivered nor failed. The status
-    /// stays UNSET, tagged with the `clickhouse.replica_unavailable` attribute.
+    /// Close the fragment span of a parallel replica that became unavailable.
     void finishFragmentSpanForUnavailableReplica() noexcept;
 };
 

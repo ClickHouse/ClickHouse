@@ -31,6 +31,12 @@ For a distributed `SELECT`, every read from a remote shard is covered by a `Remo
 * `clickhouse.query_id` and `clickhouse.initial_query_id` — the query ids from the initiator's perspective;
 * `clickhouse.target_host` — the addresses of the established connections.
 
+The `status_code` of such a span tells how the fragment ended:
+
+* `OK` — the shard delivered its full result.
+* `ERROR` — the fragment failed: the shard returned an exception, the initiator failed to read the data, or cancelling the shard failed.
+* `UNSET` — neither success nor failure. Such spans carry an attribute to give more context.
+
 `INSERT` queries into a `Distributed` table produce analogous spans in `DistributedSink` with the same `clickhouse.cluster` and `clickhouse.shard_num` attribute keys.
 
 ## Tracing ClickHouse Keeper Requests {#tracing-clickhouse-keeper-requests}
