@@ -7,11 +7,14 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 namespace Poco::Util
 {
 class AbstractConfiguration;
+class LayeredConfiguration;
+class OptionSet;
 }
 
 namespace DB
@@ -68,6 +71,15 @@ struct ServerSettings
 
     void dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const;
 
+    static void addToProgramOptions(Poco::Util::OptionSet & options);
+
+    /// Mirror the command-line values of the settings backed by a config key different from the setting
+    /// name (e.g. `openssl_server_required_tls_v1_2` -> `openSSL.server.requireTLSv1_2`, or `config_file`
+    /// -> `config-file`) into that key, so that the components reading the raw configuration and
+    /// `system.server_settings` always agree.
+    /// Must be called before the configuration file is loaded - see the implementation for the details.
+    static void mirrorCommandLineToConfigPaths(const std::vector<std::string> & argv, Poco::Util::LayeredConfiguration & config);
+
     /// Check that all top-level keys in the config are known server settings or known config sections.
     /// Throws an exception if an unknown key is found (unless skip_check_for_incorrect_settings is set,
     /// either in `config` itself or via `skip_check`).
@@ -78,6 +90,12 @@ struct ServerSettings
     /// not present in the file-only config), the caller passes its value resolved from the layered
     /// config in `skip_check`, so the escape hatch works from every supported source.
     static void checkUnknownSettings(const Poco::Util::AbstractConfiguration & config, const String & config_path, bool skip_check);
+
+    /// The names of all server settings. A few of them (`query_cache_max_entries`,
+    /// `query_cache_max_size_in_bytes`) are also the names of user-level settings, so a caller that
+    /// validates a configuration where a top-level key may be a server setting needs this set to tell
+    /// the two apart - see the `Settings::checkNoSettingNamesAtTopLevel` call in the server.
+    static const std::unordered_set<String> & allNames();
 
     /// Some server settings can be changed without a restart (e.g. memory and cache limits, thread pool sizes).
     /// When this happens, the live value held by the component diverges from the value stored in `*this`,
