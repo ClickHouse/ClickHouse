@@ -43,6 +43,9 @@ public:
     /// How long the query executed.
     UInt64 getExecutionTimeNs() const { return execution_query_time_ns; }
 
+    /// The pipeline's thread count, which caps how parallel any stage could have been.
+    UInt64 getMaxThreads() const { return max_num_threads_per_query; }
+
 private:
     void collectIOStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);

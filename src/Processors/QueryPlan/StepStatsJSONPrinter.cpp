@@ -127,9 +127,6 @@ std::unique_ptr<JSONBuilder::JSONMap> StepStatsJSONPrinter::toJSON(const Analyze
         stage_map->add("Name", stage.name);
         stage_map->add("GroupId", stage.group_id);
         stage_map->add("WallClockTimeNs", stage.wall_clock_time_ns);
-        stage_map->add("ShareOfQueryTime", stage.share_of_query_time);
-        stage_map->add("Parallelism", stage.parallelism);
-        stage_map->add("MaxParallelism", stage.max_parallelism);
         stage_map->add("Processors", stage.total_num_processors);
 
         if (!stage.inline_metrics.empty())

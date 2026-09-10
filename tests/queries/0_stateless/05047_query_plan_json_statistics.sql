@@ -42,19 +42,21 @@ FROM
 -- The timings are not deterministic, so assert the invariants that must hold of any measurement
 -- rather than the values: a step that ran took a positive amount of wall clock, it cannot have
 -- taken more than the query did, and the per-processor distribution has to be ordered.
+--
+-- Nothing derivable is stored, so nothing derivable is asserted here. What used to be checked as
+-- `ShareOfQueryTime` and `Parallelism` is checked as the quantities they are computed from --
+-- the query-level totals at the root and the per-stage primaries -- which is all a reader has.
 SELECT
     'timings',
     anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) > 0,
-    anyLast(JSONExtractFloat(stage, 'ShareOfQueryTime')) > 0,
-    anyLast(JSONExtractFloat(stage, 'ShareOfQueryTime')) <= 100,
-    anyLast(JSONExtractFloat(stage, 'Parallelism')) > 0,
     anyLast(JSONExtractUInt(stage, 'Processors')) > 0,
     anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Min')) <= anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Max')),
     anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Sum')) > 0,
-    -- The denominator the shares are taken against, stored at the root so a reader has it too.
-    -- A step cannot have been busy for longer than the query executed.
+    -- The query-level figures every stage is read against. A step cannot have been busy for
+    -- longer than the query executed, which is what keeps a derived share at or below 100%.
     anyLast(JSONExtractUInt(plan, 'ExecutionTimeNs')) > 0,
-    anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) <= anyLast(JSONExtractUInt(plan, 'ExecutionTimeNs'))
+    anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) <= anyLast(JSONExtractUInt(plan, 'ExecutionTimeNs')),
+    anyLast(JSONExtractUInt(plan, 'MaxThreads')) > 0
 FROM
 (
     SELECT
