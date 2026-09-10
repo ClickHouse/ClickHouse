@@ -23,7 +23,8 @@ public:
                                       " - uri, format\n"
                                       " - uri, format, structure\n"
                                       " - uri, format, structure, compression_method\n"
-                                      "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+                                      "All signatures support optional headers (specified as `headers('name'='value', 'name2'='value2')`) "
+                                      "and an optional `http_method = 'POST'` key-value argument";
 
     String getName() const override
     {
@@ -67,21 +68,15 @@ public:
         }
         else
         {
-            /// If arguments contain headers, just remove it and add to the end of arguments later.
             HTTPHeaderEntries tmp_headers;
-            size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context);
-            ASTPtr headers_ast;
-            if (count != args.size())
-            {
-                chassert(count + 1 == args.size());
-                headers_ast = args.back();
-                args.pop_back();
-            }
+            String tmp_http_method;
+            size_t count = StorageURL::evalArgsAndCollectHeaders(args, tmp_headers, context, /*evaluate_arguments=*/ true, &tmp_http_method);
+            ASTs key_value_args(args.begin() + count, args.end());
+            args.resize(count);
 
             ITableFunctionFileLike::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context, with_structure);
 
-            if (headers_ast)
-                args.push_back(headers_ast);
+            args.insert(args.end(), key_value_args.begin(), key_value_args.end());
         }
     }
 

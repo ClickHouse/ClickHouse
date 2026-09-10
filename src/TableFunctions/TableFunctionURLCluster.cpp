@@ -14,16 +14,16 @@ namespace ErrorCodes
 
 namespace
 {
-    void checkURLClusterDoesNotUseIndexPageWildcards(const String & filename, const StorageURL::Configuration & configuration)
+    void checkURLClusterDoesNotUseIndexPageWildcards(const String & filename)
     {
-        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
+        if (urlPathHasListableGlobs(filename))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
     }
 }
 
 ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr context, bool is_insert_query) const
 {
-    checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    checkURLClusterDoesNotUseIndexPageWildcards(filename);
     return TableFunctionURL::getActualTableStructure(context, is_insert_query);
 }
 
@@ -31,7 +31,7 @@ StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
     const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
 {
-    checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    checkURLClusterDoesNotUseIndexPageWildcards(filename);
 
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
@@ -80,7 +80,7 @@ urlCluster(cluster_name, URL, format, structure)
 | Argument       | Description                                                                                                                                            |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `cluster_name` | Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.                                      |
-| `URL`          | HTTP or HTTPS server address, which can accept `GET` requests. Type: [String](/reference/data-types/string).                               |
+| `URL`          | HTTP or HTTPS server address, which can accept `GET` requests (the method can be overridden with `http_method='POST'` for reads). Type: [String](/reference/data-types/string).                               |
 | `format`       | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                |
 | `structure`    | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string). |
 
@@ -118,6 +118,7 @@ SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements) setting.
+`urlCluster` always rejects `*`/`**` wildcards expanded from [HTTP index pages](/reference/functions/table-functions/url#wildcards-with-http-index-pages), regardless of the configured `http_method`.
 
 ## Related {#related}
 
