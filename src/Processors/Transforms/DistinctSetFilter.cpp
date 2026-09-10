@@ -129,7 +129,7 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
     /// If we've already seen all dictionary indices for this dictionary, then no row in this chunk
     /// (and also other chunks with the same dictionary) can produce a new distinct value.
     if (state.seen_count == dict_size)
-        return {{}, 0}; /// empty mask == no candidates
+        return {{}, 0};
 
     const auto seen_count_before = state.seen_count;
     auto & seen = state.seen_indices;
@@ -150,7 +150,7 @@ std::pair<IColumn::Filter, size_t> DistinctLowCardinalityFilter::buildMask(const
             if (mask.empty())
                 mask.resize_fill(num_rows);
 
-            mask[row] = 1; /// first time we see this dictionary index for this dictionary
+            mask[row] = 1;
         }
     };
 
@@ -505,7 +505,7 @@ Chunk DistinctSetFilter::filter(Chunk chunk)
     {
         lc_mask = lc_filter.buildMaskIfApplicable(*column_ptrs[0], num_rows);
 
-        /// Empty mask -> no candidate rows in this chunk.
+        /// An empty mask means that this chunk contains no candidate rows.
         if (lc_mask && lc_mask->empty())
             return {};
     }

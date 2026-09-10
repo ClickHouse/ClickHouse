@@ -114,10 +114,10 @@ TEST(DistinctTransformSkipNullKeys, DropsNullKeyRows)
     {
         auto column = type->createColumn();
         column->insert(Field(UInt64(1)));
-        column->insertDefault(); /// NULL
+        column->insertDefault();
         column->insert(Field(UInt64(2)));
         column->insert(Field(UInt64(1)));
-        column->insertDefault(); /// NULL
+        column->insertDefault();
 
         Columns columns;
         columns.emplace_back(std::move(column));
@@ -141,7 +141,7 @@ TEST(DistinctTransformSkipNullKeys, ConstNullKeyEmitsNothing)
     {
         auto column = type->createColumn();
         for (size_t i = 0; i < 3; ++i)
-            column->insertDefault(); /// NULL
+            column->insertDefault();
 
         Columns columns;
         columns.emplace_back(std::move(column));
@@ -166,10 +166,10 @@ TEST(DistinctTransformSkipNullKeys, DropsLowCardinalityNullableNullRows)
     {
         auto column = type->createColumn();
         column->insertData("a", 1);
-        column->insertDefault(); /// NULL
+        column->insertDefault();
         column->insertData("b", 1);
         column->insertData("a", 1);
-        column->insertDefault(); /// NULL
+        column->insertDefault();
 
         Columns columns;
         columns.emplace_back(std::move(column));

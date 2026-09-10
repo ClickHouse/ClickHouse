@@ -627,10 +627,10 @@ TEST(DistinctSetFilterExtraction, SerializedNullableStringKey)
 
     auto column = type->createColumn();
     column->insert(Field("a"));
-    column->insertDefault(); /// NULL
+    column->insertDefault();
     column->insert(Field("b"));
     column->insert(Field("a"));
-    column->insertDefault(); /// NULL
+    column->insertDefault();
     checkExtractionRoundTrip(header, {{std::move(column)}}, /*max_batch_rows=*/ 2, /*require_extractable_keys=*/ true);
 }
 

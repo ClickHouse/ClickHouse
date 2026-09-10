@@ -24,18 +24,12 @@ namespace QueryPlanSerializationSetting
 
 using namespace DB;
 
-/// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` may go on the wire
-/// only towards a peer whose query-plan serialization version knows the names.
+/// External `DISTINCT` thresholds are serialized only to peers whose plan version supports them.
+/// `QueryPlanSerializationSettings::readBinary` rejects unknown setting names, so older peers receive
+/// neither threshold and use in-memory execution with its memory requirements.
 ///
-/// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched
-/// entry by name and `readBinary` throws on a name it does not know. Writing either name towards a peer
-/// that predates it would make every serialized `DISTINCT` plan unreadable there. Leaving them off costs
-/// nothing: such a peer has no external `DISTINCT` at all, so it runs the in-memory `DISTINCT`, exactly as
-/// with the feature disabled, and the result is identical either way.
-///
-/// The input-order flag of the step (see `DistinctStep::preserveInputOrder`) is gated the same way: it is
-/// written only towards a peer at the version that introduced it, and a peer below that version cannot
-/// spill, so it keeps the input order anyway.
+/// The input-order flag is gated by the same version. Older peers preserve input order through their
+/// in-memory execution; newer peers receive the requirement for order restoration after spilling.
 namespace
 {
 
@@ -57,7 +51,7 @@ QueryPlanSerializationSettings serializeDistinctStep(const DistinctStep::Setting
     return settings;
 }
 
-/// The bytes of the step's own `serialize` (without its settings) at the given version.
+/// Serializes the step without its settings at the given version.
 String serializeStep(const DistinctStep & step, UInt64 version, bool for_cache_key)
 {
     WriteBufferFromOwnString out;
@@ -91,7 +85,7 @@ bool inputOrderFlagAfterRoundTrip(const DistinctStep & step, const SharedHeader 
     return dynamic_cast<const DistinctStep &>(*restored).preservesInputOrder();
 }
 
-/// The names as they appear in the binary settings stream written by `writeChangedBinary`.
+/// Checks whether the binary settings stream contains the given setting name.
 bool wireCarries(const QueryPlanSerializationSettings & settings, std::string_view name)
 {
     WriteBufferFromOwnString out;

@@ -1,20 +1,15 @@
-#include <Columns/ColumnReplicated.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/IAccumulatingTransform.h>
-#include <Processors/ISink.h>
+
+#include <algorithm>
+#include <iterator>
+
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Common/Exception.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
-#include <Disks/IVolume.h>
 
 
 namespace ProfileEvents

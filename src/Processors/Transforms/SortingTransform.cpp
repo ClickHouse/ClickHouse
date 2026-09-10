@@ -1,19 +1,12 @@
 #include <Processors/Transforms/SortingTransform.h>
-#include <Columns/ColumnReplicated.h>
 
+#include <algorithm>
 #include <type_traits>
 
+#include <Columns/ColumnReplicated.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
-
-#include <Common/formatReadable.h>
-#include <Common/ProfileEvents.h>
-
-#include <IO/WriteBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
-
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
+#include <Common/Exception.h>
 
 
 namespace DB

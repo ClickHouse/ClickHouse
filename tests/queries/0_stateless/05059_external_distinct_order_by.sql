@@ -1,9 +1,8 @@
 -- Isolate from the default ratio threshold: the spill must be triggered only by the explicit settings.
 SET max_bytes_ratio_before_external_distinct = 0;
 
--- The requirement to keep the input order is recorded on the final `DISTINCT` of a query with `ORDER BY`
--- (the preliminary `DISTINCT` never spills), and not at all for the `ORDER BY` of a subquery: its order
--- does not reach the outer `DISTINCT`, so nothing above may rely on it.
+-- The first plan records the `ORDER BY` requirement on the final `DISTINCT`. In the second plan, the
+-- subquery's expression ordering does not establish an input-order requirement for the outer `DISTINCT`.
 SELECT count() FROM (EXPLAIN PLAN actions = 1 SELECT DISTINCT number AS a FROM numbers(10) ORDER BY a + 1 DESC) WHERE explain LIKE '%Preserve input order%';
 SELECT count() FROM (EXPLAIN PLAN actions = 1 SELECT DISTINCT a FROM (SELECT number AS a FROM numbers(10) ORDER BY a + 1) SETTINGS query_plan_remove_redundant_sorting = 0) WHERE explain LIKE '%Preserve input order%';
 

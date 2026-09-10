@@ -49,7 +49,7 @@ struct SetMethodOneNumber
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
         SetMethodMapped<Data>, FieldType, set_method_use_cache<Data, use_cache>>;
 
-    /// Writes a set key into the column returned by `DistinctSetFilter::KeyExtractor`.
+    /// Appends the numeric key to its destination column.
     static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes &)
     {
         key_columns[0]->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
