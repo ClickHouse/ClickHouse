@@ -33,9 +33,9 @@ SharedHeader runtimeFilterPartialsHeader();
 /// In `RegisterUnion` mode the output never produces rows; it exists so the receiving branch can
 /// end in its own sink. The pipeline executor seeds scheduling from sinks, so ending the branch in
 /// its own sink makes the sources run eagerly. That is a correctness requirement, not an
-/// optimization: on a remote worker the data sinks stay idle until the join pulls the probe side,
-/// which waits for the build stage to finish, which waits for these very sources to connect and
-/// take the filter -- a branch folded into the data streams deadlocks the whole plan.
+/// optimization. On a remote worker the data sinks stay idle until the join pulls the probe side.
+/// The probe side waits for the build stage, and the build stage waits for these very sources to
+/// connect and take the filter. So a branch folded into the data streams deadlocks the whole plan.
 class MergeRuntimeFiltersTransform final : public IProcessor
 {
 public:

@@ -930,11 +930,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     }
 
     /// Each receive descriptor is a separate side pipeline (sources -> union -> sink) run by
-    /// `receive_branches` in its own thread. It is kept out of the data pipeline for two reasons:
-    /// folding it into the data streams deadlocks a remote worker (data sinks idle until the join
-    /// pulls the probe, which waits on the build stage, which waits on these sources), and a
-    /// filter can arrive after the data work is done or never - the task must not stay alive
-    /// waiting for it, so the branches are cancelled once the data pipeline finishes.
+    /// `receive_branches` in its own thread. It is kept out of the data pipeline for two reasons.
+    /// Folded into the data streams it deadlocks a remote worker, for the reason
+    /// `MergeRuntimeFiltersTransform` spells out. And a filter can arrive after the data work is
+    /// done, or never, so the task must not stay alive waiting for one: the branches are cancelled
+    /// once the data pipeline finishes.
     RuntimeFilterReceiveBranches receive_branches(logger);
     for (const auto & descriptor : task.runtime_filter_descriptors)
     {

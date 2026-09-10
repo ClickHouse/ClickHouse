@@ -131,13 +131,13 @@ void MergeRuntimeFiltersTransform::consume()
     for (size_t row = 0; row < column.size() && !skipped; ++row)
     {
         /// Failing closed on a duplicate is sound because the exchange layer delivers each stream
-        /// at most once: a producer emits exactly one state row per stream, a build task is never
-        /// re-run (task starts are not retried -- `sendTask` in `StatelessWorkerClient.cpp` -- and
-        /// the worker ignores a duplicate start, `StatelessTaskExecutor::startTask`), a stream
-        /// pairs one producer with one consumer (`ExchangeConnections` drops a duplicate producer
-        /// and refuses a duplicate consumer), and a broken stream fails the whole query instead of
-        /// reconnecting and replaying (`StreamingExchangeSource`). A second state from the same
-        /// source therefore indicates a bug, not a benign redelivery.
+        /// at most once. A producer emits exactly one state row per stream. A build task is never
+        /// re-run: `sendTask` in `StatelessWorkerClient.cpp` does not retry a task start, and
+        /// `StatelessTaskExecutor::startTask` ignores a duplicate one. A stream pairs one producer
+        /// with one consumer, because `ExchangeConnections` drops a duplicate producer and refuses
+        /// a duplicate consumer. A broken stream fails the whole query rather than reconnect and
+        /// replay (`StreamingExchangeSource`). A second state from the same source therefore
+        /// indicates a bug, not a benign redelivery.
         if (received[current_input])
             throw Exception(
                 ErrorCodes::INCORRECT_DATA, "Received more than one partial runtime filter '{}' from the same source", filter_name);

@@ -6,20 +6,20 @@ namespace DB
 {
 
 /// Fan-in of the runtime filter merge tree: an intermediate merge task receives at most this many
-/// child states. The value is a balance of two per-task costs that both scale with the fan-in: the
-/// concurrent input buffering of the receiving task (each streaming exchange input holds at most
-/// one in-flight packet in userspace plus a bounded socket buffer, so per-task memory is
-/// O(fan_in), independent of the total task count) and the number of extra merge tasks the tree
-/// adds (S/fan_in at the first level). With the bucket-count cap of 256 a fan-in of 16 keeps the
+/// child states. The value balances two per-task costs that both scale with the fan-in. One is the
+/// receiving task's concurrent input buffering: each streaming exchange input holds at most one
+/// in-flight packet in userspace plus a bounded socket buffer, so per-task memory is O(fan_in),
+/// independent of the total task count. The other is the number of extra merge tasks the tree
+/// adds, S/fan_in at the first level. With the bucket-count cap of 256 a fan-in of 16 keeps the
 /// tree at most two levels deep. Deliberately a constant, not a setting: it must not depend on
 /// cluster size for the topology to stay O(S + D).
 constexpr size_t RUNTIME_FILTER_MERGE_FAN_IN = 16;
 
-/// The sole step of an intermediate stage of the runtime filter merge tree. Receives serialized
-/// partial filter states from its child tasks (build tasks or lower merge tasks) over one exchange,
-/// merges them incrementally into a single state, and emits that state to its parent -- or, at the
-/// tree root, broadcasts it to every task of every receiving stage. The fragment is complete on its
-/// own: exchange sources feed a `MergeRuntimeFiltersTransform` whose output ends in exchange sinks.
+/// The sole step of an intermediate stage of the runtime filter merge tree. It receives serialized
+/// partial filter states from its child tasks - build tasks or lower merge tasks - over one
+/// exchange, and merges them incrementally into a single state. That state goes to its parent, or,
+/// at the tree root, to every task of every receiving stage. The fragment is complete on its own:
+/// exchange sources feed a `MergeRuntimeFiltersTransform` whose output ends in exchange sinks.
 ///
 /// The step itself is stage-invariant; which slice of child buckets a task consumes and which
 /// parent it feeds are derived from the task's `bucket_id` parameter: task `i` consumes child
