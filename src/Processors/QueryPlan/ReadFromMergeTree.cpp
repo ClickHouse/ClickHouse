@@ -1237,6 +1237,7 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
     UInt64 read_limit,
     const SortDescription & sort_description,
     ExpressionActionsPtr sorting_key_expr,
+    bool apply_virtual_row_conversions,
     int partition_sort_direction,
     size_t num_streams,
     const SplitRangesFunc & split_ranges_func)
@@ -1305,9 +1306,10 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
 
         if (partition_pipe.numOutputPorts() > 1)
         {
+            const size_t num_partition_streams = partition_pipe.numOutputPorts();
             auto transform = std::make_shared<MergingSortedTransform>(
                 partition_pipe.getSharedHeader(),
-                partition_pipe.numOutputPorts(),
+                num_partition_streams,
                 sort_description,
                 block_size.max_block_size_rows,
                 /*max_block_size_bytes=*/0,
@@ -1318,7 +1320,8 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
                 /*out_row_sources_buf=*/nullptr,
                 /*filter_column_name=*/std::nullopt,
                 /*use_average_block_sizes=*/false,
-                /*apply_virtual_row_conversions*/false);
+                apply_virtual_row_conversions,
+                /*virtual_row_prefetch_window=*/num_partition_streams);
 
             partition_pipe.addTransform(std::move(transform));
         }
@@ -2467,6 +2470,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             input_order_info->limit,
             sort_description,
             sorting_key_expr,
+            virtual_row_conversion != nullptr,
             partition_sort_direction,
             num_streams,
             split_ranges);
