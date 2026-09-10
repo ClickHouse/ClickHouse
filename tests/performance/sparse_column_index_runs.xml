@@ -1,0 +1,50 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>run_length</name>
+            <values>
+                <value>1</value>
+                <value>2</value>
+                <value>4</value>
+                <value>8</value>
+                <value>16</value>
+                <value>64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE sparse_column_index_runs_{run_length}
+        (
+            id UInt64,
+            u64 UInt64,
+            payload String
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.8
+    </create_query>
+
+    <fill_query>
+        INSERT INTO sparse_column_index_runs_{run_length}
+        SELECT
+            number,
+            number % 20 = 0 ? number : 0,
+            number % 20 = 0 ? repeat(toString(number), 64) : ''
+        FROM numbers(intDiv(10000000, {run_length}))
+    </fill_query>
+
+    <!-- Keep the output size roughly constant while changing the length of each repeated index run. -->
+    <query>
+        SELECT sum(u64), min(payload)
+        FROM (SELECT u64, payload FROM sparse_column_index_runs_{run_length})
+        ARRAY JOIN range({run_length}) AS element
+        FORMAT Null
+        SETTINGS enable_lazy_columns_replication = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS sparse_column_index_runs_{run_length}</drop_query>
+</test>
