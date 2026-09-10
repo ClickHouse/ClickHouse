@@ -128,7 +128,7 @@ read_stmt() {
         max_threads = $4, merge_tree_prefetch_json_shared_data_substreams = 1,
         optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
         optimize_functions_to_subcolumns = 0, enable_filesystem_cache = 0,
-        use_uncompressed_cache = 0, use_page_cache_for_disks_without_file_cache = 0,
+        use_page_cache_for_disks_without_file_cache = 0,
         read_through_distributed_cache = 0${extra:+, $extra} FORMAT Null;"
 }
 
@@ -168,12 +168,20 @@ packed_settings="local_filesystem_read_prefetch = 1, local_filesystem_read_metho
         max_read_buffer_size_local_fs = 4096"
 
 ${CLICKHOUSE_CLIENT} -m --query "
+-- Off for the session so that the two arms that ask for it are the only ones the uncompressed cache
+-- is in the buffer chain of: a statement's own SETTINGS clause wins over the session, and a value
+-- repeated inside one clause does not.
+SET use_uncompressed_cache = 0;
 $(read_stmt 1 50 '1Gi'  4 'step_limit'       "$wide4_read")
 $(read_stmt 1 0  '10Gi' 4 'step_unlimited'   "$wide4_read")
 $(read_stmt 0 50 '1Gi'  4 'plain_pool_limit' "$wide_read")
 $(read_stmt 0 0  '10Gi' 4 'plain_pool_unlim' "$wide_read")
 $(read_stmt 1 70 '1Gi'  4 'shared_limit'     "$wide_prewhere_read")
 $(read_stmt 1 0  '10Gi' 4 'shared_unlim'     "$wide_prewhere_read")
+-- With the uncompressed cache in the chain the MergeTree data buffer is a cached one wrapping the
+-- buffer that owns the prefetch allocation, so it too has to report that buffer's size.
+$(read_stmt 1 0  '1'    4 'cache_bytes'      "$wide_read" 'use_uncompressed_cache = 1')
+$(read_stmt 1 0  '10Gi' 4 'cache_unlim'      "$wide_read" 'use_uncompressed_cache = 1')
 $(read_stmt 1 5  '1Gi'  1 'json_limit_5'     "$json_read")
 $(read_stmt 1 15 '1Gi'  1 'json_limit_15'    "$json_read")
 $(read_stmt 1 0  '10Gi' 1 'json_unlim'       "$json_read")
@@ -251,6 +259,10 @@ SELECT 'prefetching does happen on this fixture when the byte bound is not the b
        $(count_of json_enc_unlim) > 0;
 SELECT 'the memory bound alone stops prefetching, on an encrypted disk',
        $(count_of json_enc_bytes) = 0;
+SELECT 'prefetching does happen through the uncompressed cache when the bound is not binding',
+       $(count_of cache_unlim) > 0;
+SELECT 'and the memory bound stops prefetching there too, through the uncompressed cache',
+       $(count_of cache_bytes) = 0;
 SELECT 'a reserved stream may prefetch again in a later batch, without new memory',
        $(count_of batched_limit) * 8 = $(count_of batched_unlim) * 4;
 SELECT 'and it took more than one batch: unbounded, all eight streams prefetch in each of them',

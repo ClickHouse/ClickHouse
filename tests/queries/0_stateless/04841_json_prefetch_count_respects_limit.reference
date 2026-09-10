@@ -10,6 +10,8 @@ and the bound is what decides how many: limits 10 apart, counts 10 apart	1
 a stream that ends returns its capacity: the arm submits more than it may hold	1
 prefetching does happen on this fixture when the byte bound is not the binding one	1
 the memory bound alone stops prefetching, on an encrypted disk	1
+prefetching does happen through the uncompressed cache when the bound is not binding	1
+and the memory bound stops prefetching there too, through the uncompressed cache	1
 a reserved stream may prefetch again in a later batch, without new memory	1
 and it took more than one batch: unbounded, all eight streams prefetch in each of them	1
 the fixture is packed part storage	1
