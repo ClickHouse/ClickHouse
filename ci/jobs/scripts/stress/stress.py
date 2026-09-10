@@ -462,7 +462,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         # value adds anything here; it also raises insert_keeper_max_retries to 100.
         client_options.append("insert_keeper_fault_injection_probability=0.05")
         # Not set anywhere by default, so any non-zero value is new coverage.
-        client_options.append("backup_restore_keeper_fault_injection_probability=0.005")
+        client_options.append("backup_restore_keeper_fault_injection_probability=0.05")
         # Fault after the ReplicatedMergeTree metadata is written to Keeper but before the
         # table is created, exercising dropIfEmpty() cleanup and re-creation over the leftover
         # znodes. This one throws instead of retrying, and a CREATE is far rarer than an INSERT
