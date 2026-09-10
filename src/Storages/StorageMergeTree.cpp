@@ -1988,6 +1988,13 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     CurrentlyMergingPartsTaggerPtr tagger;
 
     auto mutations_end_it = current_mutations_by_version.end();
+
+    /// The block numbers of the lightweight updates that have not written their patch part yet, read
+    /// once for the whole selection: it only has to be a snapshot no older than the parts below.
+    CommittingBlocksSet committing_blocks_snapshot;
+    if (supportsLightweightUpdate())
+        committing_blocks_snapshot = getCommittingBlocks();
+
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (currently_merging_mutating_parts.contains(part))
@@ -2156,6 +2163,37 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         {
             auto new_part_info = part->info;
             new_part_info.mutation = last_mutation_to_apply->first;
+
+            /** A lightweight update allocates its block number before it writes its patch part, and a
+              * mutation whose version is above that number has to see the update. Mutating the part
+              * now would read it without the patch and write a part at a higher data version, which
+              * the patch no longer applies to: the acknowledged update would be silently lost. Leave
+              * the part for a later round, exactly as `havePendingPatchPartsForMutation` postpones the
+              * entry on a replicated table.
+              */
+            std::optional<Int64> pending_update_block;
+            for (const auto & block : committing_blocks_snapshot)
+            {
+                if (block.number > new_part_info.getDataVersion())
+                    break;
+
+                if (block.op == CommittingBlock::Op::Update)
+                {
+                    pending_update_block = block.number;
+                    break;
+                }
+            }
+
+            if (pending_update_block.has_value())
+            {
+                LOG_DEBUG(
+                    log,
+                    "Will not mutate part {} yet because the lightweight update with block number {} is not committed",
+                    part->name,
+                    *pending_update_block);
+                current_parts_postpone_reasons[part->name] = PostponeReasons::PENDING_LIGHTWEIGHT_UPDATE;
+                continue;
+            }
 
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;
