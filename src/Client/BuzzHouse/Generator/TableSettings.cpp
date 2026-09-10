@@ -503,6 +503,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"part_moves_between_shards_enable", highRangeSetting},
     {"parts_to_delay_insert", highRangeSetting},
     {"parts_to_throw_insert", highRangeSetting},
+    {"patch_parts_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'v1'", "'v2'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
     {"prefer_fetch_merged_part_size_threshold", bytesRangeSetting},
     {"prefer_fetch_merged_part_time_threshold", highRangeSetting},
     {"prewarm_mark_cache", trueOrFalseSetting},
@@ -572,6 +581,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          false)},
     {"share_nested_offsets", trueOrFalseSetting},
     {"shared_merge_tree_activate_coordinated_merges_tasks", trueOrFalseSetting},
+    {"shared_merge_tree_blobs_list_inline_file_max_bytes", bytesRangeSetting},
     {"shared_merge_tree_create_per_replica_metadata_nodes", trueOrFalseSetting},
     {"shared_merge_tree_disable_merges_and_mutations_assignment", trueOrFalseSetting},
     {"shared_merge_tree_empty_partition_lifetime", highRangeSetting},
@@ -628,6 +638,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas", trueOrFalseSetting},
     {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup", trueOrFalseSetting},
     {"shared_merge_tree_update_replica_flags_delay_ms", highRangeSetting},
+    {"shared_merge_tree_use_blobs_list_for_parts", trueOrFalseSetting},
     {"shared_merge_tree_use_metadata_hints_cache", trueOrFalseSetting},
     {"shared_merge_tree_use_outdated_parts_compact_format", trueOrFalseSetting},
     {"shared_merge_tree_use_too_many_parts_count_from_virtual_parts", trueOrFalseSetting},
@@ -663,6 +674,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg, FuzzConfig &)
          {
              static const DB::Strings choices = {"'none'", "'bitpacking'"};
+             return rg.pickRandomly(choices);
+         },
+         {},
+         false)},
+    {"text_index_serialization_version",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &)
+         {
+             static const DB::Strings choices = {"'v0_initial'", "'v1_with_codec'", "'v2_with_positions'"};
              return rg.pickRandomly(choices);
          },
          {},
