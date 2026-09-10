@@ -1044,16 +1044,27 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     sock.close()
 
 
-def test_bind_negative_count_recovers(started_cluster):
-    # Reject negative `Bind` counts without desynchronizing recovery.
+def test_malformed_extended_message_recovers(started_cluster):
+    # Reject malformed extended messages without desynchronizing recovery.
     node = started_cluster.instances["node"]
 
     def sync():
         return _fe("S", b"")
 
-    # `num_params = -1`.
+    # Put a complete-looking `Sync` frame after each invalid count, but include it in the
+    # malformed message's declared payload. Recovery must ignore it and wait for the real `Sync`.
+    def parse_neg_num_params():
+        b = b"\x00" + b"SELECT 1\x00" + struct.pack("!h", -1) + sync()
+        return _fe("P", b)
+
+    # Negative parameter-format-code count.
+    def bind_neg_param_formats():
+        b = b"\x00" + b"\x00" + struct.pack("!h", -1) + sync()
+        return _fe("B", b)
+
+    # Negative parameter count.
     def bind_neg_num_params():
-        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1)
+        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1) + sync()
         return _fe("B", b)
 
     # Negative result-format-code count.
@@ -1064,22 +1075,62 @@ def test_bind_negative_count_recovers(started_cluster):
             + struct.pack("!H", 0)
             + struct.pack("!H", 0)
             + struct.pack("!h", -1)
+            + sync()
         )
         return _fe("B", b)
 
-    for make_bind in (bind_neg_num_params, bind_neg_result_formats):
+    # `Describe` must not read the following `Sync` as its missing payload.
+    def describe_incomplete_payload():
+        return _fe("D", b"")
+
+    # A named portal is rejected after deserialization. The embedded `Sync` must
+    # remain in the `Execute` payload until recovery reaches the real `Sync`.
+    def execute_named_portal():
+        b = b"named\x00" + struct.pack("!I", 0) + sync()
+        return _fe("E", b)
+
+    # An invalid close target is rejected after deserialization for the same reason.
+    def close_invalid_target():
+        return _fe("C", b"X\x00" + sync())
+
+    for make_message in (
+        parse_neg_num_params,
+        bind_neg_param_formats,
+        bind_neg_num_params,
+        bind_neg_result_formats,
+        describe_incomplete_payload,
+        execute_named_portal,
+        close_invalid_target,
+    ):
         sock, read_until_ready = _pg_raw_extended_query_session(node)
-        sock.sendall(make_bind() + sync())
+        sock.sendall(make_message() + sync())
         types = read_until_ready()
-        assert "E" in types, f"malformed Bind must be rejected, got {types}"
+        assert "E" in types, f"malformed message must be rejected, got {types}"
         assert types.count("Z") == 1, (
-            f"malformed Bind must emit one ReadyForQuery per Sync, got {types}"
+            f"malformed message must emit one ReadyForQuery per real Sync, got {types}"
         )
         # The same connection must stay usable (stream stayed aligned).
         sock.sendall(_fe("Q", b"SELECT 7\x00"))
         types = read_until_ready()
-        assert "C" in types, f"connection must stay alive after malformed Bind, got {types}"
+        assert "C" in types, f"connection must stay alive after malformed message, got {types}"
         sock.close()
+
+
+def test_incomplete_simple_query_payload_recovers(started_cluster):
+    # A length-only `Query` must not wait for or consume the next frontend message.
+    node = started_cluster.instances["node"]
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(_fe("Q", b""))
+    types = read_until_ready()
+    assert "E" in types, f"incomplete Query must be rejected, got {types}"
+    assert types.count("Z") == 1, (
+        f"incomplete Query must emit one ReadyForQuery, got {types}"
+    )
+
+    sock.sendall(_fe("Q", b"SELECT 7\x00"))
+    types = read_until_ready()
+    assert "C" in types, f"connection must stay usable after incomplete Query, got {types}"
+    sock.close()
 
 
 def test_flush_error_discards_until_sync(started_cluster):
@@ -1127,10 +1178,138 @@ def test_flush_error_discards_until_sync(started_cluster):
     assert types.count("Z") == 1, (
         f"FLUSH pipeline must emit one ReadyForQuery per Sync, got {types}"
     )
+    # `Sync` ended the cycle, so this second `FLUSH` is out of cycle even though no simple
+    # query has run since. It must be answered at once, and a timeout here is the hang.
+    sock.sendall(flush())
+    try:
+        types = read_until_ready(timeout=15.0)
+    except socket.timeout:
+        types = ["<no ReadyForQuery, client left waiting>"]
+    assert types == ["E", "Z"], (
+        f"FLUSH after the cycle's Sync must be answered at once, got {types}"
+    )
+    # A discarded `Execute` leaves nothing queued, so an empty query that answers with
+    # `EmptyQueryResponse` alone is what distinguishes discarding from executing late.
+    sock.sendall(_fe("Q", b"\x00"))
+    types = read_until_ready()
+    assert types == ["I", "Z"], (
+        f"nothing but the empty query may answer after a discarded Execute, got {types}"
+    )
     # The same connection must stay usable.
     sock.sendall(_fe("Q", b"SELECT 7\x00"))
     types = read_until_ready()
     assert "C" in types, f"connection must stay alive after FLUSH error, got {types}"
+    sock.close()
+
+
+def test_out_of_cycle_rejection_keeps_connection_usable(started_cluster):
+    # A rejected message outside an extended-query cycle has no `Sync` to recover at,
+    # so it must be answered with an error and one `ReadyForQuery`.
+    node = started_cluster.instances["node"]
+
+    def read_types(read_until_ready):
+        # A missing `ReadyForQuery` surfaces as a read timeout, which is the hang itself.
+        try:
+            return read_until_ready(timeout=15.0)
+        except socket.timeout:
+            return ["<no ReadyForQuery, client left waiting>"]
+
+    # `H` is `Flush`; `f` is `CopyFail`, a real message type this server does not accept.
+    for label, message in (("Flush", _fe("H", b"")), ("CopyFail", _fe("f", b""))):
+        # A connection that has sent nothing yet has no cycle open either, so the very
+        # first message must be answered rather than starting the discard state. Every
+        # other case here opens and ends a cycle first, which would hide a handler that
+        # started out believing a cycle was already in progress.
+        sock, read_until_ready = _pg_raw_extended_query_session(node)
+        sock.sendall(message)
+        types = read_types(read_until_ready)
+        assert types == ["E", "Z"], (
+            f"{label} as the connection's first message must be answered, got {types}"
+        )
+        sock.close()
+
+        sock, read_until_ready = _pg_raw_extended_query_session(node)
+
+        # `Parse` opens an extended-query cycle and the simple query that follows ends it,
+        # so the rejection below is out of cycle even though no `Sync` was ever sent.
+        sock.sendall(_fe("P", b"\x00" + b"SELECT 1\x00" + struct.pack("!H", 0)))
+        sock.sendall(_fe("Q", b"SELECT 1\x00"))
+        types = read_types(read_until_ready)
+        assert "1" in types, f"{label}: Parse must be accepted, got {types}"
+        assert "C" in types, f"{label}: control query must complete, got {types}"
+
+        sock.sendall(message)
+        types = read_types(read_until_ready)
+        assert types.count("Z") == 1, (
+            f"{label} outside a cycle must emit one ReadyForQuery, got {types}"
+        )
+        assert "E" in types, f"{label} must produce an ErrorResponse, got {types}"
+
+        sock.sendall(_fe("Q", b"SELECT 7\x00"))
+        types = read_types(read_until_ready)
+        assert "C" in types, f"connection stopped answering after {label}, got {types}"
+        sock.close()
+
+
+def test_simple_query_drops_unnamed_statement_and_portal(started_cluster):
+    # A simple `Query` destroys the unnamed prepared statement and the unnamed portal, so
+    # neither may stay executable across it, while named statements are untouched.
+    node = started_cluster.instances["node"]
+
+    def parse(stmt, query):
+        b = stmt.encode() + b"\x00" + query.encode() + b"\x00" + struct.pack("!H", 0)
+        return _fe("P", b)
+
+    def bind(stmt):
+        # The unnamed portal, no parameters and no explicit result formats.
+        return _fe("B", b"\x00" + stmt.encode() + b"\x00" + struct.pack("!HHH", 0, 0, 0))
+
+    def execute():
+        return _fe("E", b"\x00" + struct.pack("!I", 0))
+
+    sync = _fe("S", b"")
+    simple_query = _fe("Q", b"SELECT 222\x00")
+
+    # The portal: a `Bind` that completed before the simple query must not survive it.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(parse("", "SELECT 111") + bind("") + simple_query)
+    types = read_until_ready()
+    assert types == ["1", "2", "T", "D", "C", "Z"], (
+        f"Parse, Bind and the simple query must all succeed first, got {types}"
+    )
+    sock.sendall(execute() + sync)
+    types = read_until_ready()
+    assert types == ["E", "Z"], (
+        f"Execute of the portal the simple query destroyed must fail, got {types}"
+    )
+    sock.close()
+
+    # The prepared statement: a later `Bind` has nothing left to resolve the name to.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(parse("", "SELECT 111") + simple_query)
+    types = read_until_ready()
+    assert types == ["1", "T", "D", "C", "Z"], (
+        f"Parse and the simple query must both succeed first, got {types}"
+    )
+    sock.sendall(bind("") + sync)
+    types = read_until_ready()
+    assert types == ["E", "Z"], (
+        f"Bind on the statement the simple query destroyed must fail, got {types}"
+    )
+    sock.close()
+
+    # A named statement is not the unnamed one, so it must still bind and execute.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(parse("st", "SELECT 333") + simple_query)
+    types = read_until_ready()
+    assert types == ["1", "T", "D", "C", "Z"], (
+        f"Parse of the named statement and the simple query must succeed, got {types}"
+    )
+    sock.sendall(bind("st") + execute() + sync)
+    types = read_until_ready()
+    assert types == ["2", "T", "D", "C", "Z"], (
+        f"a named statement must survive the simple query, got {types}"
+    )
     sock.close()
 
 
