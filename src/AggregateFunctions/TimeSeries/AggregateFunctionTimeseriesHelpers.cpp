@@ -2054,7 +2054,7 @@ The histogram argument is the payload tuple of the `histograms` target table of 
 The result at each grid point is the payload tuple of a synthetic gauge histogram, computed like Prometheus' `histogramRate`/`extrapolatedRate` (counter resets are detected and handled for `rate`/`increase`; `delta` treats the samples as gauges). The value is NULL if there are not enough samples within the window (fewer than two), or if the window mixes histograms with exponential and custom bucket schemas.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
 :::
     )", promql_function, promql_anchor, promql_function);
         FunctionDocumentation::Syntax syntax = fmt::format(R"(
@@ -2087,7 +2087,7 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
         {
             "Basic usage with individual timestamp-histogram pairs",
             fmt::format(R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 WITH
     [130, 140]::Array(UInt32) AS timestamps,
     [(0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], []), (0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [], 8, 0, [2, 6], [])]::Array(Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64), count_int UInt64, zero_count_int UInt64, positive_values_int Array(UInt64), negative_values_int Array(UInt64))) AS histograms,
