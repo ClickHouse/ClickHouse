@@ -38,7 +38,7 @@ SLOW="SELECT number AS n FROM numbers(1000000) WHERE sleepEachRow(0.0001)=0"
 
 run_cancelled_query()
 {
-    local name="$1" query="$2" analyzer="$3"
+    local name="$1" query="$2" analyzer="$3" expected_exception_code="${4:-735}"
     local query_id="${DB}_${name}_${analyzer}"
     local ready=0
 
@@ -81,7 +81,7 @@ run_cancelled_query()
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
     local cancelled
     cancelled=$($CLICKHOUSE_CLIENT --query "
-        SELECT count() = 1 AND countIf(exception_code = 735
+        SELECT count() = 1 AND countIf(exception_code = $expected_exception_code
             AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')) = 1
         FROM system.query_log WHERE current_database = currentDatabase()
             AND query_id='$query_id' AND type != 'QueryStart'")
@@ -110,6 +110,8 @@ for analyzer in 0 1; do
     # `Cancel` before the enclosing write's executor is initialized.
     run_cancelled_query scalar "INSERT INTO $DB.dst SELECT (
         SELECT sum(number) FROM numbers(1000000) WHERE sleepEachRow(0.0001)=0)" "$analyzer"
-    run_cancelled_query set "INSERT INTO $DB.dst SELECT n FROM $DB.source WHERE n IN ($SLOW)" "$analyzer"
+    # An incomplete `Set` is rejected semantically with `QUERY_WAS_CANCELLED` (394),
+    # instead of the native `Cancel` transport exception `QUERY_WAS_CANCELLED_BY_CLIENT` (735).
+    run_cancelled_query set "INSERT INTO $DB.dst SELECT n FROM $DB.source WHERE n IN ($SLOW)" "$analyzer" 394
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM $DB.dst"
 done
