@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: the queries under test are the server-wide forms of `SYSTEM DROP REPLICA`
+# and `SYSTEM DROP DATABASE REPLICA`, which enumerate every database on the server.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
