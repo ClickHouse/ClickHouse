@@ -50,6 +50,9 @@ public:
     bool areBlobPathsRandom() const override { return false; }
     bool isPlain() const override { return true; }
     bool isWriteOnce() const override { return true; }
+    /// Blobs are removed right in the transaction, and there is nothing to replicate.
+    bool hasDeadBlobsQueue() const override { return false; }
+    bool hasMissingBlobsQueue() const override { return false; }
 
     MetadataTransactionPtr createTransaction() override;
 
