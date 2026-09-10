@@ -88,11 +88,13 @@
         SETTINGS max_partitions_per_insert_block = 96
     </fill_query>
 
-    <!-- The dynamic path is resolved once per part against a `JSON` type with many typed paths. -->
+    <!-- Exercise dynamic and typed subcolumn lookup against a `JSON` type with many typed paths. -->
     <query>SELECT json.target FROM json_subcolumn_type_lookup FORMAT Null</query>
     <query>SELECT json.p000 FROM json_subcolumn_type_lookup FORMAT Null</query>
     <query>SELECT json.target FROM json_subcolumn_type_lookup WHERE part = 42 FORMAT Null</query>
     <query>SELECT json.p000 FROM json_subcolumn_type_lookup WHERE part = 42 FORMAT Null</query>
+    <!-- Prune every part to isolate subcolumn resolution during query analysis. -->
+    <query>SELECT json.target FROM json_subcolumn_type_lookup WHERE part = 60000 FORMAT Null</query>
     <!-- Control for the cost of opening and reading the same parts without a subcolumn lookup. -->
     <query>SELECT part FROM json_subcolumn_type_lookup FORMAT Null</query>
 

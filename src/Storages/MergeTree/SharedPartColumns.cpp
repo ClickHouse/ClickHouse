@@ -346,9 +346,8 @@ PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationIn
         }
     }
 
-    /// `supportsPooling() == false` marks a serialization that must not be shared: it keeps mutable
-    /// state (`SerializationJSON` accumulates caches inside its extraction tree) or depends on the
-    /// settings of the query that built it (its parser, on `allow_simdjson`). Those groups are rebuilt
+    /// A serialization whose `supportsPooling` returns false must not be shared, because it keeps
+    /// mutable or query-dependent state. Groups containing such serializations are rebuilt
     /// for every part, as they were before they were interned, so they stay out of both caches: a group
     /// that is not in the group cache can only reach a part through a whole object, which is why one
     /// containing such a group is not interned either.
