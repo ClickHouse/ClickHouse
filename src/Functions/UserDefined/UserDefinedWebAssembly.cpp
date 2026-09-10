@@ -721,7 +721,7 @@ private:
         if (arguments.empty())
             return remaining;
 
-        static constexpr size_t max_probes = 16;
+        static constexpr size_t max_probes = 24;
         /// A probe may only ask for this many times the rows the previous probe measured. The
         /// extrapolated count is read off a prefix, and a prefix of narrow rows says nothing about
         /// wider rows later in the block, so growth is paid for by rows already materialized.
@@ -799,7 +799,24 @@ private:
             /// The bracket both keeps the candidate meaningful and guarantees progress: a candidate
             /// that fits raises the lower end past itself, one that overflows lowers the upper end
             /// below itself, and the check above leaves at least one row between the ends.
-            candidate = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
+            next = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
+
+            /// A slope is only as good as the rows it was measured across. Two measurements that
+            /// straddle one very wide row describe that row rather than the rows around it, and the
+            /// step they propose lands next to the end of the bracket the walk came from, so the
+            /// bracket shrinks by a row per probe and the batch stops far short of what the budget
+            /// allows. Once both ends of the bracket are known, a proposal that falls in an outer
+            /// quarter is replaced by the midpoint, which halves the bracket however wrong the
+            /// slope was. A wire whose cost is close to affine is unaffected: its proposals land on
+            /// the boundary itself, which is in the middle of the bracket by the time it is known.
+            if (largest_fitting > 0 && smallest_overflowing <= remaining)
+            {
+                const size_t width = smallest_overflowing - largest_fitting;
+                if (width > 3 && (next < largest_fitting + width / 4 || next > smallest_overflowing - width / 4))
+                    next = largest_fitting + width / 2;
+            }
+
+            candidate = next;
         }
 
         return std::max<size_t>(largest_fitting, 1);

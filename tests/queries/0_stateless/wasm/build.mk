@@ -43,6 +43,11 @@ $(OUT_FOLDER)/small_memory_abi.wasm: $(OUT_FOLDER)/small_memory_abi.o
 $(OUT_FOLDER)/growable_zero_page_abi.wasm: $(OUT_FOLDER)/growable_zero_page_abi.o
 	wasm-ld-$(CLANG_VERSION) --export-all --no-entry --lto-O3 --allow-undefined -z stack-size=0 --initial-memory=0 --max-memory=196608 $< -o $@
 
+# Linked with the same explicit initial linear memory as `batch_size_buffers_abi.wasm`, and for the
+# same reason: a test that names an exact batch boundary needs an exact byte budget.
+$(OUT_FOLDER)/batch_size_csv_abi.wasm: $(OUT_FOLDER)/batch_size_csv_abi.o
+	wasm-ld-$(CLANG_VERSION) --export-all --no-entry --lto-O3 --allow-undefined --initial-memory=1048576 $< -o $@
+
 # Linked with an explicit initial linear memory: the byte budget is
 # `webassembly_udf_input_split_memory_ratio` times that number, so pinning it to 16 pages lets a
 # test name the exact batch boundary instead of asserting a range.
