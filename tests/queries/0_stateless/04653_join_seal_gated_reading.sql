@@ -51,6 +51,11 @@ SELECT count() > 0 AS has_gated_reads FROM (
 -- The seal carries an empty key set when the build side is empty: everything is pruned.
 SELECT /* seal_empty_build */ count() FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k WHERE b.k > 100500000;
 
+-- Same for LEFT SEMI, which does not short-circuit on an empty build side the way INNER
+-- does (alwaysReturnsEmptySet covers only INNER and RIGHT kinds): without the empty-set
+-- runtime filter the whole probe side would be scanned.
+SELECT /* seal_semi_empty_build */ count() FROM t_seal_probe AS p LEFT SEMI JOIN (SELECT k FROM t_seal_build WHERE k > 100500000) AS b ON p.k = b.k;
+
 -- Single-stream reading is gated too.
 SELECT /* seal_gated_single_stream */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
     SETTINGS max_threads = 1;

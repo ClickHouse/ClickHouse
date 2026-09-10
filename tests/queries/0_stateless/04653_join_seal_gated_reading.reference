@@ -2,6 +2,7 @@
 5	100000
 1
 0
+0
 5	100000
 1
 0
@@ -43,5 +44,6 @@ seal_gated_reverse_order	1	1	0	0
 seal_gated_single_stream	1	1	0	0
 seal_gated_suppresses_read_time	1	1	0	0
 seal_join_by_shards	1	1	0	0
+seal_semi_empty_build	0	1	0	0
 seal_shadowed_key	0	0	1	0
 seal_ungated_join	0	0	1	0
