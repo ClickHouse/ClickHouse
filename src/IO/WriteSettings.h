@@ -24,6 +24,7 @@ struct WriteSettings
     bool enable_filesystem_cache_log = false;
     bool throw_on_error_from_cache = false;
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    size_t filesystem_cache_query_limit_bytes = 0;
 
     bool s3_allow_parallel_part_upload = true;
     bool azure_allow_parallel_part_upload = true;

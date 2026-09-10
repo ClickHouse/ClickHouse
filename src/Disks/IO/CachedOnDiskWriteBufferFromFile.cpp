@@ -45,11 +45,13 @@ FileSegmentRangeWriter::FileSegmentRangeWriter(
     const FileSegment::Key & key_,
     const FileCacheOriginInfo & origin_,
     size_t reserve_space_lock_wait_timeout_milliseconds_,
+    FileCacheQueryBudgetPtr query_budget_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     const String & query_id_,
     const String & source_path_,
     bool is_distributed_cache_)
     : cache(cache_)
+    , query_budget(std::move(query_budget_))
     , key(key_)
     , origin(origin_)
     , reserve_space_lock_wait_timeout_milliseconds(reserve_space_lock_wait_timeout_milliseconds_)
@@ -199,7 +201,8 @@ bool FileSegmentRangeWriter::write(char * data, size_t size, size_t offset, File
         }
         size_t size_to_write = std::min(available_size, size);
 
-        bool reserved = file_segment->reserve(size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason);
+        bool reserved = file_segment->reserve(
+            size_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason, query_budget);
         if (!reserved)
         {
             appendFilesystemCacheLog(*file_segment);
@@ -477,6 +480,7 @@ CachedOnDiskWriteBufferFromFile::CachedOnDiskWriteBufferFromFile(
     , query_id(query_id_)
     , origin(origin_)
     , reserve_space_lock_wait_timeout_milliseconds(settings_.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds)
+    , query_budget(cache_->getQueryBudget(settings_.filesystem_cache_query_limit_bytes))
     , throw_on_error_from_cache(settings_.throw_on_error_from_cache)
     , is_distributed_cache(is_distributed_cache_)
     , file_segment_kind(file_segment_kind_)
@@ -523,6 +527,7 @@ void CachedOnDiskWriteBufferFromFile::cacheData(char * data, size_t size, bool t
     {
         cache_writer = std::make_unique<FileSegmentRangeWriter>(
             cache.get(), key, origin, reserve_space_lock_wait_timeout_milliseconds,
+            query_budget,
             cache_log, query_id, source_path, is_distributed_cache);
 
         if (cache_writer_start_position)

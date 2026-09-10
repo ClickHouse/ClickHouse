@@ -192,6 +192,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// query context). Subsequent cached-buffer creations happen lazily inside
     /// gather/impl creators that may run on threadpool workers without query
     /// context, so calling `CurrentThread::getQueryId` there would return "".
+    /// The per-cache query budgets the builders below resolve are hoisted for the same reason.
     const std::string query_id(CurrentThread::getQueryId());
 
     auto impl = gather
@@ -380,7 +381,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
              cache_log = dc.cache_log,
              custom_key = dc.custom_cache_key,
              custom_origin = dc.custom_origin,
-             query_id](
+             query_id,
+             query_budget = dc.cache->getQueryBudget(fs_cache_settings.query_limit_bytes)](
                 bool restricted_seek, const StoredObject & object) mutable
                 -> std::unique_ptr<ReadBufferFromFileBase>
         {
@@ -407,6 +409,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 captured_settings.remote_fs_settings.buffer_size,
                 captured_settings.local_fs_settings.buffer_size,
                 query_id,
+                query_budget,
                 object.bytes_size,
                 /* allow_seeks_after_first_read */ !restricted_seek,
                 /* use_external_buffer */ true,
@@ -617,7 +620,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                 object_size = object.bytes_size,
                 cache_log = dc.cache_log,
                 throttler = settings.local_throttler,
-                query_id
+                query_id,
+                query_budget = dc.cache->getQueryBudget(fs_cache_settings.query_limit_bytes)
             ]() mutable -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 /// Copy, not move: impl_creator may be called multiple times
@@ -629,6 +633,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
                     fs_cache_settings,
                     remote_buf_size, local_buf_size,
                     query_id,
+                    query_budget,
                     object_size,
                     /* allow_seeks_after_first_read */ true,
                     /* use_external_buffer */ true,
@@ -654,6 +659,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
             settings.remote_fs_settings.buffer_size,
             settings.local_fs_settings.buffer_size,
             query_id,
+            outermost.cache->getQueryBudget(fs_cache_settings.query_limit_bytes),
             object.bytes_size,
             /* allow_seeks_after_first_read */ true,
             use_ext_buf,

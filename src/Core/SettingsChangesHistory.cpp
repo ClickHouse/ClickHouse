@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit", true, true, "Obsolete: a query which reaches `filesystem_cache_query_limit_bytes` always stops caching now, it never evicts what it cached itself."},
+            {"filesystem_cache_query_limit_bytes", 137438953472, 0, "Renamed from `filesystem_cache_max_download_size`, which stays as an alias, and disabled by default. The per-query filesystem cache write limit is now opt-in: the previous default of 128Gi was never reached in practice, while `enable_filesystem_query_cache_limit` in the cache configuration alone was enough to make every query maintain per-query accounting."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},
