@@ -7,7 +7,7 @@
 -- `partial_merge`, with settings that force right-side spilling, small sorted right blocks
 -- (equal-key runs span blocks) and result cuts (continuations).
 -- The small deterministic query matrix lives in
--- 04838_join_on_mixed_conditions_partial_merge_matrix.sql.j2.
+-- 04838_join_on_mixed_conditions_partial_merge_{matrix,splits,any_nullable}.sql.j2.
 -- Note: `max_rows_in_join` is applied only to `partial_merge` queries. The hash join treats it
 -- as a hard limit (`join_overflow_mode`), while the partial merge join spills to disk.
 
