@@ -218,6 +218,43 @@ def test_helper_expression_follows_the_column_order(monkeypatch):
     assert _aliases(HELPER._extra_columns_expression("test", "node")) == expected
 
 
+CLUSTER_HELPER = REPO_ROOT / "tests" / "integration" / "helpers" / "cluster.py"
+
+OLD_RELEASE_IMAGE = "clickhouse/clickhouse-server"
+
+
+def test_an_upgraded_old_release_instance_can_export(monkeypatch):
+    """A compatibility suite starts an old release from `clickhouse/clickhouse-server`
+    with `with_installed_binary=True` and then switches that same container to
+    the binary under test (`restart_with_latest_version`). The image is not the
+    integration-test one, so the export has to be decided by the binary the
+    container can run, otherwise the whole upgraded phase is missing from the
+    CI Logs cluster."""
+    monkeypatch.setenv("DOCKER_BASE_TAG", "0-0-0")
+    assert not HELPER.runs_binary_under_test(OLD_RELEASE_IMAGE, "24.3")
+    assert HELPER.supports_export(OLD_RELEASE_IMAGE, "24.3", True)
+    # An instance that stays on the old release never becomes exportable
+    assert not HELPER.supports_export(OLD_RELEASE_IMAGE, "24.3", False)
+    # And an instance of the image under test is exportable either way
+    assert HELPER.supports_export(BASE_IMAGE, "0-0-0", False)
+    assert HELPER.supports_export(BASE_IMAGE, "0-0-0", True)
+
+
+def test_the_container_gets_the_credentials_before_the_export_is_enabled():
+    """The `from_env` references of the cluster config are resolved when the
+    server starts, and a `with_installed_binary` container writes that config
+    only after the binary swap - so its `environment:` section has to be there
+    from the start, i.e. keyed on `ci_logs_export_supported`."""
+    source = CLUSTER_HELPER.read_text()
+    guard = re.search(
+        r"if (self\.ci_logs_export_\w+):\n"
+        r"\s*ci_logs_env = ci_logs_export\.docker_compose_environment_section\(\)",
+        source,
+    )
+    assert guard, f"no compose environment section in {CLUSTER_HELPER}"
+    assert guard.group(1) == "self.ci_logs_export_supported"
+
+
 def test_cache_directory_of_a_local_run_is_per_session(monkeypatch):
     """Without the CI identity the markers would be shared by every run on the
     machine, so a transient outage in one run would suppress the export in all

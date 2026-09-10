@@ -282,6 +282,20 @@ def runs_binary_under_test(image, tag):
     return tag == os.environ.get(variable, "latest")
 
 
+def supports_export(image, tag, with_installed_binary):
+    """Whether the container of an instance can carry the export at all - not
+    whether it carries it right now (see `ClickHouseInstance.ci_logs_export_enabled`).
+
+    A `with_installed_binary` instance starts from an old release installed over
+    its image, whatever that image is, but the binary under test is mounted into
+    it as `/usr/share/clickhouse_fresh` and `restart_with_latest_version` swaps
+    the server to it. So the image decides only for the instances that never
+    swap: the compatibility suites run the binary under test in the upgraded
+    phase and export it, the old-release phases are excluded by
+    `ci_logs_export_enabled` instead."""
+    return with_installed_binary or runs_binary_under_test(image, tag)
+
+
 def without_sender_user(query_result):
     """Drop the lines that mention the `ci_logs_sender` user or its profile from
     the result of an access-control introspection query (`SHOW USERS`,

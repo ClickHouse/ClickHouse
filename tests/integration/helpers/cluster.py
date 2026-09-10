@@ -5179,13 +5179,14 @@ class ClickHouseInstance:
         self.docker_init_flag = use_docker_init_flag
 
         # Export of the system log tables to the CI Logs cluster, see
-        # helpers/ci_logs_export.py. Only for servers that run the binary under
-        # test: a server of an old release may not support the configs and the
-        # DDL that the export needs.
+        # helpers/ci_logs_export.py. Only for servers that run - or, for a
+        # `with_installed_binary` instance, can be switched to - the binary
+        # under test: a server of an old release may not support the configs
+        # and the DDL that the export needs.
         self.ci_logs_export_supported = (
             ci_logs_export.is_enabled()
             and not cluster.with_dolor
-            and ci_logs_export.runs_binary_under_test(image, tag)
+            and ci_logs_export.supports_export(image, tag, with_installed_binary)
             and config_root_name == "clickhouse"
         )
         # `with_installed_binary` starts the container with an old release
@@ -6697,8 +6698,15 @@ class ClickHouseInstance:
 
         is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
 
+        # Keyed on `ci_logs_export_supported`, not on `ci_logs_export_enabled`:
+        # the variables have to be in the container from the start, because a
+        # `with_installed_binary` instance enables the export only after
+        # `restart_with_latest_version`, and the config written then references
+        # them with `from_env` - a server whose `from_env` variable does not
+        # exist refuses to start. Passing them to a container that never
+        # enables the export costs nothing, the config is what uses them.
         ci_logs_env = ""
-        if self.ci_logs_export_enabled:
+        if self.ci_logs_export_supported:
             ci_logs_env = ci_logs_export.docker_compose_environment_section()
 
         with open(self.docker_compose_path, "w") as docker_compose:

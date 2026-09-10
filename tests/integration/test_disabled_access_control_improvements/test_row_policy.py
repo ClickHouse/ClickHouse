@@ -253,13 +253,15 @@ def test_dcl_introspection():
             "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default",
         ]
     )
-    assert node.query("SHOW CREATE POLICIES ON mydb.filtered_table1") == TSV(
+    assert without_sender_user(
+        node.query("SHOW CREATE POLICIES ON mydb.filtered_table1")
+    ) == TSV(
         [
             "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
             "CREATE ROW POLICY default ON mydb.filtered_table1 FOR SELECT USING a = 1 TO default",
         ]
     )
-    assert node.query("SHOW CREATE POLICIES ON mydb.*") == TSV(
+    assert without_sender_user(node.query("SHOW CREATE POLICIES ON mydb.*")) == TSV(
         [
             "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
             "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 TO another",
@@ -271,7 +273,7 @@ def test_dcl_introspection():
             "CREATE ROW POLICY default ON mydb.local FOR SELECT USING 1 TO default",
         ]
     )
-    assert node.query("SHOW CREATE POLICIES") == TSV(
+    assert without_sender_user(node.query("SHOW CREATE POLICIES")) == TSV(
         [
             "CREATE ROW POLICY another ON mydb.filtered_table1 FOR SELECT USING 1 TO another",
             "CREATE ROW POLICY another ON mydb.filtered_table2 FOR SELECT USING 1 TO another",

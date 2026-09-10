@@ -1925,6 +1925,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
         session_timeout_parallel = 7200
         session_timeout_sequential = 7200
 
+    # The export of the system logs costs a couple of seconds of setup and a
+    # `SYSTEM FLUSH LOGS` per server, and a shard starts hundreds of them, so a
+    # shard that exports runs about 10% longer (measured on this branch:
+    # 6.9-7.4 ks against a master p50 of 6.2 ks). Give the parallel phase that
+    # back: without it the shards which were already close to the budget are cut
+    # short by the session-timeout instead of finishing their tests.
+    if os.environ.get("CLICKHOUSE_CI_LOGS_HOST"):
+        session_timeout_parallel += 900
+
     if args.session_timeout:
         session_timeout_parallel = args.session_timeout * 2
         session_timeout_sequential = args.session_timeout
