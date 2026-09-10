@@ -33,7 +33,7 @@ WHERE event_date >= today() - 7
 
 AWS S3 と GCS には S3 バリアントを使用します。Azure とローカルファイルシステムには専用のバリアント (`icebergAzure`、`icebergLocal`、および他のフォーマットの対応する同等物) があります。完全な一覧については、[直接クエリ](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) を参照してください。
 
-[Paimon](/ja/reference/functions/table-functions/paimon) では、テーブル関数のみが利用できます。
+[Paimon](/ja/reference/functions/table-functions/paimon) では、テーブル関数と[実験的なテーブルエンジン](/ja/reference/engines/table-engines/integrations/paimon)が提供されています。
 
 <div id="table-engines">
   ### テーブルエンジン
@@ -336,7 +336,7 @@ ORDER BY rows DESC;
   ### スキャン量を確認する
 </div>
 
-フィルターの追加や設定の調整の前後で、[system.query&#95;log](/ja/reference/system-tables/query_log) の `read_rows` と `read_bytes` を比較します。`ReadBufferFromS3Bytes` や `CachedReadBufferReadFromCacheBytes` などの ProfileEvents を見ると、オブジェクトストレージ由来のデータ量とローカル cache 由来のデータ量を確認できます。`query_log` と EXPLAIN の詳しい手順については、[クエリ最適化](/ja/guides/clickhouse/performance-and-monitoring/query-optimization) を参照してください。
+フィルターの追加や設定の調整の前後で、[`system.query_log`](/ja/reference/system-tables/query_log) の `read_rows` と `read_bytes` を比較します。`ReadBufferFromS3Bytes` や `CachedReadBufferReadFromCacheBytes` などの `ProfileEvents` を見ると、オブジェクトストレージ由来のデータ量とローカル cache 由来のデータ量を確認できます。`query_log` と `EXPLAIN` の詳しい手順については、[低速なクエリを診断する](/ja/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) を参照してください。
 
 ベンチマーク時には、キャッシュヒットによって実行ごとの差が見えにくくならないよう、[enable&#95;filesystem&#95;cache](/ja/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) を無効にしてください。
 

@@ -92,6 +92,11 @@ SerializationPtr SerializationVariant::create(const DataTypes & variant_types_, 
     return ISerialization::pooled(getHash(variant_serializations_, variant_name_), [&] { return new SerializationVariant(variant_types_, variant_serializations_, variant_names_, variant_name_); });
 }
 
+bool SerializationVariant::isElementSubcolumn(const SubstreamPath & path, const String & element_name)
+{
+    return !path.empty() && path.back().type == Substream::VariantElement && path.back().variant_element_name == element_name;
+}
+
 SerializationVariant::SerializationVariant(
     const DataTypes & variant_types_,
     const VariantSerializations & variant_serializations_,
