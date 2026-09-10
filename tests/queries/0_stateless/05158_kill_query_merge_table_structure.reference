@@ -14,5 +14,5 @@ c.values	Array(Array(Tuple(\n    a UInt8,\n    b UInt8)))						1
 c.values.a	Array(Array(UInt8))						1
 c.values.b	Array(Array(UInt8))						1
 part loading did not reach the enumeration checkpoint
-3
+1
 0

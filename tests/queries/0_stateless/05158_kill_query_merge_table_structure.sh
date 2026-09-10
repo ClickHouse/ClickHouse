@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
-# Tag no-fasttest: the two deterministic 10-second waits below, plus the 4-second sleep, are most of
-# a test that runs in about 30 seconds, which is a large share of the fast test per-test timeout.
+# Tag no-fasttest: the two deterministic 3-second waits below, plus the 4-second sleep, are most of
+# a test that runs in about 13 seconds, which is a large share of the fast test per-test timeout.
 # Tag no-parallel: this test WAITS on a process-global PAUSEABLE failpoint, so a concurrent
 # instance pausing or resuming the same channel would break the synchronisation.
 
@@ -16,63 +16,65 @@ KILL_QID="merge_structure_kill_${CLICKHOUSE_DATABASE}_$$"
 BREAK_QID="merge_structure_break_${CLICKHOUSE_DATABASE}_$$"
 
 # Every poll below happens inside ONE column's substream walk, so a checkpoint that only ran between
-# source tables or between columns could not stop any of the arms. Depth 10 polls 944 times.
+# source tables or between columns could not stop any of the arms. Depth 8 polls 181 times.
 DEEP="Int32"
-for _ in $(seq 1 10); do DEEP="Array(Map(String, Tuple(a ${DEEP}, b ${DEEP})))"; done
+for _ in $(seq 1 8); do DEEP="Array(Map(String, Tuple(a ${DEEP}, b ${DEEP})))"; done
 # A type whose substream tree is one long path yields a single stream callback, so it is the shape
 # that catches accounting charged per callback rather than per unit of work. Depth 100 polls 17
 # times and its 100 subcolumns cost one prefix walk each.
 UNARY="Int32"
 for _ in $(seq 1 100); do UNARY="Tuple(a ${UNARY})"; done
-# Depth 8 still polls 181 times, and its parts hold a fifth as many stream files, so the part-loading
-# arm can reach the checkpoint while staying cheap enough to write real parts.
+# Depth 6 still polls 33 times, and its part holds 317 streams, so the part-loading arm can reach
+# the checkpoint while staying cheap enough to write a real part.
 SHALLOWER="Int32"
-for _ in $(seq 1 8); do SHALLOWER="Array(Map(String, Tuple(a ${SHALLOWER}, b ${SHALLOWER})))"; done
+for _ in $(seq 1 6); do SHALLOWER="Array(Map(String, Tuple(a ${SHALLOWER}, b ${SHALLOWER})))"; done
 
 function cleanup()
 {
-    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${FP}" 2>/dev/null ||:
-    $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id IN ('${KILL_QID}', '${BREAK_QID}') FORMAT Null" 2>/dev/null ||:
+    $CLICKHOUSE_CLIENT --query "
+        SYSTEM DISABLE FAILPOINT ${FP};
+        KILL QUERY WHERE query_id IN ('${KILL_QID}', '${BREAK_QID}') FORMAT Null;
+    " 2>/dev/null ||:
     wait 2>/dev/null ||:
 }
 trap cleanup EXIT
 
+# ---- KILL QUERY has to land inside one column's walk ----
 # Structure inference reads metadata only, so these tables deliberately hold no data: one row of the
-# branching type writes 5117 streams in a wide part and would cover nothing extra.
+# branching type writes 1277 streams in a wide part and would cover nothing extra. The count() is a
+# positive control: with no deadline the inference completes and the read runs, returning no rows, and
+# it has to run before the failpoint is enabled or it would pause too.
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS deep0;
     DROP TABLE IF EXISTS unary0;
     CREATE TABLE deep0 (k UInt32, c ${DEEP}) ENGINE = MergeTree ORDER BY k;
     CREATE TABLE unary0 (k UInt32, c ${UNARY}) ENGINE = MergeTree ORDER BY k;
+    SELECT count() FROM merge(currentDatabase(), '^deep0$');
+    SYSTEM ENABLE FAILPOINT ${FP};
 "
-
-# Positive control: with no deadline the inference completes and the read runs, returning no rows.
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM merge(currentDatabase(), '^deep0$')"
-
-# ---- KILL QUERY has to land inside one column's walk ----
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${FP}"
 
 $CLICKHOUSE_CLIENT --query_id="${KILL_QID}" \
     --query "DESCRIBE TABLE merge(currentDatabase(), '^unary0$') FORMAT Null" > /dev/null 2>&1 &
 KILL_PID=$!
 
-# The enumeration is now paused at a poll inside the only matched table's column. Bound the wait:
-# if it never polls, fail with a diagnostic instead of consuming the per-test timeout.
-if ! timeout 30 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${FP} PAUSE" > /dev/null 2>&1; then
+# The wait returns once the enumeration is paused at a poll inside the only matched table's column,
+# the KILL sets is_killed while the thread sits inside that walk, and the NOTIFY resumes it WITHOUT
+# disabling, so the failpoint channel survives for the second observation. Bound the wait: if it
+# never polls, fail with a diagnostic instead of consuming the per-test timeout.
+if ! timeout 30 $CLICKHOUSE_CLIENT --query "
+        SYSTEM WAIT FAILPOINT ${FP} PAUSE;
+        KILL QUERY WHERE query_id = '${KILL_QID}' FORMAT Null;
+        SYSTEM NOTIFY FAILPOINT ${FP};
+    " > /dev/null 2>&1; then
     echo "FAIL: structure inference never polled inside the enumeration in the kill arm"
 fi
 
-# Set is_killed while the thread sits inside the walk.
-$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${KILL_QID}' FORMAT Null"
-
-# Resume WITHOUT disabling, so the failpoint channel survives for the second observation.
-$CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT ${FP}"
-
 # A cancelled walk must stop at its next poll, and 16 further polls remain, so it must never pause
-# again. Only status 124 means the wait timed out, which is the expected outcome. Status 0 means the
-# walk kept going, and any other status means the wait itself failed.
+# again. A walk that ignores the cancellation pauses again within tens of milliseconds of the resume,
+# so 3 seconds is a wide margin. Only status 124 means the wait timed out, the expected outcome.
+# Status 0 means the walk kept going, and any other status means the wait itself failed.
 kill_wait_rc=0
-timeout 10 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${FP} PAUSE" > /dev/null 2>&1 || kill_wait_rc=$?
+timeout 3 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${FP} PAUSE" > /dev/null 2>&1 || kill_wait_rc=$?
 if [ "$kill_wait_rc" -eq 0 ]; then
     echo "FAIL: the enumeration polled again after the query was cancelled"
 elif [ "$kill_wait_rc" -eq 124 ]; then
@@ -88,10 +90,10 @@ $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${FP}"
 timeout 30 tail --pid="${KILL_PID}" -f /dev/null
 wait "${KILL_PID}" 2>/dev/null ||:
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
+    SYSTEM FLUSH LOGS query_log;
     SELECT count() FROM system.query_log
-    WHERE query_id = '${KILL_QID}' AND current_database = currentDatabase() AND exception_code = 394
+    WHERE query_id = '${KILL_QID}' AND current_database = currentDatabase() AND exception_code = 394;
 "
 
 # ---- timeout_overflow_mode = 'break' must abort too ----
@@ -107,8 +109,8 @@ $CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS cheap0;
     CREATE TABLE cheap0 (k UInt32, c Int32) ENGINE = MergeTree ORDER BY k;
+    SYSTEM ENABLE FAILPOINT ${FP};
 "
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${FP}"
 
 $CLICKHOUSE_CLIENT --query_id="${BREAK_QID}" --query "
     DESCRIBE TABLE merge(currentDatabase(), '^(cheap|deep)0$')
@@ -124,7 +126,7 @@ sleep 4
 $CLICKHOUSE_CLIENT --query "SYSTEM NOTIFY FAILPOINT ${FP}"
 
 break_wait_rc=0
-timeout 10 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${FP} PAUSE" > /dev/null 2>&1 || break_wait_rc=$?
+timeout 3 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${FP} PAUSE" > /dev/null 2>&1 || break_wait_rc=$?
 if [ "$break_wait_rc" -eq 0 ]; then
     echo "FAIL: the enumeration polled again in 'break' overflow mode"
 elif [ "$break_wait_rc" -eq 124 ]; then
@@ -153,9 +155,7 @@ rm -f "${CLICKHOUSE_TMP}/05158_break.err"
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS shallow0;
     CREATE TABLE shallow0 (k UInt32, c Array(Map(String, Tuple(a UInt8, b UInt8)))) ENGINE = MergeTree ORDER BY k;
-"
-$CLICKHOUSE_CLIENT --query "
-    DESCRIBE TABLE merge(currentDatabase(), '^shallow0$') SETTINGS describe_include_subcolumns = 1
+    DESCRIBE TABLE merge(currentDatabase(), '^shallow0$') SETTINGS describe_include_subcolumns = 1;
 "
 
 # ---- part loading must not observe the checkpoint ----
@@ -169,11 +169,9 @@ $CLICKHOUSE_CLIENT --query "
         SETTINGS min_bytes_for_wide_part = 0;
     SYSTEM STOP MERGES parts0;
     INSERT INTO parts0 VALUES (1, []);
-    INSERT INTO parts0 VALUES (2, []);
-    INSERT INTO parts0 VALUES (3, []);
+    SYSTEM ENABLE FAILPOINT ${FP};
+    DETACH TABLE parts0;
 "
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${FP}"
-$CLICKHOUSE_CLIENT --query "DETACH TABLE parts0"
 attach_rc=0
 timeout 60 $CLICKHOUSE_CLIENT --query "ATTACH TABLE parts0" > /dev/null 2>&1 || attach_rc=$?
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${FP}"
@@ -182,8 +180,8 @@ if [ "$attach_rc" -eq 0 ]; then
 else
     echo "FAIL: ATTACH observed the enumeration checkpoint (status ${attach_rc})"
 fi
-$CLICKHOUSE_CLIENT --query "SELECT count() FROM parts0"
 $CLICKHOUSE_CLIENT --query "
+    SELECT count() FROM parts0;
     SELECT count() FROM system.detached_parts
-    WHERE database = currentDatabase() AND table = 'parts0'
+    WHERE database = currentDatabase() AND table = 'parts0';
 "
