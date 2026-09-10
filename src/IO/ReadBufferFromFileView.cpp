@@ -35,8 +35,11 @@ void ReadBufferFromFileView::prefetch(Priority priority)
 
 size_t ReadBufferFromFileView::prefetchBufferSize()
 {
-    /// A size query touches no buffer state, so it needs no `executeWithOriginalBuffer`.
-    return impl->prefetchBufferSize();
+    /// `impl` holds this buffer's state only inside `executeWithOriginalBuffer`, and the size an
+    /// async buffer reports comes from that state.
+    size_t size = 0;
+    executeWithOriginalBuffer([&] { size = impl->prefetchBufferSize(); });
+    return size;
 }
 
 void ReadBufferFromFileView::setReadUntilPosition(size_t position)
