@@ -46,6 +46,8 @@ public:
 
     Status prepare() override;
     Chunk generate() override;
+    void cancel(CancelReason reason) noexcept override;
+    using ISource::cancel;
 
     InputPort & getCompletionPort() { return inputs.front(); }
 

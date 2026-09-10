@@ -63,6 +63,9 @@ public:
 
     String getName() const override { return "MergeSorterSource"; }
 
+    void cancel(CancelReason reason) noexcept override;
+    using ISource::cancel;
+
     /// These rows were already counted when they were read from the original source.
     std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
 

@@ -203,6 +203,15 @@ MutableColumns MergeSorter::createMergedColumns() const
 }
 
 
+void MergeSorterSource::cancel(CancelReason reason) noexcept
+{
+    /// A partial result must finish processing data already read into the in-memory tail.
+    if (reason == CancelReason::PartialResult)
+        return;
+
+    ISource::cancel(reason);
+}
+
 SortingTransform::SortingTransform(
     SharedHeader header,
     const SortDescription & description_,

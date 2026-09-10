@@ -64,6 +64,15 @@ IProcessor::Status BufferingFromFileSource::prepare()
     return ISource::prepare();
 }
 
+void BufferingFromFileSource::cancel(CancelReason reason) noexcept
+{
+    /// A partial result must finish processing data already read into temporary files.
+    if (reason == CancelReason::PartialResult)
+        return;
+
+    ISource::cancel(reason);
+}
+
 Chunk BufferingFromFileSource::generate()
 {
     if (!tmp_read_stream)
