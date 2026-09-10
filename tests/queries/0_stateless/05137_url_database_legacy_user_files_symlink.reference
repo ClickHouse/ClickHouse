@@ -1,0 +1,12 @@
+--- EXISTS TABLE through a symlink inside user_files
+1
+--- EXISTS TABLE of a missing file through the same symlink
+0
+--- DESCRIBE through a symlink inside user_files
+c1	Nullable(Int64)
+c2	Nullable(String)
+--- SELECT through a symlink inside user_files
+1	one
+2	two
+--- a missing file through the same symlink reports that it does not exist
+UNKNOWN_TABLE

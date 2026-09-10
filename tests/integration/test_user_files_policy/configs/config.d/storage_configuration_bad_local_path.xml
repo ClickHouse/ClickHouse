@@ -1,0 +1,27 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <user_files_disk_precedence>
+                <path>/test_user_files_disk_precedence/</path>
+            </user_files_disk_precedence>
+        </disks>
+
+        <policies>
+            <user_files_precedence>
+                <volumes>
+                    <main>
+                        <disk>user_files_disk_precedence</disk>
+                    </main>
+                </volumes>
+            </user_files_precedence>
+        </policies>
+    </storage_configuration>
+
+    <user_files_policy>user_files_precedence</user_files_policy>
+
+    <!-- Deliberately unusable legacy local path: `/dev/null` is a character device,
+         not a directory, so `fs::create_directories('/dev/null/user_files/')` fails.
+         The server must still start because `user_files_policy` takes precedence and
+         the legacy local directory setup is skipped. -->
+    <user_files_path>/dev/null/user_files/</user_files_path>
+</clickhouse>
