@@ -540,6 +540,7 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
         return true;
 
     /// A Set the predicate reads is built later during execution, so it must be prepared before the evaluation below.
+    /// Readiness is all the evaluation needs; the elements the build stores are for range analysis and may be dropped.
     for (const auto & node : subdag.getNodes())
     {
         if (node.type != ActionsDAG::ActionType::COLUMN)
@@ -553,8 +554,8 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
         if (!future_set)
             return true;
 
-        auto prepared_set = future_set->buildOrderedSetInplace(context);
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        future_set->buildOrderedSetInplace(context);
+        if (!future_set->get())
             return true;
     }
 

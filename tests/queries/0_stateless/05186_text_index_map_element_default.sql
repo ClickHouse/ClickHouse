@@ -160,8 +160,10 @@ SELECT '-- the mapValues carrier reads the same default';
 SELECT count() FROM tab_values WHERE m['nokey'] = '';
 SELECT count() FROM tab_values WHERE m['abc'] = 'hello' SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT '-- and a set inside the subscript on that carrier too';
+SELECT '-- and a set inside the subscript on that carrier too, whether or not its elements are stored';
 SELECT count() FROM tab_values WHERE m[if(0 IN (SELECT number FROM numbers(1)), 'abc', 'zzz')] = 'hello';
+SELECT count() FROM tab_values WHERE m[if(0 IN (SELECT number FROM numbers(5)), 'abc', 'zzz')] = 'hello'
+SETTINGS use_index_for_in_with_subqueries_max_values = 1, force_data_skipping_indices = 'idx';
 
 DROP TABLE tab_values;
 

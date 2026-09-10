@@ -59,7 +59,8 @@
 -- the mapValues carrier reads the same default
 1
 1
--- and a set inside the subscript on that carrier too
+-- and a set inside the subscript on that carrier too, whether or not its elements are stored
+1
 1
 -- the mapValues carrier over a non-String domain, arrayElement spelling
 1
