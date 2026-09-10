@@ -224,9 +224,9 @@ void CPULeaseAllocation::RequestChain::scheduled()
 CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
-    // Parking gives back a single scalar quantum, which is only correct when master and worker
-    // threads share one resource; disable it when they use different resource links.
-    , parking_supported(!(master_link_ && worker_link_ && master_link_ != worker_link_))
+    // Parking gives back a single scalar quantum from the shared queue, which is only correct when
+    // the master and worker threads use the same resource; disabled in any other configuration.
+    , parking_supported(master_link_ && worker_link_ && master_link_ == worker_link_)
     , log(getLogger("CPULeaseAllocation"))
     , threads(max_threads)
     , requests(this, max_threads, master_link_, worker_link_)

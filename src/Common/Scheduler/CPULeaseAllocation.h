@@ -260,9 +260,9 @@ private:
     /// Configuration
     const SlotCount max_threads; /// Max number of threads (and allocated slots)
     const CPULeaseSettings settings;
-    /// Parking's give-back releases one scalar quantum, which is only correct when the master and
-    /// worker threads use the same resource. False when they use different resource links, which
-    /// disables parking (see isParkingEnabled()).
+    /// Parking's give-back releases one scalar quantum from the shared queue, which is only correct
+    /// when the master and worker threads use the same resource. False (parking disabled, see
+    /// isParkingEnabled()) in any other configuration.
     const bool parking_supported;
     LoggerPtr log;
 
