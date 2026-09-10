@@ -5,6 +5,7 @@
 #include <Common/ProductQuantizer.h>
 #include <Common/VectorQuantizer.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -161,16 +162,18 @@ std::optional<QuantizedCodecParams> tryExtractQuantizedCodecParams(const ASTPtr 
     if (!func || !func->arguments)
         return {};
 
+    /// The codec description usually holds the canonical `Quantized` spelling, but a chain whose arguments
+    /// could not be substituted keeps the AST as the user wrote it, and codec names are case-insensitive.
     for (const auto & param_ast : func->arguments->children)
     {
         if (const auto * inner_func = param_ast->as<ASTFunction>())
         {
-            if (inner_func->name == "Quantized")
+            if (equalsCaseInsensitive(inner_func->name, "Quantized"))
                 return parseQuantizeCodecArguments(inner_func->arguments);
         }
         else if (const auto * inner_identifier = param_ast->as<ASTIdentifier>())
         {
-            if (inner_identifier->name() == "Quantized")
+            if (equalsCaseInsensitive(inner_identifier->name(), "Quantized"))
                 throw Exception(ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE,
                     "Codec Quantized requires parameters: Quantized(method, dimensions[, bits])");
         }

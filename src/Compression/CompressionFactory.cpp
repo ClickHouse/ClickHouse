@@ -10,6 +10,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Common/StringUtils.h>
 #include <Poco/String.h>
 
 #include <algorithm>
@@ -47,7 +48,7 @@ bool CompressionCodecFactory::isDefaultCodec(const ASTPtr & codec)
     if (!func || func->name != "CODEC" || !func->arguments || func->arguments->children.size() != 1)
         return false;
     const auto * ident = func->arguments->children[0]->as<ASTIdentifier>();
-    return ident && ident->name() == DEFAULT_CODEC_NAME;
+    return ident && equalsCaseInsensitive(ident->name(), DEFAULT_CODEC_NAME);
 }
 
 
@@ -56,17 +57,17 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     if (level)
     {
         auto level_literal = make_intrusive<ASTLiteral>(static_cast<UInt64>(*level));
-        return get(makeASTFunction("CODEC", makeASTFunction(Poco::toUpper(family_name), level_literal)), {});
+        return get(makeASTFunction("CODEC", makeASTFunction(family_name, level_literal)), {});
     }
 
-    auto identifier = make_intrusive<ASTIdentifier>(Poco::toUpper(family_name));
+    auto identifier = make_intrusive<ASTIdentifier>(family_name);
     return get(makeASTFunction("CODEC", identifier), {});
 }
 
 CompressionCodecPtr CompressionCodecFactory::get(const String & compression_codec) const
 {
     ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    auto ast = parseQuery(codec_parser, "(" + compression_codec + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     return CompressionCodecFactory::instance().get(ast, nullptr);
 }
 
@@ -98,7 +99,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
                 throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST element for compression codec");
 
             CompressionCodecPtr codec;
-            if (codec_family_name == DEFAULT_CODEC_NAME)
+            if (equalsCaseInsensitive(codec_family_name, DEFAULT_CODEC_NAME))
                 codec = current_default;
             else
                 codec = getImpl(codec_family_name, codec_arguments, column_type);
@@ -237,7 +238,7 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
 
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments, const IDataType * column_type) const
 {
-    if (family_name == "Multiple")
+    if (equalsCaseInsensitive(family_name, "Multiple"))
         throw Exception(ErrorCodes::UNKNOWN_CODEC, "Codec Multiple cannot be specified directly");
 
     const auto family_and_creator = family_name_with_codec.find(family_name);
