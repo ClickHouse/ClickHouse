@@ -238,13 +238,19 @@ class GH:
             files = json.loads(output).get("files", [])
 
         statuses = {}
+        rename_sources = []
         for file_obj in files:
             filename = file_obj["filename"]
             status = file_obj["status"]
             statuses[filename] = status
             previous_filename = file_obj.get("previous_filename")
             if status == cls.FileStatus.RENAMED and previous_filename:
-                statuses[previous_filename] = cls.FileStatus.RENAMED_FROM
+                rename_sources.append(previous_filename)
+        # Apply rename sources only where no current path claims them, so a
+        # file that is both a rename source and a real current path (e.g. `a`
+        # renamed to `b` while a new `a` is added) keeps its actual status.
+        for previous_filename in rename_sources:
+            statuses.setdefault(previous_filename, cls.FileStatus.RENAMED_FROM)
         return statuses
 
     @staticmethod
@@ -1184,10 +1190,10 @@ class GH:
         return res
 
     @classmethod
-    def _submit_team_review_requests(cls, team_slugs, pr, repo):
-        assert team_slugs
+    def _submit_review_requests(cls, reviewers, team_slugs, pr, repo):
+        assert reviewers or team_slugs
 
-        payload = {"reviewers": [], "team_reviewers": team_slugs}
+        payload = {"reviewers": reviewers, "team_reviewers": team_slugs}
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".json", delete=False, encoding="utf-8"
         ) as temp_file:
@@ -1203,10 +1209,14 @@ class GH:
             )
             if not cls.do_command_with_retries(cmd):
                 raise RuntimeError(
-                    f"Failed to request team reviews for pull request [{pr}]"
+                    f"Failed to request reviews for pull request [{pr}]"
                 )
         finally:
             os.unlink(temp_file_path)
+
+    @classmethod
+    def _submit_team_review_requests(cls, team_slugs, pr, repo):
+        cls._submit_review_requests([], team_slugs, pr, repo)
 
     @classmethod
     def _get_requested_team_reviews(cls, pr, repo):
@@ -1235,6 +1245,65 @@ class GH:
             )
 
         return set(requested_teams)
+
+    @classmethod
+    def _submit_user_review_requests(cls, reviewers, pr, repo):
+        cls._submit_review_requests(reviewers, [], pr, repo)
+
+    @classmethod
+    def _get_requested_user_reviews(cls, pr, repo):
+        cmd = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+            "--jq '[.users[].login]'"
+        )
+        output = cls.get_output_with_retries(cmd)
+        if not output:
+            raise RuntimeError(
+                f"Failed to retrieve user review requests for pull request [{pr}]"
+            )
+
+        try:
+            requested_users = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Failed to parse user review requests for pull request [{pr}]: {e}"
+            ) from e
+        if not isinstance(requested_users, list) or not all(
+            isinstance(user, str) for user in requested_users
+        ):
+            raise RuntimeError(
+                f"Unexpected user review request response for pull request [{pr}]"
+            )
+
+        return set(requested_users)
+
+    @classmethod
+    def request_user_reviews(cls, reviewers, pr=None, repo=None):
+        requested = set(reviewers)
+        if not requested:
+            return True
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        users_to_request = sorted(
+            requested - cls._get_requested_user_reviews(pr, repo)
+        )
+        if users_to_request:
+            cls._submit_user_review_requests(users_to_request, pr, repo)
+            missing_users = set(users_to_request) - cls._get_requested_user_reviews(
+                pr, repo
+            )
+            if missing_users:
+                raise RuntimeError(
+                    "Failed to verify user review requests for pull request "
+                    f"[{pr}], missing users [{', '.join(sorted(missing_users))}]"
+                )
+
+        return True
 
     @classmethod
     def request_team_reviews(cls, team_slugs, pr=None, repo=None):
