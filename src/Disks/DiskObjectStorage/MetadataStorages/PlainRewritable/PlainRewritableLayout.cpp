@@ -1,7 +1,6 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 
 #include <base/find_symbols.h>
-#include <Common/getRandomASCIIString.h>
 
 #include <fmt/format.h>
 
@@ -13,11 +12,6 @@ namespace DB
 PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_key_prefix_)
     : object_storage_common_key_prefix(object_storage_common_key_prefix_)
 {
-}
-
-std::string PlainRewritableLayout::generateTempName()
-{
-    return TEMP_NAME_PREFIX + getRandomASCIIString(16);
 }
 
 std::string PlainRewritableLayout::constructMetadataDirectoryKey() const

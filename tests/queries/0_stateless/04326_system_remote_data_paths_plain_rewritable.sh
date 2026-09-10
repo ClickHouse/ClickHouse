@@ -39,13 +39,6 @@ echo "-- last_modified is populated"
 ${CLICKHOUSE_CLIENT} --query "
 SELECT count() FROM system.remote_data_paths WHERE disk_name = '${disk_name}' AND last_modified = 0"
 
-# An object that only exists while an operation is in flight is named `_tmp_...`, so a leftover of an
-# interrupted operation is visible as such in the path. A table nothing has interrupted has none.
-echo "-- a freshly written table has no temporary objects left behind"
-${CLICKHOUSE_CLIENT} --query "
-SELECT count() FROM system.remote_data_paths
-WHERE disk_name = '${disk_name}' AND local_path LIKE '%\_tmp\_%'"
-
 # A cache disk wraps the plain_rewritable metadata storage; the wrapped disk must still be reported.
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE 04326_cached_t (a Int32, b String) ORDER BY a

@@ -4,7 +4,5 @@
 1
 -- last_modified is populated
 0
--- a freshly written table has no temporary objects left behind
-0
 -- a wrapped (cache) plain_rewritable disk reports metadata_type
 1

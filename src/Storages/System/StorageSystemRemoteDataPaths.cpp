@@ -275,13 +275,12 @@ bool SystemRemoteDataPathsSource::nextDisk()
         {
             /// The layout is the same as for local metadata, so `store`/`data` would enumerate the same
             /// tables. Traverse from the disk root instead: that is the only way to see an object which is
-            /// no longer reachable through them, such as the `_tmp_` directory a `removeRecursive`
+            /// no longer reachable through them, such as the temporary directory a `removeRecursive`
             /// relocates a table to and then fails to delete. Those orphans are the reason this table
             /// covers plain_rewritable at all.
-
-            /// Honor traverse_shadow_remote_data_paths for the frozen-data namespace, exactly like the
-            /// non-plain branch: keep the root traversal for extra temporary/leftover roots, but skip the
-            /// `shadow` root unless the setting is enabled, and apply skipPredicateForShadowDir when it is.
+            ///
+            /// `shadow` is the one root that is not taken unconditionally: it holds frozen data and is
+            /// gated on `traverse_shadow_remote_data_paths`, exactly as in the branch below.
             const bool traverse_shadow = context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths];
             std::vector<std::string> roots;
             disk->listFiles("", roots);
