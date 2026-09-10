@@ -34,7 +34,7 @@ public:
         Float64 weight_lowering_age_seconds_,
         Float64 weight_lowering_cpu_seconds_,
         Float64 weight_lowering_io_bytes_,
-        UInt64 priority_)
+        Int64 priority_)
         : start_ns(start_ns_)
         // Non-positive weight is meaningless for SFQ (virtual runtime divides by the weight), so a
         // query setting `weight <= 0` falls back to the default 1.0.
@@ -59,7 +59,7 @@ public:
     const Float64 weight_lowering_age_seconds; /// Age threshold in seconds (0 or negative = disabled)
     const Float64 weight_lowering_cpu_seconds; /// Attained CPU-seconds threshold (0 or negative = disabled)
     const Float64 weight_lowering_io_bytes; /// Attained IO-bytes threshold (0 or negative = disabled)
-    const UInt64 priority; /// Query priority (setting `priority`): 1 highest, larger = lower, 0 = none. Used by the `priority` scheduler.
+    const Int64 priority; /// Query scheduling priority (setting `workload_priority`): lower = higher, 0 = neutral default, negatives outrank it. Used by the `priority` scheduler.
 
     /// Mutable per-resource scheduling state for this query. There is one entry per scheduler leaf
     /// the query uses (a leaf is per workload-resource), keyed by the leaf's address. Each entry is

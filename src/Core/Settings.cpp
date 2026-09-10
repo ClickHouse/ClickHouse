@@ -7616,6 +7616,9 @@ For the `fair` workload scheduler: once the query has attained this many CPU-sec
     DECLARE(Float, weight_lowering_io_bytes, 0, R"(
 For the `fair` workload scheduler: once the query has attained this many bytes of IO, its weight is lowered by `weight_lowering_factor`. Applies to IO resources. `0` (or any negative value) disables the IO threshold.
 )", BETA) \
+    DECLARE(Int64, workload_priority, 0, R"(
+Scheduling priority of the query within its workload, used by the `priority` workload scheduler (see the `scheduler` workload setting). Lower value = higher priority; the default `0` is the neutral baseline, a negative value raises the query above the default and a positive value lowers it. Queries of equal priority are served first-come-first-served. Ignored by the other schedulers.
+)", BETA) \
     DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
 )", 0) \

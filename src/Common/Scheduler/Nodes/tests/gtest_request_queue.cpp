@@ -46,7 +46,7 @@ struct Fixture
 
     ResourceSchedulingContext * makeQuery(
         Float64 weight = 1.0, Float64 factor = 1.0, Float64 age_s = 0, Float64 cpu_s = 0, Float64 io_b = 0,
-        UInt64 start_ns = 0, UInt64 priority = 0)
+        UInt64 start_ns = 0, Int64 priority = 0)
     {
         if (start_ns == 0)
             start_ns = clock_gettime_ns();
@@ -314,19 +314,19 @@ TEST(RequestQueue, LasRekeysStaleRequestsOnPop)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 9, 2, 3}));
 }
 
-/// priority: strict order by the query `priority` setting (1 = highest; 0 = none = lowest).
+/// priority: strict order by `workload_priority` (lower value = higher precedence; `0` is the neutral default).
 TEST(RequestQueue, PriorityStrictOrder)
 {
     Fixture f(SchedulerAlgorithm::Priority);
     auto * p2 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 2);
     auto * p1 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 1);
-    auto * p0 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 0); // no priority → lowest
+    auto * p0 = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 0); // neutral default
     f.enqueue(20, p2);
     f.enqueue(0, p0);
     f.enqueue(10, p1);
     f.enqueue(21, p2);
-    // priority 1 first, then the priority-2 pair (FIFO within), then the priority-0 query last.
-    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{10, 20, 21, 0}));
+    // Lower value first: the priority-0 query, then priority 1, then the priority-2 pair (FIFO within).
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{0, 10, 20, 21}));
 }
 
 /// priority ordering is exact for large values: an integer `Priority` key keeps two priorities that
@@ -334,8 +334,8 @@ TEST(RequestQueue, PriorityStrictOrder)
 TEST(RequestQueue, PriorityLargeValuesOrderExactly)
 {
     Fixture f(SchedulerAlgorithm::Priority);
-    const UInt64 p_lo = (1ULL << 53);      // 9007199254740992
-    const UInt64 p_hi = (1ULL << 53) + 1;  // 9007199254740993 — equal to p_lo once cast to double
+    const Int64 p_lo = (1LL << 53);      // 9007199254740992
+    const Int64 p_hi = (1LL << 53) + 1;  // 9007199254740993 — equal to p_lo once cast to double
     auto * higher_prec = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ p_lo); // lower value = higher precedence
     auto * lower_prec = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ p_hi);
     f.enqueue(2, lower_prec); // enqueue the lower-precedence (larger value) request first
@@ -345,18 +345,19 @@ TEST(RequestQueue, PriorityLargeValuesOrderExactly)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2}));
 }
 
-/// "no priority" (`priority = 0`) sorts strictly after every explicit priority — even the maximum
-/// representable one — instead of colliding with it (both mapping to the max key → FIFO).
-TEST(RequestQueue, PriorityNoPrioritySortsLast)
+/// Negative `workload_priority` raises a query above the default `0`; a positive value lowers it
+/// below the default. Order is by signed value (lower = higher precedence), independent of arrival.
+TEST(RequestQueue, PriorityNegativeOutranksDefault)
 {
     Fixture f(SchedulerAlgorithm::Priority);
-    const UInt64 huge = static_cast<UInt64>(std::numeric_limits<Int64>::max()); // extreme explicit priority
-    auto * no_priority = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 0);
-    auto * explicit_low = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ huge);
-    f.enqueue(1, no_priority);   // enqueue "no priority" first
-    f.enqueue(2, explicit_low);
-    // The explicit priority (even INT64_MAX) outranks "no priority", so id 2 is served first.
-    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 1}));
+    auto * high = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ -5); // above the default
+    auto * dflt = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 0);
+    auto * low = f.makeQuery(1.0, 1.0, 0, 0, 0, 0, /*priority*/ 5);  // below the default
+    f.enqueue(2, dflt);
+    f.enqueue(3, low);
+    f.enqueue(1, high);
+    // -5 < 0 < 5, so the negative-priority query is served first and the positive one last.
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3}));
 }
 
 /// The swap hook migrates all pending requests to the new algorithm; none are lost, and the

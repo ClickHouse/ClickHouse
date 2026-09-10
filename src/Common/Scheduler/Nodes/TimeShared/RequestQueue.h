@@ -389,30 +389,22 @@ private:
     Set requests;
 };
 
-/// `priority` — strict priority by the query's `priority` setting (the existing query setting,
-/// reused). Lower value = higher precedence, served first; `priority = 0` ("no priority", the
-/// default) is treated as lowest precedence. Ties (equal
-/// priority, incl. the all-zero default) fall back to FIFO by arrival. Like any strict-priority
-/// scheme it can starve low-priority queries — `fair` is the non-starving alternative.
+/// `priority` — strict priority by the query's `workload_priority` setting. Lower value = higher
+/// precedence, served first; the default `0` is the neutral baseline, a negative value raises the
+/// query above it and a positive value lowers it. Ties (equal priority) fall back to FIFO by
+/// arrival. Like any strict-priority scheme it can starve low-priority queries — `fair` is the
+/// non-starving alternative.
 class PriorityAlgorithm final : public ISchedulingAlgorithm
 {
 public:
     void push(ResourceRequest * request) override
     {
-        UInt64 priority = request->scheduling.context->priority;
-        // Map the `UInt64` `priority` query setting onto the Int64 `Priority` key (lower value =
-        // higher precedence). `priority == 0` = "no priority" → the max key so it sorts strictly
-        // last. Explicit priorities are clamped into `[1, max-1]` so (a) they always sort ahead of
-        // "no priority" (0 and a huge explicit value no longer collide), and (b) a value above
-        // `INT64_MAX` cannot wrap to a negative (spuriously high-precedence) key. This uses an
-        // integer key rather than the `double` half of `scheduling.key`, which would lose ordering
-        // above 2^53. Priorities beyond `INT64_MAX` are not distinguishable (the `Priority` type is
-        // Int64), which is well beyond any realistic query priority. FIFO within equal priority.
-        constexpr Int64 max_key = std::numeric_limits<Int64>::max();
-        Int64 key = priority == 0
-            ? max_key
-            : static_cast<Int64>(std::min<UInt64>(priority, static_cast<UInt64>(max_key) - 1));
-        request->scheduling.priority = Priority{key};
+        // `workload_priority` (Int64, lower value = higher precedence, negatives allowed) maps
+        // directly onto the `Priority` key — no transform. The default `0` is the neutral baseline;
+        // a negative value sorts ahead of it, a positive value behind it. An integer key (not the
+        // `double` half of `scheduling.key`) keeps priorities that differ above 2^53 distinct. FIFO
+        // within equal priority via the sequence number.
+        request->scheduling.priority = Priority{request->scheduling.context->priority};
         request->scheduling.key = {0.0, next_seq++};
         requests.insert(*request);
     }

@@ -92,7 +92,7 @@ public:
         std::pair<double, UInt64> key{0.0, 0};
 
         /// Primary ordering key for the `priority` scheduler (lower value first, then `key.second`).
-        /// The `priority` query setting (`UInt64`) is mapped in at enqueue (priority `0` sorts last);
+        /// The `workload_priority` query setting (`Int64`, negatives allowed) is copied in at enqueue;
         /// an integer key avoids the precision loss of routing it through the `double` half of `key`.
         Priority priority;
 

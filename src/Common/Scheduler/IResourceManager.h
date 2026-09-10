@@ -29,7 +29,7 @@ struct ClassifierSettings
     float weight_lowering_age_seconds = 0.0f;
     float weight_lowering_cpu_seconds = 0.0f;
     float weight_lowering_io_bytes = 0.0f;
-    UInt64 priority = 0;
+    Int64 priority = 0;
 };
 
 /*

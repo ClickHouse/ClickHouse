@@ -392,7 +392,7 @@ namespace Setting
     extern const SettingsFloat weight_lowering_age_seconds;
     extern const SettingsFloat weight_lowering_cpu_seconds;
     extern const SettingsFloat weight_lowering_io_bytes;
-    extern const SettingsUInt64 priority;
+    extern const SettingsInt64 workload_priority;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
@@ -2617,7 +2617,7 @@ ClassifierPtr Context::getWorkloadClassifier() const
         .weight_lowering_age_seconds = query_settings[Setting::weight_lowering_age_seconds],
         .weight_lowering_cpu_seconds = query_settings[Setting::weight_lowering_cpu_seconds],
         .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
-        .priority = query_settings[Setting::priority],
+        .priority = query_settings[Setting::workload_priority],
     };
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
