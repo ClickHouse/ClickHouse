@@ -24,4 +24,8 @@
     <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 4))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 3))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 8))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 14))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 15))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 16))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 62))) FROM numbers(3000000) FORMAT Null</query>
 </test>
