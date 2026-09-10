@@ -335,7 +335,12 @@ def test_lance_s3_table_engine(started_cluster):
     node.query("DROP TABLE lance_s3_basic")
 
 
-def test_lance_s3_query_pins_dataset_version(started_cluster):
+@pytest.mark.parametrize(
+    "failpoint",
+    ["lance_metadata_schema_pause", "lance_metadata_iterate_pause"],
+)
+@pytest.mark.parametrize("reuse_dataset", [0, 1])
+def test_lance_s3_query_pins_dataset_version(started_cluster, failpoint, reuse_dataset):
     skip_if_lance_s3_unavailable()
 
     remote_prefix = "data/lance/versions.lance"
@@ -376,7 +381,6 @@ def test_lance_s3_query_pins_dataset_version(started_cluster):
         )
     }
 
-    failpoint = "lance_metadata_iterate_pause"
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
 
     def run_query(query_id):
@@ -390,6 +394,7 @@ def test_lance_s3_query_pins_dataset_version(started_cluster):
             FROM lanceS3(nc_s3, filename = 'lance/versions.lance')
             """,
             query_id=query_id,
+            settings={"lance_query_dataset_reuse": reuse_dataset},
             timeout=60,
         )
 

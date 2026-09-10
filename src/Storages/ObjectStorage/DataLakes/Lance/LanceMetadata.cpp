@@ -104,6 +104,7 @@ extern const int LOGICAL_ERROR;
 
 namespace FailPoints
 {
+extern const char lance_metadata_schema_pause[];
 extern const char lance_metadata_iterate_pause[];
 }
 }
@@ -866,9 +867,15 @@ NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
     {
         auto session = Lance::QuerySession::get(local_context);
         auto dataset = session->getOrOpen(options);
-        const auto snapshot = dataset.currentSnapshot();
-        session->pinSnapshot(dataset.identityKey(), snapshot);
-        return dataset.tableSchema(snapshot, local_context, session->getCancelHandle());
+        auto snapshot = session->getPinnedSnapshot(dataset.identityKey());
+        if (!snapshot)
+        {
+            snapshot = dataset.currentSnapshot();
+            session->pinSnapshot(dataset.identityKey(), *snapshot);
+        }
+        auto schema = dataset.tableSchema(*snapshot, local_context, session->getCancelHandle());
+        FailPointInjection::pauseFailPoint(FailPoints::lance_metadata_schema_pause);
+        return schema;
     }
 
     auto dataset = Lance::DatasetHandle::openEphemeral(options);
@@ -883,6 +890,9 @@ std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(C
     if (local_context && local_context->hasQueryContext())
     {
         auto session = Lance::QuerySession::get(local_context);
+        if (auto snapshot = session->getPinnedSnapshot(options.identityKey()))
+            return DataLakeTableStateSnapshot{*snapshot};
+
         dataset = session->getOrOpen(options);
         const auto snapshot = dataset.currentSnapshot();
         if (snapshot.version == 0)
