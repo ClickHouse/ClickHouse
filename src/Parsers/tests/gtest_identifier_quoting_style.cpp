@@ -16,10 +16,9 @@
   * read-only SQL on the server. `DoubleQuotesPostgreSQL` escapes the way PostgreSQL reads.
   *
   * `DoubleQuotesPostgreSQL` is deliberately absent from the
-  * `show_create_query_identifier_quoting_style` value map, so no SQL-visible setting selects it and
-  * this is the only place its switch arms are pinned. Every case below also asserts the
-  * `DoubleQuotes` output, which must stay exactly as it was for its other consumers (that setting,
-  * SQLite, Cassandra and the ODBC/JDBC bridge).
+  * `show_create_query_identifier_quoting_style` value map, so no SQL-visible setting selects it.
+  * Every case below also asserts the `DoubleQuotes` output, which must stay exactly as it was for
+  * its other consumers (that setting, SQLite, Cassandra and the ODBC/JDBC bridge).
   */
 
 namespace

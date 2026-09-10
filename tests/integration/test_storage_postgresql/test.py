@@ -918,9 +918,28 @@ def test_postgresql_identifier_quoting(started_cluster):
     )
     assert node1.query("SELECT c FROM ddq_backslash").strip() == "1"
 
+    # A query-backed source is re-serialized from the user's AST and then wrapped in a projection of
+    # the required columns, so the dialect has to reach both of those identifier positions as well.
+    node1.query("DROP TABLE IF EXISTS ddq_subquery")
+    node1.query(
+        f"""CREATE TABLE ddq_subquery (`c"o` Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', (SELECT `c"o` FROM `ddq_q"x`), 'postgres', '{pg_pass}')"""
+    )
+    assert node1.query('SELECT `c"o` FROM ddq_subquery').strip() == "7"
+
+    # A non-empty ON CONFLICT switches the sink to a prepared INSERT whose text ClickHouse builds
+    # itself, so the destination and the column list need the dialect too. Kept last: it adds a row.
+    node1.query("DROP TABLE IF EXISTS ddq_conflict")
+    node1.query(
+        f"""CREATE TABLE ddq_conflict (`c"o` Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'ddq_q"x', 'postgres', '{pg_pass}', '', 'ON CONFLICT DO NOTHING')"""
+    )
+    node1.query("INSERT INTO ddq_conflict VALUES (11)")
+    assert node1.query('SELECT `c"o` FROM ddq_conflict ORDER BY `c"o`').strip() == "7\n11"
+
     node1.query("DROP TABLE ddq_inject")
     node1.query("DROP TABLE ddq_quote")
     node1.query("DROP TABLE ddq_backslash")
+    node1.query("DROP TABLE ddq_subquery")
+    node1.query("DROP TABLE ddq_conflict")
     cursor.execute('DROP TABLE "ddq_bs\\"')
     cursor.execute('DROP TABLE "ddq_q""x"')
 
