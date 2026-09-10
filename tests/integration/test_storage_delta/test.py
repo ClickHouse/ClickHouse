@@ -601,6 +601,58 @@ def test_write_cast_upgrade_compatibility(started_cluster):
         node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 
+def test_partition_key_cast_overflow(started_cluster):
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_partition_key_cast_overflow")
+
+    # Existing partitioned Delta table: partition column `p` stored as int8 (Delta `byte`).
+    storage_options = {
+        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        "AWS_ACCESS_KEY_ID": minio_access_key,
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{table_name}"
+    schema = pa.schema([("p", pa.int8()), ("x", pa.string())])
+    table = pa.Table.from_arrays(
+        [pa.array([1, 2], type=pa.int8()), pa.array(["a", "b"], type=pa.string())],
+        schema=schema,
+    )
+    write_deltalake_with_retry(path, table, storage_options=storage_options, partition_by=["p"])
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}"
+    write = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        "allow_delta_lake_create_table": 1,
+    }
+
+    # Attach with the partition column declared Int32 (wider than the Delta int8).
+    instance.query(
+        f"CREATE TABLE {table_name} (p Int32, x String) ENGINE = DeltaLake('{url}', 'minio', '{minio_secret_key}')",
+        settings=write,
+    )
+    try:
+        # Default (accurate): an out-of-range partition key is rejected instead of being committed verbatim
+        # and read back as -24.
+        error = instance.query_and_get_error(
+            f"INSERT INTO {table_name} VALUES (1000, 'c')", settings=write
+        )
+        assert "cannot be safely converted" in error, error
+
+        # With the setting off (plain cast) the partition value is truncated, so the INSERT succeeds.
+        instance.query(
+            f"INSERT INTO {table_name} VALUES (1000, 'c')",
+            settings={**write, "delta_lake_accurate_write_cast": 0},
+        )
+        assert (
+            int(instance.query(f"SELECT count() FROM {table_name}", settings=write)) == 3
+        )
+    finally:
+        instance.query(f"DROP TABLE IF EXISTS {table_name}")
+
+
 def test_single_log_file_azure_connection_string(started_cluster):
     """Test DeltaLakeAzure with connection string authentication and delta kernel enabled."""
     instance = started_cluster.instances["node1"]

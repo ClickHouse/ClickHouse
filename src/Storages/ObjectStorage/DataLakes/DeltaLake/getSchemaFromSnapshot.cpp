@@ -1020,11 +1020,19 @@ static void validateClickHouseTypeForDeltaCreate(const DB::DataTypePtr & full_ty
         }
         case DB::TypeIndex::Tuple:
         {
-            const auto & elements = assert_cast<const DB::DataTypeTuple &>(*type).getElements();
+            const auto & tuple_type = assert_cast<const DB::DataTypeTuple &>(*type);
+            const auto & elements = tuple_type.getElements();
             if (elements.empty())
                 throw DB::Exception(
                     DB::ErrorCodes::NOT_IMPLEMENTED,
                     "DeltaLake does not support an empty Tuple/struct type for CREATE TABLE");
+            /// Delta `struct` fields are always named, so an unnamed Tuple would be persisted with
+            /// synthesized names ("1", "2", ...) and read back as a named Tuple, changing its type. Reject it
+            /// so the created type round-trips; declare a named Tuple instead.
+            if (!tuple_type.hasExplicitNames())
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "DeltaLake does not support an unnamed Tuple/struct type for CREATE TABLE; declare a named Tuple");
             for (const auto & element : elements)
                 validateClickHouseTypeForDeltaCreate(element);
             return;

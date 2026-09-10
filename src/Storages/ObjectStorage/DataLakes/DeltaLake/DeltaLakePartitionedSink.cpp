@@ -18,6 +18,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
@@ -173,23 +175,30 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
 {
     delta_transaction->validateSchema(getHeader());
 
-    /// One `toString(<column>)` expression per partition column (Nullable columns yield
-    /// `Nullable(String)`, keeping nulls distinguishable). Nullability is taken from the Delta
-    /// write schema, which is authoritative over the user-supplied header.
+    /// One `toString(<cast>(<column>))` expression per partition column: the value is first cast to the
+    /// Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or
+    /// truncated (plain) instead of being committed verbatim and read back as a different value (e.g. `1000`
+    /// into a Delta `byte` -> `-24`). `toString` keeps nulls distinguishable (`Nullable(String)`); the cast
+    /// target is the nullable write type so a NULL passes through to the null-equivalent check in `consume`.
+    /// Nullability for that check is taken from the Delta write schema, which is authoritative.
     const auto & write_schema = delta_transaction->getWriteSchema();
     partition_value_actions.reserve(partition_columns.size());
     partition_column_nullable.reserve(partition_columns.size());
     for (const auto & column : partition_columns)
     {
-        ASTs to_string_args{make_intrusive<ASTIdentifier>(column)};
-        ASTPtr to_string_ast = makeASTFunction("toString", std::move(to_string_args));
-        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(to_string_ast));
-
         auto schema_column = write_schema.tryGetByName(column);
         if (!schema_column)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Partition column '{}' is not present in the DeltaLake table schema", column);
+
+        ASTPtr value_ast = makeASTFunction(
+            accurate_write_cast ? "accurateCast" : "_CAST",
+            make_intrusive<ASTIdentifier>(column),
+            make_intrusive<ASTLiteral>(makeNullable(schema_column->type)->getName()));
+        ASTPtr to_string_ast = makeASTFunction("toString", std::move(value_ast));
+        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(to_string_ast));
+
         partition_column_nullable.push_back(schema_column->type->isNullable());
     }
 }
