@@ -311,11 +311,11 @@ read_column()
         "SELECT $1, toTypeName($1) FROM file('${DATA}/unions.${3:-Arrow}', '${3:-Arrow}', \$\$$1 $2\$\$)${4:+ SETTINGS $4}"
 }
 
-# usage: rejected <column> <requested type>; prints the reported conversion, not merely a failure
+# usage: rejected <column> <requested type> [settings]; prints the reported conversion, not merely a failure
 rejected()
 {
     ${CLICKHOUSE_CLIENT} --query \
-        "SELECT $1 FROM file('${DATA}/unions.Arrow', 'Arrow', \$\$$1 $2\$\$)" 2>&1 \
+        "SELECT $1 FROM file('${DATA}/unions.Arrow', 'Arrow', \$\$$1 $2\$\$)${3:+ SETTINGS $3}" 2>&1 \
         | grep -oE 'Cannot convert type [^.]+\.' | head -1
 }
 
@@ -416,6 +416,8 @@ read_column struct_nested_union 'Variant(Tuple(v Variant(IPv6, String)), String)
 echo "--- a branch already under the requested name keeps fields the request distinguishes by case ---"
 read_column struct_ci_dup 'Variant(Tuple(A Int32, a Int32), IPv6)' Arrow \
     "input_format_arrow_case_insensitive_column_matching = 1"
+echo "--- and a case-sensitive lookup names each of those two fields exactly, so a widening one reads back ---"
+read_column struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)'
 
 echo "--- a date32 branch is excluded by design, so this stays rejected ---"
 rejected date32_utf8 'Variant(Int32, String)'
@@ -433,6 +435,9 @@ echo "--- and so does one target field among fields the struct does have ---"
 rejected struct_fields 'Variant(Tuple(a Int32, c Int32), String)'
 echo "--- the case-insensitive match is the setting's, so by default a case-differing field is rejected ---"
 rejected struct_ci 'Variant(Tuple(a Int32, b Int32), String)'
+echo "--- and under that setting two fields differing only in case make the lookup ambiguous, so it is rejected ---"
+rejected struct_ci_dup 'Variant(Tuple(A Int64, a Int64), IPv6)' \
+    "input_format_arrow_case_insensitive_column_matching = 1"
 echo "--- and the date32 exclusion is inherited by the recursion into a struct field ---"
 rejected struct_fields 'Variant(Tuple(d Int32), String)'
 echo "--- an unnamed target tuple of another arity would drop a field silently, so it is rejected ---"

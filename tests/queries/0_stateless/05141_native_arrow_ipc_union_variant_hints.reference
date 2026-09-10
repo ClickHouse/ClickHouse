@@ -236,6 +236,11 @@ q	Variant(String, Tuple(\n    v Variant(IPv6, String)))
 1:203:405:607:809:a0b:c0d:e0f	Variant(IPv6, Tuple(\n    A Int32,\n    a Int32))
 (2,4)	Variant(IPv6, Tuple(\n    A Int32,\n    a Int32))
 ::1	Variant(IPv6, Tuple(\n    A Int32,\n    a Int32))
+--- and a case-sensitive lookup names each of those two fields exactly, so a widening one reads back ---
+(1,3)	Variant(IPv6, Tuple(\n    A Int64,\n    a Int64))
+1:203:405:607:809:a0b:c0d:e0f	Variant(IPv6, Tuple(\n    A Int64,\n    a Int64))
+(2,4)	Variant(IPv6, Tuple(\n    A Int64,\n    a Int64))
+::1	Variant(IPv6, Tuple(\n    A Int64,\n    a Int64))
 --- a date32 branch is excluded by design, so this stays rejected ---
 Cannot convert type Variant(Date32, String) to Variant(Int32, String).
 --- and the narrowing DateTime64 -> DateTime is refused, so this stays rejected ---
@@ -252,6 +257,8 @@ Cannot convert type Variant(String, Tuple(a Nullable(Int32))) to Variant(String,
 Cannot convert type Variant(String, Tuple(a Nullable(Int32), b Nullable(Int32), d Nullable(Date32))) to Variant(String, Tuple(a Int32, c Int32)).
 --- the case-insensitive match is the setting's, so by default a case-differing field is rejected ---
 Cannot convert type Variant(String, Tuple(B Nullable(Int32), A Nullable(Int32))) to Variant(String, Tuple(a Int32, b Int32)).
+--- and under that setting two fields differing only in case make the lookup ambiguous, so it is rejected ---
+Cannot convert type Variant(FixedString(16), Tuple(A Int32, a Int32)) to Variant(IPv6, Tuple(A Int64, a Int64)).
 --- and the date32 exclusion is inherited by the recursion into a struct field ---
 Cannot convert type Variant(String, Tuple(a Nullable(Int32), b Nullable(Int32), d Nullable(Date32))) to Variant(String, Tuple(d Int32)).
 --- an unnamed target tuple of another arity would drop a field silently, so it is rejected ---
