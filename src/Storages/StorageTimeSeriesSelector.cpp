@@ -372,11 +372,11 @@ namespace
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
         conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
-        /// For a whole-metric selector over a metric-clustered id layout two more conditions are
-        /// added: <raw id column> >= tuple(hash(metric_name), min) AND <raw id column> <= tuple(
-        /// hash(metric_name), max). They are a superset of the `id IN <set>` condition above, so
-        /// the returned rows do not change; their purpose is to give the primary-key index
-        /// analysis a continuous key range instead of the large set (see readImpl).
+        /// For a whole-metric selector over a metric-clustered id layout one more condition is
+        /// added: indexHint(<raw id column> >= tuple(hash(metric_name), min) AND <raw id column>
+        /// <= tuple(hash(metric_name), max)). `indexHint` keeps it out of the row-level filter, so
+        /// its only purpose is to give the primary-key index analysis a continuous key range
+        /// instead of the large set (see readImpl).
         for (auto & condition : whole_metric_id_range_conditions)
             conditions.push_back(std::move(condition));
 
@@ -773,15 +773,21 @@ namespace
                 std::vector<String>{data_table_id.database_name, data_table_id.table_name, TimeSeriesColumnNames::ID});
         };
 
-        ASTs conditions;
-        conditions.push_back(makeASTFunction(
+        ASTs range_conditions;
+        range_conditions.push_back(makeASTFunction(
             "greaterOrEquals",
             make_qualified_id(),
             makeASTFunction("tuple", first_component->clone(), std::move(min_max_second_component->first))));
-        conditions.push_back(makeASTFunction(
+        range_conditions.push_back(makeASTFunction(
             "lessOrEquals",
             make_qualified_id(),
             makeASTFunction("tuple", std::move(first_component), std::move(min_max_second_component->second))));
+
+        /// Wrapped in `indexHint` so the range reaches index analysis but is not evaluated per row:
+        /// the `id IN <set>` condition the caller keeps is the exact filter, and on this path every
+        /// id of that set is inside the range (that is what the probe establishes).
+        ASTs conditions;
+        conditions.push_back(makeASTFunction("indexHint", makeASTForLogicalAnd(std::move(range_conditions))));
         return conditions;
     }
 }
