@@ -60,6 +60,7 @@ ColumnNumbers mapKeysToSpillPositions(const ColumnNumbers & key_columns_pos, con
     for (const auto key_pos : key_columns_pos)
     {
         const auto it = std::find(spill_columns_pos.begin(), spill_columns_pos.end(), key_pos);
+        chassert(it != spill_columns_pos.end());
         spill_positions.push_back(it - spill_columns_pos.begin());
     }
     return spill_positions;

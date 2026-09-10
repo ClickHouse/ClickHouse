@@ -281,6 +281,8 @@ DistinctSetFilter::DistinctSetFilter(
     , skip_null_keys(skip_null_keys_)
     , require_extractable_keys(require_extractable_keys_)
 {
+    chassert(!skip_null_keys || !require_extractable_keys);
+
     key_types.reserve(key_columns_pos.size());
     for (const auto pos : key_columns_pos)
         key_types.push_back(header.getByPosition(pos).type);
@@ -332,6 +334,8 @@ public:
 
     MutableColumns next(size_t max_rows, size_t max_bytes) override
     {
+        chassert(max_rows > 0);
+
         if (!data)
             return {};
 
@@ -387,6 +391,9 @@ private:
 
 std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys() &&
 {
+    chassert(!skip_null_keys);
+    chassert(getTotalRowCount() > 0);
+
     auto create_extractor = [this]<typename Method>(const Method & method) -> std::unique_ptr<KeyExtractor>
     {
         if constexpr (requires { &Method::insertKeyIntoColumns; })
@@ -401,7 +408,8 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
     switch (data->type)
     {
         case SetVariants::Type::EMPTY:
-            break;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from an uninitialized DISTINCT set");
+
 #define M(NAME) \
         case SetVariants::Type::NAME: \
             return create_extractor(*data->NAME);
@@ -409,7 +417,7 @@ std::unique_ptr<DistinctSetFilter::KeyExtractor> DistinctSetFilter::extractKeys(
 #undef M
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Keys cannot be extracted from an uninitialized DISTINCT set");
+    UNREACHABLE();
 }
 
 void DistinctSetFilter::initialize(const ColumnRawPtrs & key_columns)

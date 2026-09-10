@@ -21,9 +21,16 @@ DistinctSortedAlgorithm::DistinctSortedAlgorithm(
     , output_columns(num_inputs)
     , merged_data(false, max_block_size_rows, 0, std::nullopt)
 {
+    chassert(description.size() >= 2);
+    chassert(description.back().column_name == header->getByPosition(flag_column_pos).name);
+    chassert(description.back().direction == -1);
+
     DataTypes sort_types;
     for (const auto & column : description)
+    {
+        chassert(!column.collator);
         sort_types.push_back(header->getByName(column.column_name).type);
+    }
     compileSortDescriptionIfNeeded(description, sort_types, /*increase_compile_attempts=*/ true);
 }
 
