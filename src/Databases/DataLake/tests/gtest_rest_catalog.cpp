@@ -64,7 +64,7 @@ enum class CatalogShape
     /// forever (gold -> gold.gold -> ...); a flat-namespace catalog must list the top level only.
     ParentIgnoringEcho,
     /// The shapes below advertise two namespaces, `alive` (holding `table_a`) and `doomed`, and then
-    /// fail one of the two calls that read `doomed` — modelling a namespace another client dropped
+    /// fail one of the two calls that read `doomed`: modelling a namespace another client dropped
     /// after it was listed. The status varies so that only the not-found case may be tolerated.
     VanishedChildListing,
     VanishedChildListingUnauthorized,
@@ -77,16 +77,33 @@ enum class CatalogShape
     /// subset of a dropped namespace as if it were the whole of a live one.
     VanishedChildListingSecondPage,
     VanishedTableListingSecondPage,
-    /// The root `/v1/namespaces` route itself 404s: a misconfigured endpoint, never a race.
+    /// The root `/v1/namespaces` route itself 404s: a misconfigured endpoint, never a race. The
+    /// second shape answers it with a namespace-not-found body, which the root call cannot honestly
+    /// produce: it names no namespace.
     MissingRootRoute,
+    MissingRootRouteNamespaceBody,
+    /// The two shapes below 404 a listing of the still-live namespace `doomed` with a body that does
+    /// NOT name a missing namespace, modelling an endpoint the catalog does not serve: the `parent`
+    /// filter in the first, the per-namespace table listing in the second. Same status as a race,
+    /// different cause.
+    ChildListingEndpointNotFound,
+    TableListingEndpointNotFound,
+    /// A 404 whose `error.type` is another error, with the namespace-not-found type appearing in the
+    /// human-readable `message` instead: only the typed field may decide.
+    TableListingWrongErrorType,
+    /// A 404 carrying a proxy's HTML error page instead of the catalog's error model, so the cause
+    /// cannot be read at all.
+    TableListingUnparseableBody,
 };
 
-bool isVanishingShape(CatalogShape shape)
+bool advertisesDoomedNamespace(CatalogShape shape)
 {
     return shape == CatalogShape::VanishedChildListing || shape == CatalogShape::VanishedChildListingUnauthorized
         || shape == CatalogShape::VanishedChildListingServerError || shape == CatalogShape::VanishedTableListing
         || shape == CatalogShape::VanishedTableListingUnauthorized
-        || shape == CatalogShape::VanishedChildListingSecondPage || shape == CatalogShape::VanishedTableListingSecondPage;
+        || shape == CatalogShape::VanishedChildListingSecondPage || shape == CatalogShape::VanishedTableListingSecondPage
+        || shape == CatalogShape::ChildListingEndpointNotFound || shape == CatalogShape::TableListingEndpointNotFound
+        || shape == CatalogShape::TableListingWrongErrorType || shape == CatalogShape::TableListingUnparseableBody;
 }
 
 /// Requests the fake catalog served, so a test can assert the tolerant branch was really reached
@@ -106,10 +123,14 @@ void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & bod
     response.send() << body;
 }
 
-void writeError(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)
+void writeError(
+    Poco::Net::HTTPServerResponse & response,
+    Poco::Net::HTTPResponse::HTTPStatus status,
+    const std::string & body,
+    const std::string & content_type = "application/json")
 {
     response.setStatus(status);
-    response.setContentType("application/json");
+    response.setContentType(content_type);
     response.setContentLength(body.size());
     response.send() << body;
 }
@@ -124,6 +145,10 @@ std::string getRawPath(const std::string & uri)
 
 constexpr auto NO_SUCH_NAMESPACE_BODY
     = R"({"error":{"message":"Namespace doomed not found.","type":"NoSuchNamespaceException","code":404}})";
+constexpr auto ENDPOINT_NOT_FOUND_BODY = R"({"error_code":"ENDPOINT_NOT_FOUND"})";
+constexpr auto WRONG_TYPE_BODY
+    = R"({"error":{"message":"NoSuchNamespaceException","type":"EndpointNotFound","code":404}})";
+constexpr auto PROXY_HTML_BODY = "<html><head><title>404 Not Found</title></head><body>nginx</body></html>";
 constexpr auto NOT_AUTHORIZED_BODY = R"({"error":{"message":"The access token has expired","type":"NotAuthorizedException","code":401}})";
 constexpr auto SERVER_ERROR_BODY = R"({"error":{"message":"Internal error","type":"ServerError","code":500}})";
 
@@ -185,24 +210,27 @@ public:
             {
                 if (counters)
                     ++counters->root_listing;
-                if (shape == CatalogShape::MissingRootRoute)
+                if (shape == CatalogShape::MissingRootRoute || shape == CatalogShape::MissingRootRouteNamespaceBody)
                 {
                     /// A wrong catalog prefix 404s the root listing, which carries no `parent`.
-                    writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, R"({"error_code":"ENDPOINT_NOT_FOUND"})");
+                    writeError(
+                        response,
+                        Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                        shape == CatalogShape::MissingRootRoute ? ENDPOINT_NOT_FOUND_BODY : NO_SUCH_NAMESPACE_BODY);
                     return;
                 }
                 if (shape == CatalogShape::NestedTableThenEmptySibling)
                     writeJSON(response, R"({"namespaces":[["parent"],["empty_later"]]})");
                 else if (shape == CatalogShape::ParentIgnoringEcho)
                     writeJSON(response, R"({"namespaces":[["gold"]]})");
-                else if (isVanishingShape(shape))
+                else if (advertisesDoomedNamespace(shape))
                     writeJSON(response, R"({"namespaces":[["alive"],["doomed"]]})");
                 else
                     writeJSON(response, R"({"namespaces":[["namespace"]]})");
                 return;
             }
 
-            if (parent == "doomed" && isVanishingShape(shape))
+            if (parent == "doomed" && advertisesDoomedNamespace(shape))
             {
                 /// Both pages count, so an arm can require >= 2 and thereby prove the follow-up
                 /// request really was issued and really did 404.
@@ -210,6 +238,8 @@ public:
                     ++counters->doomed_child_listing;
                 if (shape == CatalogShape::VanishedChildListing)
                     writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+                else if (shape == CatalogShape::ChildListingEndpointNotFound)
+                    writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, ENDPOINT_NOT_FOUND_BODY);
                 else if (shape == CatalogShape::VanishedChildListingUnauthorized)
                     writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, NOT_AUTHORIZED_BODY);
                 else if (shape == CatalogShape::VanishedChildListingServerError)
@@ -238,7 +268,11 @@ public:
 
         if (path == "/v1/namespaces/alive/tables")
         {
-            writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
+            /// An endpoint the catalog does not serve is missing for every namespace, not just one.
+            if (shape == CatalogShape::TableListingEndpointNotFound)
+                writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, ENDPOINT_NOT_FOUND_BODY);
+            else
+                writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
             return;
         }
 
@@ -250,6 +284,12 @@ public:
                 ++counters->doomed_table_listing;
             if (shape == CatalogShape::VanishedTableListing)
                 writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, NO_SUCH_NAMESPACE_BODY);
+            else if (shape == CatalogShape::TableListingEndpointNotFound)
+                writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, ENDPOINT_NOT_FOUND_BODY);
+            else if (shape == CatalogShape::TableListingWrongErrorType)
+                writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, WRONG_TYPE_BODY);
+            else if (shape == CatalogShape::TableListingUnparseableBody)
+                writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, PROXY_HTML_BODY, "text/html");
             else if (shape == CatalogShape::VanishedTableListingUnauthorized)
                 writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, NOT_AUTHORIZED_BODY);
             else if (shape == CatalogShape::VanishedTableListingSecondPage)
@@ -712,7 +752,7 @@ TEST(RestCatalog, ChildListingServerErrorStillThrows)
 TEST(RestCatalog, MissingRootListingRouteStillThrows)
 {
     /// A 404 on the root listing means the catalog endpoint is misconfigured, not that a namespace
-    /// vanished — it carries no `parent`, so tolerance must not apply to it.
+    /// vanished: it carries no `parent`, so tolerance must not apply to it.
     RequestCounters counters;
     RestCatalogTestServer server(
         CatalogShape::MissingRootRoute, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
@@ -724,6 +764,83 @@ TEST(RestCatalog, MissingRootListingRouteStillThrows)
     EXPECT_GE(counters.root_listing.load(), 1u);
     /// The root 404 short-circuits before any descent request is issued.
     EXPECT_EQ(counters.doomed_child_listing.load(), 0u);
+}
+
+TEST(RestCatalog, RootListingNotFoundNamingANamespaceStillThrows)
+{
+    /// The root listing names no namespace, so a namespace-not-found answer to it describes nothing
+    /// that could have been dropped: the endpoint is wrong and tolerance must not reach it.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::MissingRootRouteNamespaceBody, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    expectThrowsCode([&] { catalog->getTables(); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+    EXPECT_GE(counters.root_listing.load(), 1u);
+}
+
+TEST(RestCatalog, TableListingNotFoundTypedAsAnotherErrorStillThrows)
+{
+    /// The namespace-not-found name appears only in the free-text `message`; the typed field says the
+    /// endpoint is wrong, and that is the field that decides.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::TableListingWrongErrorType, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_THROW(catalog->getTables(), DB::HTTPException);
+    EXPECT_GE(counters.doomed_table_listing.load(), 1u);
+}
+
+TEST(RestCatalog, TableListingNotFoundWithUnreadableBodyStillThrows)
+{
+    /// Nothing in the response says a namespace is missing, so there is nothing to tolerate: a body
+    /// the catalog's error model cannot be read out of leaves the failure unexplained.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::TableListingUnparseableBody, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_THROW(catalog->getTables(), DB::HTTPException);
+    EXPECT_GE(counters.doomed_table_listing.load(), 1u);
+}
+
+TEST(RestCatalog, ChildListingEndpointNotFoundStillThrows)
+{
+    /// The descent 404s without naming a missing namespace, so the namespace is still there and the
+    /// catalog is refusing the request itself: reporting no children would hide that.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::ChildListingEndpointNotFound, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    expectThrowsCode([&] { catalog->getTables(); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+    EXPECT_GE(counters.doomed_child_listing.load(), 1u);
+}
+
+TEST(RestCatalog, TableListingEndpointNotFoundStillThrows)
+{
+    /// The table listing 404s without naming a missing namespace. Reading it as an empty namespace
+    /// would make `SHOW TABLES` answer nothing and `CHECK DATABASE` call the catalog healthy, so
+    /// both the listing and the emptiness probe have to surface it.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::TableListingEndpointNotFound, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_THROW(catalog->getTables(), DB::HTTPException);
+    EXPECT_GE(counters.doomed_table_listing.load(), 1u);
+    EXPECT_THROW(catalog->empty(), DB::HTTPException);
 }
 
 TEST(RestCatalog, TableListingUnauthorizedStillThrows)

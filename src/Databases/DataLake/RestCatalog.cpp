@@ -160,6 +160,27 @@ String encodeNamespaceForURI(const String & namespace_name)
     return encoded;
 }
 
+/// A 404 status alone does not separate a namespace that is gone from an endpoint the catalog does
+/// not serve: both answer the same status. Only the Iceberg REST error `type` names the cause, so a
+/// body that is absent, unparseable or typed as anything else is not a vanished namespace.
+bool isNamespaceNotFound(const DB::HTTPException & e)
+{
+    if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        return false;
+
+    try
+    {
+        Poco::JSON::Parser parser;
+        const auto response = parser.parse(e.getResponseBody()).extract<Poco::JSON::Object::Ptr>();
+        const auto error = response->getObject("error");
+        return error && error->getValue<String>("type") == "NoSuchNamespaceException";
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
     const Poco::Util::AbstractConfiguration & config)
 {
@@ -1301,9 +1322,9 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
     catch (const DB::HTTPException & e)
     {
         /// A namespace listed by its parent a moment ago may already be dropped, and then has no
-        /// children. Only a descent (non-empty parent) can race: a 404 on the root listing means
-        /// the catalog endpoint itself is wrong and must still be reported.
-        if (!base_namespace.empty() && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        /// children. Only a descent can race: the root listing names no namespace, so nothing it
+        /// reports as missing was dropped from under this call.
+        if (!base_namespace.empty() && isNamespaceNotFound(e))
         {
             LOG_DEBUG(log, "Namespace `{}` disappeared while listing its children: {}", base_namespace, e.displayText());
             return {};
@@ -1463,9 +1484,9 @@ DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace,
     }
     catch (const DB::HTTPException & e)
     {
-        /// The namespace was dropped between being listed and being read; it has no tables. A 404
-        /// names the namespace, so no page collected so far is trustworthy: report none.
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        /// The namespace was dropped between being listed and being read; it has no tables. The
+        /// error names the namespace, so no page collected so far is trustworthy: report none.
+        if (isNamespaceNotFound(e))
         {
             LOG_DEBUG(log, "Namespace `{}` disappeared while listing its tables: {}", base_namespace, e.displayText());
             return {};
