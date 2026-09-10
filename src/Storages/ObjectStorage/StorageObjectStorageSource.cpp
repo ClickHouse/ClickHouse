@@ -1118,7 +1118,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
-    bool need_only_count)
+    bool need_only_count,
+    std::atomic_bool * iterator_consumed)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -1130,6 +1131,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     while (true)
     {
         object_info = file_iterator->next(processor);
+
+        if (iterator_consumed)
+            iterator_consumed->store(true, std::memory_order_relaxed);
 
         if (!object_info || object_info->getPath().empty())
             return {};

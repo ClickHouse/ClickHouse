@@ -122,6 +122,9 @@ public:
     /// of all files stored in FileStatusesCache cache.
     const FileStatusesCache & getFileStatusesCache() const { return local_file_statuses; }
 
+    /// Peek at the cached file status of `path` without creating one.
+    ObjectStorageQueueIFileMetadata::FileStatusPtr tryGetFileStatus(const std::string & path);
+
     /// Get TableMetadata, which is the exact information we store in keeper.
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
@@ -130,9 +133,13 @@ public:
     /// for the requested file.
     /// ObjectStorageQueueIFileMetadata (either Ordered or Unordered implementation)
     /// allows to manage metadata of a concrete file.
+    /// `foreign_processing_node_cache_ttl_sec` is a per-table setting: this object is shared
+    /// by all tables with the same `keeper_path`, so it is passed by the caller.
     FileMetadataPtr getFileMetadata(
         const std::string & path,
-        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {},
+        time_t foreign_processing_node_cache_ttl_sec = 0,
+        std::shared_ptr<ObjectStorageQueueIFileMetadata::ForeignProcessingObservers> foreign_processing_observers = {});
 
     /// Register table in keeper metadata.
     /// active = false:

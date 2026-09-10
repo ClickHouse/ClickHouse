@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
@@ -24,6 +25,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_ordered_pause_before_set_processing_multi[];
 }
 
 namespace
@@ -417,7 +423,9 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     ObjectStorageQueueBucketingMode bucketing_mode_,
     ObjectStorageQueuePartitioningMode partitioning_mode_,
     const ObjectStorageQueueFilenameParser * parser_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    time_t foreign_processing_node_cache_ttl_sec_,
+    std::shared_ptr<ForeignProcessingObservers> foreign_processing_observers_)
     : ObjectStorageQueueIFileMetadata(
         path_,
         zookeeper_name_,
@@ -428,7 +436,9 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         max_loading_retries_,
         metadata_ref_count_,
         use_persistent_processing_nodes_,
-        log_)
+        log_,
+        foreign_processing_node_cache_ttl_sec_,
+        std::move(foreign_processing_observers_))
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
     , bucket_info(bucket_info_)
@@ -568,7 +578,11 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     {
         ProcessingStateFromKeeper state(is_failed);
         if (is_failed && !responses[1].data.empty())
-            state.failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+        {
+            auto failed_node_metadata = NodeMetadata::fromString(responses[1].data);
+            state.failure_message = std::move(failed_node_metadata.last_exception);
+            state.failed_retries = failed_node_metadata.retries;
+        }
         return state;
     }
 
@@ -582,7 +596,11 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     ProcessingStateFromKeeper state(file_path, last_processed_path, is_failed);
     state.processed_bucket_version = responses[0].stat.version;
     if (is_failed && !responses[1].data.empty())
-        state.failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+    {
+        auto failed_node_metadata = NodeMetadata::fromString(responses[1].data);
+        state.failure_message = std::move(failed_node_metadata.last_exception);
+        state.failed_retries = failed_node_metadata.retries;
+    }
     return state;
 }
 
@@ -659,6 +677,14 @@ ObjectStorageQueueOrderedFileMetadata::getBucketForPath(
     return getBucketForPathImpl(path_, buckets_num, bucketing_mode, partitioning_mode, parser);
 }
 
+std::string ObjectStorageQueueOrderedFileMetadata::getPartitionKeyForPath(
+    const std::string & path_,
+    ObjectStorageQueuePartitioningMode partitioning_mode,
+    const ObjectStorageQueueFilenameParser * parser)
+{
+    return getPartitionKey(path_, partitioning_mode, parser);
+}
+
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
     const std::filesystem::path & zk_path,
     const Bucket & bucket,
@@ -722,7 +748,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file processing, error: {}", code);
 }
 
-std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl()
+std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl(
+    std::optional<FileTerminalState> & terminal_state)
 {
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
@@ -739,6 +766,10 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         if (state.is_failed)
         {
             LOG_TEST(log, "File {} is Failed, path {}", path, failed_node_path);
+            terminal_state = FileTerminalState{
+                .state = FileStatus::State::Failed,
+                .exception = std::move(state.failure_message),
+                .retries = state.failed_retries};
             return {false, FileStatus::State::Failed};
         }
 
@@ -747,7 +778,15 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                  processed_node_path);
 
         if (state.is_processed)
+        {
+            terminal_state = FileTerminalState{.state = FileStatus::State::Processed};
             return {false, FileStatus::State::Processed};
+        }
+
+        /// Test-only: park between the initial state read and the multi request, so a test can
+        /// create the `failed` node in this window and exercise the reread of a node which
+        /// appeared after the initial read.
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_ordered_pause_before_set_processing_multi);
 
         Coordination::Requests requests;
 
@@ -807,7 +846,12 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         LOG_DEBUG(log, "Code: {}, failed idx: {}, failed path: {}", code, failed_idx, failed_path);
 
         if (has_request_failed(failed_path_doesnt_exist_idx))
-            return {false, FileStatus::State::Failed};
+        {
+            /// The `failed` node appeared after the initial read: reread the state so the
+            /// exception and retries of that node reach the cached record via `terminal_state`.
+            LOG_TEST(log, "Failed node for {} appeared during set-processing, rereading it", path);
+            continue;
+        }
 
         if (has_request_failed(create_processing_path_idx))
             return {false, FileStatus::State::Processing};
@@ -1093,6 +1137,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     ObjectStorageQueueBucketingMode bucketing_mode,
     ObjectStorageQueuePartitioningMode partitioning_mode,
     const ObjectStorageQueueFilenameParser * parser,
+    std::unordered_map<std::string, FileTerminalState> & terminal_states,
     LoggerPtr log_)
 {
     const bool use_buckets_for_processing = buckets_num > 1;
@@ -1130,12 +1175,14 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
 
     std::vector<std::string> failed_paths;
     std::vector<size_t> check_paths_indexes;
+    std::vector<bool> processed_by_pointer;
     for (size_t i = 0; i < paths.size(); ++i)
     {
         const auto & path = paths[i];
         const auto bucket = use_buckets_for_processing
             ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
             : 0;
+        bool is_processed_by_pointer = false;
         if (!last_processed_file_map.empty())
         {
             if (hasPartitioningMode(partitioning_mode))
@@ -1145,21 +1192,30 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
                 if (max_processed_file != last_processed_file_map[bucket].end()
                     && path <= max_processed_file->second)
                 {
-                    LOG_TEST(log_, "Skipping file {}: Processed", path);
-                    continue;
+                    is_processed_by_pointer = true;
                 }
             }
             else
             {
                 if (path <= last_processed_file_map[bucket][""])
                 {
-                    LOG_TEST(log_, "Skipping file {}: Processed", path);
-                    continue;
+                    is_processed_by_pointer = true;
                 }
             }
         }
+
+        if (is_processed_by_pointer)
+        {
+            LOG_TEST(log_, "Skipping file {}: Processed", path);
+            terminal_states.emplace(path, FileTerminalState{.state = FileStatus::State::Processed});
+        }
+
+        /// A `failed` node has precedence over the bucket-level processed pointer.
+        /// A later file may advance that pointer while a failed node for an earlier
+        /// file remains in Keeper.
         failed_paths.push_back(zk_path_ / "failed" / getNodeName(path));
         check_paths_indexes.push_back(i);
+        processed_by_pointer.push_back(is_processed_by_pointer);
     }
 
     std::vector<std::string> result;
@@ -1182,15 +1238,23 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     });
     for (size_t i = 0; i < responses.size(); ++i)
     {
-        const auto filename = std::move(paths[check_paths_indexes[i]]);
+        auto filename = std::move(paths[check_paths_indexes[i]]);
         check_code(responses[i].error, filename);
         if (responses[i].error == Coordination::Error::ZNONODE)
         {
-            result.push_back(filename);
+            if (!processed_by_pointer[i])
+                result.push_back(std::move(filename));
         }
         else
         {
             LOG_TEST(log_, "Skipping file {}: Failed", filename);
+            auto failed_node_metadata = NodeMetadata::fromString(responses[i].data);
+            terminal_states.insert_or_assign(
+                std::move(filename),
+                FileTerminalState{
+                    .state = FileStatus::State::Failed,
+                    .exception = std::move(failed_node_metadata.last_exception),
+                    .retries = failed_node_metadata.retries});
         }
 
     }
