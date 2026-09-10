@@ -76,8 +76,8 @@ INSERT INTO tab_key_escape VALUES (map('abc\\+def', ''));
 SELECT '-- a map key is a literal, not a pattern';
 SELECT count() FROM tab_key_escape WHERE m['abc\\+def'] LIKE '' SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT count() FROM tab_key_escape WHERE m['abc\\+def'] LIKE '' SETTINGS optimize_functions_to_subcolumns = 1;
-SELECT count() FROM tab_key_escape WHERE match(m['abc\\+def'], '') SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT count() FROM tab_key_escape WHERE match(m['abc\\+def'], '') SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM tab_key_escape WHERE match(m['abc\\+def'], '') SETTINGS optimize_functions_to_subcolumns = 0, force_data_skipping_indices = 'idx';
+SELECT count() FROM tab_key_escape WHERE match(m['abc\\+def'], '') SETTINGS optimize_functions_to_subcolumns = 1, force_data_skipping_indices = 'idx';
 
 DROP TABLE tab_key_escape;
 
@@ -87,8 +87,8 @@ ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
 INSERT INTO tab_key_escape_str VALUES (map('abc\\+def', 'zzz'));
 
 SELECT '-- and the same key under a pattern the value satisfies';
-SELECT count() FROM tab_key_escape_str WHERE m['abc\\+def'] LIKE '%zzz%' SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT count() FROM tab_key_escape_str WHERE m['abc\\+def'] LIKE '%zzz%' SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM tab_key_escape_str WHERE m['abc\\+def'] LIKE '%zzz%' SETTINGS optimize_functions_to_subcolumns = 0, force_data_skipping_indices = 'idx';
+SELECT count() FROM tab_key_escape_str WHERE m['abc\\+def'] LIKE '%zzz%' SETTINGS optimize_functions_to_subcolumns = 1, force_data_skipping_indices = 'idx';
 
 DROP TABLE tab_key_escape_str;
 
