@@ -8,7 +8,8 @@ SELECT nan IN (nan), nan = nan;
 
 SELECT 'statistics part pruning';
 DROP TABLE IF EXISTS t_nan_stats;
-CREATE TABLE t_nan_stats (k UInt64, f Float64) ENGINE = MergeTree ORDER BY k;
+-- `basic` statistics hold the column min/max the pruner reads; pin it because `auto_statistics_types` is randomized by clickhouse-test.
+CREATE TABLE t_nan_stats (k UInt64, f Float64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = 'basic';
 SYSTEM STOP MERGES t_nan_stats;
 INSERT INTO t_nan_stats SELECT number, if(number < 13, nan, 1.5) FROM numbers(100000);
 INSERT INTO t_nan_stats SELECT number + 200000, 2.5 FROM numbers(1000);
@@ -21,6 +22,14 @@ SELECT count() FROM t_nan_stats WHERE f IN (nan, 2.5) SETTINGS use_statistics_fo
 SELECT count() FROM t_nan_stats WHERE f IN (SELECT nan);
 SELECT count() FROM t_nan_stats WHERE f IN (1.5);
 SELECT count() FROM t_nan_stats WHERE f = nan;
+
+-- A `NaN`-free set must keep using statistics-based part pruning: the second part holds only `2.5`,
+-- so `f IN (1.5)` prunes it. `f IN (nan)` instead makes the whole condition unknown - the set atom is
+-- declined in `KeyCondition` - so there is no `Statistics` entry to prune with at all.
+SET explain_query_plan_default = 'legacy';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_nan_stats WHERE f IN (1.5)) WHERE explain LIKE '%Statistics%';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_nan_stats WHERE f IN (1.5)) WHERE explain LIKE '%Parts: 1/2%';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_nan_stats WHERE f IN (nan)) WHERE explain LIKE '%Statistics%';
 DROP TABLE t_nan_stats;
 
 SELECT 'minmax skip index';
