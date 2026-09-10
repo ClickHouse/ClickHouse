@@ -1056,8 +1056,6 @@ void SystemLog<LogElement>::prepareUnionTable()
               * `system` database, and `system.all_query_log` is exactly the name a hand-rolled union of
               * the rotated logs would take - a `MergeTree` history table, or a materialized view's
               * target. Such a table must not lose its data to a name collision, so leave it alone.
-              * `union_table_broken` stops the attempt from repeating on every flush; a restart or a
-              * rotation of the log table checks again.
               */
             const auto * existing_create = existing_create_query_ast->as<ASTCreateQuery>();
             const auto * existing_table_function
@@ -1076,7 +1074,11 @@ void SystemLog<LogElement>::prepareUnionTable()
                     LogElement::name(),
                     existing_create_query,
                     union_create_query);
-                union_table_broken = true;
+                /// Not `union_table_broken`: the flush that follows the removal of that table has to
+                /// create the union table. Clearing the pending check keeps the message to one per
+                /// check instead of one per flush, because a later flush that still finds a table on
+                /// the name returns before reaching this point.
+                union_table_check_pending = false;
                 return;
             }
 
