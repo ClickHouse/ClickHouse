@@ -1,0 +1,100 @@
+SET enable_nullable_tuple_type = 1;
+
+DROP TABLE IF EXISTS nullable_tuple_join_left;
+DROP TABLE IF EXISTS nullable_tuple_join_right;
+CREATE TABLE nullable_tuple_join_left (id UInt8, k Nullable(Tuple(Nullable(UInt8))), tag Nullable(UInt8)) ENGINE = Memory;
+CREATE TABLE nullable_tuple_join_right AS nullable_tuple_join_left;
+INSERT INTO nullable_tuple_join_left VALUES (1, (NULL), 1), (2, (1), 1), (3, NULL, 1), (4, (2), 1), (5, (NULL), NULL);
+INSERT INTO nullable_tuple_join_right VALUES (11, (NULL), 1), (12, (1), 1), (13, NULL, 1), (14, (3), 1), (15, (NULL), NULL);
+
+-- Outer joins preserve unmatched rows while matching non-null tuples containing NULL fields.
+{% for algorithm in ['hash', 'parallel_hash', 'grace_hash', 'full_sorting_merge', 'partial_merge'] %}
+{% for kind in ['INNER', 'LEFT', 'RIGHT', 'FULL'] %}
+{% for nulls in [0, 1] %}
+SELECT '{{ algorithm }}, {{ kind }}, {{ nulls }}', arraySort(groupArray((l.id, r.id)))
+FROM nullable_tuple_join_left AS l ALL {{ kind }} JOIN nullable_tuple_join_right AS r
+ON l.k = r.k AND l.tag = r.tag
+SETTINGS join_algorithm = '{{ algorithm }}', join_use_nulls = {{ nulls }}, max_threads = 4;
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+-- Null-safe joins also match outer NULLs and NULLs in other key components.
+{% for algorithm in ['hash', 'parallel_hash', 'grace_hash', 'full_sorting_merge'] %}
+SELECT '{{ algorithm }}, null-safe', arraySort(groupArray((l.id, r.id)))
+FROM nullable_tuple_join_left AS l ALL INNER JOIN nullable_tuple_join_right AS r
+ON isNotDistinctFrom(l.k, r.k) AND isNotDistinctFrom(l.tag, r.tag)
+SETTINGS join_algorithm = '{{ algorithm }}', max_threads = 4;
+{% endfor %}
+DROP TABLE nullable_tuple_join_left;
+DROP TABLE nullable_tuple_join_right;
+
+-- Set construction deduplicates multiple partition streams with the same outer-null semantics.
+DROP TABLE IF EXISTS nullable_tuple_partitioned;
+CREATE TABLE nullable_tuple_partitioned (k Nullable(Tuple(Nullable(UInt8))), p UInt8, tag Nullable(UInt8))
+ENGINE = MergeTree PARTITION BY p ORDER BY tuple();
+INSERT INTO nullable_tuple_partitioned
+SELECT CAST(if(number % 7 = 0, NULL, tuple(if(number % 5 = 0, NULL, toNullable(toUInt8(number % 3))))),
+    'Nullable(Tuple(Nullable(UInt8)))'), toUInt8(number % 3), if(number % 11 = 0, NULL, toNullable(toUInt8(1)))
+FROM numbers(1000);
+SELECT countIf(explain LIKE '%DistinctTransform%') > 0
+FROM
+(
+    EXPLAIN PIPELINE
+    SELECT (k, p, tag) IN (SELECT k, p, tag FROM nullable_tuple_partitioned)
+    FROM nullable_tuple_partitioned
+    SETTINGS transform_null_in = 0, allow_creating_set_partitions_independently = 1,
+        force_creating_set_partitions_independently = 1, max_threads = 4
+);
+{% for mode in [0, 1] %}
+{% for preliminary in [0, 1] %}
+SELECT 'distinct, {{ mode }}, {{ preliminary }}', countIf(actual != expected), countIf(negative != NOT expected)
+FROM
+(
+    SELECT (k, p, tag) IN (SELECT k, p, tag FROM nullable_tuple_partitioned) AS actual,
+        (k, p, tag) NOT IN (SELECT k, p, tag FROM nullable_tuple_partitioned) AS negative,
+        {% if mode %}1{% else %}(isNotNull(k) AND isNotNull(tag)){% endif %} AS expected
+    FROM nullable_tuple_partitioned
+)
+SETTINGS transform_null_in = {{ mode }}, allow_creating_set_partitions_independently = {{ preliminary }},
+    force_creating_set_partitions_independently = 1, max_threads = 4, max_block_size = 7;
+{% endfor %}
+{% endfor %}
+DROP TABLE nullable_tuple_partitioned;
+
+-- Primary-key pruning agrees with row evaluation, including tuple element type conversions.
+DROP TABLE IF EXISTS nullable_tuple_index;
+CREATE TABLE nullable_tuple_index (id UInt8, k Nullable(Tuple(Nullable(UInt8))), tag Nullable(UInt8))
+ENGINE = MergeTree ORDER BY (k, tag) SETTINGS allow_nullable_key = 1, index_granularity = 1;
+INSERT INTO nullable_tuple_index VALUES (1, (NULL), 1), (2, (1), 1), (3, NULL, 1), (4, (2), 1), (5, (NULL), NULL);
+{% for mode in [0, 1] %}
+{% for element_type in ['UInt8', 'UInt16'] %}
+{% for index in [0, 1] %}
+{% for operator in ['IN', 'NOT IN'] %}
+SELECT 'index, {{ mode }}, {{ element_type }}, {{ index }}, {{ operator }}', arraySort(groupArray(id))
+FROM nullable_tuple_index
+WHERE (k, tag) {{ operator }}
+    (SELECT CAST(k, 'Nullable(Tuple(Nullable({{ element_type }})))'), tag FROM nullable_tuple_index WHERE id IN (1, 2, 3, 5))
+SETTINGS transform_null_in = {{ mode }}, use_index_for_in_with_subqueries = {{ index }},
+    use_skip_indexes = 0, optimize_move_to_prewhere = 0;
+{% endfor %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+DROP TABLE nullable_tuple_index;
+
+-- Stored sets retain their null-matching policy independently of the querying session setting.
+DROP TABLE IF EXISTS nullable_tuple_stored_set;
+CREATE TABLE nullable_tuple_stored_set (k Nullable(Tuple(Nullable(UInt8))), tag Nullable(UInt8)) ENGINE = Set SETTINGS persistent = 0;
+INSERT INTO nullable_tuple_stored_set VALUES ((NULL), 1), ((1), 1), (NULL, 1), ((NULL), NULL);
+{% for mode in [0, 1] %}
+SELECT {{ mode }}, number, (k, 1) IN nullable_tuple_stored_set, (k, 1) NOT IN nullable_tuple_stored_set
+FROM
+(
+    SELECT number, CAST(if(number = 0, NULL, tuple(if(number = 1, NULL, toNullable(number - 1)))),
+        'Nullable(Tuple(Nullable(UInt8)))') AS k
+    FROM numbers(4)
+)
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}
+DROP TABLE nullable_tuple_stored_set;
