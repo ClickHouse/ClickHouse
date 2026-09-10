@@ -915,9 +915,8 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
-        /// Match execution: a query that falls back to local execution is analyzable, and the
-        /// decision must land on the interpreter context before it is exposed below —
-        /// `executeImpl` rejects `EXPLAIN ANALYZE` only when the plan stays distributed.
+        /// A query that falls back to local execution is analyzable, and the
+        /// decision must land on the interpreter context
         interpreter.applyDistributedPlanFallbackIfNeeded();
         result->context = interpreter.getContext();
         result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
@@ -932,10 +931,11 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), planning_context, inner_options);
         interpreter.buildQueryPlan(result->plan);
         result->context = interpreter.getContext();
-        /// The old analyzer has no query tree to carry a fallback into, so the decision is recorded
-        /// on the plan only, the same way `buildQueryPipeline` applies it at execution.
-        QueryPlanOptimizationSettings probe_settings(result->context);
-        result->plan.applyDistributedPlanFallbackToLocal(probe_settings);
+        /// Match execution, a query that falls back to local execution needs
+        /// to have make_distributed_plan=0
+        QueryPlanOptimizationSettings probe_settings(planning_context);
+        if (result->plan.applyDistributedPlanFallbackToLocal(probe_settings))
+            planning_context->setSetting("make_distributed_plan", false);
         result->ignore_quota = interpreter.ignoreQuota();
         result->ignore_limits = interpreter.ignoreLimits();
     }
@@ -1101,9 +1101,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else
             {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                /// A mutable copy to include fallback decision for make_distribut
+                auto old_analyzer_context = Context::createCopy(query_context);
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), old_analyzer_context, options);
                 interpreter.buildQueryPlan(plan);
-                context = interpreter.getContext();
+                if (settings.optimize)
+                {
+                    QueryPlanOptimizationSettings probe_settings(old_analyzer_context);
+                    if (plan.applyDistributedPlanFallbackToLocal(probe_settings))
+                        old_analyzer_context->setSetting("make_distributed_plan", false);
+                }
+                context = old_analyzer_context;
             }
 
             if (settings.optimize)
