@@ -147,6 +147,7 @@ public:
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
         , start_after_set(start_after_.has_value() && !start_after_->empty())
+        , description(fmt::format("Bucket: {}, Prefix: {}", bucket_, path_prefix))
     {
         request->SetBucket(bucket_);
         request->SetPrefix(path_prefix);
@@ -164,10 +165,8 @@ public:
     }
 
 private:
-    std::string describeListing() const override
-    {
-        return fmt::format("Bucket: {}, Prefix: {}", request->GetBucket(), request->GetPrefix());
-    }
+    /// Not read off `request`: the listing worker mutates and sometimes replaces it while this runs.
+    std::string describeListing() const override { return description; }
 
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
@@ -226,6 +225,7 @@ private:
     std::unique_ptr<S3::ListObjectsV2Request> request;
     const bool with_tags;
     bool start_after_set;
+    const std::string description;
 };
 
 }
