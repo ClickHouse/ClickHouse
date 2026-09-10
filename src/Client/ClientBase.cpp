@@ -2559,36 +2559,40 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             columns_for_storage_file = std::move(reordered_description);
         }
 
+        /// Read the file with the same insert input format context as the inline data and stdin paths,
+        /// so that the named-tuple insert guard is enforced for `INSERT ... INFILE` too.
+        ContextMutablePtr format_context = getContextForInsertInputFormat();
+
         StorageFile::CommonArguments args{
-            WithContext(client_context),
+            WithContext(format_context),
             parsed_insert_query->table_id,
             current_format,
-            getFormatSettings(client_context),
+            getFormatSettings(format_context),
             compression_method,
             columns_for_storage_file,
             ConstraintsDescription{},
             String{},
             {},
         };
-        StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, client_context), args);
+        StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, format_context), args);
         storage->startup();
         SelectQueryInfo query_info;
 
         try
         {
-            auto metadata = storage->getInMemoryMetadataPtr(client_context, false);
+            auto metadata = storage->getInMemoryMetadataPtr(format_context, false);
             QueryPlan plan;
             storage->read(
                 plan,
                 sample.getNames(),
-                storage->getStorageSnapshot(metadata, client_context),
+                storage->getStorageSnapshot(metadata, format_context),
                 query_info,
-                client_context,
+                format_context,
                 {},
-                client_context->getSettingsRef()[Setting::max_block_size],
+                format_context->getSettingsRef()[Setting::max_block_size],
                 getNumberOfCPUCoresToUse());
 
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(client_context), BuildQueryPipelineSettings(client_context));
+            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(format_context), BuildQueryPipelineSettings(format_context));
 
             QueryPlanResourceHolder resources;
             auto pipe = QueryPipelineBuilder::getPipe(std::move(*builder), resources);
@@ -2638,27 +2642,32 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 }
 
 
+/// The input data of an `INSERT` with inline data, from stdin or from an `INFILE` is parsed here, in
+/// the client, so the named-tuple insert guard would not be applied to it - unlike `INSERT ... SELECT`,
+/// whose conversion runs on the server through `InterpreterInsertQuery`. Mirror that logic here so that
+/// inserting a named tuple that would drop source fields is rejected consistently on every path.
+ContextMutablePtr ClientBase::getContextForInsertInputFormat()
+{
+    if (client_context->getSettingsRef()[Setting::allow_named_tuple_conversion_with_extra_source_fields_on_insert])
+        return client_context;
+
+    auto format_context = Context::createCopy(client_context);
+    format_context->setSetting("allow_named_tuple_conversion_with_extra_source_fields", false);
+    return format_context;
+}
+
+
 void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data)
 {
     String current_format = "Values";
 
-    /// The inline data of `INSERT ... VALUES` is parsed here, in the client, so the named-tuple
-    /// insert guard would not be applied to it - unlike `INSERT ... SELECT`, whose conversion runs
-    /// on the server through `InterpreterInsertQuery`. Mirror that logic here so that inserting a
-    /// named tuple that would drop source fields is rejected consistently on both paths.
-    ContextMutablePtr format_context = client_context;
+    ContextMutablePtr format_context = getContextForInsertInputFormat();
 
     /// Data format can be specified in the INSERT query.
     if (const auto * insert = parsed_query->as<ASTInsertQuery>())
     {
         if (!insert->format.empty())
             current_format = insert->format;
-
-        if (!client_context->getSettingsRef()[Setting::allow_named_tuple_conversion_with_extra_source_fields_on_insert])
-        {
-            format_context = Context::createCopy(client_context);
-            format_context->setSetting("allow_named_tuple_conversion_with_extra_source_fields", false);
-        }
     }
 
     const Settings & settings = client_context->getSettingsRef();
