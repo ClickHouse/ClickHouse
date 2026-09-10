@@ -52,14 +52,32 @@ RuntimeFilterGeometry makeGeometry(UInt64 bloom_bytes = BLOOM_BYTES)
     };
 }
 
-std::unique_ptr<ApproximateRuntimeFilter> makeFilter(size_t filters_to_merge = 0)
+RuntimeFilterConfig makeConfig(const RuntimeFilterGeometry & geometry)
 {
-    return std::make_unique<ApproximateRuntimeFilter>(
-        filters_to_merge,
+    return RuntimeFilterConfig{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling};
+}
+
+std::unique_ptr<AdaptiveSetRuntimeFilter> makeFilter()
+{
+    return std::make_unique<AdaptiveSetRuntimeFilter>(
         std::make_shared<DataTypeUInt64>(),
         makeGeometry(),
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
+}
+
+/// A partial in flight is not wrapped in a `RuntimeFilter`, so it has no evaluation state of its
+/// own; lend it a private one for the call, the way the transport transforms do.
+void finishInsert(AdaptiveSetRuntimeFilter & filter, const RuntimeFilterGeometry & geometry = makeGeometry())
+{
+    RuntimeFilterEvaluationState evaluation_state(makeConfig(geometry));
+    filter.finishInsert(evaluation_state);
+}
+
+/// Publishes a completed union the way `MergeRuntimeFiltersTransform` does in `RegisterUnion` mode.
+UniqueRuntimeFilterPtr publish(AdaptiveSetRuntimeFilter && filter, const RuntimeFilterGeometry & geometry = makeGeometry())
+{
+    return std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, makeConfig(geometry), std::move(filter));
 }
 
 ColumnPtr makeColumn(UInt64 from, UInt64 to)
@@ -70,28 +88,38 @@ ColumnPtr makeColumn(UInt64 from, UInt64 to)
     return column;
 }
 
-String serializeToString(ApproximateRuntimeFilter & filter)
+String serializeToString(AdaptiveSetRuntimeFilter & filter)
 {
     WriteBufferFromOwnString out;
     filter.serialize(out);
     return out.str();
 }
 
-std::unique_ptr<ApproximateRuntimeFilter>
-deserializeFromString(const String & data, size_t filters_to_merge = 0, UInt64 bloom_bytes = BLOOM_BYTES)
+std::unique_ptr<AdaptiveSetRuntimeFilter> deserializeFromString(const String & data, UInt64 bloom_bytes = BLOOM_BYTES)
 {
     ReadBufferFromString in(data);
-    return ApproximateRuntimeFilter::deserialize(in, filters_to_merge, std::make_shared<DataTypeUInt64>(), makeGeometry(bloom_bytes));
+    return std::make_unique<AdaptiveSetRuntimeFilter>(
+        AdaptiveSetRuntimeFilter::deserialize(in, std::make_shared<DataTypeUInt64>(), makeGeometry(bloom_bytes)));
 }
 
-std::vector<bool> probe(const IRuntimeFilter & filter, UInt64 from, UInt64 to)
+std::vector<bool> maskToVector(const ColumnPtr & mask, size_t rows)
 {
-    auto result = filter.find({makeColumn(from, to), std::make_shared<DataTypeUInt64>(), "probe"});
-    auto full = result->convertToFullColumnIfConst();
-    std::vector<bool> found(to - from);
+    auto full = mask->convertToFullColumnIfConst();
+    std::vector<bool> found(rows);
     for (size_t i = 0; i < found.size(); ++i)
         found[i] = full->getUInt(i) != 0;
     return found;
+}
+
+std::vector<bool> probe(const AdaptiveSetRuntimeFilter & filter, UInt64 from, UInt64 to)
+{
+    std::optional<size_t> rows_passed;
+    return maskToVector(filter.find({makeColumn(from, to), std::make_shared<DataTypeUInt64>(), "probe"}, rows_passed), to - from);
+}
+
+std::vector<bool> probe(const RuntimeFilter & filter, UInt64 from, UInt64 to)
+{
+    return maskToVector(filter.find({makeColumn(from, to), std::make_shared<DataTypeUInt64>(), "probe"}), to - from);
 }
 
 /// The second byte of the state is the phase tag: 0 = exact values, 1 = bloom filter.
@@ -111,8 +139,8 @@ TEST(RuntimeFilterSerialization, RoundTripExactValues)
     EXPECT_FALSE(isBloomState(state));
     auto restored = deserializeFromString(state);
 
-    filter->finishInsert();
-    restored->finishInsert();
+    finishInsert(*filter);
+    finishInsert(*restored);
 
     EXPECT_EQ(probe(*filter, 0, 20), probe(*restored, 0, 20));
     EXPECT_EQ(probe(*restored, 0, 10), std::vector<bool>(10, true));
@@ -131,8 +159,8 @@ TEST(RuntimeFilterSerialization, RoundTripBloom)
     /// Restored state must be byte-identical, not merely probe-equivalent.
     EXPECT_EQ(serializeToString(*restored), state);
 
-    filter->finishInsert();
-    restored->finishInsert();
+    finishInsert(*filter);
+    finishInsert(*restored);
     EXPECT_EQ(probe(*filter, 0, 10000), probe(*restored, 0, 10000));
 }
 
@@ -149,18 +177,18 @@ TEST(RuntimeFilterSerialization, UnionMatchesSingleBuild)
     auto part3 = makeFilter();
     part3->insert(makeColumn(90, 3000));
 
-    auto merged = deserializeFromString(serializeToString(*part1), /*filters_to_merge=*/2);
+    auto merged = deserializeFromString(serializeToString(*part1));
     auto source2 = deserializeFromString(serializeToString(*part2));
     auto source3 = deserializeFromString(serializeToString(*part3));
-    merged->merge(source2.get());
-    merged->merge(source3.get());
+    merged->mergeFrom(*source2);
+    merged->mergeFrom(*source3);
 
     /// Byte identity holds because both unions end in the bloom phase, whose bits are a pure
     /// function of the value set; exact-phase unions may store values in a different order.
     EXPECT_EQ(serializeToString(*merged), serializeToString(*direct));
 
-    direct->finishInsert();
-    merged->finishInsert();
+    finishInsert(*direct);
+    finishInsert(*merged);
     EXPECT_EQ(probe(*direct, 0, 6000), probe(*merged, 0, 6000));
 }
 
@@ -170,19 +198,19 @@ TEST(RuntimeFilterSerialization, EmptyPartial)
     part->insert(makeColumn(0, 10));
     auto empty = makeFilter();
 
-    auto merged = deserializeFromString(serializeToString(*part), /*filters_to_merge=*/1);
+    auto merged = deserializeFromString(serializeToString(*part));
     auto empty_source = deserializeFromString(serializeToString(*empty));
-    merged->merge(empty_source.get());
-    merged->finishInsert();
+    merged->mergeFrom(*empty_source);
+    finishInsert(*merged);
 
     auto alone = deserializeFromString(serializeToString(*part));
-    alone->finishInsert();
+    finishInsert(*alone);
     EXPECT_EQ(probe(*merged, 0, 20), probe(*alone, 0, 20));
 
-    auto all_empty = deserializeFromString(serializeToString(*empty), /*filters_to_merge=*/1);
+    auto all_empty = deserializeFromString(serializeToString(*empty));
     auto another_empty = deserializeFromString(serializeToString(*empty));
-    all_empty->merge(another_empty.get());
-    all_empty->finishInsert();
+    all_empty->mergeFrom(*another_empty);
+    finishInsert(*all_empty);
     EXPECT_EQ(probe(*all_empty, 0, 10), std::vector<bool>(10, false));
 }
 
@@ -192,8 +220,8 @@ TEST(RuntimeFilterSerialization, RoundTripLowCardinalityExactValues)
     const auto lc_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     const UInt64 bytes_limit = 1 << 20;
     auto make_lc_filter = [&]
-    { return std::make_unique<ApproximateRuntimeFilter>(
-          0, lc_type, makeGeometry(bytes_limit), /*distinct_keys_hint_=*/std::nullopt,
+    { return std::make_unique<AdaptiveSetRuntimeFilter>(
+          lc_type, makeGeometry(bytes_limit), /*distinct_keys_hint_=*/std::nullopt,
           /*distinct_keys_hint_matches_filter_key_=*/false); };
     auto make_lc_column = [&](UInt64 from, UInt64 to)
     {
@@ -210,22 +238,18 @@ TEST(RuntimeFilterSerialization, RoundTripLowCardinalityExactValues)
     EXPECT_FALSE(isBloomState(state));
 
     ReadBufferFromString in(state);
-    auto restored = ApproximateRuntimeFilter::deserialize(in, 0, lc_type, makeGeometry(bytes_limit));
+    auto restored = AdaptiveSetRuntimeFilter::deserialize(in, lc_type, makeGeometry(bytes_limit));
 
-    filter->finishInsert();
-    restored->finishInsert();
-    auto probe_lc = [&](const IRuntimeFilter & f, UInt64 from, UInt64 to)
+    finishInsert(*filter, makeGeometry(bytes_limit));
+    finishInsert(restored, makeGeometry(bytes_limit));
+    auto probe_lc = [&](const AdaptiveSetRuntimeFilter & f, UInt64 from, UInt64 to)
     {
-        auto result = f.find({make_lc_column(from, to), lc_type, "probe"});
-        auto full = result->convertToFullColumnIfConst();
-        std::vector<bool> found(to - from);
-        for (size_t i = 0; i < found.size(); ++i)
-            found[i] = full->getUInt(i) != 0;
-        return found;
+        std::optional<size_t> rows_passed;
+        return maskToVector(f.find({make_lc_column(from, to), lc_type, "probe"}, rows_passed), to - from);
     };
-    EXPECT_EQ(probe_lc(*filter, 0, 20), probe_lc(*restored, 0, 20));
-    EXPECT_EQ(probe_lc(*restored, 0, 10), std::vector<bool>(10, true));
-    EXPECT_EQ(probe_lc(*restored, 10, 20), std::vector<bool>(10, false));
+    EXPECT_EQ(probe_lc(*filter, 0, 20), probe_lc(restored, 0, 20));
+    EXPECT_EQ(probe_lc(restored, 0, 10), std::vector<bool>(10, true));
+    EXPECT_EQ(probe_lc(restored, 10, 20), std::vector<bool>(10, false));
 }
 
 TEST(RuntimeFilterSerialization, GarbageFailsLoudly)
@@ -243,7 +267,7 @@ TEST(RuntimeFilterSerialization, GarbageFailsLoudly)
     bloom->insert(makeColumn(0, 1000));
     const String bloom_state = serializeToString(*bloom);
     EXPECT_THROW(deserializeFromString(bloom_state.substr(0, bloom_state.size() / 2)), Exception);
-    EXPECT_THROW(deserializeFromString(bloom_state, 0, /*bloom_bytes=*/2 * BLOOM_BYTES), Exception);
+    EXPECT_THROW(deserializeFromString(bloom_state, /*bloom_bytes=*/2 * BLOOM_BYTES), Exception);
 
     auto values = makeFilter();
     values->insert(makeColumn(0, 10));
@@ -302,9 +326,9 @@ TEST(RuntimeFilterSerialization, MergeOrderIndependence)
     std::vector<size_t> order{0, 1, 2};
     do
     {
-        auto merged = deserializeFromString(states[order[0]], /*filters_to_merge=*/2);
-        merged->merge(deserializeFromString(states[order[1]]).get());
-        merged->merge(deserializeFromString(states[order[2]]).get());
+        auto merged = deserializeFromString(states[order[0]]);
+        merged->mergeFrom(*deserializeFromString(states[order[1]]));
+        merged->mergeFrom(*deserializeFromString(states[order[2]]));
 
         /// Every permutation ends in the bloom phase, whose bits are a pure function of the value
         /// set, so even the serialized bytes must match.
@@ -355,8 +379,8 @@ TEST(RuntimeFilterSerialization, SenderBoundsExactStateByKeyBytes)
     /// The hash table buffer alone undercounts string keys (their bytes live outside it), so the
     /// exact-phase byte budget must also count the actual key bytes: 10 strings of 2 KiB blow the
     /// 4 KiB budget and the state degrades to a bloom filter even though the row count is tiny.
-    ApproximateRuntimeFilter filter(
-        0, stringType(), makeGeometry(),
+    AdaptiveSetRuntimeFilter filter(
+        stringType(), makeGeometry(),
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
     filter.insert(makeStringColumn(10, 2048));
@@ -379,8 +403,8 @@ TEST(RuntimeFilterSerialization, LongTypeNameFitsTheExactStateBound)
     const UInt64 bytes_limit = 1 << 20;
     ASSERT_GT(enum_type->getName().size(), bytes_limit + 64 * 1024);
 
-    ApproximateRuntimeFilter filter(
-        0, enum_type, makeGeometry(bytes_limit),
+    AdaptiveSetRuntimeFilter filter(
+        enum_type, makeGeometry(bytes_limit),
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
     auto column = enum_type->createColumn();
@@ -392,7 +416,7 @@ TEST(RuntimeFilterSerialization, LongTypeNameFitsTheExactStateBound)
     EXPECT_FALSE(isBloomState(state));
 
     ReadBufferFromString in(state);
-    EXPECT_NO_THROW(ApproximateRuntimeFilter::deserialize(in, 0, enum_type, makeGeometry(bytes_limit)));
+    EXPECT_NO_THROW(AdaptiveSetRuntimeFilter::deserialize(in, enum_type, makeGeometry(bytes_limit)));
 }
 
 TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
@@ -403,8 +427,8 @@ TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
     auto relaxed_geometry = makeGeometry();
     relaxed_geometry.exact_bytes_limit = 1 << 20;
 
-    ApproximateRuntimeFilter big(
-        0, stringType(), relaxed_geometry,
+    AdaptiveSetRuntimeFilter big(
+        stringType(), relaxed_geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
     big.insert(makeStringColumn(10, 20 * 1024));
@@ -415,7 +439,7 @@ TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
     /// A receiver whose plan carries the relaxed budget accepts the state.
     {
         ReadBufferFromString in(state);
-        EXPECT_NO_THROW(ApproximateRuntimeFilter::deserialize(in, 0, stringType(), relaxed_geometry));
+        EXPECT_NO_THROW(AdaptiveSetRuntimeFilter::deserialize(in, stringType(), relaxed_geometry));
     }
 
     /// A receiver with the standard budget rejects it, rows notwithstanding.
@@ -423,7 +447,7 @@ TEST(RuntimeFilterSerialization, OversizedExactStateRejected)
         ReadBufferFromString in(state);
         try
         {
-            ApproximateRuntimeFilter::deserialize(in, 0, stringType(), makeGeometry());
+            AdaptiveSetRuntimeFilter::deserialize(in, stringType(), makeGeometry());
             FAIL() << "expected an exception";
         }
         catch (const Exception & e)
@@ -442,23 +466,19 @@ TEST(RuntimeFilterSerialization, ShortStringKeysStayExactUpToTheRaisedRowBound)
     auto geometry = makeGeometry(/*bloom_bytes=*/512 * 1024);
     geometry.exact_values_limit = 20000;
 
-    const auto probe_strings = [&](const IRuntimeFilter & filter, size_t from, size_t to)
+    const auto probe_strings = [&](const AdaptiveSetRuntimeFilter & filter, size_t from, size_t to)
     {
-        auto result = filter.find({makeShortStringColumn(from, to), stringType(), "probe"});
-        auto full = result->convertToFullColumnIfConst();
-        std::vector<bool> found(to - from);
-        for (size_t i = 0; i < found.size(); ++i)
-            found[i] = full->getUInt(i) != 0;
-        return found;
+        std::optional<size_t> rows_passed;
+        return maskToVector(filter.find({makeShortStringColumn(from, to), stringType(), "probe"}, rows_passed), to - from);
     };
 
-    ApproximateRuntimeFilter part1(
-        0, stringType(), geometry,
+    AdaptiveSetRuntimeFilter part1(
+        stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
     part1.insert(makeShortStringColumn(0, 10000));
-    ApproximateRuntimeFilter part2(
-        0, stringType(), geometry,
+    AdaptiveSetRuntimeFilter part2(
+        stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
     part2.insert(makeShortStringColumn(10000, 20000));
@@ -469,17 +489,16 @@ TEST(RuntimeFilterSerialization, ShortStringKeysStayExactUpToTheRaisedRowBound)
     EXPECT_FALSE(isBloomState(state2));
 
     ReadBufferFromString in1(state1);
-    auto merged = ApproximateRuntimeFilter::deserialize(in1, /*filters_to_merge_=*/1, stringType(), geometry);
+    auto merged = AdaptiveSetRuntimeFilter::deserialize(in1, stringType(), geometry);
     ReadBufferFromString in2(state2);
-    auto source = ApproximateRuntimeFilter::deserialize(in2, 0, stringType(), geometry);
-    merged->merge(source.get());
+    merged.mergeFrom(AdaptiveSetRuntimeFilter::deserialize(in2, stringType(), geometry));
 
     /// The complete 20000-key union still fits both caps, so it forwards exact as well.
-    EXPECT_FALSE(isBloomState(serializeToString(*merged)));
+    EXPECT_FALSE(isBloomState(serializeToString(merged)));
 
-    merged->finishInsert();
-    EXPECT_EQ(probe_strings(*merged, 0, 20000), std::vector<bool>(20000, true));
-    EXPECT_EQ(probe_strings(*merged, 20000, 20100), std::vector<bool>(100, false));
+    finishInsert(merged, geometry);
+    EXPECT_EQ(probe_strings(merged, 0, 20000), std::vector<bool>(20000, true));
+    EXPECT_EQ(probe_strings(merged, 20000, 20100), std::vector<bool>(100, false));
 }
 
 TEST(RuntimeFilterSerialization, LongStringKeysStillDegradeAtTheByteCap)
@@ -490,8 +509,8 @@ TEST(RuntimeFilterSerialization, LongStringKeysStillDegradeAtTheByteCap)
     auto geometry = makeGeometry(/*bloom_bytes=*/512 * 1024);
     geometry.exact_values_limit = 20000;
 
-    ApproximateRuntimeFilter filter(
-        0, stringType(), geometry,
+    AdaptiveSetRuntimeFilter filter(
+        stringType(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
     filter.insert(makeStringColumn(20000, 200));
@@ -502,6 +521,39 @@ TEST(RuntimeFilterSerialization, LongStringKeysStillDegradeAtTheByteCap)
     EXPECT_LE(state.size(), geometry.bloom_filter_bytes + 64);
 }
 
+TEST(RuntimeFilterSerialization, DegradedBloomIsSizedByGeometryNotTheExactByteBound)
+{
+    /// A transported plan may raise the exact-phase byte budget above the settings geometry, because
+    /// the estimate-raised row bound needs room for the keys. The bloom filter that the exact phase
+    /// degrades to must not follow it: it stays at `bloom_filter_bytes`, the width every node that
+    /// merges a partial of this exchange allocates. Blooms of different widths cannot be merged.
+    const auto type = std::make_shared<DataTypeUInt64>();
+    auto geometry = makeGeometry();
+    geometry.exact_bytes_limit = 64 * BLOOM_BYTES;
+    geometry.exact_values_limit = 4;
+
+    AdaptiveSetRuntimeFilter filter(
+        type, geometry,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
+    /// Overflows the row bound while the raised byte budget is nowhere near exhausted.
+    filter.insert(makeColumn(0, 100));
+
+    const String state = serializeToString(filter);
+    ASSERT_TRUE(isBloomState(state));
+
+    /// `deserialize` accepts a bloom state only if the width it declares is exactly
+    /// `geometry.bloom_filter_bytes`, so a successful round trip pins the allocation.
+    ReadBufferFromString in(state);
+    EXPECT_NO_THROW(AdaptiveSetRuntimeFilter::deserialize(in, type, geometry));
+
+    /// Had the bloom been sized from the exact byte bound, this is the geometry that would take it.
+    auto sized_from_exact_bound = geometry;
+    sized_from_exact_bound.bloom_filter_bytes = geometry.exact_bytes_limit;
+    ReadBufferFromString sized_from_exact_bound_in(state);
+    EXPECT_THROW(AdaptiveSetRuntimeFilter::deserialize(sized_from_exact_bound_in, type, sized_from_exact_bound), Exception);
+}
+
 TEST(RuntimeFilterSerialization, RegisteredUnionIsFindable)
 {
     auto part1 = makeFilter();
@@ -509,12 +561,12 @@ TEST(RuntimeFilterSerialization, RegisteredUnionIsFindable)
     auto part2 = makeFilter();
     part2->insert(makeColumn(10, 20));
 
-    auto merged = deserializeFromString(serializeToString(*part1), /*filters_to_merge=*/1);
+    auto merged = deserializeFromString(serializeToString(*part1));
     auto source = deserializeFromString(serializeToString(*part2));
-    merged->merge(source.get());
+    merged->mergeFrom(*source);
 
     auto lookup = createRuntimeFilterLookup();
-    lookup->add("key", "name", std::move(merged));
+    lookup->add("key", "name", publish(std::move(*merged)));
 
     auto found = lookup->find("key");
     ASSERT_NE(found, nullptr);

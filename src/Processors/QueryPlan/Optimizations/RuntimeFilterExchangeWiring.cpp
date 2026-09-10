@@ -267,7 +267,7 @@ void wireRuntimeFilterExchangeTopology(
                 /// from a subset of the keys would wrongly drop rows, and only the bloom-style state can
                 /// be merged across tasks.
                 if (!build->getFilterKey().empty() && build->allowsNotExactFilter()
-                    && ApproximateRuntimeFilter::isDataTypeSupported(build->getFilterColumnType()))
+                    && AdaptiveSetRuntimeFilter::isDataTypeSupported(build->getFilterColumnType()))
                     producers[build->getFilterKey()] = FilterProducer{.step = build, .stage = stage_name};
             }
 

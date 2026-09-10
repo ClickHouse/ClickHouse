@@ -41,33 +41,34 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     if (!filter_column_target_type->equals(*filter_column_original_type))
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 
+    const RuntimeFilterConfig runtime_filter_config{
+        geometry_.pass_ratio_threshold_for_disabling,
+        geometry_.blocks_to_skip_before_reenabling};
+
     if (allow_to_use_not_exact_filter_)
     {
-        if (ApproximateRuntimeFilter::isDataTypeSupported(filter_column_target_type))
+        if (AdaptiveSetRuntimeFilter::isDataTypeSupported(filter_column_target_type))
         {
-            built_filter = std::make_unique<ApproximateRuntimeFilter>(
-                filters_to_merge_, filter_column_target_type, geometry_, distinct_keys_hint_, distinct_keys_hint_matches_filter_key_);
+            built_filter = std::make_unique<RuntimeFilter>(
+                filters_to_merge_,
+                runtime_filter_config,
+                RuntimeFilter::Adaptive(
+                    filter_column_target_type, geometry_, distinct_keys_hint_, distinct_keys_hint_matches_filter_key_));
         }
         else
         {
-            built_filter = std::make_unique<ExactContainsRuntimeFilter>(
+            built_filter = std::make_unique<RuntimeFilter>(
                 filters_to_merge_,
-                filter_column_target_type,
-                geometry_.pass_ratio_threshold_for_disabling,
-                geometry_.blocks_to_skip_before_reenabling,
-                geometry_.exact_bytes_limit,
-                geometry_.exact_values_limit);
+                runtime_filter_config,
+                RuntimeFilter::ExactContains(filter_column_target_type, geometry_.exact_bytes_limit, geometry_.exact_values_limit));
         }
     }
     else
     {
-        built_filter = std::make_unique<ExactNotContainsRuntimeFilter>(
+        built_filter = std::make_unique<RuntimeFilter>(
             filters_to_merge_,
-            filter_column_target_type,
-            geometry_.pass_ratio_threshold_for_disabling,
-            geometry_.blocks_to_skip_before_reenabling,
-            geometry_.exact_bytes_limit,
-            geometry_.exact_values_limit);
+            runtime_filter_config,
+            RuntimeFilter::ExactNotContains(filter_column_target_type, geometry_.exact_bytes_limit, geometry_.exact_values_limit));
     }
 
     /// Only pay the extra min/max scan of the build side when the left side will use it for index analysis.

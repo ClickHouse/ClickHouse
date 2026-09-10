@@ -81,7 +81,10 @@ private:
     std::vector<bool> received;
     size_t states_received = 0;
     /// The single private accumulated filter; arrived states are merged into it and destroyed.
-    std::unique_ptr<ApproximateRuntimeFilter> accumulated;
+    /// It is the filter implementation, not a `RuntimeFilter`: while it accumulates it belongs to
+    /// nobody, so it needs neither the build-state accounting (`received` above does that) nor an
+    /// evaluation state. `RegisterUnion` wraps the finished union in a `RuntimeFilter` to publish it.
+    std::unique_ptr<AdaptiveSetRuntimeFilter> accumulated;
     /// An oversized state was rejected: publish nothing, fail open.
     bool skipped = false;
 

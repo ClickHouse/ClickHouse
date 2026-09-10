@@ -170,13 +170,13 @@ void MergeRuntimeFiltersTransform::consume()
         ReadBufferFromMemory in(state.data(), state.size());
         if (!accumulated)
         {
-            accumulated = ApproximateRuntimeFilter::deserialize(in, inputs.size() - 1, filter_column_target_type, geometry);
+            accumulated = std::make_unique<AdaptiveSetRuntimeFilter>(
+                AdaptiveSetRuntimeFilter::deserialize(in, filter_column_target_type, geometry));
         }
         else
         {
             /// Deserialize-and-merge immediately; the decoded state dies at the end of this block.
-            auto arrived = ApproximateRuntimeFilter::deserialize(in, 0, filter_column_target_type, geometry);
-            accumulated->merge(arrived.get());
+            accumulated->mergeFrom(AdaptiveSetRuntimeFilter::deserialize(in, filter_column_target_type, geometry));
         }
     }
     current_chunk.clear();
@@ -199,7 +199,12 @@ void MergeRuntimeFiltersTransform::finalize()
 
     if (mode == Mode::RegisterUnion)
     {
-        filter_lookup->add(filter_key, filter_name, std::move(accumulated));
+        /// Every input has delivered, so the union is complete and the published filter expects no
+        /// further merges: `add` finishes it right away and `__applyFilter` can start pruning.
+        const RuntimeFilterConfig config{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling};
+        filter_lookup->add(
+            filter_key, filter_name, std::make_unique<RuntimeFilter>(/*filters_to_merge_=*/0, config, std::move(*accumulated)));
+        accumulated.reset();
         return;
     }
 

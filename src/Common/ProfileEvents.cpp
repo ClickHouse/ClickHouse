@@ -443,6 +443,7 @@
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
     \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
+    M(IcebergPartitionPrunedManifestFiles, "Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list", ValueType::Number) \
     M(IcebergTrivialCountOptimizationApplied, "Trivial count optimization applied while reading from Iceberg", ValueType::Number) \
     M(IcebergVersionHintUsed, "Number of times version-hint.text has been used.", ValueType::Number) \
     M(IcebergMinMaxIndexPrunedFiles, "Number of skipped files by using MinMax index in Iceberg", ValueType::Number) \
@@ -475,7 +476,7 @@
     M(UniqueKeyIndexCacheLookupMicroseconds, "Wall-clock time inside `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` (ClickHouse-side `CacheBase` adapter for the RocksDB block cache).", ValueType::Microseconds) \
     M(UniqueKeyIndexCacheHits, "Number of times an entry has been found in the UNIQUE KEY index cache, so we didn't have to load an SST block.", ValueType::Number) \
     M(UniqueKeyIndexCacheMisses, "Number of times an entry has not been found in the UNIQUE KEY index cache, so we had to load an SST block from disk.", ValueType::Number) \
-    M(UniqueKeySSTWriteMicroseconds, "Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + `WriteBuffer` finalize in `finalizeToStorage` (the SST bytes are streamed straight into the part storage's `WriteBuffer`). Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.", ValueType::Microseconds) \
+    M(UniqueKeySSTWriteMicroseconds, "Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + `WriteBuffer` finalize (+ fsync) in `finish` (the SST bytes are streamed straight into the part storage's `WriteBuffer`). Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.", ValueType::Microseconds) \
     M(UniqueKeyLoadTimeSSTRebuildCount, "Number of UNIQUE KEY parts whose `unique_key_index.sst` was rebuilt at load time after the crash-before-flush window.", ValueType::Number) \
     M(UniqueKeyLoadTimeSSTRebuildMicroseconds, "Total time spent rebuilding `unique_key_index.sst` at load time (sequential read of UK columns + SST write).", ValueType::Microseconds) \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.", ValueType::Number) \

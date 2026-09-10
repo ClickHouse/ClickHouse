@@ -64,8 +64,8 @@ SharedHeader dataHeader()
 
 String makePartialBlob(UInt64 from, UInt64 to, const RuntimeFilterGeometry & geometry = testGeometry())
 {
-    ApproximateRuntimeFilter filter(
-        0, std::make_shared<DataTypeUInt64>(), geometry,
+    AdaptiveSetRuntimeFilter filter(
+        std::make_shared<DataTypeUInt64>(), geometry,
         /*distinct_keys_hint_=*/std::nullopt,
         /*distinct_keys_hint_matches_filter_key_=*/false);
     auto column = ColumnUInt64::create();
@@ -339,17 +339,42 @@ struct TestPipeline
     }
 };
 
-std::vector<bool> probe(const IRuntimeFilter & filter, UInt64 from, UInt64 to)
+ColumnWithTypeAndName probeColumn(UInt64 from, UInt64 to)
 {
     auto column = ColumnUInt64::create();
     for (UInt64 i = from; i < to; ++i)
         column->insertValue(i);
-    auto result = filter.find({std::move(column), std::make_shared<DataTypeUInt64>(), "probe"});
-    auto full = result->convertToFullColumnIfConst();
-    std::vector<bool> found(to - from);
+    return ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeUInt64>(), "probe");
+}
+
+std::vector<bool> maskToVector(const ColumnPtr & mask, size_t rows)
+{
+    auto full = mask->convertToFullColumnIfConst();
+    std::vector<bool> found(rows);
     for (size_t i = 0; i < found.size(); ++i)
         found[i] = full->getUInt(i) != 0;
     return found;
+}
+
+std::vector<bool> probe(const RuntimeFilter & filter, UInt64 from, UInt64 to)
+{
+    return maskToVector(filter.find(probeColumn(from, to)), to - from);
+}
+
+std::vector<bool> probe(const AdaptiveSetRuntimeFilter & filter, UInt64 from, UInt64 to)
+{
+    std::optional<size_t> rows_passed;
+    return maskToVector(filter.find(probeColumn(from, to), rows_passed), to - from);
+}
+
+/// A forwarded union is not wrapped in a `RuntimeFilter`, so it has no evaluation state; lend it a
+/// private one to finish the build, the way the transport transforms do.
+void finishInsert(AdaptiveSetRuntimeFilter & filter)
+{
+    const auto geometry = testGeometry();
+    RuntimeFilterEvaluationState evaluation_state(
+        RuntimeFilterConfig{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling});
+    filter.finishInsert(evaluation_state);
 }
 
 ProcessorPtr partialSource(UInt64 from, UInt64 to)
@@ -592,10 +617,10 @@ std::vector<String> runForward(
     return blobs;
 }
 
-std::unique_ptr<ApproximateRuntimeFilter> deserializeBlob(const String & blob)
+AdaptiveSetRuntimeFilter deserializeBlob(const String & blob)
 {
     ReadBufferFromString in(blob);
-    return ApproximateRuntimeFilter::deserialize(in, 0, std::make_shared<DataTypeUInt64>(), testGeometry());
+    return AdaptiveSetRuntimeFilter::deserialize(in, std::make_shared<DataTypeUInt64>(), testGeometry());
 }
 
 }
@@ -606,9 +631,9 @@ TEST(MergeRuntimeFiltersTransform, ForwardModeEmitsUnion)
     ASSERT_EQ(blobs.size(), 1u);
 
     auto merged = deserializeBlob(blobs.front());
-    merged->finishInsert();
-    EXPECT_EQ(probe(*merged, 0, 30), std::vector<bool>(30, true));
-    EXPECT_EQ(probe(*merged, 30, 40), std::vector<bool>(10, false));
+    finishInsert(merged);
+    EXPECT_EQ(probe(merged, 0, 30), std::vector<bool>(30, true));
+    EXPECT_EQ(probe(merged, 30, 40), std::vector<bool>(10, false));
 }
 
 TEST(MergeRuntimeFiltersTransform, ForwardModeMissingInputEmitsNothing)
@@ -648,9 +673,9 @@ TEST(MergeRuntimeFiltersTransform, ForwardModeSingleInputPassesThrough)
     ASSERT_EQ(blobs.size(), 1u);
 
     auto merged = deserializeBlob(blobs.front());
-    merged->finishInsert();
-    EXPECT_EQ(probe(*merged, 0, 10), std::vector<bool>(10, true));
-    EXPECT_EQ(probe(*merged, 10, 20), std::vector<bool>(10, false));
+    finishInsert(merged);
+    EXPECT_EQ(probe(merged, 0, 10), std::vector<bool>(10, true));
+    EXPECT_EQ(probe(merged, 10, 20), std::vector<bool>(10, false));
 }
 
 TEST(MergeRuntimeFiltersTransform, PayloadRetentionIndependentOfInputCount)

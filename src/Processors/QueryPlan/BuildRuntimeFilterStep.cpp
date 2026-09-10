@@ -29,7 +29,6 @@
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <Common/ProfileEvents.h>
-#include <Common/assert_cast.h>
 
 namespace ProfileEvents
 {
@@ -68,10 +67,14 @@ namespace
 
 /// The partial filter shared by all streams of one task: each stream merges its part in at end of
 /// stream, and the stream that completes the merge serializes the result.
+/// It holds the filter implementation, not a `RuntimeFilter`: a transported partial has no build
+/// state to account for (`streams_left` below does that) and no evaluation state to feed, and it is
+/// serialized before it is ever published. The last stream wraps it in a `RuntimeFilter` for the
+/// same-task lookup.
 struct TaskPartialFilter
 {
     std::mutex mutex;
-    UniqueRuntimeFilterPtr filter;
+    std::unique_ptr<AdaptiveSetRuntimeFilter> filter;
     size_t streams_left;
 
     explicit TaskPartialFilter(size_t num_streams)
@@ -92,7 +95,6 @@ public:
         std::shared_ptr<TaskPartialFilter> task_filter_,
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
-        size_t num_streams,
         size_t num_destinations_,
         const RuntimeFilterGeometry & geometry,
         String filter_key_,
@@ -106,10 +108,10 @@ public:
         , filter_column_target_type(filter_column_type_)
         , filter_key(std::move(filter_key_))
         , filter_name(std::move(filter_name_))
+        , runtime_filter_config{geometry.pass_ratio_threshold_for_disabling, geometry.blocks_to_skip_before_reenabling}
         , query_context(std::move(query_context_))
         , partial(
-              std::make_unique<ApproximateRuntimeFilter>(
-                  /*filters_to_merge_=*/num_streams - 1,
+              std::make_unique<AdaptiveSetRuntimeFilter>(
                   filter_column_target_type,
                   geometry,
                   /// No stats-sized bloom growth for a transported partial: its serialized state must
@@ -196,7 +198,7 @@ public:
 
         std::lock_guard lock(task_filter->mutex);
         if (task_filter->filter)
-            task_filter->filter->merge(partial.get());
+            task_filter->filter->mergeFrom(*partial);
         else
             task_filter->filter = std::move(partial);
 
@@ -204,15 +206,21 @@ public:
             return;
 
         WriteBufferFromOwnString out;
-        assert_cast<ApproximateRuntimeFilter &>(*task_filter->filter).serialize(out);
+        task_filter->filter->serialize(out);
         /// Same-stage `__applyFilter` is not on the exchange (that edge would cycle the scheduler).
-        /// Serialize before `add`: it takes ownership and `finishInsert`s.
+        /// Serialize before `add`: it takes ownership and `finishInsert`s. Every stream has merged
+        /// in by now, so the published filter expects no further merges.
         if (!filter_key.empty())
         {
             if (!query_context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context is not available for BuildRuntimeFilterPartialTransform");
-            query_context->getRuntimeFilterLookup()->add(filter_key, filter_name, std::move(task_filter->filter));
+            query_context->getRuntimeFilterLookup()->add(
+                filter_key,
+                filter_name,
+                std::make_unique<RuntimeFilter>(
+                    /*filters_to_merge_=*/0, runtime_filter_config, std::move(*task_filter->filter)));
         }
+        task_filter->filter.reset();
         ProfileEvents::increment(ProfileEvents::RuntimeFilterStatesSent, num_destinations);
         ProfileEvents::increment(ProfileEvents::RuntimeFilterStateBytesSent, out.str().size() * num_destinations);
         auto column = ColumnString::create();
@@ -233,8 +241,9 @@ private:
 
     const String filter_key;
     const String filter_name;
+    const RuntimeFilterConfig runtime_filter_config;
     ContextPtr query_context;
-    UniqueRuntimeFilterPtr partial;
+    std::unique_ptr<AdaptiveSetRuntimeFilter> partial;
     Chunk data_chunk;
     Chunk partial_chunk;
     bool has_data_chunk = false;
@@ -377,7 +386,6 @@ void BuildRuntimeFilterStep::transformPipelineForTransport(QueryPipelineBuilder 
                     task_filter,
                     filter_column_name,
                     filter_column_type,
-                    ports.size(),
                     destination_streams.size(),
                     geometry,
                     filter_key,
