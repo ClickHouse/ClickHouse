@@ -5,7 +5,13 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Databases/DatabasesCommon.h>
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Settings.h>
@@ -21,11 +27,13 @@
 #include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool iceberg_delete_data_on_drop;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
@@ -34,6 +42,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -75,11 +84,15 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const ConstraintsDescription & constraints_,
     const ASTPtr & partition_by,
     ContextPtr context_,
-    bool is_table_function)
+    bool is_table_function,
+    std::optional<FormatSettings> format_settings_,
+    std::shared_ptr<DataLake::ICatalog> catalog_)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
+    , format_settings(std::move(format_settings_))
+    , catalog(std::move(catalog_))
 {
     configuration->initPartitionStrategy(partition_by, columns_in_table_or_function_definition, context_);
     /// We allow exceptions to be thrown on update(),
@@ -139,6 +152,108 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
 std::string StorageObjectStorageCluster::getName() const
 {
     return configuration->getEngineName();
+}
+
+SinkToStoragePtr StorageObjectStorageCluster::write(
+    const ASTPtr &,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    bool /* async_insert */)
+{
+    if (!configuration->isDataLakeConfiguration())
+        configuration->update(object_storage, local_context);
+
+    return StorageObjectStorage::createSink(
+        configuration, object_storage, getStorageID(), format_settings, catalog, metadata_snapshot, local_context);
+}
+
+bool StorageObjectStorageCluster::supportsParallelInsert() const
+{
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsParallelInsert();
+}
+
+bool StorageObjectStorageCluster::supportsDelete() const
+{
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsDelete();
+}
+
+bool StorageObjectStorageCluster::optimize(
+    const ASTPtr & /*query*/,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ASTPtr & /*partition*/,
+    bool /*final*/,
+    bool /*deduplicate*/,
+    const Names & /*deduplicate_by_columns*/,
+    bool /*cleanup*/,
+    ContextPtr context)
+{
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
+}
+
+void StorageObjectStorageCluster::mutate(const MutationCommands & commands, ContextPtr context)
+{
+    updateExternalDynamicMetadataIfExists(context);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    configuration->mutate(commands, context, shared_from_this(), getStorageID(), metadata_snapshot, catalog, format_settings);
+}
+
+void StorageObjectStorageCluster::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
+{
+    configuration->checkMutationIsPossible(object_storage, CurrentThread::tryGetQueryContext(), commands);
+}
+
+void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
+    params.apply(new_metadata, context);
+
+    checkMetadataDoesNotExceedMaxQuerySize(getStorageID(), new_metadata, context);
+
+    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+
+    if (catalog)
+        return;
+
+    const auto storage_id = getStorageID();
+    DatabaseCatalog::instance()
+        .getDatabase(storage_id.database_name)
+        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
+    setInMemoryMetadata(new_metadata);
+}
+
+void StorageObjectStorageCluster::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
+{
+    configuration->checkAlterIsPossible(object_storage, context, commands);
+}
+
+Pipe StorageObjectStorageCluster::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
+{
+    if (!configuration->isDataLakeConfiguration())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
+
+    configuration->update(object_storage, context);
+    auto metadata = configuration->getExternalMetadata();
+    if (!metadata)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
+
+    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, getStorageID());
+}
+
+void StorageObjectStorageCluster::drop()
+{
+    /// We cannot use query context here, because drop is executed in the background.
+    auto drop_context = Context::getGlobalContextInstance();
+    if (catalog)
+    {
+        const auto [namespace_name, table_name] = DataLake::parseTableName(getStorageID().getTableName());
+        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
+    }
+    configuration->drop(drop_context);
 }
 
 std::optional<UInt64> StorageObjectStorageCluster::totalRows(ContextPtr query_context) const
