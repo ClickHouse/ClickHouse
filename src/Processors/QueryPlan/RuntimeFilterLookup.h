@@ -7,8 +7,7 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
-#include <Common/SharedLockGuard.h>
-#include <Common/SharedMutex.h>
+#include <Common/MutexProtected.h>
 
 #include <atomic>
 #include <cstddef>
@@ -336,8 +335,8 @@ public:
     /// Whether building and all expected merges have finished.
     bool isReady() const
     {
-        SharedLockGuard lock(mutex);
-        return data.build_state.isFinished();
+        auto filter_data = data.getReadOnly();
+        return filter_data->build_state.isFinished();
     }
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
@@ -360,8 +359,7 @@ private:
     const bool range_positive;
 
     RuntimeFilterEvaluationState evaluation_state;
-    mutable SharedMutex mutex;
-    Data data TSA_GUARDED_BY(mutex);
+    MutexProtected<Data> data;
 };
 
 /// Store and find per-query runtime filters that are used for optimizing some kinds of JOINs
