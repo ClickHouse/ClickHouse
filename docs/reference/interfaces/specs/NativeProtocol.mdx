@@ -805,7 +805,7 @@ The final drain waits at most ten seconds for the collector. If that deadline ex
 
 Samples collected while draining or serializing profile trace packets are excluded from the stream. `CPU` and `Real` samples from that work can still be collected in `system.trace_log`.
 
-Wire settings enable collection before query analysis. A `send_profile_traces` value supplied only in SQL `SETTINGS` takes effect when execution starts after analysis. Distributed SELECT queries forward remote trace blocks with their original host and query identifiers. Remote INSERT uploads disable delivery to avoid blocking while both peers are sending data. When connecting to a server below revision `54493`, the native client omits the `send_profile_traces` wire setting, and an older client never receives this packet from a newer server.
+Wire settings enable collection before query analysis. A `send_profile_traces` value supplied only in SQL `SETTINGS` takes effect immediately after those settings are applied, before subsequent analysis and synchronous interpreter work such as `BACKUP` or `RESTORE`. Earlier samples cannot be recovered. Distributed SELECT queries forward remote trace blocks with their original host and query identifiers. Remote INSERT uploads disable delivery to avoid blocking while both peers are sending data. When connecting to a server below revision `54493`, the native client omits the `send_profile_traces` wire setting, and an older client never receives this packet from a newer server.
 
 Secondary queries request profile trace blocks only when delivery is active for the coordinator's client. Remote SQL opt-ins cannot enable delivery when it is disabled at the coordinator; explicit remote SQL opt-outs remain effective.
 

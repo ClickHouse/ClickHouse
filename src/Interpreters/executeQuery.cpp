@@ -2227,7 +2227,8 @@ static BlockIO executeQueryImpl(
     ASTPtr & out_ast,
     ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
     HTTPContinueCallback http_continue_callback,
-    QueryResultDetails & result_details)
+    QueryResultDetails & result_details,
+    const QuerySettingsAppliedCallback & on_query_settings_applied)
 {
     if (flags.internal)
         context->getClientInfo().is_internal = true;
@@ -2690,6 +2691,11 @@ static BlockIO executeQueryImpl(
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+
+            /// Some interpreters execute synchronous work before returning their pipeline.
+            /// Attach the trace subscription before they start workers that inherit the thread group.
+            if (on_query_settings_applied)
+                on_query_settings_applied();
 
             /// The `database` setting is documented as equivalent to `USE`. To behave that way it must
             /// change the database that unqualified names resolve to, not just be stored as a string.
@@ -3712,7 +3718,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
-    QueryProcessingStage::Enum stage)
+    QueryProcessingStage::Enum stage,
+    const QuerySettingsAppliedCallback & on_query_settings_applied)
 {
     if (isCrashed())
         throw Exception(ErrorCodes::ABORTED, "The server is shutting down due to a fatal error");
@@ -3727,7 +3734,9 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     ReadBufferUniquePtr no_input_buffer;
     QueryResultDetails result_details;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
+    res = executeQueryImpl(
+        query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast,
+        implicit_tcl_executor, {}, result_details, on_query_settings_applied);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = resolveOutputFormatName(context, ast_query_with_output);
@@ -3901,6 +3910,31 @@ struct FramingQueues
     InternalProfileTracesQueuePtr profile_traces_queue;
 };
 
+/// Reconcile traces separately because synchronous interpreter work must already have a subscription.
+void syncFramingProfileTracesWithSettings(const ContextMutablePtr & context, FramingQueues & queues)
+{
+    if (context->getClientInfo().interface != ClientInfo::Interface::HTTP)
+        return;
+
+    const Settings & settings = context->getSettingsRef();
+    const bool framing_enabled = !boost::iequals(settings[Setting::framing_output_format].value, "None");
+
+    if (framing_enabled && settings[Setting::send_profile_traces])
+    {
+        if (!queues.profile_traces_queue)
+        {
+            queues.profile_traces_queue = InternalProfileTracesQueue::create(context->getCurrentQueryId());
+            CurrentThread::attachInternalProfileTracesQueue(queues.profile_traces_queue);
+        }
+    }
+    else if (queues.profile_traces_queue)
+    {
+        queues.profile_traces_queue->cancel();
+        CurrentThread::attachInternalProfileTracesQueue(nullptr);
+        queues.profile_traces_queue.reset();
+    }
+}
+
 /// Attach or detach the logs, profile-events and profile-traces queues on the current thread (the thread group of
 /// the query inherits them) so they match the effective settings: a framing format requested over
 /// HTTP, plus `send_logs_level` / `send_profile_events` / `send_profile_traces`. The queues are owned by `queues` here (the
@@ -3917,11 +3951,11 @@ struct FramingQueues
 ///    drops them instead of capturing packets that nobody drains.
 ///
 /// The queues are wired into the framing format later, once it is created (the framing format only
-/// becomes known after the output format's header is available). Anything a query enables only through
-/// its own `SETTINGS` clause - a framing format, `send_logs_level`, `send_profile_events`, or `send_profile_traces` - is not
-/// known before parsing, so the corresponding queues start capturing only from query execution onwards.
-/// The parse / plan / analysis phase logs, profile events and traces are captured only when the setting comes
-/// from the session or the URL. In particular, a query that fails during analysis (before pipeline
+/// becomes known after the output format's header is available). Logs and profile events enabled only
+/// through SQL `SETTINGS` start capturing after analysis. Traces are reconciled separately immediately
+/// after applying SQL settings, before subsequent analysis and synchronous interpreter work.
+/// Samples emitted before those settings are applied require the session or URL opt-in.
+/// In particular, a query that fails during analysis (before pipeline
 /// execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its
 /// `SETTINGS` clause does not deliver the analysis-phase logs.
 ///
@@ -3970,20 +4004,7 @@ void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQue
         CurrentThread::attachInternalProfileEventsQueue(nullptr);
     }
 
-    if (framing_enabled && settings[Setting::send_profile_traces])
-    {
-        if (!queues.profile_traces_queue)
-        {
-            queues.profile_traces_queue = InternalProfileTracesQueue::create(context->getCurrentQueryId());
-            CurrentThread::attachInternalProfileTracesQueue(queues.profile_traces_queue);
-        }
-    }
-    else if (queues.profile_traces_queue)
-    {
-        queues.profile_traces_queue->cancel();
-        CurrentThread::attachInternalProfileTracesQueue(nullptr);
-        queues.profile_traces_queue.reset();
-    }
+    syncFramingProfileTracesWithSettings(context, queues);
 }
 
 /// Wire the queues attached by `syncFramingQueuesWithSettings` into the framing format.
@@ -4296,7 +4317,13 @@ void executeQuery(
 
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, result_details);
+        streams = executeQueryImpl(
+            begin, end, context, flags, QueryProcessingStage::Complete, istr, ast,
+            implicit_tcl_executor, http_continue_callback, result_details,
+            [&context, &framing_queues]
+            {
+                syncFramingProfileTracesWithSettings(context, framing_queues);
+            });
     }
     catch (...)
     {
