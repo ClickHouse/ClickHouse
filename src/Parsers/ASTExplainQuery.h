@@ -202,6 +202,8 @@ protected:
             const bool source_output_options_need_parens
                 = kind == FormattedQuery && !actions && query_with_output && query_with_output->hasOutputOptions();
 
+            /// maintain the boundary between nested `EXPLAIN` queries and their actions
+            const bool nested_explain_needs_parens = kind == FormattedQuery && query->getQueryKind() == QueryKind::Explain;
             /// When trailing output options (SETTINGS, FORMAT, etc.) follow the EXPLAIN body,
             /// and the inner query is not an ASTQueryWithOutput (e.g. a bare SELECT or UNION),
             /// we must wrap it in parentheses. Otherwise the trailing SETTINGS clause would be
@@ -211,6 +213,7 @@ protected:
             /// INSERT queries also don't need wrapping: wrapping INSERT in parens would
             /// produce `(INSERT ...)` which cannot be parsed back.
             bool need_parens = source_output_options_need_parens
+                || nested_explain_needs_parens
                 || (frame.has_trailing_output_options
                     && !query_with_output
                     && query->getQueryKind() != QueryKind::Insert

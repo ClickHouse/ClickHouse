@@ -30,4 +30,6 @@ SELECT 1 SETTINGS filter = \'0\'
 SELECT * FROM (SELECT 1 SETTINGS filter = \'0\')
 SELECT 1 SETTINGS filter = \'0\' UNION ALL SELECT 2
 SHOW TABLES
+1
+1
 validation complete

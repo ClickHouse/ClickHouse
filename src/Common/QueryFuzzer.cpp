@@ -3579,7 +3579,20 @@ void QueryFuzzer::callTableAsParameterizedView(ASTTableExpression & table)
 void QueryFuzzer::fuzzExplainQuery(ASTExplainQuery & explain)
 {
     if (explain.getKind() == ASTExplainQuery::ExplainKind::FormattedQuery)
+    {
+        /// fuzz the source while maintaining the typed action list and
+        /// absence of leading kind-specific settings required by `EXPLAIN TEXT`
+        const auto & explained_query = explain.getExplainedQuery();
+        if (explained_query)
+        {
+            ASTPtr fuzzed_query = explained_query;
+            fuzz(fuzzed_query);
+
+            if (fuzzed_query != explained_query)
+                explain.replaceExplainedQuery(std::move(fuzzed_query));
+        }
         return;
+    }
 
     explain.setExplainKind(fuzzExplainKind(explain.getKind()));
 

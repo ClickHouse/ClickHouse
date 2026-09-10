@@ -123,7 +123,8 @@ bool canFollowExplainTextActions(const Token & token)
 {
     if (token.type == TokenType::EndOfStream
         || token.type == TokenType::Semicolon
-        || token.type == TokenType::VerticalDelimiter)
+        || token.type == TokenType::VerticalDelimiter
+        || token.type == TokenType::ClosingRoundBracket)
     {
         return true;
     }
@@ -166,7 +167,7 @@ bool parseExplainTextBareSourceAndActions(IParser::Pos & pos, ASTPtr & query, AS
     {
         const bool at_top_level = round_depth == 0 && square_depth == 0 && curly_depth == 0;
 
-        if (at_top_level && (scan->type == TokenType::Semicolon || scan->type == TokenType::VerticalDelimiter))
+        if (at_top_level && (scan->type == TokenType::Semicolon || scan->type == TokenType::VerticalDelimiter || scan->type == TokenType::ClosingRoundBracket))
             break;
 
         if (at_top_level && previous_type != TokenType::Comma && isActionLeadingToken(*scan))

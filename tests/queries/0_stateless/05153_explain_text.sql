@@ -115,4 +115,13 @@ SELECT formatQueryFromJSON(concat(
     '}'
 )); -- { serverError BAD_ARGUMENTS }
 
+-- Nested `EXPLAIN TEXT` preserves action ownership across formatting.
+WITH 'EXPLAIN TEXT (EXPLAIN TEXT (SELECT 1) ONELINE) MULTILINE' AS q
+SELECT parseQueryToJSON(formatQuerySingleLine(q)) = parseQueryToJSON(q);
+
+-- A closing parenthesis terminates the inner action list.
+SELECT
+    parseQueryToJSON('EXPLAIN TEXT (EXPLAIN TEXT SELECT 1 ONELINE) MULTILINE')
+    = parseQueryToJSON('EXPLAIN TEXT (EXPLAIN TEXT (SELECT 1) ONELINE) MULTILINE');
+
 SELECT 'validation complete';

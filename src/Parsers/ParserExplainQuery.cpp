@@ -255,7 +255,7 @@ void registerStatementExplain(StatementFactory & factory)
     factory.registerStatement("EXPLAIN",
     {
         .description = R"DOCS_MD(
-Shows the execution plan of a statement.
+Shows a statement's parsed representation, query text, execution plan, or runtime metrics.
 
 <div class='vimeo-container'>
   <Frame>
@@ -278,6 +278,9 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
     ]
     [FORMAT ...]
+
+EXPLAIN TEXT query [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
+EXPLAIN TEXT (query) [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
 ```
 
 Example:
@@ -309,6 +312,7 @@ Union
 ## EXPLAIN Types {#explain-types}
 
 - `AST` — Abstract syntax tree.
+- `TEXT` — Formatted query text with optional pagination and output-format changes.
 - `SYNTAX` — Query text after AST-level optimizations.
 - `QUERY TREE` — Query tree after Query Tree level optimizations.
 - `PLAN` — Query execution plan.
@@ -354,6 +358,104 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
        Function today (children 1)
         ExpressionList
 ```
+
+### EXPLAIN TEXT {#explain-text}
+
+Formats a query and optionally changes its pagination or output format without executing it. The source query is parsed without resolving referenced tables or running query optimization.
+
+The result contains exactly one row with one `String` column named `text`. Formatting uses multiple lines by default. Original whitespace and comments are not preserved.
+
+**Syntax**
+
+```sql
+EXPLAIN TEXT query [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
+EXPLAIN TEXT (query) [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
+```
+
+**Actions**
+
+Actions are applied from left to right. Separate consecutive actions with commas; do not put a comma before the first action. A later action can replace an earlier change.
+
+| Action | Effect |
+| --- | --- |
+| `ONELINE` | Formats the query on one line. |
+| `MULTILINE` | Formats the query across multiple lines. This is the default. |
+| `MODIFY LIMIT expression` | Replaces or adds the source query's `LIMIT` length. Preserves any existing offset. |
+| `MODIFY OFFSET expression` | Replaces or adds the source query's offset. Preserves any existing limit length. |
+| `PAGE n` | Sets the offset to the current limit length multiplied by `n - 1`. Requires an existing `LIMIT` and a positive `UInt64` literal page number. `PAGE 1` removes the offset. |
+| `MODIFY FORMAT identifier` | Replaces or adds the source query's output `FORMAT`. |
+
+`MODIFY LIMIT`, `MODIFY OFFSET`, and `PAGE` require a single plain `SELECT`; they reject queries with multiple union branches. `MODIFY FORMAT` supports unions and other statements that accept output formats.
+
+For `PAGE`, multiplication of a `UInt64` literal limit is checked for overflow. An expression limit remains an expression in the generated offset.
+
+**Source and result options**
+
+Parentheses make the source boundary explicit: options inside them belong to the source query, and options after them or after the action list belong to `EXPLAIN TEXT`.
+
+In the bare form with actions, output options before the first action belong to the source, and options after the action list belong to `EXPLAIN TEXT`. Without actions, trailing `FORMAT` and `INTO OUTFILE` clauses belong to `EXPLAIN TEXT`.
+
+`SETTINGS` parsed as part of the source `SELECT` remain source settings. To apply settings to `EXPLAIN TEXT`, put them after the source's closing parenthesis or after the action list.
+
+Source settings are preserved without being applied. Query parameters in the source and action expressions remain placeholders, even when values for those parameters have been supplied. Outer settings are applied normally.
+
+In bare syntax, action keywords take precedence over implicit aliases. For example, `EXPLAIN TEXT SELECT 1 ONELINE` requests single-line formatting. Use `AS`, quote the alias, or parenthesize the source when `ONELINE` is intended as an alias.
+
+**Examples**
+
+Replace a limit and return the formatted query as JSON:
+
+```sql
+EXPLAIN TEXT (SELECT * FROM t LIMIT 100)
+MODIFY LIMIT 5, ONELINE
+FORMAT JSONEachRow;
+```
+
+```json
+{"text":"SELECT * FROM t LIMIT 5"}
+```
+
+Select the third page with ten rows per page:
+
+```sql
+EXPLAIN TEXT SELECT * FROM t LIMIT 10 PAGE 3, ONELINE;
+```
+
+The `text` value is:
+
+```sql
+SELECT * FROM t LIMIT 20, 10
+```
+
+Preserve a parameterized limit:
+
+```sql
+EXPLAIN TEXT SELECT * FROM t LIMIT {n:UInt64} PAGE 3, ONELINE;
+```
+
+The `text` value is:
+
+```sql
+SELECT * FROM t LIMIT multiply({n:UInt64}, 2), {n:UInt64}
+```
+
+Keep the source format while choosing a different format for the result:
+
+```sql
+EXPLAIN TEXT SELECT 1 FORMAT TSV
+MODIFY LIMIT 2, ONELINE
+FORMAT JSONEachRow;
+```
+
+```json
+{"text":"SELECT 1 LIMIT 2 FORMAT TSV"}
+```
+
+**Limitations**
+
+- `INSERT` statements containing inline data are rejected.
+- Leading kind-specific settings, such as `EXPLAIN TEXT oneline = 1 SELECT 1`, are not supported. Use actions instead.
+- `EXPLAIN TEXT` cannot be used in a subquery or through the `viewExplain` table function.
 
 ### EXPLAIN SYNTAX {#explain-syntax}
 
@@ -1350,6 +1452,9 @@ EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABL
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
     ]
     [FORMAT ...]
+
+EXPLAIN TEXT query [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
+EXPLAIN TEXT (query) [action [, action] ...] [INTO OUTFILE ...] [FORMAT ...] [SETTINGS ...]
 )",
         .related = {"SELECT", "HYPOTHETICAL INDEX", "ALTER TABLE ... STATISTICS"},
     });
