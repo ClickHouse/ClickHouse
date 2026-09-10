@@ -8381,8 +8381,10 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 
 Cloud default value: `1`.
 )", BETA, allow_database_unity_catalog) \
-    DECLARE(Bool, allow_database_unity_v2_catalog, false, R"(
-Allow beta database engine DataLakeCatalog with catalog_type = 'unity_v2', which serves both Delta Lake and Iceberg tables from a single Unity Catalog.
+    DECLARE(Bool, use_unity_catalog_v2, false, R"(
+Use the new implementation of the `DataLakeCatalog` database engine with `catalog_type = 'unity'`, which serves both Delta Lake and Iceberg tables from a single Unity Catalog.
+The value is read on `CREATE DATABASE` and stored in the database as the `use_unity_catalog_v2` database setting, so it does not change after a restart.
+Migrate an existing database with `ALTER DATABASE ... MODIFY SETTING use_unity_catalog_v2 = 1`.
 )", BETA) \
     DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'

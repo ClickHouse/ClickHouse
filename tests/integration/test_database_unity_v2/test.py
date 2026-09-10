@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Integration tests for the Unity v2 catalog (`catalog_type = 'unity_v2'`).
+"""Integration tests for the new Unity catalog implementation
+(`catalog_type = 'unity'` with `use_unity_catalog_v2 = 1`).
 
 `UnityV2Catalog` serves Delta and Iceberg tables from one catalog, detecting
 the format per table.
@@ -40,7 +41,8 @@ SEEDED_ROW_COUNT = 15
 SEEDED_FIRST_ROW = "1\tnWYHawtqUw\t930"
 SEEDED_LAST_ROW = "15\tkxUUZEUoKv\t398"
 
-GATE_SETTING = "allow_database_unity_v2_catalog"
+GATE_SETTING = "allow_database_unity_catalog"
+V2_SETTING = "use_unity_catalog_v2"
 
 
 UC_HOME = "/tmp/unitycatalog"
@@ -187,7 +189,7 @@ def create_database(node, db_name, url=UC_URL, catalog_credential=None):
     node.query(
         f"""
 CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{url}')
-SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_v2',
+SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = 1,
          vended_credentials = false{credential_clause}
         """,
         settings={GATE_SETTING: "1"},
@@ -234,19 +236,92 @@ print(urllib.request.urlopen(request).status)
 
 
 def test_experimental_gate(started_cluster):
-    """`CREATE DATABASE` must refuse without the opt-in setting."""
+    """`CREATE DATABASE` must refuse without the Unity opt-in setting."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("gated")
 
     error = node.query_and_get_error(f"""
 CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{UC_URL}')
-SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_v2', vended_credentials = false
+SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = 1, vended_credentials = false
         """)
     assert GATE_SETTING in error
 
 
+def create_with_session_flag(node, db_name, flag):
+    """`CREATE` without the database setting, with the session flag set to `flag`."""
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(
+        f"""
+CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{PROXY_URL}')
+SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity',
+         vended_credentials = false, catalog_credential = '{PAT_TOKEN}'
+        """,
+        settings={GATE_SETTING: "1", V2_SETTING: flag},
+    )
+
+
+def assert_legacy_hides_iceberg(node, db_name):
+    """The legacy implementation does not read tables with an Iceberg `securable_kind`,
+    which the proxy stamps on the UniForm table, so it hides them."""
+    assert UNIFORM_TABLE not in show_tables(node, db_name, "default%")
+    assert DELTA_TABLE in show_tables(node, db_name, "default%")
+
+
+def test_session_flag_is_persisted_on_create(started_cluster):
+    """The session flag is read once, on `CREATE`, and written into the database."""
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("flag_on")
+    create_with_session_flag(node, db_name, "1")
+
+    assert f"{V2_SETTING} = 1" in node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
+
+    # The stored value wins over the session flag after a restart.
+    node.restart_clickhouse()
+    assert f"{V2_SETTING} = 1" in node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
+
+
+def test_session_flag_off_is_not_persisted(started_cluster):
+    """Without the flag nothing is written, so the database follows the default (legacy)."""
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("flag_off")
+    create_with_session_flag(node, db_name, "0")
+
+    assert V2_SETTING not in node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert_legacy_hides_iceberg(node, db_name)
+
+
+def test_alter_switches_implementation(started_cluster):
+    """An existing legacy database is migrated with `ALTER DATABASE ... MODIFY SETTING`."""
+    node = started_cluster.instances["node1"]
+    db_name = unique_name("alter_v2")
+    create_with_session_flag(node, db_name, "0")
+    assert_legacy_hides_iceberg(node, db_name)
+
+    node.query(f"ALTER DATABASE {db_name} MODIFY SETTING {V2_SETTING} = 1")
+
+    assert f"{V2_SETTING} = 1" in node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
+    assert_seeded_rows(node, db_name, UNIFORM_TABLE)
+
+    # The switch survives a restart, and it can be reverted.
+    node.restart_clickhouse()
+    assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
+
+    node.query(f"ALTER DATABASE {db_name} MODIFY SETTING {V2_SETTING} = 0")
+    assert V2_SETTING + " = 0" in node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert_legacy_hides_iceberg(node, db_name)
+
+    # Only the implementation switch may be altered.
+    error = node.query_and_get_error(
+        f"ALTER DATABASE {db_name} MODIFY SETTING warehouse = 'other'"
+    )
+    assert "cannot be altered" in error
+
+
 def test_list_and_read_delta_tables(started_cluster):
-    """On an all-Delta catalog the `unity_v2` engine must match the Delta-only one."""
+    """On an all-Delta catalog the new implementation must match the legacy one."""
     node = started_cluster.instances["node1"]
     db_name = unique_name("v2_delta")
     create_database(node, db_name)
@@ -439,7 +514,7 @@ def test_static_token_expiry(started_cluster):
         node.restart_clickhouse()
 
         assert db_name in node.query("SHOW DATABASES").split("\n")
-        assert "unity_v2" in node.query(f"SHOW CREATE DATABASE {db_name}")
+        assert f"{V2_SETTING} = 1" in node.query(f"SHOW CREATE DATABASE {db_name}")
 
         error = node.query_and_get_error(f"SHOW TABLES FROM {db_name}")
         assert "401" in error
@@ -465,7 +540,7 @@ def test_no_secrets_leaked(started_cluster):
         query(
             f"""
 CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{PROXY_URL}')
-SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_v2',
+SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity', {V2_SETTING} = 1,
          vended_credentials = false, catalog_credential = '{credential}'
             """,
             settings={GATE_SETTING: "1"},

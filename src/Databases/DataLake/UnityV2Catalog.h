@@ -52,7 +52,7 @@ public:
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
-        return DB::DatabaseDataLakeCatalogType::UNITY_V2;
+        return DB::DatabaseDataLakeCatalogType::UNITY;
     }
 
     /// Serves both Delta and Iceberg tables, so the format is detected per table.

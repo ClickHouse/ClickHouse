@@ -3,6 +3,8 @@
 #if USE_AVRO && USE_PARQUET
 
 #include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Common/SettingsChanges.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
@@ -31,6 +33,25 @@ bool hasValueAndItsNotNone(const std::string & value, const Poco::JSON::Object::
 {
     return object->has(value) && !object->isNull(value) && !object->get(value).isEmpty();
 }
+
+/// `ALTER DATABASE ... MODIFY SETTING` on a Unity catalog may only switch the implementation.
+[[maybe_unused]] const bool unity_settings_alter_validator_registered = []
+{
+    DataLake::CatalogSettingsAlterValidatorFactory::instance().registerValidator(
+        DB::DatabaseDataLakeCatalogType::UNITY,
+        [](const DB::DatabaseDataLakeSettings &, const DB::SettingsChanges & changes)
+        {
+            for (const auto & change : changes)
+            {
+                if (change.name != "use_unity_catalog_v2")
+                    throw DB::Exception(
+                        DB::ErrorCodes::BAD_ARGUMENTS,
+                        "Setting `{}` cannot be altered for a Unity catalog (alterable settings are: use_unity_catalog_v2)",
+                        change.name);
+            }
+        });
+    return true;
+}();
 
 }
 
