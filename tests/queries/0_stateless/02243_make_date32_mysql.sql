@@ -4,6 +4,9 @@ select toTypeName(makeDate32(1991, cast(8 as Nullable(UInt64))));
 
 select makeDate32(1900, 01);
 select makeDate32(2020, 08);
+select makeDate32(2024, 366);
+select makeDate32(2023, 366);
+select makeDate32(2024, 367);
 select makeDate32(-1980, 10);
 select makeDate32(1980, -10);
 select makeDate32(1980.0, 9);
