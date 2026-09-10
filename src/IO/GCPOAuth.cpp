@@ -101,8 +101,8 @@ GCPOAuthToken postTokenRequest(
 
 GCPOAuthToken fetchGCPOAuthToken(
     const std::string & client_id,
-    const std::string & client_secret,
-    const std::string & refresh_token,
+    std::string_view client_secret,
+    std::string_view refresh_token,
     const ConnectionTimeouts & timeouts,
     HTTPConnectionGroupType group,
     const std::string & token_endpoint)

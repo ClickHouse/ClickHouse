@@ -4,13 +4,14 @@
 #include <base/types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
+#include <Common/SensitiveString.h>
 
 namespace DB
 {
 
 struct GCPOAuthToken
 {
-    std::string access_token;
+    SensitiveString access_token;
     Int64 expires_in = 3600; /// seconds until expiry as reported by the token endpoint
 };
 
@@ -21,8 +22,8 @@ struct GCPOAuthToken
 /// Session creation is retried up to 5 times.
 GCPOAuthToken fetchGCPOAuthToken(
     const std::string & client_id,
-    const std::string & client_secret,
-    const std::string & refresh_token,
+    std::string_view client_secret,
+    std::string_view refresh_token,
     const ConnectionTimeouts & timeouts,
     HTTPConnectionGroupType group = HTTPConnectionGroupType::HTTP,
     const std::string & token_endpoint = "https://oauth2.googleapis.com/token");

@@ -169,7 +169,7 @@ GlueCatalog::GlueCatalog(
     client_configuration.region = region;
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
-    Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key);
+    Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, Aws::SensitiveString(settings_.aws_secret_access_key.view()), Aws::String());
     /// Only for testing when we are mocking glue
     if (!endpoint.empty())
     {

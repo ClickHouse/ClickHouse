@@ -10,7 +10,7 @@ namespace DataLake
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const std::string & bearer_token,
+    std::string_view bearer_token,
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
@@ -19,7 +19,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const std::string & bearer_token,
+    std::string_view bearer_token,
     const Poco::URI::QueryParameters & params = {},
     const DB::HTTPHeaderEntries & headers = {},
     const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
@@ -29,6 +29,6 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
 /// `createWithBearerToken` synthesizes, applying the same `http_forbid_headers` and
 /// control-character checks as a user-supplied `auth_header`. Throws BAD_ARGUMENTS on a forbidden
 /// or malformed token; an empty token is a no-op (no header is sent).
-void validateBearerToken(const DB::ContextPtr & context, const std::string & bearer_token);
+void validateBearerToken(const DB::ContextPtr & context, std::string_view bearer_token);
 
 }

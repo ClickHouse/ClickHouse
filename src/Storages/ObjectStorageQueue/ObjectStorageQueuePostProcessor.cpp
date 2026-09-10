@@ -39,8 +39,8 @@ namespace FailPoints
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSensitiveString secret_access_key;
+    extern const S3AuthSettingsSensitiveString session_token;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
@@ -49,8 +49,8 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsSensitiveString google_adc_client_secret;
+    extern const S3AuthSettingsSensitiveString google_adc_refresh_token;
 }
 
 #endif
@@ -297,7 +297,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 #if USE_AWS_S3
     const String & move_uri = settings.after_processing_move_uri;
     const String & move_access_key_id = settings.after_processing_move_access_key_id;
-    const String & move_secret_access_key = settings.after_processing_move_secret_access_key;
+    const SensitiveString & move_secret_access_key = settings.after_processing_move_secret_access_key;
     const String & move_prefix = settings.after_processing_move_prefix;
 
     if (!move_uri.empty() || !move_access_key_id.empty() || !move_secret_access_key.empty())

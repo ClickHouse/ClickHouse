@@ -77,13 +77,13 @@ static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_n
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params) const
 {
     const auto & context = getContext();
-    return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
+    return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token.view(), params);
 }
 
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
 {
     const auto & context = getContext();
-    return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, {}, {}, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
+    return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token.view(), {}, {}, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }
 
 bool UnityCatalog::empty() const
@@ -470,7 +470,7 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
 UnityCatalog::UnityCatalog(
     const std::string & catalog_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     DB::ContextPtr context_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)

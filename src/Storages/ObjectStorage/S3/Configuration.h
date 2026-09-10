@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorage/S3/Serde.h>
 #endif
 #include <Parsers/IAST_fwd.h>
+#include <Common/SensitiveString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 namespace DB
@@ -100,7 +101,7 @@ public:
 
     StorageS3Configuration() = default;
 
-    void setInitializationAsBigLake(const String & client_id_, const String & client_secret_, const String & refresh_token_)
+    void setInitializationAsBigLake(const String & client_id_, std::string_view client_secret_, std::string_view refresh_token_)
     {
         biglake_adc_client_id = client_id_;
         biglake_adc_client_secret = client_secret_;
@@ -164,8 +165,8 @@ public:
     bool static_configuration = true;
 
     String biglake_adc_client_id;
-    String biglake_adc_client_secret;
-    String biglake_adc_refresh_token;
+    SensitiveString biglake_adc_client_secret;
+    SensitiveString biglake_adc_refresh_token;
 
 protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;

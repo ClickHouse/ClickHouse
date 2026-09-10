@@ -56,17 +56,17 @@ static constexpr auto NEW_LINE = "\n";
 struct PaimonToken
 {
     const String token_provider;
-    const String bearer_token;
+    const DB::SensitiveString bearer_token;
     const String dlf_access_key_id;
-    const String dlf_access_key_secret;
+    const DB::SensitiveString dlf_access_key_secret;
 
-    explicit PaimonToken(const String & bearer_token_)
+    explicit PaimonToken(std::string_view bearer_token_)
         : token_provider("bearer")
         , bearer_token(bearer_token_)
     {
     }
 
-    PaimonToken(const String & access_key_id_, const String & access_key_secret_)
+    PaimonToken(const String & access_key_id_, std::string_view access_key_secret_)
         : token_provider("dlf")
         , dlf_access_key_id(access_key_id_)
         , dlf_access_key_secret(access_key_secret_)
@@ -115,7 +115,7 @@ private:
     /// signed headers to `current_headers` and returns an empty string; for the `bearer` provider it
     /// returns the bearer token (to pass to `create`) without adding a header. Returns an empty
     /// string when no token is configured.
-    String createAuthHeaders(
+    std::string_view createAuthHeaders(
         DB::HTTPHeaderEntries & current_headers,
         const String & resource_path,
         const std::unordered_map<String, String> & query_params,

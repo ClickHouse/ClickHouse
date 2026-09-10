@@ -55,22 +55,22 @@ namespace S3AuthSetting
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString region;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsSensitiveString secret_access_key;
+    extern const S3AuthSettingsSensitiveString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSensitiveString session_token;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsSensitiveString google_adc_client_secret;
+    extern const S3AuthSettingsSensitiveString google_adc_refresh_token;
 }
 
 namespace S3RequestSetting
@@ -122,7 +122,7 @@ private:
     std::shared_ptr<S3::Client> makeS3Client(
         const S3::URI & s3_uri,
         const String & access_key_id,
-        const String & secret_access_key,
+        std::string_view secret_access_key,
         String role_arn,
         String role_session_name,
         String external_id,
@@ -131,16 +131,16 @@ private:
         const S3Settings & settings,
         const ContextPtr & context)
     {
-        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
+        Aws::Auth::AWSCredentials credentials(access_key_id, Aws::SensitiveString(secret_access_key), Aws::String());
         HTTPHeaderEntries headers;
-        String session_token = settings.auth_settings[S3AuthSetting::session_token];
-        String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+        SensitiveString session_token = settings.auth_settings[S3AuthSetting::session_token];
+        SensitiveString sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
         S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
         /// Whether the base key pair came from the request rather than the server `<s3>` config fallback below.
         const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
         {
-            credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], settings.auth_settings[S3AuthSetting::secret_access_key]);
+            credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], Aws::SensitiveString(settings.auth_settings[S3AuthSetting::secret_access_key].value.view()), Aws::String());
             headers = settings.auth_settings.headers;
         }
 
@@ -287,11 +287,11 @@ private:
             client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
-            sse_customer_key,
+            sse_customer_key.view(),
             sse_kms_config,
             std::move(headers),
             std::move(credentials_configuration),
-            session_token,
+            session_token.view(),
             shared_cache);
     }
 
@@ -370,7 +370,7 @@ std::shared_ptr<S3::Client> S3BackupDiskClientFactory::getOrCreate(DiskPtr disk)
 BackupReaderS3::BackupReaderS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
-    const String & secret_access_key_,
+    std::string_view secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
     const String & external_id,
@@ -506,7 +506,7 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
 BackupWriterS3::BackupWriterS3(
     const S3::URI & s3_uri_,
     const String & access_key_id_,
-    const String & secret_access_key_,
+    std::string_view secret_access_key_,
     const String & role_arn,
     const String & role_session_name,
     const String & external_id,

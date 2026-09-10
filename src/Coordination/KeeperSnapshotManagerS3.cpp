@@ -22,7 +22,6 @@
 #include <Interpreters/Context.h>
 #include <Common/Macros.h>
 
-#include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Errors.h>
 
 namespace DB
@@ -37,9 +36,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSensitiveString secret_access_key;
+    extern const S3AuthSettingsSensitiveString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsSensitiveString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
 }
@@ -99,7 +98,6 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         LOG_INFO(log, "S3 configuration was updated");
 
-        auto credentials = Aws::Auth::AWSCredentials(auth_settings[S3AuthSetting::access_key_id], auth_settings[S3AuthSetting::secret_access_key], auth_settings[S3AuthSetting::session_token]);
         auto headers = auth_settings.headers;
 
         static constexpr size_t s3_max_redirects = 10;
@@ -141,9 +139,9 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
-            credentials.GetAWSAccessKeyId(),
-            credentials.GetAWSSecretKey(),
-            auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
+            auth_settings[S3AuthSetting::access_key_id],
+            auth_settings[S3AuthSetting::secret_access_key].value.view(),
+            auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value.view(),
             auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             S3::CredentialsConfiguration
@@ -160,7 +158,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 /// Keeper snapshot upload is a server-internal operation; it uses the server's own credentials.
                 /*forbid_implicit_credentials=*/false
             },
-            credentials.GetSessionToken(),
+            auth_settings[S3AuthSetting::session_token].value.view(),
             shared_cache);
 
         auto new_client = std::make_shared<KeeperSnapshotManagerS3::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));

@@ -607,7 +607,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
                 if (!header_name.starts_with("x-amz-"))
                 {
-                    poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
+                    poco_request.set(boost::algorithm::to_lower_copy(header_name), String(header_value.view()));
                 }
             }
 
@@ -860,7 +860,7 @@ void PocoHTTPClientGCPOAuth::makeRequestInternal(
         if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
             bearer_token = requestBearerToken();
 
-        request.SetHeaderValue("Authorization", fmt::format("Bearer {}", bearer_token->token));
+        request.SetHeaderValue("Authorization", fmt::format("Bearer {}", bearer_token->token.view()));
     }
 
     PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
@@ -872,7 +872,7 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
     if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
         bearer_token = requestBearerToken();
 
-    return bearer_token->token;
+    return String(bearer_token->token.view());
 }
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
@@ -926,7 +926,7 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken()
 
     return
     {
-        .token = object->getValue<String>("access_token"),
+        .token = SensitiveString(object->getValue<String>("access_token")),
         .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(object->getValue<Int64>("expires_in"))
     };
 }
@@ -935,7 +935,7 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFr
 {
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto result = fetchGCPOAuthToken(
-        google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, getCredentialAcquisitionTimeouts(timeouts), group);
+        google_adc_client_id, google_adc_client_secret.view(), google_adc_refresh_token.view(), getCredentialAcquisitionTimeouts(timeouts), group);
     return
     {
         .token = std::move(result.access_token),

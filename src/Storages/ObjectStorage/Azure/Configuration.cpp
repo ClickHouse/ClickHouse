@@ -902,7 +902,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             /// Use epoch as the expiry time. There is no refresh -- the database must be
             /// recreated with a new token once it expires.
             parsed_arguments.connection_params.auth_method = std::make_shared<AzureBlobStorage::StaticCredential>(
-                onelake_access_token,
+                onelake_access_token.view(),
                 std::chrono::system_clock::time_point{}
             );
         }
@@ -911,7 +911,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             parsed_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
                 onelake_tenant_id,
                 onelake_client_id,
-                onelake_client_secret
+                std::string(onelake_client_secret.view())
             );
         }
     }

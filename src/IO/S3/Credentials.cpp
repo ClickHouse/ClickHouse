@@ -1251,7 +1251,7 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey::updateHash(SipHash & has
     hash.update(external_id);
     hash.update(endpoint);
     hash.update(credentials.GetAWSAccessKeyId());
-    hash.update(credentials.GetAWSSecretKey());
+    hash.update(std::string_view(credentials.GetAWSSecretKey()));
     hash.update(credentials.GetSessionToken());
 }
 

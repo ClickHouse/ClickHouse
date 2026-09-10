@@ -4,6 +4,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/SensitiveString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -477,12 +478,14 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
 }
 
 template String NamedCollection::get<String>(const NamedCollection::Key & key) const;
+template SensitiveString NamedCollection::get<SensitiveString>(const NamedCollection::Key & key) const;
 template UInt64 NamedCollection::get<UInt64>(const NamedCollection::Key & key) const;
 template Int64 NamedCollection::get<Int64>(const NamedCollection::Key & key) const;
 template Float64 NamedCollection::get<Float64>(const NamedCollection::Key & key) const;
 template bool NamedCollection::get<bool>(const NamedCollection::Key & key) const;
 
 template String NamedCollection::getOrDefault<String>(const NamedCollection::Key & key, const String & default_value) const;
+template SensitiveString NamedCollection::getOrDefault<SensitiveString>(const NamedCollection::Key & key, const SensitiveString & default_value) const;
 template UInt64 NamedCollection::getOrDefault<UInt64>(const NamedCollection::Key & key, const UInt64 & default_value) const;
 template Int64 NamedCollection::getOrDefault<Int64>(const NamedCollection::Key & key, const Int64 & default_value) const;
 template Float64 NamedCollection::getOrDefault<Float64>(const NamedCollection::Key & key, const Float64 & default_value) const;

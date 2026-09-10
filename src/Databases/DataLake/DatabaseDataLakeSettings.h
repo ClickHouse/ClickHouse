@@ -19,6 +19,7 @@ class SettingsChanges;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, DatabaseDataLakeCatalogType) \
     M(CLASS_NAME, S3UriStyle) \
+    M(CLASS_NAME, SensitiveString) \
 
 /// Merged and deduplicated type list for DatabaseDataLake + StorageObjectStorage settings.
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -49,6 +50,7 @@ class SettingsChanges;
     M(CLASS_NAME, S3UriStyle) \
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, Seconds) \
+    M(CLASS_NAME, SensitiveString) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
@@ -74,7 +76,8 @@ struct DatabaseDataLakeSettings
 
     /// Name of the setting referenced by its `DatabaseDataLakeSetting::*` index,
     /// so catalog code can match `SettingsChanges` entries without magic strings.
-    static const String & getSettingName(DatabaseDataLakeSettingsString setting);
+    template <typename FieldType>
+    static const String & getSettingName(SettingIndex<DatabaseDataLakeSettings, FieldType> setting);
 
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;

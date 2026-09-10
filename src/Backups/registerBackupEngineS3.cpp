@@ -19,11 +19,11 @@
 namespace DB::S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsSensitiveString secret_access_key;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSensitiveString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool no_sign_request;
     extern const S3AuthSettingsString http_client;
@@ -31,8 +31,8 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsString metadata_service;
     extern const S3AuthSettingsString request_token_path;
     extern const S3AuthSettingsString google_adc_client_id;
-    extern const S3AuthSettingsString google_adc_client_secret;
-    extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsSensitiveString google_adc_client_secret;
+    extern const S3AuthSettingsSensitiveString google_adc_refresh_token;
 }
 
 #endif
@@ -214,7 +214,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         auto location = resolveS3BackupLocation(params.backup_info, params.context);
         String & s3_uri = location.uri;
         String access_key_id;
-        String secret_access_key;
+        SensitiveString secret_access_key;
         String role_arn;
         String role_session_name;
         String external_id;
@@ -226,7 +226,7 @@ void registerBackupEngineS3(BackupFactory & factory)
         if (const auto & collection = location.collection)
         {
             access_key_id = collection->getOrDefault<String>("access_key_id", "");
-            secret_access_key = collection->getOrDefault<String>("secret_access_key", "");
+            secret_access_key = collection->getOrDefault<SensitiveString>("secret_access_key");
             role_arn = collection->getOrDefault<String>("role_arn", "");
             role_session_name = collection->getOrDefault<String>("role_session_name", "");
             external_id = collection->getOrDefault<String>("external_id", "");
@@ -275,7 +275,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             /// its own key pair without a token.
             auth[S3AuthSetting::session_token]
                 = (drop_collection_keys_for_query_role || drop_inherited_token)
-                ? "" : collection->getOrDefault<String>("session_token", "");
+                ? SensitiveString{} : collection->getOrDefault<SensitiveString>("session_token");
             auth[S3AuthSetting::role_arn] = role_arn;
             auth[S3AuthSetting::role_session_name] = role_session_name;
             auth[S3AuthSetting::external_id] = external_id;
@@ -284,8 +284,8 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::metadata_service] = collection->getOrDefault<String>("metadata_service", "");
             auth[S3AuthSetting::request_token_path] = collection->getOrDefault<String>("request_token_path", "");
             auth[S3AuthSetting::google_adc_client_id] = collection->getOrDefault<String>("google_adc_client_id", "");
-            auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
-            auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
+            auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<SensitiveString>("google_adc_client_secret");
+            auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<SensitiveString>("google_adc_refresh_token");
 
         }
         else
@@ -341,7 +341,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auto reader = std::make_shared<BackupReaderS3>(
                 S3::URI{s3_uri},
                 access_key_id,
-                secret_access_key,
+                secret_access_key.view(),
                 role_arn,
                 role_session_name,
                 external_id,
@@ -362,7 +362,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auto reader = std::make_shared<BackupReaderS3>(
                 S3::URI{s3_uri},
                 access_key_id,
-                secret_access_key,
+                secret_access_key.view(),
                 role_arn,
                 role_session_name,
                 external_id,
@@ -383,7 +383,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 return std::make_shared<BackupReaderS3>(
                     uri_for_lightweight,
                     access_key_id,
-                    secret_access_key,
+                    secret_access_key.view(),
                     role_arn,
                     role_session_name,
                     external_id,
@@ -402,7 +402,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auto writer = std::make_shared<BackupWriterS3>(
                 S3::URI{s3_uri},
                 access_key_id,
-                secret_access_key,
+                secret_access_key.view(),
                 std::move(role_arn),
                 std::move(role_session_name),
                 std::move(external_id),

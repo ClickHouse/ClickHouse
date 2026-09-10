@@ -45,7 +45,7 @@ public:
     BackupReaderS3(
         const S3::URI & s3_uri_,
         const String & access_key_id_,
-        const String & secret_access_key_,
+        std::string_view secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
         const String & external_id,
@@ -91,7 +91,7 @@ public:
     BackupWriterS3(
         const S3::URI & s3_uri_,
         const String & access_key_id_,
-        const String & secret_access_key_,
+        std::string_view secret_access_key_,
         const String & role_arn,
         const String & role_session_name,
         const String & external_id,

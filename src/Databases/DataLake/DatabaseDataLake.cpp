@@ -64,7 +64,7 @@ namespace DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
-    extern const DatabaseDataLakeSettingsString catalog_credential;
+    extern const DatabaseDataLakeSettingsSensitiveString catalog_credential;
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
@@ -73,25 +73,25 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsBool oauth_server_use_request_body;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSensitiveString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
     extern const DatabaseDataLakeSettingsString aws_role_arn;
     extern const DatabaseDataLakeSettingsString aws_role_session_name;
     extern const DatabaseDataLakeSettingsString aws_external_id;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
-    extern const DatabaseDataLakeSettingsString onelake_client_secret;
-    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
-    extern const DatabaseDataLakeSettingsString onelake_refresh_token;
+    extern const DatabaseDataLakeSettingsSensitiveString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsSensitiveString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsSensitiveString onelake_refresh_token;
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
-    extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
+    extern const DatabaseDataLakeSettingsSensitiveString dlf_access_key_secret;
     extern const DatabaseDataLakeSettingsString google_project_id;
     extern const DatabaseDataLakeSettingsString google_service_account;
     extern const DatabaseDataLakeSettingsString google_metadata_service;
     extern const DatabaseDataLakeSettingsString google_adc_client_id;
-    extern const DatabaseDataLakeSettingsString google_adc_client_secret;
-    extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
+    extern const DatabaseDataLakeSettingsSensitiveString google_adc_client_secret;
+    extern const DatabaseDataLakeSettingsSensitiveString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
@@ -258,7 +258,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::RestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::catalog_credential].value.view(),
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
@@ -273,7 +273,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::DeltaSharingCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::catalog_credential].value.view(),
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
@@ -289,7 +289,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::HorizonCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::catalog_credential].value.view(),
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
@@ -309,9 +309,9 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_id].value,
-                settings[DatabaseDataLakeSetting::onelake_client_secret].value,
-                settings[DatabaseDataLakeSetting::onelake_bearer_token].value,
-                settings[DatabaseDataLakeSetting::onelake_refresh_token].value,
+                settings[DatabaseDataLakeSetting::onelake_client_secret].value.view(),
+                settings[DatabaseDataLakeSetting::onelake_bearer_token].value.view(),
+                settings[DatabaseDataLakeSetting::onelake_refresh_token].value.view(),
                 onelake_auth_scope,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
@@ -324,8 +324,8 @@ void DatabaseDataLake::initialize() const
             std::string google_service_account = settings[DatabaseDataLakeSetting::google_service_account].value;
             std::string google_metadata_service = settings[DatabaseDataLakeSetting::google_metadata_service].value;
             std::string google_adc_client_id = settings[DatabaseDataLakeSetting::google_adc_client_id].value;
-            std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
-            std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
+            std::string_view google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value.view();
+            std::string_view google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.view();
             std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
@@ -354,7 +354,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::UnityCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::catalog_credential].value.view(),
                 Context::getGlobalContextInstance());
             break;
         }
@@ -397,7 +397,7 @@ void DatabaseDataLake::initialize() const
                 catalog_impl = std::make_shared<DataLake::PaimonRestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::catalog_credential].value),
+                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::catalog_credential].value.view()),
                 settings[DatabaseDataLakeSetting::region].value,
                 Context::getGlobalContextInstance());
             }
@@ -408,7 +408,7 @@ void DatabaseDataLake::initialize() const
                 catalog_impl = std::make_shared<DataLake::PaimonRestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::dlf_access_key_id].value, settings[DatabaseDataLakeSetting::dlf_access_key_secret].value),
+                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::dlf_access_key_id].value, settings[DatabaseDataLakeSetting::dlf_access_key_secret].value.view()),
                 settings[DatabaseDataLakeSetting::region].value,
                 Context::getGlobalContextInstance());
             }
@@ -872,9 +872,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             access_token_provider = [onelake_catalog = rest_catalog] { return onelake_catalog->getCurrentAccessToken(); };
         azure_configuration->setInitializationAsOneLake(
             auth->client_id,
-            auth->client_secret,
+            auth->client_secret.view(),
             auth->tenant_id,
-            auth->bearer_token,
+            auth->bearer_token.view(),
             std::move(access_token_provider),
             settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
