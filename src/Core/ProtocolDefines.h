@@ -109,7 +109,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
 /// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
+/// Version 16 adds the `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct`
+/// plan setting names (external `DISTINCT`) and the input-order flag of the `Distinct` step.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -135,9 +137,13 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORD
 /// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
 /// mixed-version cluster fails at plan time.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
-/// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
+/// First query-plan serialization version that registers a `LimitRange` step. Gates serializing a
 /// `LimitRangeStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
+/// First query-plan serialization version that knows the `max_bytes_before_external_distinct` and
+/// `max_bytes_ratio_before_external_distinct` plan setting names. Gates writing them in
+/// `DistinctStep::serializeSettings`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 16;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

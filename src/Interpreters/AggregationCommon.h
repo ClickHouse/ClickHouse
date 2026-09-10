@@ -4,6 +4,7 @@
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/KeysNullMap.h>
 
@@ -86,6 +87,60 @@ void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
     fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
+}
+
+/// The inverse of the fixed-size key packing above: writes the values of the key columns (and their
+/// null map, if any of the keys is nullable) from the packed key back into the columns.
+template <bool has_nullable_keys, typename Key>
+void unpackFixedKeyIntoColumns(const Key & key, const std::vector<size_t> * unpack_order, std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+{
+    static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0;
+
+    /// In any hash key value, column values to be read start just after the bitmap, if it exists.
+    size_t pos = bitmap_size;
+
+    for (size_t j = 0; j < key_columns.size(); ++j)
+    {
+        const size_t i = unpack_order ? (*unpack_order)[j] : j;
+
+        IColumn * observed_column = key_columns[i];
+        ColumnUInt8 * null_map = nullptr;
+
+        bool column_nullable = false;
+        if constexpr (has_nullable_keys)
+            column_nullable = isColumnNullable(*key_columns[i]);
+
+        /// If we have a nullable column, get its nested column and its null map.
+        if (column_nullable)
+        {
+            auto & nullable_col = assert_cast<ColumnNullable &>(*key_columns[i]);
+            observed_column = &nullable_col.getNestedColumn();
+            null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
+        }
+
+        bool is_null = false;
+        if (column_nullable)
+        {
+            /// The current column is nullable. Check if the value of the
+            /// corresponding key is nullable. Update the null map accordingly.
+            size_t bucket = i / 8;
+            size_t offset = i % 8;
+            UInt8 val = (reinterpret_cast<const UInt8 *>(&key)[bucket] >> offset) & 1;
+            null_map->insertValue(val);
+            is_null = val == 1;
+        }
+
+        if (has_nullable_keys && is_null)
+        {
+            observed_column->insertDefault();
+        }
+        else
+        {
+            size_t size = key_sizes[i];
+            observed_column->insertData(reinterpret_cast<const char *>(&key) + pos, size);
+            pos += size;
+        }
+    }
 }
 
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the

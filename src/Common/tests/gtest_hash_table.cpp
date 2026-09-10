@@ -549,3 +549,62 @@ TEST(HashTable, StringHashMapMoveConstructorDoesNotAllocate)
 
     check_map(dst2);
 }
+
+namespace
+{
+
+/// Records the allocation overlap required by the memory tracker before a replacement is admitted.
+struct GrowthTrackingAllocator : HashTableAllocator
+{
+    static inline size_t allocated_bytes = 0;
+    static inline size_t peak_bytes = 0;
+
+    void * alloc(size_t bytes)
+    {
+        void * result = HashTableAllocator::alloc(bytes);
+        allocated_bytes += bytes;
+        peak_bytes = std::max(peak_bytes, allocated_bytes);
+        return result;
+    }
+
+    void * realloc(void * buffer, size_t old_bytes, size_t new_bytes)
+    {
+        peak_bytes = std::max(peak_bytes, allocated_bytes + new_bytes);
+        void * result = HashTableAllocator::realloc(buffer, old_bytes, new_bytes);
+        allocated_bytes += new_bytes - old_bytes;
+        return result;
+    }
+
+    void free(void * buffer, size_t bytes)
+    {
+        HashTableAllocator::free(buffer, bytes);
+        allocated_bytes -= bytes;
+    }
+};
+
+
+template <typename Grower>
+void checkGrowthAllocations()
+{
+    using Table = HashSet<UInt64, DefaultHash<UInt64>, Grower, GrowthTrackingAllocator>;
+    Table table;
+    UInt64 next_key = 1;
+    for (size_t additional_keys : {0, 1, 2, 20, 500, 2000, 40000})
+    {
+        const size_t initial_bytes = GrowthTrackingAllocator::allocated_bytes;
+        GrowthTrackingAllocator::peak_bytes = initial_bytes;
+        const size_t growth_memory = table.estimateGrowthMemory(additional_keys);
+        for (size_t i = 0; i < additional_keys; ++i)
+            table.insert(next_key++);
+        EXPECT_EQ(GrowthTrackingAllocator::peak_bytes, initial_bytes + growth_memory);
+    }
+}
+
+}
+
+TEST(HashTableGrowth, MatchesSuccessiveReplacementAllocations)
+{
+    checkGrowthAllocations<HashTableGrower<2>>();
+    checkGrowthAllocations<HashTableGrowerWithPrecalculation<2>>();
+    checkGrowthAllocations<TwoLevelHashTableGrower<15>>();
+}

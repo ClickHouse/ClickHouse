@@ -23,6 +23,8 @@ namespace DB
     DECLARE(UInt64, max_rows_in_distinct, 0, "Maximum number of elements during execution of DISTINCT.", 0) \
     DECLARE(UInt64, max_bytes_in_distinct, 0, "Maximum total size of state (in uncompressed bytes) in memory for the execution of DISTINCT.", 0) \
     DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \
+    DECLARE(UInt64, max_bytes_before_external_distinct, 0, "Tracked query memory threshold that triggers external `DISTINCT`. See the corresponding query setting in `Settings`.", 0) \
+    DECLARE(Double, max_bytes_ratio_before_external_distinct, 0., "Fraction of available memory used to derive the external `DISTINCT` trigger. See the corresponding query setting in `Settings`.", 0) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, "If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
     DECLARE(UInt64, max_bytes_to_sort, 0, "If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \

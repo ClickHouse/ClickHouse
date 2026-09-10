@@ -32,6 +32,30 @@ void SetVariantsTemplate<Variant>::init(Type type_)
 }
 
 template <typename Variant>
+size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(size_t additional_keys) const
+    requires std::is_same_v<Variant, NonClearableSet>
+{
+    auto estimate = [additional_keys]<typename Method>(const Method & method) -> size_t
+    {
+        using Table = typename Method::Data;
+        if constexpr (std::is_same_v<Table, FixedHashSet<UInt8>> || std::is_same_v<Table, FixedHashSet<UInt16>>)
+            return 0;
+        else
+            return method.data.estimateGrowthMemory(additional_keys);
+    };
+
+    switch (type)
+    {
+        case Type::EMPTY: UNREACHABLE();
+
+    #define M(NAME) case Type::NAME: return estimate(*(NAME));
+        APPLY_FOR_SET_VARIANTS(M)
+    #undef M
+    }
+    UNREACHABLE();
+}
+
+template <typename Variant>
 size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 {
     switch (type)

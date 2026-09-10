@@ -1,17 +1,12 @@
 #include <Processors/Transforms/SortingTransform.h>
-#include <Columns/ColumnReplicated.h>
 
+#include <algorithm>
+#include <type_traits>
+
+#include <Columns/ColumnReplicated.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
-
-#include <Common/formatReadable.h>
-#include <Common/ProfileEvents.h>
-
-#include <IO/WriteBufferFromFile.h>
-#include <Compression/CompressedWriteBuffer.h>
-
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -23,8 +18,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
-    : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(*header, description)
+MergeSorter::MergeSorter(
+    SharedHeader header, Chunks chunks_, const SortDescription & description,
+    size_t max_merged_block_size_, UInt64 limit_, Mode mode_)
+    : chunks(std::move(chunks_))
+    , max_merged_block_size(max_merged_block_size_)
+    , limit(limit_)
+    , mode(mode_)
+    , queue_variants(*header, description)
 {
     Chunks nonempty_chunks;
     size_t chunks_size = chunks.size();
@@ -35,18 +36,15 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
         if (chunk.getNumRows() == 0)
             continue;
 
-        /// Convert to full column, because sparse column has
-        /// access to element in O(log(K)), where K is number of non-default rows,
-        /// which can be inefficient.
+        /// Materialize sparse columns to avoid searching their offsets during comparisons.
         convertToFullIfSparse(chunk);
 
-        /// Convert to full column, because some cursors expect non-contant columns
+        /// Merge cursors expect full columns.
         convertToFullIfConst(chunk);
 
         size_t num_rows = chunk.getNumRows();
         auto columns = chunk.detachColumns();
-        /// We don't support sorting by replicated columns for now,
-        /// because it requires special code for them in the cursors.
+        /// Sort cursors compare materialized keys; replicated payloads retain their representation.
         for (const auto & column_desc : description)
         {
             size_t column_number = header->getPositionByName(column_desc.column_name);
@@ -55,7 +53,6 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
         chunk.setColumns(std::move(columns), num_rows);
 
         cursors.emplace_back(*header, chunk.getColumns(), chunk.getNumRows(), description, chunk_index);
-        has_collation |= cursors.back().has_collation;
 
         nonempty_chunks.emplace_back(std::move(chunk));
     }
@@ -75,7 +72,8 @@ Chunk MergeSorter::read()
     if (chunks.empty())
         return Chunk();
 
-    if (chunks.size() == 1)
+    if (chunks.size() == 1 && chunks.front().getNumRows() <= max_merged_block_size
+        && (!limit || chunks.front().getNumRows() <= limit))
     {
         auto res = std::move(chunks[0]);
         chunks.clear();
@@ -84,81 +82,102 @@ Chunk MergeSorter::read()
 
     Chunk result = queue_variants.callOnBatchVariant([&](auto & queue)
     {
-        return mergeBatchImpl(queue);
+        if (mode == Mode::MergeUniqueChunks)
+            return mergeBatchImpl<Mode::MergeUniqueChunks>(queue);
+        return mergeBatchImpl<Mode::PreserveRows>(queue);
     });
 
     return result;
 }
 
 
-template <typename TSortingQueue>
+template <MergeSorter::Mode merge_mode, typename TSortingQueue>
 Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
 {
     size_t num_columns = chunks[0].getNumColumns();
     MutableColumns merged_columns = createMergedColumns();
 
+    size_t size_to_reserve = 0;
+    for (const auto & chunk : chunks)
+        size_to_reserve += chunk.getNumRows();
 
-    /// Reserve
-    if (queue.isValid())
-    {
-        size_t size_to_reserve = 0;
-        for (auto & chunk : chunks)
-            size_to_reserve += chunk.getNumRows();
+    /// Reserve at most one output block because reserved capacity counts toward tracked memory.
+    size_to_reserve = std::min(size_to_reserve, max_merged_block_size);
+    for (auto & column : merged_columns)
+        column->reserve(size_to_reserve);
 
-        /// The size of output block will not be larger than the `max_merged_block_size`.
-        /// If redundant memory space is reserved, `MemoryTracker` will count more memory usage than actual usage.
-        size_to_reserve = std::min(size_to_reserve, max_merged_block_size);
-        for (auto & column : merged_columns)
-            column->reserve(size_to_reserve);
-    }
-
-    /// Take rows from queue in right order and push to 'merged'.
+    size_t consumed_rows = 0;
     size_t merged_rows = 0;
+    bool limit_reached = false;
     while (queue.isValid())
     {
         auto [current_ptr, batch_size] = queue.current();
         auto & current = *current_ptr;
+        const size_t first_row = current->getRow();
+        batch_size = std::min(batch_size, max_merged_block_size - consumed_rows);
 
-        if (merged_rows + batch_size > max_merged_block_size)
-            batch_size -= merged_rows + batch_size - max_merged_block_size;
-
-        bool limit_reached = false;
-        if (limit && total_merged_rows + batch_size > limit)
+        size_t skipped_rows = 0;
+        if constexpr (merge_mode == Mode::MergeUniqueChunks)
         {
-            batch_size -= total_merged_rows + batch_size - limit;
+            /// Only a different input chunk can repeat the last emitted key.
+            if (last_emitted_cursor && last_emitted_cursor != current.impl)
+            {
+                using Cursor = std::decay_t<decltype(current)>;
+                const Cursor previous(last_emitted_cursor);
+                /// Keys are nondecreasing, so a key that is not greater is equal. Source order chooses
+                /// the first payload but does not participate in key equality.
+                skipped_rows = !current.template greaterAt<false>(previous, first_row, last_emitted_row);
+            }
+        }
+
+        size_t rows_to_insert = batch_size - skipped_rows;
+        if (limit && rows_to_insert >= limit - total_merged_rows)
+        {
+            rows_to_insert = limit - total_merged_rows;
+            batch_size = rows_to_insert + skipped_rows;
             limit_reached = true;
         }
 
-        /// Append rows from queue.
-        for (size_t i = 0; i < num_columns; ++i)
+        if (rows_to_insert)
         {
-            if (batch_size == 1)
-                merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
-            else
-                merged_columns[i]->insertRangeFrom(*current->all_columns[i], current->getRow(), batch_size);
+            /// Each input batch is internally unique in `MergeUniqueChunks` mode. Only its first row
+            /// can repeat the last emitted key, so the remaining rows form one contiguous range.
+            for (size_t i = 0; i < num_columns; ++i)
+            {
+                if (rows_to_insert == 1)
+                    merged_columns[i]->insertFrom(*current->all_columns[i], first_row + skipped_rows);
+                else
+                    merged_columns[i]->insertRangeFrom(*current->all_columns[i], first_row + skipped_rows, rows_to_insert);
+            }
+
+            if constexpr (merge_mode == Mode::MergeUniqueChunks)
+            {
+                last_emitted_cursor = current.impl;
+                last_emitted_row = first_row + batch_size - 1;
+            }
         }
 
-        total_merged_rows += batch_size;
-        merged_rows += batch_size;
+        total_merged_rows += rows_to_insert;
+        merged_rows += rows_to_insert;
+        consumed_rows += batch_size;
 
-        /// We don't need more rows because of limit has reached.
         if (limit_reached)
-        {
-            chunks.clear();
             break;
-        }
 
         queue.next(batch_size);
 
-        /// It's enough for current output block but we will continue.
-        if (merged_rows >= max_merged_block_size)
+        /// Bound work by consumed rows so duplicate-only batches return control to the caller.
+        if (consumed_rows == max_merged_block_size)
             break;
     }
 
-    if (!queue.isValid())
+    if (limit_reached || !queue.isValid())
+    {
+        last_emitted_cursor = nullptr;
         chunks.clear();
+    }
 
-    if (merged_rows == 0)
+    if (merged_rows == 0 && chunks.empty())
         return {};
 
     return Chunk(std::move(merged_columns), merged_rows);
@@ -183,6 +202,15 @@ MutableColumns MergeSorter::createMergedColumns() const
     return merged_columns;
 }
 
+
+void MergeSorterSource::cancel(CancelReason reason) noexcept
+{
+    /// A partial result must finish processing data already read into the in-memory tail.
+    if (reason == CancelReason::PartialResult)
+        return;
+
+    ISource::cancel(reason);
+}
 
 SortingTransform::SortingTransform(
     SharedHeader header,
