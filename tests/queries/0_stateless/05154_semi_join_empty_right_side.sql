@@ -44,13 +44,24 @@ SEMI LEFT JOIN
 ) AS r ON l.number = r.number
 SETTINGS join_algorithm = 'grace_hash', log_comment = '05154_grace_hash';
 
+SELECT count()
+FROM
+(
+    SELECT number FROM numbers(50000000)
+) AS l
+SEMI LEFT JOIN
+(
+    SELECT number FROM numbers(1000) WHERE sipHash64(number) = 42
+) AS r ON l.number = r.number
+SETTINGS join_algorithm = 'partial_merge', log_comment = '05154_partial_merge';
+
 SYSTEM FLUSH LOGS query_log;
 
 -- The left side holds 50 million rows and only the 1000 rows of the right side may be read.
 SELECT log_comment, read_rows < 1000000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-  AND log_comment IN ('05154_hash', '05154_parallel_hash', '05154_grace_hash')
+  AND log_comment IN ('05154_hash', '05154_parallel_hash', '05154_grace_hash', '05154_partial_merge')
 ORDER BY log_comment;
 
 SELECT 'a non-empty right side is unaffected';
