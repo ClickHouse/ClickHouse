@@ -36,9 +36,10 @@ FROM (EXPLAIN header = 1
 
 SET local_filesystem_read_prefetch = 1, remote_filesystem_read_prefetch = 1;
 
--- A nonzero `filesystem_prefetches_limit` below the number of columns read skips prefetching
--- entirely, which would make every assertion below pass without taking the prefetch path. Read the
--- effective value rather than pinning it, so such a limit fails this test instead of silencing it.
+-- A nonzero `filesystem_prefetches_limit` below the number of substreams read can starve the shared
+-- offsets stream, which would make every assertion below pass without taking the prefetch path.
+-- Read the effective value rather than pinning it, so such a limit fails this test instead of
+-- silencing it.
 SELECT 'prefetch limit permits prefetching', getSetting('filesystem_prefetches_limit') = 0 OR getSetting('filesystem_prefetches_limit') > 8;
 
 SELECT 'missing subcolumn first', sum(length(nb)), countIf(aid != arrayMap(x -> x + 10, range(id % 3 + 1))), countIf(s != arrayMap(x -> concat('s', toString(x)), range(id % 3 + 1)))

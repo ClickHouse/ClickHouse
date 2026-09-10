@@ -1,6 +1,12 @@
--- exactly the requested number of prefetches is issued
+-- the whole read step stays at the default limit, over four concurrent readers
 1
+-- the limit is observed, not naturally small: four readers want 4 x 300 of them
 1
+-- a single reader above the limit prefetches the first N substreams, not none
 1
--- the limit is observed, not naturally small: zero means unlimited
+-- and all 300 of them when unlimited
+1
+-- a JSON read step prefetches fewer substreams under a limit than without one
+1
+-- the memory bound alone stops prefetching, on an encrypted disk
 1
