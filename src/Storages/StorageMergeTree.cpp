@@ -122,6 +122,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreePatchPartsVersion patch_parts_version;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsBool table_disk;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
@@ -168,6 +169,9 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType Cleanup;
 }
+
+/// The directory with the log of the block numbers inserted into a non-replicated table, see `MergeTreeDeduplicationLog`.
+static constexpr auto DEDUPLICATION_LOGS_DIR_NAME = "deduplication_logs";
 
 static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
 {
@@ -251,9 +255,9 @@ void StorageMergeTree::startup()
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
-    /// NOTE background task will also do the above cleanups periodically.
+    /// NOTE background task will also clean runtime temporary directories periodically.
 
     try
     {
@@ -417,7 +421,11 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
 
 std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
 {
-    return getTotalActiveSizeInRows();
+    UInt64 res = 0;
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
+        res += part->rows_count;
+    return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr local_context) const
@@ -428,14 +436,18 @@ std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const Acti
 
 std::optional<UInt64> StorageMergeTree::totalBytes(ContextPtr) const
 {
-    return getTotalActiveSizeInBytes();
+    UInt64 res = 0;
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
+        res += part->getBytesOnDisk();
+    return res;
 }
 
 std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &) const
 {
     UInt64 res = 0;
-    auto parts = getDataPartsForInternalUsage();
-    for (const auto & part : parts)
+    auto lock = readLockParts();
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
         res += part->getBytesUncompressedOnDisk();
     return res;
 }
@@ -452,7 +464,47 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
 void StorageMergeTree::drop()
 {
     shutdown(true);
+
+    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
+    /// recursively (see `MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation`), so the state that this table
+    /// keeps there would survive the drop and get loaded by the next table created on the same disk.
+    if ((*getSettings())[MergeTreeSetting::table_disk])
+        removeOwnFilesInDiskRootOnDrop();
+
     dropAllData();
+}
+
+void StorageMergeTree::removeOwnFilesInDiskRootOnDrop()
+{
+    for (const auto & disk : getDisks())
+    {
+        if (disk->isBroken() || disk->isReadOnly())
+            continue;
+
+        size_t removed_count = 0;
+        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+        {
+            if (startsWith(it->name(), "mutation_") || startsWith(it->name(), "tmp_mutation_"))
+            {
+                LOG_DEBUG(log, "Removing mutation file {} on drop", it->path());
+                disk->removeFile(it->path());
+                ++removed_count;
+            }
+        }
+
+        /// Otherwise the next table created on the same disk loads the block numbers of this one and deduplicates
+        /// (silently skips) its inserts.
+        const auto deduplication_logs_path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
+        if (disk->existsDirectory(deduplication_logs_path))
+        {
+            LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path.string());
+            disk->removeRecursive(deduplication_logs_path);
+            ++removed_count;
+        }
+
+        if (removed_count > 0)
+            LOG_INFO(log, "Removed {} entries of this table from the root of the disk {} on drop", removed_count, disk->getName());
+    }
 }
 
 void StorageMergeTree::alter(
@@ -1554,7 +1606,7 @@ void StorageMergeTree::loadDeduplicationLog()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
     auto disk = getDisks()[0];
-    std::string path = fs::path(relative_data_path) / "deduplication_logs";
+    std::string path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
 
     /// Deduplication log only matters on INSERTs.
     if (!disk->isReadOnly())
