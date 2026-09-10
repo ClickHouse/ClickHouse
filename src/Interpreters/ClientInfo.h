@@ -53,6 +53,7 @@ public:
         PROMETHEUS = 8,
         BACKGROUND = 9, // e.g. queries from refreshable materialized views
         ARROW_FLIGHT = 10,
+        REDIS = 11,
     };
 
     enum class HTTPMethod : uint8_t
