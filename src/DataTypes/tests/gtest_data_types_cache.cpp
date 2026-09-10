@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
@@ -12,6 +13,8 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
+
+#include <array>
 
 using namespace DB;
 
@@ -182,11 +185,17 @@ TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
     FormatSettings settings;
     settings.try_infer_datetimes = true;
     settings.try_infer_dates = false;
+    const std::array<std::pair<const char *, UInt64>, 4> timezones{{
+        {"UTC", 1704110400},
+        {"Asia/Tokyo", 1704078000},
+        {"", DateLUT::serverTimezoneInstance().makeDateTime(2024, 1, 1, 12, 0, 0)},
+        {"UTC", 1704110400},
+    }};
 
     for (bool simdjson : {false, true})
     {
         context->setSetting("allow_simdjson", simdjson);
-        for (const auto & session_timezone : {"UTC", "Asia/Tokyo", "UTC"})
+        for (const auto & [session_timezone, expected_timestamp] : timezones)
         {
             context->setSetting("session_timezone", String(session_timezone));
             for (size_t row = 0; row < 2; ++row)
@@ -195,7 +204,7 @@ TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
                 ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
                 serialization->deserializeWholeText(*column, input, settings);
                 auto dates = type->getSubcolumn("d.:`DateTime`", column->getPtr());
-                EXPECT_EQ((*dates)[0].safeGet<UInt64>(), String(session_timezone) == "UTC" ? 1704110400 : 1704078000);
+                EXPECT_EQ((*dates)[0].safeGet<UInt64>(), expected_timestamp);
             }
         }
     }

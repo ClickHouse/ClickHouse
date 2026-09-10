@@ -132,6 +132,7 @@ std::shared_ptr<JSONParsingState> createJSONParsingState()
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
+    extern const SettingsTimezone session_timezone;
 }
 
 namespace
@@ -368,8 +369,18 @@ void SerializationJSON::serializeTextImpl(const IColumn & column, size_t row_num
 
 void SerializationJSON::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
+    /// Resolve the context once for both the parser backend and the effective timezone.
+    auto context = CurrentThread::tryGetQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+    std::string_view session_timezone_name;
+    if (context)
+        session_timezone_name = context->getSettingsRef()[Setting::session_timezone].value;
+    const auto & timezone_lut = session_timezone_name.empty()
+        ? DateLUT::serverTimezoneInstance() : DateLUT::instance(session_timezone_name);
+
     const auto & state = settings.json_parsing_state;
-    JSONParsingState::Key key{shared_from_this(), &DateLUT::instance()};
+    JSONParsingState::Key key{shared_from_this(), &timezone_lut};
     auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingState::Key> & pool)
     {
         auto lease = pool.get(key, [&]
@@ -395,9 +406,6 @@ void SerializationJSON::deserializeObject(IColumn & column, std::string_view obj
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
     };
 #if USE_SIMDJSON
-    auto context = CurrentThread::tryGetQueryContext();
-    if (!context)
-        context = Context::getGlobalContextInstance();
     if (context->getSettingsRef()[Setting::allow_simdjson])
         return deserialize(state->simdjson);
 #endif
