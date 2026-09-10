@@ -178,11 +178,7 @@ TEST(ChangelogValidRuns, ForwardGapAfterCompactionStartsNewRun)
 }
 
 /// Not built under ASan, TSan or MSan: their runtimes replace `operator new`, so
-/// `Memory::trackMemory` never runs and the tracker has nothing to report. That is the only
-/// requirement - jemalloc is not one. Without it `getActualAllocationSize` is the identity, and
-/// since both sides of the comparison below size their allocations through that same function, they
-/// simply drop the size-class rounding together. So `ENABLE_JEMALLOC=0` builds run this too, as do
-/// UBSan and debug builds, which is why `DEBUG_OR_SANITIZER_BUILD` would exclude too much.
+/// `Memory::trackMemory` never runs and the tracker has nothing to report.
 #if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
 
 /// The cache's accounting is only worth having if it matches what the allocator actually hands out.
