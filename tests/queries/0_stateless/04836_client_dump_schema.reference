@@ -57,6 +57,9 @@ OK: non-zero exit code
 UNKNOWN_DATABASE
 --- a database-less reference that two dumped databases can satisfy is refused ---
 ambiguous reference refused: 1
+--- a database-less reference only a wrong-engine namesake collides with is dumped ---
+OK: wrong-engine namesake in another dumped database is not a competing binding
+OK: wrong-engine namesake in an omitted database is not a competing binding
 --- a database-less merge() satisfiable by two dumped databases is refused ---
 ambiguous merge refused: 1
 --- a database-less merge() bound outside the dump set is refused ---

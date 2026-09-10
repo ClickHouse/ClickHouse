@@ -306,6 +306,50 @@ else
 fi
 rm -rf "$AMB_PATH"
 
+echo '--- a database-less reference only a wrong-engine namesake collides with is dumped ---'
+# joinGet() binds only a Join table and dictionary() only a dictionary, so a same-named MergeTree
+# table or view elsewhere cannot be what the CREATE-time session bound and must not fail the dump.
+KIND_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_kind"
+KIND_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_kind.sql"
+rm -rf "$KIND_PATH"
+$CLICKHOUSE_LOCAL --path "$KIND_PATH" --multiquery --query "
+CREATE DATABASE kind_a;
+CREATE DATABASE kind_b;
+CREATE TABLE kind_a.jt (k UInt64, v String) ENGINE = Join(ANY, LEFT, k);
+CREATE TABLE kind_b.jt (k UInt64, v String) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE kind_a.dsrc (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
+CREATE DICTIONARY kind_a.dd (id UInt64, val String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dsrc' DB 'kind_a')) LAYOUT(FLAT()) LIFETIME(0);
+CREATE VIEW kind_b.dd AS SELECT 1::UInt64 AS id;
+USE kind_a;
+CREATE VIEW kind_a.uses_join AS SELECT joinGet('jt', 'v', toUInt64(1)) AS x;
+CREATE VIEW kind_a.uses_dict AS SELECT * FROM dictionary('dd');
+"
+check_kind_dump()
+{
+    jt_line=$(grep -n 'CREATE TABLE kind_a\.jt ' "$KIND_DUMP_FILE" | cut -d: -f1)
+    join_view_line=$(grep -n 'CREATE VIEW kind_a\.uses_join ' "$KIND_DUMP_FILE" | cut -d: -f1)
+    dict_line=$(grep -n 'CREATE DICTIONARY kind_a\.dd ' "$KIND_DUMP_FILE" | cut -d: -f1)
+    dict_view_line=$(grep -n 'CREATE VIEW kind_a\.uses_dict ' "$KIND_DUMP_FILE" | cut -d: -f1)
+    if [[ -n "$jt_line" && -n "$join_view_line" && -n "$dict_line" && -n "$dict_view_line" \
+        && "$jt_line" -lt "$join_view_line" && "$dict_line" -lt "$dict_view_line" ]]; then
+        echo "OK: $1"
+    else
+        echo "FAIL: $1 (jt=$jt_line join_view=$join_view_line dict=$dict_line dict_view=$dict_view_line)"
+    fi
+}
+if $CLICKHOUSE_LOCAL --path "$KIND_PATH" --dump-schema='kind_a,kind_b' > "$KIND_DUMP_FILE" 2>"$ERR_FILE"; then
+    check_kind_dump 'wrong-engine namesake in another dumped database is not a competing binding'
+else
+    echo 'FAIL: dump refused a database-less reference over a wrong-engine namesake'
+fi
+# The same collision, but now the namesakes live in an omitted database.
+if $CLICKHOUSE_LOCAL --path "$KIND_PATH" --dump-schema='kind_a' > "$KIND_DUMP_FILE" 2>"$ERR_FILE"; then
+    check_kind_dump 'wrong-engine namesake in an omitted database is not a competing binding'
+else
+    echo 'FAIL: dump refused a database-less reference over a wrong-engine namesake in an omitted database'
+fi
+rm -rf "$KIND_PATH" "$KIND_DUMP_FILE"
+
 echo '--- a database-less merge() satisfiable by two dumped databases is refused ---'
 MRG_PATH="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_mrg"
 rm -rf "$MRG_PATH"

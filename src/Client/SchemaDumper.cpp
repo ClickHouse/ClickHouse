@@ -605,14 +605,44 @@ std::optional<String> tryGetStringLiteralOrRegexpWrapper(const ASTPtr & arg, boo
     return std::nullopt;
 }
 
+/// What a reference can bind to: `dictGet`/`dictionary()` name a dictionary and `joinGet` a Join
+/// table, so a same-named object of any other engine is not a candidate binding for them.
+enum class ReferenceKind
+{
+    Any,
+    Dictionary,
+    Join,
+};
+
+struct TableReference
+{
+    String database;
+    String table;
+    ReferenceKind kind = ReferenceKind::Any;
+};
+
+/// Whether an object with this `system.tables.engine` can be what such a reference resolved to.
+bool engineCanBind(ReferenceKind kind, const String & engine)
+{
+    switch (kind)
+    {
+        case ReferenceKind::Dictionary:
+            return engine == "Dictionary";
+        case ReferenceKind::Join:
+            return engine == "Join";
+        case ReferenceKind::Any:
+            return true;
+    }
+}
+
 /// Collects local `merge` and `loop` references, resolving empty `merge` databases to the owner.
 void collectMergeAndLoopReferences(
     const IAST & node,
     const std::map<String, std::set<String>> & table_names_by_db,
     const std::set<String> & undumped_databases,
-    const std::map<String, std::set<String>> & undumped_table_names_by_db,
+    const std::map<String, std::map<String, String>> & undumped_tables_by_db,
     const String & owning_database,
-    std::vector<std::pair<String, String>> & out)
+    std::vector<TableReference> & out)
 {
     if (const auto * function = node.as<ASTFunction>(); function && function->arguments)
     {
@@ -680,10 +710,10 @@ void collectMergeAndLoopReferences(
                         /// omitted database also has matching tables, the create-time session could
                         /// have been the omitted one, and replaying under USE <own db> would rebind.
                         if (merge_owning_matches)
-                            for (const auto & [db, tables] : undumped_table_names_by_db)
+                            for (const auto & [db, tables] : undumped_tables_by_db)
                                 if (db != owning_database)
-                                    for (const auto & table : tables)
-                                        if (table_regexp.match(table))
+                                    for (const auto & table_and_engine : tables)
+                                        if (table_regexp.match(table_and_engine.first))
                                         {
                                             if (!merge_ambiguous_dbs.empty())
                                                 merge_ambiguous_dbs += ", ";
@@ -697,12 +727,12 @@ void collectMergeAndLoopReferences(
                         if (it == table_names_by_db.end())
                         {
                             /// Preserve external matches so the caller can warn about them.
-                            out.emplace_back(db, *table_pattern);
+                            out.push_back({db, *table_pattern});
                             continue;
                         }
                         for (const auto & table : it->second)
                             if (table_regexp.match(table))
-                                out.emplace_back(db, table);
+                                out.push_back({db, table});
                     }
                 }
                 catch (const Exception &) // Ok: malformed regexp leaves this reference unresolved, not the whole dump // NOLINT(bugprone-empty-catch)
@@ -741,7 +771,7 @@ void collectMergeAndLoopReferences(
                 /// Its child expressions will be visited by the recursive traversal below.
             }
             else if (auto candidate = tryGetQualifiedNameFromFunctionArgument(*function, 0))
-                out.push_back(std::move(*candidate));
+                out.push_back({candidate->first, candidate->second});
             else
             {
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -764,7 +794,7 @@ void collectMergeAndLoopReferences(
             auto database = read_plain_name(args[0]);
             auto table = read_plain_name(args[1]);
             if (database && table)
-                out.emplace_back(*database, *table);
+                out.push_back({*database, *table});
             else
                 /// Same reasoning as the merge() case above: a computed database/table name here is
                 /// resolvable in principle but not by this walker, so refuse rather than mis-order.
@@ -779,11 +809,12 @@ void collectMergeAndLoopReferences(
 /// Collects table references from dictionary, join, `IN`, and local `cluster` function arguments.
 void collectFunctionArgumentReferences(
     const IAST & node, const ClusterLocality & clusters,
-    std::vector<std::pair<String, String>> & out)
+    std::vector<TableReference> & out)
 {
     if (const auto * function = node.as<ASTFunction>())
     {
         std::optional<std::pair<String, String>> candidate;
+        ReferenceKind candidate_kind = ReferenceKind::Any;
         if (isClusterTableFunctionName(function->name) && function->arguments)
         {
             const auto & args = function->arguments->children;
@@ -867,12 +898,13 @@ void collectFunctionArgumentReferences(
                             function->formatForErrorMessage());
                 }
                 if (dependency)
-                    out.push_back(std::move(*dependency));
+                    out.push_back({dependency->first, dependency->second});
             }
         }
         else if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || function->name == "dictionary")
         {
             candidate = tryGetQualifiedNameFromFunctionArgument(*function, 0);
+            candidate_kind = functionIsJoinGet(function->name) ? ReferenceKind::Join : ReferenceKind::Dictionary;
             /// The server evaluates constant expressions in this position (DDLDependencyVisitor's
             /// tryGetStringFromArgument), so an unrecognized argument is not dependency-free.
             if (!candidate && function->arguments && !function->arguments->children.empty()
@@ -892,14 +924,14 @@ void collectFunctionArgumentReferences(
                         candidate = std::pair(table_id->getDatabaseName(), table_id->shortName());
         }
         if (candidate)
-            out.push_back(std::move(*candidate));
+            out.push_back({candidate->first, candidate->second, candidate_kind});
     }
 }
 
 /// Combines server dependency columns with parsed view references and drops implicit storage.
 std::vector<TableInfo> resolveTables(
     std::vector<RawTableRow> rows, const ClusterLocality & clusters, const std::set<String> & undumped_databases,
-    const std::map<String, std::set<String>> & undumped_table_names_by_db)
+    const std::map<String, std::map<String, String>> & undumped_tables_by_db)
 {
     std::map<std::pair<String, String>, CreateTargets> targets_by_table;
     for (const auto & row : rows)
@@ -1001,7 +1033,7 @@ std::vector<TableInfo> resolveTables(
             }
 
     std::set<std::pair<String, String>> known_tables;
-    std::map<String, std::set<String>> table_names_by_db;
+    std::map<String, std::map<String, String>> table_engines_by_db;
     /// Match `merge` against all tables, then remap omitted helpers to their owners.
     std::map<String, std::set<String>> all_table_names_by_db;
     for (const auto & row : rows)
@@ -1010,7 +1042,7 @@ std::vector<TableInfo> resolveTables(
         if (!implicit_inner.contains({row.database, row.name}))
         {
             known_tables.emplace(row.database, row.name);
-            table_names_by_db[row.database].insert(row.name);
+            table_engines_by_db[row.database].emplace(row.name, row.engine);
         }
     }
 
@@ -1039,20 +1071,23 @@ std::vector<TableInfo> resolveTables(
                 row.database, row.name, e.message());
         }
 
-        auto add_dependency = [&](const std::pair<String, String> & candidate)
+        auto add_dependency = [&](const TableReference & candidate)
         {
-            std::pair<String, String> resolved = candidate;
+            std::pair<String, String> resolved{candidate.database, candidate.table};
             if (resolved.first.empty())
             {
                 /// Replay resolves unqualified names under `USE <owner database>`; reject ambiguous rebinding.
+                /// Only an object the reference can actually bind to competes for the name.
                 String other_databases;
-                for (const auto & [db, names] : table_names_by_db)
-                    if (db != row.database && names.contains(resolved.second))
-                    {
-                        if (!other_databases.empty())
-                            other_databases += ", ";
-                        other_databases += backQuoteIfNeed(db);
-                    }
+                for (const auto & [db, engines] : table_engines_by_db)
+                {
+                    auto engine_it = engines.find(resolved.second);
+                    if (db == row.database || engine_it == engines.end() || !engineCanBind(candidate.kind, engine_it->second))
+                        continue;
+                    if (!other_databases.empty())
+                        other_databases += ", ";
+                    other_databases += backQuoteIfNeed(db);
+                }
                 /// Present in the owning database AND elsewhere in the dump: the CREATE-time session
                 /// could have bound either one, so replaying under `USE <own db>` may silently rebind.
                 if (!other_databases.empty()
@@ -1085,13 +1120,15 @@ std::vector<TableInfo> resolveTables(
                 /// If an omitted database has the same table, the create-time session could have
                 /// been that database, and replaying under `USE <own db>` would silently rebind.
                 String omitted_databases;
-                for (const auto & [db, names] : undumped_table_names_by_db)
-                    if (db != row.database && names.contains(resolved.second))
-                    {
-                        if (!omitted_databases.empty())
-                            omitted_databases += ", ";
-                        omitted_databases += backQuoteIfNeed(db);
-                    }
+                for (const auto & [db, engines] : undumped_tables_by_db)
+                {
+                    auto engine_it = engines.find(resolved.second);
+                    if (db == row.database || engine_it == engines.end() || !engineCanBind(candidate.kind, engine_it->second))
+                        continue;
+                    if (!omitted_databases.empty())
+                        omitted_databases += ", ";
+                    omitted_databases += backQuoteIfNeed(db);
+                }
                 if (!omitted_databases.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Cannot statically resolve the database-less reference {} in {}.{} for --dump-schema: "
@@ -1106,13 +1143,13 @@ std::vector<TableInfo> resolveTables(
                 row.loading_dependencies.emplace_back(resolved);
         };
 
-        std::vector<std::pair<String, String>> references;
+        std::vector<TableReference> references;
         visitLocalAST(select_ast.get(), clusters, [&](const IAST & node)
         {
             if (const auto * table_id = node.as<ASTTableIdentifier>(); table_id && !table_id->getDatabaseName().empty())
-                references.emplace_back(table_id->getDatabaseName(), table_id->shortName());
+                references.push_back({table_id->getDatabaseName(), table_id->shortName()});
             collectFunctionArgumentReferences(node, clusters, references);
-            collectMergeAndLoopReferences(node, all_table_names_by_db, undumped_databases, undumped_table_names_by_db, row.database, references);
+            collectMergeAndLoopReferences(node, all_table_names_by_db, undumped_databases, undumped_tables_by_db, row.database, references);
         });
         for (const auto & candidate : references)
             add_dependency(candidate);
@@ -1182,7 +1219,7 @@ std::vector<TableInfo> fetchTables(
 
     /// Fetch table names from undumped databases so unqualified references and empty-database
     /// merge() calls can be checked for ambiguity against them, not just against dumped databases.
-    std::map<String, std::set<String>> undumped_table_names_by_db;
+    std::map<String, std::map<String, String>> undumped_tables_by_db;
     if (!undumped_databases.empty())
     {
         String undumped_list;
@@ -1194,19 +1231,21 @@ std::vector<TableInfo> fetchTables(
         }
         auto undumped_visibility = detectExternalTableVisibility(connection, timeouts, client_info, undumped_list, context->getSettingsRef());
         executeQuery(connection, timeouts, client_info,
-            "SELECT database, name FROM system.tables WHERE database IN (" + undumped_list + ") AND NOT is_temporary",
+            "SELECT database, name, engine FROM system.tables WHERE database IN (" + undumped_list + ") AND NOT is_temporary",
             [&](const Block & block)
             {
                 if (block.empty())
                     return;
                 const auto & db_col = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
                 const auto & name_col = typeid_cast<const ColumnString &>(*block.getByPosition(1).column);
+                const auto & engine_col = typeid_cast<const ColumnString &>(*block.getByPosition(2).column);
                 for (size_t i = 0; i < db_col.size(); ++i)
-                    undumped_table_names_by_db[db_col[i].safeGet<String>()].insert(name_col[i].safeGet<String>());
+                    undumped_tables_by_db[db_col[i].safeGet<String>()].emplace(
+                        name_col[i].safeGet<String>(), engine_col[i].safeGet<String>());
             }, context->getSettingsRef(), undumped_visibility.show_datalake_catalogs, undumped_visibility.show_remote_databases);
     }
 
-    return resolveTables(fetchRawRows(connection, timeouts, client_info, databases, context->getSettingsRef()), clusters, undumped_databases, undumped_table_names_by_db);
+    return resolveTables(fetchRawRows(connection, timeouts, client_info, databases, context->getSettingsRef()), clusters, undumped_databases, undumped_tables_by_db);
 }
 
 /// Warns when stored CREATE statements contain masked credentials.
