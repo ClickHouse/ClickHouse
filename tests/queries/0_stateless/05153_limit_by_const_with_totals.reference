@@ -59,7 +59,7 @@
 	[
 		{
 			"name": "g",
-			"type": "UInt64"
+			"type": "UInt8"
 		},
 		{
 			"name": "c",
