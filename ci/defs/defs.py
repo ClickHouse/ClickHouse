@@ -761,14 +761,15 @@ class ArtifactConfigs:
     )
     # The two configurations of the standalone SQL parser that `Build (wasm_parser)` publishes:
     # everything, and the smallest build the project offers (no formatting, no access management).
-    # No JavaScript sidecar, unlike the Emscripten build above - the module is a WASI reactor, and
-    # the consumer supplies the preview1 imports. See utils/wasm-parser/README.md.
+    # The npm pack tarball is the JS wrapper around those modules (`utils/wasm-parser/npm`); it is
+    # not a registry publish. See utils/wasm-parser/README.md and utils/wasm-parser/npm/README.md.
     wasm_parser = Artifact.Config(
         name=ArtifactNames.CH_WASM_PARSER,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/parser.wasm",
             f"{TEMP_DIR}/build/parser-no-formatting-no-dcl.wasm",
+            f"{TEMP_DIR}/build/clickhouse-wasm-parser.tgz",
         ],
     )
     fuzzers = Artifact.Config(
