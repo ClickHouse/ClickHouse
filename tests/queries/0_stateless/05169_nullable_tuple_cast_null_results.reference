@@ -32,6 +32,12 @@ Tuple(UInt8)	materialize	0	1
 0	1
 1	1	1	1
 0	1
+\N	(1)	\N	\N	(NULL)
+\N	(1)	\N	\N	(NULL)
+1	(1)	('1')
+\N	\N	\N
+bad	\N	('bad')
+1	(1)	('1')
 0	1	1
 0	1	1
 0	1	1

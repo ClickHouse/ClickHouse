@@ -33,6 +33,17 @@ SELECT isNull(accurateCastOrNull(tuple(tuple(materialize('bad'))), 'Tuple(Tuple(
 -- Dictionary strings and fixed strings preserve the same conversion-failure behavior.
 SELECT isNull(accurateCastOrNull(tuple(toLowCardinality('1')), 'Tuple(UInt8)')),
     isNull(accurateCastOrNull(tuple(toLowCardinality('bad')), 'Tuple(UInt8)'));
+
+-- A NULL in a nullable dictionary field is reported through the tuple like a NULL in a plain nullable field.
+{% for wrapper in ['', 'materialize'] %}
+SELECT accurateCastOrNull({{ wrapper }}(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
+    accurateCastOrNull({{ wrapper }}(tuple(CAST('1', 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
+    accurateCastOrNull({{ wrapper }}(tuple(CAST('bad', 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'),
+    accurateCastOrNull({{ wrapper }}(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(String)'),
+    accurateCastOrNull({{ wrapper }}(tuple(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(Nullable(UInt8))');
+{% endfor %}
+SELECT k, accurateCastOrNull(tuple(k), 'Tuple(UInt8)'), accurateCastOrNull(tuple(k), 'Tuple(String)')
+FROM (SELECT arrayJoin(CAST(['1', NULL, 'bad', '1'], 'Array(LowCardinality(Nullable(String)))')) AS k);
 {% for enum_type in ['Enum8', 'Enum16'] %}
 {% for wrapper in ['', 'materialize'] %}
 SELECT isNull(accurateCastOrNull({{ wrapper }}(tuple(toFixedString('a', 1))), 'Tuple({{ enum_type }}(\'a\' = 1))')),
@@ -76,8 +87,9 @@ SELECT {{ mode }},
 SETTINGS transform_null_in = {{ mode }};
 {% endfor %}
 
--- Strict casts continue to report malformed text instead of manufacturing NULL values.
+-- Strict casts continue to report malformed text and NULL fields instead of manufacturing NULL values.
 SELECT accurateCast(tuple(materialize('bad')), 'Tuple(UInt8)'); -- { serverError CANNOT_PARSE_TEXT }
+SELECT accurateCast(tuple(materialize(CAST(NULL, 'LowCardinality(Nullable(String))'))), 'Tuple(UInt8)'); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 SELECT CAST(tuple(materialize('bad')), 'Tuple(Enum8(\'a\' = 1))'); -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 SELECT accurateCastOrNull(CAST(tuple('1'), 'Tuple(a String)'), 'Tuple(b UInt8, c UInt8)'); -- { serverError TYPE_MISMATCH }
 
