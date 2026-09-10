@@ -1,9 +1,11 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Common/assert_cast.h>
 
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -40,6 +42,11 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -1165,7 +1172,7 @@ static bool mayFixColumn(const ActionsDAG::Node * condition)
     return false;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -1448,8 +1455,14 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// announces `WithOrder` to the shared coordinator against the replicas' `Default`. Pruning is
         /// not in question - it changes which rows this replica reads, not the order it reads them in -
         /// so push the condition either way and take only that one consequence away from it.
+        ///
+        /// Read the setting off the fragment's own context rather than the query being optimized. The
+        /// fragment is what travels, `SETTINGS` and all, and the rewrite that splices the condition
+        /// into the replicas' query answers to those. An outer `1` over a fragment carrying `0` leaves
+        /// the condition here alone, and taking the outer answer would leave this read ordered by it.
+        const auto & fragment_settings = parallel_replicas_local_plan->getContext()->getSettingsRef();
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
-        if (!settings.parallel_replicas_filter_pushdown && condition && mayFixColumn(condition))
+        if (!fragment_settings[Setting::parallel_replicas_filter_pushdown] && condition && mayFixColumn(condition))
             parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
 
         // actual push down will be done when plan for local parallel replica will be optimized

@@ -260,7 +260,6 @@ struct QueryPlanOptimizationSettings
     /// of re-running the same subqueries.
     std::function<std::unique_ptr<QueryPlan>(const BuiltSetsByHashPtr &)> query_plan_with_parallel_replicas_builder;
 
-    bool parallel_replicas_filter_pushdown = false;
     bool enable_parallel_replicas = false;
 
     double max_selectivity_for_not_null_filters_execution;
