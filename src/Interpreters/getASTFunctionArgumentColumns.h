@@ -17,9 +17,10 @@ class ASTFunction;
 /// with a UTC offset transition is not injective, and neither is `toString(x, NULL)` - so a caller
 /// that can resolve them has no reason to pass nothing.
 ///
-/// Only what the AST alone decides is resolved: an identifier that names a source column, and a
-/// literal. For anything else the answer is undecidable at this point, and `std::nullopt` is
-/// returned so that the caller claims nothing.
+/// Only what the AST alone decides is resolved: a plain identifier that names a source column, and
+/// a literal. For anything else - including a compound identifier, which may name a joined column
+/// or a subcolumn rather than the source column of the same short name - the answer is undecidable
+/// at this point, and `std::nullopt` is returned so that the caller claims nothing.
 std::optional<ColumnsWithTypeAndName> tryGetASTFunctionArgumentColumns(
     const ASTFunction & function, const NamesAndTypesList & source_columns);
 

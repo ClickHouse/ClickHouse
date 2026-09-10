@@ -86,6 +86,31 @@ SELECT uniqExact(toFixedString(f, 2)) FROM (SELECT materialize(toFixedString('ab
 -- A fitting target width stays injective.
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT uniqExact(toFixedString(materialize(toFixedString('abc', 3)), 4))) WHERE explain LIKE '%uniqExact%' AND explain NOT LIKE '%toFixedString%' SETTINGS enable_analyzer = 1;
 
+SELECT 'a width that is not an unsigned integer still throws';
+-- The claim must not be made before the width is known to be unsigned: reading a negative width
+-- wraps it around to a huge `UInt64`, and eliminating the call would turn a query that must fail
+-- into one that succeeds.
+SELECT count() FROM (SELECT 1 FROM (SELECT materialize(toFixedString('abc', 3)) AS f) GROUP BY toFixedString(f, -1)) SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT uniqExact(toFixedString(f, -1)) FROM (SELECT materialize(toFixedString('abc', 3)) AS f) SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_COLUMN }
+SELECT count() FROM (SELECT materialize(toFixedString('abc', 3)) AS f LIMIT 1 BY toFixedString(f, -1)) SETTINGS enable_analyzer = 0; -- { serverError ILLEGAL_COLUMN }
+
+SELECT 'a qualified JOIN key in the old analyzer';
+-- The old-analyzer rewrites run before joined columns are collected, so a qualified right-hand key
+-- must not be resolved against the source column of the same short name: `l.dt` is a `UInt32` and
+-- would make `toString` look injective, while the right-hand `DateTime` folds.
+DROP TABLE IF EXISTS t_join_left;
+DROP TABLE IF EXISTS t_join_right;
+CREATE TABLE t_join_left (id UInt32, dt UInt32) ENGINE = Memory;
+CREATE TABLE t_join_right (id UInt32, dt DateTime('Europe/Amsterdam')) ENGINE = Memory;
+INSERT INTO t_join_left VALUES (1, 100), (2, 200);
+INSERT INTO t_join_right VALUES (1, 1540686600), (2, 1540690200);
+SELECT count() FROM (SELECT 1 FROM t_join_left INNER JOIN t_join_right ON t_join_left.id = t_join_right.id GROUP BY toString(t_join_right.dt)) SETTINGS enable_analyzer = 0;
+SELECT count() FROM (SELECT 1 FROM t_join_left INNER JOIN t_join_right ON t_join_left.id = t_join_right.id GROUP BY toString(t_join_right.dt)) SETTINGS enable_analyzer = 0, optimize_injective_functions_in_group_by = 0;
+SELECT uniqExact(toString(t_join_right.dt)) FROM t_join_left INNER JOIN t_join_right ON t_join_left.id = t_join_right.id SETTINGS enable_analyzer = 0;
+SELECT uniqExact(toString(t_join_right.dt)) FROM t_join_left INNER JOIN t_join_right ON t_join_left.id = t_join_right.id SETTINGS enable_analyzer = 0, optimize_injective_functions_inside_uniq = 0;
+
+DROP TABLE t_join_left;
+DROP TABLE t_join_right;
 DROP TABLE t_tz_fold;
 DROP TABLE t_window_fold;
 DROP TABLE t_window_pad;

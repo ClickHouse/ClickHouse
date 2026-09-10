@@ -29,7 +29,14 @@ std::optional<ColumnsWithTypeAndName> tryGetASTFunctionArgumentColumns(
         }
         else if (const auto * identifier = child->as<ASTIdentifier>())
         {
-            auto name_and_type = source_columns.tryGetByName(identifier->shortName());
+            /// A compound name - a table-qualified `JOIN` key such as `r.dt`, or a subcolumn such as
+            /// `tuple.dt` - is not decidable here. This runs before `collectJoinedColumns`, so
+            /// `source_columns` describes only the source side, and matching by the last part alone
+            /// would resolve `r.dt` against an unrelated source column named `dt` and read its type.
+            if (identifier->compound())
+                return {};
+
+            auto name_and_type = source_columns.tryGetByName(identifier->name());
             if (!name_and_type)
                 return {};
             arguments.emplace_back(ColumnPtr{}, name_and_type->type, name_and_type->name);

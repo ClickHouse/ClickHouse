@@ -58,7 +58,14 @@ public:
         if (!fixed_string)
             return false;
 
-        /// The target width has to be known to compare it with the source width.
+        /// The target width has to be known to compare it with the source width. It also has to be
+        /// an unsigned integer: `getReturnTypeImpl` rejects everything else, and reading a negative
+        /// or a `NULL` width here would either wrap around to a huge `UInt64` or throw, in both
+        /// cases eliminating a call that must raise
+        /// `Second argument for function toFixedString must be unsigned integer`.
+        if (!isUInt(sample_columns[1].type))
+            return false;
+
         const auto & width_column = sample_columns[1].column;
         if (!width_column || !isColumnConst(*width_column))
             return false;
