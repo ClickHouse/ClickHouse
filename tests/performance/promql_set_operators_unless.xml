@@ -24,16 +24,16 @@
     <fill_query>
         INSERT INTO promql_set_operators_unless_high_card_ts (metric_name, tags, time_series)
         SELECT
-            if(number &lt; 32000, 'foo', 'bar'),
-            map('instance', toString(number % 32000)),
-            arrayMap(step -> (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000), range(60))
-        FROM numbers_mt(64000)
+            if(number &lt; 262144, 'foo', 'bar'),
+            map('instance', toString(number % 262144)),
+            arrayMap(step -> (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000), range(16))
+        FROM numbers_mt(524288)
     </fill_query>
 
     <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_ts', 'sum by (instance) (last_over_time(foo[10])) unless sum by (instance) (last_over_time(bar[10]))', 100, 3090, 10) FORMAT Null</query>
     <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_ts', 'sum by (instance) (last_over_time(foo[10])) unless on(instance) sum by (instance) (last_over_time(bar[10]))', 100, 3090, 10) FORMAT Null</query>
-    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_high_card_ts', 'last_over_time(foo[10]) unless last_over_time(bar[10])', 100, 690, 10) FORMAT Null</query>
-    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_high_card_ts', 'last_over_time(foo[10]) unless on(instance) last_over_time(bar[10])', 100, 690, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_high_card_ts', 'last_over_time(foo[10]) unless last_over_time(bar[10])', 100, 250, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_high_card_ts', 'last_over_time(foo[10]) unless on(instance) last_over_time(bar[10])', 100, 250, 10) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_set_operators_unless_high_card_ts</drop_query>
     <drop_query>DROP TABLE IF EXISTS promql_set_operators_unless_ts</drop_query>
