@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Core/Block_fwd.h>
-#include <Processors/Chunk.h>
-
 #include <base/types.h>
 #include <Core/Block_fwd.h>
+#include <Processors/Chunk.h>
 
 namespace Poco::Net
 {
@@ -100,13 +98,14 @@ namespace StreamingExchangeProtocol
     /// serializer and a source that hands out packets output it; the deserializer takes it.
     const SharedHeader & packetStreamHeader();
 
-    /// The leading fields of a Data packet body, read without deserializing the block.
+    /// The leading fields of a Data packet body, read without deserializing the block. An
+    /// end-of-stream packet that carries rows is rejected here, as `readDataPacketBody` rejects it.
     struct DataPacketPrefix
     {
         bool end_of_stream = false;
         UInt64 num_rows = 0;
     };
-    DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size);
+    DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size, const String & stream_name);
 
     /// One parsed Data packet body. The end-of-stream packet has a chunk without rows.
     struct DataPacket
