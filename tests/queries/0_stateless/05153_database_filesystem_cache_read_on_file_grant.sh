@@ -36,6 +36,10 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM $fs_db.\`warm.csv\`";
 # The grant is checked before the filesystem is observed, so a name that does not exist reports the
 # access error instead of telling the user whether the file is there.
 (( $(${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT * FROM $fs_db.\`missing.csv\`" 2>&1 | grep -c "READ ON FILE") >= 1 )) && echo "READ ON FILE" || echo "UNEXPECTED";
+# `EXISTS TABLE` needs only `SHOW TABLES`, and it reads the same cache and probes the same directory,
+# so without the grant it must answer alike for a cached name and for one that is not there at all.
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXISTS TABLE $fs_db.\`warm.csv\`";
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXISTS TABLE $fs_db.\`missing.csv\`";
 
 ${CLICKHOUSE_CLIENT} --query "GRANT READ ON FILE TO $user";
 
@@ -44,6 +48,8 @@ ${CLICKHOUSE_CLIENT} --query "GRANT READ ON FILE TO $user";
 # answered from the cache and not by resolving the file again.
 ${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT * FROM $fs_db.\`warm.csv\`";
 (( $(${CLICKHOUSE_CLIENT} --user "$user" --query "SELECT * FROM $fs_db.\`cold.csv\`" 2>&1 | grep -c "CREATE TEMPORARY TABLE") >= 1 )) && echo "CREATE TEMPORARY TABLE" || echo "UNEXPECTED";
+# The grant restores the honest answer, so the two lines above are the check and not a constant.
+${CLICKHOUSE_CLIENT} --user "$user" --query "EXISTS TABLE $fs_db.\`missing.csv\`";
 
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP DATABASE $fs_db;

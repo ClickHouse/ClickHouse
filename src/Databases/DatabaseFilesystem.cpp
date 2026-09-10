@@ -136,6 +136,11 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
 
 bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) const
 {
+    /// `EXISTS TABLE` requires only `SHOW TABLES`, so answering it without the read source grant turns
+    /// this database into an oracle for `user_files`. Claim the table: resolving it reports the denial.
+    if (!context_->getAccess()->isGrantedWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ ""))
+        return true;
+
     if (tryGetTableFromCache(name))
         return true;
 
