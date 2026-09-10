@@ -22,6 +22,18 @@ group by
 00
 3FF8000000000000
 8000000000000000
+preliminary distinct on the float sorting key, no ORDER BY
+00
+3FF8000000000000
+8000000000000000
+the same, with the sorted-stream transform kept out of the plan
+0
+a LowCardinality float key stops the sort prefix as well
+0
+distinct over an integer key extended by a float key
+00
+3FF8000000000000
+8000000000000000
 the sorted variant is still used for an integer key
 DistinctSortedStreamTransform
 LimitBySortedStreamTransform
