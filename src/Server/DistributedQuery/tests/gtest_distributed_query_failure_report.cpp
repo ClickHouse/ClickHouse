@@ -18,6 +18,7 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
+#include <Server/DistributedQuery/tests/FakeExchangePeer.h>
 #include <base/types.h>
 
 namespace DB
@@ -116,42 +117,7 @@ TEST(DistributedQueryCancellation, PipelineCancel)
 
 namespace
 {
-    /// A producer's end of an exchange connection, driven by a thread: what the teardown of a failed
-    /// producer task looks like to a consumer.
-    class Peer
-    {
-    public:
-        /// `behaviour` runs on the accepted connection.
-        explicit Peer(std::function<void(Poco::Net::StreamSocket &)> behaviour_)
-            : listener(Poco::Net::SocketAddress("127.0.0.1", 0))
-            , thread([this, behaviour = std::move(behaviour_)]
-            {
-                accepted = listener.acceptConnection();
-                behaviour(accepted);
-            })
-        {
-        }
-
-        ~Peer()
-        {
-            join();
-            accepted.close();
-            listener.close();
-        }
-
-        void join()
-        {
-            if (thread.joinable())
-                thread.join();
-        }
-
-        UInt16 port() const { return listener.address().port(); }
-
-    private:
-        Poco::Net::ServerSocket listener;
-        Poco::Net::StreamSocket accepted;
-        std::thread thread;
-    };
+    using Peer = ExchangeTest::FakePeer;
 
     /// Half-closes at once, so the source's handshake read hits EOF. Only the sending direction is
     /// shut down: the peer still absorbs the source's SourceHello, so the read is what fails.
@@ -164,23 +130,7 @@ namespace
     /// the source's next write fails instead of being buffered.
     void handshakeThenReset(Poco::Net::StreamSocket & socket)
     {
-        using namespace StreamingExchangeProtocol;
-        PacketHeader header{};
-        size_t position = 0;
-        while (position < sizeof(header))
-            position += socket.receiveBytes(reinterpret_cast<char *>(&header) + position, static_cast<int>(sizeof(header) - position));
-        std::string body(header.bytes_size, '\0');
-        position = 0;
-        while (position < body.size())
-            position += socket.receiveBytes(body.data() + position, static_cast<int>(body.size() - position));
-
-        WriteBufferFromOwnString reply_body;
-        SinkHelloBody{.sink_version = PROTOCOL_VERSION}.write(reply_body);
-        reply_body.finalize();
-        PacketHeader reply_header{.packet_type = PacketType::SinkHello, .bytes_size = reply_body.str().size()};
-        socket.sendBytes(&reply_header, sizeof(reply_header));
-        socket.sendBytes(reply_body.str().data(), static_cast<int>(reply_body.str().size()));
-
+        ExchangeTest::completeSinkHandshake(socket);
         socket.setLinger(true, 0);
         socket.close();
     }
