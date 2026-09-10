@@ -224,6 +224,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     serialize_settings.write_statistics = ISerialization::SerializeBinaryBulkSettings::StatisticsMode::PREFIX;
     serialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     serialize_settings.data_part_type = MergeTreeDataPartType::Compact;
+    serialize_settings.min_compress_block_size = settings.min_compress_block_size;
 
     return serialize_settings;
 }

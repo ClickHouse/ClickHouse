@@ -352,15 +352,18 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
             StreamFileNameSettings stream_file_name_settings;
             stream_file_name_settings.escape_variant_substreams = false;
 
+            const size_t min_compress_block_size = settings.min_compress_block_size;
+
             for (const auto & [path, path_column] : flattened_paths)
             {
                 paths_substreams.emplace_back();
                 paths_substreams_marks.emplace_back();
                 data_serialization_settings.getter = [&](const SubstreamPath & substream_path) -> WriteBuffer *
                 {
-                    /// Start each substream in a new compressed block so a selective read (one path or one
-                    /// subcolumn of a path) doesn't decompress blocks shared with the path's other substreams.
-                    data_stream->next();
+                    /// New block per substream only once it's worth it: bounds a selective read's over-read
+                    /// to min_compress_block_size while small substreams still share a block (good compression).
+                    if (data_stream->offset() >= min_compress_block_size)
+                        data_stream->next();
                     /// Add new substream and its mark for current path.
                     paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings));
                     paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
@@ -368,8 +371,9 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 };
 
                 SerializeBinaryBulkStatePtr path_state;
-                /// Close the previous path's last substream block so this path's mark starts on a block boundary.
-                data_stream->next();
+                /// Same at the path boundary.
+                if (data_stream->offset() >= min_compress_block_size)
+                    data_stream->next();
                 /// Remember the mark of ObjectSharedDataData stream for this path before writing any data.
                 paths_marks.push_back(settings.stream_mark_getter(settings.path));
                 dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
@@ -377,9 +381,8 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 dynamic_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
             }
 
-            /// Close the last path's block so it isn't merged with the following metadata streams (in
-            /// Compact parts they reuse the same compressed stream).
-            data_stream->next();
+            /// Don't flush the last block here: the Wide writer flushes it between granules, and in Compact
+            /// letting the tail share the metadata block avoids a tiny final block (marks are absolute).
 
             /// End ObjectSharedDataData stream.
             settings.path.pop_back();
