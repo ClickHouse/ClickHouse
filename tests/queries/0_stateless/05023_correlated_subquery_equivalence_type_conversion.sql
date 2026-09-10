@@ -26,10 +26,9 @@ SET enable_parallel_replicas = 0;
 SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_optimize_join_order_limit = 10;
--- Pinned off to isolate the guarded float case 12 (and case 24 in part 2) from issue #116358: under the default,
--- merging the fallback's cross-type equality into a join condition compares floats bitwise and
--- loses the `-0.0` matches that `equals` semantics keep.
-SET query_plan_merge_filter_into_join_condition = 0;
+-- The comma joins of case 1 get their INNER join keys from this optimization; it is pinned off only
+-- from the guarded float case 12 on (see there).
+SET query_plan_merge_filter_into_join_condition = 1;
 
 SELECT '-- Case 1: the reproducer from the issue; the nullability mismatch must not force a CROSS JOIN';
 -- The NULL pre-filter is pushed past the subquery join into the `store_sales` Prewhere,
@@ -184,6 +183,11 @@ SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
               toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x) ORDER BY x;
+
+-- Pinned off to isolate the guarded float case 12 (and case 24 in part 2) from issue #116358: under the default,
+-- merging the fallback's cross-type equality into a join condition compares floats bitwise and
+-- loses the `-0.0` matches that `equals` semantics keep.
+SET query_plan_merge_filter_into_join_condition = 0;
 
 SELECT '-- Case 12: guarded, outer Float64 vs inner Int32; a float correlated value cannot be reconstructed from an equivalent member (-0.0 = 0 is true but hash joins compare floats bitwise), so with the equality kept as a filter (see issue #116358) the fallback matches -0.0 to inner 0 (the -0 row appears) while 1.5 and 100.25 must not match';
 CREATE TABLE t_outer_12 (x Float64) ENGINE = MergeTree ORDER BY tuple();

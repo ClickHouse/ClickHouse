@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
+#include <algorithm>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -150,6 +151,9 @@ struct ExtractedJoinConditions
     /// column is not kept. `getConjunctionNodes` looks only through a bare `and`, so an alias with the old
     /// name would hide the conjuncts from the pushdown.
     std::optional<String> new_filter_column_name;
+    /// The new filter column is also a regular output (e.g. `WHERE flag AND a = b` keeps `flag`), so the
+    /// new filter step must not remove it.
+    bool new_filter_column_is_output = false;
 };
 
 /// A conjunct left alone once the others moved into the JOIN loses the boolean conversion the
@@ -394,9 +398,12 @@ ExtractedJoinConditions extractActionsForJoinCondition(
             }
             else
             {
-                for (const auto * & output : filter_dag.getOutputs())
-                    if (output == predicate)
-                        output = new_predicate;
+                auto & outputs = filter_dag.getOutputs();
+                result.new_filter_column_is_output = std::ranges::find(outputs, new_predicate) != outputs.end();
+                if (result.new_filter_column_is_output)
+                    std::erase(outputs, predicate);
+                else
+                    std::ranges::replace(outputs, predicate, new_predicate);
                 result.new_filter_column_name = new_predicate->result_name;
             }
         }
@@ -477,7 +484,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     const bool allow_hyperedges = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH);
 
     auto & filter_dag = filter_step->getExpression();
-    auto [equality_predicates, trivial_filter, new_filter_column_name] = extractActionsForJoinCondition(
+    auto [equality_predicates, trivial_filter, new_filter_column_name, new_filter_column_is_output] = extractActionsForJoinCondition(
         filter_dag,
         filter_step->getFilterColumnName(),
         left_stream_available_columns,
@@ -502,14 +509,12 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     {
         if (filter_step->removesFilterColumn())
             filter_dag.removeUnusedResult(filter_step->getFilterColumnName());
-        auto expression_step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(filter_dag));
-        expression_step->setStepDescription(*filter_step);
-        parent_node->step = std::move(expression_step);
+        parent_node->step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(filter_dag));
     }
     else if (new_filter_column_name)
     {
         auto new_filter_step = std::make_unique<FilterStep>(
-            filter_step->getInputHeaders().front(), std::move(filter_dag), *new_filter_column_name, /*remove_filter_column_=*/ true);
+            filter_step->getInputHeaders().front(), std::move(filter_dag), *new_filter_column_name, !new_filter_column_is_output);
         new_filter_step->setStepDescription(*filter_step);
         parent_node->step = std::move(new_filter_step);
     }
