@@ -181,15 +181,16 @@ avro::GenericDatum convertToAvro(const Field & field, const DataTypePtr & type, 
         case TypeIndex::UInt32:
         case TypeIndex::Int32:
         case TypeIndex::Date:
-        case TypeIndex::Date32:
-        case TypeIndex::Time: {
+        case TypeIndex::Date32: {
             Int32 value = 0;
             check_and_cast(field, value);
             return avro::GenericDatum(value);
         }
-        /// Avro `long` (64-bit).
+        /// Avro `long` (64-bit). Iceberg `time` belongs here: it is a 64-bit value in the
+        /// specification, and the manifest rewrite paths see it as `Int64` — see `getAvroType`.
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
+        case TypeIndex::Time:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64: {
             Int64 value = 0;

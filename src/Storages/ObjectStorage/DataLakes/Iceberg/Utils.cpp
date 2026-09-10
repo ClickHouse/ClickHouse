@@ -688,11 +688,19 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type, Int32 field_id)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-        case TypeIndex::Time:
             return "int";
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
+            return "long";
+        /// Iceberg `time` is a 64-bit value (see the Avro appendix of the Iceberg specification), so the
+        /// manifest partition field must be an Avro `long` and not an `int`. This also keeps the direct
+        /// `INSERT` path consistent with the manifest rewrite paths (compaction, mutations), which rebuild
+        /// the partition types from the persisted metadata and therefore see Iceberg `time` as `Int64`
+        /// (`IcebergSchemaProcessor`). No `time-micros` logical type is attached on purpose: ClickHouse
+        /// `Time` values are whole seconds, and rescaling them to microseconds would desynchronize the
+        /// manifest partition value from the value written into the data file.
+        case TypeIndex::Time:
             return "long";
         case TypeIndex::DateTime64:
         {

@@ -83,3 +83,27 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (1.25, 'a'), (2.5, 'b')"
 ${CLICKHOUSE_CLIENT} --query "SELECT f, v FROM ${TABLE} ORDER BY f FORMAT TSV"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
+
+echo "--- Time partition (Avro long, insert and manifest rewrite) ---"
+# Iceberg `time` is a 64-bit value, so its manifest partition field must be an Avro `long` on
+# every path. The table schema is re-derived from the persisted Iceberg schema, so the declared
+# `Time` column comes back as `Int64`; the manifest rewrite done by `OPTIMIZE` rebuilds the
+# partition types the same way. Both must agree with the spec, otherwise a rewritten manifest
+# would carry a partition tuple whose Avro width disagrees with the partition spec.
+TABLE_PATH="${TABLE_PATH_BASE}_time/"
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE} (t Time, v String)
+    ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
+    PARTITION BY (t)
+"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (3723, 'a')"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE} VALUES (37230, 'b')"
+${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=1 --query "OPTIMIZE TABLE ${TABLE}"
+${CLICKHOUSE_CLIENT} --query "SELECT t, v FROM ${TABLE} ORDER BY t FORMAT TSV"
+${CLICKHOUSE_CLIENT} --query "SELECT v FROM ${TABLE} WHERE t = 3723 FORMAT TSV"
+for manifest in "${TABLE_PATH}metadata/"*.avro; do
+    if grep -a -q '"data_file"' "${manifest}"; then
+        grep -a -o '{"field-id":1001,"name":"t","type":"[a-z]*"}' "${manifest}" | sed 's/^/manifest schema: /'
+    fi
+done | sort -u
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
