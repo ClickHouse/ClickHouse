@@ -2775,11 +2775,11 @@ FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataType
         };
     }
 
-    bool skip_not_null_check = false;
-
-    if (from_low_cardinality && from_nested->isNullable() && !to_nested->isNullable())
-        /// Disable check for dictionary. Will check that column doesn't contain NULL in wrapper below.
-        skip_not_null_check = true;
+    /// A nullable dictionary always holds a NULL entry, so a conversion to a non-nullable type checks the rows
+    /// for NULLs in the wrapper below instead of the dictionary. `accurateCastOrNull` does not reject NULLs
+    /// at all: it reports them through its nullable result, so the check is skipped for it.
+    const bool skip_not_null_check = from_low_cardinality && from_nested->isNullable() && !to_nested->isNullable()
+        && cast_type != CastType::accurateOrNull;
 
     auto wrapper = prepareRemoveNullable(from_nested, to_nested, skip_not_null_check);
     if (!from_low_cardinality && !to_low_cardinality)
