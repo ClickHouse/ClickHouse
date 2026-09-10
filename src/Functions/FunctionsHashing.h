@@ -1159,6 +1159,7 @@ private:
             key = Impl::getKey(key_cols, 0);
 
         SerializationPtr serialization;
+        WriteBufferFromOwnString buf;
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             if constexpr (Keyed)
@@ -1176,13 +1177,14 @@ private:
                 /// to serialize value and calculate hash from it.
                 if (!serialization)
                     serialization = type->getDefaultSerialization();
-                WriteBufferFromOwnString buf;
                 if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
                     serialization->serializeForHashCalculation(column_const->getDataColumn(), 0, buf);
                 else
                     serialization->serializeForHashCalculation(*column, i, buf);
-                auto bytes = buf.str();
+                const auto & bytes = buf.str();
                 hash = apply(key, bytes.data(), bytes.size());
+                /// str() finalized the buffer: restart() makes it writable again, keeping the capacity.
+                buf.restart();
             }
             if constexpr (first)
                 vec_to[i] = hash;
