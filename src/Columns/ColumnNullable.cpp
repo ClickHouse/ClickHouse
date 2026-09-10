@@ -338,13 +338,27 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
     }
 
     auto & null_map_data = getNullMapData();
-    const size_t new_size = null_map_data.size() + length;
+    const size_t old_size = null_map_data.size();
+    const size_t new_size = old_size + length;
 
     /// Reserve before modifying the nested column so extending the null map cannot fail after a
     /// successful nested insertion.
     null_map_data.reserve(new_size);
-    getNestedColumn().insertManyFrom(src, position, length);
-    null_map_data.resize_fill(new_size);
+
+    /// Some nested columns may partially insert rows before throwing. Keep both columns in sync
+    /// if that happens.
+    auto checkpoint = getNestedColumn().getCheckpoint();
+    try
+    {
+        getNestedColumn().insertManyFrom(src, position, length);
+        null_map_data.resize_fill(new_size);
+    }
+    catch (...)
+    {
+        null_map_data.resize_assume_reserved(old_size);
+        getNestedColumn().rollback(*checkpoint);
+        throw;
+    }
 }
 
 void ColumnNullable::popBack(size_t n)

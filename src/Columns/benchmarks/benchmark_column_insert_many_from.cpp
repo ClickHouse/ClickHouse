@@ -83,6 +83,12 @@ static NO_INLINE void insertManyFromNotNullable(ColumnNullable & dst, const ICol
     dst.insertManyFromNotNullable(src, position, length);
 }
 
+static NO_INLINE void insertManyFromNotNullableScalar(ColumnNullable & dst, const IColumn & src, size_t position, size_t length)
+{
+    for (size_t i = 0; i < length; ++i)
+        dst.insertFromNotNullable(src, position);
+}
+
 
 template <const std::string & str_type>
 static void BM_insertManyFrom(benchmark::State & state)
@@ -102,8 +108,8 @@ static void BM_insertManyFrom(benchmark::State & state)
     }
 }
 
-template <const std::string & str_type>
-static void BM_insertManyFromNotNullable(benchmark::State & state)
+template <const std::string & str_type, bool use_bulk_insert>
+static void BM_insertManyFromNotNullableImpl(benchmark::State & state)
 {
     auto nullable_type = DataTypeFactory::instance().get(str_type);
     auto type_not_nullable = removeNullable(nullable_type);
@@ -120,9 +126,24 @@ static void BM_insertManyFromNotNullable(benchmark::State & state)
         state.ResumeTiming();
 
         auto & dst_nullable = assert_cast<ColumnNullable &>(*dst);
-        insertManyFromNotNullable(dst_nullable, *src, src->size() / 2, length);
+        if constexpr (use_bulk_insert)
+            insertManyFromNotNullable(dst_nullable, *src, src->size() / 2, length);
+        else
+            insertManyFromNotNullableScalar(dst_nullable, *src, src->size() / 2, length);
         benchmark::DoNotOptimize(dst);
     }
+}
+
+template <const std::string & str_type>
+static void BM_insertManyFromNotNullable(benchmark::State & state)
+{
+    BM_insertManyFromNotNullableImpl<str_type, true>(state);
+}
+
+template <const std::string & str_type>
+static void BM_insertManyFromNotNullableScalar(benchmark::State & state)
+{
+    BM_insertManyFromNotNullableImpl<str_type, false>(state);
 }
 
 static const String type_int64 = "Int64";
@@ -154,4 +175,11 @@ BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_int64)
 BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_string)
     ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
 BENCHMARK_TEMPLATE(BM_insertManyFromNotNullable, type_nullable_decimal)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullableScalar, type_nullable_int64)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullableScalar, type_nullable_string)
+    ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
+BENCHMARK_TEMPLATE(BM_insertManyFromNotNullableScalar, type_nullable_decimal)
     ->Arg(1)->Arg(2)->Arg(4)->Arg(8)->Arg(16)->Arg(64)->Arg(256)->Arg(ROWS);
