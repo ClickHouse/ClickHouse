@@ -189,6 +189,7 @@ TEST(CachedLogEntryBytes, MatchesTrackedAllocation)
         Int64 tracked = 0;
         size_t charged = 0;
         size_t expected = 0;
+        bool allocations_tracked = false;
     };
 
     /// Every entry gets the same term, so `log_term_infos` does not grow while measuring.
@@ -245,6 +246,16 @@ TEST(CachedLogEntryBytes, MatchesTrackedAllocation)
             DB::CurrentThread::get().untracked_memory_limit = 1;
             thread_tracker.setParent(&scope_tracker);
 
+            /// Builds without ClickHouse's own `operator new` - the sanitizer ones, which drop
+            /// jemalloc - never route allocations through the tracker, leaving nothing to compare
+            /// against. Probe it instead of enumerating build flavours, and free the probe again so
+            /// the measurement below starts from zero.
+            void * probe = ::operator new(1024);
+            DB::CurrentThread::flushUntrackedMemory();
+            measurement.allocations_tracked = scope_tracker.get() > 0;
+            ::operator delete(probe);
+            DB::CurrentThread::flushUntrackedMemory();
+
             for (size_t i = 0; i < count; ++i)
             {
                 auto entry = make_entry(payload_size);
@@ -270,6 +281,9 @@ TEST(CachedLogEntryBytes, MatchesTrackedAllocation)
     /// more than it is charged. Both are tens of bytes, far below the hundreds per entry that
     /// payload-only accounting used to miss.
     constexpr Int64 unaccounted_slack = 128;
+
+    if (!measure(64, 0).allocations_tracked)
+        GTEST_SKIP() << "allocations are not routed through the memory tracker in this build";
 
     for (size_t payload_size : {64UL, 500UL, 4096UL})
     {
