@@ -4,40 +4,40 @@
   "entries": [
     {
       "fileId": "b7b4169fa5b2e02aa17d40553a73c5d9520086753c501eeb926c63b162bb6d9e",
-      "versionId": "a372f4e7d54d9b799344f85fa77a6c684c792c8951b74039b53becd67db973b4",
+      "versionId": "a0e1d0f83df446e79f3e38e9d52d64657cff177f781d2a8caeba01d5f4e79080",
       "translations": {
-        "ja": {
-          "updatedAt": "2026-09-10T10:54:29.298Z",
+        "ko": {
+          "updatedAt": "2026-09-10T13:03:38.668Z",
+          "fileName": "docs.json"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-10T13:03:38.868Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-10T10:54:30.074Z",
-          "fileName": "docs.json"
-        },
-        "ar": {
-          "updatedAt": "2026-09-10T10:54:30.276Z",
-          "fileName": "docs.json"
-        },
-        "es": {
-          "updatedAt": "2026-09-10T10:54:29.102Z",
+          "updatedAt": "2026-09-10T13:03:39.081Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-10T10:54:30.464Z",
-          "fileName": "docs.json",
-          "postProcessHash": "4f7feba23e985a20b41929169a88383554b847a03cbb5a31b8f12ad1f9d65464"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-10T10:54:29.691Z",
+          "updatedAt": "2026-09-10T13:03:39.266Z",
           "fileName": "docs.json"
         },
-        "ko": {
-          "updatedAt": "2026-09-10T10:54:29.500Z",
+        "es": {
+          "updatedAt": "2026-09-10T13:03:39.445Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-10T10:54:29.886Z",
+          "updatedAt": "2026-09-10T13:03:39.630Z",
           "fileName": "docs.json"
+        },
+        "ja": {
+          "updatedAt": "2026-09-10T13:03:39.812Z",
+          "fileName": "docs.json"
+        },
+        "ar": {
+          "updatedAt": "2026-09-10T13:03:39.998Z",
+          "fileName": "docs.json",
+          "postProcessHash": "afb734706672562f3fc9468f985bbfb894493c5f2171023a18d88f553ad14f9c"
         }
       },
       "fileName": "docs.json"
@@ -138394,6 +138394,53 @@
         }
       },
       "fileName": "products/cloud/features/infrastructure/on-demand-compute.mdx"
+    },
+    {
+      "fileId": "da87873a897bbc9383eac64ba154981cd0fc87e237d019d20d78c009b8a8ac20",
+      "versionId": "a1cb057dff18521b7f602d6f987a5a35de76e91c76b4d65ddc47c30576f75aa3",
+      "translations": {
+        "pt-BR": {
+          "updatedAt": "2026-09-10T13:03:38.477Z",
+          "fileName": "pt-BR/clickstack/demo-days/2026/2026-09-04.mdx",
+          "postProcessHash": "50e158cc9aa7f08d5bba5bcb25ed128b2de5b1a3c76f43506171b33e7bac515b"
+        },
+        "fr": {
+          "updatedAt": "2026-09-10T13:03:39.266Z",
+          "fileName": "fr/clickstack/demo-days/2026/2026-09-04.mdx",
+          "postProcessHash": "81fdcfb82e380f296759add78093aa383be7d91e69a8b04ed83b29aaa4da6569"
+        },
+        "es": {
+          "updatedAt": "2026-09-10T13:03:39.446Z",
+          "fileName": "es/clickstack/demo-days/2026/2026-09-04.mdx",
+          "postProcessHash": "6aeb1dee9092465671c7063dd3a32e3b0395fa3bf1df3b66de44a2a523ce5aae"
+        },
+        "zh": {
+          "updatedAt": "2026-09-10T13:03:39.813Z",
+          "fileName": "zh/clickstack/demo-days/2026/2026-09-04.mdx",
+          "postProcessHash": "3949f4b1508ee84b7c8370ee73829a2c553280259baa1e702a06146ba07535f4"
+        },
+        "ja": {
+          "updatedAt": "2026-09-10T13:03:39.813Z",
+          "fileName": "ja/clickstack/demo-days/2026/2026-09-04.mdx",
+          "postProcessHash": "e127e6119e33b2f7fa5e75091bb1e1fd930564823a38d6f93a80dd70227ae939"
+        },
+        "ko": {
+          "updatedAt": "2026-09-10T13:03:39.999Z",
+          "fileName": "ko/clickstack/demo-days/2026/2026-09-04.mdx",
+          "postProcessHash": "894b84e7bd43bc784d38c1e049ffca165a0866047ab3ed3b6e95a7bd706ea863"
+        },
+        "ar": {
+          "updatedAt": "2026-09-10T13:03:39.999Z",
+          "fileName": "ar/clickstack/demo-days/2026/2026-09-04.mdx",
+          "postProcessHash": "5829719e9d9140e21e6e3466503e9215cace03677cb1ea9f828be1ba10878741"
+        },
+        "ru": {
+          "updatedAt": "2026-09-10T13:03:40.000Z",
+          "fileName": "ru/clickstack/demo-days/2026/2026-09-04.mdx",
+          "postProcessHash": "c1ebe61a331590e1309d8a5480614f8f8996e1ef6229bb8aba4da8e8e43f3215"
+        }
+      },
+      "fileName": "clickstack/demo-days/2026/2026-09-04.mdx"
     }
   ]
 }

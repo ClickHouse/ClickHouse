@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "Начало работы",
       "pages": [
         "ru/products/managed-postgres/overview",
         "ru/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Features",
+      "group": "Возможности",
       "pages": [
         "ru/products/managed-postgres/connection",
         "ru/products/managed-postgres/settings",
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "group": "Pricing",
+      "group": "Цены",
       "pages": [
         "ru/products/managed-postgres/pricing"
       ]
@@ -55,7 +55,7 @@
       ]
     },
     {
-      "group": "Migrations",
+      "group": "Миграции",
       "pages": [
         "ru/products/managed-postgres/migrations/overview",
         "ru/products/managed-postgres/migrations/clickpipes",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "group": "Monitoring",
+      "group": "Мониторинг",
       "pages": [
         "ru/products/managed-postgres/monitoring/overview",
         "ru/products/managed-postgres/monitoring/dashboard",
