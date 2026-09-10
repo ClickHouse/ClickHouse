@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/IAllocationQueue.h>
 
 #include <boost/intrusive/list.hpp>
@@ -30,7 +31,8 @@ public:
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override;
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override;
     void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) override;
-    void finishSpill(ResourceAllocation & allocation, ResourceCost reclaimable_total) override;
+    ResourceCost requestSpill(ResourceAllocation & allocation, ResourceCost max_bytes) override;
+    void finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total) override;
     void removeAllocation(ResourceAllocation & allocation) override;
     void purgeQueue() override;
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
@@ -68,12 +70,13 @@ private:
     ResourceAllocation::IncreasingSet increasing_allocations; /// Allocations with pending increase request
     ResourceAllocation::DecreasingList decreasing_allocations; /// Allocations with pending decrease request
     ResourceAllocation::RemovingList removing_allocations; /// Allocations to remove
-    ResourceAllocation::ReclaimableSet reclaimable_allocations; /// Running allocations with `reclaimable > 0`, ordered by `fair_key` (spill victim = largest)
+    ResourceAllocation::ReclaimableSet reclaimable_allocations; /// Allocations with `spill_key > 0`, ordered by available bytes.
 
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;
     ResourceCost pending_reclaimable_delta = 0; /// Net change to `reclaimable` reported since the last activation, drained and propagated in processActivation().
-    bool pending_spilled = false; /// A spill request was finished (via `finishSpill` or by removing a reclaimable allocation); drained into `Update::spilled` together with the delta.
+    ResourceCost pending_available_reclaimable_delta = 0;
+    ResourceCost pending_spilled_settled_bytes = 0; /// Credits to retire on activation, together with pending decreases.
 
     UInt64 rejects = 0; /// Number of rejected allocations
 };

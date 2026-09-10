@@ -42,14 +42,15 @@ public:
     /// scheduler thread and propagated to the root; the scheduler uses it to choose spill victims.
     virtual void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) = 0;
 
+    /// Scheduler-thread-only: reserve up to `max_bytes` of the allocation's uncommitted capacity,
+    /// propagate the credit to every ancestor, and deliver `ResourceAllocation::spillAllocation`.
+    /// Returns the issued amount, or zero if the candidate no longer has available capacity.
+    virtual ResourceCost requestSpill(ResourceAllocation & allocation, ResourceCost max_bytes) = 0;
+
     /// The reply to `ResourceAllocation::spillAllocation`: the query finished handling the spill request.
-    /// Reports the remaining reclaimable total like `setReclaimable` (0 means nothing was or can be
-    /// reclaimed, i.e. a decline) and additionally reopens the spill gate of every `AllocationLimit` above,
-    /// allowing the scheduler to signal the next victim if the subtree is still over its soft limit.
-    /// Call it AFTER issuing the decreases for the freed memory, so that the scheduler re-evaluates the
-    /// soft limit only once the released memory is reflected in `allocated`.
-    /// Never blocks and never fails.
-    virtual void finishSpill(ResourceAllocation & allocation, ResourceCost reclaimable_total) = 0;
+    /// `settled_bytes` retires the claim, independently of the amount actually freed.
+    /// Publish reservation decreases before this reply; increase approval need not precede the reply.
+    virtual void finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total) = 0;
 
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.

@@ -36,7 +36,7 @@ private:
     PendingSetByUsage pending_children; /// Children with pending allocation increase request
     IncreasingSetByUsage increasing_children; /// Children with running allocation increase request
     DecreasingList decreasing_children; /// Children with decrease request
-    ReclaimableSetByUsage reclaimable_children; /// Children with `reclaimable > 0`, ordered by usage (spill victim = highest usage)
+    ReclaimableSetByUsage reclaimable_children; /// Children with `available_reclaimable > 0`, ordered by usage.
     size_t tie_breaker = 0; /// Unique id generator for tie breaking in ordering
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`

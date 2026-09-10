@@ -11,7 +11,9 @@
 #include <barrier>
 #include <cstdlib>
 #include <future>
+#include <initializer_list>
 #include <thread>
+#include <utility>
 
 using namespace DB;
 
@@ -55,7 +57,7 @@ struct SpaceSharedResourceHolder
         unregisterResource();
     }
 
-    AllocationLimit * addLimit(const String & path, ResourceCost max_allocated)
+    AllocationLimit * addLimit(const String & path, ResourceCost max_allocated, ISpaceSharedNode * parent = nullptr)
     {
         auto node = std::make_shared<AllocationLimit>(t.scheduler.event_queue, SchedulerNodeInfo{}, max_allocated);
         if (path == "/")
@@ -64,7 +66,7 @@ struct SpaceSharedResourceHolder
             return node.get();
         }
         node->basename = path.substr(path.rfind('/') + 1);
-        root_node->attachChild(node);
+        (parent ? parent : root_node.get())->attachChild(node);
         return node.get();
     }
 
@@ -107,10 +109,35 @@ struct SpaceSharedResourceHolder
     /// Blocks until the scheduler thread has drained all events enqueued so far (FIFO barrier).
     void sync()
     {
+        execute([] {});
+    }
+
+    template <typename Func>
+    void execute(Func func)
+    {
         std::promise<void> p;
         auto f = p.get_future();
-        t.scheduler.event_queue.enqueue([&] { p.set_value(); });
+        t.scheduler.event_queue.enqueue([&]
+        {
+            func();
+            p.set_value();
+        });
         f.get();
+    }
+
+    void expectSpillState(std::initializer_list<ISpaceSharedNode *> nodes,
+        ResourceCost reclaimable, ResourceCost available, ResourceCost outstanding)
+    {
+        execute([&]
+        {
+            for (auto * node : nodes)
+            {
+                SCOPED_TRACE(node->getPath());
+                EXPECT_EQ(node->reclaimable, reclaimable);
+                EXPECT_EQ(node->available_reclaimable, available);
+                EXPECT_EQ(node->spill_outstanding, outstanding);
+            }
+        });
     }
 
     void registerResource()
@@ -140,11 +167,7 @@ struct SpaceSharedResourceHolder
 };
 
 
-/// A mock allocation for exercising the reclaimable/spill machinery deterministically. Unlike
-/// `MemoryReservation` (whose `spillAllocation` is a no-op), it records spill signals and lets the test
-/// simulate a query reacting to one (report a lower reclaimable total, then decrease). Lock ordering
-/// mirrors `MemoryReservation`: AllocationQueue::mutex -> SpillableAllocation::mutex, so queue operations
-/// are always invoked without `mutex` held.
+/// Lock ordering: `AllocationQueue::mutex` -> `SpillableAllocation::mutex`.
 struct SpillableAllocation : public ResourceAllocation
 {
     SpillableAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size)
@@ -199,10 +222,7 @@ struct SpillableAllocation : public ResourceAllocation
             queue.increaseAllocation(*this, inc);
         else if (dec > 0)
             queue.decreaseAllocation(*this, dec);
-        std::unique_lock lock(mutex);
-        cv.wait(lock, [this] { return fail_reason || (!increase_enqueued && !decrease_enqueued); });
-        if (fail_reason)
-            std::rethrow_exception(fail_reason);
+        waitSynced();
     }
 
     /// Reports the absolute reclaimable total to the scheduler (advisory, non-blocking).
@@ -211,16 +231,12 @@ struct SpillableAllocation : public ResourceAllocation
         queue.setReclaimable(*this, total);
     }
 
-    /// Replies to a spill request: reports the remaining reclaimable total and reopens the spill gates.
-    void finishSpill(ResourceCost total)
+    void finishSpill(ResourceCost settled_bytes, ResourceCost total)
     {
-        queue.finishSpill(*this, total);
+        queue.finishSpill(*this, settled_bytes, total);
     }
 
-    /// Simulates a spill reaction without waiting for the decrease approval: issues the decrease for the
-    /// freed memory and immediately finishes the spill, so both reach the scheduler in one activation.
-    /// Exercises the deferred re-evaluation path (the reply arrives while the decrease is still pending).
-    void spillAndFinish(ResourceCost spilled_bytes, ResourceCost reclaimable_total)
+    void spillAndFinish(ResourceCost spilled_bytes, ResourceCost settled_bytes, ResourceCost reclaimable_total)
     {
         {
             std::unique_lock lock(mutex);
@@ -228,7 +244,21 @@ struct SpillableAllocation : public ResourceAllocation
             decrease_enqueued = true;
         }
         queue.decreaseAllocation(*this, spilled_bytes);
-        queue.finishSpill(*this, reclaimable_total);
+        queue.finishSpill(*this, settled_bytes, reclaimable_total);
+    }
+
+    void waitSynced()
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return fail_reason || (!increase_enqueued && !decrease_enqueued); });
+        if (fail_reason)
+            std::rethrow_exception(fail_reason);
+    }
+
+    ResourceCost takeSpillRequest()
+    {
+        std::unique_lock lock(mutex);
+        return std::exchange(unclaimed_spill_bytes, 0);
     }
 
     void waitSpills(size_t n)
@@ -290,11 +320,13 @@ private: // interaction with the scheduler thread
         cv.notify_all();
     }
 
-    void spillAllocation(ResourceCost at_least_bytes) override
+    void spillAllocation(ResourceCost additional_bytes) override
     {
         std::unique_lock lock(mutex);
+        EXPECT_GT(additional_bytes, 0);
         ++spills;
-        last_spill_at_least = at_least_bytes;
+        last_spill_at_least = additional_bytes;
+        unclaimed_spill_bytes += additional_bytes;
         cv.notify_all();
     }
 
@@ -307,6 +339,7 @@ private: // interaction with the scheduler thread
     bool removed = false;
     size_t spills = 0;
     ResourceCost last_spill_at_least = 0;
+    ResourceCost unclaimed_spill_bytes = 0;
     ResourceCost allocated_size = 0;
     ResourceCost real_size = 0;
 };
@@ -326,16 +359,16 @@ TEST(SchedulerSpaceShared, Smoke)
 
     // Create a reservation with initial size
     {
-        MemoryReservation reservation(link, "test_reservation", 1000);
+        MemoryReservation reservation(link, "test_reservation", 1000, 1);
         // Reservation should be approved immediately since we're under the limit
         // Destructor will clean up
     }
 
     // Create multiple reservations
     {
-        MemoryReservation res1(link, "res1", 1000);
-        MemoryReservation res2(link, "res2", 2000);
-        MemoryReservation res3(link, "res3", 3000);
+        MemoryReservation res1(link, "res1", 1000, 1);
+        MemoryReservation res2(link, "res2", 2000, 1);
+        MemoryReservation res3(link, "res3", 3000, 1);
         // All should be approved
     }
 }
@@ -359,7 +392,7 @@ TEST(SchedulerSpaceShared, ReservationWithMemoryTracker)
     // Note: We don't call syncWithMemoryTracker after decreasing the tracker because
     // decreases are async and would compete with the destructor's final decrease.
     {
-        MemoryReservation reservation(link, "test_increasing", 1000);
+        MemoryReservation reservation(link, "test_increasing", 1000, 1);
 
         // Sync with memory tracker when tracker has 0 - uses reserved amount (1000)
         reservation.syncWithMemoryTracker(&tracker);
@@ -387,7 +420,7 @@ TEST(SchedulerSpaceShared, ReservationWithMemoryTracker)
 
     // Test 2: Start above reserved and keep increasing
     {
-        MemoryReservation reservation(link, "test_above_reserved", 2000);
+        MemoryReservation reservation(link, "test_above_reserved", 2000, 1);
 
         // Start with allocation higher than reserved
         tracker.adjustWithUntrackedMemory(4000);
@@ -411,7 +444,7 @@ TEST(SchedulerSpaceShared, ReservationWithMemoryTracker)
 
     // Test 3: Multiple syncs with same value (idempotent)
     {
-        MemoryReservation reservation(link, "test_idempotent", 1000);
+        MemoryReservation reservation(link, "test_idempotent", 1000, 1);
 
         tracker.adjustWithUntrackedMemory(3000);
         EXPECT_EQ(tracker.get(), 3000);
@@ -459,7 +492,7 @@ TEST(SchedulerSpaceShared, IncreaseWhileDecreaseIsInFlight)
 
     MemoryTracker tracker;
     {
-        MemoryReservation res(link, "res", 100);
+        MemoryReservation res(link, "res", 100, 1);
         tracker.adjustWithUntrackedMemory(800);
         res.syncWithMemoryTracker(&tracker);
         EXPECT_EQ(allocated_of(queue), 800);
@@ -507,7 +540,7 @@ TEST(SchedulerSpaceShared, SyncWaitsForPostDecreaseCoverage)
     link.allocation_queue = queue;
 
     MemoryTracker tracker;
-    MemoryReservation res(link, "res", 100);
+    MemoryReservation res(link, "res", 100, 1);
     tracker.adjustWithUntrackedMemory(800);
     res.syncWithMemoryTracker(&tracker); // allocated == 800
 
@@ -562,13 +595,13 @@ TEST(SchedulerSpaceShared, LimitEnforcement)
     {
         // Wait for res1 to be created first
         sync_barrier.arrive_and_wait();
-        MemoryReservation res2(link, "res2", 5000);
+        MemoryReservation res2(link, "res2", 5000, 1);
         res2_completed = true;
     });
 
     {
         // Create first reservation taking most of the limit - inside scope
-        MemoryReservation res1(link, "res1", 8000);
+        MemoryReservation res1(link, "res1", 8000, 1);
 
         // Signal res1 is created, res2 can now try to create its reservation
         sync_barrier.arrive_and_wait();
@@ -613,7 +646,7 @@ TEST(SchedulerSpaceShared, ConcurrentReservations)
             start_barrier.arrive_and_wait();
             for (int j = 0; j < reservations_per_thread; ++j)
             {
-                MemoryReservation res(link, fmt::format("res_{}_{}", i, j), 100);
+                MemoryReservation res(link, fmt::format("res_{}_{}", i, j), 100, 1);
                 // Small delay to increase interleaving
                 std::this_thread::yield();
             }
@@ -654,7 +687,7 @@ TEST(SchedulerSpaceShared, KillDuringPendingIncrease)
         MemoryTracker tracker;
         try
         {
-            MemoryReservation res(link, "victim", 60000); // 60KB = 60% of limit
+            MemoryReservation res(link, "victim", 60000, 1); // 60KB = 60% of limit
 
             // Signal that victim reservation is created
             sync_barrier.arrive_and_wait();
@@ -681,7 +714,7 @@ TEST(SchedulerSpaceShared, KillDuringPendingIncrease)
         try
         {
             // Start with a small reservation (30KB = 30% of limit)
-            MemoryReservation killer(link, "killer", 30000);
+            MemoryReservation killer(link, "killer", 30000, 1);
 
             // Wait for victim to be ready
             sync_barrier.arrive_and_wait();
@@ -741,7 +774,7 @@ TEST(SchedulerSpaceShared, SelfKillDoesNotBlockNextAllocation)
     {
         MemoryTracker tracker;
         tracker.adjustWithUntrackedMemory(20000); // 20KB > 10KB limit
-        MemoryReservation res(link, id, 0); // reserved_size == 0 -> never admitted
+        MemoryReservation res(link, id, 0, 1); // reserved_size == 0 -> never admitted
         res.syncWithMemoryTracker(&tracker);
         tracker.adjustWithUntrackedMemory(-20000);
     };
@@ -784,7 +817,7 @@ TEST(SchedulerSpaceShared, MultipleMemoryTrackerSyncs)
     MemoryTracker tracker;
 
     {
-        MemoryReservation res(link, "test", 5000); // Reserve 5KB minimum
+        MemoryReservation res(link, "test", 5000, 1); // Reserve 5KB minimum
 
         // Multiple syncs
         for (int i = 0; i < 10; ++i)
@@ -820,7 +853,7 @@ TEST(SchedulerSpaceShared, ReclaimablePropagation)
     };
 
     {
-        MemoryReservation res(link, "res", 1000); // admitted -> allocated == 1000
+        MemoryReservation res(link, "res", 1000, 1); // admitted -> allocated == 1000
 
         // Nothing reclaimable initially.
         EXPECT_EQ(reclaimable_of(queue), 0);
@@ -869,7 +902,7 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 
     for (int i = 0; i < 1000; ++i)
     {
-        MemoryReservation res(link, fmt::format("rapid_{}", i), 100);
+        MemoryReservation res(link, fmt::format("rapid_{}", i), 100, 1);
         // Immediate destruction
     }
 }
@@ -896,8 +929,6 @@ TEST(SchedulerSpaceShared, SoftLimitFailCloseThenSpill)
 }
 
 
-/// Among several reclaimable allocations in one queue, the largest is asked to spill first (the same order
-/// the kill path uses), and no second signal is issued while the first request is outstanding.
 TEST(SchedulerSpaceShared, SoftLimitSpillsLargestInQueue)
 {
     SpaceSharedTest t;
@@ -915,12 +946,25 @@ TEST(SchedulerSpaceShared, SoftLimitSpillsLargestInQueue)
     EXPECT_EQ(a.spillCount(), 0);
     EXPECT_EQ(b.spillCount(), 0);
 
-    // Cross the soft limit: allocated becomes 5000 + 6000 = 11000. `b` (6000) is the largest reclaimable.
-    a.setSize(5000);
-    b.waitSpills(1);
+    a.setSize(7000);
+    r.sync();
     EXPECT_EQ(b.spillCount(), 1);
-    EXPECT_EQ(b.lastSpillAtLeast(), 1000); // need = 11000 - 10000
-    EXPECT_EQ(a.spillCount(), 0); // one spill at a time: the smaller reclaimable is not signaled
+    EXPECT_EQ(b.lastSpillAtLeast(), 3000);
+    EXPECT_EQ(a.spillCount(), 0);
+    r.expectSpillState({queue, limit, &t.scheduler}, 9000, 6000, 3000);
+
+    // Equal available credits are ordered by insertion ID, not allocation size.
+    r.execute([&]
+    {
+        String details;
+        EXPECT_EQ(queue->selectAllocationToSpill(1, details), &b);
+        limit->updateSoftLimit(3000);
+    });
+    EXPECT_EQ(b.spillCount(), 2);
+    EXPECT_EQ(b.lastSpillAtLeast(), 3000);
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 3000);
+    r.expectSpillState({queue, limit, &t.scheduler}, 9000, 0, 9000);
 }
 
 
@@ -948,10 +992,6 @@ TEST(SchedulerSpaceShared, SoftLimitDescendsFairSkippingUnreclaimable)
 }
 
 
-/// While over the soft limit, each acknowledgement — a decrease OR a drop in reported reclaimable — reopens
-/// the one-at-a-time gate and the scheduler re-signals with the updated `need`; once back under the soft
-/// limit the episode ends and no further spill is requested. The exact number of (coalescing) re-signals is
-/// intentionally not asserted, only the requested amount and the terminal "no more spills" state.
 TEST(SchedulerSpaceShared, SpillReSignalsUntilUnderSoftLimit)
 {
     SpaceSharedTest t;
@@ -966,21 +1006,23 @@ TEST(SchedulerSpaceShared, SpillReSignalsUntilUnderSoftLimit)
     a.waitSpills(1);
     EXPECT_EQ(a.lastSpillAtLeast(), 3000); // need = allocated(8000) - soft(5000)
 
-    // Partial reaction: shrink and reply, still above the soft limit. The reply reopens the gate and the
-    // next signal carries the updated need for the smaller allocation.
-    a.setSize(6000); // decrease by 2000 -> allocated 6000 > soft 5000, still reclaimable
-    a.finishSpill(6000);
+    a.setSize(6000);
+    r.expectSpillState({queue, limit, &t.scheduler}, 6000, 3000, 3000);
+    EXPECT_EQ(a.spillCount(), 1);
+    a.finishSpill(3000, 6000); // Settles the request, not the 2000 bytes freed.
     a.waitSpills(2);
     EXPECT_EQ(a.lastSpillAtLeast(), 1000); // need = allocated(6000) - soft(5000)
+    r.expectSpillState({queue, limit, &t.scheduler}, 6000, 5000, 1000);
 
     // Drop below the soft limit and reply: the episode ends. After the scheduler settles, no new signal.
     a.setSize(4000); // allocated 4000 <= soft 5000
-    a.finishSpill(4000);
+    a.finishSpill(1000, 4000);
     r.sync();
     size_t settled = a.spillCount();
     r.sync();
     EXPECT_EQ(a.spillCount(), settled); // no further spill once under the soft limit
     EXPECT_EQ(settled, 2u);
+    r.expectSpillState({queue, limit, &t.scheduler}, 4000, 4000, 0);
 }
 
 
@@ -1021,9 +1063,6 @@ TEST(SchedulerSpaceShared, ReclaimableClampedOnShrink)
 }
 
 
-/// If the spill-signaled victim declines (replies with zero reclaimable, WITHOUT decreasing), the episode
-/// must not stall: the reply reopens the gate and the scheduler re-targets the next reclaimable allocation
-/// while still over the soft limit. Without this `b` is never signaled and the test hangs on `waitSpills`.
 TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimDeclines)
 {
     SpaceSharedTest t;
@@ -1041,11 +1080,11 @@ TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimDeclines)
     // Over the soft limit (14000 > 10000): the largest reclaimable allocation (`a`) is asked to spill first.
     a.waitSpills(1);
     EXPECT_EQ(a.spillCount(), 1);
-    EXPECT_EQ(b.spillCount(), 0); // only one spill is in flight at a time
+    EXPECT_EQ(b.spillCount(), 0); // The outstanding credit covers the excess.
 
     // `a` declines: it replies with nothing reclaimable and does NOT decrease. Still over the soft limit,
     // with `b` reclaimable, the scheduler must now ask `b` to spill instead of stalling on `a`.
-    a.finishSpill(0);
+    a.finishSpill(4000, 0);
     b.waitSpills(1);
     EXPECT_EQ(b.spillCount(), 1);
     EXPECT_EQ(b.lastSpillAtLeast(), 4000); // need = allocated(14000) - soft(10000)
@@ -1053,11 +1092,7 @@ TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimDeclines)
 }
 
 
-/// Pins the spill-gate semantics: at most one spill request is outstanding under the limit at a time, and
-/// the gate is held until the victim REPLIES via `finishSpill` — unrelated activity (decreases by other
-/// allocations, new reclaimable reports, growth) does not reopen it. Once the reply arrives, the next
-/// check signals the then-current extremum with the then-current excess.
-TEST(SchedulerSpaceShared, SpillGateHeldUntilVictimReply)
+TEST(SchedulerSpaceShared, SpillCreditsAllowParallelAndAdditionalRequests)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -1068,33 +1103,40 @@ TEST(SchedulerSpaceShared, SpillGateHeldUntilVictimReply)
 
     SpillableAllocation a(queue, "a", 8000); // will be the first victim
     SpillableAllocation b(queue, "b", 6000); // never reports reclaimable (unreclaimable)
-    SpillableAllocation c(queue, "c", 7000); // will outgrow `a` and become the next extremum
+    SpillableAllocation c(queue, "c", 7000);
 
     // Nothing reclaimable yet: over the soft limit (21000 > 10000) but fail-close, no signals.
     r.sync();
     EXPECT_EQ(a.spillCount() + b.spillCount() + c.spillCount(), 0u);
 
-    // First report opens the episode: `a` is the only reclaimable allocation and gets signaled.
     a.reportReclaimable(8000);
-    a.waitSpills(1);
-    EXPECT_EQ(a.lastSpillAtLeast(), 11000); // need = allocated(21000) - soft(10000)
+    r.sync();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 8000);
+    r.expectSpillState({queue, limit, &t.scheduler}, 8000, 0, 8000);
 
-    // While `a`'s request is outstanding, more reclaimable appears, `c` grows past `a`, and an UNRELATED
-    // allocation (`b`) shrinks. None of that is the victim's reply: the gate stays closed, no new signals.
     c.reportReclaimable(7000);
+    r.sync();
+    EXPECT_EQ(c.spillCount(), 1);
+    EXPECT_EQ(c.lastSpillAtLeast(), 3000);
     c.setSize(9000);
+    r.sync();
+    EXPECT_EQ(c.spillCount(), 2);
+    EXPECT_EQ(c.lastSpillAtLeast(), 2000);
+    r.expectSpillState({queue, limit, &t.scheduler}, 15000, 2000, 13000);
+
     b.setSize(3000);
     r.sync();
-    EXPECT_EQ(c.spillCount(), 0u);
+    EXPECT_EQ(c.spillCount(), 2u);
     EXPECT_EQ(a.spillCount(), 1u);
+    r.expectSpillState({queue, limit, &t.scheduler}, 15000, 2000, 13000);
 
-    // The victim replies after spilling: `a` shrinks by 5000 and finishes. Only now does the scheduler
-    // re-evaluate — and signals the new extremum `c` (fair_key 9000 > 3000) with the fresh excess.
     a.setSize(3000);
-    a.finishSpill(3000);
-    c.waitSpills(1);
-    EXPECT_EQ(c.lastSpillAtLeast(), 5000); // need = allocated(3000+3000+9000) - soft(10000)
-    EXPECT_EQ(a.spillCount(), 1u); // the reply closed `a`'s episode; `a` is not re-signaled
+    r.expectSpillState({queue, limit, &t.scheduler}, 10000, 2000, 13000);
+    a.finishSpill(8000, 3000);
+    r.expectSpillState({queue, limit, &t.scheduler}, 10000, 5000, 5000);
+    EXPECT_EQ(c.spillCount(), 2u);
+    EXPECT_EQ(a.spillCount(), 1u);
 }
 
 
@@ -1115,15 +1157,21 @@ TEST(SchedulerSpaceShared, SpillReplyDeferredToPendingDecrease)
     a.waitSpills(1);
     EXPECT_EQ(a.lastSpillAtLeast(), 5000); // need = allocated(15000) - soft(10000)
 
-    // The victim spills 3000 and replies without waiting for the decrease approval: both arrive in one
-    // activation. With the stale `allocated` (15000) the need would be 5000; the correct need after the
-    // decrease is applied (12000) is 2000.
-    a.spillAndFinish(/*spilled_bytes=*/ 3000, /*reclaimable_total=*/ 12000);
-    a.waitSpills(2);
+    r.execute([&]
+    {
+        a.spillAndFinish(/*spilled_bytes=*/ 3000, /*settled_bytes=*/ 5000, /*reclaimable_total=*/ 12000);
+    });
+    a.waitSynced();
+    r.sync();
+    EXPECT_EQ(a.spillCount(), 2);
     EXPECT_EQ(a.lastSpillAtLeast(), 2000); // re-evaluated AFTER the decrease, never with the stale excess
 
     // Finish the episode: spill the rest of the excess; once under the soft limit no further signal comes.
-    a.spillAndFinish(/*spilled_bytes=*/ 2000, /*reclaimable_total=*/ 10000);
+    r.execute([&]
+    {
+        a.spillAndFinish(/*spilled_bytes=*/ 2000, /*settled_bytes=*/ 2000, /*reclaimable_total=*/ 10000);
+    });
+    a.waitSynced();
     r.sync();
     size_t settled = a.spillCount();
     r.sync();
@@ -1132,11 +1180,7 @@ TEST(SchedulerSpaceShared, SpillReplyDeferredToPendingDecrease)
 }
 
 
-/// No spill signal may be issued while a decrease is pending under the limit: the reply reopens the gate,
-/// but until the victim's decrease is approved, `allocated` still contains the released memory. A trigger
-/// arriving in that window from elsewhere (here: a reclaimable report from a sibling queue, processed as an
-/// event BEFORE the decrease approval) must not evaluate the soft limit against the stale size — the
-/// evaluation belongs to the approval's trailing check.
+/// Until the decrease is approved, `allocated` still includes the released memory.
 TEST(SchedulerSpaceShared, NoSpillSignalWhileVictimDecreaseIsPending)
 {
     SpaceSharedTest t;
@@ -1161,7 +1205,7 @@ TEST(SchedulerSpaceShared, NoSpillSignalWhileVictimDecreaseIsPending)
     t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
     entered.get_future().get();
 
-    a.spillAndFinish(/*spilled_bytes=*/ 5000, /*reclaimable_total=*/ 10000); // reply + pending decrease
+    a.spillAndFinish(/*spilled_bytes=*/ 5000, /*settled_bytes=*/ 6000, /*reclaimable_total=*/ 10000);
     x.reportReclaimable(1000); // a separate activation, processed after the reply but before the approval
 
     release.set_value();
@@ -1169,16 +1213,55 @@ TEST(SchedulerSpaceShared, NoSpillSignalWhileVictimDecreaseIsPending)
     // The next signal must be computed only after the victim's decrease is applied:
     // need = allocated(16000 - 5000) - soft(10000) = 1000, and the victim is still the extremum.
     // Evaluating in the window instead would signal with the stale excess of 6000.
-    a.waitSpills(2);
+    a.waitSynced();
+    r.sync();
+    EXPECT_EQ(a.spillCount(), 2);
     EXPECT_EQ(a.lastSpillAtLeast(), 1000);
     EXPECT_EQ(x.spillCount(), 0u);
 }
 
 
-/// A victim that is removed mid-spill (query killed or cancelled) must not leave the gate closed forever:
-/// its removal is treated as the reply, and the next reclaimable allocation is signaled if the subtree is
-/// still over the soft limit.
-TEST(SchedulerSpaceShared, SpillGateReopensWhenVictimRemoved)
+TEST(SchedulerSpaceShared, NoReentrantSpillWhileSiblingDecreaseIsPending)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    auto * outer = r.addLimit("/", 1000);
+    auto * fair = r.addFair("/fair", outer);
+    auto * inner = r.addLimit("/fair/inner", 1000, fair);
+    auto * qa = r.addQueueUnder("/fair/inner/qa", inner);
+    auto * qb = r.addQueueUnder("/fair/qb", fair);
+    r.registerResource();
+
+    SpillableAllocation a(qa, "a", 100);
+    SpillableAllocation b(qb, "b", 100);
+    a.reportReclaimable(100);
+    b.reportReclaimable(0);
+    r.setSoftLimit(outer, 100);
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 100);
+    r.setSoftLimit(inner, 50);
+    EXPECT_EQ(a.spillCount(), 1);
+
+    r.execute([&]
+    {
+        a.spillAndFinish(20, 100, 80);
+        b.spillAndFinish(80, 0, 0);
+    });
+    a.waitSynced();
+    b.waitSynced();
+    r.execute([&]
+    {
+        EXPECT_EQ(outer->allocated, 100);
+    });
+    EXPECT_EQ(a.spillCount(), 2);
+    EXPECT_EQ(a.lastSpillAtLeast(), 30);
+    EXPECT_EQ(b.spillCount(), 0);
+    r.expectSpillState({qa, inner, fair, outer, &t.scheduler}, 80, 50, 30);
+    r.expectSpillState({qb}, 0, 0, 0);
+}
+
+
+TEST(SchedulerSpaceShared, SpillRemovalSettlesOutstandingWithZeroReclaimable)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -1187,24 +1270,171 @@ TEST(SchedulerSpaceShared, SpillGateReopensWhenVictimRemoved)
     r.registerResource();
     r.setSoftLimit(limit, 5000);
 
-    SpillableAllocation b(queue, "b", 7000); // will be signaled after the victim disappears
+    SpillableAllocation b(queue, "b", 7000);
 
     {
         SpillableAllocation a(queue, "a", 8000);
         a.reportReclaimable(8000);
-        a.waitSpills(1);
-        EXPECT_EQ(a.lastSpillAtLeast(), 10000); // need = allocated(15000) - soft(5000)
-
-        b.reportReclaimable(7000); // gate is held by `a`: no signal for `b`
         r.sync();
-        EXPECT_EQ(b.spillCount(), 0u);
-        // `a` is destroyed here without ever replying — the removal is the implicit reply.
+        EXPECT_EQ(a.spillCount(), 1);
+        EXPECT_EQ(a.lastSpillAtLeast(), 8000);
+
+        b.reportReclaimable(7000);
+        r.sync();
+        EXPECT_EQ(b.spillCount(), 1u);
+        EXPECT_EQ(b.lastSpillAtLeast(), 2000);
+        a.reportReclaimable(0);
+        r.expectSpillState({queue, limit, &t.scheduler}, 7000, 5000, 10000);
+        a.setSize(0);
+        r.expectSpillState({queue, limit, &t.scheduler}, 7000, 5000, 10000);
     }
 
-    b.waitSpills(1);
-    EXPECT_EQ(b.lastSpillAtLeast(), 2000); // need = allocated(7000) - soft(5000)
+    r.expectSpillState({queue, limit, &t.scheduler}, 7000, 5000, 2000);
+    EXPECT_EQ(b.spillCount(), 1u);
 }
 
+
+TEST(SchedulerSpaceShared, SpillNestedLimitsShareOutstandingCredits)
+{
+    for (bool outer_first : {false, true})
+    {
+        SCOPED_TRACE(outer_first);
+        SpaceSharedTest t;
+        SpaceSharedResourceHolder r(t);
+        auto * outer = r.addLimit("/", 100000);
+        auto * outer_fair = r.addFair("/fair", outer);
+        auto * inner = r.addLimit("/fair/limit", 100000, outer_fair);
+        auto * inner_fair = r.addFair("/fair/limit/fair", inner);
+        auto * queue = r.addQueueUnder("/fair/limit/fair/queue", inner_fair);
+        r.registerResource();
+
+        SpillableAllocation a(queue, "a", 8000);
+        a.reportReclaimable(8000);
+        r.sync();
+
+        r.execute([&]
+        {
+            auto expect_credit = [&](ResourceCost outstanding)
+            {
+                for (auto * node : std::initializer_list<ISpaceSharedNode *>{queue, inner_fair, inner, outer_fair, outer, &t.scheduler})
+                {
+                    SCOPED_TRACE(node->getPath());
+                    EXPECT_EQ(node->reclaimable, 8000);
+                    EXPECT_EQ(node->available_reclaimable, 8000 - outstanding);
+                    EXPECT_EQ(node->spill_outstanding, outstanding);
+                }
+            };
+
+            (outer_first ? outer : inner)->updateSoftLimit(6000);
+            EXPECT_EQ(a.spillCount(), 1);
+            EXPECT_EQ(a.lastSpillAtLeast(), 2000);
+            expect_credit(2000);
+
+            (outer_first ? inner : outer)->updateSoftLimit(5000);
+            EXPECT_EQ(a.spillCount(), 2);
+            EXPECT_EQ(a.lastSpillAtLeast(), 1000);
+            expect_credit(3000);
+        });
+
+        a.setSize(6000);
+        a.finishSpill(3000, 6000);
+        r.expectSpillState({queue, inner_fair, inner, outer_fair, outer, &t.scheduler}, 6000, 5000, 1000);
+        EXPECT_EQ(a.spillCount(), 3);
+        EXPECT_EQ(a.lastSpillAtLeast(), 1000);
+    }
+}
+
+TEST(SchedulerSpaceShared, SpillSkipsFullyCommittedSubtree)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    auto * limit = r.addLimit("/", 100000);
+    auto * fair = r.addFair("/fair", limit);
+    auto * nested = r.addFair("/fair/nested", fair);
+    auto * q1 = r.addQueueUnder("/fair/nested/q1", nested);
+    auto * q2 = r.addQueueUnder("/fair/q2", fair);
+    r.registerResource();
+
+    SpillableAllocation a(q1, "a", 8000);
+    SpillableAllocation b(q2, "b", 5000);
+    a.reportReclaimable(2000);
+    b.reportReclaimable(5000);
+    r.sync();
+    r.setSoftLimit(limit, 10000);
+
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 2000);
+    EXPECT_EQ(b.spillCount(), 1);
+    EXPECT_EQ(b.lastSpillAtLeast(), 1000);
+    r.expectSpillState({q1, nested}, 2000, 0, 2000);
+    r.expectSpillState({q2}, 5000, 4000, 1000);
+    r.expectSpillState({fair, limit, &t.scheduler}, 7000, 4000, 3000);
+    r.execute([&]
+    {
+        String details;
+        EXPECT_FALSE(q1->isReclaimable());
+        EXPECT_FALSE(nested->isReclaimable());
+        EXPECT_EQ(limit->selectAllocationToSpill(1, details), &b);
+    });
+
+    a.setSize(0);
+    r.expectSpillState({q1, nested}, 0, 0, 2000);
+    r.expectSpillState({fair, limit, &t.scheduler}, 5000, 4000, 3000);
+    a.finishSpill(2000, 0);
+    r.expectSpillState({q1, nested}, 0, 0, 0);
+    r.expectSpillState({fair, limit, &t.scheduler}, 5000, 4000, 1000);
+    EXPECT_EQ(b.spillCount(), 1);
+}
+
+TEST(SchedulerSpaceShared, SpillUnchangedReclaimableCompletionAndRemoval)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    auto * limit = r.addLimit("/", 100000);
+    auto * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    SpillableAllocation b(queue, "b", 6000);
+    b.reportReclaimable(6000);
+    {
+        SpillableAllocation a(queue, "a", 8000);
+        a.reportReclaimable(8000);
+        r.execute([&]
+        {
+            EXPECT_EQ(queue->requestSpill(a, 3000), 3000);
+        });
+        r.expectSpillState({queue, limit, &t.scheduler}, 14000, 11000, 3000);
+
+        a.finishSpill(1000, 8000);
+        r.expectSpillState({queue, limit, &t.scheduler}, 14000, 12000, 2000);
+        r.execute([&]
+        {
+            a.finishSpill(500, 8000);
+            a.finishSpill(1500, 8000);
+        });
+        r.expectSpillState({queue, limit, &t.scheduler}, 14000, 14000, 0);
+
+        r.execute([&]
+        {
+            EXPECT_EQ(queue->requestSpill(a, 9000), 8000);
+            EXPECT_EQ(queue->requestSpill(a, 1000), 0);
+            EXPECT_EQ(a.spillCount(), 2);
+            EXPECT_EQ(a.lastSpillAtLeast(), 8000);
+        });
+        r.expectSpillState({queue, limit, &t.scheduler}, 14000, 6000, 8000);
+        a.finishSpill(8000, 8000);
+        r.expectSpillState({queue, limit, &t.scheduler}, 14000, 14000, 0);
+        r.execute([&]
+        {
+            EXPECT_EQ(queue->requestSpill(b, 2000), 2000);
+        });
+    }
+
+    r.expectSpillState({queue, limit, &t.scheduler}, 6000, 4000, 2000);
+    EXPECT_EQ(b.spillCount(), 1);
+    b.finishSpill(2000, 6000);
+    r.expectSpillState({queue, limit, &t.scheduler}, 6000, 6000, 0);
+}
 
 /// Concurrency stress for the reclaimable/spill machinery: many query threads churn allocation sizes and
 /// reclaimable reports across sibling queues while the workload sits around a small soft limit, so spill
@@ -1245,9 +1475,9 @@ TEST(SchedulerSpaceShared, ConcurrentSpillChurn)
                 a.reportReclaimable(6000);
                 // Reply together with a pending decrease (the deferred re-evaluation path), shrinking
                 // below the last report to exercise the clamp as well.
-                a.spillAndFinish(/*spilled_bytes=*/ 6000 + i, /*reclaimable_total=*/ 1500);
+                a.spillAndFinish(/*spilled_bytes=*/ 6000 + i, a.takeSpillRequest(), /*reclaimable_total=*/ 1500);
                 a.reportReclaimable(0);
-                a.finishSpill(1500); // a reply that changes nothing but reopens the gates
+                a.finishSpill(a.takeSpillRequest(), 1500);
                 total_spills += a.spillCount();
                 // Allocation destroyed here: exercises removal while possibly spill-signaled
             }
@@ -1281,6 +1511,9 @@ TEST(SchedulerSpaceShared, ConcurrentSpillChurn)
     auto [reclaimable, allocated] = fut.get();
     EXPECT_EQ(reclaimable, 0);
     EXPECT_EQ(allocated, 0);
+    r.expectSpillState({limit, fair, &t.scheduler}, 0, 0, 0);
+    for (auto * queue : queues)
+        r.expectSpillState({queue}, 0, 0, 0);
 }
 
 

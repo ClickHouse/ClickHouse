@@ -37,7 +37,7 @@ private:
     RunningSetByPrecedence running_children; /// Children with currently running allocations
     IncreasingSetByPrecedence increasing_children; /// Children with pending increase request
     DecreasingList decreasing_children; /// Children with pending decrease request
-    ReclaimableSetByPrecedence reclaimable_children; /// Children with `reclaimable > 0`, ordered by precedence (spill victim = least precedence)
+    ReclaimableSetByPrecedence reclaimable_children; /// Children with `available_reclaimable > 0`, ordered by precedence.
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`
     ISpaceSharedNode * decrease_child = nullptr; /// Child that requested the current `decrease`

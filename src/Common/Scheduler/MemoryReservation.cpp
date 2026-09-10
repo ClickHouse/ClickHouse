@@ -266,39 +266,36 @@ ResourceCost MemoryReservation::takeSpillRequest(const ISpillable * spillable, R
     ResourceCost claim = std::min(spillable_bytes, enqueued_spill);
     enqueued_spill -= claim;
     ++spills_in_flight;
-    reclaimable_in_progress[spillable] = claim;
+    reclaimable_in_progress.insert(spillable);
     return claim;
 }
 
-void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost remaining_bytes, const MemoryTracker * memory_tracker)
+void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost settled_bytes, ResourceCost new_spillable_memory_bytes, const MemoryTracker * memory_tracker)
 {
+    if (new_spillable_memory_bytes < min_bytes_to_spill)
+        new_spillable_memory_bytes = 0;
+
     ResourceCost total = 0;
     {
         std::lock_guard lock(mutex);
         chassert(spills_in_flight > 0);
         --spills_in_flight;
 
-        ResourceCost claim = 0;
-        if (auto it = reclaimable_in_progress.find(spillable); it != reclaimable_in_progress.end())
-        {
-            claim = it->second;
-            reclaimable_in_progress.erase(it);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No in progress spilling request");
+        chassert(reclaimable_in_progress.contains(spillable));
+        reclaimable_in_progress.erase(spillable);
 
         auto & entry = reclaimable[spillable];
-        reclaimable_total = reclaimable_total - entry + remaining_bytes;
-        entry = remaining_bytes;
+        reclaimable_total = reclaimable_total - entry + new_spillable_memory_bytes;
+        entry = new_spillable_memory_bytes;
         total = reclaimable_total;
         reclaimable_increment.changeTo(total);
 
-        enqueued_spill -= claim;
         reported_reclaimable = reclaimable_total;
     }
 
-    queue.finishSpill(*this, total);
+    /// Note, may block
     syncWithMemoryTracker(memory_tracker);
+    queue.finishSpill(*this, settled_bytes, total);
 }
 
 void MemoryReservation::throwIfNeeded()
@@ -333,10 +330,10 @@ void MemoryReservation::killAllocation(const std::exception_ptr & reason)
     cv.notify_all(); // notify syncWithMemoryTracker
 }
 
-void MemoryReservation::spillAllocation(ResourceCost at_least_bytes)
+void MemoryReservation::spillAllocation(ResourceCost additional_bytes)
 {
     std::lock_guard lock(mutex);
-    enqueued_spill = at_least_bytes;
+    enqueued_spill += additional_bytes;
 }
 
 void MemoryReservation::increaseApproved(const IncreaseRequest & increase)

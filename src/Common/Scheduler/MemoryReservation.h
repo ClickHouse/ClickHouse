@@ -67,7 +67,7 @@ public:
     void removeReclaimable(const ISpillable * spillable);
 
     [[nodiscard]] ResourceCost takeSpillRequest(const ISpillable * spillable, ResourceCost spillable_bytes);
-    void finishSpill(const ISpillable * spillable, ResourceCost remaining_bytes, const MemoryTracker * memory_tracker);
+    void finishSpill(const ISpillable * spillable, ResourceCost settled_bytes, ResourceCost new_spillable_memory_bytes, const MemoryTracker * memory_tracker);
 
 private:
     void throwIfNeeded();
@@ -80,7 +80,7 @@ private:
 
     // Interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override;
-    void spillAllocation(ResourceCost at_least_bytes) override;
+    void spillAllocation(ResourceCost additional_bytes) override;
     void increaseApproved(const IncreaseRequest & increase) override;
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;
@@ -120,7 +120,8 @@ private:
 
     /// Reclaimable bytes per spillable object
     std::unordered_map<const ISpillable *, ResourceCost> reclaimable;
-    std::unordered_map<const ISpillable *, ResourceCost> reclaimable_in_progress;
+    /// Map of in progress objects, to avoid spilling them again (since multiple processors can share the same spilling object)
+    std::unordered_set<const ISpillable *> reclaimable_in_progress;
     /// Sum of the map values
     ResourceCost reclaimable_total = 0;
     /// Last total sent to the scheduler (small updates are not sent)

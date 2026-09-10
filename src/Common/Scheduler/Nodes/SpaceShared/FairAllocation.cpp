@@ -137,11 +137,7 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
         else
             update.resetDecrease();
     }
-    // Membership in `reclaimable_children` follows `from_child.reclaimable`. Re-keying of an
-    // existing member on a usage-key change is handled inside `updateKey`; this only adds/removes members
-    // (including a pure `reclaimable_delta` update, which does not touch `increase`/`decrease` and so does
-    // not reach `updateKey`). `from_child.reclaimable` is already final here (the child applied its delta
-    // before propagating). The usage key is valid because `reclaimable > 0` implies a running child.
+    // Availability updates can change membership without changing the usage key.
     syncReclaimableMembership(from_child, update.detached == &from_child);
     if (parent && update)
         propagate(std::move(update));
@@ -266,7 +262,7 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
 
 void FairAllocation::syncReclaimableMembership(ISpaceSharedNode & from_child, bool detach_child)
 {
-    bool should_be_member = !detach_child && from_child.reclaimable > 0;
+    bool should_be_member = !detach_child && from_child.available_reclaimable > 0;
     bool is_member = from_child.isReclaimable();
     if (should_be_member && !is_member)
         reclaimable_children.insert(from_child); // Uses the child's current (valid) usage key

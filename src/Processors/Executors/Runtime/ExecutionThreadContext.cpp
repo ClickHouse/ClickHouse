@@ -83,15 +83,23 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                     if (auto spill_request = reservation->takeSpillRequest(spillable, memory.spillable_memory_bytes))
                     {
                         auto * memory_tracker = process_list_element->getMemoryTracker();
-                        reservation->finishSpill(spillable, 0, memory_tracker);
                         const auto & logger = getLogger("Scheduler");
 
-                        LOG_TRACE(logger, "Spilling {}, of {} (tracked {})", formatReadableSizeWithBinarySuffix(spill_request), formatReadableSizeWithBinarySuffix(memory.spillable_memory_bytes), formatReadableSizeWithBinarySuffix(memory_tracker->get()));
+                        LOG_TRACE(logger, "Spilling {}, of {} (tracked {})",
+                            formatReadableSizeWithBinarySuffix(spill_request),
+                            formatReadableSizeWithBinarySuffix(memory.spillable_memory_bytes),
+                            formatReadableSizeWithBinarySuffix(memory_tracker->get()));
+
                         Stopwatch watch;
                         size_t spilled = spillable->spill(spill_request);
-                        auto remaining = spillable->getMemoryStats().spillable_memory_bytes;
+                        auto new_spillable_memory_bytes = spillable->getMemoryStats().spillable_memory_bytes;
+                        reservation->finishSpill(spillable, spill_request, new_spillable_memory_bytes, memory_tracker);
 
-                        LOG_TRACE(logger, "Spilled {}, remaining {}, tracked {} (took {} ms)", formatReadableSizeWithBinarySuffix(spilled), formatReadableSizeWithBinarySuffix(remaining), formatReadableSizeWithBinarySuffix(memory_tracker->get()), watch.elapsedMilliseconds());
+                        LOG_TRACE(logger, "Spilled {}, remaining {}, tracked {} (took {} ms)",
+                            formatReadableSizeWithBinarySuffix(spilled),
+                            formatReadableSizeWithBinarySuffix(new_spillable_memory_bytes),
+                            formatReadableSizeWithBinarySuffix(memory_tracker->get()),
+                            watch.elapsedMilliseconds());
                         ProfileEvents::increment(ProfileEvents::MemoryReservationSpilledBytes, spilled);
                         ProfileEvents::increment(ProfileEvents::MemoryReservationSpillingMicroseconds, watch.elapsedMicroseconds());
                     }
