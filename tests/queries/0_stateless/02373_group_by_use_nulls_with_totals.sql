@@ -105,3 +105,30 @@ FROM
 )
 WHERE k IS NULL
 SETTINGS group_by_use_nulls = 1;
+
+-- An alias referenced from HAVING or QUALIFY resolves against the Nullable key,
+-- so `toTypeName(k)` reports Nullable there as well; the pre-nullability
+-- spelling therefore matches no grouped row.
+SELECT number AS k, toTypeName(k) AS t, count()
+FROM numbers(3)
+GROUP BY ALL
+    WITH TOTALS
+HAVING t = 'Nullable(UInt64)'
+ORDER BY k
+SETTINGS group_by_use_nulls = 1;
+
+SELECT number AS k, toTypeName(k) AS t, count()
+FROM numbers(3)
+GROUP BY ALL
+    WITH TOTALS
+HAVING t = 'UInt64'
+ORDER BY k
+SETTINGS group_by_use_nulls = 1;
+
+SELECT number AS k, toTypeName(k) AS t, count() OVER () AS c
+FROM numbers(3)
+GROUP BY ALL
+    WITH TOTALS
+QUALIFY t = 'Nullable(UInt64)'
+ORDER BY k
+SETTINGS group_by_use_nulls = 1;
