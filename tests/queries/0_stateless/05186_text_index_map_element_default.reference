@@ -18,6 +18,16 @@
 -- equality with the String default keeps working
 1
 1
+-- an array needle cannot be served by a mapKeys probe
+0
+0
+1
+1
+1
+-- hasAny and hasAll reach the same substitution
+1
+1
+0
 -- a NULL default is not a match, so the index stays usable
 0
 0

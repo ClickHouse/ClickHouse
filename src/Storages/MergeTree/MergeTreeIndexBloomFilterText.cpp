@@ -617,6 +617,11 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             if (!map_keys_index && !map_values_index)
                 return false;
 
+            /// A `mapKeys` probe searches for the key, so it replaces the needle below; the array-consuming
+            /// atoms (`has` with an array, `hasAny`, `hasAll`, `multiSearchAny`) would read that key as an `Array`.
+            if (map_keys_index && value_data_type.isArray())
+                return false;
+
             /// `arrayElement` returns the map value type's default for a key the row does not have.
             if (mapElementDefaultBreaksIndex(function_name, predicate_node))
                 return false;
@@ -654,6 +659,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name));
             const auto map_values_index = getKeyIndex(fmt::format("mapValues({})", map_column_name));
             if (!map_keys_index && !map_values_index)
+                return false;
+
+            /// Same restriction as the `arrayElement` branch: the substituted key is not an `Array`.
+            if (map_keys_index && value_data_type.isArray())
                 return false;
 
             /// The subcolumn reads the map value type's default for an absent key, as `arrayElement` does.

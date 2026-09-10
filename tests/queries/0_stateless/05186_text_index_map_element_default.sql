@@ -45,7 +45,27 @@ SELECT '-- equality with the String default keeps working';
 SELECT count() FROM tab_str WHERE m['nokey'] = '';
 SELECT count() FROM tab_str WHERE m['nokey'] = '' SETTINGS ignore_data_skipping_indices = 'idx';
 
+SELECT '-- an array needle cannot be served by a mapKeys probe';
+SELECT count() FROM tab_str WHERE multiSearchAny(m['nokey'], CAST([], 'Array(String)')) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM tab_str WHERE multiSearchAny(m['nokey'], CAST([], 'Array(String)')) SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM tab_str WHERE multiSearchAny(m['nokey'], CAST([], 'Array(String)')) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab_str WHERE multiSearchAny(m['abc'], ['hello']) SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM tab_str WHERE multiSearchAny(m['abc'], ['hello']) SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM tab_str WHERE m['abc'] = 'hello' SETTINGS force_data_skipping_indices = 'idx';
+
 DROP TABLE tab_str;
+
+DROP TABLE IF EXISTS tab_arr;
+CREATE TABLE tab_arr (m Map(String, Array(String)), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192;
+INSERT INTO tab_arr VALUES (map('abc', ['hello']));
+
+SELECT '-- hasAny and hasAll reach the same substitution';
+SELECT count() FROM tab_arr WHERE hasAny(m['abc'], ['hello']);
+SELECT count() FROM tab_arr WHERE hasAll(m['abc'], ['hello']);
+SELECT count() FROM tab_arr WHERE hasAny(m['nokey'], CAST([], 'Array(String)'));
+
+DROP TABLE tab_arr;
 
 DROP TABLE IF EXISTS tab_null;
 CREATE TABLE tab_null (m Map(String, Nullable(String)), INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0))
