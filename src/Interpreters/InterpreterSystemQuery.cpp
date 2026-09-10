@@ -1754,20 +1754,9 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         info.path = query.replica_zk_path;
         info.replica_name = query.replica;
 
-        /// There is no local StorageReplicatedMergeTree for this table (that's the whole point of this variant),
-        /// so the zero-copy lock roots have to be reconstructed on a best-effort basis; see the function's own
-        /// comment for what is exact vs. assumed. Read before dropReplica() removes /table_shared_id.
-        auto zero_copy_locks_roots = StorageReplicatedMergeTree::getZeroCopyLockPathsForOrphanReplicaDrop(zookeeper, info, getContext(), log);
-
+        auto zero_copy_locks_roots = StorageReplicatedMergeTree::getZeroCopyLockRootsForOrphanReplicaDrop(zookeeper, info, getContext(), log);
         bool last_replica_dropped = StorageReplicatedMergeTree::dropReplica(zookeeper, info, log);
-
-        /// The dropped replica is dead (or the active-replica check above would have refused), so it will never
-        /// run its own unlockSharedData(...) and release the zero-copy locks it took on its parts. Do it here
-        /// instead, so a live replica's own unlockSharedDataByID(...) doesn't see a phantom lock and refuse to
-        /// free blobs it legitimately owns alone.
-        StorageReplicatedMergeTree::removeReplicaZeroCopyLocks(zookeeper, zero_copy_locks_roots, query.replica, log);
-        if (last_replica_dropped)
-            StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zookeeper, zero_copy_locks_roots, log);
+        StorageReplicatedMergeTree::releaseZeroCopyLocksOfDroppedReplica(zookeeper, info, zero_copy_locks_roots, last_replica_dropped, log);
 
         LOG_INFO(log, "Dropped replica {}", remote_replica_path);
     }

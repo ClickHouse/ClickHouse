@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <remote_fs_zero_copy_zookeeper_path>/clickhouse/{zc_cluster}/zero_copy</remote_fs_zero_copy_zookeeper_path>
+    </merge_tree>
+</clickhouse>
