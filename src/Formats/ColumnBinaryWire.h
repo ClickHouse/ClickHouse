@@ -231,6 +231,22 @@ struct ColDescriptor
 };
 static_assert(sizeof(ColDescriptor) == COL_DESC_BYTES);
 
+/// Alignment padding produced by the layout pass, as (offset, length) pairs.
+/// `writeColData` never writes these bytes - it only fills the areas the descriptors
+/// point at - so a writer serializing into a buffer it did not zero has to zero them
+/// itself, or uninitialized memory leaks into the frame. Collecting the exact ranges
+/// lets that writer zero a few bytes per column instead of the whole frame.
+using PaddingGaps = std::vector<std::pair<uint64_t, uint64_t>>;
+
+/// Round `cursor` up to `align` (a power of two), recording the skipped bytes as a gap.
+inline uint64_t alignWriteCursor(uint64_t cursor, uint64_t align, PaddingGaps * gaps)
+{
+    uint64_t aligned = (cursor + align - 1ull) & ~(align - 1ull);
+    if (gaps && aligned != cursor)
+        gaps->emplace_back(cursor, aligned - cursor);
+    return aligned;
+}
+
 // The wire descriptor's own offsets/sizes are uint64_t, but element/row counts are threaded
 // through the recursive size/write/read helpers below as uint32_t (row counts realistically
 // don't exceed 4 billion). A flattened Array(T)'s total nested element count is a different
@@ -482,7 +498,8 @@ inline uint64_t buildColDescriptor(
     bool is_nullable,
     uint32_t num_rows,
     uint64_t write_cursor,
-    ColDescriptor & desc)
+    ColDescriptor & desc,
+    PaddingGaps * gaps = nullptr)
 {
     // COL_COMPLEX (Array/Tuple) carries its own top-level null map (reserved below,
     // guarded by is_nullable); unwrap here so the Variant/Array/Tuple dispatch below
@@ -514,11 +531,11 @@ inline uint64_t buildColDescriptor(
         desc.null_offset = write_cursor;
         write_cursor += num_rows;
 
-        write_cursor = (write_cursor + 3ull) & ~3ull;
+        write_cursor = alignWriteCursor(write_cursor, 4ull, gaps);
         desc.offsets_offset = write_cursor;
         write_cursor += num_rows * sizeof(uint32_t);
 
-        write_cursor = (write_cursor + 3ull) & ~3ull;
+        write_cursor = alignWriteCursor(write_cursor, 4ull, gaps);
         desc.data_offset = write_cursor;
 
         // Count non-empty sub-variants.
@@ -539,7 +556,7 @@ inline uint64_t buildColDescriptor(
                 continue;
             ColDescriptor inner_desc{};
             uint32_t sub_rows = checkFitsUint32(sub.size(), "Variant sub-column row count");
-            write_cursor = buildColDescriptor(&sub, false, false, sub_rows, write_cursor, inner_desc);
+            write_cursor = buildColDescriptor(&sub, false, false, sub_rows, write_cursor, inner_desc, gaps);
         }
 
         desc.data_size = write_cursor - desc.data_offset;
@@ -575,12 +592,12 @@ inline uint64_t buildColDescriptor(
         desc.offsets_offset = write_cursor;
         write_cursor += static_cast<uint64_t>(num_rows) * idx_elem_sz;
 
-        write_cursor = (write_cursor + 3ull) & ~3ull;
+        write_cursor = alignWriteCursor(write_cursor, 4ull, gaps);
         desc.data_offset = write_cursor;
         write_cursor += 4u + 4u + COL_DESC_BYTES; // dict_row_count + (index_elem_width+pad) + dict_desc
 
         ColDescriptor dict_desc{};
-        write_cursor = buildColDescriptor(&dict_col, false, false, dict_rows, write_cursor, dict_desc);
+        write_cursor = buildColDescriptor(&dict_col, false, false, dict_rows, write_cursor, dict_desc, gaps);
 
         desc.data_size = write_cursor - desc.data_offset;
         return write_cursor;
@@ -602,7 +619,7 @@ inline uint64_t buildColDescriptor(
             desc.null_offset = 0;
         }
 
-        write_cursor = (write_cursor + 7ull) & ~7ull;
+        write_cursor = alignWriteCursor(write_cursor, 8ull, gaps);
         desc.data_offset = write_cursor;
 
         const IColumn & nested = arr_col->getData();
@@ -624,7 +641,7 @@ inline uint64_t buildColDescriptor(
         {
             desc.null_offset = write_cursor;
             write_cursor += num_rows;
-            write_cursor = (write_cursor + 7ull) & ~7ull; // realign after null map
+            write_cursor = alignWriteCursor(write_cursor, 8ull, gaps); // realign after null map
         }
         else
         {
@@ -659,7 +676,7 @@ inline uint64_t buildColDescriptor(
             desc.null_offset = 0;
         }
 
-        write_cursor = (write_cursor + 7ull) & ~7ull;
+        write_cursor = alignWriteCursor(write_cursor, 8ull, gaps);
         desc.offsets_offset = write_cursor;
         write_cursor += (num_rows + 1u) * sizeof(uint64_t);
 
@@ -690,7 +707,7 @@ inline uint64_t buildColDescriptor(
     {
         desc.null_offset = write_cursor;
         write_cursor += num_rows;
-        write_cursor = (write_cursor + 3ull) & ~3ull; // 4-byte align data after null map
+        write_cursor = alignWriteCursor(write_cursor, 4ull, gaps); // 4-byte align data after null map
     }
     else
     {

@@ -163,6 +163,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     }
 
     std::vector<ColumnBinaryWire::ColDescriptor> descs(num_cols);
+    ColumnBinaryWire::PaddingGaps gaps;
     for (uint32_t i = 0; i < num_cols; ++i)
     {
         const IColumn & raw_col = *chunk.getColumns()[i];
@@ -173,7 +174,7 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
         checkColumnStructure(i, *actual);
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : num_rows;
-        cursor = ColumnBinaryWire::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, descs[i]);
+        cursor = ColumnBinaryWire::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, descs[i], &gaps);
     }
 
     // Get write destination: use the pre-allocated region in out when available,
@@ -191,12 +192,14 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     else
     {
         // Unlike tmp_buf (std::vector::resize value-initializes to 0), the
-        // WriteBuffer's internal buffer is not zeroed. Alignment padding gaps
-        // between COL_COMPLEX/COL_VARIANT sub-blocks are intentionally never
-        // written by writeColData, so they must be zeroed here to avoid
-        // leaking uninitialized memory into the output stream.
+        // WriteBuffer's internal buffer is not zeroed. Every byte a descriptor
+        // points at is overwritten below, so the only bytes that would leak
+        // uninitialized memory are the alignment padding gaps writeColData
+        // never touches - and the layout pass recorded exactly those. Zeroing
+        // them instead of the whole frame keeps this to a few bytes per column.
         buf = reinterpret_cast<uint8_t *>(out.position());
-        std::memset(buf, 0, cursor);
+        for (const auto & [gap_offset, gap_size] : gaps)
+            std::memset(buf + gap_offset, 0, gap_size);
     }
 
     // Write header and descriptor table.
