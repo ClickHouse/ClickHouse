@@ -430,7 +430,7 @@ enum class FwhtKernel
     Avx2,
 };
 
-/// Read the kernel choice once from CLICKHOUSE_RHT_KERNEL (default: NEON on AArch64).
+/// Read the kernel choice once from CLICKHOUSE_RHT_KERNEL (default: NEON on AArch64, AVX2 on x86 with AVX2 support).
 inline FwhtKernel selectKernel()
 {
     static const FwhtKernel kernel = []
