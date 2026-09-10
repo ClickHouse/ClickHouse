@@ -192,7 +192,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
     const String & name,
     NullsAction action,
-    const DataTypes & types_without_low_cardinality,
+    const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
     AggregateFunctionStateVariant state_variant,
@@ -200,6 +200,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
     bool allow_skipping_variant_nulls,
     const Settings * settings) const
 {
+    /// The types coming from `get` are already free of `LowCardinality`, but a combinator can reintroduce it
+    /// in its nested argument types (e.g. `-Merge` over a declared
+    /// `AggregateFunction(argMax, LowCardinality(String), DateTime)` state), and an aggregate function is
+    /// always instantiated with `LowCardinality` stripped from its arguments.
+    auto types_without_low_cardinality = convertLowCardinalityTypesToNested(argument_types);
+
     /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
     /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
     /// they must handle the nullability themselves.

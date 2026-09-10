@@ -141,10 +141,14 @@ private:
     /// `AggregateFunction(f, Variant(...))` state type): if set, the nested function is resolved through the
     /// Variant adapter so such states round-trip; if not, the Variant is passed to the nested function as-is
     /// (which keeps the adapter as the outermost wrapper on the forward path, where it is applied by `get`).
+    /// `LowCardinality` is stripped from the argument types here as well as in `get`: a combinator can
+    /// reintroduce it in its nested argument types (e.g. `-Merge` over a declared
+    /// `AggregateFunction(argMax, LowCardinality(String), DateTime)` state), and an aggregate function is
+    /// always instantiated with `LowCardinality` stripped, so the nested resolution must strip it again.
     AggregateFunctionPtr getWithoutVariantAdapter(
         const String & name,
         NullsAction action,
-        const DataTypes & types_without_low_cardinality,
+        const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant,
