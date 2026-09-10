@@ -219,6 +219,36 @@ TEST(ReadPlan, ExtendGrowsRightAndDropsOverhang)
     EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(3)), nullptr);
 }
 
+/// `CacheTier` does not identify a tier: a stacked cache-on-cache chain has two `FilesystemCache`
+/// layers. Pairing held tiers to resolved tiers by the enum folded both onto the FIRST resolved entry,
+/// so the second layer appended moved-from cells (null `reader`) and its own cells were dropped.
+TEST(ReadPlan, StackedSameTierLayersKeepTheirOwnCells)
+{
+    ReadPlan plan;
+    plan.reset(0);
+    /// Span [0,2): both layers miss.
+    std::vector<CacheResolution> fast_first;
+    fast_first.push_back(miss({0, 2}));
+    std::vector<CacheResolution> slow_first;
+    slow_first.push_back(miss({0, 2}));
+    plan.extend(2, tiers(tier(CacheTier::FilesystemCache, std::move(fast_first)),
+                         tier(CacheTier::FilesystemCache, std::move(slow_first))));
+
+    /// Span [2,4): the fast layer now holds [2,3), the slow layer holds [3,4).
+    std::vector<CacheResolution> fast_second;
+    fast_second.push_back(hit({2, 1}));
+    std::vector<CacheResolution> slow_second;
+    slow_second.push_back(hit({3, 1}));
+    plan.extend(4, tiers(tier(CacheTier::FilesystemCache, std::move(fast_second)),
+                         tier(CacheTier::FilesystemCache, std::move(slow_second))));
+
+    EXPECT_EQ(plan.resolvedEnd(), 4u);
+    /// The fast layer's cell serves 2 ...
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(2)), nullptr);
+    /// ... and the slow layer keeps its OWN cell, so 3 is served rather than re-fetched.
+    EXPECT_NE(as<ReadPlan::ServeFromReader>(plan.runAt(3)), nullptr);
+}
+
 TEST(ReadPlan, FetchExtendsLeftToFillFrontier)
 {
     /// One incremental miss segment [0,4). A read that opens mid-segment must fetch from the segment's

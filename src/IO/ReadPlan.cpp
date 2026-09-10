@@ -143,16 +143,17 @@ void ReadPlan::extend(size_t new_end, VectorWithMemoryTracking<PlanTier> resolve
     }
     else
     {
-        /// Match resolved tiers to held tiers by `CacheTier`; skip cells before the held end (overhang
-        /// the next `resolve` re-returns).
-        for (auto & held : tiers)
+        /// Pair by chain position: both vectors come from one ordered walk of the same chain. `CacheTier`
+        /// does NOT identify a tier - a stacked cache-on-cache chain repeats it, and matching on it would
+        /// fold one entry into two held tiers, leaving the second with moved-from (null) cells.
+        chassert(resolved.size() == tiers.size());
+        for (size_t i = 0; i < tiers.size(); ++i)
         {
-            auto it = std::find_if(resolved.begin(), resolved.end(),
-                [&](const PlanTier & r) { return r.tier == held.tier; });
-            if (it == resolved.end())
-                continue;
+            auto & held = tiers[i];
+            chassert(resolved[i].tier == held.tier);
+            /// Skip cells before the held end - overhang the next `resolve` re-returns.
             size_t held_end = held.cells.empty() ? span_start : held.cells.back().range.end();
-            for (auto & cell : it->cells)
+            for (auto & cell : resolved[i].cells)
             {
                 if (cell.range.offset < held_end)
                     continue;
