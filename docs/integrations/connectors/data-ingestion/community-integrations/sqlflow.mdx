@@ -22,7 +22,7 @@ This page covers the ClickHouse sink: connecting to ClickHouse Cloud and self-ho
 
 ## Prerequisites {#prerequisites}
 
-- sqlflow **v1.0.6** or later.
+- sqlflow **v1.1.0** or later.
 - ClickHouse Cloud, or self-hosted ClickHouse. Everything on this page was run against Cloud 26.2 and self-hosted 26.8; no minimum below those has been established.
 - A Kafka broker the pipeline can reach, for the Kafka source used in the example. The WebSocket and webhook sources need no broker.
 - Python 3 with the `confluent-kafka` package (`pip install confluent-kafka`), only for the script in the example that publishes the sample data to Kafka. sqlflow itself needs no Python.
@@ -256,7 +256,7 @@ docker run --rm \
   -v "$(pwd)":/conf \
   -e SQLFLOW_CLICKHOUSE_DSN \
   -e SQLFLOW_KAFKA_BROKERS=<broker address as advertised inside that network> \
-  turbolytics/sql-flow:v1.0.6 \
+  turbolytics/sql-flow:v1.1.0 \
   run /conf/taxi.yml --max-msgs=1000000
 ```
 
@@ -336,18 +336,51 @@ GROUP BY lang ORDER BY posts DESC LIMIT 5;
 
 sqlflow hands each batch to ClickHouse as rows built from the Arrow table DuckDB produces, so what matters is the Arrow type each SQL column ends up with. Cast in the handler SQL to control it.
 
-| DuckDB SQL type (cast to)              | ClickHouse column types that accept it |
-| -------------------------------------- | -------------------------------------- |
-| `BOOLEAN`                              | `Bool`, `UInt8` |
-| `TINYINT` … `BIGINT`, `UTINYINT` … `UBIGINT` | The matching `Int8`…`Int64` / `UInt8`…`UInt64` |
-| `FLOAT`, `DOUBLE`                      | `Float32`, `Float64` |
-| `VARCHAR`                              | `String`, `LowCardinality(String)`, `Enum` (by name), `FixedString` |
-| `TIMESTAMP`, `TIMESTAMPTZ`             | `DateTime`, `DateTime64(n)` |
-| `DATE`                                 | `Date`, `Date32` |
-| `BLOB`                                 | `String` |
-| `VARCHAR` holding the textual form     | `UUID`, `IPv4`, `Decimal(P, S)`. The driver parses the string |
-| `LIST` of any of the above, nested     | `Array(T)`, `Array(Array(T))` |
-| `NULL` in any column                   | `NULL` in a `Nullable(T)` column. In any other column, the type's zero value: `0`, `''`, `1970-01-01 00:00:00`, `false`. A `DEFAULT` expression on the column is **not** evaluated, because sqlflow names every column it produces in the `INSERT`; supply the default in the handler SQL with `coalesce()`, or make the column `Nullable`. A null list becomes `[]`. |
+Every row below is generated from the engine's type matrix and proven by an integration test that writes the value, reads it back through the server, and compares. The matrix and the test live in the [sqlflow repository](https://github.com/turbolytics/sql-flow/blob/main/docs/coverage/clickhouse-types.mdx). Parameterised column types are listed as the instance the test wrote.
+
+| DuckDB SQL type (cast to) | ClickHouse column types that accept it | Notes |
+| --- | --- | --- |
+| `BOOLEAN` | `Bool`, `UInt8` |  |
+| `TINYINT` | `Int8` |  |
+| `SMALLINT` | `Int16` |  |
+| `INTEGER` | `Int32` |  |
+| `BIGINT` | `Int64` |  |
+| `UTINYINT` | `UInt8` |  |
+| `USMALLINT` | `UInt16` |  |
+| `UINTEGER` | `UInt32` |  |
+| `UBIGINT` | `UInt64` |  |
+| `REAL` | `Float32` |  |
+| `DOUBLE` | `Float64` |  |
+| `VARCHAR`, `UUID`, `JSON` | `String`, `LowCardinality(String)`, `DateTime64(3)`, `Enum8('' = 0, 'a' = 1, 'b' = 2)`, `FixedString(36)`, `UUID`, `IPv4`, `Decimal(10, 2)` |  |
+| `BLOB`, `BIT`, `VARINT` | `String` |  |
+| `DATE` | `Date`, `Date32` |  |
+| `TIMESTAMP_S` | `DateTime` |  |
+| `TIMESTAMP_MS` | `DateTime64(3)` |  |
+| `TIMESTAMP` | `DateTime64(6)` |  |
+| `TIMESTAMP_NS` | `DateTime64(9)` |  |
+| `TIMESTAMPTZ` | `DateTime64(6)` | stored as the same UTC instant; the zone is dropped and the column's own zone governs rendering |
+| `BOOLEAN[]` | `Array(Bool)` |  |
+| `TINYINT[]` | `Array(Int8)` |  |
+| `SMALLINT[]` | `Array(Int16)` |  |
+| `INTEGER[]` | `Array(Int32)` |  |
+| `BIGINT[]` | `Array(Int64)` |  |
+| `UTINYINT[]` | `Array(UInt8)` |  |
+| `USMALLINT[]` | `Array(UInt16)` |  |
+| `UINTEGER[]` | `Array(UInt32)` |  |
+| `UBIGINT[]` | `Array(UInt64)` |  |
+| `REAL[]` | `Array(Float32)` |  |
+| `DOUBLE[]` | `Array(Float64)` |  |
+| `VARCHAR[]` | `Array(String)` |  |
+| `BLOB[]` | `Array(String)` |  |
+| `DATE[]` | `Array(Date32)` |  |
+| `TIMESTAMP_S[]` | `Array(DateTime)` |  |
+| `TIMESTAMP_MS[]` | `Array(DateTime64(3))` |  |
+| `TIMESTAMP[]` | `Array(DateTime64(6))` |  |
+| `TIMESTAMP_NS[]` | `Array(DateTime64(9))` |  |
+| `TIMESTAMPTZ[]` | `Array(DateTime64(6))` | stored as the same UTC instant; the zone is dropped and the column's own zone governs rendering |
+| `BIGINT[][]` | `Array(Array(Int64))` |  |
+| `NULL` in any column | the column's own type | the column type's zero value; the DEFAULT expression is not evaluated because every produced column is named in the INSERT |
+| `NULL` inside a `LIST` | the element's own type | the element type's zero value, because ClickHouse's Array(T) holds no nulls unless T is Nullable |
 
 Values are matched to columns **by name**, not by position.
 
@@ -368,9 +401,26 @@ If the field can be `NULL`, a `DateTime` column stores it as `1970-01-01 00:00:0
 `Decimal` columns accept the value as a **string**, not as a `DOUBLE`. `CAST(amount AS VARCHAR)` works; `CAST(amount AS DOUBLE)` fails the batch with `converting float64 to Decimal(10, 2) is unsupported`.
 </Note>
 
+### Unsupported {#unsupported}
+
+These fail the batch with `user.sink.type_unsupported` rather than reaching the table. Cast or flatten them in the handler SQL.
+
+- `DECIMAL(p, s)`, `HUGEINT`, `UHUGEINT`
+- `TIME`, `TIMETZ`
+- `TIME_NS`
+- `INTERVAL`
+- `DECIMAL(p, s)[]`, `HUGEINT[]`
+- `TIME[]`
+- `STRUCT(...)[]`
+- `INTEGER[3]`
+- `STRUCT(...)`
+- `MAP(K, V)`
+- `UNION(...)`
+- `ENUM`
+
 ## Known limits {#known-limits}
 
-- **Unsupported types:** `Map` and `Tuple`. A DuckDB `STRUCT` or `MAP` column fails the batch with `unsupported arrow type struct<…>`. Flatten it into scalar columns in the handler SQL, or serialise it with `to_json()` into a `String` column. Both work. `Nested` and `JSON` columns were not tested.
+- **Unsupported types:** listed under [Unsupported](#unsupported). `DECIMAL`, `STRUCT`, `MAP`, `TIME` and `INTERVAL` are the ones a handler reaches for. Each fails the batch with `user.sink.type_unsupported` before any row is written. Flatten a `STRUCT` or `MAP` into scalar columns in the handler SQL, or serialise it with `to_json()` into a `String` column. Cast a `DECIMAL` to `VARCHAR`. `Nested` columns were not tested.
 - **No table creation or schema evolution.** The table must exist, and a column the handler emits that the table lacks fails the batch (see [Troubleshooting](#troubleshooting)). Columns the handler omits take the table's `DEFAULT`.
 - **A `NULL` written to a non-`Nullable` column is stored as the type's zero value**, not as the column's `DEFAULT` expression, and no error is raised. See [Type mapping](#type-mapping) for the workaround.
 - **At-least-once delivery.** Kafka offsets are committed after the `INSERT` is acknowledged. A crash between the two replays the batch, so duplicates are possible. For a pipeline that writes one row per message, `ReplacingMergeTree` keyed on something that identifies the row removes them, as does an idempotent insert pattern. Do not apply that to an aggregate table fed by a tumbling window. See the next point.
