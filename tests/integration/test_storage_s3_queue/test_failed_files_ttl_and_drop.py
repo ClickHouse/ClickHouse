@@ -17,6 +17,18 @@ from helpers.s3_queue_common import (
 )
 
 
+# The lock value a manual drop writes is `manual_drop_failed:<command_id>`, and a waiter binds to that
+# id rather than to the lock node, so it can follow the command across the retries it may make. Tests
+# that play the winner by hand must therefore write a lock value of the same shape and publish markers
+# carrying the same id.
+TEST_DROP_COMMAND_ID = "11111111-2222-3333-4444-555555555555"
+TEST_DROP_LOCK_VALUE = f"manual_drop_failed:{TEST_DROP_COMMAND_ID}".encode()
+# A second, unrelated command. Used where a test hands the lock on to someone else: the point of those
+# tests is that the waiter must NOT follow a different command, which only holds if the id differs.
+OTHER_DROP_COMMAND_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+OTHER_DROP_LOCK_VALUE = f"manual_drop_failed:{OTHER_DROP_COMMAND_ID}".encode()
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -897,7 +909,7 @@ def test_drop_failed_files_loser_reconciles_cache(started_cluster):
       2. its materialized view is dropped, so nothing can re-fail the files and
          repopulate `/failed` behind our back;
       3. the test itself takes `<keeper_path>/cleanup_lock` with the winner's own
-         marker value `manual_drop_failed`, so `dropFailedFiles` finds the lock held
+         marker value `manual_drop_failed:<command_id>`, so `dropFailedFiles` finds the lock held
          and takes the loser branch (`EphemeralNodeHolder::tryCreate` fails ->
          `waitForConcurrentDropToComplete`);
       4. the test then plays the winner by hand: it deletes the `/failed` children
@@ -990,7 +1002,7 @@ def test_drop_failed_files_loser_reconciles_cache(started_cluster):
     # briefly takes and releases this same lock, so retry until it is ours.
     def take_cleanup_lock():
         try:
-            zk.create(cleanup_lock_path, b"manual_drop_failed", ephemeral=True)
+            zk.create(cleanup_lock_path, TEST_DROP_LOCK_VALUE, ephemeral=True)
             return True
         except NodeExistsError:
             return False
@@ -1120,7 +1132,7 @@ def _drive_loser_branch(
 
     def take_cleanup_lock():
         try:
-            zk.create(cleanup_lock_path, b"manual_drop_failed", ephemeral=True)
+            zk.create(cleanup_lock_path, TEST_DROP_LOCK_VALUE, ephemeral=True)
             return True
         except NodeExistsError:
             return False
@@ -1189,6 +1201,7 @@ def test_drop_failed_files_loser_succeeds_when_new_failures_arrive_during_drop(s
             f"{keeper_path}/last_drop_result",
             json.dumps(
                 {
+                    "command_id": TEST_DROP_COMMAND_ID,
                     "attempt_id": str(zk.exists(f"{keeper_path}/cleanup_lock").czxid),
                     "success": True,
                     "snapshot_size": len(failed_children),
@@ -1240,6 +1253,7 @@ def test_drop_failed_files_reports_partial_failure_to_losers(started_cluster):
             f"{keeper_path}/last_drop_result",
             json.dumps(
                 {
+                    "command_id": TEST_DROP_COMMAND_ID,
                     "attempt_id": str(zk.exists(f"{keeper_path}/cleanup_lock").czxid),
                     "success": False,
                     "snapshot_size": len(failed_children),
@@ -1262,7 +1276,11 @@ def test_drop_failed_files_reports_partial_failure_to_losers(started_cluster):
 
 
 def _hand_the_lock_to_a_later_attempt(zk, keeper_path, marker_payload=None):
-    """Atomically release this attempt's lock and give a different attempt the same path.
+    """Atomically release this command's lock and give a *different* command the same path.
+
+    The replacement lock carries `OTHER_DROP_COMMAND_ID`, not this command's id. That is what makes
+    these tests about an unrelated operation taking the path: were the id the same, the waiter would
+    correctly read it as its own command retrying and keep waiting.
 
     The interleaving under test is "the lock is released and re-acquired inside one poll interval",
     which looks timing-bound but need not be: a Keeper multi transaction makes the gap unobservable
@@ -1276,7 +1294,7 @@ def _hand_the_lock_to_a_later_attempt(zk, keeper_path, marker_payload=None):
 
     transaction = zk.transaction()
     transaction.delete(cleanup_lock_path)
-    transaction.create(cleanup_lock_path, b"manual_drop_failed", ephemeral=True)
+    transaction.create(cleanup_lock_path, OTHER_DROP_LOCK_VALUE, ephemeral=True)
     if marker_payload is not None:
         transaction.set_data(
             f"{keeper_path}/last_drop_result", json.dumps(marker_payload).encode()
@@ -1312,6 +1330,7 @@ def test_drop_failed_files_waiter_is_not_transferred_to_a_later_attempt(started_
             f"{keeper_path}/last_drop_result",
             json.dumps(
                 {
+                    "command_id": TEST_DROP_COMMAND_ID,
                     "attempt_id": str(zk.exists(f"{keeper_path}/cleanup_lock").czxid),
                     "success": True,
                     "snapshot_size": len(failed_children),
@@ -1359,6 +1378,7 @@ def test_drop_failed_files_waiter_does_not_adopt_a_later_attempts_verdict(starte
             f"{keeper_path}/last_drop_result",
             json.dumps(
                 {
+                    "command_id": TEST_DROP_COMMAND_ID,
                     "attempt_id": str(zk.exists(f"{keeper_path}/cleanup_lock").czxid),
                     "success": True,
                     "snapshot_size": len(failed_children),
@@ -1375,6 +1395,8 @@ def test_drop_failed_files_waiter_does_not_adopt_a_later_attempts_verdict(starte
             zk,
             keeper_path,
             marker_payload={
+                # The other command's own verdict - which is the point: it must not be adopted.
+                "command_id": OTHER_DROP_COMMAND_ID,
                 "attempt_id": "-1",
                 "success": False,
                 "snapshot_size": 99,
@@ -1388,3 +1410,160 @@ def test_drop_failed_files_waiter_does_not_adopt_a_later_attempts_verdict(starte
     )
 
     assert error is None, f"waiter adopted a later attempt's verdict or failed to fall back: {error}"
+
+
+def test_drop_failed_files_waiter_follows_its_command_across_a_retry(started_cluster):
+    """A waiter must keep waiting when the command it waits for retries, not give up on it.
+
+    `dropFailedFiles` retries the whole statement when an attempt loses its Keeper session, and each
+    attempt takes the lock again, which gives the lock node a new `czxid`. A waiter bound to that
+    `czxid` read the retry as "a different operation took the path", stopped waiting and evaluated at
+    once - at the moment the retry had just acquired the lock and deleted nothing, so `/failed` was at
+    its fullest - found no result under the id it was bound to, and threw. The retry then finished and
+    reported success: the winner succeeded while every waiter failed.
+
+    Binding to the command id instead makes a retry recognisable as the same statement. This test
+    drives exactly that sequence: the lock is released and retaken under the *same* command id while
+    `/failed` is still full, the waiter must not treat that as the end of the command, and it must
+    then accept the verdict the retry eventually publishes.
+
+    The `is_alive` window in the middle is the regression assertion, not a synchronisation device:
+    remaining blocked is a property that only exists over an interval, and the window spans ~20 of the
+    waiter's 100ms polls, so a waiter that gives up on the retry cannot slip through it.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_drop_retry_follow_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+    num_failing_files = 5
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,
+            "failed_files_ttl_sec": 0,
+            "tracked_files_limit": 0,
+        },
+    )
+
+    invalid_csv = b"not,valid,numbers\n"
+    for i in range(num_failing_files):
+        put_s3_file_content(started_cluster, f"{files_path}/failed_{i}.csv", invalid_csv)
+
+    create_mv(node, table_name, dst_table_name)
+
+    def failed_znodes():
+        result = node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    def wait_for(predicate, timeout_sec=120):
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.5)
+        return False
+
+    assert wait_for(
+        lambda: failed_znodes() >= num_failing_files
+    ), f"expected {num_failing_files} failed znodes, got {failed_znodes()}"
+
+    node.query(f"DROP TABLE {mv_name}")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def take_cleanup_lock():
+        try:
+            zk.create(cleanup_lock_path, TEST_DROP_LOCK_VALUE, ephemeral=True)
+            return True
+        except NodeExistsError:
+            return False
+
+    assert wait_for(
+        take_cleanup_lock, timeout_sec=60
+    ), "could not acquire cleanup_lock for the test"
+
+    drop_result = {}
+
+    def run_drop():
+        try:
+            node.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}")
+        except Exception as e:  # noqa: BLE001 - reported through the assertions below
+            drop_result["error"] = e
+
+    drop_thread = threading.Thread(target=run_drop)
+    drop_thread.start()
+    try:
+        waiting_message = (
+            f"{keeper_path}): Another replica is executing "
+            f"SYSTEM DROP S3QUEUE FAILED FILES"
+        )
+        assert wait_for(
+            lambda: node.contains_in_log(waiting_message)
+        ), "drop command did not reach the loser branch"
+
+        # The attempt loses its session and the statement retries: same command, new lock node, and
+        # `/failed` untouched because the new attempt has only just started. Done as one transaction so
+        # the waiter cannot observe the path empty and mistake that for the command finishing.
+        transaction = zk.transaction()
+        transaction.delete(cleanup_lock_path)
+        transaction.create(cleanup_lock_path, TEST_DROP_LOCK_VALUE, ephemeral=True)
+        results = transaction.commit()
+        assert all(
+            not isinstance(r, Exception) for r in results
+        ), f"the retry handoff transaction did not commit: {results}"
+
+        assert failed_znodes() == num_failing_files, (
+            "the retry must begin with /failed still full - otherwise this test would pass even for a "
+            "waiter that gave up and fell back to the emptiness check"
+        )
+
+        # The regression assertion: the waiter must still be waiting for its command.
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            assert drop_thread.is_alive(), (
+                "the waiter stopped waiting when its own command retried - it should have recognised "
+                "the same command id and kept waiting for the verdict still to come"
+            )
+            time.sleep(0.1)
+
+        # The retry now completes and publishes under the same command id.
+        for child in zk.get_children(failed_path):
+            zk.delete(f"{failed_path}/{child}")
+        zk.create(
+            f"{keeper_path}/last_drop_result",
+            json.dumps(
+                {
+                    "command_id": TEST_DROP_COMMAND_ID,
+                    "attempt_id": str(zk.exists(cleanup_lock_path).czxid),
+                    "success": True,
+                    "snapshot_size": num_failing_files,
+                    "deleted": num_failing_files,
+                    "error": "",
+                }
+            ).encode(),
+        )
+        zk.delete(cleanup_lock_path)
+    finally:
+        drop_thread.join(timeout=300)
+
+    assert not drop_thread.is_alive(), "drop command did not return after the retry published its result"
+    assert "error" not in drop_result, (
+        f"waiter rejected the verdict of the command it was waiting for: {drop_result.get('error')}"
+    )
+    assert failed_znodes() == 0, f"failed znodes remain: {failed_znodes()}"
+
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {dst_table_name}")

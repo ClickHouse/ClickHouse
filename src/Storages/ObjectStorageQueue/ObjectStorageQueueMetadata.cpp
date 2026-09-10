@@ -25,6 +25,7 @@
 #include <Interpreters/DDLTask.h>
 #include <shared_mutex>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
@@ -1769,10 +1770,26 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
     LOG_INFO(log, "Reconciled cache: removed {} Failed entries confirmed absent in Keeper", removed);
 }
 
+/// The cleanup lock's value tells a replica finding the lock held what is holding it. For a manual drop
+/// it is `manual_drop_failed:<command_id>`: the prefix distinguishes it from the background sweep's
+/// `background_cleanup`, and the id identifies the statement, so a waiter can tell one attempt of the
+/// command it waits for from a different command that happened to take the path next.
+static constexpr const char * LOCK_OPERATION_DROP_FAILED_PREFIX = "manual_drop_failed:";
+
+namespace
+{
+    /// The command id from a lock value, or empty when the value is not a manual drop's.
+    std::string extractDropCommandId(const std::string & lock_value)
+    {
+        const std::string_view prefix{LOCK_OPERATION_DROP_FAILED_PREFIX};
+        if (!lock_value.starts_with(prefix))
+            return {};
+        return lock_value.substr(prefix.size());
+    }
+}
+
 void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path)
 {
-    static constexpr const char * LOCK_OPERATION_DROP_FAILED = "manual_drop_failed";
-
     /// Lock is held by another process. Check if it's another dropFailedFiles invocation.
     /// When invoked via ON CLUSTER, multiple replicas attempt this concurrently;
     /// if another dropFailedFiles holds the lock, treat it as idempotent success.
@@ -1780,14 +1797,15 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
     /// so we must fail and let the user retry.
     try
     {
-        /// The `czxid` of the lock node observed here identifies the attempt this command waits on.
-        /// Keeper assigns a fresh one every time the path is created, and the path is reused by every
-        /// attempt, so it is the only thing that distinguishes them.
+        /// Bind to the command holding the lock, not to the lock node. A command retries by taking the
+        /// lock again, which gives the node a new `czxid`; binding to that would make every retry look
+        /// like a different operation and leave this waiter unable to accept the result of the very
+        /// command it is waiting for.
         Coordination::Stat lock_stat;
         std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path, &lock_stat);
-        const std::string waited_attempt_id = toString(lock_stat.czxid);
+        const std::string waited_command_id = extractDropCommandId(lock_value);
 
-        if (lock_value == LOCK_OPERATION_DROP_FAILED)
+        if (!waited_command_id.empty())
         {
             /// Another replica is executing the same operation. Wait for it to complete and take its
             /// verdict from the result it publishes, rather than from a wall-clock timeout that could be
@@ -1814,19 +1832,19 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
                 bool attempt_finished = false;
                 try
                 {
-                    /// Poll the lock. The attempt being waited on is over either when the lock is gone, or
-                    /// when the node at that path is no longer the one observed at entry: the path is
-                    /// reused, so a release and a re-acquisition inside one poll interval is invisible to
-                    /// a plain existence check. Continuing to wait in that case would silently transfer
-                    /// this command onto an attempt that started after it did and says nothing about it.
+                    /// Poll the lock. The command being waited on is over when the lock is gone, or when
+                    /// the value at that path names a different command - the path is reused, so a
+                    /// release and a re-acquisition inside one poll interval is invisible to a plain
+                    /// existence check, and continuing to wait would silently transfer this waiter onto
+                    /// an operation that started after it did and says nothing about it.
                     ///
-                    /// Who took the lock does not matter - another manual drop or the background sweep
-                    /// both mean the same thing here, that the attempt waited on has finished.
+                    /// The same command id means the command retried after losing its session. That is
+                    /// still the command being waited for, so keep waiting: its verdict is still coming.
                     Coordination::Stat poll_stat;
                     std::string poll_value;
                     if (!zk_client->tryGet(zookeeper_cleanup_lock_path, poll_value, &poll_stat))
                         attempt_finished = true;
-                    else if (toString(poll_stat.czxid) != waited_attempt_id)
+                    else if (extractDropCommandId(poll_value) != waited_command_id)
                         attempt_finished = true;
                 }
                 catch (const Coordination::Exception & poll_e)
@@ -1841,8 +1859,8 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
                     /// partially failed - so read the result it published.
                     size_t terminal_failed_count = 0;
                     if (verifyCleanupSucceeded(zk_client,
-                            fmt::format("Cleanup attempt finished after {}ms, verifying cleanup succeeded", (i + 1) * 100),
-                            waited_attempt_id, terminal_failed_count))
+                            fmt::format("Cleanup command finished after {}ms, verifying cleanup succeeded", (i + 1) * 100),
+                            waited_command_id, terminal_failed_count))
                         return;
 
                     throw Exception(ErrorCodes::KEEPER_EXCEPTION,
@@ -1872,7 +1890,7 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
             /// attribute no published result and go straight to what it can observe directly.
             size_t terminal_failed_count = 0;
             if (verifyCleanupSucceeded(zk_client, "Cleanup lock was released, verifying cleanup succeeded",
-                    /* waited_attempt_id */ "", terminal_failed_count))
+                    /* waited_command_id */ "", terminal_failed_count))
                 return;
 
             throw Exception(ErrorCodes::KEEPER_EXCEPTION,
@@ -1890,11 +1908,15 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
         "Please retry in a moment.");
 }
 void ObjectStorageQueueMetadata::publishDropResult(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
-    const std::string & attempt_id, bool success, size_t snapshot_size, size_t deleted, const std::string & error)
+    const std::string & command_id, const std::string & attempt_id,
+    bool success, size_t snapshot_size, size_t deleted, const std::string & error)
 {
     Poco::JSON::Object json;
-    /// A decimal string rather than a number: `czxid` is 64-bit and JSON numbers are not required to
-    /// carry that range exactly, so the identity comparison must not depend on how a parser rounds.
+    /// What a waiter matches on: stable for the whole statement, including across its retries.
+    json.set("command_id", command_id);
+    /// Which attempt of that statement produced the result. Kept for the writer-side ownership check and
+    /// for diagnosis; a decimal string rather than a number, because `czxid` is 64-bit and JSON numbers
+    /// are not required to carry that range exactly.
     json.set("attempt_id", attempt_id);
     json.set("success", success);
     json.set("snapshot_size", snapshot_size);
@@ -1911,7 +1933,7 @@ void ObjectStorageQueueMetadata::publishDropResult(const std::shared_ptr<ZooKeep
 }
 
 bool ObjectStorageQueueMetadata::verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
-    const std::string & waited_attempt_id, size_t & out_terminal_failed_count)
+    const std::string & waited_command_id, size_t & out_terminal_failed_count)
 {
     LOG_INFO(log, "{}", context_msg);
 
@@ -1922,18 +1944,19 @@ bool ObjectStorageQueueMetadata::verifyCleanupSucceeded(std::shared_ptr<ZooKeepe
     /// of terminal nodes it took when it started and is not responsible for files that fail afterwards,
     /// while `/failed` has other writers, so "not empty" says nothing about whether the winner succeeded.
     ///
-    /// The result is matched by attempt identity, not by "the marker moved since I started waiting".
-    /// Ordering cannot answer this: the lock path is reused, so a later and entirely unrelated attempt
-    /// publishes a newer result too, and adopting it would report a verdict about a cleanup this command
-    /// never waited for.
+    /// The result is matched by command identity, not by "the marker moved since I started waiting".
+    /// Ordering cannot answer this: the lock path is reused, so a later and entirely unrelated command
+    /// publishes a newer result too, and adopting it would report a verdict about a cleanup this waiter
+    /// never waited for. Nor can the attempt's `czxid` answer it, since the command it waits for may
+    /// have retried and published under a different one.
     std::string marker_value;
-    if (!waited_attempt_id.empty() && zk_client->tryGet(zookeeper_path / "last_drop_result", marker_value))
+    if (!waited_command_id.empty() && zk_client->tryGet(zookeeper_path / "last_drop_result", marker_value))
     {
         Poco::JSON::Parser parser;
         auto json = parser.parse(marker_value).extract<Poco::JSON::Object::Ptr>();
         chassert(json);
 
-        if (json->getValue<std::string>("attempt_id") == waited_attempt_id)
+        if (json->getValue<std::string>("command_id") == waited_command_id)
         {
             const bool success = json->getValue<bool>("success");
             const size_t snapshot_size = json->getValue<size_t>("snapshot_size");
@@ -1954,18 +1977,18 @@ bool ObjectStorageQueueMetadata::verifyCleanupSucceeded(std::shared_ptr<ZooKeepe
                 json->getValue<std::string>("error"), deleted, snapshot_size);
         }
 
-        /// The marker belongs to some other attempt: the one waited on either died before publishing, or
-        /// another attempt has already overwritten its result - the marker is a single node kept in place.
-        /// That verdict is unrecoverable, so claim nothing about it and fall through to what can still be
-        /// observed directly.
-        LOG_INFO(log, "The drop result in Keeper was published by a different attempt, so it says nothing "
-                      "about the one this command waited for");
+        /// The marker belongs to some other command: the one waited on either failed every attempt without
+        /// publishing, or another command has already overwritten its result - the marker is a single node
+        /// kept in place. That verdict is unrecoverable, so claim nothing about it and fall through to what
+        /// can still be observed directly.
+        LOG_INFO(log, "The drop result in Keeper was published by a different command, so it says nothing "
+                      "about the one this waiter waited for");
     }
 
     /// No usable result: nothing was published, or what is there belongs to another attempt. Either way
     /// the snapshot that attempt worked on is unknown here, and the only statement still available is
     /// about `/failed` as a whole.
-    LOG_INFO(log, "No drop result is available for the attempt that was waited on, falling back to checking /failed");
+    LOG_INFO(log, "No drop result is available for the command that was waited on, falling back to checking /failed");
 
     const std::string failed_path = zookeeper_path / "failed";
     Strings remaining_failed_nodes;
@@ -2111,9 +2134,14 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
     /// listing. Re-deleting an already deleted node is a no-op, so an attempt costs correctness nothing.
     static constexpr size_t MAX_ATTEMPTS = 3;
 
+    /// Generated once for the whole statement, so every attempt takes the lock under the same identity.
+    /// A replica waiting on this command matches results by this id: were it per attempt, a retry would
+    /// look to the waiter like a different operation and its verdict would be rejected.
+    const std::string command_id = toString(UUIDHelpers::generateV4());
+
     for (size_t attempt = 0; attempt < MAX_ATTEMPTS; ++attempt)
     {
-        if (tryDropFailedFilesOnce())
+        if (tryDropFailedFilesOnce(command_id))
             return;
 
         LOG_INFO(log, "Attempt {} of {} to drop failed files lost its Keeper session before publishing a "
@@ -2125,18 +2153,18 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         "cleanup lock. Please retry the command.", MAX_ATTEMPTS);
 }
 
-bool ObjectStorageQueueMetadata::tryDropFailedFilesOnce()
+bool ObjectStorageQueueMetadata::tryDropFailedFilesOnce(const std::string & command_id)
 {
     const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
     const auto zk_client = getZooKeeper();
 
     /// Acquire the same distributed lock used by the periodic cleanup sweep
     /// to prevent concurrent modification of failed files.
-    /// Store "manual_drop_failed" in the lock value so dropFailedFiles invocations
-    /// can distinguish themselves from the generic background cleanup.
-    static constexpr const char * LOCK_OPERATION_DROP_FAILED = "manual_drop_failed";
+    /// The lock value is `manual_drop_failed:<command_id>`: the prefix distinguishes a manual drop from
+    /// the generic background cleanup, and the id lets a waiting replica follow this statement across
+    /// the attempts it may make.
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_DROP_FAILED);
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_DROP_FAILED_PREFIX + command_id);
 
     if (!ephemeral_node)
     {
@@ -2157,7 +2185,7 @@ bool ObjectStorageQueueMetadata::tryDropFailedFilesOnce()
     /// holder's destructor from deleting a lock node that by then may belong to another replica.
     try
     {
-        return dropFailedFilesUnderLock(zk_client, ephemeral_node, zookeeper_cleanup_lock_path, attempt_id);
+        return dropFailedFilesUnderLock(zk_client, ephemeral_node, zookeeper_cleanup_lock_path, command_id, attempt_id);
     }
     catch (const Coordination::Exception & e)
     {
@@ -2175,6 +2203,7 @@ bool ObjectStorageQueueMetadata::dropFailedFilesUnderLock(
     const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
     const zkutil::EphemeralNodeHolder::Ptr & ephemeral_node,
     const fs::path & zookeeper_cleanup_lock_path,
+    const std::string & command_id,
     const std::string & attempt_id)
 {
     /// Publishing is the one write a waiting replica depends on, so the lock is re-checked immediately
@@ -2188,7 +2217,7 @@ bool ObjectStorageQueueMetadata::dropFailedFilesUnderLock(
             ephemeral_node->setAlreadyRemoved();
             return false;
         }
-        publishDropResult(zk_client, attempt_id, success, snapshot_size, deleted, error);
+        publishDropResult(zk_client, command_id, attempt_id, success, snapshot_size, deleted, error);
         return true;
     };
 

@@ -229,25 +229,28 @@ private:
     /// Publishes the outcome of this replica's `dropFailedFiles` attempt at `<zookeeper_path>/last_drop_result`,
     /// so a replica waiting on the cleanup lock learns what happened instead of inferring it from `/failed`.
     /// Must be called while the cleanup lock is still held.
-    /// `attempt_id` is the `czxid` of the cleanup lock node this attempt created, rendered as a decimal
-    /// string. It identifies the attempt: Keeper assigns a fresh one every time the lock path is created,
-    /// so a waiter can tell this attempt's result from any other attempt's, in either direction.
-    void publishDropResult(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client, const std::string & attempt_id,
+    /// `command_id` identifies one `dropFailedFiles` statement and is stable across the attempts that
+    /// statement makes; `attempt_id` is the `czxid` of the lock node of the single attempt that produced
+    /// this result. A waiter matches on `command_id`, because it waits for a command and not for one of
+    /// its attempts; the writer checks `attempt_id`, because ownership of the lock is what it must not
+    /// lose. Both are published: neither answers the other's question.
+    void publishDropResult(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const std::string & command_id, const std::string & attempt_id,
         bool success, size_t snapshot_size, size_t deleted, const std::string & error);
     /// One attempt at `dropFailedFiles`: acquires the cleanup lock, does the work pinned to the session that
     /// owns it, and publishes the result. Returns false when the attempt lost that session and produced no
     /// verdict, which is the only case the caller retries; every other failure throws.
-    bool tryDropFailedFilesOnce();
+    bool tryDropFailedFilesOnce(const std::string & command_id);
     /// The body of one attempt, run with the cleanup lock held and pinned to `zk_client`.
     bool dropFailedFilesUnderLock(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
         const zkutil::EphemeralNodeHolder::Ptr & ephemeral_node, const fs::path & zookeeper_cleanup_lock_path,
-        const std::string & attempt_id);
+        const std::string & command_id, const std::string & attempt_id);
     /// True while `<zookeeper_path>/cleanup_lock` is still the node this attempt created. Once it is not,
     /// nothing this attempt does may touch shared state - it no longer holds the lock.
     bool stillHoldsCleanupLock(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
         const fs::path & zookeeper_cleanup_lock_path, const std::string & attempt_id) const;
     bool verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
-        const std::string & waited_attempt_id, size_t & out_terminal_failed_count);
+        const std::string & waited_command_id, size_t & out_terminal_failed_count);
     void waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path);
     /// Executes `remove_requests` as a single Keeper `multi` and reconciles the result, retrying
     /// individually the requests that were aborted with `ZRUNTIMEINCONSISTENCY`. For every node that is
