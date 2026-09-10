@@ -48,8 +48,13 @@ CREATE OR REPLACE FUNCTION ${FUNC}
     ARGUMENTS (value String) RETURNS UInt64
     SETTINGS serialization_format = 'CSV';
 
-SELECT 'a late wide row does not shrink the batches before it', max(v) = 524, min(v) = 1, uniqExact(v) = 4, count() = 1005
-FROM (SELECT ${FUNC}(s) AS v FROM (SELECT if(number = 1000, repeat('a', 50000), 'a') AS s FROM numbers(1005)));
+-- Rows 0..523 report 524, rows 524..999 report 476, row 1000 reports 1, and rows 1001..1004
+-- report 4. Every row carries the size of its own batch, and batches are contiguous, so the
+-- per-row expectation below pins each boundary rather than only the extremes.
+SELECT 'a late wide row does not shrink the batches before it',
+       countIf(v != multiIf(number < 524, 524, number < 1000, 476, number = 1000, 1, 4)) = 0,
+       count() = 1005
+FROM (SELECT number, ${FUNC}(s) AS v FROM (SELECT number, if(number = 1000, repeat('a', 50000), 'a') AS s FROM numbers(1005)));
 
 DROP FUNCTION ${FUNC};
 "

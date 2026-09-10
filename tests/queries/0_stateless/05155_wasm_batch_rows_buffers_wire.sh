@@ -46,9 +46,13 @@ CREATE OR REPLACE FUNCTION ${FUNC}
     ARGUMENTS (value UInt64) RETURNS UInt64
     SETTINGS serialization_format = 'Buffers';
 
--- 4000 rows fall into batches of 1307, 1307, 1307 and a remainder of 79.
-SELECT 'block-scoped framing is charged once per batch', max(v) = 1307, min(v) = 79, count() = 4000
-FROM (SELECT ${FUNC}(number) AS v FROM numbers(4000));
+-- 4000 rows fall into batches of 1307, 1307, 1307 and a remainder of 79, so rows 0..3920 report
+-- 1307 and rows 3921..3999 report 79. Every row carries the size of its own batch, and batches are
+-- contiguous, so the per-row expectation below pins each boundary rather than only the extremes.
+SELECT 'block-scoped framing is charged once per batch',
+       countIf(v != if(number < 3921, 1307, 79)) = 0,
+       count() = 4000
+FROM (SELECT number, ${FUNC}(number) AS v FROM numbers(4000));
 
 DROP FUNCTION ${FUNC};
 "
