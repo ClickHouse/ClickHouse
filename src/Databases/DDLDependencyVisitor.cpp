@@ -133,7 +133,8 @@ namespace
                     else if (target.kind == ViewTarget::Kind::Samples
                         || target.kind == ViewTarget::Kind::RecentSamples
                         || target.kind == ViewTarget::Kind::Tags
-                        || target.kind == ViewTarget::Kind::Metrics)
+                        || target.kind == ViewTarget::Kind::Metrics
+                        || target.kind == ViewTarget::Kind::Histograms)
                     {
                         /// External target tables of a TimeSeries table are referential dependencies.
                         /// Inner target tables (created and owned by the TimeSeries table) are not, the same way
