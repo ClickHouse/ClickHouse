@@ -1544,7 +1544,6 @@ protected:
 
             /// Forward worker log lines to the initiator's send_logs_level stream.
             if (task_status.logs.rows() != 0 && initiator_logs_queue)
-
                 initiator_logs_queue->pushBlock(std::move(task_status.logs));
 
             auto progress_callback = context->getProgressCallback();
@@ -1758,10 +1757,7 @@ protected:
         ThreadPool thread_pool;
         LoggerPtr logger;
 
-        /// The initiator query's send_logs_level queue, captured at construction (which runs
-        /// on the query's own thread): the tracker's poll threads are not part of the query's
-        /// thread group, so a CurrentThread lookup at push time would return null. Null when
-        /// the client did not request logs.
+        /// Initiator logs queue captured at construction so it is tied to the main query's thread
         InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
