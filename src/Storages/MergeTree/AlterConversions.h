@@ -46,6 +46,8 @@ public:
     /// `name` is the name the column has in the part, not in the current metadata.
     bool isColumnDropped(const std::string & name, bool share_nested_offsets = true) const;
 
+    const NameSet & getDroppedColumns() const { return dropped_columns; }
+
     static bool isSupportedDataMutation(MutationCommand::Type type);
     static bool isSupportedAlterMutation(MutationCommand::Type type);
     static bool isSupportedMetadataMutation(MutationCommand::Type type);
