@@ -4,8 +4,10 @@
 #include <Processors/StepWallClock.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <QueryPipeline/printPipeline.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
-#include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemorySpillScheduler.h>
@@ -158,17 +160,7 @@ void ExecutingGraph::removeAffectedEdges(Node & node, const std::unordered_set<N
 
 ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container::devector<Node *> & stack, Node & cur_node)
 {
-    IProcessor::PipelineUpdate update;
-
-    try
-    {
-        update = cur_node.processor()->updatePipeline();
-    }
-    catch (...)
-    {
-        cur_node.exception = std::current_exception();
-        return UpdateNodeStatus::Exception;
-    }
+    IProcessor::PipelineUpdate update = cur_node.processor()->updatePipeline();
 
     IProcessor::CancelReason cancel_reason_if_cancelled = IProcessor::CancelReason::NotCancelled;
     {
@@ -384,53 +376,37 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                 stack_top_lock.emplace(node.status_mutex);
 
             {
-#ifndef NDEBUG
-                Stopwatch watch;
-#endif
-
                 std::unique_lock<std::mutex> lock(std::move(*stack_top_lock));
 
-                try
+                auto & processor = *node.processor();
+                const auto last_status = node.last_processor_status;
+                IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
+                node.last_processor_status = status;
+                if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
+                    CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
+
+                if (profile_processors)
                 {
-                    auto & processor = *node.processor();
-                    const auto last_status = node.last_processor_status;
-                    IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
-                    node.last_processor_status = status;
-                    if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
-                        CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
-
-                    if (profile_processors)
+                    /// NeedData
+                    if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
                     {
-                        /// NeedData
-                        if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
-                        {
-                            processor.input_wait_watch.restart();
-                        }
-                        else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
-                        {
-                            processor.input_wait_elapsed_ns += processor.input_wait_watch.elapsedNanoseconds();
-                        }
+                        processor.input_wait_watch.restart();
+                    }
+                    else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
+                    {
+                        processor.input_wait_elapsed_ns += processor.input_wait_watch.elapsedNanoseconds();
+                    }
 
-                        /// PortFull
-                        if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
-                        {
-                            processor.output_wait_watch.restart();
-                        }
-                        else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
-                        {
-                            processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
-                        }
+                    /// PortFull
+                    if (last_status != IProcessor::Status::PortFull && status == IProcessor::Status::PortFull)
+                    {
+                        processor.output_wait_watch.restart();
+                    }
+                    else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
+                    {
+                        processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
                     }
                 }
-                catch (...)
-                {
-                    node.exception = std::current_exception();
-                    return UpdateNodeStatus::Exception;
-                }
-
-#ifndef NDEBUG
-                node.preparation_time_ns += watch.elapsed();
-#endif
 
                 node.updated_input_ports.clear();
                 node.updated_output_ports.clear();
@@ -530,6 +506,41 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
     }
 
     return UpdateNodeStatus::Done;
+}
+
+const Processors & ExecutingGraph::getProcessors() const
+{
+    return *processors;
+}
+
+bool ExecutingGraph::isAllFinished() const
+{
+    for (const auto & node : nodes)
+        if (node.status != ExecStatus::Finished)
+            return false;
+
+    return true;
+}
+
+String ExecutingGraph::dump() const
+{
+    std::vector<std::optional<IProcessor::Status>> statuses;
+    statuses.reserve(nodes.size());
+
+    for (const auto & node : nodes)
+    {
+        WriteBufferFromOwnString buffer;
+        buffer << "(" << node.processor()->getNumExecutedJobs() << " jobs)";
+        node.processor()->setDescription(buffer.str());
+
+        statuses.emplace_back(node.last_processor_status);
+    }
+
+    WriteBufferFromOwnString out;
+    printPipeline(*processors, statuses, out);
+    out.finalize();
+
+    return out.str();
 }
 
 void ExecutingGraph::cancel(IProcessor::CancelReason reason)
