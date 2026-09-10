@@ -37,7 +37,7 @@
     <query>SELECT isValidUTF8(materialize(repeat('a', 8) || repeat('\xE6\x97\xA5', 18) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 96) || repeat('\xD0\xB0', 26))) FROM numbers(3000000) FORMAT Null</query>
     <!-- Malformed at offset 0: the scalar loop rejects in constant time while simdutf always checks at
-         least one block, so this row is a bounded cost that no threshold can improve, never a crossover.
+         least one block, so this row is a bounded cost that any cutoff keeps above itself, never a crossover.
          The alias is required: the folded argument would otherwise become the result column's name, and
          the harness's client decodes header strings as strict UTF-8. -->
     <query>SELECT isValidUTF8(materialize('\xFF' || repeat('a', 63))) AS v FROM numbers(3000000) FORMAT Null</query>
