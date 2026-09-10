@@ -11,6 +11,9 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Common/FailPoint.h>
 
 
 namespace DB
@@ -20,6 +23,13 @@ namespace ErrorCodes
 {
     extern const int VIOLATED_CONSTRAINT;
     extern const int UNSUPPORTED_METHOD;
+}
+
+namespace FailPoints
+{
+    extern const char check_constraints_transform_before_expression_pause[];
+    extern const char check_constraints_transform_pause[];
+    extern const char check_constraints_transform_between_constraints_pause[];
 }
 
 
@@ -37,10 +47,33 @@ CheckConstraintsTransform::CheckConstraintsTransform(
 }
 
 
+void CheckConstraintsTransform::onCancel() noexcept
+{
+    ExceptionKeepingTransform::onCancel();
+
+    /// A `CHECK` constraint can contain an arbitrarily long-running function, so cancellation has
+    /// to reach the function that is being evaluated right now.
+    for (const auto & expression : expressions)
+        for (const auto & node : expression->getNodes())
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+}
+
+
 void CheckConstraintsTransform::onConsume(Chunk chunk)
 {
     if (chunk.getNumRows() > 0)
     {
+        FailPointInjection::pauseFailPoint(FailPoints::check_constraints_transform_before_expression_pause);
+
+        /// The task could have been dispatched before the cancellation and picked up after it.
+        /// There is nothing to check for a query that is not going to write anything.
+        if (isCancelled())
+        {
+            cur_chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+            return;
+        }
+
         if (rows_written == 0)
             for (const auto & expression : expressions)
                 VirtualColumnUtils::buildSetsForDAG(expression->getActionsDAG(), context);
@@ -48,8 +81,28 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
         Block block_to_calculate = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         for (size_t i = 0; i < expressions.size(); ++i)
         {
+            /// A cancellation could have landed while the previous constraint was being validated.
+            /// `ExpressionActions::execute` polls the cancellation flag only after its first action,
+            /// so without this guard the next constraint would still evaluate one whole action, and
+            /// that action can be an arbitrarily long-running function.
+            if (isCancelled())
+            {
+                cur_chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
+
             auto constraint_expr = expressions[i];
-            constraint_expr->execute(block_to_calculate);
+            constraint_expr->execute(block_to_calculate, false, false, &getCancellationFlag());
+
+            FailPointInjection::pauseFailPoint(FailPoints::check_constraints_transform_pause);
+
+            /// `execute` stops between actions when cancelled, so the result column of the
+            /// constraint is not necessarily there any more.
+            if (isCancelled())
+            {
+                cur_chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
+                return;
+            }
 
             auto * constraint_ptr = constraints_to_check[i]->as<ASTConstraintDeclaration>();
 
@@ -152,6 +205,11 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                     constraint_ptr->expr->formatForErrorMessage(),
                     column_values_msg);
             }
+
+            /// The window between two constraints of the same table: a `KILL QUERY` landing here
+            /// must not let the next constraint expression start.
+            if (i + 1 < expressions.size())
+                FailPointInjection::pauseFailPoint(FailPoints::check_constraints_transform_between_constraints_pause);
         }
     }
 
