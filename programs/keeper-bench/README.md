@@ -364,6 +364,9 @@ list:
     watch_probability: 0.5           # in [0.0, 1.0], default: 0 (no watches)
 ```
 
+Requests are sent as `getChildren`, the only list operation that ZooKeeper-compatible servers accept
+both standalone and as a `multi` sub-request; responses carry child names without a `Stat`.
+
 When `watch_probability` is set, each request has that probability of setting a watch on the node.
 Watch fire events are counted and reported in stats.
 
