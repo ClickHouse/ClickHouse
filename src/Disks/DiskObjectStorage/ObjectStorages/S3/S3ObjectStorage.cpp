@@ -478,6 +478,16 @@ void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObjectImpl(object, true);
 }
 
+void S3ObjectStorage::removeObjectVersionIfExists(const StoredObject & object, const String & version_id)
+{
+    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    const auto [bucket, key] = splitBucketAndKey(object.remote_path);
+
+    deleteFileFromS3(client.get(), bucket, key, /*if_exists=*/true,
+                     blob_storage_log, object.local_path, object.bytes_size,
+                     ProfileEvents::DiskS3DeleteObjects, version_id);
+}
+
 void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     removeObjectsImpl(objects, true);

@@ -105,6 +105,10 @@ public:
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
+    /// Removes exactly one version of the object, leaving every other one (and the key itself) in place.
+    /// Only meaningful on a bucket with versioning enabled.
+    void removeObjectVersionIfExists(const StoredObject & object, const String & version_id);
+
     /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;

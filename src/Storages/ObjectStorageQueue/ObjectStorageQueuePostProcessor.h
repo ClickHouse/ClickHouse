@@ -40,9 +40,34 @@ public:
     void process(const StoredObjects & objects) const;
 
 private:
+    /// The source generation a copy step consumed. `version_id` is set only when the copy was pinned
+    /// to that generation, so pinning the delete to it cannot remove contents nothing copied.
+    struct SourceGeneration
+    {
+        String version_id;
+        String etag;
+    };
+
+    struct CopyResult
+    {
+        /// False when the destination is occupied by an object this attempt did not put there.
+        bool destination_is_ours = true;
+        SourceGeneration consumed;
+    };
+
+    enum class MoveResult : uint8_t
+    {
+        Moved,
+        DestinationCollision,
+        SourceRewritten,
+    };
+
     void doWithRetries(std::function<void()> action) const;
-    bool copyAndRemoveObject(const StoredObject & object, const std::function<bool()> & copy_object) const;
+    MoveResult copyAndRemoveObject(const StoredObject & object, const std::function<CopyResult()> & copy_object) const;
+    /// Removes the source only while it still holds the generation the copy consumed.
+    bool removeCopiedSource(const StoredObject & object, const SourceGeneration & consumed) const;
     void reportMoveCollision(const StoredObject & source, const StoredObject & destination) const;
+    void reportSourceRewritten(const StoredObject & source, const StoredObject & destination) const;
 
     /// Move processed objects to another prefix
     void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const;

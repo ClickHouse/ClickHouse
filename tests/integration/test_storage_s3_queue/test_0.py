@@ -1,3 +1,4 @@
+import concurrent.futures
 import io
 import json
 import logging
@@ -494,6 +495,34 @@ def move_collisions(node):
     )
 
 
+def move_source_rewrites(node):
+    return int(
+        node.query(
+            "SELECT value FROM system.events "
+            "WHERE name = 'ObjectStorageQueueMoveSourceRewritten' "
+            "SETTINGS system_events_show_zero_values = 1"
+        )
+    )
+
+
+PAUSE_AFTER_MOVE_COPY_FAILPOINT = "object_storage_queue_pause_after_move_copy"
+
+
+def wait_failpoint_paused(node, failpoint, timeout=60):
+    """Block until a background thread parks at `failpoint`.
+
+    `SYSTEM WAIT FAILPOINT ... PAUSE` blocks, so it runs on a worker thread: a failpoint that is
+    never reached must fail the test rather than hang it."""
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    done, _ = concurrent.futures.wait([future], timeout=timeout)
+    if not done:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise AssertionError(f"failpoint {failpoint} was not reached within {timeout}s")
+    pool.shutdown(wait=False)
+    future.result()
+
+
 def read_s3_object(cluster, bucket, key):
     response = cluster.minio_client.get_object(bucket, key)
     try:
@@ -873,14 +902,13 @@ def test_move_retry_recognizes_committed_copy(
 
 
 @pytest.mark.parametrize(
-    "destination_version, expect_move",
-    [(None, True), ("foreign-version", False)],
-    ids=["pre_upgrade_destination", "foreign_destination"],
+    "destination_token",
+    [None, "foreign-token"],
+    ids=["no_move_token", "foreign_move_token"],
 )
-def test_move_versioned_source_provenance(
-    started_cluster, destination_version, expect_move
-):
-    """A destination with no version attribute was written before the upgrade and is still ours."""
+def test_move_forged_destination_provenance(started_cluster, destination_token):
+    """The source generation proves nothing on its own: it is public and identical for every
+    attempt, so only this attempt's move token may make a destination adoptable."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     bucket = f"versioned-{token}"
@@ -890,6 +918,7 @@ def test_move_versioned_source_provenance(
     source_key = f"{files_path}/part.csv"
     destination_key = f"{processed_prefix}/part.csv"
     data = b"1,2,3\n"
+    sentinel = b"9,9,9\n"
     client = started_cluster.minio_client
     client.make_bucket(bucket)
     client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
@@ -897,20 +926,22 @@ def test_move_versioned_source_provenance(
 
     source = client.stat_object(bucket, source_key)
     assert source.version_id, "the source must carry a version id"
+    # Everything a HeadObject of the source reveals, restamped on contents nobody copied there.
     metadata = {
         "clickhouse_move_source_path": source_key,
         "clickhouse_move_source_etag": f'"{source.etag}"',
         "clickhouse_move_source_last_modified": str(
             int(source.last_modified.timestamp())
         ),
+        "clickhouse_move_source_version_id": source.version_id,
     }
-    if destination_version:
-        metadata["clickhouse_move_source_version_id"] = destination_version
+    if destination_token:
+        metadata["clickhouse_move_token"] = destination_token
     client.put_object(
         bucket,
         destination_key,
-        io.BytesIO(data),
-        len(data),
+        io.BytesIO(sentinel),
+        len(sentinel),
         metadata=metadata,
     )
     collisions_before = move_collisions(node)
@@ -928,15 +959,50 @@ def test_move_versioned_source_provenance(
     create_mv(node, table_name, f"{table_name}_dst")
 
     wait_until(lambda: int(node.query(f"SELECT count() FROM {table_name}_dst")) == 1)
-    if expect_move:
-        wait_until(
-            lambda: count_minio_objects(started_cluster, bucket, files_path) == 0
-        )
-        assert move_collisions(node) == collisions_before
-    else:
-        wait_until(lambda: move_collisions(node) > collisions_before)
-        assert count_minio_objects(started_cluster, bucket, files_path) == 1
+    wait_until(lambda: move_collisions(node) > collisions_before)
+    # The destination is not this attempt's copy, so the source must survive untouched.
+    assert count_minio_objects(started_cluster, bucket, files_path) == 1
     assert count_minio_objects(started_cluster, bucket, processed_prefix) == 1
+    assert read_s3_object(started_cluster, bucket, destination_key) == sentinel
+
+
+def test_move_does_not_remove_rewritten_source(started_cluster):
+    """The delete that ends a move must not remove a generation the copy never consumed."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string()
+    table_name = f"move_rewritten_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    copied = b"1,2,3\n"
+    rewritten = b"7,8,9\n"
+    put_s3_file_content(started_cluster, source_key, copied)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+    rewrites_before = move_source_rewrites(node)
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_MOVE_COPY_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_AFTER_MOVE_COPY_FAILPOINT)
+        # The copy is committed and the delete has not run yet: replace what it would delete.
+        put_s3_file_content(started_cluster, source_key, rewritten)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_MOVE_COPY_FAILPOINT}")
+
+    wait_until(lambda: move_source_rewrites(node) > rewrites_before)
+    bucket = started_cluster.minio_bucket
+    assert read_s3_object(started_cluster, bucket, destination_key) == copied
+    assert read_s3_object(started_cluster, bucket, source_key) == rewritten
 
 
 def test_move_after_processing_many_objects(started_cluster):
