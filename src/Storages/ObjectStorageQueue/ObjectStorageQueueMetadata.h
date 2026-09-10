@@ -229,13 +229,13 @@ private:
     /// Publishes the outcome of this replica's `dropFailedFiles` attempt at `<zookeeper_path>/last_drop_result`,
     /// so a replica waiting on the cleanup lock learns what happened instead of inferring it from `/failed`.
     /// Must be called while the cleanup lock is still held.
-    void publishDropResult(bool success, size_t snapshot_size, size_t deleted, const std::string & error);
-    /// Version of the drop-result marker, or -1 when it does not exist yet. Keeper's own version counter
-    /// is the attempt id: a value greater than the one read before waiting means the result was published
-    /// by the attempt that was waited on, not left over by an earlier one.
-    int32_t getDropResultVersion(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const;
+    /// `attempt_id` is the `czxid` of the cleanup lock node this attempt created, rendered as a decimal
+    /// string. It identifies the attempt: Keeper assigns a fresh one every time the lock path is created,
+    /// so a waiter can tell this attempt's result from any other attempt's, in either direction.
+    void publishDropResult(const std::string & attempt_id, bool success, size_t snapshot_size, size_t deleted,
+        const std::string & error);
     bool verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
-        int32_t marker_version_before_wait, size_t & out_terminal_failed_count);
+        const std::string & waited_attempt_id, size_t & out_terminal_failed_count);
     void waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path);
     /// Executes `remove_requests` as a single Keeper `multi` and reconciles the result, retrying
     /// individually the requests that were aborted with `ZRUNTIMEINCONSISTENCY`. For every node that is

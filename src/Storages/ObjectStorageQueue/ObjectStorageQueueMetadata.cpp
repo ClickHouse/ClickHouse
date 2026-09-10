@@ -1773,10 +1773,6 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
 {
     static constexpr const char * LOCK_OPERATION_DROP_FAILED = "manual_drop_failed";
 
-    /// Read the drop-result marker's version before waiting, so a result published by the attempt being
-    /// waited on can be told apart from one left behind by an earlier attempt.
-    const int32_t marker_version_before_wait = getDropResultVersion(zk_client);
-
     /// Lock is held by another process. Check if it's another dropFailedFiles invocation.
     /// When invoked via ON CLUSTER, multiple replicas attempt this concurrently;
     /// if another dropFailedFiles holds the lock, treat it as idempotent success.
@@ -1784,7 +1780,13 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
     /// so we must fail and let the user retry.
     try
     {
-        std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path);
+        /// The `czxid` of the lock node observed here identifies the attempt this command waits on.
+        /// Keeper assigns a fresh one every time the path is created, and the path is reused by every
+        /// attempt, so it is the only thing that distinguishes them.
+        Coordination::Stat lock_stat;
+        std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path, &lock_stat);
+        const std::string waited_attempt_id = toString(lock_stat.czxid);
+
         if (lock_value == LOCK_OPERATION_DROP_FAILED)
         {
             /// Another replica is executing the same operation. Wait for it to complete and take its
@@ -1809,29 +1811,44 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
             {
                 sleepForMilliseconds(POLL_INTERVAL_MS);
 
+                bool attempt_finished = false;
                 try
                 {
-                    /// Poll to see if the lock still exists
-                    zk_client->get(zookeeper_cleanup_lock_path);
+                    /// Poll the lock. The attempt being waited on is over either when the lock is gone, or
+                    /// when the node at that path is no longer the one observed at entry: the path is
+                    /// reused, so a release and a re-acquisition inside one poll interval is invisible to
+                    /// a plain existence check. Continuing to wait in that case would silently transfer
+                    /// this command onto an attempt that started after it did and says nothing about it.
+                    ///
+                    /// Who took the lock does not matter - another manual drop or the background sweep
+                    /// both mean the same thing here, that the attempt waited on has finished.
+                    Coordination::Stat poll_stat;
+                    std::string poll_value;
+                    if (!zk_client->tryGet(zookeeper_cleanup_lock_path, poll_value, &poll_stat))
+                        attempt_finished = true;
+                    else if (toString(poll_stat.czxid) != waited_attempt_id)
+                        attempt_finished = true;
                 }
                 catch (const Coordination::Exception & poll_e)
                 {
-                    if (poll_e.code == Coordination::Error::ZNONODE)
-                    {
-                        /// Lock was released. "Lock released" does not by itself mean "cleanup succeeded"
-                        /// - the winner could have partially failed - so read the result it published.
-                        size_t terminal_failed_count = 0;
-                        if (verifyCleanupSucceeded(zk_client,
-                                fmt::format("Cleanup lock was released after {}ms, verifying cleanup succeeded", (i + 1) * 100),
-                                marker_version_before_wait, terminal_failed_count))
-                            return;
+                    /// Transient during polling; the next iteration retries.
+                    LOG_TEST(log, "Transient Keeper error while polling the cleanup lock: {}", poll_e.displayText());
+                }
 
-                        throw Exception(ErrorCodes::KEEPER_EXCEPTION,
-                            "The replica holding the cleanup lock published no result and {} terminal failed nodes remain "
-                            "in /failed, so the cleanup cannot be confirmed. Please retry the command.",
-                            terminal_failed_count);
-                    }
-                    /// Other errors during polling are transient - retry on next iteration
+                if (attempt_finished)
+                {
+                    /// The attempt is over, which does not by itself mean it succeeded - it could have
+                    /// partially failed - so read the result it published.
+                    size_t terminal_failed_count = 0;
+                    if (verifyCleanupSucceeded(zk_client,
+                            fmt::format("Cleanup attempt finished after {}ms, verifying cleanup succeeded", (i + 1) * 100),
+                            waited_attempt_id, terminal_failed_count))
+                        return;
+
+                    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                        "The replica holding the cleanup lock published no usable result and {} terminal failed nodes "
+                        "remain in /failed, so the cleanup cannot be confirmed. Please retry the command.",
+                        terminal_failed_count);
                 }
 
                 /// Hit absolute safety-net timeout
@@ -1849,12 +1866,13 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
     {
         if (e.code == Coordination::Error::ZNONODE)
         {
-            /// The ephemeral lock node disappeared between our tryCreate and get.
-            /// We don't know whose lock it was (manual_drop_failed vs background_cleanup),
-            /// so ask for a published drop result before claiming success.
+            /// The ephemeral lock node disappeared between our tryCreate and get, so its `Stat` was
+            /// never read and there is no attempt to bind to - nor do we know whose lock it was
+            /// (manual_drop_failed vs background_cleanup). An empty id makes `verifyCleanupSucceeded`
+            /// attribute no published result and go straight to what it can observe directly.
             size_t terminal_failed_count = 0;
             if (verifyCleanupSucceeded(zk_client, "Cleanup lock was released, verifying cleanup succeeded",
-                    marker_version_before_wait, terminal_failed_count))
+                    /* waited_attempt_id */ "", terminal_failed_count))
                 return;
 
             throw Exception(ErrorCodes::KEEPER_EXCEPTION,
@@ -1871,9 +1889,13 @@ void ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr
         "Failed file cleanup cannot proceed: another operation is holding the cleanup lock. "
         "Please retry in a moment.");
 }
-void ObjectStorageQueueMetadata::publishDropResult(bool success, size_t snapshot_size, size_t deleted, const std::string & error)
+void ObjectStorageQueueMetadata::publishDropResult(const std::string & attempt_id, bool success, size_t snapshot_size,
+    size_t deleted, const std::string & error)
 {
     Poco::JSON::Object json;
+    /// A decimal string rather than a number: `czxid` is 64-bit and JSON numbers are not required to
+    /// carry that range exactly, so the identity comparison must not depend on how a parser rounds.
+    json.set("attempt_id", attempt_id);
     json.set("success", success);
     json.set("snapshot_size", snapshot_size);
     json.set("deleted", deleted);
@@ -1888,17 +1910,8 @@ void ObjectStorageQueueMetadata::publishDropResult(bool success, size_t snapshot
     getZooKeeper()->createOrUpdate(zookeeper_path / "last_drop_result", oss.str(), zkutil::CreateMode::Persistent);
 }
 
-int32_t ObjectStorageQueueMetadata::getDropResultVersion(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client) const
-{
-    Coordination::Stat stat;
-    std::string value;
-    if (!zk_client->tryGet(zookeeper_path / "last_drop_result", value, &stat))
-        return -1;
-    return stat.version;
-}
-
 bool ObjectStorageQueueMetadata::verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
-    int32_t marker_version_before_wait, size_t & out_terminal_failed_count)
+    const std::string & waited_attempt_id, size_t & out_terminal_failed_count)
 {
     LOG_INFO(log, "{}", context_msg);
 
@@ -1908,37 +1921,51 @@ bool ObjectStorageQueueMetadata::verifyCleanupSucceeded(std::shared_ptr<ZooKeepe
     /// inferring the answer from `/failed`. Inference cannot work here: the winner deletes the snapshot
     /// of terminal nodes it took when it started and is not responsible for files that fail afterwards,
     /// while `/failed` has other writers, so "not empty" says nothing about whether the winner succeeded.
-    Coordination::Stat marker_stat;
+    ///
+    /// The result is matched by attempt identity, not by "the marker moved since I started waiting".
+    /// Ordering cannot answer this: the lock path is reused, so a later and entirely unrelated attempt
+    /// publishes a newer result too, and adopting it would report a verdict about a cleanup this command
+    /// never waited for.
     std::string marker_value;
-    if (zk_client->tryGet(zookeeper_path / "last_drop_result", marker_value, &marker_stat)
-        && marker_stat.version > marker_version_before_wait)
+    if (!waited_attempt_id.empty() && zk_client->tryGet(zookeeper_path / "last_drop_result", marker_value))
     {
         Poco::JSON::Parser parser;
         auto json = parser.parse(marker_value).extract<Poco::JSON::Object::Ptr>();
         chassert(json);
 
-        const bool success = json->getValue<bool>("success");
-        const size_t snapshot_size = json->getValue<size_t>("snapshot_size");
-        const size_t deleted = json->getValue<size_t>("deleted");
-
-        if (success)
+        if (json->getValue<std::string>("attempt_id") == waited_attempt_id)
         {
-            LOG_INFO(log, "Winner replica reported success: dropped {} of {} failed files it had selected",
-                     deleted, snapshot_size);
-            reconcileFailedFilesCache();
-            return true;
+            const bool success = json->getValue<bool>("success");
+            const size_t snapshot_size = json->getValue<size_t>("snapshot_size");
+            const size_t deleted = json->getValue<size_t>("deleted");
+
+            if (success)
+            {
+                LOG_INFO(log, "Winner replica reported success: dropped {} of {} failed files it had selected",
+                         deleted, snapshot_size);
+                reconcileFailedFilesCache();
+                return true;
+            }
+
+            /// A partial failure is the winner's own verdict, reported with the winner's own numbers.
+            throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                "Failed file cleanup on the replica holding the lock did not complete: {}. "
+                "It dropped {} of the {} failed files it had selected. Please retry the command.",
+                json->getValue<std::string>("error"), deleted, snapshot_size);
         }
 
-        /// A partial failure is the winner's own verdict, reported with the winner's own numbers.
-        throw Exception(ErrorCodes::KEEPER_EXCEPTION,
-            "Failed file cleanup on the replica holding the lock did not complete: {}. "
-            "It dropped {} of the {} failed files it had selected. Please retry the command.",
-            json->getValue<std::string>("error"), deleted, snapshot_size);
+        /// The marker belongs to some other attempt: the one waited on either died before publishing, or
+        /// another attempt has already overwritten its result - the marker is a single node kept in place.
+        /// That verdict is unrecoverable, so claim nothing about it and fall through to what can still be
+        /// observed directly.
+        LOG_INFO(log, "The drop result in Keeper was published by a different attempt, so it says nothing "
+                      "about the one this command waited for");
     }
 
-    /// No result was published during the wait, so the winner died before it could report. Its snapshot is
-    /// unknown to us, and the only statement we can still make is about `/failed` as a whole.
-    LOG_INFO(log, "The replica holding the cleanup lock published no result, falling back to checking /failed");
+    /// No usable result: nothing was published, or what is there belongs to another attempt. Either way
+    /// the snapshot that attempt worked on is unknown here, and the only statement still available is
+    /// about `/failed` as a whole.
+    LOG_INFO(log, "No drop result is available for the attempt that was waited on, falling back to checking /failed");
 
     const std::string failed_path = zookeeper_path / "failed";
     Strings remaining_failed_nodes;
@@ -2091,6 +2118,13 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         return;
     }
 
+    /// This attempt's identity, published with its result so a waiting replica can tell this attempt's
+    /// verdict from any other attempt's. `EphemeralNodeHolder` does not hand back the `Stat`, so the
+    /// `czxid` costs one extra read of the node just created - once per command.
+    Coordination::Stat lock_stat;
+    zk_client->get(zookeeper_cleanup_lock_path, &lock_stat);
+    const std::string attempt_id = toString(lock_stat.czxid);
+
     const std::string failed_path = zookeeper_path / "failed";
     auto zk_retries = getKeeperRetriesControl(log);
 
@@ -2107,7 +2141,7 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         /// No failed path exists yet - nothing to drop.
         /// Reconcile cache to clear any stale entries before returning.
         LOG_TRACE(log, "Failed files path does not exist, nothing to drop");
-        publishDropResult(/* success */ true, /* snapshot_size */ 0, /* deleted */ 0, /* error */ "");
+        publishDropResult(attempt_id, /* success */ true, /* snapshot_size */ 0, /* deleted */ 0, /* error */ "");
         reconcileFailedFilesCache();
         return;
     }
@@ -2120,7 +2154,7 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         /// No failed files to drop (or only .retriable nodes remain).
         /// Reconcile cache to clear any stale entries before returning.
         LOG_TRACE(log, "No failed files to drop");
-        publishDropResult(/* success */ true, /* snapshot_size */ 0, /* deleted */ 0, /* error */ "");
+        publishDropResult(attempt_id, /* success */ true, /* snapshot_size */ 0, /* deleted */ 0, /* error */ "");
         reconcileFailedFilesCache();
         return;
     }
@@ -2239,14 +2273,14 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
         }
         /// Published before the throw, and so before the lock is released, so the replicas waiting on this
         /// one are told the cleanup failed instead of having to guess it from what remains in `/failed`.
-        publishDropResult(/* success */ false, failed_nodes.size(), total_deleted, error_msg);
+        publishDropResult(attempt_id, /* success */ false, failed_nodes.size(), total_deleted, error_msg);
         throw Exception(ErrorCodes::KEEPER_EXCEPTION, "{}", error_msg);
     }
 
     /// Published while the lock is still held: this replica deleted every terminal node of the snapshot it
     /// took when it started, which is all it is responsible for. Files that failed after that snapshot are
     /// not part of this attempt and must not make it look unsuccessful.
-    publishDropResult(/* success */ true, failed_nodes.size(), total_deleted, /* error */ "");
+    publishDropResult(attempt_id, /* success */ true, failed_nodes.size(), total_deleted, /* error */ "");
 
     reconcileFailedFilesCache();
     LOG_INFO(log, "Successfully dropped {} failed files", file_paths.size());

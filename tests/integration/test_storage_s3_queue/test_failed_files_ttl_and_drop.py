@@ -1045,7 +1045,9 @@ def test_drop_failed_files_loser_reconciles_cache(started_cluster):
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
 
 
-def _drive_loser_branch(started_cluster, table_name, num_failing_files, play_winner):
+def _drive_loser_branch(
+    started_cluster, table_name, num_failing_files, play_winner, release_lock=True
+):
     """Put a `SYSTEM DROP S3QUEUE FAILED FILES` on the loser branch and let the caller be the winner.
 
     Same construction as `test_drop_failed_files_loser_reconciles_cache`: the race is removed
@@ -1054,7 +1056,10 @@ def _drive_loser_branch(started_cluster, table_name, num_failing_files, play_win
     `dropFailedFiles` takes `waitForConcurrentDropToComplete`.
 
     `play_winner(zk, keeper_path, failed_path, failed_children)` is called while the lock is still
-    held and does whatever the winner under test would have done. The lock is released afterwards.
+    held and does whatever the winner under test would have done. The lock is released afterwards,
+    unless `release_lock` is false - which a caller that hands the lock to a *different* attempt
+    inside `play_winner` wants, so that the later attempt is still holding it when the command
+    under test makes up its mind.
 
     Returns the exception the command raised, or `None` if it returned normally.
     """
@@ -1144,11 +1149,12 @@ def _drive_loser_branch(started_cluster, table_name, num_failing_files, play_win
         ), "drop command did not reach the loser branch"
 
         play_winner(zk, keeper_path, failed_path, zk.get_children(failed_path))
-        zk.delete(cleanup_lock_path)
+        if release_lock:
+            zk.delete(cleanup_lock_path)
     finally:
         drop_thread.join(timeout=300)
 
-    assert not drop_thread.is_alive(), "drop command did not return after the lock was released"
+    assert not drop_thread.is_alive(), "drop command did not return once its attempt had finished"
 
     node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
@@ -1177,11 +1183,13 @@ def test_drop_failed_files_loser_succeeds_when_new_failures_arrive_during_drop(s
         for child in failed_children:
             zk.delete(f"{failed_path}/{child}")
 
-        # The winner publishes what it did, while it still holds the lock.
+        # The winner publishes what it did, while it still holds the lock. `attempt_id` is the czxid of
+        # the lock node it holds, which is what binds the result to this attempt.
         zk.create(
             f"{keeper_path}/last_drop_result",
             json.dumps(
                 {
+                    "attempt_id": str(zk.exists(f"{keeper_path}/cleanup_lock").czxid),
                     "success": True,
                     "snapshot_size": len(failed_children),
                     "deleted": len(failed_children),
@@ -1232,6 +1240,7 @@ def test_drop_failed_files_reports_partial_failure_to_losers(started_cluster):
             f"{keeper_path}/last_drop_result",
             json.dumps(
                 {
+                    "attempt_id": str(zk.exists(f"{keeper_path}/cleanup_lock").czxid),
                     "success": False,
                     "snapshot_size": len(failed_children),
                     "deleted": deleted,
@@ -1250,3 +1259,132 @@ def test_drop_failed_files_reports_partial_failure_to_losers(started_cluster):
     # The winner's own numbers, not a count of what remains in /failed.
     assert "dropped 2 of the 5" in message, message
     assert "Failed to remove 1 batch(es)" in message, message
+
+
+def _hand_the_lock_to_a_later_attempt(zk, keeper_path, marker_payload=None):
+    """Atomically release this attempt's lock and give a different attempt the same path.
+
+    The interleaving under test is "the lock is released and re-acquired inside one poll interval",
+    which looks timing-bound but need not be: a Keeper multi transaction makes the gap unobservable
+    by construction, so the waiter cannot see the path empty no matter when it polls. That is what
+    makes this test deterministic rather than a race against the 100ms poll.
+
+    `marker_payload`, when given, is written in the same transaction, so the later attempt's result
+    is already in place the first time the waiter looks.
+    """
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+
+    transaction = zk.transaction()
+    transaction.delete(cleanup_lock_path)
+    transaction.create(cleanup_lock_path, b"manual_drop_failed", ephemeral=True)
+    if marker_payload is not None:
+        transaction.set_data(
+            f"{keeper_path}/last_drop_result", json.dumps(marker_payload).encode()
+        )
+    results = transaction.commit()
+    assert all(
+        not isinstance(r, Exception) for r in results
+    ), f"the lock handoff transaction did not commit: {results}"
+
+
+def test_drop_failed_files_waiter_is_not_transferred_to_a_later_attempt(started_cluster):
+    """A waiter must decide on the attempt it started waiting for, not on whoever holds the lock next.
+
+    `cleanup_lock` is a fixed path, so every attempt creates and deletes the same node. The waiter
+    polled it for existence only, which cannot distinguish "the attempt I am watching still holds
+    the lock" from "that attempt finished and an unrelated one took the path". A release and a
+    re-acquisition inside one 100ms poll interval was therefore invisible, and the waiter silently
+    carried on watching an attempt that had started after its own command did.
+
+    Here attempt A completes and publishes, and the lock passes to attempt B in a single Keeper
+    transaction, so the waiter provably never observes the path empty. B then keeps the lock. The
+    waiter must still return on A's result rather than blocking on B, which it has no business
+    waiting for.
+    """
+    num_failing_files = 5
+    table_name = f"test_drop_handoff_{uuid.uuid4().hex[:8]}"
+
+    def play_winner(zk, keeper_path, failed_path, failed_children):
+        # A does its job in full and publishes its own verdict.
+        for child in failed_children:
+            zk.delete(f"{failed_path}/{child}")
+        zk.create(
+            f"{keeper_path}/last_drop_result",
+            json.dumps(
+                {
+                    "attempt_id": str(zk.exists(f"{keeper_path}/cleanup_lock").czxid),
+                    "success": True,
+                    "snapshot_size": len(failed_children),
+                    "deleted": len(failed_children),
+                    "error": "",
+                }
+            ).encode(),
+        )
+
+        # A releases and B acquires, atomically. B then holds the lock and does nothing.
+        _hand_the_lock_to_a_later_attempt(zk, keeper_path)
+
+    # `release_lock=False`: B is deliberately left holding the lock, so a waiter which followed the
+    # path instead of the attempt would still be blocked when the command is expected to have returned.
+    error = _drive_loser_branch(
+        started_cluster, table_name, num_failing_files, play_winner, release_lock=False
+    )
+
+    assert error is None, f"waiter did not accept the result of the attempt it waited for: {error}"
+
+
+def test_drop_failed_files_waiter_does_not_adopt_a_later_attempts_verdict(started_cluster):
+    """A later attempt's published result must not be reported as the awaited attempt's outcome.
+
+    The marker was accepted on the strength of its Keeper version being higher than the one read
+    before waiting. That excludes a stale result from an earlier attempt, which was the intent, but
+    it does not exclude a *newer* result from an unrelated later one - so a waiter could be handed
+    the verdict of a drop it never waited for, in either direction.
+
+    Attempt A succeeds and empties `/failed`; the lock then passes to B, which publishes a failure
+    of its own, all in one transaction so the waiter's first look already sees B's marker. The
+    waiter must not report B's failure. It cannot report A's either - the marker is a single node
+    kept in place, so B's write destroyed it - and must fall back to what it can still observe,
+    which is that `/failed` is empty.
+    """
+    num_failing_files = 5
+    table_name = f"test_drop_foreign_verdict_{uuid.uuid4().hex[:8]}"
+    b_error_text = "a totally unrelated later attempt failed"
+
+    def play_winner(zk, keeper_path, failed_path, failed_children):
+        # A empties /failed and publishes success.
+        for child in failed_children:
+            zk.delete(f"{failed_path}/{child}")
+        zk.create(
+            f"{keeper_path}/last_drop_result",
+            json.dumps(
+                {
+                    "attempt_id": str(zk.exists(f"{keeper_path}/cleanup_lock").czxid),
+                    "success": True,
+                    "snapshot_size": len(failed_children),
+                    "deleted": len(failed_children),
+                    "error": "",
+                }
+            ).encode(),
+        )
+
+        # The lock passes to B and B's failure overwrites A's result, in one transaction. `attempt_id`
+        # is deliberately a value no lock node can have, standing in for B's own id: what matters is
+        # only that it is not the id the waiter is bound to.
+        _hand_the_lock_to_a_later_attempt(
+            zk,
+            keeper_path,
+            marker_payload={
+                "attempt_id": "-1",
+                "success": False,
+                "snapshot_size": 99,
+                "deleted": 0,
+                "error": b_error_text,
+            },
+        )
+
+    error = _drive_loser_branch(
+        started_cluster, table_name, num_failing_files, play_winner, release_lock=False
+    )
+
+    assert error is None, f"waiter adopted a later attempt's verdict or failed to fall back: {error}"
