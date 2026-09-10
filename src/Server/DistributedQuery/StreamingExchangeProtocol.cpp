@@ -157,7 +157,7 @@ const SharedHeader & packetStreamHeader()
     return header;
 }
 
-DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size)
+DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size, const String & stream_name)
 {
     ReadBufferFromMemory in(body, body_size);
     UInt64 flags = 0;
@@ -165,6 +165,10 @@ DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size)
     DataPacketPrefix prefix;
     prefix.end_of_stream = flags & 1;
     readVarUInt(prefix.num_rows, in);
+    /// The end-of-stream packet is not handed on, so rows in it would be lost.
+    if (prefix.end_of_stream && prefix.num_rows != 0)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Final data packet on exchange stream {} carries {} rows; it must be empty", stream_name, prefix.num_rows);
     return prefix;
 }
 

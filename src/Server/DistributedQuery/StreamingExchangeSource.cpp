@@ -343,7 +343,7 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     {
         /// Hand the whole packet on as one row for the deserializers behind this source. Only the
         /// end-of-stream marker is read here, because it ends this stream.
-        const auto prefix = StreamingExchangeProtocol::readDataPacketPrefix(packet_in->position(), packet_in->available());
+        const auto prefix = StreamingExchangeProtocol::readDataPacketPrefix(packet_in->position(), packet_in->available(), stream_name);
         rows_read += prefix.num_rows;
         if (prefix.end_of_stream)
         {

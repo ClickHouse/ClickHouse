@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -35,6 +36,11 @@
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
+}
 
 namespace
 {
@@ -486,4 +492,25 @@ TEST(ShuffleExchangeParallelism, PlainStreamWithPacketLikeColumnStaysData)
     EXPECT_EQ(stats.serializers, 0u);
     EXPECT_EQ(stats.sinks, 1u);
     EXPECT_EQ(stats.rows_into_sinks, total_rows);
+}
+
+/// A source that hands packets on only reads the leading fields of each one to find the end-of-stream
+/// marker. A marker that carries rows would lose them, so it must be rejected there as well.
+TEST(ShuffleExchangeParallelism, EndOfStreamPacketWithRowsIsRejected)
+{
+    WriteBufferFromOwnString body;
+    writeVarUInt(/*flags: end of stream*/ 1, body);
+    writeVarUInt(/*rows*/ 5, body);
+    writeVarUInt(/*columns*/ 0, body);
+    body.finalize();
+
+    try
+    {
+        StreamingExchangeProtocol::readDataPacketPrefix(body.str().data(), body.str().size(), "test stream");
+        FAIL() << "an end-of-stream packet with rows was accepted";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+    }
 }
