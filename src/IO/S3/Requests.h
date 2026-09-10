@@ -43,7 +43,6 @@ namespace ErrorCodes
 }
 }
 
-#include <optional>
 #include <string>
 
 namespace DB::S3
