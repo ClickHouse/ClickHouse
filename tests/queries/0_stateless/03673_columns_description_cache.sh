@@ -20,8 +20,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function cleanup()
 {
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_mem"
-    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_mt"
+    # DROP TABLE IF EXISTS only sees attached tables, so a table left detached by a run that died
+    # between DETACH TABLE and ATTACH TABLE survives it and makes the next CREATE TABLE fail with
+    # TABLE_ALREADY_EXISTS (detached). ATTACH TABLE IF NOT EXISTS throws without metadata at all.
+    local sql
+    sql=$(${CLICKHOUSE_CLIENT} --query "SELECT 'ATTACH TABLE ' || table || ';' FROM system.detached_tables WHERE database = currentDatabase() AND table = 't_mt'")
+    ${CLICKHOUSE_CLIENT} --query "$sql DROP TABLE IF EXISTS t_mem; DROP TABLE IF EXISTS t_mt;"
 }
 
 function cache_size()
