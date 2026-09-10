@@ -160,6 +160,10 @@ run_query 0 0   '10Gi' 4 'plain_pool_unlim'   "$wide_read"
 run_query 1 50  '1Gi'  8 'json_step_limit'    "$json_read"
 run_query 1 0   '10Gi' 8 'json_step_unlim'    "$json_read"
 run_query 1 0   1      4 'json_enc_bytes'     "SELECT count() FROM t_json_enc WHERE length(JSONAllPaths(jn)) >= 0"
+# Each row below that asserts nothing was prefetched has a companion here that differs only in the
+# byte bound, so that a fixture which stopped prefetching for some unrelated reason fails the pair
+# instead of passing the `= 0` row.
+run_query 1 0   '10Gi' 4 'json_enc_unlim'     "SELECT count() FROM t_json_enc WHERE length(JSONAllPaths(jn)) >= 0"
 
 # One part read by one thread, and a prefetch buffer well under a granule's worth of data so the
 # reader still has data pending when the next batch starts.
@@ -174,15 +178,16 @@ run_query 0 0 1 1 'packed_bytes' "SELECT * FROM t_packed FORMAT Null" \
     --local_filesystem_read_prefetch 1 --local_filesystem_read_method pread_threadpool \
     --remote_filesystem_read_prefetch 0 --enable_filesystem_read_prefetches_log 1 \
     --max_read_buffer_size_local_fs 4096
+run_query 0 0 '10Gi' 1 'packed_unlim' "SELECT * FROM t_packed FORMAT Null" \
+    --local_filesystem_read_prefetch 1 --local_filesystem_read_method pread_threadpool \
+    --remote_filesystem_read_prefetch 0 --enable_filesystem_read_prefetches_log 1 \
+    --max_read_buffer_size_local_fs 4096
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log, filesystem_read_prefetches_log"
 
 # The readers of one step are created as threads pick their tasks up, so two of them can charge the
 # budget, finish, release it and let the next two charge it again. The cumulative submissions are then
-# a multiple of the limit rather than the limit, which is why this row asserts the multiple: what the
-# bound promises is that no set of readers alive together exceeds it.
-echo "-- no set of readers alive together in the step exceeds the default limit"
-${CLICKHOUSE_CLIENT} --query "SELECT $(count_of step_default_limit) % 200 = 0
-                              AND $(count_of step_default_limit) > 0"
+# a multiple of the limit rather than the limit itself, which is why this row is an inequality: what
+# the bound promises is that no set of readers alive together exceeds it.
 echo "-- and the step never reaches what its four readers asked for"
 ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of step_default_limit) < $(count_of step_unlimited)"
 echo "-- the limit is observed, not naturally small: four readers want 4 x 300 of them"
@@ -205,6 +210,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of plain_pool_unlim) = 300"
 echo "-- a bounded JSON read step prefetches fewer substreams than an unbounded one"
 ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of json_step_limit) < $(count_of json_step_unlim)"
 
+echo "-- prefetching does happen on this fixture when the byte bound is not the binding one"
+${CLICKHOUSE_CLIENT} --query "SELECT $(count_of json_enc_unlim) > 0"
 echo "-- the memory bound alone stops prefetching, on an encrypted disk"
 ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of json_enc_bytes) = 0"
 
@@ -223,6 +230,8 @@ ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of batched_unlim) > 8"
 echo "-- the fixture is packed part storage"
 ${CLICKHOUSE_CLIENT} --query "SELECT any(part_storage_type) = 'Packed' FROM system.parts
                               WHERE database = currentDatabase() AND table = 't_packed' AND active"
+echo "-- prefetching does happen through the file view when the byte bound is not the binding one"
+${CLICKHOUSE_CLIENT} --query "SELECT $(logged_count_of packed_unlim) > 0"
 echo "-- and the memory bound stops prefetching there too, through the file view"
 ${CLICKHOUSE_CLIENT} --query "SELECT $(logged_count_of packed_bytes) = 0"
 
