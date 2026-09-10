@@ -7415,12 +7415,12 @@ Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step
 Prefetch step in marks. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
 )", 0) \
     DECLARE(NonZeroUInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
-Maximum memory usage for prefetches.
+Maximum memory held by the filesystem prefetch buffers that are alive at the same time within one MergeTree read step. It bounds the prefetches a reader issues for the substreams it is about to read as well as the prefetches the prefetched read pool admits.
 
 Cloud default value: 10% of total memory.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
-Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
+Maximum number of filesystem prefetch buffers that may be alive at the same time within one MergeTree read step. They are counted per prefetched substream rather than per column, so a `Nullable` column contributes two of them and a `JSON` column many. Zero means no count bound; use `filesystem_prefetch_max_memory_usage` if you want to bound the memory those buffers hold rather than their number.
 )", 0) \
     \
     DECLARE(Bool, allow_calculating_subcolumns_sizes_for_merge_tree_reading, true, R"(
