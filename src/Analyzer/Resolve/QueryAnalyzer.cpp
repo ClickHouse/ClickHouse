@@ -5786,7 +5786,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 && is_inner_or_semi
                 && !is_asof_inequality_key)
             {
-                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(expression_types[0], expression_types[1]))
+                /// A conversion of the whole key column into this type runs before the join, so it must
+                /// hold every source value: `is_nullable` at the top level, the flag inside a Tuple.
+                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(
+                        expression_types[0], expression_types[1], /* force_support_conversion= */ true))
                 {
                     bool is_nullable = isNullableOrLowCardinalityNullable(expression_types[0]) || isNullableOrLowCardinalityNullable(expression_types[1]);
                     common_type = is_nullable ? makeNullable(subtype) : subtype;
