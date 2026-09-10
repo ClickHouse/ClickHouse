@@ -33,8 +33,9 @@ public:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    /// A persisted table would run `executeImpl` under the global context, bypassing its access checks.
+    /// A persisted definition would resolve the source table under the global context or the engine credentials.
     bool canBeUsedToCreateTable() const override { return false; }
+    bool dependsOnCurrentUserGrants() const override { return true; }
 
 private:
     StoragePtr executeImpl(
