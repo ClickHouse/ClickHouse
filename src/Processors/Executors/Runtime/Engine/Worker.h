@@ -42,7 +42,8 @@ private:
     WorkerPool & pool;
 
     /// Graph prepare temporary data.
-    std::vector<Task> found_tasks;
+    std::vector<Task> tasks_found;
+    std::vector<AsyncTask> async_tasks_found;
     std::vector<InputPort *> pending_inputs;
     std::vector<OutputPort *> pending_outputs;
     std::vector<IProcessor *> finished_processors;

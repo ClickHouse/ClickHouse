@@ -66,11 +66,12 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
     while (auto task = pickTask())
     {
         if (coordinator.needsPoller())
-            coordinator.wake(1);
+            if (!coordinator.wake(1))
+                pool.grow(1);
 
         const size_t threads_needed = runTask(*task);
 
-        if (threads_needed > 0)
+        if (threads_needed)
         {
             size_t woken = 0;
             if (coordinator.idle() > 0)
@@ -115,7 +116,8 @@ std::optional<Task> Worker::pickTask()
 
 size_t Worker::runTask(Task task)
 {
-    found_tasks.clear();
+    tasks_found.clear();
+    async_tasks_found.clear();
 
     switch (task.kind)
     {
@@ -134,10 +136,14 @@ size_t Worker::runTask(Task task)
             break;
     }
 
-    for (const auto & found : found_tasks | std::views::reverse)
+    for (const auto & found : tasks_found | std::views::reverse)
         scheduler.push(found, worker_id);
 
-    return found_tasks.empty() ? 0 : found_tasks.size() - 1;
+    for (const auto & found : async_tasks_found)
+        scheduler.push(found);
+
+    const size_t work_found = tasks_found.size() + async_tasks_found.size();
+    return work_found == 0 ? 0 : work_found - 1;
 }
 
 void Worker::notifyOwner(ProcessorState & owner)
@@ -147,7 +153,7 @@ void Worker::notifyOwner(ProcessorState & owner)
     {
         case ProcessorLock::Status::Idle:
             owner.lock.setExecuting();
-            found_tasks.push_back(Task{.state = &owner, .kind = Task::Kind::Prepare});
+            tasks_found.push_back(Task{.state = &owner, .kind = Task::Kind::Prepare});
             return;
         case ProcessorLock::Status::Executing:
             owner.processor->onUpdatePorts();
@@ -240,7 +246,7 @@ void Worker::prepareRound(ProcessorState & state, std::unique_lock<std::mutex>)
 
         case IProcessor::Status::Ready:
             state.lock.setExecuting();
-            found_tasks.push_back(Task{.state = &state, .kind = Task::Kind::Work});
+            tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::Work});
             return;
 
         case IProcessor::Status::Async:
@@ -248,7 +254,7 @@ void Worker::prepareRound(ProcessorState & state, std::unique_lock<std::mutex>)
 #if defined(OS_LINUX) || defined(OS_DARWIN)
             auto [fd, events, timeout_ms] = processor.scheduleForEvent();
             state.lock.setExecuting();
-            scheduler.push(AsyncTask{.state = &state, .fd = fd, .events = events, .timeout_ms = timeout_ms});
+            async_tasks_found.push_back(AsyncTask{.state = &state, .fd = fd, .events = events, .timeout_ms = timeout_ms});
             return;
 #else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Asynchronous processors are not supported on this platform");
@@ -257,7 +263,7 @@ void Worker::prepareRound(ProcessorState & state, std::unique_lock<std::mutex>)
 
         case IProcessor::Status::UpdatePipeline:
             state.lock.setExecuting();
-            found_tasks.push_back(Task{.state = &state, .kind = Task::Kind::UpdatePipeline});
+            tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::UpdatePipeline});
             return;
     }
 }
@@ -340,7 +346,7 @@ void Worker::runWork(ProcessorState & state) /// NOLINT
 void Worker::runAsyncReady(ProcessorState & state)
 {
     state.processor->onAsyncJobReady();
-    found_tasks.push_back(Task{.state = &state, .kind = Task::Kind::Work});
+    tasks_found.push_back(Task{.state = &state, .kind = Task::Kind::Work});
 }
 
 void Worker::runUpdatePipeline(ProcessorState & requester)
@@ -358,7 +364,7 @@ void Worker::runUpdatePipeline(ProcessorState & requester)
     if (pipeline.cancelled())
         return;
 
-    found_tasks.push_back(Task{.state = &requester, .kind = Task::Kind::Prepare});
+    tasks_found.push_back(Task{.state = &requester, .kind = Task::Kind::Prepare});
     for (auto * state : updated)
         notifyOwner(*state);
 }

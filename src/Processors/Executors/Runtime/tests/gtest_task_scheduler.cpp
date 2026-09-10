@@ -186,6 +186,27 @@ TEST(TaskScheduler, FiredFdBecomesAnAsyncReadyTaskInTheQueue)
 #endif
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
+TEST(TaskScheduler, ABusyChainTakesFromTheGlobalQueueWithinAFewPicks)
+{
+    Fixture f(1, 2);
+    f.scheduler.push(f.task(0));
+
+    size_t picks = 0;
+    while (true)
+    {
+        f.scheduler.push(f.task(1), 0);
+        const size_t popped = f.popIndex(0);
+        ASSERT_LT(++picks, 1000u);
+        if (popped == 0)
+            break;
+        EXPECT_EQ(1u, popped);
+    }
+
+    EXPECT_EQ(0u, f.scheduler.queued());
+    EXPECT_EQ(1u, f.popIndex(0));
+    EXPECT_FALSE(f.scheduler.tryPop(0));
+}
+
 TEST(TaskScheduler, BusyWorkerPicksUpAFiredFdWithinAFewPicks)
 {
     Fixture f(1, 2);
@@ -216,7 +237,7 @@ TEST(TaskScheduler, BusyWorkerPicksUpAFiredFdWithinAFewPicks)
     ::close(fds[1]);
 }
 
-TEST(TaskScheduler, TryPopPollsWhenTheQueuesAreEmpty)
+TEST(TaskScheduler, TryPopDoesNotPollWhenTheQueuesAreEmpty)
 {
     Fixture f(1, 1);
 
@@ -227,11 +248,14 @@ TEST(TaskScheduler, TryPopPollsWhenTheQueuesAreEmpty)
     char byte = 0;
     ASSERT_EQ(1, ::write(fds[1], &byte, 1));
 
+    EXPECT_FALSE(f.scheduler.tryPop(0));
+    EXPECT_EQ(1u, f.scheduler.poll(0, 0));
+    EXPECT_EQ(0u, f.scheduler.poll(0, 0));
+
     auto popped = f.scheduler.tryPop(0);
     ASSERT_TRUE(popped);
     EXPECT_EQ(Task::Kind::AsyncReady, popped->kind);
-    EXPECT_EQ(0u, f.scheduler.queued());
-    EXPECT_EQ(0u, f.poller.pending());
+    EXPECT_EQ(0u, f.scheduler.total());
 
     ::close(fds[0]);
     ::close(fds[1]);

@@ -144,7 +144,7 @@ std::optional<Task> TaskScheduler::tryPop(size_t worker_id)
 
     if (picks_streak % max_sequential_full_rounds == 0)
     {
-        if (async.poller.pending() > 0 && poll(worker_id, 0) > 0)
+        if (poll(worker_id, 0) > 0)
             if (auto task = takeFromLocal(own))
                 return task;
 
@@ -164,15 +164,14 @@ std::optional<Task> TaskScheduler::tryPop(size_t worker_id)
     if (auto task = takeFromOthers(own))
         return task;
 
-    if (async.poller.pending() > 0)
-        if (poll(worker_id, 0) > 0)
-            return tryPop(worker_id);
-
     return std::nullopt;
 }
 
 size_t TaskScheduler::poll(size_t worker_id, int timeout_ms)
 {
+    if (async.tasks_count.load() == 0)
+        return 0;
+
     auto fired = async.poller.poll(timeout_ms);
     if (fired.empty())
         return 0;
