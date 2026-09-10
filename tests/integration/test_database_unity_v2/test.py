@@ -40,7 +40,7 @@ SEEDED_ROW_COUNT = 15
 SEEDED_FIRST_ROW = "1\tnWYHawtqUw\t930"
 SEEDED_LAST_ROW = "15\tkxUUZEUoKv\t398"
 
-EXPERIMENTAL_SETTING = "allow_experimental_database_unity_v2_catalog"
+GATE_SETTING = "allow_database_unity_v2_catalog"
 
 
 UC_HOME = "/tmp/unitycatalog"
@@ -60,7 +60,7 @@ def start_unity_catalog(node):
             'tar -C / -cf - --exclude="*/zinc" unitycatalog | tar -C /tmp -xf -',
         ]
     )
-    
+
     # Call start-uc-server.
     node.exec_in_container(
         [
@@ -133,7 +133,7 @@ def start_proxy(node):
                 "bash",
                 "-c",
                 "for i in $(seq 1 30); do "
-                f"[ \"$(curl -s http://localhost:{PROXY_PORT}/)\" = OK ] && exit 0; sleep 1; done; "
+                f'[ "$(curl -s http://localhost:{PROXY_PORT}/)" = OK ] && exit 0; sleep 1; done; '
                 f"echo 'Proxy did not answer on port {PROXY_PORT}' >&2; exit 1",
             ]
         )
@@ -153,7 +153,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/user_files_root.xml"],
+            main_configs=["configs/user_files_root.xml", "configs/display_secrets.xml"],
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
             stay_alive=True,
@@ -190,7 +190,7 @@ CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{url}')
 SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_v2',
          vended_credentials = false{credential_clause}
         """,
-        settings={EXPERIMENTAL_SETTING: "1"},
+        settings={GATE_SETTING: "1"},
     )
 
 
@@ -208,9 +208,11 @@ def show_tables(node, db_name, pattern):
 
 def assert_seeded_rows(node, db_name, table):
     """`marksheet` and its UniForm copy hold the same rows, whichever arm reads them."""
-    rows = node.query(
-        f"SELECT * FROM {db_name}.`{table}` ORDER BY 1, 2, 3"
-    ).strip().split("\n")
+    rows = (
+        node.query(f"SELECT * FROM {db_name}.`{table}` ORDER BY 1, 2, 3")
+        .strip()
+        .split("\n")
+    )
     assert len(rows) == SEEDED_ROW_COUNT
     assert rows[0] == SEEDED_FIRST_ROW
     assert rows[-1] == SEEDED_LAST_ROW
@@ -236,13 +238,11 @@ def test_experimental_gate(started_cluster):
     node = started_cluster.instances["node1"]
     db_name = unique_name("gated")
 
-    error = node.query_and_get_error(
-        f"""
+    error = node.query_and_get_error(f"""
 CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{UC_URL}')
 SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_v2', vended_credentials = false
-        """
-    )
-    assert EXPERIMENTAL_SETTING in error
+        """)
+    assert GATE_SETTING in error
 
 
 def test_list_and_read_delta_tables(started_cluster):
@@ -306,7 +306,14 @@ def test_unreadable_table_is_hidden(started_cluster):
 def test_uniform_table_reads_as_delta(started_cluster):
     node = started_cluster.instances["node1"]
     # The Delta kernel (Rust) is not built under Memory Sanitizer, so the DeltaLake engine is absent.
-    has_delta_lake = int(node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) > 0
+    has_delta_lake = (
+        int(
+            node.query(
+                "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
+            ).strip()
+        )
+        > 0
+    )
     if not has_delta_lake:
         pytest.skip("Build does not support DeltaLake (Delta kernel is unavailable)")
 
@@ -398,7 +405,7 @@ def test_oauth_token_refresh(started_cluster):
     # Create DB with client ID and secret.
     node = started_cluster.instances["node1"]
     db_name = unique_name("v2_oauth")
-    create_database(node, db_name, PROXY_URL,f"{CLIENT_ID}:{CLIENT_SECRET}")
+    create_database(node, db_name, PROXY_URL, f"{CLIENT_ID}:{CLIENT_SECRET}")
     assert_seeded_rows(node, db_name, DELTA_TABLE)
 
     # Expire the token.
@@ -441,3 +448,96 @@ def test_static_token_expiry(started_cluster):
         proxy_control(node, "restore_pat")
 
     assert_seeded_rows(node, db_name, DELTA_TABLE)
+
+
+def test_no_secrets_leaked(started_cluster):
+    """`catalog_credential` must not appear in `SHOW CREATE`, `system.databases`, errors, or logs."""
+    node = started_cluster.instances["node1"]
+    secrets = [PAT_TOKEN, CLIENT_SECRET]
+    query_ids = []
+
+    def query(sql, **kwargs):
+        qid = uuid.uuid4().hex
+        query_ids.append(qid)
+        return node.query(sql, query_id=qid, **kwargs)
+
+    def create(db_name, credential):
+        query(
+            f"""
+CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('{PROXY_URL}')
+SETTINGS warehouse = '{CATALOG}', catalog_type = 'unity_v2',
+         vended_credentials = false, catalog_credential = '{credential}'
+            """,
+            settings={GATE_SETTING: "1"},
+        )
+
+    databases = {
+        unique_name("v2_leak_pat"): PAT_TOKEN,
+        unique_name("v2_leak_oauth"): f"{CLIENT_ID}:{CLIENT_SECRET}",
+    }
+    for db_name, credential in databases.items():
+        create(db_name, credential)
+        # Exercise the auth path so that the token exchange gets logged.
+        assert DELTA_TABLE in query(f"SHOW TABLES FROM {db_name}")
+
+        show_create = query(f"SHOW CREATE DATABASE {db_name}")
+        assert "[HIDDEN]" in show_create
+        for secret in secrets:
+            assert secret not in show_create
+
+        engine_full_sql = (
+            f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+        )
+        engine_full = query(engine_full_sql)
+        assert "[HIDDEN]" in engine_full
+        for secret in secrets:
+            assert secret not in engine_full
+        # The value is masked, not dropped.
+        assert credential in node.query(
+            engine_full_sql,
+            settings={"format_display_secrets_in_show_and_select": 1},
+        )
+
+    # Authentication errors must not echo the credential.
+    wrong_pat = f"dapi-wrong-{uuid.uuid4().hex}"
+    wrong_secret = f"wrong-secret-{uuid.uuid4().hex}"
+    for credential, secret in [
+        (wrong_pat, wrong_pat),
+        (f"{CLIENT_ID}:{wrong_secret}", wrong_secret),
+    ]:
+        bad_db = unique_name("v2_leak_bad")
+        create(bad_db, credential)
+        error = node.query_and_get_error(f"SHOW TABLES FROM {bad_db}")
+        assert "401" in error
+        assert secret not in error
+        node.query(f"DROP DATABASE {bad_db}")
+
+    node.query("SYSTEM FLUSH LOGS system.query_log")
+    node.query("SYSTEM FLUSH LOGS system.text_log")
+
+    id_list = ", ".join(f"'{qid}'" for qid in query_ids)
+    # All queries must be in the log, otherwise the checks below pass on empty output.
+    assert node.query(
+        f"SELECT count() FROM system.query_log WHERE query_id IN ({id_list}) AND type = 'QueryFinish'"
+    ).strip() == str(len(query_ids))
+    logged_queries = node.query(
+        f"SELECT query FROM system.query_log WHERE query_id IN ({id_list})"
+    )
+    for secret in secrets:
+        assert secret not in logged_queries
+
+    text_log_rows = node.query(f"""
+SELECT message, value1, value2, value3, value4, value5, value6, value7, value8, value9, value10
+FROM system.text_log
+WHERE query_id IN ({id_list})
+FORMAT JSONEachRow
+""").strip()
+    assert text_log_rows
+    for line in text_log_rows.split("\n"):
+        for val in json.loads(line).values():
+            if isinstance(val, str):
+                for secret in secrets:
+                    assert secret not in val
+
+    for db_name in databases:
+        node.query(f"DROP DATABASE {db_name}")

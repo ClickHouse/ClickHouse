@@ -338,7 +338,7 @@ CATALOG_TYPES = ["unity", "unity_v2"]
 def allow_catalog_setting(catalog_type):
     if catalog_type == "unity":
         return "allow_database_unity_catalog"
-    return "allow_experimental_database_unity_v2_catalog"
+    return "allow_database_unity_v2_catalog"
 
 
 @pytest.mark.parametrize("catalog_type", CATALOG_TYPES)
