@@ -232,8 +232,20 @@ private:
     /// `attempt_id` is the `czxid` of the cleanup lock node this attempt created, rendered as a decimal
     /// string. It identifies the attempt: Keeper assigns a fresh one every time the lock path is created,
     /// so a waiter can tell this attempt's result from any other attempt's, in either direction.
-    void publishDropResult(const std::string & attempt_id, bool success, size_t snapshot_size, size_t deleted,
-        const std::string & error);
+    void publishDropResult(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client, const std::string & attempt_id,
+        bool success, size_t snapshot_size, size_t deleted, const std::string & error);
+    /// One attempt at `dropFailedFiles`: acquires the cleanup lock, does the work pinned to the session that
+    /// owns it, and publishes the result. Returns false when the attempt lost that session and produced no
+    /// verdict, which is the only case the caller retries; every other failure throws.
+    bool tryDropFailedFilesOnce();
+    /// The body of one attempt, run with the cleanup lock held and pinned to `zk_client`.
+    bool dropFailedFilesUnderLock(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const zkutil::EphemeralNodeHolder::Ptr & ephemeral_node, const fs::path & zookeeper_cleanup_lock_path,
+        const std::string & attempt_id);
+    /// True while `<zookeeper_path>/cleanup_lock` is still the node this attempt created. Once it is not,
+    /// nothing this attempt does may touch shared state - it no longer holds the lock.
+    bool stillHoldsCleanupLock(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+        const fs::path & zookeeper_cleanup_lock_path, const std::string & attempt_id) const;
     bool verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
         const std::string & waited_attempt_id, size_t & out_terminal_failed_count);
     void waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path);
@@ -248,7 +260,7 @@ private:
         const Coordination::Requests & remove_requests,
         const std::vector<std::string> & batch_file_paths,
         const std::unordered_map<std::string, uint64_t> & failed_generations,
-        ZooKeeperRetriesControl & zk_retries,
+        const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
         std::string_view batch_description,
         size_t report_batch_index,
         size_t & total_deleted,
