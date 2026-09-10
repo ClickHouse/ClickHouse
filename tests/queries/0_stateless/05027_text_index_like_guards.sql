@@ -6,6 +6,8 @@
 -- 2. `analyzeCardinalitiesAndBypassPatterns` bypasses a pattern query whose matched-token union
 --    leaves no row unmatched, before any posting list is read.
 -- In every case the result must equal a plain scan without the index.
+-- This test pins the `use_skip_indexes_on_data_read = 1` planning flavor; the
+-- `use_skip_indexes_on_data_read = 0` flavor is covered by 05053_text_index_like_guards_direct_read.
 
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SET use_skip_indexes = 1;
