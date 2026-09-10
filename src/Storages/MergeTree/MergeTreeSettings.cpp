@@ -793,6 +793,15 @@ the partition does not have to fit into a single merge: each merge still
 respects `max_bytes_to_merge_at_max_space_in_pool`. Works for Simple and
 StochasticSimple merge selectors.
 
+The age compared here is the age of the youngest part in the partition
+(`now - modification_time`, minimised over its parts), so the rule arms only
+once every part has aged past this value. Any new part resets it: an insert, a
+mutation, and also each merge this setting itself assigns, because the merged
+part is new. Forcing therefore disarms as soon as a forced merge lands and
+re-arms only after this value elapses again with no new parts, so a partition
+that needs several merges is compacted over successive rounds spaced by this
+interval rather than in one continuous pass.
+
 Forcing works exactly like `min_age_to_force_merge_seconds`: it waives the
 size-ratio requirement that normally keeps an unbalanced merge from being
 assigned, and it also waives the `min_parts_to_merge_at_once` floor, so a
