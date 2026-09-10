@@ -12,6 +12,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
 
+#include <TableFunctions/ITableFunction.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -148,6 +150,7 @@ QueryTreeNodePtr TableFunctionNode::cloneImpl() const
 {
     auto result = std::make_shared<TableFunctionNode>(table_function_name);
 
+    result->table_function = table_function;
     result->storage = storage;
     result->storage_id = storage_id;
     result->storage_snapshot = storage_snapshot;
@@ -176,8 +179,15 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
             table_function_ast->name = database_name + "." + storage_id.getTableName();
     }
 
-    const auto & arguments = getArguments();
-    table_function_ast->children.push_back(arguments.toAST(options));
+    auto arguments_ast = getArguments().toAST(options);
+
+    /// A table function may take an unqualified table name which would be resolved against a different current
+    /// database on a receiving server, so a resolved table function qualifies its arguments with the database name
+    /// (like `TableNode` always qualifies the table name with the database name).
+    if (table_function)
+        table_function->qualifyArgumentsWithDatabase(arguments_ast->children);
+
+    table_function_ast->children.push_back(std::move(arguments_ast));
     table_function_ast->arguments = table_function_ast->children.back();
 
     if (!settings_changes.empty())

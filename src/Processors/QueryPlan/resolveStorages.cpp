@@ -270,6 +270,8 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         bool use_parallel_replicas = false;
         if (reading_from_table)
             use_parallel_replicas = reading_from_table->useParallelReplicas();
+        else if (reading_from_table_function)
+            use_parallel_replicas = reading_from_table_function->useParallelReplicas();
 
         auto mutable_context = Context::createCopy(context);
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", use_parallel_replicas);

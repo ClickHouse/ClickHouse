@@ -5,6 +5,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -70,6 +71,16 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
     target_table_type_name = getTargetTable(context)->getName();
+}
+
+
+template <ViewTarget::Kind target_kind>
+void TableFunctionTimeSeriesTarget<target_kind>::qualifyArgumentsWithDatabase(ASTs & arguments) const
+{
+    /// timeSeriesMetrics( 'mydb', 'my_time_series_table' )
+    arguments.clear();
+    arguments.push_back(make_intrusive<ASTLiteral>(time_series_storage_id.database_name));
+    arguments.push_back(make_intrusive<ASTLiteral>(time_series_storage_id.table_name));
 }
 
 

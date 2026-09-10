@@ -1,6 +1,7 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -23,6 +24,19 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
 
     auto & args = args_func.arguments->children;
     config = StorageTimeSeriesSelector::getConfiguration(args, context);
+}
+
+void TableFunctionTimeSeriesSelector::qualifyArgumentsWithDatabase(ASTs & arguments) const
+{
+    /// timeSeriesSelector( 'mydb', 'my_time_series_table', selector, min_time, max_time )
+    size_t num_other_arguments = 3;
+    if (arguments.size() < num_other_arguments + 1)
+        return;
+
+    const auto & time_series_storage_id = config.time_series_storage_id;
+    arguments.erase(arguments.begin(), arguments.end() - num_other_arguments);
+    arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(time_series_storage_id.table_name));
+    arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(time_series_storage_id.database_name));
 }
 
 ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const

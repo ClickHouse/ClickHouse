@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -9,16 +10,20 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 ReadFromTableFunctionStep::ReadFromTableFunctionStep(
     SharedHeader header,
     std::string serialized_ast_,
-    TableExpressionModifiers table_expression_modifiers_)
+    TableExpressionModifiers table_expression_modifiers_,
+    bool use_parallel_replicas_)
     : ISourceStep(std::move(header))
     , serialized_ast(std::move(serialized_ast_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
+    , use_parallel_replicas(use_parallel_replicas_)
 {
 }
 
@@ -45,6 +50,15 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (table_expression_modifiers.hasSampleOffsetRatio())
         flags |= 4;
+    if (use_parallel_replicas)
+    {
+        if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Reading from a table function with parallel replicas requires query plan serialization version >= {}, "
+                "but the plan is serialized at version {}",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS, ctx.version);
+        flags |= 8;
+    }
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -52,6 +66,9 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
 
     if (table_expression_modifiers.hasSampleOffsetRatio())
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
+
+    if (use_parallel_replicas)
+        writeIntBinary(use_parallel_replicas, ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
@@ -81,8 +98,19 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
     if (flags & 4)
         sample_offset_ratio = deserializeRational(ctx.in);
 
+    char use_parallel_replicas = 0;
+    if (flags & 8)
+    {
+        /// On an older stream the bit is garbage, so reject it (serialize checks the same).
+        if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The parallel replicas flag of a table function in a version {} query plan stream; it requires version >= {}",
+                ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS);
+        readIntBinary(use_parallel_replicas, ctx.in);
+    }
+
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers);
+    return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(serialized_ast), table_expression_modifiers, use_parallel_replicas);
 }
 
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);

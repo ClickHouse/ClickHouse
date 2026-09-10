@@ -8,6 +8,7 @@ namespace DB
 class QueryNode;
 class TableNode;
 class UnionNode;
+class ITableExpressionNode;
 
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
@@ -19,7 +20,8 @@ struct SelectQueryOptions;
 const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 /// Find a table from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
+/// The result is either a table or a table function which returns a table (like `timeSeriesSamples`).
+const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;

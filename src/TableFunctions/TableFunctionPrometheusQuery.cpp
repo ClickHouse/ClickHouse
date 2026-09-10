@@ -1,6 +1,7 @@
 #include <TableFunctions/TableFunctionPrometheusQuery.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -27,6 +28,21 @@ void TableFunctionPrometheusQuery<over_range>::parseArguments(const ASTPtr & ast
     config = StoragePrometheusQuery::getConfiguration(args, context, over_range);
 }
 
+
+template <bool over_range>
+void TableFunctionPrometheusQuery<over_range>::qualifyArgumentsWithDatabase(ASTs & arguments) const
+{
+    /// prometheusQuery( 'mydb', 'my_time_series_table', promql_query, evaluation_time )
+    /// prometheusQueryRange( 'mydb', 'my_time_series_table', promql_query, start_time, end_time, step )
+    size_t num_other_arguments = over_range ? 4 : 2;
+    if (arguments.size() < num_other_arguments + 1)
+        return;
+
+    const auto & time_series_storage_id = config.evaluation_settings.time_series_storage_id;
+    arguments.erase(arguments.begin(), arguments.end() - num_other_arguments);
+    arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(time_series_storage_id.table_name));
+    arguments.insert(arguments.begin(), make_intrusive<ASTLiteral>(time_series_storage_id.database_name));
+}
 
 template <bool over_range>
 ColumnsDescription

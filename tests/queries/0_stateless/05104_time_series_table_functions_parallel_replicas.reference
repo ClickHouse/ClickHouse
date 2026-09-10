@@ -1,0 +1,22 @@
+-- one-argument form
+m1
+m2
+1
+2
+3
+m1	gauge
+m2	counter
+-- every row is returned once
+2
+3
+2
+-- the same with a local plan
+2
+3
+-- FINAL
+2
+-- table functions on the right side of a JOIN
+3
+2
+1
+1

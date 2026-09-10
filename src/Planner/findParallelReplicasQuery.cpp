@@ -3,6 +3,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
@@ -42,7 +43,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context)
+static bool isStorageEligibleForParallelReplicas(const StoragePtr & storage, bool has_final, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
 
@@ -53,10 +54,23 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
         return false;
 
     /// Parallel replicas not supported with FINAL.
-    if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+    if (has_final)
         return false;
 
     return true;
+}
+
+bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const StoragePtr & storage, const ContextPtr & context)
+{
+    bool has_final = table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal();
+    return isStorageEligibleForParallelReplicas(storage, has_final, context);
+}
+
+/// A table function returning a table (like `timeSeriesSamples`) is read with parallel replicas in the same way as the table itself.
+static bool canUseTableFunctionForParallelReplicas(const TableFunctionNode & table_function_node, const ContextPtr & context)
+{
+    bool has_final = table_function_node.hasTableExpressionModifiers() && table_function_node.getTableExpressionModifiers()->hasFinal();
+    return isStorageEligibleForParallelReplicas(table_function_node.getStorage(), has_final, context);
 }
 
 static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
@@ -410,7 +424,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     return res;
 }
 
-static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
+static const ITableExpressionNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::stack<const IQueryTreeNode *> join_nodes;
     while (query_tree_node || !join_nodes.empty())
@@ -436,6 +450,10 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                const auto & table_function_node = query_tree_node->as<TableFunctionNode &>();
+                if (canUseTableFunctionForParallelReplicas(table_function_node, context))
+                    return &table_function_node;
+
                 query_tree_node = nullptr;
                 break;
             }
@@ -502,7 +520,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
     return nullptr;
 }
 
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
+const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
@@ -630,14 +648,20 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     removeGroupingFunctionSpecializations(modified_query_tree_for_ast);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
 
-    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
-    if (!table_node)
+    const auto * table_expression_node = findTableForParallelReplicas(modified_query_tree.get(), context);
+    if (!table_expression_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
+
+    StorageID storage_id = StorageID::createEmpty();
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        storage_id = table_node->getStorageID();
+    else
+        storage_id = table_expression_node->as<TableFunctionNode &>().getStorageID();
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        table_node->getStorageID(),
+        storage_id,
         header,
         processed_stage,
         modified_query_ast,
