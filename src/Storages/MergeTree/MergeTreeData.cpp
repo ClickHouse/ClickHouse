@@ -418,6 +418,7 @@ namespace ErrorCodes
     extern const int BAD_TTL_EXPRESSION;
     extern const int INCORRECT_FILE_NAME;
     extern const int BAD_DATA_PART_NAME;
+    extern const int NO_FILE_IN_DATA_PART;
     extern const int READONLY_SETTING;
     extern const int ABORTED;
     extern const int UNKNOWN_DISK;
@@ -8303,6 +8304,34 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
 
     IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
     part->loadColumnsChecksumsIndexes(false, true);
+
+    /// The fallback mentioned above is only safe while there is nothing for the part to catch up with.
+    /// A part detached before a metadata-only `ALTER` (`RENAME COLUMN`, `MODIFY COLUMN`) still needs the
+    /// conversions of the versions it has not applied, and its `metadata_version.txt` is the only record
+    /// of how far it got. That file carries no checksum, so its absence is not corruption that anything
+    /// detects: the part would be attached as if it were already at the table's version, the conversions
+    /// would be skipped, and every renamed or modified column would silently read as its default. Refuse
+    /// the attach instead and say what to do about it. A table that never had a metadata-only `ALTER` is
+    /// unaffected, which is also the shape of a genuinely old part written before the file existed.
+    if (part->old_part_with_no_metadata_version_on_disk)
+    {
+        auto table_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        auto table_metadata_version = table_metadata_snapshot->getMetadataVersion();
+        if (table_metadata_version > 0)
+        {
+            throw Exception(
+                ErrorCodes::NO_FILE_IN_DATA_PART,
+                "Part {} has no {}, so the metadata-only ALTERs it still has to apply cannot be determined, "
+                "while the table is at metadata version {}. Attaching it would read the columns of every "
+                "such ALTER as their defaults. Write the metadata version the part was detached at into "
+                "{}/{} and attach it again",
+                part->name,
+                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+                table_metadata_version,
+                part->getDataPartStorage().getPartDirectory(),
+                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+        }
+    }
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
     part->removeVersionMetadata();
