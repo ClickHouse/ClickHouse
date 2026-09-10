@@ -4,6 +4,8 @@
 -- until the lambda is executed. The pattern is still materialized in full when LIKE runs (the lambda
 -- receives a mix of replicated and full columns), but the eager copy at capture time is gone, so the
 -- exploded pattern is created later and freed sooner.
+-- mapContainsKeyValue and mapContainsKeyValueLike build the same kind of lambda but capture two needle
+-- columns (key and value), so lazy replication must apply to both to avoid two eager copies at capture.
 
 SELECT '-- correctness with a non-constant pattern';
 {% for i in range(2) -%}
@@ -22,6 +24,22 @@ FROM
 SETTINGS enable_lazy_columns_replication = {{ i }};
 {% endfor %}
 
+SELECT '-- correctness with non-constant key and value needles';
+{% for i in range(2) -%}
+SELECT
+    mapContainsKeyValue(m, k, v),
+    mapContainsKeyValueLike(m, k || '%', v || '%')
+FROM
+(
+    SELECT
+        mapFromArrays(arrayMap(i -> 'k' || toString(i), range(number % 4)), arrayMap(i -> 'v' || toString(i), range(number % 4))) AS m,
+        'k' || toString(number % 3) AS k,
+        'v' || toString(number % 3) AS v
+    FROM numbers(6)
+)
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
+
 SELECT '-- large non-constant pattern is copied one time fewer at peak';
 {% for i in range(2) -%}
 WITH
@@ -32,6 +50,17 @@ SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, max_block_s
 FORMAT Null;
 {% endfor %}
 
+SELECT '-- large non-constant key and value needles are copied fewer times at peak';
+{% for i in range(2) -%}
+WITH
+    repeat('a', 100000) || toString(number) AS key_pattern,
+    repeat('b', 100000) || toString(number) AS value_pattern,
+    mapFromArrays(arrayMap(i -> 'key' || toString(i), range(20)), arrayMap(i -> 'val' || toString(i), range(20))) AS m
+SELECT sum(mapContainsKeyValueLike(m, key_pattern, value_pattern)) FROM numbers(100)
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, max_block_size = 65536, log_queries = 1, log_comment = '04616_map_kv_{{ 'lazy' if i else 'eager' }}'
+FORMAT Null;
+{% endfor %}
+
 SYSTEM FLUSH LOGS query_log;
 
 -- Lazy replication saves one full copy of the pattern exploded per map entry (~200 MB here),
@@ -39,3 +68,9 @@ SYSTEM FLUSH LOGS query_log;
 SELECT
     (SELECT max(memory_usage) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04616_map_like_lazy')
     < 0.9 * (SELECT max(memory_usage) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04616_map_like_eager');
+
+-- mapContainsKeyValueLike captures both the key and the value needle, so lazy replication saves two
+-- exploded copies at peak; the lazy run must again stay noticeably below the eager one.
+SELECT
+    (SELECT max(memory_usage) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04616_map_kv_lazy')
+    < 0.9 * (SELECT max(memory_usage) FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04616_map_kv_eager');
