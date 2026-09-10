@@ -1289,26 +1289,36 @@ public:
     YearWeek toYearWeekOfNewyearMode(DateOrTime v, bool monday_first_mode) const
     {
         YearWeek yw(0, 0);
-        UInt16 offset_day = monday_first_mode ? 0U : 1U;
 
         const LUTIndex i = LUTIndex(v);
 
-        // Checking the week across the year
-        yw.first = toYear(i + (7 - toDayOfWeek(i + offset_day)));
-
-        /// Round both days down to the day the week starts on, and count the weeks between them.
-        /// The rounding is done on day numbers rather than on LUT indexes: the Sunday that starts the first
-        /// week of 1900 is 1899-12-31, which lies before the beginning of the LUT, so subtracting it from a
-        /// LUT index would underflow (`toDayOfWeek` numbers the days 1 for Monday to 7 for Sunday).
-        auto day_num_of_start_of_week = [this, monday_first_mode](LUTIndex index)
+        /// Everything below is calculated on day indexes - the number of days since the beginning of the
+        /// lookup table - and not on `LUTIndex`, whose arithmetic saturates at the ends of the table, because
+        /// both ends of a week can lie outside of it: the Sunday that starts the first week of 1900 is
+        /// 1899-12-31, and the Saturday that ends the week of 2299-12-31 is 2300-01-06.
+        /// `toDayOfWeek` numbers the days 1 for Monday to 7 for Sunday.
+        auto days_since_start_of_week = [this, monday_first_mode](LUTIndex index) -> Int64
         {
             const UInt8 day_of_week = toDayOfWeek(index);
-            const Int64 days_since_start_of_week = monday_first_mode ? day_of_week - 1 : day_of_week % 7;
-            return static_cast<Int64>(toDayNum(index)) - days_since_start_of_week;
+            return monday_first_mode ? day_of_week - 1 : day_of_week % 7;
         };
 
-        const Int64 first_day = day_num_of_start_of_week(makeLUTIndex(yw.first, 1, 1));
-        const Int64 this_day = day_num_of_start_of_week(i);
+        /// The day the week of the queried day starts on, and the day it ends on.
+        const Int64 this_day = static_cast<Int64>(i.toUnderType()) - days_since_start_of_week(i);
+        const Int64 last_day_of_week = this_day + 6;
+
+        /// The week belongs to the year of its last day. The calendar repeats every 400 years, which is
+        /// exactly the size of the lookup table, so a day past its end is looked up 400 years earlier.
+        const bool crosses_end_of_lut = last_day_of_week >= days_in_400_years;
+        const Int64 last_day_of_week_in_lut = crosses_end_of_lut ? last_day_of_week - days_in_400_years : last_day_of_week;
+        yw.first = static_cast<UInt16>(toYear(LUTIndex(static_cast<UInt32>(last_day_of_week_in_lut))) + (crosses_end_of_lut ? 400 : 0));
+
+        /// Week 1 is the week containing January 1 of that year, which is out of the table's range as well
+        /// when the week of the queried day is.
+        const LUTIndex first_january = makeLUTIndex(crosses_end_of_lut ? yw.first - 400 : yw.first, 1, 1);
+        const Int64 first_day = static_cast<Int64>(first_january.toUnderType())
+            + (crosses_end_of_lut ? days_in_400_years : 0)
+            - days_since_start_of_week(first_january);
 
         yw.second = static_cast<UInt8>((this_day - first_day) / 7 + 1);
         return yw;
