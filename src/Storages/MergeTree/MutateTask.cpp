@@ -609,7 +609,14 @@ static void splitAndModifyMutationCommands(
     }
     else
     {
-        NameSet cleared_nested_member_names;
+        /// Part names of columns whose files must not survive this mutation. A rename of the
+        /// same files is pushed too and wins in `collectFilesForRenames` (first command per
+        /// source file), so such renames are removed after the loop.
+        NameSet dropped_column_names_in_part;
+        /// New name -> name in the source part for renames applied to `part_columns` below.
+        /// A drop erases the entry from `rename_map` (see `AlterConversions`), so a DROP after
+        /// the rename in the same command batch cannot be resolved by `nameInPart`.
+        NameToNameMap renamed_in_batch;
         for (const auto & command : commands)
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
@@ -677,29 +684,49 @@ static void splitAndModifyMutationCommands(
             else if (part_columns.has(command.column_name))
             {
                 if (command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    auto it = renamed_in_batch.find(command.column_name);
+                    renamed_in_batch[command.rename_to] = it != renamed_in_batch.end() ? it->second : nameInPart(command.column_name);
                     part_columns.rename(command.column_name, command.rename_to);
+                }
 
                 /// CLEAR COLUMN must also go to the interpreter, because we might have projections/indexes/materialized
                 /// columns that depend on this column and should be rebuilt.
                 if (command.type == MutationCommand::Type::DROP_COLUMN && command.clear)
                     for_interpreter.push_back(command);
 
-                for_file_renames.push_back(command);
+                /// A DROP/CLEAR of a renamed column must address the files by the name the
+                /// source part stores, otherwise the rename carries the data forward.
+                auto command_for_renames = command;
+                if (command.type == MutationCommand::Type::DROP_COLUMN)
+                {
+                    if (auto it = renamed_in_batch.find(command.column_name); it != renamed_in_batch.end())
+                    {
+                        command_for_renames.column_name = it->second;
+                        dropped_column_names_in_part.emplace(it->second);
+                    }
+                }
+                for_file_renames.push_back(std::move(command_for_renames));
+            }
+            /// The column can be stored under a previous name if the part is behind a rename.
+            else if (command.type == MutationCommand::Type::DROP_COLUMN && part_columns.has(nameInPart(command.column_name)))
+            {
+                if (command.clear)
+                    for_interpreter.push_back(command);
+
+                auto command_for_renames = command;
+                command_for_renames.column_name = nameInPart(command.column_name);
+                dropped_column_names_in_part.emplace(command_for_renames.column_name);
+                for_file_renames.push_back(std::move(command_for_renames));
             }
             else if (command.type == MutationCommand::Type::DROP_COLUMN && part_columns.hasNested(nameInPart(command.column_name)))
             {
-                /// A DROP/CLEAR of a Nested parent matches no flattened column stored in the part
-                /// (`n` is stored as `n.x`, `n.y`, ...), so expand it to the member columns. Without
-                /// this their files are hardlinked into the new part and become readable again if
-                /// the same name is re-added to the table schema (see
-                /// 05059_re_add_column_if_not_exists_same_alter). The shared array-sizes stream is
-                /// kept while any member still uses it (`stream_counts` in collectFilesForRenames).
+                /// A DROP/CLEAR of a Nested parent matches no flattened column stored in the
+                /// part (`n` is stored as `n.x`, `n.y`, ...), so expand it to the members.
                 for (const auto & nested_member : part_columns.getNested(nameInPart(command.column_name)))
                 {
                     auto member_command = command;
-                    /// The command for the interpreter must carry the member's current name:
-                    /// `MutationsInterpreter` and `getColumnsForNewDataPart` match `column_name`
-                    /// against the current table metadata.
+                    /// The interpreter matches `column_name` against the current table metadata.
                     member_command.column_name = nested_member.name;
                     if (member_command.clear)
                     {
@@ -708,11 +735,10 @@ static void splitAndModifyMutationCommands(
                         for_interpreter.push_back(member_command);
                     }
 
-                    /// The files are resolved against the source part, which stores the member
-                    /// under its original name, so the command for the file renames carries the
-                    /// part name (it can differ from the current name after a pending rename).
+                    /// Files are resolved against the source part, which stores the member
+                    /// under its original name (different after a pending rename).
                     member_command.column_name = nameInPart(nested_member.name);
-                    cleared_nested_member_names.emplace(member_command.column_name);
+                    dropped_column_names_in_part.emplace(member_command.column_name);
                     for_file_renames.push_back(member_command);
                 }
             }
@@ -739,17 +765,14 @@ static void splitAndModifyMutationCommands(
             for_file_renames.push_back({.type = MutationCommand::Type::RENAME_COLUMN, .column_name = rename_from, .rename_to = rename_to});
         }
 
-        /// The files of members dropped or cleared through their `Nested` parent must be removed,
-        /// not renamed to the member's current name. `collectFilesForRenames` deduplicates by the
-        /// source file name and the renames of the same members were pushed before the parent's
-        /// drop was expanded, so without this the rename would win and the cleared data would
-        /// survive in the new part under the member's new name.
-        if (!cleared_nested_member_names.empty())
+        /// The files of columns in `dropped_column_names_in_part` must be removed, not renamed
+        /// to the column's current name, so the renames pushed before their drop lose here.
+        if (!dropped_column_names_in_part.empty())
         {
             std::erase_if(for_file_renames, [&](const MutationCommand & command_for_renames)
             {
                 return command_for_renames.type == MutationCommand::Type::RENAME_COLUMN
-                    && cleared_nested_member_names.contains(command_for_renames.column_name);
+                    && dropped_column_names_in_part.contains(command_for_renames.column_name);
             });
         }
     }

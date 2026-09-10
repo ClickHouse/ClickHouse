@@ -22,3 +22,57 @@ partial re-add columns	n.y
 partial re-add data	1	[0]	[20]
 partial re-add data	2	[0]	[21]
 rename re-add	42	7	1
+if-exists nested re-add columns	a
+if-exists nested re-add columns	n.x
+if-exists nested re-add data	1	[]
+if-exists nested re-add data	2	[]
+missing skip columns	a
+missing skip data	1
+part type	Wide
+after drop parent	1
+after drop parent	2
+columns after drop parent	a
+all_1_1_0_2	1	
+re-add columns	a
+re-add columns	n.x
+re-add data	1	[]
+re-add data	2	[]
+all_1_1_0_2	1	
+after clear parent	1	[]	[]
+after clear parent	2	[]	[]
+all_1_1_0_2	1	
+rename and clear in one alter	1	[]	[]
+rename and clear in one alter	2	[]	[]
+all_1_1_0_2	1	
+clear after pending rename	1	[]	[]
+clear after pending rename	2	[]	[]
+all_1_1_0_4	1	
+clear after applied rename	1	[]	[]
+clear after applied rename	2	[]	[]
+all_1_1_0_4	1	
+drop and re-add after rename	1	[]
+drop and re-add after rename	2	[]
+all_1_1_0_2	1	
+scalar drop and re-add after rename	1	7
+all_1_1_0_2	1	
+scalar rename and clear	1	0
+all_1_1_0_2	1	
+nested members have no implicit index	auto_minmax_index_a
+scalar column got an index	auto_minmax_index_a	a	Implicit
+scalar column got an index	auto_minmax_index_n.x	`n.x`	Implicit
+the index follows the rename	auto_minmax_index_a	a	Implicit
+the index follows the rename	auto_minmax_index_n.z	`n.z`	Implicit
+no orphan after dropping the parent	auto_minmax_index_a
+re-add and rename in one alter	auto_minmax_index_a	a	Implicit
+re-add and rename in one alter	auto_minmax_index_n.z	`n.z`	Implicit
+1	0
+all_1_1_0_5	1	
+clear keeps the indices	auto_minmax_index_a	a	Implicit
+clear keeps the indices	auto_minmax_index_n.w	`n.w`	Implicit
+clear keeps the indices	auto_minmax_index_n.x	`n.x`	Implicit
+rename replaces the stale index	auto_minmax_index_a	a	Implicit
+rename replaces the stale index	auto_minmax_index_n.w	`n.w`	Implicit
+rename replaces the stale index	auto_minmax_index_n.z	`n.z`	Implicit
+1	0	0
+all_1_1_0_4	1	
+x			

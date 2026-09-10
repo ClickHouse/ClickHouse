@@ -1,6 +1,0 @@
-if-exists nested re-add columns	a
-if-exists nested re-add columns	n.x
-if-exists nested re-add data	1	[]
-if-exists nested re-add data	2	[]
-missing skip columns	a
-missing skip data	1

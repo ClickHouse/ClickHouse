@@ -639,6 +639,40 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
+/// The column definition an `ADD COLUMN` command materializes, including default/comment/codec/
+/// ttl/settings/statistics, so `prepare`/`validate` advance their working snapshots with the same
+/// definition as `apply` instead of a bare name+type.
+static ColumnDescription columnDescriptionFromAddAlter(const AlterCommand & command)
+{
+    ColumnDescription column(command.column_name, command.data_type);
+    if (command.default_expression)
+    {
+        column.default_desc.kind = command.default_kind;
+        column.default_desc.expression = command.default_expression;
+    }
+    if (command.comment)
+        column.comment = *command.comment;
+
+    if (command.codec)
+        column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, CodecValidationSettings::trusted());
+
+    column.ttl = command.ttl;
+
+    if (!command.settings_changes.empty())
+    {
+        MergeTreeColumnSettings::validate(command.settings_changes);
+        column.settings = command.settings_changes;
+    }
+
+    /// The declared statistics are transferred like in CREATE (the types are validated against the
+    /// column data type by the storage in `checkAlterIsPossible`).
+    if (command.column_statistics_decl)
+        column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(command.column_statistics_decl, command.column_name, command.data_type);
+
+    return column;
+}
+
+
 /// The exact set of columns an ADD COLUMN command materializes: flatten_nested expansion plus the
 /// IF NOT EXISTS existence filter. Shared by AlterCommand::apply and AlterCommands::validate so both
 /// model the identical schema (an earlier drift here caused apply/validate to disagree on nested adds).
@@ -691,30 +725,7 @@ void AlterCommand::apply(
 
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type);
-        if (default_expression)
-        {
-            column.default_desc.kind = default_kind;
-            column.default_desc.expression = default_expression;
-        }
-        if (comment)
-            column.comment = *comment;
-
-        if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
-
-        column.ttl = ttl;
-
-        if (!settings_changes.empty())
-        {
-            MergeTreeColumnSettings::validate(settings_changes);
-            column.settings = settings_changes;
-        }
-
-        /// The declared statistics are transferred like in CREATE (the types are validated against the
-        /// column data type by the storage in `checkAlterIsPossible`).
-        if (column_statistics_decl)
-            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, data_type);
+        ColumnDescription column = columnDescriptionFromAddAlter(*this);
 
         /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
         /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so
@@ -2031,7 +2042,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
                 /// Advance the working snapshot with the exact columns apply() would materialize
                 /// (flatten_nested expansion), so a later command in the same ALTER statement
                 /// sees the column as existing, matching validate() and apply().
-                for (auto & col : columnsAddedByAlter(columns, ColumnDescription(command.column_name, command.data_type),
+                for (auto & col : columnsAddedByAlter(columns, columnDescriptionFromAddAlter(command),
                                                       context, command.if_not_exists, share_nested_offsets))
                     columns.add(std::move(col));
             }
@@ -2170,7 +2181,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// Advance the working snapshot with the exact columns apply() would materialize
             /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
             /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
+            for (auto & col : columnsAddedByAlter(all_columns, columnDescriptionFromAddAlter(command),
                                                   context, command.if_not_exists, share_nested))
                 all_columns.add(std::move(col));
         }
