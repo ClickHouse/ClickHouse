@@ -2065,9 +2065,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                             join_pos);
                         creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_pos), max_len);
 
-                        auto * step_raw_ptr = creating_set_step.get();
                         plan.addStep(std::move(creating_set_step));
-                        return step_raw_ptr;
+                        return static_cast<CreateSetAndFilterOnTheFlyStep *>(plan.getRootNode()->step.get());
                     };
 
                     if (expressions.join->pipelineType() == JoinPipelineType::YShaped && expressions.join->getTableJoin().kind() != JoinKind::Paste)
