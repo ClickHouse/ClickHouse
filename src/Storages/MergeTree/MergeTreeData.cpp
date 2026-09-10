@@ -9853,12 +9853,15 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             if (arguments.size() >= 2)
             {
                 const auto & right_argument = arguments[1];
-                /// A parsed `IN some_table` carries a plain `ASTIdentifier`; only an already-resolved
-                /// one is an `ASTTableIdentifier`, and `ASTTableIdentifier` derives from it. Nothing
-                /// else can stand there: the right-hand side of `IN` is a set, a tuple, a subquery, a
-                /// table or a table function, so an identifier always names a table whose contents the
+                /// A parsed `IN some_table` carries a plain `ASTIdentifier`, while an already
+                /// resolved one carries an `ASTTableIdentifier`; both spellings have to be listed,
+                /// because `IAST::as` is an exact-type cast rather than a `dynamic_cast`, and
+                /// `MarkTableIdentifiersVisitor` rewrites the node in place - including inside a
+                /// column default expression that the storage metadata keeps. Nothing else can
+                /// stand there: the right-hand side of `IN` is a set, a tuple, a subquery, a table
+                /// or a table function, so an identifier always names a table whose contents the
                 /// analyzer turns into a prepared set.
-                if (right_argument->as<ASTIdentifier>())
+                if (right_argument->as<ASTIdentifier>() || right_argument->as<ASTTableIdentifier>())
                     return true;
 
                 /// A non-literal function in the right-hand side may be a table function. It is
