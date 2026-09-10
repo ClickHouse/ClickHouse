@@ -42,7 +42,7 @@ struct ExtractFirstSignificantSubdomain
 
         if constexpr (conform_rfc)
         {
-            if (find_first_symbols<':'>(tmp, tmp + domain_length) != tmp + domain_length)
+            if (tmp > data && tmp[-1] == '[' && tmp + domain_length < data + size && tmp[domain_length] == ']')
                 return;
         }
 

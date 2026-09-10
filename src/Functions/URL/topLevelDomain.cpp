@@ -25,8 +25,9 @@ struct ExtractTopLevelDomain
         {
             if constexpr (conform_rfc)
             {
-                if (host.data() > data && host.data()[-1] == '[' && host.data() + host.size() < data + size
-                    && host.data()[host.size()] == ']')
+                const auto * host_begin = host.data(); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                const auto * host_end_ptr = host_begin + host.size();
+                if (host_begin > data && host_begin[-1] == '[' && host_end_ptr < data + size && *host_end_ptr == ']')
                     return;
             }
 

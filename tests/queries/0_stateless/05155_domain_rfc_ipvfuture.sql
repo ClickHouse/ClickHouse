@@ -5,7 +5,7 @@ SELECT domainRFC('//[v1.a]:80/') FORMAT CSV;
 SELECT domainRFC('http://[vA.fe80::1]:80/') FORMAT CSV;
 SELECT portRFC('http://[v1.a]:80/') FORMAT CSV;
 SELECT portRFC('http://[v1.a]/', toUInt16(443)) FORMAT CSV;
-SELECT topLevelDomainRFC('http://[v1.a]:80/');
+SELECT topLevelDomainRFC('http://[v1.a]:80/') FORMAT CSV;
 
 -- Malformed IPvFuture must still be rejected.
 SELECT domainRFC('http://[v.a]:80/') FORMAT CSV; -- missing hex version digit
