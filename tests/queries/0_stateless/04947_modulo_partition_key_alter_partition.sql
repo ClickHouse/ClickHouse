@@ -21,9 +21,19 @@ SELECT 'complex key', count() FROM mod_complex;
 CREATE TABLE mod_wide (c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(37528, 'UInt64') % c0);
 INSERT INTO mod_wide VALUES (167682982);
 SELECT 'wide render', partition FROM system.parts WHERE database = currentDatabase() AND table = 'mod_wide' AND active;
+SELECT 'wide render columns', partition FROM system.parts_columns WHERE database = currentDatabase() AND table = 'mod_wide' AND active AND column = 'c0';
 ALTER TABLE mod_wide DROP PARTITION 37528;
 SELECT 'wide key', count() FROM mod_wide;
 DROP TABLE mod_wide;
+
+-- A projection part has no partition value of its own; `system.projection_parts` renders its parent's,
+-- so it needs the same adjusted key.
+CREATE TABLE mod_proj (c0 Int128, c1 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(37528, 'UInt64') % c0);
+ALTER TABLE mod_proj ADD PROJECTION p (SELECT c1 ORDER BY c1);
+INSERT INTO mod_proj VALUES (167682982, 1);
+SELECT 'projection render', partition FROM system.projection_parts WHERE database = currentDatabase() AND table = 'mod_proj' AND active;
+SELECT 'projection columns render', partition FROM system.projection_parts_columns WHERE database = currentDatabase() AND table = 'mod_proj' AND active AND column = 'c1';
+DROP TABLE mod_proj;
 
 -- A value outside the range of the partition key type addresses no partition and is rejected.
 CREATE TABLE mod_range (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c0 % 37528);

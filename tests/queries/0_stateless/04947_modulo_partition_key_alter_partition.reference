@@ -2,7 +2,10 @@ drop partition	0
 delete in partition	0
 complex key	0
 wide render	37528
+wide render columns	37528
 wide key	0
+projection render	37528
+projection columns render	tuple()
 out of range	1
 partition id	20200523-37528
 unsigned render	37528
