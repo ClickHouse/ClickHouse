@@ -22,6 +22,17 @@
 2	World
 -- The archive syntax can be switched off
 1
+-- The interpretation of an ambiguous name is not shared between the two modes
+allow_archive_path_syntax = 1
+1	Hello
+2	World
+allow_archive_path_syntax = 0
+3	Literal
+allow_archive_path_syntax = 1
+1	Hello
+2	World
+allow_archive_path_syntax = 0
+3	Literal
 -- A missing archive and a missing file inside an archive
 1
 1

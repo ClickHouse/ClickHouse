@@ -44,16 +44,23 @@ namespace ErrorCodes
 namespace
 {
 
+/// The path to the archive a name resolves to through the archive path syntax
+/// (`archive.tar.zst::data.native`), or an empty string if the name is a plain path in this context.
+String getPathToArchive(const String & table_path, const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::allow_archive_path_syntax])
+        return {};
+
+    return splitToArchivePathAndPathInArchive(table_path).first;
+}
+
 /// The file whose presence decides whether a table name resolves to a table. A name can use the
 /// archive path syntax (`archive.tar.zst::data.native`), which the `file` table function resolves
 /// to a file stored inside the archive; the file that has to exist on the filesystem is then the
 /// archive, not the whole name.
 String getPathToProbe(const String & table_path, const ContextPtr & context)
 {
-    if (!context->getSettingsRef()[Setting::allow_archive_path_syntax])
-        return table_path;
-
-    String path_to_archive = splitToArchivePathAndPathInArchive(table_path).first;
+    String path_to_archive = getPathToArchive(table_path, context);
     return path_to_archive.empty() ? table_path : path_to_archive;
 }
 
@@ -88,13 +95,13 @@ std::string DatabaseFilesystem::getTablePath(const std::string & table_name) con
     return table_path.lexically_normal().string();
 }
 
-StoragePtr DatabaseFilesystem::addTable(const std::string & table_name, StoragePtr table_storage) const
+StoragePtr DatabaseFilesystem::addTable(const std::string & cache_key, StoragePtr table_storage) const
 {
     std::lock_guard lock(mutex);
     /// `emplace` keeps the existing entry if the key is already there, so `first->second` is the storage
     /// a concurrent call for the same name inserted first. Nothing that locks `mutex` again may be called
     /// here: it is the non-recursive base `IDatabase::mutex`, shared with `getDatabaseName`.
-    return loaded_tables.emplace(table_name, table_storage).first->second;
+    return loaded_tables.emplace(cache_key, table_storage).first->second;
 }
 
 bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const
@@ -133,12 +140,28 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     return true;
 }
 
+std::string DatabaseFilesystem::getCacheKey(const std::string & table_name, const ContextPtr & context_) const
+{
+    /// `allow_archive_path_syntax` is part of the resolution of a name: with it enabled,
+    /// `a.tar::x.csv` is the file `x.csv` inside the archive `a.tar`, and with it disabled the same
+    /// name is a file called `a.tar::x.csv`. Both files can exist at once, and the existence probe
+    /// succeeds in both modes, so the two interpretations must not share a cache entry, or a query
+    /// would read the source the previous query resolved. A file name cannot contain a zero byte,
+    /// so the marker cannot collide with the name of another table.
+    if (getPathToArchive(getTablePath(table_name), context_).empty())
+        return table_name;
+
+    return table_name + String(1, '\0') + "archive";
+}
+
 StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name, const ContextPtr & context_) const
 {
+    const std::string key = getCacheKey(name, context_);
+
     StoragePtr table = nullptr;
     {
         std::lock_guard lock(mutex);
-        auto it = loaded_tables.find(name);
+        auto it = loaded_tables.find(key);
         if (it != loaded_tables.end())
             table = it->second;
     }
@@ -147,7 +170,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name, co
     if (table && !fs::exists(getPathToProbe(getTablePath(name), context_)))
     {
         std::lock_guard lock(mutex);
-        loaded_tables.erase(name);
+        loaded_tables.erase(key);
         return nullptr;
     }
 
@@ -207,7 +230,7 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
     if (table_storage && !renames_after_processing)
-        return addTable(name, table_storage);
+        return addTable(getCacheKey(name, context_), table_storage);
 
     return table_storage;
 }

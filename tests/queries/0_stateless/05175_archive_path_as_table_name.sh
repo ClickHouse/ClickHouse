@@ -44,6 +44,25 @@ ${CLICKHOUSE_CLIENT} --query "
 echo '-- The archive syntax can be switched off'
 ${CLICKHOUSE_LOCAL} --allow_archive_path_syntax 0 --query "SELECT * FROM '${ARCHIVE}.tar::${DATA}'" 2>&1 | grep -c 'UNKNOWN_TABLE'
 
+echo '-- The interpretation of an ambiguous name is not shared between the two modes'
+# A file whose name is literally the archive syntax, next to the archive of the same name: the
+# `Filesystem` database caches a resolved table, and the two interpretations of the one name must
+# not share that cache entry.
+AMBIGUOUS="${CLICKHOUSE_TEST_UNIQUE_NAME}_ambiguous.tar"
+echo -e "3,Literal" > "${USER_FILES_PATH}/${AMBIGUOUS}::${DATA}"
+tar -C "${CLICKHOUSE_TMP}" -cf "${USER_FILES_PATH}/${AMBIGUOUS}" "${DATA}"
+
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${CLICKHOUSE_DATABASE}_ambiguous ENGINE = Filesystem"
+for setting in 1 0 1 0
+do
+    echo "allow_archive_path_syntax = ${setting}"
+    ${CLICKHOUSE_CLIENT} --allow_archive_path_syntax "${setting}" --query \
+        "SELECT * FROM ${CLICKHOUSE_DATABASE}_ambiguous.\`${AMBIGUOUS}::${DATA}\` ORDER BY 1"
+done
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_ambiguous"
+
+rm "${USER_FILES_PATH}/${AMBIGUOUS}" "${USER_FILES_PATH}/${AMBIGUOUS}::${DATA}"
+
 echo '-- A missing archive and a missing file inside an archive'
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM '${ARCHIVE}_nonexistent.tar::${DATA}'" 2>&1 | grep -c 'UNKNOWN_TABLE'
 ${CLICKHOUSE_LOCAL} --query "SELECT * FROM '${ARCHIVE}.tar::nonexistent.csv'" 2>&1 | grep -c 'CANNOT_EXTRACT_TABLE_STRUCTURE'
