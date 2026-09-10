@@ -121,6 +121,12 @@ public:
 
     void rollback_ext(const nuraft::state_machine::ext_op_params & params) override;
 
+    /// Convenience wrappers over the `*_ext` methods above, for tools and tests that drive the
+    /// state machine by hand. In the server, nuraft calls the `*_ext` methods directly.
+    nuraft::ptr<nuraft::buffer> preCommitEntry(uint64_t log_idx, const nuraft::ptr<nuraft::log_entry> & entry);
+    nuraft::ptr<nuraft::buffer> commitEntry(uint64_t log_idx, const nuraft::ptr<nuraft::log_entry> & entry);
+    void rollbackEntry(uint64_t log_idx, const nuraft::ptr<nuraft::log_entry> & entry);
+
     // Roll back the batch's requests in reverse zxid order.
     // allow_missing - whether the transactions we want to rollback can be missing from storage
     // (can happen in case of exception during preprocessing)
