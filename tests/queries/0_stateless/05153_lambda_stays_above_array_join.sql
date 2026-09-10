@@ -1,6 +1,9 @@
 -- A lambda is not a column: the lift below ARRAY JOIN must not carry it through the step
 -- (debug builds trip on cutting the Function-typed constant in the step).
 
+-- only the analyzer folds a capture-free lambda into a constant; the plan shape below depends on it
+SET enable_analyzer = 1;
+
 SELECT uniq(x, arrayMap(elem -> [elem, elem], x)) FROM system.one ARRAY JOIN [[], ['a'], ['a', 'b'], []] AS x;
 SELECT count() FROM (EXPLAIN header = 1 SELECT uniq(x, arrayMap(elem -> [elem, elem], x)) FROM system.one ARRAY JOIN [[], ['a'], ['a', 'b'], []] AS x) WHERE explain ILIKE '%Function(%';
 SELECT uniq(x, arrayMap(elem -> [elem, elem], x)) FROM (SELECT arrayJoin([[], ['a'], ['a', 'b'], []]) AS x) SETTINGS query_plan_lower_array_join_function = 1;
