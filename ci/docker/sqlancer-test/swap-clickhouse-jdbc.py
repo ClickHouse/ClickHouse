@@ -38,6 +38,22 @@
    false-positive failure. Let the `IgnoreMeException` propagate instead; genuine
    unexpected errors (a re-thrown `SQLException`, or an `AssertionError` with a
    message) are unaffected and still reported.
+5. Read the view with an aggregate in `GeneralProvider.checkViewsAreValid`'s
+   per-view validity probe, instead of `SELECT * FROM <view>`. That probe goes
+   through `SQLQueryAdapter.execute`, which closes the statement without draining
+   the result set, so an error ClickHouse reports mid-stream - a generated view
+   body dividing by zero on the generated data, say - arrives only as a truncated
+   chunked body that the driver logs and swallows: `execute` returns `true` and
+   neither `dropView` branch fires. `COUNT(*)` cannot emit its row before it has
+   consumed all input, so the server finishes the view before answering and the
+   failure arrives as a normal error response. `WHERE NOT ignore(*)` stops the
+   view's projection being pruned away (`ignore` takes every view column as an
+   argument, is never constant-folded and returns 0, so the filter keeps every
+   row); a plain `COUNT(*)` returns `1` for a view whose only defect sits in its
+   SELECT list. The existing `if (!execute()) -> dropView` /
+   `catch (Throwable) -> dropView` branches then drop exactly the unreadable
+   view, so it no longer reaches the cross-join size probe below - which is
+   called outside the per-oracle `catch (AssertionError)` and so killed the run.
 """
 
 import argparse
@@ -154,6 +170,35 @@ def patch_where_oracle(repo: pathlib.Path) -> None:
     src.write_text(text.replace(anchor, replacement))
 
 
+def patch_view_validity_probe(repo: pathlib.Path) -> None:
+    src = repo / "src" / "sqlancer" / "general" / "GeneralProvider.java"
+    text = src.read_text()
+    # `SELECT * FROM <view>` cannot tell this probe that the view is unreadable:
+    # `execute` never drains the result set, so ClickHouse's mid-stream error is
+    # invisible and the view survives into the cross-join size probe, where the
+    # same error is fatal. An aggregate makes the server finish the view before it
+    # answers; `ignore(*)` keeps the view's projection from being pruned, so a
+    # defect in the SELECT list is caught as well as one in the view's WHERE.
+    anchor = (
+        '            SQLQueryAdapter q = new SQLQueryAdapter("SELECT * FROM " + view.getName(),'
+        " new ExpectedErrors(), false,\n"
+        "                    globalState.getOptions().canonicalizeSqlString());\n"
+    )
+    replacement = (
+        "            // ClickHouse patch: an aggregate makes the server finish the view before it answers,\n"
+        "            // and ignore(*) keeps its projection from being pruned. A mid-stream error never\n"
+        "            // reaches execute(), which does not drain the result set.\n"
+        "            SQLQueryAdapter q = new SQLQueryAdapter(\n"
+        '                    "SELECT COUNT(*) FROM " + view.getName() + " WHERE NOT ignore(*)",\n'
+        "                    new ExpectedErrors(), false, globalState.getOptions().canonicalizeSqlString());\n"
+    )
+    if anchor not in text:
+        sys.exit(f"failed to locate the view-validity probe in {src}")
+    if text.count(anchor) != 1:
+        sys.exit(f"expected exactly one view-validity probe in {src}")
+    src.write_text(text.replace(anchor, replacement))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repo", help="Path to the SQLancer++ checkout")
@@ -172,6 +217,7 @@ def main() -> None:
     patch_jdbc_properties(repo)
     patch_norec_oracle(repo)
     patch_where_oracle(repo)
+    patch_view_validity_probe(repo)
 
 
 if __name__ == "__main__":
