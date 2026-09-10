@@ -44,6 +44,61 @@ TEST_P(CoordinationTest, TestSystemNodeModify)
     assert_create("/keeper1/test", Error::ZOK);
 }
 
+/// A batch consisting only of SessionID requests takes a zxid range like any other batch, so
+/// committing it must advance the committed zxid. Otherwise the leader hands the same zxid out
+/// again for the next batch, and followers (which still have the SessionID batch in
+/// uncommitted_batches at that point) fail with "Got new ZXID smaller or equal to current ZXID"
+/// or trip the leader-dedupe chassert in preprocessBatch.
+TEST_P(CoordinationTest, TestSessionIDBatchAdvancesZxid)
+{
+    using namespace Coordination;
+
+    this->keeper_context->setServerState(KeeperContext::Phase::RUNNING);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+
+    /// Same sequence as KeeperStateMachine: preprocess the batch, then commit each SessionID
+    /// request with getSessionID and finish the batch with endProcessBatch.
+    const auto commit_session_id_batch = [&](size_t request_count)
+    {
+        DB::KeeperRequestBatch batch;
+        for (size_t i = 0; i < request_count; ++i)
+        {
+            auto request = std::make_shared<ZooKeeperSessionIDRequest>();
+            request->session_timeout_ms = 1000;
+            batch.requests.push_back(DB::KeeperRequestForSession{.session_id = -1, .request = request});
+        }
+        batch.first_zxid = storage.getNextZXID();
+        storage.preprocessBatch(batch, /*check_acl=*/false);
+        for (size_t i = 0; i < request_count; ++i)
+            storage.getSessionID(1000);
+        storage.endProcessBatch(batch);
+        return batch.getLastZxid();
+    };
+
+    const int64_t session_batch_last_zxid = commit_session_id_batch(2);
+    ASSERT_EQ(session_batch_last_zxid, 2);
+    ASSERT_EQ(storage.getZXID(), session_batch_last_zxid) << "committing a SessionID-only batch did not advance the committed zxid";
+    ASSERT_EQ(storage.getNextZXID(), session_batch_last_zxid + 1) << "the zxid range of the committed SessionID batch is handed out again";
+
+    /// A second SessionID-only batch with the same request count is exactly the shape that
+    /// collides with the first one (same zxid range, same nodes digest) when the zxid is reused.
+    const int64_t second_session_batch_last_zxid = commit_session_id_batch(2);
+    ASSERT_EQ(second_session_batch_last_zxid, 4);
+    ASSERT_EQ(storage.getZXID(), second_session_batch_last_zxid);
+
+    /// And a regular request after that must be accepted with the next zxid.
+    const int64_t create_zxid = storage.getNextZXID();
+    ASSERT_EQ(create_zxid, 5);
+    auto create_request = std::make_shared<ZooKeeperCreateRequest>();
+    create_request->path = "/after_session_id_batch";
+    storage.preprocessRequest(create_request, 1, 0, create_zxid, /*check_acl=*/true, /*log_idx=*/0);
+    auto responses = storage.processRequest(create_request, 1, create_zxid);
+    ASSERT_EQ(responses.size(), 1);
+    ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    ASSERT_EQ(storage.getZXID(), create_zxid);
+}
+
 TEST_P(CoordinationTest, TestCheckNotExistsRequest)
 {
     using namespace DB;
