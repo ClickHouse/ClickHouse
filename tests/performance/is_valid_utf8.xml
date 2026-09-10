@@ -17,15 +17,25 @@
     <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 341))) FROM numbers(300000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 65535))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21845))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 63))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 65534))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
+    <!-- The six rows whose payload carries a raw 0xC2, here and below, need the column alias: the folded
+         argument otherwise becomes the result column's name, and the harness's client decodes header
+         strings as strict UTF-8, so the query cannot run at all. -->
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 63))) AS v FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 65534))) AS v FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
     <query>SELECT isValidUTF8(materialize(repeat('a', 4))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 7))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 4))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 3))) FROM numbers(3000000) FORMAT Null</query>
     <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 8))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 14))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 15))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 16))) FROM numbers(3000000) FORMAT Null</query>
-    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 62))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 14))) AS v FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 15))) AS v FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 16))) AS v FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xC2' || repeat('a', 62))) AS v FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 16))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 1))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 1))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 1))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 1))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 4))) FROM numbers(3000000) FORMAT Null</query>
 </test>
