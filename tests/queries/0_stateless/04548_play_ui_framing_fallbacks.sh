@@ -261,27 +261,54 @@ echo "$page" | grep -q -F "s.display_error = 'The query failed, but its error ou
 echo "$page" | grep -q -F 'this._log_buffer.length - queue_budget' && echo 'log queue bounded: OK'
 echo "$page" | grep -q -F 'const queue_budget = Math.max(MAX_LOG_DOM_LINES - rendered, MAX_LOG_LINES_PER_FRAME);' && echo 'log budget shared with the DOM: OK'
 echo "$page" | grep -q -F 'function downsampleHistoryByHalf(' && echo 'metric history bounded: OK'
-# The Logs/Metrics view and toggle availability are tab-owned, not global: the `set-view` handler
-# records the view on the active tab and applies it only to that tab's results, `_markLogsAvailable`
-# marks availability on the owning tab, and `syncActiveTabChrome` replays both via `setViewState`.
-echo "$page" | grep -q -F 'if (tab) tab.view = e.detail.view;' && echo 'view is tab-owned: OK'
+# The Logs/Metrics view and toggle availability are cell-owned, not global: the `set-view` handler
+# records the view on the cell the shared row is docked under and applies it only to that cell's
+# results, `_markLogsAvailable` marks availability on the owning cell, and `syncActiveTabChrome`
+# replays both via `setViewState`. That cell is `chromeCell`, not the active one, so using the
+# toggles after moving the editor off a still-running cell still acts on the running query's result.
+echo "$page" | grep -q -F 'if (cell) cell.view = e.detail.view;' && echo 'view is cell-owned: OK'
+echo "$page" | grep -q -F 'const cell = tab ? chromeCell(tab) : null;' && echo 'toggles act on the chrome cell: OK'
+# The shared logo belongs to the same row, so it is repainted from the chrome cell too: a mid-run
+# cell switch cannot regrow the idle logo over a running multi-query row.
+echo "$page" | grep -q -F "logoEl.style.display = run_cell.logoVisible ? 'block' : 'none';" && echo 'logo follows the chrome cell: OK'
+# Color modes and pinned columns are per CELL: a toggle repaints the result tables of the owning
+# cell (a "Run all" has one per statement, all sharing the cell's objects) and persists onto that
+# cell's own snapshot, instead of reaching into other cells or writing through the active one.
+echo "$page" | grep -q -F 'const scope = (cell && cell.el) ? cell.el : this.closest(' && echo 'color scope is the owning cell: OK'
+echo "$page" | grep -q -F 'persistColorModes(this._ownerCell);' && echo 'color modes persist onto the owning cell: OK'
+echo "$page" | grep -q -F 'persistPinnedColumns(this._ownerCell);' && echo 'pins persist onto the owning cell: OK'
+# Markdown link/image targets: anything naming a scheme must be `http`, `https` or `mailto`, and a
+# protocol-relative `//host` is rejected with them; everything scheme-less is an ordinary relative
+# target of the page and is allowed, which is what text cells document.
+echo "$page" | grep -q -F "if (scheme) return /^(https?|mailto)\$/i.test(scheme[1]) ? trimmed : '';" && echo 'markdown schemes restricted: OK'
+echo "$page" | grep -q -F "if (probe.startsWith('//')) return '';" && echo 'protocol-relative markdown URLs rejected: OK'
 echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' && echo 'toggles replayed per tab: OK'
-# The realtime resource meters are tab-owned too: CPU counters in `profile_events` packets are
-# per-packet increments, so a backgrounded tab's batches keep accumulating on the tab
+# The realtime resource meters are cell-owned too: CPU counters in `profile_events` packets are
+# per-packet increments, so a backgrounded cell's batches keep accumulating on the cell
 # (`accumulateResourceEvents`) instead of being dropped, and `syncActiveTabChrome` re-adopts the
-# state so a reopened tab's meter continues from its live values instead of restarting near zero.
-echo "$page" | grep -q -F 'accumulateResourceEvents(tab.resources, events);' && echo 'background meter batches accumulate: OK'
-echo "$page" | grep -q -F 'progressEl.adoptResourceState(tab.resources);' && echo 'meter state re-adopted on tab open: OK'
+# state so a reopened cell's meter continues from its live values instead of restarting near zero.
+# The state it re-adopts is the one of the cell the shared chrome belongs to (`chromeCell`): the
+# RUNNING cell while the tab has a run in flight, so moving the editor to another cell mid-run does
+# not blank the meters of the query that is still going.
+echo "$page" | grep -q -F 'accumulateResourceEvents(cell.resources, events);' && echo 'background meter batches accumulate: OK'
+echo "$page" | grep -q -F 'progressEl.adoptResourceState(run_cell.resources);' && echo 'meter state re-adopted on tab open: OK'
+echo "$page" | grep -q -F 'return (tab.inFlight && tab.runCell) ? tab.runCell : activeCell(tab);' && echo 'shared chrome follows the running cell: OK'
+# One query runs at a time per tab, so the cell header's run action - and a sort/filter/page change
+# in a cell's result, which re-runs that cell - end the tab's current run through the same path as
+# the Run/Stop button instead of starting a second request beside it. Two call sites each: one for a
+# cell that already holds the editor, one after handing it the editor first.
+[ "$(echo "$page" | grep -c -F 'cancelTabRun(tab);')" -eq 4 ] && echo 'a cell run ends the tab run first: OK'
+echo "$page" | grep -q -F 'cancelTabRun(getActiveTab());' && echo 'Stop goes through the same path: OK'
 # An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
 # exception: the reader reports `saw_exception` only once the exception line reached its newline
 # (`exception_done`), so the partial JSON line is never persisted or replayed as the failure carrier.
 echo "$page" | grep -q -F 'saw_exception: saw_exception && exception_done,' && echo 'partial exception line is a truncation: OK'
 # The meter state is one aggregate per RUN, not per stream: "Run all" executes a parallelizable
-# group concurrently, so several framed statements of one tab can stream at once. The run's first
-# stream creates the aggregate (`clearPanel` dropped the previous run's) and every stream
+# group concurrently, so several framed statements of one cell can stream at once. The run's first
+# stream creates the aggregate (`clearCell` dropped the previous run's) and every stream
 # accumulates into it, so a sibling statement cannot reset away increments already collected; the
 # per-host peak keeps the maximum, so a sibling's smaller peak cannot erase a larger one.
-echo "$page" | grep -q -F 'if (!tab.resources) tab.resources = freshResourceState();' && echo 'meter aggregate is per run: OK'
+echo "$page" | grep -q -F 'if (!cell.resources) cell.resources = freshResourceState();' && echo 'meter aggregate is per run: OK'
 echo "$page" | grep -q -F 'host.peak = Math.max(host.peak, value);' && echo 'peak gauge keeps the maximum: OK'
 # A transport failure (network drop / cancellation) striking a framed stream mid-flight keeps the
 # snapshot's framing kind and synthesizes the failure carrier in the form that kind replays, so a
@@ -314,12 +341,12 @@ echo "$page" | grep -q -F 'const is_table = !rendered_image && isDefaultFormat(f
 # speed. Live streaming keeps the wall clock (`updateMetrics` called with no packet time).
 echo "$page" | grep -q -F "const t = Date.parse(String(e.current_time ?? '').replace(' ', 'T') + 'Z');" && echo 'replay clock comes from the packets: OK'
 echo "$page" | grep -q -F 'targetResultEl.updateMetrics(events, options.replay ? replayTimeSeconds(events) : undefined);' && echo 'replay time reaches the metrics model: OK'
-# A restored framed result rebuilds the tab-owned resource state from the replayed `profile_events`
+# A restored framed result rebuilds the cell-owned resource state from the replayed `profile_events`
 # through the same `accumulateResourceEvents` path the live reader uses, so the shared CPU/RAM/peak-RAM
-# line reappears after a reload / Back / Forward (`clearPanel` dropped that state); `syncActiveTabChrome`
-# repaints it. Every replay site passes its tab.
-echo "$page" | grep -q -F 'resourceMeter: tab ? (events) => accumulateResourceEvents(tab.resources, events) : undefined,' && echo 'replay rebuilds the resource state: OK'
-[ "$(echo "$page" | grep -c -E 'renderEventStreamText\(.*, format, tab, (false|!!)')" -eq 3 ] && echo 'every replay site passes its tab: OK'
+# line reappears after a reload / Back / Forward (`clearCell` dropped that state); `syncActiveTabChrome`
+# repaints it. Every replay site passes its cell.
+echo "$page" | grep -q -F 'resourceMeter: cell ? (events) => accumulateResourceEvents(cell.resources, events) : undefined,' && echo 'replay rebuilds the resource state: OK'
+[ "$(echo "$page" | grep -c -E 'renderEventStreamText\(.*, format, cell, (false|!!)')" -eq 3 ] && echo 'every replay site passes its cell: OK'
 # The live reader deliberately never renders an image collected from a truncated stream
 # (`verbatim.finish(truncated)` skips it), so a saved truncated `FORMAT PNG` snapshot must not
 # reopen as a partially decoded picture either: the truncation state is persisted with the

@@ -1257,8 +1257,8 @@ async function main() {
         /// looks like BETWEEN the click and the run.
         vm.runInContext(
             "(() => { globalThis.__launched = 0; postOne = async () => { ++globalThis.__launched; };" +
-            " const t = getActiveTab(); t.sortColumns.push({ name: 'a', desc: true });" +
-            " commitResultShape({ _ownerTab: t, _queryText: t.query }); })()",
+            " const t = getActiveTab(); const c = activeCell(t); c.sortColumns.push({ name: 'a', desc: true });" +
+            " commitResultShape({ _ownerCell: c, _queryText: c.query }); })()",
             r.sandbox);
         await sleep(50);
         check('shape-not-stamped-before-run', 'the shape change launched the re-run',
@@ -1273,7 +1273,7 @@ async function main() {
             r.sandbox.history.state);
         /// And the launch DOES stamp it, once it has resolved the shape for the statement it runs -
         /// this is the call `postSingle` makes right after `resolveShapeForRun`.
-        vm.runInContext('persistResultShape(getActiveTab())', r.sandbox);
+        vm.runInContext('persistResultShape(activeCell(getActiveTab()))', r.sandbox);
         await sleep(50);
         check('shape-not-stamped-before-run', 'the run stamps the shape it resolved',
             new URL(r.sandbox.location.href).searchParams.get('sort_columns')
