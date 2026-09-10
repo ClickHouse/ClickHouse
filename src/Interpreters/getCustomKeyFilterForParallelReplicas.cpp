@@ -369,7 +369,7 @@ bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTP
     try
     {
         custom_key_tree = buildQueryTree(custom_key, context.shared_from_this());
-        QueryAnalysisPass query_analysis_pass(query_node->getJoinTree(), /*only_analyze_=*/true);
+        QueryAnalysisPass query_analysis_pass(query_node->getJoinTreeNodeTyped(), /*only_analyze_=*/true);
         query_analysis_pass.run(custom_key_tree, context.shared_from_this());
     }
     catch (...)
