@@ -179,7 +179,7 @@ namespace
         }
     }
 
-    /// Fills columns metric_family_name, type, unit, help for the "metrics" table.
+    /// Fills the columns of the "metrics" table: the name of a metric family, type, unit, help.
     void fillMetricsColumns(
         const IColumn & metric_family_column,
         const IColumn & type_column,
@@ -772,7 +772,7 @@ void TimeSeriesSink::initMetricsPipeline()
 
     Block metrics_header;
     metrics_header.insert(ColumnWithTypeAndName{
-        header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::MetricFamilyName});
+        header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
 
     metrics_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
@@ -828,7 +828,8 @@ void TimeSeriesSink::consumeMetrics(const Block & block)
 
     /// Step 3. Assemble the block and push it to the "metrics" table.
     Block metrics_block;
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::MetricFamilyName});
+    metrics_block.insert(ColumnWithTypeAndName{
+        std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
     metrics_block.insert(ColumnWithTypeAndName{std::move(new_type_column), type_col.type, TimeSeriesColumnNames::Type});
     metrics_block.insert(ColumnWithTypeAndName{std::move(new_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
     metrics_block.insert(ColumnWithTypeAndName{std::move(new_help_column), help_col.type, TimeSeriesColumnNames::Help});

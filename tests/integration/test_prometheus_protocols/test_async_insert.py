@@ -83,7 +83,7 @@ def test_async_insert_acknowledged_after_flush():
     assert (
         node.query(
             "SELECT type, help, unit FROM timeSeriesMetrics(prometheus) "
-            "WHERE metric_family_name = 'async_metric'"
+            "WHERE metric_family = 'async_metric'"
         )
         == "gauge\tTest metric\tseconds\n"
     )

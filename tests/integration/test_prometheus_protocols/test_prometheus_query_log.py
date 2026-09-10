@@ -42,10 +42,10 @@ def query_log_has_single_finish_with_written_rows_sql(query_id):
     )
 
 
-def timeseries_metrics_has_metric_family_sql(table, metric_family_name):
+def timeseries_metrics_has_metric_family_sql(table, metric_family):
     return (
         f"SELECT count() > 0 FROM timeSeriesMetrics({table}) "
-        f"WHERE metric_family_name = '{metric_family_name}'"
+        f"WHERE metric_family = '{metric_family}'"
     )
 
 
