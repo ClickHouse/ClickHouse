@@ -613,15 +613,19 @@ KeeperDigest KeeperStorage::preprocessRequest(
 
 void KeeperStorage::endProcessBatch(const KeeperRequestBatch & batch)
 {
+    if (!batch.ownsZxids())
+        return;
+
     uint64_t preprocessed_digest = 0;
     {
         std::lock_guard lock(transaction_mutex);
 
-        /// Committed transactions have strictly increasing zxids.
-        if (batch.getLastZxid() <= zxid)
+        if (batch.getLastZxid() < zxid)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Trying to commit ZXID {} while ZXID {} is already committed", batch.getLastZxid(), zxid);
 
+        /// Advance committed zxid in case processOneRequest didn't do it (for SessionID requests
+        /// processOneRequest is not called).
         zxid = batch.getLastZxid();
 
         if (uncommitted_batches.empty())
@@ -876,6 +880,9 @@ bool KeeperStorage::isFinalized() const
 
 void KeeperStorage::rollbackBatch(const KeeperRequestBatch & batch, bool allow_missing) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
+    if (!batch.ownsZxids())
+        return;
+
     if (allow_missing && (uncommitted_batches.empty() || uncommitted_batches.back().last_zxid < batch.first_zxid))
         return;
 

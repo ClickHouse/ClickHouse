@@ -117,6 +117,15 @@ struct KeeperRequestBatch
     int64_t getZxid(size_t request_idx) const { return first_zxid == 0 ? 0 : first_zxid + static_cast<int64_t>(request_idx); }
     int64_t getLastZxid() const { return getZxid(requests.size() - 1); }
 
+    /// Unfortunate historical quirk: in the past SessionID requests had zxid field assigned, but
+    /// that zxid wasn't actually reserved/advanced; an old leader may write a SessionID request
+    /// followed by another request with the same zxid.
+    /// So we handle batch of one SessionID request in special ways: they don't go into
+    /// uncommitted_batches, don't advance KeeperStorage::zxid, etc.
+    /// This returns true if this batch should be handled normally, false if it consists of one
+    /// SessionID request.
+    bool ownsZxids() const;
+
     std::string toString() const;
 };
 using KeeperRequestBatchPtr = std::shared_ptr<KeeperRequestBatch>;

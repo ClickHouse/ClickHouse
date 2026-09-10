@@ -56,6 +56,11 @@ void assertDigest(const KeeperRequestBatch & batch, const KeeperDigest & actual,
     }
 }
 
+bool KeeperRequestBatch::ownsZxids() const
+{
+    return requests.size() != 1 || requests[0].request->getOpNum() != Coordination::OpNum::SessionID;
+}
+
 std::string KeeperRequestBatch::toString() const
 {
     std::string res = fmt::format("batch of {} request(s), first zxid {}, log idx {}", requests.size(), first_zxid, log_idx);

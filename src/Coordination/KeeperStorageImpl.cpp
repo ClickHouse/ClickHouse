@@ -1659,6 +1659,9 @@ std::optional<KeeperDigest> KeeperStorageImpl<NS>::preprocessBatch(const KeeperR
     if (!staging.deltas.empty() || staging.zxid != -1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "State left over from previous transaction");
 
+    if (!batch.ownsZxids())
+        return getNodesDigest(false, /*lock_transaction_mutex=*/true);
+
     /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
     /// than inside the storage's prepare methods to make sure storage_mutex is not held: sleeping
     /// under storage_mutex would stall the background work that the throttling is waiting for.
@@ -1992,6 +1995,19 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processOneRequest(
         };
 
         callOnConcreteRequestType(*zk_request, process_request);
+    }
+
+    /// Update committed zxid after each request in a batch, not after the whole batch.
+    /// Because there may be read requests in the middle of the batch, and they use `zxid` to tell
+    /// the client what version of the data was read.
+    {
+        std::lock_guard lock(transaction_mutex);
+
+        if (commit_zxid <= zxid)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Trying to commit ZXID {} while ZXID {} is already committed", commit_zxid, zxid);
+
+        zxid = commit_zxid;
     }
 
     return results;

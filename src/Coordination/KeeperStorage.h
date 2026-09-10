@@ -202,9 +202,7 @@ protected:
     /// One preprocessed batch of requests (one Raft log entry).
     struct UncommittedBatchInfo
     {
-        /// Zxids of the batch's first and last transaction-creating requests. Some zxids inside
-        /// the range may be unused, occupied by requests that create no transactions (like
-        /// `SessionID`).
+        /// Zxid range from KeeperRequestBatch.
         int64_t first_zxid{-1};
         int64_t last_zxid{-1};
         /// Digest after the batch's last preprocessed request (i.e. after the whole batch once
