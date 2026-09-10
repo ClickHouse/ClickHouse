@@ -18,6 +18,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+function cleanup()
+{
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_mem"
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_mt"
+}
+
 function cache_size()
 {
     ${CLICKHOUSE_CLIENT} --query "SELECT columns_descriptions_cache_size FROM system.tables WHERE database = currentDatabase() AND table = '$1'"
@@ -37,8 +43,8 @@ function wait_for_cache_size()
     echo "$res"
 }
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_mem"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_mt"
+cleanup
+trap cleanup EXIT
 
 echo "-- the cache is only for MergeTree"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_mem (key Int) ENGINE = Memory"
@@ -70,6 +76,3 @@ wait_for_cache_size t_mt 1
 
 echo "-- system.metrics"
 ${CLICKHOUSE_CLIENT} --query "SELECT value > 0 FROM system.metrics WHERE metric = 'ColumnsDescriptionsCacheSize'"
-
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_mem"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_mt"

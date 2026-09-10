@@ -18,6 +18,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+function cleanup()
+{
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_nested_leak"
+}
+
 function cache_size()
 {
     ${CLICKHOUSE_CLIENT} --query "SELECT columns_descriptions_cache_size FROM system.tables WHERE database = currentDatabase() AND table = '$1'"
@@ -37,7 +42,8 @@ function wait_for_cache_size()
     echo "$res"
 }
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_nested_leak"
+cleanup
+trap cleanup EXIT
 
 echo "-- an entry per distinct column list of the alive parts"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_nested_leak (key Int, \`n.a\` Array(Int32), \`n.b\` Array(String)) ENGINE = MergeTree ORDER BY key SETTINGS old_parts_lifetime = 1, max_bytes_to_merge_at_max_space_in_pool = 1"
@@ -51,5 +57,3 @@ cache_size t_nested_leak
 echo "-- the entry of the detached part must be evicted once its object is gone"
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_nested_leak DETACH PART 'all_1_1_0'"
 wait_for_cache_size t_nested_leak 1
-
-${CLICKHOUSE_CLIENT} --query "DROP TABLE t_nested_leak"
