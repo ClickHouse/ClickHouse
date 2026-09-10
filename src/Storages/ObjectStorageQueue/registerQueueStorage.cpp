@@ -492,12 +492,19 @@ Default value: `30000`.
 
 ### `tracked_files_limit` {#tracked_files_limit}
 
-Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' or 'exclusive' mode.
-If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
+Allows to limit the number of Zookeeper nodes that track already-seen files.
+If the limit is reached the oldest entries are deleted from the ZooKeeper node and those files are processed again.
+
+The limit is applied to the set of processed files in 'unordered' mode, and to the set of failed files in both
+'unordered' and 'ordered' mode. It does nothing for 'exclusive' mode.
+
+Set to `0` to keep the tracked sets uncapped, in which case only the time-based settings
+[`tracked_file_ttl_sec`](#tracked_file_ttl_sec) and [`failed_files_ttl_sec`](#failed_files_ttl_sec) remove entries.
 
 Possible values:
 
 - Positive integer.
+- `0` - no limit.
 
 Default value: `1000`.
 
@@ -514,13 +521,23 @@ Default value: `0`.
 
 ### `failed_files_ttl_sec` {#failed_files_ttl_sec}
 
-Maximum number of seconds to store terminal failed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
+Maximum number of seconds to store terminal failed files in ZooKeeper node (no time-based expiry by default) for 'unordered' mode, does nothing for 'ordered' mode.
 Terminal failed files are files that exhausted all retry attempts and cannot be processed (due to parsing errors, schema mismatches, or other exceptions).
 Files in retriable failed state are preserved regardless of this TTL.
 After the specified number of seconds, old terminal failed file entries are automatically removed from ZooKeeper and the in-memory cache by the periodic cleanup task.
 
 :::note
-This setting only applies to **unordered mode** tables. For ordered mode tables, the setting is ignored and failed files are stored indefinitely.
+This setting controls **time-based** expiry of the failed set, and only for **unordered mode** tables.
+For ordered mode tables it is ignored.
+
+It is not the only thing that removes entries from the failed set. [`tracked_files_limit`](#tracked_files_limit)
+caps how many tracked files are kept, and that cap applies to the failed set in both unordered and ordered mode.
+With the default `tracked_files_limit = 1000` the oldest failed entries are dropped once the set grows past that
+many, whatever `failed_files_ttl_sec` is set to, and those files are processed again. Set `tracked_files_limit = 0`
+if the failed set must not be trimmed by count.
+
+[`tracked_file_ttl_sec`](#tracked_file_ttl_sec) is the retention of the *processed* set and does not expire failed
+files; `failed_files_ttl_sec` is the only time-based control over the failed set.
 :::
 
 You can also manually clear all terminal failed files using the [`SYSTEM DROP S3QUEUE FAILED FILES`](/sql-reference/statements/system#drop-s3queue-failed-files) command.
@@ -529,7 +546,7 @@ Possible values:
 
 - Positive integer.
 
-Default value: `0` (store forever).
+Default value: `0` (no time-based expiry).
 
 **Example**
 

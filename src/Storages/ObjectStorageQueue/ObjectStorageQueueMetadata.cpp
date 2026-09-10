@@ -137,10 +137,15 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
     /// Two independent reasons to sweep `/failed`, and either one on its own is enough: the
-    /// count-based tracked-files limit, and the time-based `failed_files_ttl_sec`. They are separate
+    /// count-based `tracked_files_limit`, and the time-based `failed_files_ttl_sec`. They are separate
     /// controls, so this is a union rather than a choice between them.
+    ///
+    /// `tracked_files_limit` alone, not `hasTrackedFilesLimit`: the latter is also true for
+    /// `tracked_files_ttl_sec`, which is the retention of `/processed` and says nothing about `/failed`.
+    /// Mirrors the per-run decision in `cleanupThreadFuncImpl`, so this coarse "could this table ever
+    /// need a sweep" answer cannot disagree with what a run actually does.
     , cleanup_failed_files(
-          (!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
+          (!isExclusive(mode) && table_metadata.tracked_files_limit)
           || (isUnordered(mode) && table_metadata.failed_files_ttl_sec))
     , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
@@ -1353,10 +1358,15 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         /// need a sweep" answer that `startup` uses.
         const bool sweep_processed = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
         /// `/failed` has two independent controls, and each trims by its own criterion: the count-based
-        /// tracked-files limit, and the time-based `failed_files_ttl_sec`. They are deliberately not
+        /// `tracked_files_limit`, and the time-based `failed_files_ttl_sec`. They are deliberately not
         /// collapsed into one call - neither overrides the other, and a table may have either, both or
         /// neither. Both passes run under the same cleanup lock this function already holds.
-        const bool sweep_failed_by_limit = !isExclusive(mode) && table_metadata.hasTrackedFilesLimit();
+        ///
+        /// The count pass is gated on `tracked_files_limit` alone rather than `hasTrackedFilesLimit`,
+        /// which is also true for `tracked_files_ttl_sec`. `tracked_files_ttl_sec` is the retention of
+        /// `/processed`; letting it enable a `/failed` pass would put the two sets back on one knob, and
+        /// would reach `cleanupTrackedNodes` with no limit and no TTL, which it asserts against.
+        const bool sweep_failed_by_limit = !isExclusive(mode) && table_metadata.tracked_files_limit;
         const bool sweep_failed_by_ttl = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
 
         if (sweep_processed || sweep_failed_by_limit || sweep_failed_by_ttl)
@@ -1364,8 +1374,13 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
             if (sweep_processed)
                 cleanupTrackedNodes(zk_client, zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
 
+            /// Count-only, with no TTL of its own: `/failed` expires by `failed_files_ttl_sec` and by
+            /// nothing else. Passing `tracked_files_ttl_sec` here would keep `/processed` retention
+            /// trimming `/failed` behind the new setting's back, which is exactly what this setting
+            /// exists to separate - and for a table old enough to inherit the legacy fallback it would
+            /// scan the whole subtree twice per run with the same TTL.
             if (sweep_failed_by_limit)
-                cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
+                cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", /* ttl_seconds */0, table_metadata.tracked_files_limit);
 
             if (sweep_failed_by_ttl)
                 cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec, 0);

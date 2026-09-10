@@ -166,6 +166,154 @@ def test_failed_files_ttl_sec(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def test_tracked_file_ttl_sec_does_not_expire_failed_files(started_cluster):
+    """`tracked_file_ttl_sec` is the retention of the processed set and must not touch the failed set.
+
+    Regression for the failed-set cleanup being driven by the processed-set knobs: the `/failed` sweep
+    used to be enabled by `hasTrackedFilesLimit()` and handed `tracked_files_ttl_sec` as its TTL, so a
+    table with `failed_files_ttl_sec = 0` still had its terminal failures expired on the processed set's
+    schedule. Here only `tracked_file_ttl_sec` is set, so nothing may expire the failed marker.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_tracked_ttl_keeps_failed_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # Short enough that several cleanup runs pass while the test waits.
+    tracked_file_ttl_sec = 3
+    cleanup_interval_ms = 2000
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # The processed-set knobs, both set. `tracked_files_limit = 0` leaves the count cap off, so
+            # this table's only retention control is a TTL that belongs to `/processed`.
+            "tracked_files_limit": 0,
+            "tracked_file_ttl_sec": tracked_file_ttl_sec,
+            # The failed-set knob, explicitly off: no time-based expiry of terminal failures.
+            "failed_files_ttl_sec": 0,
+            "cleanup_interval_min_ms": cleanup_interval_ms,
+            "cleanup_interval_max_ms": cleanup_interval_ms,
+            "s3queue_loading_retries": 0,  # Fail terminally on the first attempt.
+        },
+    )
+
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_file.csv", b"invalid,data,here\n"
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def terminal_failed_znodes():
+        """Terminal `/failed/<hash>` children, excluding the `.retriable` retry-state markers."""
+        result = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{keeper_path}/failed'"
+        ).strip()
+        names = result.split("\n") if result else []
+        return {name for name in names if not name.endswith(".retriable")}
+
+    for _ in range(60):
+        if terminal_failed_znodes():
+            break
+        time.sleep(1)
+
+    before = terminal_failed_znodes()
+    assert len(before) == 1, f"Expected one terminal failed znode, got {before}"
+
+    # Well past the processed-set TTL, and long enough for several cleanup runs at a 2s interval.
+    time.sleep(tracked_file_ttl_sec + 4 * cleanup_interval_ms / 1000)
+
+    after = terminal_failed_znodes()
+    assert after == before, (
+        f"`tracked_file_ttl_sec` expired a terminal failed file: {before} -> {after}. "
+        f"Only `failed_files_ttl_sec` may expire the failed set."
+    )
+    assert (
+        node.query(
+            f"SELECT count() FROM system.s3queue_metadata_cache "
+            f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
+        ).strip()
+        == "1"
+    ), "The cache should still report the file as failed"
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_tracked_files_limit_still_caps_the_failed_set(started_cluster):
+    """`tracked_files_limit` remains a count cap on the failed set, as documented.
+
+    The companion to `test_tracked_file_ttl_sec_does_not_expire_failed_files`: decoupling the two TTLs
+    deliberately left the count cap alone, so `failed_files_ttl_sec = 0` means "no time-based expiry",
+    not "keep every failure forever". Pinning that here keeps the setting's documentation honest.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_failed_count_cap_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    tracked_files_limit = 1
+    cleanup_interval_ms = 2000
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_files_limit": tracked_files_limit,
+            "tracked_file_ttl_sec": 0,
+            "failed_files_ttl_sec": 0,
+            "cleanup_interval_min_ms": cleanup_interval_ms,
+            "cleanup_interval_max_ms": cleanup_interval_ms,
+            "s3queue_loading_retries": 0,
+        },
+    )
+
+    for name in ["bad_one.csv", "bad_two.csv"]:
+        put_s3_file_content(
+            started_cluster, f"{files_path}/{name}", b"invalid,data,here\n"
+        )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def terminal_failed_znodes():
+        result = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{keeper_path}/failed'"
+        ).strip()
+        names = result.split("\n") if result else []
+        return {name for name in names if not name.endswith(".retriable")}
+
+    # Both files fail, then the sweep trims the set back to the cap. Only the converged state is
+    # asserted: whether the sweep observes one or both failures first is a race, but either way it
+    # cannot leave more than `tracked_files_limit` behind.
+    converged = False
+    for _ in range(60):
+        time.sleep(1)
+        if len(terminal_failed_znodes()) == tracked_files_limit:
+            converged = True
+            break
+
+    assert converged, (
+        f"Expected the failed set to be capped at {tracked_files_limit}, "
+        f"got {terminal_failed_znodes()}"
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
 def test_system_drop_s3queue_failed_files_single(started_cluster):
     """Test SYSTEM DROP S3QUEUE FAILED FILES command with a single failed file"""
     node = started_cluster.instances["instance"]
