@@ -134,3 +134,10 @@ group 13: Values, an overflowing padded value now wraps like the unpadded one
 -128
 -128
 -128
+group 14: a string literal compared with a numeric column
+7
+7
+7	7
+group 14: index analysis accepts the same literal
+Condition: (id in [7, 7])
+Name: bf_04812

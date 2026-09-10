@@ -184,3 +184,23 @@ SELECT 'group 13: Values, an overflowing padded value now wraps like the unpadde
 SELECT * FROM format(Values, 'a Int8', '(0128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;
 SELECT * FROM format(Values, 'a Int8', '(+128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;
 SELECT * FROM format(Values, 'a Int8', '(128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;
+
+-- 14. The reader also serves SQL, not only a format: comparing a numeric column with a string literal
+-- sends the literal through `convertFieldToType`, which re-reads it with `deserializeWholeText`. `toInt64`
+-- has always used the tolerant reader for the same spellings, so it is the oracle here the way `CSV` is
+-- above, and the comparison disagreed with it until now.
+SELECT 'group 14: a string literal compared with a numeric column';
+CREATE TABLE cmp_04812 (id UInt64, v Int64, INDEX bf_04812 v TYPE bloom_filter) ENGINE = MergeTree ORDER BY id
+    AS SELECT number AS id, number AS v FROM numbers(8);
+SELECT v FROM cmp_04812 WHERE v = '007';
+SELECT v FROM cmp_04812 WHERE v = '+7';
+SELECT toInt64('007'), toInt64('+7');
+-- A literal that is not a number at all is still refused, by the same layer as before.
+SELECT count() FROM cmp_04812 WHERE v = '0abc'; -- { serverError TYPE_MISMATCH }
+-- The same conversion runs during planning, so the predicate now reaches the primary key and a skip index
+-- instead of failing analysis. Only the naming lines are asserted: the part and granule counts beside them
+-- move with the granularity the runner randomizes.
+SELECT 'group 14: index analysis accepts the same literal';
+SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE id = '007') WHERE explain ILIKE '%Condition:%';
+SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE v = '007') WHERE explain ILIKE '%Name:%';
+DROP TABLE cmp_04812;
