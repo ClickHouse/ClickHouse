@@ -671,17 +671,19 @@ private:
         size_t row_end,
         bool all_keys_are_const) const;
 
-    /// One claimed batch of staged chunks into one drain table, bucket-major: bucket b's
-    /// slices from all of the batch's chunks drain consecutively, so the destination subtable
-    /// and its arena stay cache-hot across the whole batch instead of being revisited once per
-    /// chunk - the measured win of the pressure drains. The price is that the batch stays
-    /// alive until the pass ends: the callers bound a batch at about one spill floor of
-    /// records and release the chunks right after the call. Stops between buckets when
-    /// cancelled.
+    /// Drains a claimed batch in bucket-major order so each destination subtable and arena stays
+    /// cache-hot while processing all chunks. The caller retains the batch until the pass returns;
+    /// cancellation is checked between buckets.
     size_t drainStagedBatch(
         AggregatedDataVariants & table,
         const std::vector<StagedChunkPtr> & chunks,
         std::atomic<bool> & is_cancelled,
+        PaddedPODArray<AggregateDataPtr> & places_scratch) const;
+
+    /// Drains into the shared table and updates its tracked allocation growth before the batch is released.
+    /// The caller holds `pressure_sweep_mutex` and has initialized the bucket arenas.
+    size_t drainBatchIntoSharedTable(
+        AdaptiveAggregationSession & shared, const std::vector<StagedChunkPtr> & batch,
         PaddedPODArray<AggregateDataPtr> & places_scratch) const;
 
     /// A fresh drain destination of the session's method type, with one arena per bucket.

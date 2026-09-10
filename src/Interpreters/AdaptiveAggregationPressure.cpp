@@ -42,9 +42,9 @@ size_t Aggregator::adaptivePressurePartBytes() const
 
 /// The hash-table cell of the drain table's variant: what one record occupies in the table's
 /// buffer, before the buffer's slack. A `UInt64` key is a 16-byte cell, the fixed `keys128` and
-/// `keys256` variants 24 and 40 bytes, a string key with its saved hash 32 - a bound derived
-/// from any one of them would be wrong for the others, so it is read from the variant the drains
-/// actually build. The drain tables are always the two-level twin of the shared method.
+/// `keys256` variants 24 and 40 bytes, and a string key with its saved hash 32. A bound derived
+/// from one would be wrong for the others, so it is read from the variant the drains actually build.
+/// The drain tables are always the two-level twin of the shared method.
 static size_t adaptiveDrainCellBytes(AggregatedDataVariants::Type type)
 {
     switch (type)
@@ -141,9 +141,9 @@ static AggregatedDataVariantsPtr detachSharedDrainTable(AdaptiveAggregationSessi
 }
 
 /// The memory a published chunk holds, and keeps holding until the drain that claimed it
-/// returns: the staged keys, and the staged payload beside them - the run lengths of a
-/// count-only chunk, or the argument columns gathered during conversion,
-/// whose variable-width values can outweigh everything the drained table itself will cost.
+/// returns: the staged keys and the payload, consisting of run lengths for a count-only chunk
+/// or argument columns gathered during conversion. Variable-width arguments can outweigh the
+/// drained table's footprint.
 /// Variable-width keys are counted twice, because a pressure-time drain copies them into the
 /// table's arena while the chunk still holds the staged bytes, so both copies are resident when
 /// the drain returns; a fixed-size key lives in the table's cell, which the per-record charge
@@ -154,16 +154,11 @@ static size_t estimateStagedBytesWithKeyCopy(const StagedChunk & chunk)
     return chunk.allocatedBytes() + copied_key_bytes;
 }
 
-/// The staged footprint of the records [begin, end) of a chunk, charged the way `estimateStagedBytesWithKeyCopy`
-/// charges a whole chunk but by size rather than allocation, a slice having no allocation of its
-/// own: the routing hashes, the key bytes (twice for variable-width keys, for the arena copy a
-/// drain makes beside them) and their offsets, then the payload - the run lengths, or the
-/// argument columns, record by record. The argument bytes are summed per record rather than
-/// prorated by the record count, because a variable-width argument may put most of a chunk's
-/// bytes into a few records, and those records may share a bucket range - a piece sized by the
-/// average would then come out over the bound it was cut to meet. The per-record walk is a
-/// virtual call per record and column, paid only on the rare path that cuts a chunk, and once
-/// per record of it: the bucket ranges are disjoint.
+/// Estimates the staged bytes and copied keys for a record range. Unlike a whole chunk's allocation,
+/// a range has no capacity of its own, so this uses logical sizes. Variable-width keys count twice
+/// because the pressure drain copies them into its arena. Argument bytes are summed per record;
+/// prorating a chunk's bytes would miss skewed payloads concentrated in a few records or buckets.
+/// This scan runs only while splitting a chunk, over disjoint bucket ranges.
 static size_t estimateStagedRangeBytesWithKeyCopy(const StagedChunk & chunk, size_t begin, size_t end)
 {
     const size_t records = end - begin;
@@ -246,7 +241,7 @@ std::vector<MutableStagedChunkPtr> Aggregator::splitStagedChunkAtPartBound(
 
         /// The bucket is over the bound on its own: cut inside it, record by record. A record's
         /// bytes are its slice of the range measure, which for variable-width keys counts the
-        /// offset of a one-record range twice - a few bytes over per record, on the safe side.
+        /// offset of a one-record range twice, conservatively adding a few bytes per record.
         for (size_t i = bucket_begin; i < bucket_end; ++i)
         {
             const size_t record_bytes = estimateStagedRangeBytesWithKeyCopy(chunk, i, i + 1);
@@ -279,6 +274,27 @@ std::vector<MutableStagedChunkPtr> Aggregator::splitStagedChunkAtPartBound(
     return pieces;
 }
 
+/// Adds the bucket arenas when a drain first needs them, preserving any arenas already in use.
+static void ensureDrainArenas(AggregatedDataVariants & table)
+{
+    while (table.aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
+        table.aggregates_pools.push_back(std::make_shared<Arena>());
+}
+
+size_t Aggregator::drainBatchIntoSharedTable(
+    AdaptiveAggregationSession & shared, const std::vector<StagedChunkPtr> & batch,
+    PaddedPODArray<AggregateDataPtr> & places_scratch) const
+{
+    /// Sample before releasing the batch so its deallocation cannot hide growth in aggregate states,
+    /// including heap storage outside the table's arenas.
+    const Int64 tracked_before_drain = currentThreadTrackedMemory();
+    const size_t drained_records
+        = drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
+    shared.early_drain_tracked_bytes
+        += static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
+    return drained_records;
+}
+
 AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVariants::Type type) const
 {
     auto table = std::make_shared<AggregatedDataVariants>();
@@ -286,9 +302,7 @@ AggregatedDataVariantsPtr Aggregator::createAdaptiveDrainTable(AggregatedDataVar
     table->keys_size = params.keys_size;
     table->key_sizes = key_sizes;
     table->init(type);
-    /// Bucket b's drained states live in pool b, mirroring the merge-time layout.
-    while (table->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
-        table->aggregates_pools.push_back(std::make_shared<Arena>());
+    ensureDrainArenas(*table);
     return table;
 }
 
@@ -318,12 +332,9 @@ Aggregator::StagedChunkClaim Aggregator::claimStagedChunksToBound(
         const bool reaches_target
             = records >= records_target || estimateAdaptiveDrainBytes(type, records, staged_bytes) >= bytes_target;
 
-        /// The claim is closed before the chunk that would take it to a target, not after: the
-        /// bound is meant for the batch as drained, and a claim that took the chunk it crossed
-        /// on would hold two chunks each just under the target - two pieces of a cut chunk that
-        /// are single records over half a part, say - and drain both into one table, twice the
-        /// part the bound exists to keep. Only a first chunk that is over a target alone is
-        /// taken as it is, because a chunk is claimed whole.
+        /// Close before adding a chunk that reaches a target, so two individually large chunks
+        /// cannot jointly exceed the drain's part bound. The first chunk is always accepted because
+        /// a drain must process at least one whole chunk, even when it alone exceeds the target.
         if (reaches_target && claim.end > begin)
         {
             claim.full = true;
@@ -367,8 +378,7 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
     }
 
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
-    while (shared.early_drain_variants->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
-        shared.early_drain_variants->aggregates_pools.push_back(std::make_shared<Arena>());
+    ensureDrainArenas(*shared.early_drain_variants);
 
     PaddedPODArray<AggregateDataPtr> places_scratch;
 
@@ -412,13 +422,7 @@ void Aggregator::drainStagedChunksAtFinish(AdaptiveAggregationSession & shared) 
 
         const std::vector<StagedChunkPtr> batch(
             std::make_move_iterator(chunks.begin() + begin), std::make_move_iterator(chunks.begin() + end));
-        /// The table's account grows by what this drain was seen to allocate - read before the
-        /// batch is released, so its bytes do not come off the reading - which is how the heap
-        /// its states own outside the arenas reaches the part bound above.
-        const Int64 tracked_before_drain = currentThreadTrackedMemory();
-        drained_records += drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
-        shared.early_drain_tracked_bytes
-            += static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
+        drained_records += drainBatchIntoSharedTable(shared, batch, places_scratch);
         begin = end;
     }
 
@@ -478,15 +482,11 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
 
         ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureSweeps);
 
-        /// The claim is bounded in records and in the bytes the drain of those records is
-        /// expected to take, so a batch of wide keys or wide states is cut short before the
-        /// drain builds a table the threshold cannot hold. The byte side counts the chunks'
-        /// whole staged footprint - the gathered argument columns of a general-aggregate chunk
-        /// as much as its keys - because the batch keeps holding it until `drainStagedBatch`
-        /// returns, so a stream of wide arguments is a working set the destination table's
-        /// estimate alone does not see. A batch that reached either bound, or was closed before
-        /// the chunk that would have taken it there, is a part of its own, which is what tells
-        /// the two regimes below apart; a batch that merely ran out of chunks is the tail.
+        /// Each claim targets a record count and an estimated drain footprint. The estimate includes
+        /// gathered argument columns and keys because the batch retains them throughout `drainStagedBatch`.
+        /// A claim that reaches either bound, or closes before a chunk that would reach one, drains
+        /// into its own table. A claim that exhausts the backlog below both bounds accumulates in the
+        /// shared table.
         routing_type = shared.early_drain_variants->type;
         const auto claim = claimStagedChunksToBound(chunks, 0, routing_type, adaptive_pressure_spill_min_keys, part_bytes);
         const bool batch_is_full = claim.full;
@@ -500,17 +500,8 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
         if (!batch_is_full)
         {
             /// The tail regime: too little for a part of reasonable size.
-            while (shared.early_drain_variants->aggregates_pools.size() < ADAPTIVE_AGGREGATION_NUM_BUCKETS)
-                shared.early_drain_variants->aggregates_pools.push_back(std::make_shared<Arena>());
-
-            /// The shared table's account grows by what this drain was seen to allocate, read
-            /// before the batch is released so its bytes do not come off the reading: that is
-            /// how the heap its states own outside the arenas counts toward the detachment below.
-            const Int64 tracked_before_drain = currentThreadTrackedMemory();
-            const size_t drained_records
-                = drainStagedBatch(*shared.early_drain_variants, batch, shared.cancelled, places_scratch);
-            shared.early_drain_tracked_bytes
-                += static_cast<size_t>(std::max<Int64>(currentThreadTrackedMemory() - tracked_before_drain, 0));
+            ensureDrainArenas(*shared.early_drain_variants);
+            const size_t drained_records = drainBatchIntoSharedTable(shared, batch, places_scratch);
             batch.clear();
 
             ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureDrainedRecords, drained_records);
@@ -577,9 +568,9 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
     drained_records_out = drained_records;
     LOG_TRACE(log, "Adaptive aggregation: pressure sweep drained {} staged records into a producer-local table", drained_records);
 
-    /// Correct the estimate upward to the built table's real footprint - the larger of what the
-    /// table reports and what the drain was seen to allocate - never downward, so the
-    /// serialization scratch still to come is not double-booked to someone else.
+    /// Raise the reservation to cover both the table's reported size and the observed allocation
+    /// growth. Keep at least the original estimate so the serialization scratch still to come is
+    /// not reserved by another writer.
     const size_t drain_growth_bytes = static_cast<size_t>(std::max<Int64>(drain_growth, 0));
     reservation.resize(std::max({estimated_bytes, local->allocatedBytes(), drain_growth_bytes}));
 
