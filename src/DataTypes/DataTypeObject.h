@@ -61,7 +61,7 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
-    void forEachChild(const ChildCallback &) const override;
+    DataTypes getChildren() const override;
 
     bool hasDynamicSubcolumnsData() const override { return true; }
     bool hasDynamicStructure() const override { return true; }
@@ -95,6 +95,12 @@ public:
     static const DataTypePtr & getTypeOfSharedData();
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
+
+    /// The typed paths in the canonical order `getChildren` and `doCloneWithChildren` agree on.
+    /// `typed_paths` is a hash map, so an order has to be imposed rather than read off it.
+    std::vector<std::pair<std::string_view, DataTypePtr>> getSortedTypedPaths() const;
+
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;

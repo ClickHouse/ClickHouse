@@ -32,6 +32,22 @@ String DataTypeNestedCustomName::getName() const
     return s.str();
 }
 
+DataTypeCustomDescPtr DataTypeNestedCustomName::rederiveFor(const DataTypePtr & rebuilt) const
+{
+    /// `Nested` semantics - `isNested`, subcolumn resolution, the printed name - all key off this
+    /// custom name, so it has to follow the rebuilt `Array(Tuple(...))` rather than be dropped.
+    const auto * array = typeid_cast<const DataTypeArray *>(rebuilt.get());
+    if (!array)
+        return nullptr;
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(array->getNestedType().get());
+    if (!tuple)
+        return nullptr;
+
+    return std::make_unique<DataTypeCustomDesc>(
+        std::make_unique<DataTypeNestedCustomName>(tuple->getElements(), tuple->getElementNames()));
+}
+
 static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())

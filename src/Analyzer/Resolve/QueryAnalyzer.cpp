@@ -52,6 +52,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
@@ -4001,8 +4002,7 @@ void QueryAnalyzer::validateSortingKeyType(const DataTypePtr & sorting_key_type,
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Data type {} is not allowed in ORDER BY keys, because its values are not comparable", type.getName());
     };
 
-    check(*sorting_key_type);
-    sorting_key_type->forEachChild(check);
+    forEachInTypeTree(*sorting_key_type, check);
 }
 
 namespace

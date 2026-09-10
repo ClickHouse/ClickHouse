@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
@@ -1326,14 +1327,8 @@ static bool canScaleSizeBySelectedRows(const IDataType & type)
     if (!type.haveMaximumSizeOfValue())
         return false;
 
-    bool has_low_cardinality = type.lowCardinality();
     /// `LowCardinality` may sit below `Array`, `Nullable`, `Tuple` and friends.
-    type.forEachChild([&](const IDataType & child)
-    {
-        has_low_cardinality |= child.lowCardinality();
-    });
-
-    return !has_low_cardinality;
+    return !anyInTypeTree(type, [](const IDataType & node) { return node.lowCardinality(); });
 }
 
 /// Mirrors `injectRequiredColumnsRecursively`: a column that is absent from a part is filled from its
@@ -3120,16 +3115,7 @@ void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
             partition_required_columns.begin(), partition_required_columns.end(),
             [](const auto & col)
             {
-                if (isFloat(removeLowCardinalityAndNullable(col.type)))
-                    return true;
-
-                bool has_float = false;
-                col.type->forEachChild([&](const IDataType & child)
-                {
-                    if (!has_float && WhichDataType(child).isFloat())
-                        has_float = true;
-                });
-                return has_float;
+                return anyInTypeTree(*col.type, [](const IDataType & type) { return WhichDataType(type).isFloat(); });
             });
 
         skip_partition_pruning = (!exprs_match && !columns_match) || reads_float_column;

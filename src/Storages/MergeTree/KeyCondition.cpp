@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/Context.h>
@@ -3123,16 +3124,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     /// the predicate.
     auto contains_float = [](const DataTypePtr & type)
     {
-        bool found = WhichDataType(*type).isFloat();
-        if (!found)
-        {
-            type->forEachChild([&found](const IDataType & child)
-            {
-                if (!found && WhichDataType(child).isFloat())
-                    found = true;
-            });
-        }
-        return found;
+        return anyInTypeTree(*type, [](const IDataType & node) { return WhichDataType(node).isFloat(); });
     };
 
     /// `Variant` and `Dynamic` elements are judged by the alternatives the constant column actually

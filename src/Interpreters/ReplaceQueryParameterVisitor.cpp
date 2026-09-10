@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -143,15 +144,7 @@ bool needCastFromString(const DataTypePtr & type)
     if (type->getCustomSerialization())
         return true;
 
-    bool result = false;
-    auto check = [&](const IDataType & t)
-    {
-        result |= isVariant(t) || isDynamic(t) || isObject(t);
-    };
-
-    check(*type);
-    type->forEachChild(check);
-    return result;
+    return anyInTypeTree(*type, [](const IDataType & t) { return isVariant(t) || isDynamic(t) || isObject(t); });
 }
 
 /// Build an AST literal for a query parameter, optionally wrapping it in a CAST.

@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -935,12 +936,7 @@ struct IEJoinPlanDescription
 /// top-level NULL/NaN divergence by excluding such rows from matching.
 static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t) || isVariant(t); };
-    check(*type);
-    if (!result)
-        type->forEachChild(check);
-    return result;
+    return anyInTypeTree(*type, [](const IDataType & t) { return isTuple(t) || isDynamic(t) || isVariant(t); });
 }
 
 /// An inequality between the two tables that the IEJoin operator can use as one of its two key

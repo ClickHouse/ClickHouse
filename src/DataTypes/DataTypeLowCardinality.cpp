@@ -160,10 +160,9 @@ SerializationPtr DataTypeLowCardinality::doGetSerialization(const SerializationI
     return SerializationLowCardinality::create(dictionary_type);
 }
 
-void DataTypeLowCardinality::forEachChild(const ChildCallback & callback) const
+DataTypePtr DataTypeLowCardinality::doCloneWithChildren(const DataTypes & new_children) const
 {
-    callback(*dictionary_type);
-    dictionary_type->forEachChild(callback);
+    return std::make_shared<DataTypeLowCardinality>(new_children[0]);
 }
 
 

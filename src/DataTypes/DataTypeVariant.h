@@ -66,9 +66,10 @@ public:
     /// Check if Variant has provided type in the list of variants and return its discriminator.
     std::optional<ColumnVariant::Discriminator> tryGetVariantDiscriminator(const String & type_name) const;
 
-    void forEachChild(const ChildCallback & callback) const override;
+    DataTypes getChildren() const override { return variants; }
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     std::string doGetName() const override;
     std::string doGetPrettyName(size_t indent) const override;
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
