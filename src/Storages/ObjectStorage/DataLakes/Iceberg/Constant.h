@@ -191,6 +191,10 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, sort_order_id);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, record_count);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, key_metadata);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, contains_null);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, contains_nan);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, lower_bound);
+DEFINE_ICEBERG_FIELD_COMPOUND(partitions, upper_bound);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, first_row_id);
 
 constexpr Int32 row_id_field_id = 2147483540;
