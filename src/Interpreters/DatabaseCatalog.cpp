@@ -1260,7 +1260,7 @@ DDLGuardPtr DatabaseCatalog::getDDLGuardForStorage(const StoragePtr & storage, c
     auto guard = tryGetDDLGuardForStorage(storage, timeout);
     if (!guard)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-            "Cannot acquire the DDL guard for {} within {} ms",
+            "Cannot acquire the DDL guard for {}, lock_acquire_timeout is {} ms",
             storage->getStorageID().getNameForLogs(), timeout.totalMilliseconds());
     return guard;
 }

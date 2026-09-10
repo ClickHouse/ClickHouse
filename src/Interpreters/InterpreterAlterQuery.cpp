@@ -347,7 +347,8 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     {
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
-            /// DDLGuard before the table locks, same order as RENAME/EXCHANGE/DROP take them.
+            /// DDLGuard before the table locks, same order as RENAME/EXCHANGE/DROP take them. Re-acquiring
+            /// it after a released wait inverts this order, both sides are bounded by lock_acquire_timeout.
             DDLGuardPtr ddl_guard;
             if (!no_ddl_lock)
                 ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(table, settings[Setting::lock_acquire_timeout]);

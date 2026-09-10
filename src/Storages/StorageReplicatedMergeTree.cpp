@@ -7226,7 +7226,19 @@ void StorageReplicatedMergeTree::alter(
                 setInMemoryMetadata(metadata_copy);
             }
 
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            try
+            {
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata_copy, /*validate_new_create_query=*/true);
+            }
+            catch (...)
+            {
+                /// Revert in-memory so system.* doesn't diverge from SHOW CREATE TABLE.
+                if (settings_are_changed)
+                    changeSettings(current_metadata->settings_changes, table_lock_holder);
+                if (comment_is_changed)
+                    setInMemoryMetadata(*current_metadata);
+                throw;
+            }
         }
 
         /// We can be sure, that in case of successful commit in zookeeper our

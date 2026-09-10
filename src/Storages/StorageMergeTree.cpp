@@ -560,8 +560,8 @@ void StorageMergeTree::alter(
             applyMetadataChangesToCreateQuery(create_ast, new_metadata, local_context);
         }
 
-        /// Waiting for a mutation takes as long as the mutation runs, so the guard is not held for
-        /// it. The table can be renamed meanwhile, so it is re-resolved before the commit below.
+        /// Waiting for a mutation takes as long as the mutation runs, so the guard is not held for it.
+        /// It is re-acquired under the table locks and re-resolves the table, a concurrent DROP can win.
         auto wait_for_mutation_unguarded = [&](Int64 version_to_wait)
         {
             const bool reacquire = ddl_guard != nullptr;
