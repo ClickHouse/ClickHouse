@@ -488,7 +488,8 @@ void WriteBufferFromS3::abortMultipartUpload()
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
 
-    S3::setRequestCancellationHook(req, cancellation_hook);
+    /// Cleanup must get one attempt even after cancellation; subsequent retries remain cancellable.
+    S3::setRequestCancellationHookForCleanup(req, cancellation_hook);
 
     ProfileEvents::increment(ProfileEvents::S3AbortMultipartUpload);
     if (client_ptr->isClientForDisk())

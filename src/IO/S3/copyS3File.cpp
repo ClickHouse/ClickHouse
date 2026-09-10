@@ -270,7 +270,8 @@ namespace
             abort_request.SetBucket(dest_bucket);
             abort_request.SetKey(dest_key);
             abort_request.SetUploadId(multipart_upload_id);
-            S3::setRequestCancellationHook(abort_request, cancellation_hook);
+            /// Cleanup must get one attempt even after cancellation; subsequent retries remain cancellable.
+            S3::setRequestCancellationHookForCleanup(abort_request, cancellation_hook);
 
             Stopwatch watch;
             auto outcome = client_ptr->AbortMultipartUpload(abort_request);

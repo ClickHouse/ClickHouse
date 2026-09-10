@@ -1082,7 +1082,10 @@ def test_cancelling_vertical_multipart_merge_stops_s3_retries(
             max_attempts=100,
         )
     assert_s3_cancelled(node, table, request, broken_s3, "part_upload")
-    assert broken_s3.get_request_counts()["abort_multipart_upload"] == 0
+    wait_for_s3_request(broken_s3, "abort_multipart_upload")
+    abort_count = broken_s3.get_request_counts()["abort_multipart_upload"]
+    time.sleep(0.5)
+    assert broken_s3.get_request_counts()["abort_multipart_upload"] == abort_count
 
 
 @pytest.mark.parametrize(

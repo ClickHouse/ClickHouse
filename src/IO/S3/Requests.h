@@ -31,6 +31,8 @@
 #include <base/defines.h>
 #include <Common/Exception.h>
 
+#include <atomic>
+#include <memory>
 #include <optional>
 
 namespace DB
@@ -57,6 +59,21 @@ void setRequestCancellationHook(Request & request, const std::function<void()> &
 
     cancellation_hook();
     request.SetRequestRetryHandler([cancellation_hook](const Aws::AmazonWebServiceRequest &) { cancellation_hook(); });
+}
+
+/// Unlike the regular hook, allow the first cleanup request after cancellation and stop retries.
+template <typename Request>
+void setRequestCancellationHookForCleanup(Request & request, const std::function<void()> & cancellation_hook)
+{
+    if (!cancellation_hook)
+        return;
+
+    auto first_attempt = std::make_shared<std::atomic_bool>(true);
+    request.SetRequestRetryHandler([cancellation_hook, first_attempt](const Aws::AmazonWebServiceRequest &)
+    {
+        if (!first_attempt->exchange(false))
+            cancellation_hook();
+    });
 }
 
 /// Used for `S3Express` and user-requested upload checksums.
