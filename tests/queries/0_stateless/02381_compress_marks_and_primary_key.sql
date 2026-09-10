@@ -62,9 +62,7 @@ drop table if exists test_02381_compact;
 CREATE TABLE t_stream_wide_adaptive (a UInt64, b String)
 ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_stream_wide_adaptive SELECT number, toString(number) FROM numbers(10000);
-SYSTEM DROP MARK CACHE;
 SELECT count(), sum(a) FROM t_stream_wide_adaptive SETTINGS use_streaming_marks_compression = 1;
-SYSTEM DROP MARK CACHE;
 SELECT count(), sum(a) FROM t_stream_wide_adaptive;
 DROP TABLE t_stream_wide_adaptive;
 
@@ -73,9 +71,7 @@ CREATE TABLE t_stream_wide_constant (a UInt64, b String)
 ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_stream_wide_constant SELECT number, toString(number) FROM numbers(10000);
-SYSTEM DROP MARK CACHE;
 SELECT count(), sum(a) FROM t_stream_wide_constant SETTINGS use_streaming_marks_compression = 1;
-SYSTEM DROP MARK CACHE;
 SELECT count(), sum(a) FROM t_stream_wide_constant;
 DROP TABLE t_stream_wide_constant;
 
@@ -87,8 +83,6 @@ INSERT INTO t_stream_compact SELECT number, number*2, number*3, number*4, toStri
 SELECT part_type FROM system.parts
 WHERE database = currentDatabase() AND table = 't_stream_compact' AND active
 ORDER BY part_type;
-SYSTEM DROP MARK CACHE;
 SELECT count(), sum(a), sum(b) FROM t_stream_compact SETTINGS use_streaming_marks_compression = 1;
-SYSTEM DROP MARK CACHE;
 SELECT count(), sum(a), sum(b) FROM t_stream_compact;
 DROP TABLE t_stream_compact;
