@@ -6,8 +6,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
-#include <Functions/keyvaluepair/impl/DuplicateKeyFoundException.h>
+#include <Functions/extractKeyValuePairs.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
@@ -31,15 +30,14 @@ namespace ErrorCodes
 namespace HivePartitioningUtils
 {
 
-static auto makeExtractor()
+static const KeyValuePairExtractor & getExtractor()
 {
-    return KeyValuePairExtractorBuilder().withItemDelimiters({'/'}).withKeyValueDelimiter('=').buildWithReferenceMap();
+    static const KeyValuePairExtractor extractor({.key_value_delimiter = '=', .pair_delimiters = "/"});
+    return extractor;
 }
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
-    static auto extractor = makeExtractor();
-
     HivePartitioningKeysAndValues key_values;
 
     // cutting the filename to prevent malformed filenames that contain key-value-pairs from being extracted
@@ -54,14 +52,12 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
 
     std::string_view path_without_filename(path.data(), last_slash_pos);
 
-    try
+    getExtractor().forEachPair(path_without_filename, [&](std::string_view key, std::string_view value)
     {
-        extractor.extract(path_without_filename, key_values);
-    }
-    catch (const extractKV::DuplicateKeyFoundException & ex)
-    {
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, ex.key);
-    }
+        auto [it, inserted] = key_values.try_emplace(key, value);
+        if (!inserted && it->second != value)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, key);
+    });
 
     return key_values;
 }
