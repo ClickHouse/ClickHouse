@@ -1,12 +1,20 @@
 -- `bitmaskToArray` returns `Array(UInt8)`, and of a NULL it returns `[]`, so the LEFT join stays.
+3
+3
 Type: INNER
 Type: LEFT
 -- `splitByChar` of a NULL returns an array holding one empty string, so the LEFT join stays.
+3
+3
 Type: INNER
 Type: LEFT
 -- A `Map` result can not hold a NULL, so the LEFT join stays.
+3
+3
 Type: INNER
 Type: LEFT
 -- A wrapper above such a function does not propagate NULLs, so the LEFT join stays.
+3
+3
 Type: INNER
 Type: LEFT

@@ -25,24 +25,44 @@ INSERT INTO mid VALUES (1, 1, 'a:1'), (2, NULL, NULL);
 INSERT INTO small VALUES ([], [''], {}, 0), ([1], ['a:1'], {'a':'1'}, 1);
 
 SELECT '-- `bitmaskToArray` returns `Array(UInt8)`, and of a NULL it returns `[]`, so the LEFT join stays.';
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON bitmaskToArray(m.num) = s.arr
+SETTINGS query_plan_derive_not_null_filters_from_joins = 0;
+
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON bitmaskToArray(m.num) = s.arr;
+
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON bitmaskToArray(m.num) = s.arr
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- `splitByChar` of a NULL returns an array holding one empty string, so the LEFT join stays.';
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON splitByChar(',', m.str) = s.str_arr
+SETTINGS query_plan_derive_not_null_filters_from_joins = 0;
+
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON splitByChar(',', m.str) = s.str_arr;
+
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON splitByChar(',', m.str) = s.str_arr
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- A `Map` result can not hold a NULL, so the LEFT join stays.';
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON extractKeyValuePairs(m.str) = s.m
+SETTINGS query_plan_derive_not_null_filters_from_joins = 0;
+
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON extractKeyValuePairs(m.str) = s.m;
+
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON extractKeyValuePairs(m.str) = s.m
 ) WHERE trim(explain) IN ('Type: INNER', 'Type: LEFT', 'Type: RIGHT', 'Type: FULL');
 
 SELECT '-- A wrapper above such a function does not propagate NULLs, so the LEFT join stays.';
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON length(bitmaskToArray(m.num)) = s.val
+SETTINGS query_plan_derive_not_null_filters_from_joins = 0;
+
+SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON length(bitmaskToArray(m.num)) = s.val;
+
 SELECT trim(explain) FROM (
     EXPLAIN PLAN actions = 1
     SELECT count() FROM fact AS f LEFT JOIN mid AS m ON f.id = m.id INNER JOIN small AS s ON length(bitmaskToArray(m.num)) = s.val
