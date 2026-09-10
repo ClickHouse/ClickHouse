@@ -153,6 +153,44 @@ struct FunctionConvertSettings
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
     {
     }
+
+    /** The settings a conversion captured decide the values it produces, while its name and the
+      * types it was resolved for do not mention them, so whatever keys an expression by a hash has
+      * to see them: without this, two sessions that differ only in `precise_float_parsing` build the
+      * same key and one serves the other its granule-skip verdicts.
+      *
+      * `format_settings` is hashed by the fields the text (de)serialization of a converted value can
+      * read; a setting added to this struct has to be added here too.
+      */
+    void updateHash(SipHash & hash) const
+    {
+        hash.update(date_time_overflow_behavior);
+        hash.update(precise_float_parsing);
+        hash.update(cast_ipv4_ipv6_default_on_conversion_error);
+        hash.update(cast_string_to_variant_use_inference);
+        hash.update(cast_string_to_dynamic_use_inference);
+        hash.update(input_format_ipv4_default_on_conversion_error);
+        hash.update(input_format_ipv6_default_on_conversion_error);
+        hash.update(check_conversion_from_numbers_to_enum);
+        hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
+        hash.update(cast_keep_nullable);
+        hash.update(cast_string_to_date_time_mode);
+
+        hash.update(format_settings.date_time_input_format);
+        hash.update(format_settings.date_time_output_format);
+        hash.update(format_settings.interval_output_format);
+        hash.update(format_settings.date_time_overflow_behavior);
+        hash.update(format_settings.bool_true_representation);
+        hash.update(format_settings.bool_false_representation);
+        hash.update(format_settings.json.quote_64bit_integers);
+        hash.update(format_settings.json.quote_64bit_floats);
+        hash.update(format_settings.json.quote_denormals);
+        hash.update(format_settings.json.quote_decimals);
+        hash.update(format_settings.try_infer_integers);
+        hash.update(format_settings.try_infer_dates);
+        hash.update(format_settings.try_infer_datetimes);
+        hash.update(format_settings.decimal_trailing_zeros);
+    }
 };
 
 using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings>;
@@ -3152,6 +3190,8 @@ public:
         return name;
     }
 
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
@@ -3768,6 +3808,8 @@ public:
     {
         return name;
     }
+
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -4994,6 +5036,8 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override;
 
     String getName() const override { return cast_name; }
+
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnNumbers.h>
+#include <Common/SipHash.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
@@ -182,6 +183,14 @@ public:
 
     /// Get the main function name.
     virtual String getName() const = 0;
+
+    /** Contributes whatever decides the values this function produces beyond its name, its
+      * parameters and the types it was resolved for: a conversion, for instance, captures the
+      * settings that tell it how to parse. Anything that keys an expression by a hash - the query
+      * condition cache, the reuse of collected statistics - relies on this, so a function that
+      * captured a setting must not leave it out.
+      */
+    virtual void updateHash(SipHash &) const {}
 
     const Array & getParameters() const final;
 
@@ -420,6 +429,7 @@ public:
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
+
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
@@ -568,6 +578,10 @@ public:
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
+
+    /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this interface
+    /// into one forwards to this.
+    virtual void updateHash(SipHash &) const {}
 
     /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
     ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting

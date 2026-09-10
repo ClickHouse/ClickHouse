@@ -296,7 +296,13 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         hash_state.update(result_type->getName());
 
     if (function_base)
+    {
         hash_state.update(function_base->getName());
+        /// The name says nothing about the settings a function captured when it was built (a
+        /// conversion captures how it parses), and two expressions that differ only in those are not
+        /// the same expression.
+        function_base->updateHash(hash_state);
+    }
 
     if (function)
         hash_state.update(function->getName());

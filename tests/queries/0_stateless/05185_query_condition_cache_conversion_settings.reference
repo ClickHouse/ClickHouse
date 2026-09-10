@@ -1,0 +1,14 @@
+every row matches at defaults	20000
+and none without precise parsing	0
+the cached verdict is not served to the default session	20000
+and it is still not, the other way round
+20000
+0
+and a repeat of the default session keeps its own verdict	20000
+a filter that matches nothing under either setting
+0
+entries	1
+0
+entries after the same query again	1
+0
+entries after the other setting	2
