@@ -3086,9 +3086,6 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
                 /// expanded row. Keep such an expression on the side of the `ARRAY JOIN` where it was written.
                 if (isNonDeterministicOrStateful(*cur.node))
                     depend_on_array_join = true;
-                /// A lambda is not a column: it cannot be carried through the step, so it stays with its caller.
-                if (WhichDataType(cur.node->result_type).isFunction())
-                    depend_on_array_join = true;
 
                 for (const auto * child : cur.node->children)
                 {
@@ -3104,8 +3101,33 @@ ActionsDAG::SplitResult ActionsDAG::splitActionsBeforeArrayJoin(const Names & ar
         }
     }
 
-    auto res = split(split_nodes);
-    return res;
+    /// A lambda is not a column, so it must not become an output of the lifted part. When its caller stays
+    /// above, keep the lambda and everything built on it above as well.
+    std::unordered_map<const Node *, std::vector<const Node *>> parents;
+    for (const auto & node : nodes)
+        for (const auto * child : node.children)
+            parents[child].push_back(&node);
+    for (bool changed = true; changed;)
+    {
+        changed = false;
+        for (const auto & node : nodes)
+        {
+            if (!split_nodes.contains(&node) || !WhichDataType(node.result_type).isFunction())
+                continue;
+            if (std::ranges::all_of(parents[&node], [&](const Node * parent) { return split_nodes.contains(parent); }))
+                continue;
+            std::vector<const Node *> pending{&node};
+            while (!pending.empty())
+            {
+                const auto * current = pending.back();
+                pending.pop_back();
+                if (split_nodes.erase(current))
+                    pending.insert(pending.end(), parents[current].begin(), parents[current].end());
+            }
+            changed = true;
+        }
+    }
+    return split(split_nodes);
 }
 
 ActionsDAG::NodeRawConstPtrs ActionsDAG::getParents(const Node * target) const
