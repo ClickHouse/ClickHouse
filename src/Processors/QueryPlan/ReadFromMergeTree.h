@@ -626,7 +626,6 @@ private:
         UInt64 read_limit,
         const SortDescription & sort_description,
         ExpressionActionsPtr sorting_key_expr,
-        bool apply_virtual_row_conversions,
         int partition_sort_direction,
         size_t num_streams = 0,
         const std::function<MarkRanges(const MarkRanges &, int)> & split_ranges_func = {});

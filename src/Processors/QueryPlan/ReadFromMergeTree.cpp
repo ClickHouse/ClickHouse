@@ -1237,7 +1237,6 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
     UInt64 read_limit,
     const SortDescription & sort_description,
     ExpressionActionsPtr sorting_key_expr,
-    bool apply_virtual_row_conversions,
     int partition_sort_direction,
     size_t num_streams,
     const SplitRangesFunc & split_ranges_func)
@@ -1306,10 +1305,9 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
 
         if (partition_pipe.numOutputPorts() > 1)
         {
-            const size_t num_partition_streams = partition_pipe.numOutputPorts();
             auto transform = std::make_shared<MergingSortedTransform>(
                 partition_pipe.getSharedHeader(),
-                num_partition_streams,
+                partition_pipe.numOutputPorts(),
                 sort_description,
                 block_size.max_block_size_rows,
                 /*max_block_size_bytes=*/0,
@@ -1320,8 +1318,7 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
                 /*out_row_sources_buf=*/nullptr,
                 /*filter_column_name=*/std::nullopt,
                 /*use_average_block_sizes=*/false,
-                apply_virtual_row_conversions,
-                /*virtual_row_prefetch_window=*/num_partition_streams);
+                /*apply_virtual_row_conversions*/false);
 
             partition_pipe.addTransform(std::move(transform));
         }
@@ -2294,8 +2291,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     bool need_preliminary_merge = (parts_with_ranges.size() > settings[Setting::read_in_order_two_level_merge_threshold]);
 
+    const bool use_virtual_row_per_block = settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion;
+
     /// Preliminary MergingSortedTransform consumes virtual row, so it won't reach downstream sorting and optimization won't work.
-    if (settings[Setting::read_in_order_use_virtual_row_per_block] && virtual_row_conversion)
+    if (use_virtual_row_per_block)
         need_preliminary_merge = false;
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
@@ -2343,6 +2342,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         && query_task_size_limit
         && !is_parallel_reading_from_replicas
         && !output_each_partition_through_separate_port
+        && !use_virtual_row_per_block
         && countPartitions(parts_with_ranges) > 1;
 
     /// Check whether we can use lazy partition reading optimization.
@@ -2470,7 +2470,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
             input_order_info->limit,
             sort_description,
             sorting_key_expr,
-            virtual_row_conversion != nullptr,
             partition_sort_direction,
             num_streams,
             split_ranges);

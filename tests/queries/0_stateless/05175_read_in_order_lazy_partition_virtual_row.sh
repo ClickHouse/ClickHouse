@@ -50,26 +50,15 @@ QUERY_SETTINGS="
     max_block_size = 64,
     max_threads = 4"
 
-echo "lazy path"
+echo "lazy path disabled"
 if $CLICKHOUSE_CLIENT -q "
     EXPLAIN PIPELINE
     SELECT ts FROM ${TABLE_NAME}
     ORDER BY toUnixTimestamp(ts) LIMIT 20
     SETTINGS ${QUERY_SETTINGS}" | grep -q "Concat"; then
-    echo "yes"
-else
     echo "no"
-fi
-
-echo "partition-local merge"
-if $CLICKHOUSE_CLIENT -q "
-    EXPLAIN PIPELINE
-    SELECT ts FROM ${TABLE_NAME}
-    ORDER BY toUnixTimestamp(ts) LIMIT 20
-    SETTINGS ${QUERY_SETTINGS}" | grep -q "MergingSortedTransform"; then
-    echo "yes"
 else
-    echo "no"
+    echo "yes"
 fi
 
 $CLICKHOUSE_CLIENT -q "
