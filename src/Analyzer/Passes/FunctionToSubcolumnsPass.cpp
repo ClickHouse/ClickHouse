@@ -133,7 +133,9 @@ struct IdentifiersToOptimize
     ColumnInSourceSet everywhere;
 
     /// Identifiers that also have plain column references, but have at least one
-    /// transformable use in WHERE/PREWHERE. Rewritten ONLY inside WHERE/PREWHERE.
+    /// filter-only transformer use in WHERE/PREWHERE. The permission is scoped
+    /// to the identifier: another otherwise eligible direct transformer for it
+    /// can be rewritten inside WHERE/PREWHERE.
     ColumnInSourceSet filter_only;
 
     bool empty() const { return everywhere.empty() && filter_only.empty(); }
@@ -646,8 +648,9 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
     {TypeIndex::Map, "arrayElement"},
 };
 
-/// Transformers that should be applied even when the full column is also read
-/// elsewhere in the query (e.g., in SELECT alongside WHERE m['key'] = val).
+/// Transformers that should mark their identifier for filter-only optimization
+/// even when the full column is also read elsewhere in the query (e.g., in
+/// SELECT alongside WHERE m['key'] = val).
 /// Normally the optimizer skips a column if it's used both in a transformable
 /// function and as a plain column reference, because introducing a new
 /// subcolumn identifier complicates analysis. But for Map subcolumn filters,
@@ -657,6 +660,9 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// skip index on that subcolumn prune granules), while the full column is still
 /// read for matching rows in SELECT. The reads are independent and semantically
 /// correct.
+/// The second pass applies this permission at identifier granularity, so another
+/// eligible direct transformer on the same identifier may also be rewritten in
+/// the filter. Keep this set limited to transformers that make that behavior safe.
 /// Note: this exception does NOT apply to HAVING or other clauses where the
 /// subcolumn would need to appear in GROUP BY.
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
@@ -1269,6 +1275,8 @@ public:
             auto qualified_name = makeColumnInSource(column_source, column.name);
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
+            /// The permission is intentionally scoped to the whole identifier,
+            /// not to the transformer that caused it to be marked.
             bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
             if (!should_optimize
                 && identifiers_to_optimize.filter_only.contains(qualified_name)
