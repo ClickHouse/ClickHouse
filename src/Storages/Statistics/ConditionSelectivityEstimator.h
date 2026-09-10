@@ -102,6 +102,15 @@ public:
         std::unordered_set<String> not_null_check_columns;
         bool finalized = false;
         Selectivity selectivity;
+        /// Selectivity of the atoms that were absorbed by a conjunctive merge without contributing
+        /// any range - currently only `FUNCTION_UNKNOWN`. Merging carries ranges across, so such an
+        /// atom has nothing to add to the merged clause, but it still has to be accounted for.
+        /// Keeping it here instead of finalizing the clause lets the ranges of a later conjunct on
+        /// the same column still merge with the earlier ones. `finalize` applies it at the end.
+        /// Only meaningful under `FUNCTION_AND`: `P(a OR unknown)` is not `P(a) * f`.
+        Selectivity absorbed_and_selectivity{1.0, 0.0};
+
+        bool hasAbsorbed() const { return absorbed_and_selectivity.true_sel != 1.0 || absorbed_and_selectivity.null_sel != 0.0; }
 
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);

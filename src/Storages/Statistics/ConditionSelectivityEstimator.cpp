@@ -168,6 +168,11 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             case RPNElement::FUNCTION_NOT:
             {
                 auto* last_element = rpn_stack.top();
+                /// A clause holding an absorbed factor is a conjunction times that factor, and
+                /// `NOT (a AND u)` is `NOT a OR NOT u` - not the flipped ranges times the same factor.
+                /// Finalize it first so the negation applies to a plain selectivity.
+                if (!last_element->finalized && last_element->hasAbsorbed())
+                    last_element->finalize(column_estimators, metadata);
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
                 else
@@ -801,6 +806,19 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
 {
     auto can_merge_with = [](const RPNElement & e, Function function_to_merge)
     {
+        /// An unknown atom carries no range, so a merge cannot represent it as one. Under `AND` it is
+        /// still absorbable: its selectivity is kept aside in `absorbed_and_selectivity` and applied by
+        /// `finalize`, which lets the ranges around it keep merging with each other. Under `OR` there is
+        /// no such factorisation, so it stays unmergeable and is finalized as its own operand.
+        if (e.function == FUNCTION_UNKNOWN)
+            return function_to_merge == FUNCTION_AND && !e.finalized;
+
+        /// A clause that already absorbed an unknown atom is a conjunction times a constant factor.
+        /// That composes with another conjunction, but not with a disjunction: `P((a AND u) OR b)` is
+        /// not the selectivity of the united ranges times the factor.
+        if (e.hasAbsorbed() && function_to_merge != FUNCTION_AND)
+            return false;
+
         return (e.function == FUNCTION_IN_RANGE
                 || e.function == FUNCTION_IS_NULL
                 || e.function == FUNCTION_IS_NOT_NULL
@@ -810,10 +828,6 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
                 /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
                 || (e.column_ranges.size() + e.column_not_ranges.size()
                     + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1)
-                /// `FUNCTION_UNKNOWN` is deliberately absent: merging carries only ranges, and an
-                /// unknown atom has none, so absorbing it into the merged clause would silently give it
-                /// a selectivity of 1. Leaving it unmergeable sends it down the branch that finalizes
-                /// both sides, where it contributes `default_unknown_cond_factor` like any other atom.
                 && !e.finalized;
     };
     /// we will merge normal expression and not expression separately.
@@ -841,6 +855,16 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
     };
     if (can_merge_with(lhs, function) && can_merge_with(rhs, function))
     {
+        /// Carry over what either side absorbed, and absorb an unknown operand itself. Both are
+        /// conjunctive factors, so they multiply into this clause's own factor.
+        for (const RPNElement * side : {&lhs, &rhs})
+        {
+            if (side->hasAbsorbed())
+                absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(side->absorbed_and_selectivity);
+            if (side->function == FUNCTION_UNKNOWN)
+                absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(Selectivity{default_unknown_cond_factor, 0});
+        }
+
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
         merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);
         null_check_columns.insert(lhs.null_check_columns.begin(), lhs.null_check_columns.end());
@@ -947,6 +971,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         {
             if (not_null_check_columns.contains(col))
             {
+                /// A contradiction is zero whatever was absorbed alongside it.
                 selectivity = Selectivity();
                 return;
             }
@@ -960,6 +985,8 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
             if (not_null_check_columns.contains(col))
             {
                 selectivity = Selectivity(1, 0);
+                if (hasAbsorbed())
+                    selectivity = selectivity.applyAnd(absorbed_and_selectivity);
                 return;
             }
         }
@@ -1035,6 +1062,11 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         selectivity.true_sel = default_unknown_cond_factor;
     else
         selectivity.true_sel = std::max(0.0, std::min(1.0, selectivity.true_sel));
+
+    /// Atoms absorbed by a conjunctive merge contribute no range, so they are applied here, after the
+    /// ranges they were interleaved with have been merged and estimated together.
+    if (hasAbsorbed())
+        selectivity = selectivity.applyAnd(absorbed_and_selectivity);
 }
 
 }
