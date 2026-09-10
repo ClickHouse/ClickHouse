@@ -556,6 +556,8 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                                 S3CopyFileSettings{
                                     .if_none_match = move_if_none_match,
                                     .source_version_id = source_version_id,
+                                    /// Same generation as the provenance above, so an unversioned bucket is pinned too.
+                                    .source_if_match = move_if_none_match.empty() ? String{} : source_info.etag,
                                     .source_headers = move_if_none_match.empty() ? std::optional<S3::ObjectHeaders>{}
                                                                                  : std::optional<S3::ObjectHeaders>{source_info.headers},
                                     .source_tags = std::move(source_tags)});
