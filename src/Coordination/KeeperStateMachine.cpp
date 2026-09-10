@@ -290,7 +290,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit_ext(const nuraft::sta
     if (!keeper_context->localLogsPreprocessed())
         return result;
 
-    auto batch = parseRequestBatch(*params.log_entry, /*final=*/false, nullptr, nullptr);
+    auto batch = parseRequestBatch(*params.entry, /*final=*/false, nullptr, nullptr);
     if (batch->first_zxid == 0)
     {
         if (batch->requests.size() != 1)
@@ -809,7 +809,7 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const nuraft::state_machine::ext_op_params & params)
 {
     uint64_t log_idx = params.log_idx;
-    auto batch = parseRequestBatch(*params.log_entry, /*final=*/true, nullptr, nullptr);
+    auto batch = parseRequestBatch(*params.entry, /*final=*/true, nullptr, nullptr);
     if (batch->first_zxid == 0)
     {
         /// A legacy entry from an older node that didn't assign a zxid; use the log_idx as the zxid.
@@ -1167,7 +1167,7 @@ void KeeperStateMachine::rollback_ext(const nuraft::state_machine::ext_op_params
         return;
 
     uint64_t log_idx = params.log_idx;
-    auto batch = parseRequestBatch(*params.log_entry, /*final=*/true, nullptr, nullptr);
+    auto batch = parseRequestBatch(*params.entry, /*final=*/true, nullptr, nullptr);
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
     // (log_idx is increased for all logs, while zxid is only increased for requests)
