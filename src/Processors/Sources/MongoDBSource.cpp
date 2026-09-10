@@ -3,6 +3,7 @@
 #if USE_MONGODB
 #include <Processors/Sources/MongoDBSource.h>
 
+#include <Common/config_version.h>
 #include <vector>
 
 #include <Columns/ColumnArray.h>
@@ -161,7 +162,14 @@ MongoDBSource::MongoDBSource(
     SharedHeader sample_block_,
     const UInt64 & max_block_size_)
     : ISource{std::make_shared<const Block>(sample_block_->cloneEmpty())}
-    , client{uri}
+    , client{[&uri]
+        {
+            mongocxx::client client{uri};
+            /// Append ClickHouse metadata to the MongoDB driver handshake.
+            /// This allows MongoDB server operators to identify connections from ClickHouse.
+            client.append_metadata("ClickHouse", VERSION_STRING);
+            return client;
+        }()}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
     , cursor{collection.find(query, options)}
