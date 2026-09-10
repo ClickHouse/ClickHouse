@@ -165,6 +165,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_analysis) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_block_allocation) \
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
+    PAUSEABLE_ONCE(rmt_restarting_thread_pause_after_activation) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(nats_pause_before_building_insert_pipeline) \
