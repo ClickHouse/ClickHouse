@@ -2544,7 +2544,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     bool type_hint_not_nullable_capable = type_hint && !type_hint->isLowCardinalityNullable() && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
     /// A struct is wrapped into Nullable only when the Nullable(Tuple) type is allowed by
-    /// allow_experimental_nullable_tuple_type (otherwise schema inference would return a type
+    /// enable_nullable_tuple_type (otherwise schema inference would return a type
     /// that CREATE TABLE rejects) or explicitly requested by the type hint (e.g. an existing
     /// table with such a column). Otherwise the struct is read as a plain Tuple, as it worked
     /// before Nullable(Tuple) was supported.

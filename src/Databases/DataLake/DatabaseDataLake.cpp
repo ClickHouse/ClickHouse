@@ -99,9 +99,9 @@ namespace DatabaseDataLakeSetting
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_database_iceberg;
-    extern const SettingsBool allow_experimental_database_unity_catalog;
-    extern const SettingsBool allow_experimental_database_glue_catalog;
+    extern const SettingsBool allow_database_iceberg;
+    extern const SettingsBool allow_database_unity_catalog;
+    extern const SettingsBool allow_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
@@ -1513,7 +1513,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
+                    && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
@@ -1610,7 +1610,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::GLUE:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_glue_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Glue catalog is beta. "
@@ -1623,7 +1623,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::UNITY:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DataLake database with Unity catalog catalog is beta. "
@@ -1662,7 +1662,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::S3_TABLES:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
+                    && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with S3 Tables catalog (Iceberg REST) is beta. "
@@ -1728,9 +1728,9 @@ The `DataLakeCatalog` engine supports the following data catalogs:
 You will need to enable the relevant settings below to use the `DataLakeCatalog` engine:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
-SET allow_experimental_database_unity_catalog = 1;
-SET allow_experimental_database_glue_catalog = 1;
+SET allow_database_iceberg = 1;
+SET allow_database_unity_catalog = 1;
+SET allow_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
@@ -1774,7 +1774,7 @@ See below sections for examples of using the `DataLakeCatalog` engine:
 * [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
 * [Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
-    Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
+    Can be used by enabling `allow_database_iceberg`.
 ```sql
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog(catalog_endpoint)
