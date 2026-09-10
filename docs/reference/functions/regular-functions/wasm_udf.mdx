@@ -220,8 +220,40 @@ RETURNS return_type
 - `DETERMINISTIC`: Declares the function as deterministic — always returns the same output for the same input. When specified, ClickHouse may constant-fold calls where all arguments are constants: the function is evaluated once at query analysis time and the result is reused for every row.
 - `SHA256_HASH`: Expected module hash for verification (auto-filled if omitted), can be used to ensure the correct WASM module loaded across different replicas.
 - `SETTINGS`: Per-function settings
-    - `serialization_format` String — Format used to serialize argument blocks passed to the module and to parse the returned result. Used only by `ABI BUFFERED_V1`. Supported values: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, and `Buffers`. Default: `MsgPack`. Block-based formats such as `Buffers` must return a single column whose type matches the declared function signature.
+    - `serialization_format` String — Format used to serialize argument blocks passed to the module and to parse the returned result. Used only by `ABI BUFFERED_V1`. Supported values: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`, and [`ColumnBinary`](/reference/formats/ColumnBinary). Default: `MsgPack`. Block-based formats such as `Buffers` and `ColumnBinary` must return a single column whose type matches the declared function signature.
     - `webassembly_udf_enable_fuel` Bool — Enables finite fuel budgeting for the function. Default: `true`. When `false`, the query-level setting `webassembly_udf_max_fuel` is ignored for this function. Disabling fuel limits may improve performance. However, for untrusted or buggy guest code, it can increase the risk of runaway execution.
+
+## NULL handling {#null-handling}
+
+A WASM UDF is never handed a nullable argument column. `NULL` arguments are handled by ClickHouse
+around the call, exactly as they are for built-in functions: the `Nullable` wrappers are stripped
+before the module runs and the module sees only the nested values.
+
+What happens to a `NULL` row after that depends on whether the declared return type can be
+`Nullable`, and the two cases behave differently:
+
+- For a return type that can be wrapped, such as `UInt64` or `String`, the null maps of all
+  arguments are combined onto the result. A row whose argument is `NULL` yields `NULL` without the
+  module deciding anything about it, and the declared return type is not the type of the
+  expression: a function declared `RETURNS UInt64` called with a `Nullable(String)` argument
+  produces `Nullable(UInt64)`, because the wrapper is reapplied on the way out.
+- For a return type that cannot be wrapped - `Array`, `Tuple` and `Map` - there is no `NULL` to
+  return, so nothing is propagated. Null rows are replaced by the default value of the nested
+  argument type and the module is called on those, `f(default(x))`. A function declared
+  `RETURNS Array(UInt64)` called with a `Nullable(String)` argument still produces
+  `Array(UInt64)`, and the `NULL` row gets whatever the module computes for the empty string.
+
+The module cannot distinguish "the argument was `NULL`" from "the argument was the default
+value", because it is never shown the difference. A function that needs that distinction has to
+take it as a separate argument - for example an explicit `isNull(x)` flag alongside
+`ifNull(x, ...)`.
+
+Declaring `RETURNS Nullable(...)` does not change any of this. It only tells ClickHouse to expect
+a nullable result column back from the module, which the module must then actually produce: with
+`ABI BUFFERED_V1` the returned block has to carry the nullability the chosen
+`serialization_format` encodes, such as the `COL_IS_NULLABLE` flag and null map of
+[`ColumnBinary`](/reference/formats/ColumnBinary). A module that returns a plain non-nullable
+column against a declared `Nullable` return type is rejected.
 
 ## ABIs Versions
 

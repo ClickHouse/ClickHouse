@@ -1,0 +1,9 @@
+Nullable(UInt64)
+(empty)	0
+ab	195
+\N	\N
+Array(UInt64)
+(empty)	[0]
+ab	[2]
+\N	[0]
+INCORRECT_DATA

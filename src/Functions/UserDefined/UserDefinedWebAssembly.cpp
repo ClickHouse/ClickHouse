@@ -1,14 +1,31 @@
 #include <Functions/UserDefined/UserDefinedWebAssembly.h>
+#include <Formats/ColumnBinaryWire.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
+#include <atomic>
+#include <algorithm>
 #include <base/hex.h>
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnTuple.h>
 
 #include <Functions/IFunction.h>
@@ -31,7 +48,6 @@
 #include <IO/WriteBufferFromStringWithMemoryTracking.h>
 
 #include <Processors/Chunk.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/formatReadable.h>
@@ -45,8 +61,6 @@
 #include <base/arithmeticOverflow.h>
 
 
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipeline.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
@@ -62,6 +76,7 @@ namespace DB
 {
 
 using namespace WebAssembly;
+using namespace ColumnBinaryWire;
 
 namespace Setting
 {
@@ -265,6 +280,31 @@ public:
     explicit UserDefinedWebAssemblyFunctionBufferedV1(Args &&... args) : UserDefinedWebAssemblyFunction(std::forward<Args>(args)...)
     {
         checkSignature();
+        serialization_format = settings.getValue("serialization_format").safeGet<String>();
+        Block input_header;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            String col_name = !argument_names[i].empty() ? argument_names[i] : fmt::format("arg{}", i);
+            input_header.insert(ColumnWithTypeAndName(arguments[i], col_name));
+        }
+        // Validate the argument and result types eagerly, at declaration time, instead of
+        // deferring to the first call. For `ColumnBinary` this is the same check its output
+        // format runs in its constructor, done directly rather than by building that format:
+        // building it would also demand `allow_experimental_column_binary_format`, and whether
+        // the experimental wire may be used belongs to the query that calls the function, not
+        // to the statement that declares it. Every other format is probed by construction,
+        // which is also what rejects a serialization format that does not exist.
+        if (serialization_format == "ColumnBinary")
+        {
+            for (const auto & column : input_header)
+                validateColumnBinaryWireSupportedType(column.type);
+            validateColumnBinaryWireSupportedType(result_type);
+        }
+        else
+        {
+            probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(
+                serialization_format, probe_null_wb, input_header);
+        }
     }
 
     /// The input block is serialized into a buffer the guest allocates, and the result read
@@ -285,13 +325,22 @@ public:
         checkFunction(WasmMemoryManagerV01::deallocateFunctionDeclaration());
     }
 
-    static void readSingleBlock(std::unique_ptr<PullingPipelineExecutor> pipeline_executor, Block & result_block)
+    /// Reads the whole result out of `input_format` by driving it directly, without building a
+    /// `QueryPipeline` and a `PullingPipelineExecutor` around it. `FormatFactory::getInput` returns a
+    /// single `IInputFormat` source with no transforms attached, so a pipeline would add nothing here
+    /// beyond its own construction cost, which is substantial relative to deserializing one small
+    /// in-memory frame: it dominated the WASM read-back path in profiles. `IInputFormat::generate`
+    /// yields an empty chunk at end of input, exactly as `ISource::tryGenerate` (and therefore
+    /// `ISource::work`) interprets it, so this loop reproduces the source's own driving logic,
+    /// including the trailing `onFinish`. No input format overrides `tryGenerate`, so nothing else
+    /// can be interposed between `work` and `generate`.
+    static void readSingleBlock(IInputFormat & input_format, Block & result_block)
     {
         Chunk result_chunk;
         while (true)
         {
-            Chunk chunk;
-            bool has_data = pipeline_executor->pull(chunk);
+            Chunk chunk = input_format.generate();
+            bool has_data = static_cast<bool>(chunk);
 
             if (chunk && chunk.getNumColumns() != result_block.columns())
                 throw Exception(
@@ -303,11 +352,24 @@ public:
             if (!result_chunk)
                 result_chunk = std::move(chunk);
             else if (chunk)
+            {
+                // `Chunk::append` concatenates with `insertRangeFrom`, which is not const-safe, and
+                // `ColumnBinary` preserves top-level const, so a multi-frame result can legitimately
+                // contain const chunks. A const destination would only grow its row count and repeat
+                // the first frame's value for every later frame; a const source would reach
+                // `insertRangeFrom`'s `assert_cast`, which is a plain `static_cast` in release
+                // builds. Materialize both sides before concatenating. The single-chunk case above
+                // is untouched, so a result that is const end to end still stays const.
+                convertToFullIfConst(result_chunk);
+                convertToFullIfConst(chunk);
                 result_chunk.append(chunk);
+            }
 
             if (!has_data)
                 break;
         }
+
+        input_format.onFinish();
 
         if (result_chunk.getNumColumns() != result_block.columns())
             throw Exception(
@@ -323,8 +385,6 @@ public:
     {
         ProfileEventTimeIncrement<Microseconds> timer_execute(ProfileEvents::WasmTotalExecuteMicroseconds);
 
-        String format_name = settings.getValue("serialization_format").safeGet<String>();
-
         if (num_rows == 0)
             return result_type->createColumn();
         if (num_rows >= std::numeric_limits<WasmSizeT>::max())
@@ -332,28 +392,74 @@ public:
 
         auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment, stop_token);
 
+        // Build the format settings and the empty sample header once per call. `getFormatSettings`
+        // reads several hundred settings and allocates for every string-valued one, and it used to
+        // run three times per invocation (probe, real output format, input format), with
+        // `block.cloneEmpty()` running twice on top of that. They are query-invariant, so hoisting
+        // them changes nothing about which settings apply while removing the repeated work.
+        const FormatSettings format_settings = getFormatSettings(context);
+        const Block empty_header = block.cloneEmpty();
+
         WasmMemoryGuard wasm_data = nullptr;
         if (!block.empty())
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
-            StringWithMemoryTracking input_data;
 
+            // Build the probe from the query's actual Context rather than reusing probe_format
+            // (built once at construction with default FormatSettings, kept only for its early
+            // validation side effect): otherwise this precompute/allocate fast path would
+            // ignore per-query settings like column_binary_disable_preallocation while the real
+            // `out` format below picks them up from context, and the two could disagree on
+            // whether or how to serialize. A local NullWriteBuffer (not the probe_null_wb
+            // member) avoids a data race if this const method is called concurrently for the
+            // same instance.
+            NullWriteBuffer local_probe_wb;
+            auto probe = context->getOutputFormat(serialization_format, local_probe_wb, empty_header, format_settings);
+            std::optional<uint64_t> precomputed = probe->precomputeSerializedSize(block, num_rows);
+
+            if (precomputed)
             {
-                WriteBufferFromStringWithMemoryTracking buf(input_data);
-                auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());
-                formatBlock(out, block);
+                wasm_data = allocateInWasmMemory(wmm.get(), *precomputed);
+                auto wasm_mem = wasm_data.getMemoryView();
+                // Same defensive check as the fallback branch below: a buggy clickhouse_create_buffer
+                // implementation in the WASM module could return a handle to a smaller buffer than
+                // requested. Without this check, WriteBufferFromPointer below would be constructed
+                // with the *requested* size (*precomputed) rather than the actual buffer size, and
+                // out->write(block) could write past the end of the real guest buffer.
+                if (wasm_mem.size() != *precomputed)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "Cannot allocate WASM buffer of size {}, got {}. "
+                        "Maybe '{}' function implementation in WebAssembly module is incorrect",
+                        *precomputed, wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
+                WriteBufferFromPointer wb(reinterpret_cast<char *>(wasm_mem.data()), *precomputed);
+                auto out = context->getOutputFormat(serialization_format, wb, empty_header, format_settings);
+                // write()+finalize() instead of formatBlock(): formatBlock calls flush()
+                // which triggers out.next() — fatal for WriteBufferFromPointer.
+                // auto_flush defaults to false so neither write() nor finalize() flush.
+                out->write(block);
+                out->finalize();
+                wb.cancel();
             }
-
-            wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
-            auto wasm_mem = wasm_data.getMemoryView();
-
-            if (wasm_mem.size() != input_data.size())
-                throw Exception(ErrorCodes::WASM_ERROR,
-                    "Cannot allocate buffer of size {}, got {} "
-                    "Maybe '{}' function implementation in WebAssembly module is incorrect",
-                    input_data.size(), wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
-
-            std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
+            else
+            {
+                // Fallback: serialize into a CH-side String, then copy into WASM memory.
+                // WriteBufferForWasmMemory (zero-copy path) cannot be used here because it
+                // invokes clickhouse_create_buffer in the WASM compartment during construction,
+                // which crashes during constant-folding dry-run (executeImplDryRun).
+                StringWithMemoryTracking input_data;
+                {
+                    WriteBufferFromStringWithMemoryTracking buf(input_data);
+                    auto out = context->getOutputFormat(serialization_format, buf, empty_header, format_settings);
+                    formatBlock(out, block);
+                }
+                wasm_data = allocateInWasmMemory(wmm.get(), input_data.size());
+                auto wasm_mem = wasm_data.getMemoryView();
+                if (wasm_mem.size() != input_data.size())
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "Cannot allocate WASM buffer of size {}, got {}",
+                        input_data.size(), wasm_mem.size());
+                std::copy(input_data.data(), input_data.data() + input_data.size(), wasm_mem.begin());
+            }
         }
 
         auto result_ptr = compartment->invoke<WasmPtr>(function_name, {wasm_data.getHandle(), static_cast<WasmSizeT>(num_rows)}, stop_token);
@@ -368,9 +474,10 @@ public:
 
         Block result_header({ColumnWithTypeAndName(result_type->createColumn(), result_type, "result")});
 
-        auto pipeline = QueryPipeline(
-            Pipe(context->getInputFormat(format_name, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
-        readSingleBlock(std::make_unique<PullingPipelineExecutor>(pipeline), result_header);
+        auto input_format = context->getInputFormat(
+            serialization_format, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE,
+            format_settings);
+        readSingleBlock(*input_format, result_header);
 
         if (result_header.columns() != 1 || result_header.rows() != num_rows)
             throw Exception(
@@ -382,6 +489,11 @@ public:
         auto result_columns = result_header.mutateColumns();
         return std::move(result_columns[0]);
     }
+
+private:
+    String serialization_format;
+    NullWriteBuffer probe_null_wb;
+    OutputFormatPtr probe_format;
 };
 
 std::unique_ptr<UserDefinedWebAssemblyFunction> UserDefinedWebAssemblyFunction::create(
@@ -485,6 +597,19 @@ static WebAssembly::WasmModule::Config getWasmModuleConfig(ContextPtr context, W
     return cfg;
 }
 
+static bool computePreserveConstColumns(const ContextPtr & context, const std::shared_ptr<UserDefinedWebAssemblyFunction> & udf)
+{
+    const String fmt = udf->getSettings().getValue("serialization_format").safeGet<String>();
+    StringWithMemoryTracking dummy_buf;
+    WriteBufferFromStringWithMemoryTracking dummy_writer(dummy_buf);
+    Block sample_block;
+    size_t arg_idx = 0;
+    for (const auto & arg : udf->getArguments())
+        sample_block.insert(ColumnWithTypeAndName(arg->createColumn(), arg, "arg" + std::to_string(arg_idx++)));
+    auto format = context->getOutputFormat(fmt, dummy_writer, sample_block);
+    return !format->expectMaterializedColumns() || format->supportsColumnSchema();
+}
+
 class FunctionUserDefinedWasm final : public IFunction
 {
 public:
@@ -494,6 +619,7 @@ public:
         , function_name(std::move(function_name_))
         , argument_names(user_defined_function->getArgumentNames())
         , context(std::move(context_))
+        , preserve_const_columns(computePreserveConstColumns(context, user_defined_function))
         , interrupt_source()
         , compartment_pool(
               static_cast<UInt32>(context->getSettingsRef()[Setting::webassembly_udf_max_instances]),
@@ -505,13 +631,6 @@ public:
         if (configured_memory_limit != 0)
             module_memory_limit = configured_memory_limit;
         serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
-    }
-
-    /// Bytes a serialized block carries besides its rows: `BuffersWriter` prefixes the payloads
-    /// with a `UInt64` column count, a `UInt64` row count and one `UInt64` size per column.
-    size_t blockFramingBytes(size_t num_columns) const
-    {
-        return serialization_format == "Buffers" ? sizeof(UInt64) * (2 + num_columns) : 0;
     }
 
     String getName() const override { return function_name; }
@@ -674,71 +793,129 @@ private:
         return static_cast<size_t>(static_cast<Float64>(*budget_basis) * memory_ratio);
     }
 
-    /// Measure the wire instead of predicting it: write each row through the real output format
-    /// into a `NullWriteBuffer` and read the byte count off it. Delimiters, keys, enum labels and
-    /// the configured tokens are all counted, because the serializer writes them.
+    /// The exact number of bytes one call carrying `[start, start + length)` puts on the wire.
     ///
-    /// Reports the payload of a row alone: a block-framing format writes its framing on every
-    /// `write`, and the measurement writes one row at a time, so the framing would otherwise be
-    /// charged to each row instead of once to the call that carries them.
-    template <typename OnRow>
-    void measureRows(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, OnRow && on_row) const
+    /// The batch is measured whole rather than assembled out of per-row measurements. A row has
+    /// no cost of its own under a block-scoped wire: `ColumnBinary` writes a frame header, a
+    /// descriptor per column and one `COL_LOWCARD` dictionary per batch, and `BuffersWriter`
+    /// runs `NativeWriter::writeData` once per block, which emits a fresh `LowCardinality`
+    /// dictionary and the `Dynamic` / `Variant` structure prefixes for whatever rows the block
+    /// holds. Summing one-row probes charges every row a whole frame and a whole dictionary,
+    /// which over-prices such a batch by more than an order of magnitude, and no fixed per-write
+    /// subtraction can remove state whose size depends on which rows the batch carries.
+    ///
+    /// What comes back here is the stream the guest is really handed - framing, wrapping and
+    /// shared state included - so the budget below is compared against the actual size rather
+    /// than against a bound on it.
+    size_t measureBatchBytes(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
     {
-        /// A function without arguments is handed no input buffer at all, so there is nothing to
-        /// measure and nothing for the size of an input to decide.
-        if (arguments.empty())
-            return;
-
-        /// Cut each row out of the original arguments instead of materializing the whole block
-        /// first: a wide `ColumnConst` argument would otherwise be expanded to one copy per row
-        /// on the host, which is the very input the splitting below exists to rescue.
-        auto header = getArgumentsBlock(arguments, 0, 0);
+        auto block = getArgumentsBlock(arguments, start_idx, length);
         NullWriteBuffer measure_buf;
-        auto measure_out = context->getOutputFormat(serialization_format, measure_buf, header.cloneEmpty());
-        const size_t framing_per_write = blockFramingBytes(header.columns());
+        auto measure_out
+            = context->getOutputFormat(serialization_format, measure_buf, block.cloneEmpty());
 
-        size_t written_before = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            measure_out->write(getArgumentsBlock(arguments, row, 1));
+        /// `ColumnBinary` states the size of a block without writing it. This is the very
+        /// primitive `executeOnBlock` sizes the guest buffer with, so the measurement and the
+        /// allocation cannot disagree, and it is exact for the whole block being measured.
+        if (auto precomputed = measure_out->precomputeSerializedSize(block, length))
+            return *precomputed;
 
-            const size_t written_after = measure_buf.count();
-            on_row(row, written_after - written_before - framing_per_write);
-            written_before = written_after;
-        }
+        measure_out->write(block);
+        measure_out->finalize();
+        return measure_buf.count();
     }
 
-    /// What one call's stream costs beyond its rows: the framing a block format writes on every
-    /// `write`, plus whatever the format wraps the rows in once - `JSONEachRow` under
-    /// `output_format_json_array_of_rows` brackets them, for instance. The wrapping is measured
-    /// rather than modelled, by finalizing an empty stream through the real format.
+    /// How many rows the call starting at `start_idx` should carry, out of `remaining`.
     ///
-    /// The per-row measurement runs one long-lived stream, so it charges the opening bracket to
-    /// its first row and every later row a separator instead of that bracket. Counting the whole
-    /// wrapping again here therefore overstates a call by the few bytes of an opening bracket,
-    /// which only ever moves a batch boundary one row earlier. An input is never understated,
-    /// which is what the batching budget relies on.
-    size_t perCallOverheadBytes(const ColumnsWithTypeAndName & arguments) const
+    /// The cost of a batch is monotone in its row count - adding a row can only grow the payload,
+    /// and can only grow a per-batch dictionary - so "the rows that fit the budget" is a prefix
+    /// and can be bracketed. Each probe measures a candidate exactly and rescales the next one by
+    /// how far it landed from the budget, keeping the largest candidate known to fit and the
+    /// smallest known to overflow, so the bracket shrinks on every step.
+    ///
+    /// The batch that is sent has always been measured, so the choice never depends on the hint
+    /// carried across calls; the hint only saves probes. It is a relaxed atomic because
+    /// `executeImpl` runs concurrently over pipeline threads on one function object, and a stale
+    /// or torn-looking value costs at most an extra probe.
+    size_t chooseBatchRows(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t remaining, size_t budget) const
     {
-        const size_t framing = blockFramingBytes(arguments.size());
+        /// A function without arguments is handed no input buffer, so no size bounds its calls.
         if (arguments.empty())
-            return framing;
+            return remaining;
 
-        NullWriteBuffer overhead_buf;
-        auto overhead_out = context->getOutputFormat(serialization_format, overhead_buf, getArgumentsBlock(arguments, 0, 0));
-        overhead_out->finalize();
-        return framing + overhead_buf.count();
+        /// A batch filling this much of its budget is taken as it is: proving it maximal costs
+        /// more serializations than the few rows it could still gain.
+        static constexpr double good_enough_fill = 0.75;
+        static constexpr size_t max_probes = 16;
+
+        /// Probe upwards from a single row when nothing is known yet, rather than downwards from
+        /// the whole block. A probe serializes the candidate, and for a wire that does not carry
+        /// constness a `ColumnConst` argument is materialized to do it, so a first probe of the
+        /// whole block would expand exactly the input the splitting exists to rescue. Measuring
+        /// one row over-states the marginal cost, because it carries the whole per-batch state,
+        /// so the rescaled candidate is an undershoot that later probes grow into.
+        const size_t hint = batch_rows_hint.load(std::memory_order_relaxed);
+        size_t candidate = std::clamp(hint == 0 ? static_cast<size_t>(1) : hint, static_cast<size_t>(1), remaining);
+        size_t largest_fitting = 0;
+        size_t smallest_overflowing = remaining + 1;
+
+        for (size_t probe = 0; probe < max_probes; ++probe)
+        {
+            const size_t measured = measureBatchBytes(arguments, start_idx, candidate);
+            if (measured <= budget)
+            {
+                largest_fitting = candidate;
+                if (candidate == remaining || static_cast<double>(measured) >= good_enough_fill * static_cast<double>(budget))
+                    break;
+            }
+            else
+            {
+                smallest_overflowing = candidate;
+                /// A single row past the budget is still passed on its own: the split stops at
+                /// one row per call, and whether the guest can hold that row is for its
+                /// allocator to say.
+                if (candidate == 1)
+                    break;
+            }
+
+            if (largest_fitting + 1 >= smallest_overflowing)
+                break;
+
+            size_t next = measured == 0
+                ? remaining
+                : static_cast<size_t>(static_cast<double>(candidate) * static_cast<double>(budget) / static_cast<double>(measured));
+            next = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
+            if (next == candidate)
+                break;
+            candidate = next;
+        }
+
+        const size_t chosen = std::max<size_t>(largest_fitting, 1);
+        batch_rows_hint.store(chosen, std::memory_order_relaxed);
+        return chosen;
     }
 
     void appendBatchResult(MutableColumnPtr & result_column, MutableColumnPtr batch_column) const
     {
-        if (!result_column->structureEquals(*batch_column))
+        /// Under a const-preserving wire a guest may legitimately return `COL_IS_CONST`, which
+        /// `ColumnBinaryInputFormat` decodes as a `ColumnConst`. `structureEquals` only holds
+        /// between two `ColumnConst`s, so compare the unwrapped nested column rather than
+        /// rejecting every valid const result.
+        const IColumn * batch_for_check = batch_column.get();
+        if (const auto * batch_const = typeid_cast<const ColumnConst *>(batch_for_check))
+            batch_for_check = &batch_const->getDataColumn();
+        if (!result_column->structureEquals(*batch_for_check))
             throw Exception(
                 ErrorCodes::WASM_ERROR,
                 "Different column types in result blocks: {} and {}",
                 result_column->dumpStructure(),
                 batch_column->dumpStructure());
 
+        /// A `ColumnConst` batch result must be materialized before it is accumulated:
+        /// `ColumnConst::insertRangeFrom` only bumps the row count without copying the source's
+        /// value, so a const accumulator would keep repeating the first batch's value for every
+        /// row appended afterwards.
+        batch_column = IColumn::mutate(batch_column->convertToFullColumnIfConst());
         if (result_column->empty())
             result_column = std::move(batch_column);
         else
@@ -775,26 +952,11 @@ private:
 
         if (budget)
         {
-            /// What a call costs beyond its rows, which no per-row measurement sees.
-            const size_t block_framing_bytes = perCallOverheadBytes(arguments);
-
-            /// Flush before the next row would cross the budget. A stride derived from the
-            /// average row size cannot bound a skewed block: one huge row among many tiny ones
-            /// would still share a call with its neighbours.
-            ///
-            /// A row that is itself past the budget is still passed on its own: the split stops
-            /// at one row per call, and whether the guest can hold that row is for its allocator
-            /// to say.
-            size_t running_bytes = 0;
-            measureRows(arguments, input_rows_count, [&](size_t row, size_t row_bytes)
-            {
-                if (row > batch_start && running_bytes + row_bytes + block_framing_bytes > *budget)
-                {
-                    flush_batch(row);
-                    running_bytes = 0;
-                }
-                running_bytes += row_bytes;
-            });
+            /// Take the rows a call can hold, measure the call, and start the next one where
+            /// it ended. A stride derived from an average row size cannot bound a skewed block:
+            /// one huge row among many tiny ones would still share a call with its neighbours.
+            while (batch_start < input_rows_count)
+                flush_batch(batch_start + chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget));
         }
         else if (fixed_block_size > 0)
         {
@@ -813,12 +975,20 @@ private:
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             /// Cut first, materialize second: `ColumnConst::cut` is O(1), while materializing
-            /// the whole block first would make the per-row measurement O(rows^2).
-            ColumnPtr column = arguments[i].column->cut(start_idx, length)->convertToFullColumnIfConst();
+            /// the whole block first would make the per-row measurement O(rows^2). A wire that
+            /// encodes constness itself keeps the wrapper instead of materializing at all.
+            ColumnPtr column = arguments[i].column->cut(start_idx, length);
+            if (!preserve_const_columns)
+                column = column->convertToFullColumnIfConst();
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
             /// as 1 byte by RowBinary instead of 4, causing the WASM module to read garbage.
+            /// `ColumnBinary`'s descriptor only encodes a coarse width class (`COL_FIXED8/16/32/64`),
+            /// not exact signedness - a `UInt8(255)` and an `Int8(-1)` both serialize to the same
+            /// single `0xff` byte, so a guest reading a declared `Int32` has no way to tell them
+            /// apart. Always cast here regardless of format until the wire carries real logical
+            /// type and signedness information.
             const DataTypePtr & declared_type = declared_arguments[i];
             if (!arguments[i].type->equals(*declared_type))
                 column = castColumn(ColumnWithTypeAndName(column, arguments[i].type, column_name), declared_type);
@@ -832,11 +1002,21 @@ private:
     String function_name;
     Strings argument_names;
     ContextPtr context;
+    /// Whether the configured wire keeps a top-level `ColumnConst` compact instead of
+    /// materializing it - `ColumnBinary`'s `COL_IS_CONST`. Driven off the format's own
+    /// capabilities rather than its name: `Buffers` exposes a native serialization but
+    /// `NativeWriter::writeData` calls `convertToFullColumnIfConst` before writing, so it is
+    /// not const-preserving.
+    bool preserve_const_columns;
 
     String serialization_format;
 
     /// Configured `webassembly_udf_max_memory` in bytes, empty when the host caps nothing.
     std::optional<size_t> module_memory_limit;
+
+    /// Rows the previous call fitted into the budget, reused as the first candidate for the
+    /// next one. A hint only, never a bound: see `chooseBatchRows`.
+    mutable std::atomic<size_t> batch_rows_hint{0};
 
     mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;
@@ -1055,7 +1235,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     const UnorderedMapWithMemoryTracking<String, SettingDefinition> settings_def = {
         /// Serialization format for input/output data for ABI what uses serialization
-        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
+        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers", "ColumnBinary"}}.withDefault("MsgPack")},
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
         /// Whether bbox-disjoint pruning is safe for this function (see IFunctionBase::isSpatialPredicate).
         {"is_spatial_predicate", SettingBool{}.withDefault(false)},

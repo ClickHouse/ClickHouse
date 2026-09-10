@@ -643,6 +643,13 @@ struct FormatSettings
         bool escape_special_characters = false;
     } markdown{};
 
+    // ColumnBinary format settings
+    struct
+    {
+        bool allow_experimental = false;
+        bool disable_preallocation = false;
+    } column_binary{};
+
     enum class UnsupportedGeometryHandling { Throw, Null };
 
     struct

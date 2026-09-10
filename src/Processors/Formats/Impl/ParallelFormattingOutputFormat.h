@@ -93,6 +93,8 @@ public:
         auto internal_formatter = internal_formatter_creator(buf);
         save_totals_and_extremes_in_statistics = internal_formatter->areTotalsAndExtremesUsedInFinalize();
         supports_non_default_serialization_kinds = internal_formatter->supportsSpecialSerializationKinds();
+        expect_materialized_columns = internal_formatter->expectMaterializedColumns();
+        supports_column_schema = internal_formatter->supportsColumnSchema();
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
@@ -148,6 +150,15 @@ public:
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
 
     bool supportsSpecialSerializationKinds() const override { return supports_non_default_serialization_kinds; }
+
+    /// These describe the columns the wrapped format wants to be handed, so the answer has to be
+    /// the wrapped format's own. The pipeline asks `expectMaterializedColumns` to decide whether to
+    /// insert a materializing transform ahead of the format, and taking the base class default here
+    /// would expand a `ColumnConst` for a format that encodes it as a single value - `ColumnBinary`
+    /// writes a constant column once with `COL_IS_CONST`, so materializing it multiplies the frame
+    /// by the row count.
+    bool expectMaterializedColumns() const override { return expect_materialized_columns; }
+    bool supportsColumnSchema() const override { return supports_column_schema; }
 
 private:
     void consume(Chunk chunk) final
@@ -256,6 +267,8 @@ private:
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
     bool supports_non_default_serialization_kinds;
+    bool expect_materialized_columns;
+    bool supports_column_schema;
 
     String exception_message;
     bool exception_is_rethrown = false;

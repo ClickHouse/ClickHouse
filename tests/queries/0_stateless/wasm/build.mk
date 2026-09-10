@@ -47,3 +47,9 @@ $(OUT_FOLDER)/as_%.wasm: as_%.ts
 	$(ASSEMBLYSCRIPT_COMPILER) $< --runtime incremental --exportRuntime --enable simd --disableWarning 112 -o $@
 # WARNING AS112: Exchange of 'v128' values is not supported by all embeddings
 # We support 128-bit integers, so allow export function with v128 in signature
+
+# Linked with an explicit 1 MiB linear memory so a test can name the exact input budget the
+# splitter derives from it (`initial memory * webassembly_udf_input_split_memory_ratio`), which
+# is what makes an expected batch size predictable rather than compiler-dependent.
+$(OUT_FOLDER)/columnar_split_abi.wasm: $(OUT_FOLDER)/columnar_split_abi.o
+	wasm-ld-$(CLANG_VERSION) --export-all --no-entry --lto-O3 --allow-undefined -z stack-size=8192 --initial-memory=1048576 --max-memory=1048576 $< -o $@

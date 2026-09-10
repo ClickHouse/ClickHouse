@@ -811,6 +811,7 @@
           ]
         },
         "reference/formats/CapnProto",
+        "reference/formats/ColumnBinary",
         {
           "expanded": false,
           "group": "CustomSeparated",
