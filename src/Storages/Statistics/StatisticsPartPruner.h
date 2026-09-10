@@ -29,6 +29,14 @@ public:
     /// Get the list of column names used in the filter condition that have statistics.
     Names getUsedColumns() const { return {used_column_names.begin(), used_column_names.end()}; }
 
+    /// A top-level `IS NULL` / `IS NOT NULL` conjunct of the filter,
+    /// resolved to a nullable column with `Basic` statistics.
+    struct NullPredicate
+    {
+        String column;
+        bool is_null;
+    };
+
 private:
     /// Get or create a KeyCondition for the given columns, using cache to avoid recreating for each part.
     KeyCondition * getKeyConditionForEstimates(const NamesAndTypesList & columns_and_types);
@@ -36,14 +44,7 @@ private:
     /// Cache key_condition by column names to avoid recreating them for each part.
     std::unordered_map<Names, std::unique_ptr<KeyCondition>, NamesHash> key_condition_cache;
 
-    /// Names of `.null` subcolumns (e.g. `value.null` for nullable `value`) that may appear as
-    /// bare boolean inputs in the filter DAG; they are rewritten to comparisons during
-    /// `filter_dag` construction. Declared before `filter_dag` because it initializes from it.
-    NameSet null_subcolumns_to_normalize;
-
-    /// Maps a virtual key name (`value.null`) to its parent column name (`value`) for
-    /// estimate lookup. Virtual keys are plain UInt8 and never NULL themselves.
-    std::map<String, String> virtual_key_to_parent;
+    std::vector<NullPredicate> null_predicates;
 
     const ActionsDAGWithInversionPushDown filter_dag;
     const ContextPtr context;

@@ -1,7 +1,6 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -105,30 +104,10 @@ bool nestedTypeHasNullSubcolumn(const DataTypePtr & type)
     return false;
 }
 
-/// Collect names of `.null` subcolumns whose parent column has `Basic` statistics and a
-/// nullable type, so that bare boolean inputs on them can be rewritten to comparisons.
-/// Columns where `.null` resolves to a real subcolumn are excluded.
-NameSet collectNullSubcolumnsToNormalize(const StorageMetadataPtr & metadata)
-{
-    NameSet result;
-    if (!metadata)
-        return result;
-    for (const auto & col : metadata->getColumns())
-    {
-        if (col.statistics.types_to_desc.contains(StatisticsType::Basic)
-            && isNullableOrLowCardinalityNullable(col.type)
-            && !nestedTypeHasNullSubcolumn(col.type))
-            result.insert(col.name + ".null");
-    }
-    return result;
-}
-
-/// If `name` is a `<parent>.null` subcolumn of a nullable column with `Basic` statistics,
-/// return the parent column name. A physical column literally named `foo.null` is never
-/// treated as a virtual key: the physical-column check wins. Neither is a parent whose
-/// nested type owns a `null` subcolumn (e.g. `Nullable(JSON)`), where `<parent>.null` is
-/// that real subcolumn, not the null-map.
-std::optional<String> tryResolveVirtualKeyParent(const StorageMetadataPtr & metadata, const String & name)
+/// If `name` is the `<parent>.null` null-map of a nullable column with `Basic` statistics,
+/// return the parent column name. A physical column literally named `foo.null` wins, and a
+/// parent whose nested type owns a `null` subcolumn (e.g. `Nullable(JSON)`) is excluded.
+std::optional<String> tryResolveNullMapParent(const StorageMetadataPtr & metadata, const String & name)
 {
     if (!name.ends_with(".null"))
         return std::nullopt;
@@ -146,20 +125,52 @@ std::optional<String> tryResolveVirtualKeyParent(const StorageMetadataPtr & meta
     return std::nullopt;
 }
 
-/// Create a Range on the virtual UInt8 `.null` subcolumn from the parent column's NULL
-/// count: value 0 marks "row is not NULL", value 1 marks "row is NULL".
-std::optional<Range> createRangeFromNullCount(const Estimate & estimate)
+bool hasBasicStatsOnNullableType(const ColumnDescription & col)
 {
-    if (!estimate.estimated_null_count.has_value() || estimate.rows_count == 0
-        || *estimate.estimated_null_count > estimate.rows_count)
-        return std::nullopt;
+    return col.statistics.types_to_desc.contains(StatisticsType::Basic)
+        && isNullableOrLowCardinalityNullable(col.type);
+}
 
-    UInt64 null_count = *estimate.estimated_null_count;
-    if (null_count == 0)
-        return Range(UInt64(0), true, UInt64(0), true);
-    if (null_count == estimate.rows_count)
-        return Range(UInt64(1), true, UInt64(1), true);
-    return Range(UInt64(0), true, UInt64(1), true);
+/// Collect top-level `AND` conjuncts testing a column's NULL-ness: a bare `<col>.null`
+/// input (`IS NULL` rewritten by `optimize_functions_to_subcolumns`), `not(<col>.null)`,
+/// or `isNull(<col>)` / `isNotNull(<col>)` on a bare column.
+void collectNullPredicates(
+    const ActionsDAG::Node & node,
+    const StorageMetadataPtr & metadata,
+    std::vector<StatisticsPartPruner::NullPredicate> & out)
+{
+    if (node.type == ActionsDAG::ActionType::INPUT)
+    {
+        if (auto parent = tryResolveNullMapParent(metadata, node.result_name))
+            out.push_back({*parent, /*is_null=*/true});
+        return;
+    }
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return;
+
+    const auto & name = node.function_base->getName();
+    if (name == "and")
+    {
+        for (const auto * child : node.children)
+            collectNullPredicates(*child, metadata, out);
+        return;
+    }
+
+    if (node.children.size() != 1 || node.children.front()->type != ActionsDAG::ActionType::INPUT)
+        return;
+
+    const String & arg_name = node.children.front()->result_name;
+    if (name == "not")
+    {
+        if (auto parent = tryResolveNullMapParent(metadata, arg_name))
+            out.push_back({*parent, /*is_null=*/false});
+    }
+    else if (name == "isNull" || name == "isNotNull")
+    {
+        if (const auto * col = metadata->getColumns().tryGet(arg_name); col && hasBasicStatsOnNullableType(*col))
+            out.push_back({arg_name, name == "isNull"});
+    }
 }
 
 /// Functions that negate a comparison, i.e. can be `true` for a `NaN` operand. `NaN` never
@@ -223,9 +234,7 @@ void collectFloatColumnsUnderNegation(
 } /// anonymous namespace
 
 StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_, const ActionsDAG::Node & filter_node_, ContextPtr context_)
-    : null_subcolumns_to_normalize(collectNullSubcolumnsToNormalize(metadata_))
-    , filter_dag(&filter_node_, context_, /* boolean_context */ true,
-                 null_subcolumns_to_normalize.empty() ? nullptr : &null_subcolumns_to_normalize)
+    : filter_dag(&filter_node_, context_, /* boolean_context */ true)
     , context(context_)
 {
     if (!metadata_ || !filter_dag.dag)
@@ -255,18 +264,14 @@ StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_,
                 stats_column_name_to_type_map[col->name] = col->type;
                 useless = false;
             }
-            continue;
-        }
-
-        /// Virtual `.null` key produced by `optimize_functions_to_subcolumns`: register it
-        /// as a UInt8 key column resolved against the parent column's estimate.
-        if (auto parent = tryResolveVirtualKeyParent(metadata_, name))
-        {
-            stats_column_name_to_type_map[name] = std::make_shared<DataTypeUInt8>();
-            virtual_key_to_parent[name] = *parent;
-            useless = false;
         }
     }
+
+    collectNullPredicates(*filter_dag.predicate, metadata_, null_predicates);
+    if (!null_predicates.empty())
+        useless = false;
+    for (const auto & pred : null_predicates)
+        used_column_names.insert(pred.column);
 }
 
 KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndTypesList & columns)
@@ -319,14 +324,27 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
     if (pruning_estimates.empty())
         return {true, true};
 
-    /// Use only columns that are both in filter and have estimates. Virtual `.null` keys
-    /// resolve to their parent column's estimate.
+    /// `IS NULL` cannot match a part with zero NULLs; `IS NOT NULL` cannot match an all-NULL part.
+    for (const auto & [column, is_null] : null_predicates)
+    {
+        auto est_it = pruning_estimates.find(column);
+        if (est_it == pruning_estimates.end())
+            continue;
+        const Estimate & estimate = est_it->second;
+        if (!estimate.estimated_null_count.has_value() || estimate.rows_count == 0
+            || *estimate.estimated_null_count > estimate.rows_count)
+            continue;
+        if (is_null && *estimate.estimated_null_count == 0)
+            return {false, true};
+        if (!is_null && *estimate.estimated_null_count == estimate.rows_count)
+            return {false, true};
+    }
+
+    /// Use only columns that are both in filter and have estimates
     NamesAndTypesList columns;
     for (const auto & [col_name, col_type] : stats_column_name_to_type_map)
     {
-        auto parent_it = virtual_key_to_parent.find(col_name);
-        const String & estimate_name = parent_it != virtual_key_to_parent.end() ? parent_it->second : col_name;
-        if (pruning_estimates.contains(estimate_name))
+        if (pruning_estimates.contains(col_name))
             columns.emplace_back(col_name, col_type);
     }
 
@@ -342,29 +360,17 @@ BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 
     for (const auto & [col_name, col_type] : columns)
     {
-        auto parent_it = virtual_key_to_parent.find(col_name);
-        bool is_virtual_null_key = parent_it != virtual_key_to_parent.end();
-        const String & estimate_name = is_virtual_null_key ? parent_it->second : col_name;
-
-        auto est_it = pruning_estimates.find(estimate_name);
+        auto est_it = pruning_estimates.find(col_name);
         chassert(est_it != pruning_estimates.end());
 
-        std::optional<Range> range;
-        if (is_virtual_null_key)
-            range = createRangeFromNullCount(est_it->second);
-        else
-            range = createRangeFromEstimate(est_it->second, col_type, isNullableOrLowCardinalityNullable(col_type));
+        auto is_nullable_type = isNullableOrLowCardinalityNullable(col_type);
+        auto range = createRangeFromEstimate(est_it->second, col_type, is_nullable_type);
 
         if (range.has_value())
         {
             hyperrectangle.push_back(std::move(*range));
         }
-        else if (is_virtual_null_key)
-        {
-            /// A `.null` subcolumn is plain UInt8 and never NULL itself.
-            hyperrectangle.emplace_back(Range::createWholeUniverseWithoutNull());
-        }
-        else if (isNullableOrLowCardinalityNullable(col_type))
+        else if (is_nullable_type)
         {
             hyperrectangle.emplace_back(Range::createWholeUniverse());
         }

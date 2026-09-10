@@ -16,8 +16,8 @@ Test 5: min/max + NULL count prune all-NULL and below-range parts
 Test 6: `NOT (value IS NULL)` matches `IS NOT NULL` pruning
 1	1
 6
-Test 7: `IS NULL OR range` combines NULL count and min/max pruning
-1	1
+Test 7: `IS NULL OR range` does not prune (NULL-count pruning needs a top-level conjunct)
+1
 8
 Test 8: `optimize_functions_to_subcolumns = 0` prunes via native `IS NULL` atoms
 1	1
