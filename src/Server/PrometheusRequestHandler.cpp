@@ -16,6 +16,7 @@
 #include <Common/setThreadName.h>
 #include "config.h"
 
+#include <Access/Common/AccessFlags.h>
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
@@ -466,6 +467,13 @@ public:
         auto table_id = is_url_path_dynamic_routing
             ? StorageID{resolveTableNameFromRequest(config(), request)}
             : getTimeSeriesTableID();
+
+        /// Check the `INSERT` privilege before looking the table up in the catalog. Neither `DatabaseCatalog::getTable`
+        /// nor reading the storage settings enforces RBAC, and the synthetic `INSERT` executed later would check it too
+        /// late: with dynamic routing an unauthorized caller could otherwise probe arbitrary table names and tell
+        /// `UNKNOWN_TABLE`, a wrong engine or a disabled opt-in setting apart from `ACCESS_DENIED`.
+        context->checkAccess(AccessType::INSERT, table_id);
+
         auto table = DatabaseCatalog::instance().getTable(table_id, context);
         auto time_series_storage = storagePtrToTimeSeries(table);
         if (is_url_path_dynamic_routing)

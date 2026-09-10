@@ -260,6 +260,69 @@ def test_remote_write_dynamic_routing_disabled_for_table():
     )
 
 
+def test_remote_write_dynamic_routing_requires_insert_privilege():
+    # The `INSERT` privilege must be checked before the target table is looked up in the catalog, so that a user
+    # without it cannot use a table-less dynamic handler to probe table names: a missing table, a table with a
+    # wrong engine and a table that did not opt into dynamic routing must all look the same (`ACCESS_DENIED`).
+    timestamp = time.time()
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": "no_insert_privilege_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+    )
+    node.query("CREATE USER prometheus_no_insert IDENTIFIED BY 'secret'")
+    node.query("GRANT SELECT ON default.* TO prometheus_no_insert")
+    node.query("CREATE TABLE prometheus_not_time_series (x UInt8) ENGINE=Memory")
+    try:
+        for path in [
+            "default/prometheus_dynamic/write",
+            "default/prometheus/write",
+            "default/prometheus_not_time_series/write",
+            "default/prometheus_no_such_table/write",
+            "no_such_database/prometheus_dynamic/write",
+        ]:
+            response = get_response_to_remote_write(
+                node.ip_address,
+                9093,
+                path,
+                write_request,
+                headers={"X-ClickHouse-User": "prometheus_no_insert", "X-ClickHouse-Key": "secret"},
+            )
+            assert response.status_code == requests.codes.forbidden, path
+            assert "ACCESS_DENIED" in response.text, path
+            assert "Not enough privileges" in response.text, path
+            assert "UNKNOWN_TABLE" not in response.text, path
+            assert "UNKNOWN_DATABASE" not in response.text, path
+            assert "dynamic routing is disabled" not in response.text, path
+            assert "is not TimeSeries" not in response.text, path
+
+        assert (
+            node.query(
+                "SELECT count() FROM timeSeriesTags(prometheus_dynamic) "
+                "WHERE metric_name = 'no_insert_privilege_metric'"
+            ).strip()
+            == "0"
+        )
+
+        # With the `INSERT` privilege the same user can write through the dynamic handler. The grant covers the
+        # whole database because the `TimeSeries` sink inserts into the inner tables with the caller's context.
+        node.query("GRANT INSERT ON default.* TO prometheus_no_insert")
+        send_protobuf_to_remote_write(
+            node.ip_address,
+            9093,
+            "default/prometheus_dynamic/write",
+            write_request,
+            headers={"X-ClickHouse-User": "prometheus_no_insert", "X-ClickHouse-Key": "secret"},
+        )
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM timeSeriesTags(prometheus_dynamic) "
+            "WHERE metric_name = 'no_insert_privilege_metric'",
+            "1",
+        )
+    finally:
+        node.query("DROP USER IF EXISTS prometheus_no_insert")
+        node.query("DROP TABLE IF EXISTS prometheus_not_time_series")
+
+
 def test_remote_write_query_parameter_routing_keeps_existing_behavior_without_table_setting():
     timestamp = time.time()
     write_request = convert_time_series_to_protobuf(

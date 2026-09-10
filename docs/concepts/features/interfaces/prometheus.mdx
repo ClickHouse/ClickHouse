@@ -201,6 +201,8 @@ CREATE TABLE prometheus.metrics ENGINE = TimeSeries
 SETTINGS prometheus_remote_write_dynamic_routing_enabled = 1;
 ```
 
+The authenticated user must have the `INSERT` privilege on the target table. The privilege is checked before the table is looked up, so a user without it gets `ACCESS_DENIED` regardless of whether the table exists or has opted in.
+
 Prometheus then writes to a table chosen by the URL:
 
 ```yaml
