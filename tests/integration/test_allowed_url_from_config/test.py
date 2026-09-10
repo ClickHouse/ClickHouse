@@ -446,3 +446,32 @@ def test_ai_functions_host_filter(start_cluster):
     finally:
         drop_ai_collections(node4)
         drop_ai_collections(node5)
+
+
+def test_hive_catalog_host_filter(start_cluster):
+    # A Hive metastore catalog talks Thrift over a raw socket instead of going through the HTTP
+    # client that carries the host check for the other `DataLakeCatalog` types, so the allow-list
+    # has to be applied by the catalog itself. Nothing listens on port 1; the check runs before
+    # the connection, so no metastore is needed.
+    query = (
+        "CREATE DATABASE test_hive_host_filter ENGINE = DataLakeCatalog('thrift://localhost:1') "
+        "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'"
+    )
+    settings = {"allow_experimental_database_hms_catalog": 1}
+    try:
+        # Control first: `node4` declares no `remote_url_allow_hosts` at all, so its filter stays
+        # uninitialized and allows everything - the same statement gets past the check and fails at
+        # the network instead. Without this arm, a filter that rejected everything would also pass.
+        error = node4.query_and_get_error(query, settings=settings)
+        if "USE_HIVE" in error:
+            pytest.skip("ClickHouse was built without Hive support")
+        assert "UNACCEPTABLE_URL" not in error, error
+
+        # `node5` declares an empty `remote_url_allow_hosts`, which allows nothing.
+        error = node5.query_and_get_error(query, settings=settings)
+        assert "UNACCEPTABLE_URL" in error, error
+        # The check must run before the connect, so the refusal carries no connection error.
+        assert "Connection refused" not in error, error
+    finally:
+        node4.query("DROP DATABASE IF EXISTS test_hive_host_filter")
+        node5.query("DROP DATABASE IF EXISTS test_hive_host_filter")
