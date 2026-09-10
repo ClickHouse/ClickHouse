@@ -7,7 +7,6 @@
 #endif
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromIndexPages.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
@@ -201,10 +200,8 @@ static void registerPlainRewritableMetadataStorage(MetadataStorageFactory & fact
 
         const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
         std::string key_compatibility_prefix = getObjectKeyCompatiblePrefix(local_object_storage, config, config_prefix);
-        /// Hard links make the metadata of a directory unreadable by older servers, so they are opt-in.
-        bool enable_hard_links = config.getBool(config_prefix + ".enable_hard_links", false);
 
-        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(local_object_storage, key_compatibility_prefix, enable_hard_links);
+        return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(local_object_storage, key_compatibility_prefix);
     });
 }
 
@@ -225,23 +222,6 @@ static void registerMetadataStorageFromStaticFilesWebServer(MetadataStorageFacto
     });
 }
 
-static void registerMetadataStorageFromIndexPages(MetadataStorageFactory & factory)
-{
-    factory.registerMetadataStorageType("web_index", [](
-        const std::string & /* name */,
-        const Poco::Util::AbstractConfiguration & /* config */,
-        const std::string & /* config_prefix */,
-        const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
-    {
-        checkSingleLocation(cluster);
-
-        const auto local_object_storage = object_storages->takePointingTo(cluster->getLocalLocation());
-
-        return std::make_shared<MetadataStorageFromIndexPages>(assert_cast<const WebObjectStorage &>(*local_object_storage));
-    });
-}
-
 void registerMetadataStorages();
 
 void registerMetadataStorages()
@@ -251,7 +231,6 @@ void registerMetadataStorages()
     registerPlainMetadataStorage(factory);
     registerPlainRewritableMetadataStorage(factory);
     registerMetadataStorageFromStaticFilesWebServer(factory);
-    registerMetadataStorageFromIndexPages(factory);
 #if CLICKHOUSE_CLOUD
     registerMetadataStorageFromKeeper(factory);
 #endif

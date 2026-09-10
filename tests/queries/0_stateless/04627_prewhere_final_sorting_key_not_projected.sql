@@ -25,6 +25,7 @@ SELECT (SELECT sum(s) FROM t_04627_summing FINAL WHERE k GROUP BY s)
 -- Explicit PREWHERE on the unprojected key hits the same merge-key pruning path.
 SELECT sum(s) FROM t_04627_summing FINAL PREWHERE k GROUP BY s;
 -- The old planner (enable_analyzer = 0) shares the pruning path too.
+SELECT sum(s) FROM t_04627_summing FINAL WHERE k GROUP BY s SETTINGS enable_analyzer = 0;
 -- The optimization must still fire: the filter on k is moved to PREWHERE (returns 1).
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT s FROM t_04627_summing FINAL WHERE k GROUP BY s)
 WHERE explain ILIKE '%Prewhere filter column:%k%';

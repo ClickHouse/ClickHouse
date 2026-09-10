@@ -7,13 +7,11 @@
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/StringUtils.h>
-#include <Common/levenshteinDistance.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <algorithm>
 
 
 namespace DB
@@ -174,60 +172,6 @@ void writeCommonErrorMessage(
 }
 
 
-/** A typo in a keyword is the most common syntax mistake, and the parser answers it with a list of every
-  * alternative it could accept at that place - dozens of them, with the keyword the user meant being just
-  * one item somewhere in the middle. Find that item by the edit distance and name it explicitly.
-  *
-  * Returns an empty string if there is no close enough keyword. The thresholds are deliberately tighter
-  * than in `NamePrompter`: here the candidates are keywords of the language rather than names from the
-  * query, so almost every short word is within a small distance of some keyword (`hits` is two edits away
-  * from `WITH`), and a wrong guess is worse than no guess.
-  */
-std::string_view getKeywordTypoHint(const Token & last_token, const Expected & expected)
-{
-    if (last_token.type != TokenType::BareWord)
-        return {};
-
-    const String token(last_token.begin, last_token.end - last_token.begin);
-    if (token.size() < 3)
-        return {};
-
-    /// Keywords consist of letters only, so a word with a digit in it is a name, not a mistyped keyword.
-    /// Without this, aliases such as `an1` in a query with many joined tables get matched against `ANY`.
-    if (std::any_of(token.begin(), token.end(), isNumericASCII))
-        return {};
-
-    /// One mistaken character, plus one more for longer words, where a transposition of two letters
-    /// (`ESLECT`) already costs two edits.
-    const size_t max_distance = token.size() < 6 ? 1 : 2;
-
-    size_t best_distance = max_distance + 1;
-    std::string_view best_variant;
-
-    for (const char * variant : expected.variants)
-    {
-        /// Only a description that is a keyword itself can be meant literally: the parser also adds prose
-        /// such as `SELECT query, possibly with UNION`. A single word cannot be a typo of a multi-word
-        /// keyword either, so anything with a space is not a candidate.
-        const std::string_view variant_view(variant);
-        if (variant_view.size() + max_distance < token.size() || token.size() + max_distance < variant_view.size())
-            continue;
-        if (!std::all_of(variant_view.begin(), variant_view.end(), [](char c) { return isUpperAlphaASCII(c) || c == '_'; }))
-            continue;
-
-        const size_t distance = levenshteinDistanceCaseInsensitive(token, String(variant_view));
-        /// Zero distance means the token is that keyword, so it cannot be the reason of the failure.
-        if (distance > 0 && distance < best_distance)
-        {
-            best_distance = distance;
-            best_variant = variant_view;
-        }
-    }
-
-    return best_variant;
-}
-
-
 std::string getSyntaxErrorMessage(
     const char * begin,
     const char * end,
@@ -241,12 +185,7 @@ std::string getSyntaxErrorMessage(
     writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
 
     if (!expected.variants.empty())
-    {
-        if (const std::string_view hint = getKeywordTypoHint(last_token, expected); !hint.empty())
-            out << "Maybe you meant: " << hint << ". ";
-
         out << "Expected " << expected;
-    }
 
     return out.str();
 }
@@ -267,133 +206,20 @@ std::string getLexicalErrorMessage(
 }
 
 
-/// Describe a bracket as `'(' at position 42 (line 3, col 5)`.
-void writeBracketPosition(WriteBuffer & out, const char * begin, const char * end, const Token & bracket)
-{
-    out << "'" << std::string_view(bracket.begin, bracket.end - bracket.begin)
-        << "' at position " << (bracket.begin - begin + 1);
-
-    /// If query is multiline.
-    const char * nl = find_first_symbols<'\n'>(begin, end);
-    if (nl + 1 < end)
-    {
-        const auto [line, col] = getLineAndCol(begin, bracket.begin);
-        out << " (line " << line << ", col " << col << ")";
-    }
-}
-
-
 std::string getUnmatchedParenthesesErrorMessage(
     const char * begin,
     const char * end,
     const UnmatchedParentheses & unmatched_parens,
-    Token last_token,
     bool hilite,
     const std::string & query_description)
 {
-    /** `checkUnmatchedParentheses` reports either a closing bracket that has nothing to close, or the whole
-      * stack of brackets that are never closed - and in the latter case the first element of that stack is
-      * the outermost bracket, which is a poor place to point at. In
-      *   SELECT a FROM (SELECT count(* FROM t) x
-      * the bracket of `count(` gets matched with the `)` that was meant to close the subquery, so the
-      * leftover bracket is the one of the subquery: bracket counting alone cannot tell which of the nested
-      * brackets the user forgot to close, and in a large query the outermost one is thousands of characters
-      * away from the mistake.
-      *
-      * The token where the parser stopped does not have that problem - it is right next to the mistake
-      * (`FROM` in the example above) - so report it as the error position, and list the leftover brackets
-      * with their own positions separately.
-      */
-
-    const bool closing_bracket_is_unmatched
-        = unmatched_parens.back().type == TokenType::ClosingRoundBracket
-        || unmatched_parens.back().type == TokenType::ClosingSquareBracket;
-
-    /** The bracket to fall back to when the parser position is of no use: the closing bracket that closes
-      * nothing, or the outermost bracket that is never closed.
-      *
-      * A closing bracket that closes nothing has the mirror image of the problem described above. It can be
-      * excessive, and then it is itself the mistake, but it can just as well be the *opening* bracket that
-      * is missing - `CREATE TABLE t a UInt32, b UInt32)` - and then the closing bracket is as far from the
-      * mistake as the whole column list is long. The parser stops right where the opening bracket belongs,
-      * so prefer its position whenever it is before the bracket.
-      */
-    const Token & fallback_bracket = closing_bracket_is_unmatched ? unmatched_parens.back() : unmatched_parens.front();
-
-    const bool point_at_parser_position = closing_bracket_is_unmatched
-        ? last_token.begin < fallback_bracket.begin
-        : last_token.begin > fallback_bracket.begin;
-
-    const Token error_token = point_at_parser_position ? last_token : fallback_bracket;
-
     WriteBufferFromOwnString out;
-    writeCommonErrorMessage(out, begin, end, error_token, query_description);
-
-    if (hilite)
-    {
-        /// Highlight both the brackets and the place where the parser stopped. The positions must be
-        /// passed in ascending order, and the parser can stop before some of the brackets.
-        UnmatchedParentheses positions_to_hilite(unmatched_parens);
-        if (point_at_parser_position)
-            positions_to_hilite.push_back(error_token);
-        std::sort(positions_to_hilite.begin(), positions_to_hilite.end(),
-            [](const Token & lhs, const Token & rhs) { return lhs.begin < rhs.begin; });
-
-        /// The parser can stop exactly at one of the unmatched brackets, as in
-        ///   CREATE TABLE t [a UInt32) ENGINE = Memory
-        /// where it stops at `[` while the brackets in question are `[` and `)`. The highlighting
-        /// requires strictly ascending positions, so the duplicate has to be removed.
-        positions_to_hilite.erase(
-            std::unique(positions_to_hilite.begin(), positions_to_hilite.end(),
-                [](const Token & lhs, const Token & rhs) { return lhs.begin == rhs.begin; }),
-            positions_to_hilite.end());
-
-        writeQueryAroundTheError(out, begin, end, hilite, positions_to_hilite.data(), positions_to_hilite.size());
-    }
-    else
-    {
-        /// Without highlighting only a fragment of the query is printed, starting from the first passed
-        /// position. Show the text around the mistake rather than around the outermost bracket.
-        ///
-        /// When the parser stopped at the end of the query (or at the `;` that ends the statement), as in
-        ///   SELECT (1, 2
-        /// there is nothing after the error position to show, so the excerpt would be empty. In that case
-        /// start it at the innermost bracket that is never closed: it is the one nearest to the mistake,
-        /// and the excerpt then covers everything from that bracket to the end of the statement.
-        const bool nothing_after_error_position
-            = error_token.type == TokenType::EndOfStream || error_token.type == TokenType::Semicolon;
-
-        const Token & excerpt_begin = nothing_after_error_position && !closing_bracket_is_unmatched
-            ? unmatched_parens.back()
-            : error_token;
-
-        writeQueryAroundTheError(out, begin, end, hilite, &excerpt_begin, 1);
-    }
+    writeCommonErrorMessage(out, begin, end, unmatched_parens[0], query_description);
+    writeQueryAroundTheError(out, begin, end, hilite, unmatched_parens.data(), unmatched_parens.size());
 
     out << "Unmatched parentheses: ";
-
-    if (closing_bracket_is_unmatched && unmatched_parens.size() >= 2)
-    {
-        writeBracketPosition(out, begin, end, unmatched_parens.back());
-        out << " does not match ";
-        writeBracketPosition(out, begin, end, unmatched_parens[unmatched_parens.size() - 2]);
-        out << ".";
-    }
-    else if (closing_bracket_is_unmatched)
-    {
-        writeBracketPosition(out, begin, end, unmatched_parens.back());
-        out << " has no matching opening bracket.";
-    }
-    else
-    {
-        for (size_t i = 0; i < unmatched_parens.size(); ++i)
-        {
-            if (i != 0)
-                out << ", ";
-            writeBracketPosition(out, begin, end, unmatched_parens[i]);
-        }
-        out << (unmatched_parens.size() == 1 ? " is never closed." : " are never closed.");
-    }
+    for (const Token & paren : unmatched_parens)
+        out << *paren.begin;
 
     return out.str();
 }
@@ -438,20 +264,8 @@ ASTPtr tryParseQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool skip_insignificant,
-    ParserDiagnostics * diagnostics)
+    bool skip_insignificant)
 {
-    /// The caller owns `diagnostics` and may reuse it across queries, so start from a clean slate:
-    /// everything the parse fills in is an output, and only the knobs the caller set - highlighting
-    /// and the literal token map - are kept.
-    if (diagnostics)
-    {
-        diagnostics->expected.variants.clear();
-        diagnostics->expected.max_parsed_pos = nullptr;
-        diagnostics->expected.highlights.clear();
-        diagnostics->error_token = Token{};
-    }
-
     const char * query_begin = _out_query_end;
     Tokens tokens(query_begin, all_queries_end, max_query_size, skip_insignificant);
     /// NOTE: consider use UInt32 for max_parser_depth setting.
@@ -460,51 +274,20 @@ ASTPtr tryParseQuery(
     if (token_iterator->isEnd()
         || token_iterator->type == TokenType::Semicolon)
     {
+        out_error_message = "Empty query";
         // Token iterator skips over comments, so we'll get this error for queries
         // like this:
         // "
         // -- just a comment
         // ;
         //"
-        out_error_message = "Empty query";
-
-        /// Name what was empty, the same way the syntax errors below do. The text is not always a query
-        /// the user has sent: it can be a fragment parsed on its own, such as the value of a setting
-        /// (`parallel_replicas_custom_key`, `additional_result_filter`) or a stored expression, and a
-        /// bare `Empty query` gives nothing to look for in that case.
-        if (!query_description.empty())
-            out_error_message += " (" + query_description + ")";
-
-        if (diagnostics)
-            diagnostics->error_token = *token_iterator;
-
         // Advance the position, so that we can use this parser for stream parsing
         // even in presence of such queries.
         _out_query_end = token_iterator->begin;
         return nullptr;
     }
 
-    /// End of the current statement (next `;` or end of input), used to scope error
-    /// messages in multi-statement input (issue #101509). Walks a fresh iterator
-    /// (the parser's may have backtracked). `ErrorMaxQuerySizeExceeded` is terminal:
-    /// once `pos` is past `max_query_size`, `nextToken` forces that type on every
-    /// call (including the natural `EndOfStream`), so we must stop on it or loop
-    /// forever. Other lexer errors are recoverable - `pos` keeps advancing.
-    /// `min_end` clamps against `size_t` underflow in `writeQueryAroundTheError`.
-    auto current_statement_end = [&](const char * min_end) -> const char *
-    {
-        IParser::Pos iter(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
-        while (!iter->isEnd()
-            && iter->type != TokenType::ErrorMaxQuerySizeExceeded
-            && iter->type != TokenType::Semicolon)
-            ++iter;
-        return std::max(iter->end, min_end);
-    };
-
-    /// The parse reports into the caller's `Expected` when one is supplied (it may have
-    /// highlighting enabled, and it carries the expected-token variants back to the caller).
-    Expected local_expected;
-    Expected & expected = diagnostics ? diagnostics->expected : local_expected;
+    Expected expected;
 
     /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
       * But there are certain cases when invalid tokens are permitted:
@@ -521,30 +304,9 @@ ASTPtr tryParseQuery(
         {
             if (lookahead->isError())
             {
+                out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
                 // Advance the position for further processing of possible test hint.
-                // Capture max() BEFORE current_statement_end, which walks fresh tokens
-                // and would otherwise inflate the max-visited position.
                 _out_query_end = token_iterator.max().end;
-                if (diagnostics)
-                    diagnostics->error_token = *lookahead;
-
-                /// A caller that asked for highlighting expects them for the prefix that is fine even
-                /// when the query as a whole is not - an editor keeps coloring while the user types -
-                /// and only a parse produces them, so the shortcut cannot skip it. The result of that
-                /// parse is thrown away: the lexical error below is the better message, and it is the
-                /// one this position has always reported. What the shortcut existed to avoid is paid
-                /// here instead, which is why only a caller that asked for highlighting pays it: the
-                /// parse of an obviously erroneous query can backtrack up to `max_parser_backtracks`
-                /// and, on reaching it, report by throwing rather than by returning.
-                if (diagnostics && diagnostics->expected.enable_highlighting)
-                {
-                    ASTPtr discarded;
-                    IParser::Pos highlighting_iterator(token_iterator);
-                    parser.parse(highlighting_iterator, discarded, expected);
-                }
-
-                out_error_message = getLexicalErrorMessage(
-                    query_begin, current_statement_end(lookahead->end), *lookahead, hilite, query_description);
                 return nullptr;
             }
 
@@ -574,10 +336,8 @@ ASTPtr tryParseQuery(
     /// Lexical error
     if (last_token.isError())
     {
-        if (diagnostics)
-            diagnostics->error_token = last_token;
-        out_error_message = getLexicalErrorMessage(
-            query_begin, current_statement_end(last_token.end), last_token, hilite, query_description);
+        out_error_message = getLexicalErrorMessage(query_begin, all_queries_end,
+            last_token, hilite, query_description);
         return nullptr;
     }
 
@@ -585,31 +345,9 @@ ASTPtr tryParseQuery(
     UnmatchedParentheses unmatched_parens = checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
-        /// `checkUnmatchedParentheses` walks the entire remaining input, so it can
-        /// report parens that live in later statements. Restrict to parens inside
-        /// the current statement; otherwise the highlight loop in
-        /// `writeQueryWithHighlightedErrorPositions` asserts on positions past `end`.
-        const char * statement_end = current_statement_end(last_token.end);
-        UnmatchedParentheses scoped_parens;
-        for (const auto & paren : unmatched_parens)
-        {
-            if (paren.begin >= query_begin && paren.begin < statement_end)
-            {
-                scoped_parens.push_back(paren);
-                /// Extend `statement_end` to cover the paren itself: a multi-byte token
-                /// at the very boundary must not underflow `size_t` in the formatter.
-                statement_end = std::max(paren.end, statement_end);
-            }
-        }
-
-        if (!scoped_parens.empty())
-        {
-            if (diagnostics)
-                diagnostics->error_token = scoped_parens[0];
-            out_error_message = getUnmatchedParenthesesErrorMessage(
-                query_begin, statement_end, scoped_parens, last_token, hilite, query_description);
-            return nullptr;
-        }
+        out_error_message = getUnmatchedParenthesesErrorMessage(query_begin,
+            all_queries_end, unmatched_parens, hilite, query_description);
+        return nullptr;
     }
 
     IParser::Pos this_query_end_pos = token_iterator;
@@ -620,8 +358,6 @@ ASTPtr tryParseQuery(
     if (!parse_res)
     {
         /// Generic parse error.
-        if (diagnostics)
-            diagnostics->error_token = last_token;
         out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
         return nullptr;
@@ -631,8 +367,6 @@ ASTPtr tryParseQuery(
     if (!token_iterator->isEnd()
         && token_iterator->type != TokenType::Semicolon)
     {
-        if (diagnostics)
-            diagnostics->error_token = last_token;
         expected.add(last_token.begin, "end of query");
         out_error_message = getSyntaxErrorMessage(query_begin, this_query_end_pos->end,
             last_token, expected, hilite, query_description);
@@ -650,8 +384,6 @@ ASTPtr tryParseQuery(
     if (!allow_multi_statements
         && !token_iterator->isEnd())
     {
-        if (diagnostics)
-            diagnostics->error_token = last_token;
         out_error_message = getSyntaxErrorMessage(query_begin, all_queries_end,
             last_token, {}, hilite,
             (query_description.empty() ? std::string() : std::string(". "))

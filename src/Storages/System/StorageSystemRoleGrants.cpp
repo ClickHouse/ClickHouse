@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemRoleGrants.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -133,6 +132,3 @@ void StorageSystemRoleGrants::fillData(MutableColumns & res_columns, ContextPtr 
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRoleGrants) }

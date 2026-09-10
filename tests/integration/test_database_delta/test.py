@@ -761,13 +761,8 @@ def test_snapshot_version(started_cluster):
     db_name = f"db_{table_name}"
 
     def get_table_versions():
-        # DESCRIBE HISTORY is read-only, so retry_on_timeout is safe: a
-        # fresh-JVM retry after a transient Unity Catalog HTTP-client hang
-        # cannot corrupt state or duplicate data.
         history = execute_spark_query(
-            node1,
-            f"DESCRIBE HISTORY {schema_name}.{table_name}",
-            retry_on_timeout=True,
+            node1, f"DESCRIBE HISTORY {schema_name}.{table_name}"
         )
         lines = [line.strip() for line in history.splitlines() if line.strip()]
         if "version" in lines[0].lower():
