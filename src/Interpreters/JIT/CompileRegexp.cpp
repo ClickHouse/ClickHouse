@@ -710,6 +710,11 @@ RegexpJITMatcher getRegexpJITMatcher(
     if (min_count_to_compile == std::numeric_limits<size_t>::max())
         return {};
 
+    /// A compiled matcher only pays off if the compiled-expression cache hands it to the next call: with
+    /// no cache every call would pay a full LLVM compile under one process-wide lock. Stay on RE2.
+    if (!CompiledExpressionCacheFactory::instance().tryGetCache())
+        return {};
+
     ParseFlags flags;
     flags.case_insensitive = case_insensitive;
     flags.dot_all = dot_all;
