@@ -3,6 +3,7 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
@@ -94,9 +95,8 @@ JoinSide makeJoinSide(
     if (!arm->hasAlias())
         arm->setAlias(aliases.next());
 
-    bool same_types = true;
-    for (size_t i = 0; i < arm_columns.size(); ++i)
-        same_types &= arm_columns[i].type->equals(*result_columns[i].type);
+    const bool same_types = std::ranges::equal(
+        arm_columns, result_columns, [](const auto & lhs, const auto & rhs) { return lhs.type->equals(*rhs.type); });
     if (same_types)
         return {arm, std::move(arm_columns)};
 
@@ -163,25 +163,42 @@ QueryTreeNodePtr buildJoinQuery(const UnionNode & union_node, JoinStrictness str
     return left.node;
 }
 
+bool hasFloatType(const DataTypePtr & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= isFloat(nested); };
+    check(*type);
+    type->forEachChild(check);
+    return result;
+}
+
 /// Whether one of the enabled join algorithms can execute a left join of two subqueries with this strictness.
-bool joinAlgorithmSupports(const Settings & settings, JoinStrictness strictness)
+///
+/// A merge join compares its keys with `compareAt`, which equates `-0.0` with `0.0` and every `NaN` with every
+/// other, while both the set operation and the hash join compare them bitwise. So the rewrite is only equivalent
+/// for a float key when no algorithm that a merge join can be reached through is enabled: `PARTIAL_MERGE` and
+/// `PREFER_PARTIAL_MERGE` run one directly, and `AUTO` switches to one once the right side outgrows the limits.
+bool joinAlgorithmSupports(const Settings & settings, JoinStrictness strictness, bool has_float_key)
 {
     const auto & algorithms = settings[Setting::join_algorithm].value;
-    for (const auto algorithm : {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::GRACE_HASH, JoinAlgorithm::AUTO, JoinAlgorithm::PREFER_PARTIAL_MERGE})
+    for (const auto algorithm : {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::GRACE_HASH})
         if (TableJoin::isEnabledAlgorithm(algorithms, algorithm))
             return true;
+
+    if (has_float_key)
+        return false;
+
+    if (TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::AUTO)
+        || TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::PREFER_PARTIAL_MERGE))
+        return true;
+
     /// The partial merge join executes semi joins but not anti joins.
     return strictness == JoinStrictness::Semi && TableJoin::isEnabledAlgorithm(algorithms, JoinAlgorithm::PARTIAL_MERGE);
 }
 
-struct Replacement
-{
-    /// Kept alive so that the columns of the outer queries still sourced by the union node can be re-pointed.
-    QueryTreeNodePtr union_node;
-    QueryTreeNodePtr join_query;
-};
-
-using Replacements = std::unordered_map<const IQueryTreeNode *, Replacement>;
+/// Keyed by the replaced node, which the key itself keeps alive so that the columns of the outer queries
+/// still sourced by it can be re-pointed.
+using Replacements = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
 
 class RewriteIntersectExceptToJoinVisitor : public InDepthQueryTreeVisitorWithContext<RewriteIntersectExceptToJoinVisitor>
 {
@@ -203,7 +220,12 @@ public:
             return;
 
         const auto strictness = union_mode == SelectUnionMode::INTERSECT_DISTINCT ? JoinStrictness::Semi : JoinStrictness::Anti;
-        if (!getSettings()[Setting::optimize_rewrite_intersect_except_to_join] || !joinAlgorithmSupports(getSettings(), strictness))
+        if (!getSettings()[Setting::optimize_rewrite_intersect_except_to_join])
+            return;
+
+        const auto result_columns = union_node->computeProjectionColumns();
+        const bool has_float_key = std::ranges::any_of(result_columns, [](const auto & column) { return hasFloatType(column.type); });
+        if (!joinAlgorithmSupports(getSettings(), strictness, has_float_key))
             return;
 
         auto join_query = buildJoinQuery(*union_node, strictness, aliases, getContext());
@@ -216,7 +238,7 @@ public:
                 arm->as<QueryNode &>().setIsDistinct(false);
 
         rewritten.insert(join_query.get());
-        replacements.emplace(node.get(), Replacement{node, join_query});
+        replacements.emplace(node, join_query);
         node = std::move(join_query);
     }
 
@@ -225,45 +247,25 @@ private:
     std::unordered_set<const IQueryTreeNode *> rewritten;
 };
 
-/// The in-place counterpart of what `IQueryTreeNode::cloneAndReplace` does for the column sources of a replaced node.
-class ReplaceColumnSourcesVisitor : public InDepthQueryTreeVisitor<ReplaceColumnSourcesVisitor>
-{
-public:
-    explicit ReplaceColumnSourcesVisitor(const Replacements & replacements_) : replacements(replacements_) {}
+}
 
-    void visitImpl(QueryTreeNodePtr & node)
+void RewriteIntersectExceptToJoinPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
+{
+    RewriteIntersectExceptToJoinVisitor visitor(std::move(context));
+    visitor.visit(query_tree_node);
+
+    /// The in-place counterpart of what `IQueryTreeNode::cloneAndReplace` does for the column sources of a
+    /// replaced node: the outer queries still point their columns at the union node this pass replaced.
+    const auto & replacements = visitor.replacements;
+    traverseQueryTree(query_tree_node, Everything{}, [&](const QueryTreeNodePtr & node)
     {
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
             return;
 
-        auto source = column_node->getColumnSourceOrNull();
-        if (!source)
-            return;
-
-        auto it = replacements.find(source.get());
-        if (it != replacements.end())
-            column_node->setColumnSource(std::static_pointer_cast<ITableExpressionNode>(it->second.join_query));
-    }
-
-private:
-    const Replacements & replacements;
-};
-
-}
-
-void RewriteIntersectExceptToJoinPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
-{
-    const auto * root = query_tree_node.get();
-    RewriteIntersectExceptToJoinVisitor visitor(std::move(context));
-    visitor.visit(query_tree_node);
-
-    /// No column can be sourced by the root.
-    if (visitor.replacements.empty() || (visitor.replacements.size() == 1 && visitor.replacements.contains(root)))
-        return;
-
-    ReplaceColumnSourcesVisitor replace_sources_visitor(visitor.replacements);
-    replace_sources_visitor.visit(query_tree_node);
+        if (auto it = replacements.find(column_node->getColumnSourceOrNull()); it != replacements.end())
+            column_node->setColumnSource(std::static_pointer_cast<ITableExpressionNode>(it->second));
+    });
 }
 
 }

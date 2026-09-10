@@ -147,6 +147,10 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         max_streams = std::max(max_streams, cur_pipeline->getNumStreams());
     const size_t num_partitions = clampScatterPartitions(new_max_threads, max_streams);
 
+    /// Both inputs have the same header after the conversion below, so equal rows land in the same partition.
+    ColumnNumbers key_columns(getOutputHeader()->columns());
+    std::iota(key_columns.begin(), key_columns.end(), 0);
+
     for (auto & cur_pipeline : pipelines)
     {
         QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
@@ -179,9 +183,6 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         }
         else
         {
-            /// Both inputs have the same header after the conversion above, so equal rows land in the same partition.
-            ColumnNumbers key_columns(getOutputHeader()->columns());
-            std::iota(key_columns.begin(), key_columns.end(), 0);
             scatterByPartition(*cur_pipeline, num_partitions, key_columns);
         }
         auto added_processors = collector.detachProcessors();
