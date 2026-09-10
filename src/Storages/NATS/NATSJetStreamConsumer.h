@@ -26,6 +26,8 @@ public:
     void subscribe() override;
 
 protected:
+    void nackMessage(natsMsg * msg) override;
+
     NATSSubscriptionPtr subscribeToSubject(const String & subject);
 
     const String stream_name;

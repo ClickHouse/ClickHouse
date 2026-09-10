@@ -42,7 +42,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
-    extern const int SYNTAX_ERROR;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
@@ -276,6 +275,12 @@ void readStringUntilEquals(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilCharsInto<'='>(s, buf);
+}
+
+void readStringUntilColon(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilCharsInto<':'>(s, buf);
 }
 
 template void readNullTerminated<PODArray<char>>(PODArray<char> & s, ReadBuffer & buf);
@@ -1950,6 +1955,29 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
 }
 
 
+/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
+/// to the declared size first, so that a size declared by the peer cannot become an allocation on
+/// its own when the payload never follows.
+static void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
+{
+    size_t size = 0;
+    readVarUInt(size, buf);
+
+    if (size > max_string_size)
+        throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size.");
+
+    s.clear();
+    while (s.size() < size)
+    {
+        if (buf.eof())
+            throwReadAfterEOF();
+
+        const size_t bytes_to_copy = std::min(size - s.size(), buf.available());
+        s.append(buf.position(), bytes_to_copy);
+        buf.position() += bytes_to_copy;
+    }
+}
+
 Exception readException(ReadBuffer & buf, const String & additional_message, bool remote_exception)
 {
     int code = 0;
@@ -1959,9 +1987,11 @@ Exception readException(ReadBuffer & buf, const String & additional_message, boo
     bool has_nested = false;    /// Obsolete
 
     readBinaryLittleEndian(code, buf);
-    readBinary(name, buf);
-    readBinary(message, buf);
-    readBinary(stack_trace, buf);
+    /// This is the first thing read from a server during the handshake, and the sizes of these
+    /// strings come from the other side, so read them without preallocating the declared size.
+    readStringBinaryGrowing(name, buf);
+    readStringBinaryGrowing(message, buf);
+    readStringBinaryGrowing(stack_trace, buf);
     readBinary(has_nested, buf);
 
     WriteBufferFromOwnString out;
@@ -2020,47 +2050,6 @@ void skipToNextLineOrEOF(ReadBuffer & buf)
             ++buf.position();
             return;
         }
-    }
-}
-
-
-void skipWhitespaceAndSQLComments(ReadBuffer & buf)
-{
-    while (true)
-    {
-        skipWhitespaceIfAny(buf);
-        if (buf.eof())
-            break;
-        if (buf.buffer().end() - buf.position() < 2)
-            break;
-        if (buf.position()[0] == '-' && buf.position()[1] == '-')
-        {
-            buf.position() += 2;
-            skipToNextLineOrEOF(buf);
-        }
-        else if (buf.position()[0] == '/' && buf.position()[1] == '*')
-        {
-            buf.position() += 2;
-            while (!buf.eof())
-            {
-                char * star = find_first_symbols<'*'>(buf.position(), buf.buffer().end());
-                buf.position() = star;
-                if (star == buf.buffer().end())
-                    continue;
-                ++buf.position();
-                if (buf.eof())
-                    throw Exception(ErrorCodes::SYNTAX_ERROR, "Unterminated block comment: expected '*/' before end of input");
-                if (*buf.position() == '/')
-                {
-                    ++buf.position();
-                    break;
-                }
-            }
-            if (buf.eof())
-                throw Exception(ErrorCodes::SYNTAX_ERROR, "Unterminated block comment: expected '*/' before end of input");
-        }
-        else
-            break;
     }
 }
 

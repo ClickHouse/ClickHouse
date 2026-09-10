@@ -4914,3 +4914,274 @@ def test_snapshot_initialized_once_per_query(started_cluster):
         expected_result=4950,
         query_id=f"snapshot_init_cluster_sum_{TABLE_NAME}",
     )
+
+@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
+def test_insert_select_from_cluster_with_partition_pruning(started_cluster, allow_experimental_analyzer):
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_insert_select_cluster_pruning")
+
+    schema = pa.schema(
+        [
+            ("event_time", pa.date32()),
+            ("account_id", pa.string()),
+            ("impressions", pa.int64()),
+        ]
+    )
+    storage_options = get_storage_options(started_cluster)
+    path = f"s3://root/{table_name}"
+
+    dates = [
+        datetime.strptime("2026-02-01", "%Y-%m-%d").date(),
+        datetime.strptime("2026-02-02", "%Y-%m-%d").date(),
+        datetime.strptime("2026-02-03", "%Y-%m-%d").date(),
+    ]
+
+    for dt in dates:
+        data = pa.table(
+            {
+                "event_time": pa.array([dt] * 5, type=pa.date32()),
+                "account_id": pa.array([f"acc_{dt}_{i}" for i in range(5)], type=pa.string()),
+                "impressions": pa.array(list(range(5)), type=pa.int64()),
+            },
+            schema=schema,
+        )
+        write_deltalake_with_retry(
+            path,
+            data,
+            storage_options=storage_options,
+            partition_by=["event_time"],
+            mode="append",
+        )
+
+    table_function = (
+        f"deltaLakeCluster(cluster,"
+        f" 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}',"
+        f" 'minio', '{minio_secret_key}',"
+        f" SETTINGS allow_experimental_delta_kernel_rs=1)"
+    )
+
+    total = int(node.query(f"SELECT count() FROM {table_function}"))
+    assert total == 15, f"Expected 15 total rows, got {total}"
+
+    zk_path = f"/clickhouse/tables/{{shard}}/{table_name}_dst"
+    node.query(
+        f"""
+        CREATE TABLE {table_name}_dst ON CLUSTER cluster
+        (event_time Nullable(Date), account_id Nullable(String), impressions Nullable(Int64))
+        ENGINE = ReplicatedMergeTree('{zk_path}', '{{replica}}') ORDER BY tuple()
+        """
+    )
+
+    query_id = f"{table_name}-insert-{uuid.uuid4()}"
+    node.query(
+        f"""
+        INSERT INTO {table_name}_dst (event_time, account_id, impressions)
+        SELECT event_time, account_id, impressions
+        FROM {table_function}
+        WHERE (event_time >= '2026-02-01') AND (event_time < '2026-02-02')
+        """,
+        query_id=query_id,
+        settings={"allow_experimental_delta_kernel_rs": 1, "delta_lake_enable_engine_predicate": 0, "allow_experimental_analyzer" : allow_experimental_analyzer},
+    )
+
+    # The cluster INSERT path runs the SELECT on a remote replica, which writes
+    # the part there and replicates via ZooKeeper. Wait for the local replica
+    # to fetch the part before reading; otherwise the count below races against
+    # background fetch and returns 0.
+    node.query(f"SYSTEM SYNC REPLICA {table_name}_dst")
+
+    node.query("SYSTEM FLUSH LOGS ON CLUSTER 'cluster'")
+
+    result = int(
+        node.query(
+            f"SELECT count() FROM {table_name}_dst WHERE event_time = '2026-02-01'"
+        )
+    )
+    assert result == 5
+
+    result = int(
+        node.query(
+            f"SELECT count() FROM {table_name}_dst WHERE event_time != '2026-02-01'"
+        )
+    )
+    assert result == 0
+
+    pruned = int(
+        node.query(
+            f"""
+            SELECT ProfileEvents['DeltaLakePartitionPrunedFiles']
+            FROM system.query_log
+            WHERE query_id = '{query_id}' AND type = 'QueryFinish' AND is_initial_query = 1
+            """
+        )
+    )
+    assert pruned >= 2
+    node.query(f"DROP TABLE IF EXISTS {table_name}_dst ON CLUSTER cluster")
+    table_name2 = randomize_table_name("test_insert_select_cluster_pruning_virt")
+    zk_path2 = f"/clickhouse/tables/{{shard}}/{table_name2}_dst"
+    query_id = f"{table_name2}-insert-{uuid.uuid4()}"
+
+    node.query(
+        f"""
+        CREATE TABLE {table_name2}_dst ON CLUSTER cluster
+        (
+            event_time Nullable(Date),
+            account_id Nullable(String),
+            impressions Nullable(Int64),
+            file_path LowCardinality(String)
+        )
+        ENGINE = ReplicatedMergeTree('{zk_path2}', '{{replica}}') ORDER BY tuple()
+        """
+    )
+
+    node.query(
+        f"""
+        INSERT INTO {table_name2}_dst (event_time, account_id, impressions, file_path)
+        SELECT event_time, account_id, impressions, _path
+        FROM {table_function}
+        WHERE _path LIKE '%2026-02-01%'
+        """,
+        query_id=query_id,
+        settings={
+            "allow_experimental_delta_kernel_rs": 1,
+            "delta_lake_enable_engine_predicate": 0,
+            "allow_experimental_analyzer": allow_experimental_analyzer,
+        },
+    )
+
+    # Same race as above: the matching file is processed by a remote replica,
+    # and the local replica fetches the resulting part asynchronously. Without
+    # SYSTEM SYNC REPLICA, the SELECT below can run before the part is active.
+    node.query(f"SYSTEM SYNC REPLICA {table_name2}_dst")
+
+    result = int(
+        node.query(
+            f"SELECT count() FROM {table_name2}_dst WHERE file_path LIKE '%2026-02-01%'"
+        )
+    )
+    assert result == 5
+
+    result = int(
+        node.query(
+            f"SELECT count() FROM {table_name2}_dst WHERE NOT (file_path LIKE '%2026-02-01%')"
+        )
+    )
+    assert result == 0
+    node.query(f"DROP TABLE IF EXISTS {table_name2}_dst ON CLUSTER cluster")
+
+def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
+    """Cache a DeltaLake snapshot, then change the credentials fingerprint between two
+    reads and assert the second read rebuilds the kernel engine instead of silently
+    reusing the stale one.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_rebuild_on_rotation")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # First read: caches the kernel snapshot state under the current credentials fingerprint.
+    baseline_query_id = f"{TABLE_NAME}_baseline"
+    assert int(instance.query(
+        f"SELECT count() FROM {TABLE_NAME}",
+        query_id=baseline_query_id,
+    )) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+    init_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Initializing snapshot%'"
+    ).strip())
+    assert init_hits >= 1, "First read should initialize the kernel snapshot state"
+
+    rebuild_hits_pre = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state%'"
+    ).strip())
+    assert rebuild_hits_pre == 0, "First read should NOT trigger the credentials-rotation rebuild"
+
+    # Second read: the failpoint perturbs the credentials fingerprint, simulating an STS
+    # rotation between consecutive reads of the same cached snapshot. The fingerprint
+    # mismatch must trigger the rebuild path; the row count must still come back correct.
+    rotated_query_id = f"{TABLE_NAME}_rotated"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=rotated_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{rotated_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state (credentials rotated)%'"
+    ).strip())
+    assert rebuild_hits >= 1, (
+        f"Expected the credentials-rotation rebuild log line to fire for query {rotated_query_id}, "
+        f"found {rebuild_hits} hits — the fingerprint check did not rebuild the kernel state."
+    )
+
+
+def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster):
+    """Simulate delta-kernel reporting an `ExpiredToken` during snapshot init. The
+    `delta_kernel_force_stale_token_error` failpoint throws the kernel error exactly
+    once; `object_storage_force_refresh_callback_success` short-circuits the catalog
+    refresh callback to succeed without an actual catalog. The retry path must rebuild
+    the snapshot and return the correct row count.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_retry_on_stale_token")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # Prime the cache so the second read starts from a clean state.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    retry_query_id = f"{TABLE_NAME}_retry"
+    instance.query("SYSTEM ENABLE FAILPOINT object_storage_force_refresh_callback_success")
+    # Drift the fingerprint so initOrUpdateSnapshot enters its rebuild branch; the
+    # stale-token failpoint then trips inside the KernelSnapshotState ctor and the
+    # retry path takes over.
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_stale_token_error")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=retry_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+        instance.query("SYSTEM DISABLE FAILPOINT object_storage_force_refresh_callback_success")
+        # delta_kernel_force_stale_token_error is FIU_ONETIME and self-disables, but
+        # disable defensively in case the retry path never reached it.
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_stale_token_error")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    retry_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{retry_query_id}' "
+        "  AND message ILIKE '%stale credentials during snapshot init; rebuilding%'"
+        "  AND message ILIKE '%refreshed via callback: true%'"
+    ).strip())
+    assert retry_hits >= 1, (
+        f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
+        f"found {retry_hits} hits — the stale-token retry path was not exercised."
+    )

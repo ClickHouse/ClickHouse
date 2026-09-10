@@ -884,6 +884,7 @@ def run_s3_mocks(started_cluster):
             ("unstable_server.py", "resolver", "8081"),
             ("echo.py", "resolver", "8082"),
             ("no_list_objects.py", "resolver", "8083"),
+            ("gcs_transcode_mock.py", "resolver", "8084"),
         ],
     )
 
@@ -3236,3 +3237,21 @@ def test_schema_inference_cache_multi_path(started_cluster):
     assert "1\ta\n2\tb\n" == instance.query(
         f"SELECT * FROM url('{s3_path_prefix}/test1.parquet')"
     )
+
+
+def test_gcs_decompressive_transcoding(started_cluster):
+    """Mock at resolver:8084 omits Content-Length on HEAD and GET
+    Without the fix, s3() would silently return 0 rows"""
+    instance = started_cluster.instances["dummy"]
+
+    result = instance.query(
+        "SELECT count() FROM s3("
+        "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == "3"
+
+    result = instance.query(
+        "SELECT * FROM s3("
+        "'http://resolver:8084/bucket/data.jsonl', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'

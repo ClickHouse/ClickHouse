@@ -58,7 +58,6 @@ extern const SettingsBool enable_positional_arguments_for_projections;
 
 }
 
-
 bool ProjectionDescription::isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     const String column_name = node->getColumnName();
@@ -93,8 +92,6 @@ ProjectionDescription ProjectionDescription::clone() const
     other.primary_key_max_column_name = primary_key_max_column_name;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
-    other.with_block_number = with_block_number;
-    other.with_block_offset = with_block_offset;
     other.index = index;
     other.index_granularity = index_granularity;
     other.index_granularity_bytes = index_granularity_bytes;
@@ -131,8 +128,6 @@ public:
         setInMemoryMetadata(storage_metadata);
         VirtualColumnsDescription desc;
         desc.addEphemeral("_part_offset", std::make_shared<DataTypeUInt64>(), "");
-        desc.addPersistent(BlockNumberColumn::name, BlockNumberColumn::type, BlockNumberColumn::codec, "");
-        desc.addPersistent(BlockOffsetColumn::name, BlockOffsetColumn::type, BlockOffsetColumn::codec, "");
         setVirtuals(std::move(desc));
     }
 
@@ -140,7 +135,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
 
     Pipe read(
         const Names & column_names,
@@ -261,6 +256,11 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
+
+    /// The name is used unescaped as a directory name (`getDirectoryName`) inside a part directory,
+    /// so a '/' in it would address files outside of the part and outside of the data directory.
+    if (projection_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Projection name ({}) cannot contain '/'", projection_definition->name);
 
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
@@ -399,16 +399,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     else
     {
         result.type = ProjectionDescription::Type::Normal;
-
-        /// Build sorting key — add virtual column types so KeyDescription can resolve them.
-        auto columns_for_key = columns;
-        if (!columns.has(BlockNumberColumn::name))
-            columns_for_key.add(ColumnDescription(BlockNumberColumn::name, BlockNumberColumn::type));
-        if (!columns.has(BlockOffsetColumn::name))
-            columns_for_key.add(ColumnDescription(BlockOffsetColumn::name, BlockOffsetColumn::type));
-
-        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns_for_key, query_context, {});
-        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns_for_key, query_context);
+        metadata.sorting_key = KeyDescription::getSortingKeyFromAST(projection_order_by, columns, query_context, {});
+        metadata.primary_key = KeyDescription::getKeyFromAST(projection_order_by, columns, query_context);
         metadata.primary_key.definition_ast = nullptr;
     }
 
@@ -423,11 +415,7 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         std::erase_if(result.required_columns, [](const String & s) { return s.contains("_part_offset"); });
     }
 
-    /// Track whether projection stores _block_number/_block_offset from the parent table.
-    result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
-    result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
-
-    NamesAndTypesList metadata_columns;
+    ColumnsDescription metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
     {
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
@@ -444,11 +432,16 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         }
         else
         {
-            metadata_columns.emplace_back(column_with_type_name.name, column_with_type_name.type);
+            ColumnDescription column_description(column_with_type_name.name, column_with_type_name.type);
+            /// Carry over the parent column's DEFAULT so a column missing from a projection part written
+            /// before the column was added reads the table default, not the column type's default.
+            if (columns.has(column_with_type_name.name) && columns.get(column_with_type_name.name).default_desc.expression)
+                column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
+            metadata_columns.add(std::move(column_description));
         }
     }
 
-    metadata.setColumns(ColumnsDescription(metadata_columns));
+    metadata.setColumns(std::move(metadata_columns));
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
 }
 
@@ -565,7 +558,6 @@ Block ProjectionDescription::calculate(
 {
     if (index)
         return index->calculate(*this, block, starting_offset, context, perm_ptr);
-
     return calculateByQuery(block, starting_offset, context, perm_ptr);
 }
 

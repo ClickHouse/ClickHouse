@@ -5,6 +5,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -21,6 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
+#include <cmath>
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -42,7 +44,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int READONLY;
 }
 
 // clang-format off
@@ -323,7 +324,7 @@ namespace ErrorCodes
     - `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
     Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
 
-    Number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
+    The number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
     [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
     )", 0) \
     DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
@@ -333,10 +334,12 @@ namespace ErrorCodes
     the insertion time significantly.
     )", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
-    Number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    The maximum allowed value is 256.
     )", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
-    Number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+    The maximum allowed value is 256.
     )", 0) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
     Serialization version for Dynamic data type. Required for compatibility.
@@ -347,8 +350,50 @@ namespace ErrorCodes
     - `v3`
     )", 0) \
     DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
-    If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple elements.
+    If true, serialization versions like string_serialization_version will be propagated inside nested types like Array/Map/Nullable/JSON/etc. If disabled, the serialization version will take affect only to top-level columns of this type and Tuple el
     )", 0)\
+    DECLARE(MergeTreeMapSerializationVersion, map_serialization_version, "basic", R"(
+    Controls the serialization method used for `Map` columns.
+
+    Possible values:
+
+    - basic — Use the standard serialization for `Map`.
+    - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
+
+    The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
+    )", 0) \
+    DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(
+    This setting allows to specify a different serialization version of
+    `Map` columns for zero level parts that are created during inserts.
+    It can be useful to keep `basic` serialization for zero level parts to avoid
+    performance degradation during inserts, while using `with_buckets` for merged parts.
+    )", 0) \
+    DECLARE(NonZeroUInt64, max_buckets_in_map, 32, R"(
+    The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.
+    The actual number of buckets is determined by [map_buckets_strategy](#map_buckets_strategy).
+    The maximum allowed value is 256.
+    )", 0) \
+    DECLARE(MergeTreeMapBucketsStrategy, map_buckets_strategy, "sqrt", R"(
+    Controls the strategy for choosing the number of buckets in `with_buckets` `Map` serialization based on the average map size.
+
+    Possible values:
+
+    - constant — Always use [max_buckets_in_map](#max_buckets_in_map) as the number of buckets, regardless of the average map size.
+    - sqrt — Use `round(map_buckets_coefficient * sqrt(avg_map_size))` as the number of buckets, clamped to `[1, max_buckets_in_map]`.
+    - linear — Use `round(map_buckets_coefficient * avg_map_size)` as the number of buckets, clamped to `[1, max_buckets_in_map]`.
+    )", 0) \
+    DECLARE(Float, map_buckets_coefficient, 1.0, R"(
+    The coefficient used in `sqrt` and `linear` [map_buckets_strategy](#map_buckets_strategy) to calculate the number of buckets from the average map size.
+    For `sqrt` strategy: `round(map_buckets_coefficient * sqrt(avg_map_size))`.
+    For `linear` strategy: `round(map_buckets_coefficient * avg_map_size)`.
+    Ignored when `map_buckets_strategy` is `constant`.
+    )", 0) \
+    DECLARE(UInt64, map_buckets_min_avg_size, 32, R"(
+    The minimum average map size (number of keys per row) required to apply `with_buckets` serialization.
+    If the average map size is less than this value, a single bucket is used regardless of other bucket settings.
+    A value of `0` disables the threshold and always applies the bucketing strategy.
+    This setting is useful to avoid the overhead of bucketed serialization for small maps where the benefit is negligible.
+    )", 0) \
     DECLARE(Bool, write_marks_for_substreams_in_compact_parts, true, R"(
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
@@ -538,17 +583,6 @@ namespace ErrorCodes
     )", 0) \
     DECLARE(UInt64, min_compressed_bytes_to_fsync_after_fetch, 0, R"(
     Minimal number of compressed bytes to do fsync for part after fetch (0 - disabled)
-    )", 0) \
-    DECLARE(UInt64, replicated_fetches_min_part_level, 0, R"(
-    Minimum part level to fetch from other replicas. Parts with level below this threshold are postponed
-    (kept in the replication queue and re-evaluated each scheduling cycle, not permanently skipped).
-    Use 1 to postpone fetching level-0 (unmerged) parts, reducing replication overhead during heavy ingestion.
-    Default: 0 (fetch all parts regardless of level).
-    )", 0) \
-    DECLARE(UInt64, replicated_fetches_min_part_level_timeout_seconds, 300, R"(
-    Timeout in seconds after which a part below replicated_fetches_min_part_level will be fetched anyway.
-    Use 0 to disable the timeout (parts below the minimum level are postponed indefinitely until merged).
-    Default: 300 (force fetch after 5 minutes).
     )", 0) \
     DECLARE(Bool, fsync_after_insert, false, R"(
     Do fsync for every inserted part. Significantly decreases performance of
@@ -1651,8 +1685,11 @@ namespace ErrorCodes
     Name of storage disk. Can be specified instead of storage policy.
     )", 0) \
     DECLARE(Bool, table_disk, false, R"(
-    This is table disk, the path/endpoint should point to the table data, not to
-    the database data. Can be set only for s3_plain/s3_plain_rewritable/web.
+    This is table disk: the path/endpoint points to the table data, not the database data.
+    Supported for object-storage disks whose metadata lives on the object storage itself
+    (s3_plain, s3_plain_rewritable, web, web_index) and their cached variants. Encrypted
+    variants are supported only over the writable s3_plain / s3_plain_rewritable disks, not
+    over the read-only web / web_index disks.
     )", 0) \
     DECLARE(Bool, allow_nullable_key, false, R"(
     Allow Nullable types as primary keys.
@@ -1953,10 +1990,6 @@ namespace ErrorCodes
 
     **Default Value:** false
     )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_commit_order_projection, false, R"(
-    Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
-    Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
-    )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \
@@ -2163,26 +2196,34 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
+    void sanityCheck(size_t background_pool_tasks) const;
 };
 
 static void validateTableDisk(const DiskPtr & disk)
 {
     if (!disk)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
-    const auto * disk_object_storage = dynamic_cast<const DiskObjectStorage *>(disk.get());
-    if (!disk_object_storage)
+
+    const auto description = disk->getDataSourceDescription();
+    if (description.type != DataSourceType::ObjectStorage)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
-    if (!(disk_object_storage->isReadOnly() || disk_object_storage->isPlain()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for {}", disk_object_storage->getStructure());
+
+    /// table_disk loads the table straight from the disk root (no database/UUID path), so its metadata must be
+    /// reconstructable from the object storage alone; random blob keys (Local, Keeper) keep the map elsewhere.
+    const auto metadata_storage = disk->getMetadataStorage();
+    if (metadata_storage->areBlobPathsRandom())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "MergeTree settings `table_disk` is not supported for {}: it requires metadata stored on the object storage.",
+            description.toString());
 }
 
 IMPLEMENT_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     if (storage_def.settings)
     {
@@ -2205,7 +2246,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
                     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
                     {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
+                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
                         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                         value = disk_name;
                     }
@@ -2225,7 +2266,7 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 else if (name == "table_disk")
                     table_disk = value.safeGet<bool>();
 
-                if (!is_attach && found_disk_setting && found_storage_policy_setting)
+                if (!is_loading_from_existing_metadata && found_disk_setting && found_storage_policy_setting)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -2265,35 +2306,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks) const
 {
-    if (!allow_experimental || !allow_beta)
-    {
-        for (const auto & setting : all())
-        {
-            if (!setting.isValueChanged())
-                continue;
-
-            auto tier = setting.getTier();
-            if (!allow_experimental && tier == EXPERIMENTAL)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
-                    "('allow_feature_tier')",
-                    setting.getName());
-            }
-            if (!allow_beta && tier == BETA)
-            {
-                throw Exception(
-                    ErrorCodes::READONLY,
-                    "Cannot modify setting '{}'. Changes to BETA settings are disabled in the server config ('allow_feature_tier')",
-                    setting.getName());
-            }
-        }
-    }
-
-
     if (number_of_free_entries_in_pool_to_execute_mutation > background_pool_tasks)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
@@ -2389,6 +2403,45 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             merge_selecting_sleep_slowdown_factor.value);
     }
 
+    static constexpr UInt64 max_allowed_buckets = 256;
+
+    if (max_buckets_in_map > max_allowed_buckets)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of max_buckets_in_map setting ({}) exceeds the maximum allowed value of {}",
+            max_buckets_in_map.value,
+            max_allowed_buckets);
+    }
+
+    if (!std::isfinite(map_buckets_coefficient) || map_buckets_coefficient <= 0)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of map_buckets_coefficient setting ({}) must be positive and finite",
+            map_buckets_coefficient.value);
+    }
+
+    /// The reader validates the on-wire bucket count against the same bound
+    /// (`MAX_OBJECT_SHARED_DATA_BUCKETS`), so keep this cap and that guard in sync via the constant.
+    if (object_shared_data_buckets_for_compact_part > MAX_OBJECT_SHARED_DATA_BUCKETS)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
+            object_shared_data_buckets_for_compact_part.value,
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
+    }
+
+    if (object_shared_data_buckets_for_wide_part > MAX_OBJECT_SHARED_DATA_BUCKETS)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
+            object_shared_data_buckets_for_wide_part.value,
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
+    }
+
     if (zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0
         && zero_copy_merge_mutation_min_parts_size_sleep_before_lock < zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock)
     {
@@ -2473,6 +2526,18 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
+SettingsChanges MergeTreeSettings::changesFrom(const MergeTreeSettings & base) const
+{
+    SettingsChanges res;
+    for (const auto & setting : impl->all())
+    {
+        auto value = setting.getValue();
+        if (value != base.impl->get(setting.getName()))
+            res.emplace_back(String{setting.getName()}, value);
+    }
+    return res;
+}
+
 void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
@@ -2524,9 +2589,18 @@ std::vector<std::string_view> MergeTreeSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
+std::vector<std::string_view> MergeTreeSettings::getAllAliasNames()
 {
-    impl->loadFromQuery(storage_def, context, is_attach);
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = MergeTreeSettingsImpl::Traits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
@@ -2557,9 +2631,9 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || (impl->min_compressed_bytes_to_fsync_after_merge && input_bytes >= impl->min_compressed_bytes_to_fsync_after_merge));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const
+void MergeTreeSettings::sanityCheck(size_t background_pool_tasks) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta);
+    impl->sanityCheck(background_pool_tasks);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
@@ -2572,8 +2646,8 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         const auto & setting_name = setting.getName();
         size_t col = 0;
         res_columns[col++]->insert(setting_name);
-        res_columns[col++]->insert(setting.getValueString());
-        res_columns[col++]->insert(setting.getDefaultValueString());
+        res_columns[col++]->insert(setting.getValueString(/* show_secrets */ true));
+        res_columns[col++]->insert(setting.getDefaultValueString(/* show_secrets */ true));
         res_columns[col++]->insert(setting.isValueChanged());
         res_columns[col++]->insert(setting.getDescription());
         Field min;
@@ -2685,6 +2759,11 @@ Field MergeTreeSettings::stringToValueUtil(std::string_view name, const String &
 bool MergeTreeSettings::hasBuiltin(std::string_view name)
 {
     return MergeTreeSettingsImpl::hasBuiltin(name);
+}
+
+std::optional<SettingsTierType> MergeTreeSettings::tryGetTierOfBuiltin(std::string_view name)
+{
+    return MergeTreeSettingsImpl::tryGetTierOfBuiltin(name);
 }
 
 std::string_view MergeTreeSettings::resolveName(std::string_view name)

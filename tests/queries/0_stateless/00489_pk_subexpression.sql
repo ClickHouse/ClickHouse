@@ -1,6 +1,3 @@
-SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
-
 DROP TABLE IF EXISTS pk;
 
 set allow_deprecated_syntax_for_merge_tree=1;

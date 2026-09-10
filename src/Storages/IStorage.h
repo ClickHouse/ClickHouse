@@ -173,8 +173,8 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports storing of dynamic subcolumns.
-    virtual bool supportsDynamicSubcolumns() const { return false; }
+    /// Returns true if the storage supports columns with dynamic structure (like JSON or Dynamic types).
+    virtual bool supportsColumnsWithDynamicStructure() const { return false; }
 
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
@@ -272,9 +272,6 @@ public:
     /// is_restore_from_backup = true in StorageFactory::Arguments).
     virtual void finalizeRestoreFromBackup() {}
 
-    /// Return true if there is at least one part containing lightweight deleted mask.
-    virtual bool hasLightweightDeletedMask() const { return false; }
-
     /// Return true if storage can execute lightweight delete mutations.
     virtual bool supportsLightweightDelete() const { return false; }
 
@@ -310,7 +307,7 @@ public:
     virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
 
 private:
-    StorageID storage_id;
+    StorageID storage_id TSA_GUARDED_BY(id_mutex);
 
     mutable std::mutex id_mutex;
 

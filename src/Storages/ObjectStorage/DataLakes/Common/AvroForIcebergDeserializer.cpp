@@ -4,7 +4,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Common/UniqueLock.h>
@@ -29,15 +28,13 @@ namespace DB::Iceberg
 using namespace DB;
 
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
-    std::unique_ptr<ReadBufferFromFileBase> buffer_,
-    const IcebergPathFromMetadata & manifest_file_path_,
-    const DB::FormatSettings & format_settings)
+    std::unique_ptr<ReadBufferFromFileBase> buffer_, const std::string & manifest_file_path_, const DB::FormatSettings & format_settings)
 try
     : buffer(std::move(buffer_))
     , manifest_file_path(manifest_file_path_)
 {
     auto manifest_file_reader
-        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
+        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
     auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
@@ -84,20 +81,29 @@ TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) c
 Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() const
 {
     auto format_version_value = tryGetAvroMetadataValue("format-version");
-    if (!format_version_value.has_value())
-        return 1;
-    try
+    if (format_version_value.has_value())
     {
-        return std::stoi(format_version_value.value());
+        try
+        {
+            return std::stoi(format_version_value.value());
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
+                manifest_file_path,
+                e.what());
+        }
     }
-    catch (const std::exception & e)
-    {
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
-            manifest_file_path,
-            e.what());
-    }
+
+    /// Older ClickHouse versions wrote both manifest lists and manifest files without the
+    /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
+    /// `sequence_number` field appears at the top level of v2 manifest lists and v2
+    /// manifest entries, but is absent from their v1 counterparts.
+    if (hasPath(f_sequence_number))
+        return 2;
+    return 1;
 }
 
 
@@ -106,8 +112,25 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     const auto format_version = getFormatVersionFromManifestFileMetadata();
     FileContentType content_type = FileContentType::DATA;
     if (format_version > 1)
-        content_type = FileContentType(getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
-    const auto status = ManifestEntryStatus(getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>());
+    {
+        /// The value comes from the file and has to be validated: casting an arbitrary integer to
+        /// the enum and switching over it below would be undefined behaviour.
+        const auto content_type_value = getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>();
+        if (content_type_value > UInt64(FileContentType::EQUALITY_DELETE))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read Iceberg table: unexpected value {} of 'data_file.content' in a manifest file",
+                content_type_value);
+        content_type = FileContentType(content_type_value);
+    }
+
+    const auto status_value = getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>();
+    if (status_value > UInt64(ManifestEntryStatus::DELETED))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot read Iceberg table: unexpected value {} of 'status' in a manifest file",
+            status_value);
+    const auto status = ManifestEntryStatus(status_value);
 
     const auto snapshot_id_value = getValueFromRowByName(row_index, f_snapshot_id);
     std::optional<Int64> snapshot_id;
@@ -149,8 +172,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
     }
 
 
-    const auto file_path_key = IcebergPathFromMetadata::deserialize(
-        getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>());
+    const auto file_path_key = getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>();
     /// NOTE: This is weird, because in manifest file partition looks like this:
     /// {
     /// ...
@@ -251,18 +273,16 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         }
         case FileContentType::POSITION_DELETE: {
             /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
-            std::optional<Iceberg::IcebergPathFromMetadata> lower_reference_data_file_path;
-            std::optional<Iceberg::IcebergPathFromMetadata> upper_reference_data_file_path;
+            std::optional<String> lower_reference_data_file_path = std::nullopt;
+            std::optional<String> upper_reference_data_file_path = std::nullopt;
             bool bounds_set_by_referenced_data_file = false;
             if (hasPath(c_data_file_referenced_data_file))
             {
                 Field reference_file_path_field = getValueFromRowByName(row_index, c_data_file_referenced_data_file);
                 if (!reference_file_path_field.isNull())
                 {
-                    lower_reference_data_file_path.emplace(
-                        Iceberg::IcebergPathFromMetadata::deserialize(reference_file_path_field.safeGet<String>()));
-                    upper_reference_data_file_path.emplace(
-                        Iceberg::IcebergPathFromMetadata::deserialize(reference_file_path_field.safeGet<String>()));
+                    lower_reference_data_file_path = reference_file_path_field.safeGet<String>();
+                    upper_reference_data_file_path = reference_file_path_field.safeGet<String>();
                     bounds_set_by_referenced_data_file = true;
                 }
             }
@@ -273,9 +293,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 {
                     auto & [lower, upper] = it->second;
                     if (!lower.isNull())
-                        lower_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(lower.safeGet<String>()));
+                        lower_reference_data_file_path = lower.safeGet<String>();
                     if (!upper.isNull())
-                        upper_reference_data_file_path.emplace(Iceberg::IcebergPathFromMetadata::deserialize(upper.safeGet<String>()));
+                        upper_reference_data_file_path = upper.safeGet<String>();
                 }
             }
             return std::make_shared<const ParsedManifestFileEntry>(
@@ -324,6 +344,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*sort_order_id = */ std::nullopt);
         }
     }
+
+    throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Cannot read Iceberg table: unexpected content type {} of a manifest file entry", UInt64(content_type));
 }
 
 

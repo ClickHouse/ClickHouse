@@ -149,6 +149,9 @@ void insertPostgreSQLValue(
                 {
                     max_dimension = std::max(max_dimension, dimension);
 
+                    if (dimension == 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected array closing bracket");
+
                     --dimension;
                     if (dimension == 0)
                         break;

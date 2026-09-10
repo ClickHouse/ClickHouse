@@ -269,7 +269,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserKeyword s_index(Keyword::INDEX);
     ParserKeyword s_type(Keyword::TYPE);
     ParserExpressionWithOptionalArguments type_p;
-    ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
+    ParserExpression expression_p;
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
     ASTPtr name;
     ASTPtr query;
@@ -290,7 +290,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
     else if (s_index.ignore(pos, expected))
     {
-        if (!expression_list_p.parse(pos, index, expected))
+        if (!expression_p.parse(pos, index, expected))
             return false;
 
         if (!s_type.ignore(pos, expected))
@@ -1053,7 +1053,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (to_inner_uuid)
     {
         if (!storage || !storage->engine || (storage->engine->name != "SharedSet" && storage->engine->name != "SharedJoin"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage engine {} does not inner UUID", storage->engine->name);
+        {
+            const String engine_name = (storage && storage->engine) ? storage->engine->name : "(no engine)";
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage engine {} does not support inner UUID", engine_name);
+        }
 
         if (targets)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());

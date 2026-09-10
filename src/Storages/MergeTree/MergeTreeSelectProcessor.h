@@ -35,9 +35,10 @@ public:
         size_t number_of_current_replica_,
         size_t total_nodes_count_);
 
-    void sendInitialRequest(CoordinationMode mode, RangesInDataPartsDescription description, size_t mark_segment_size, size_t min_marks_per_request) const;
+    void sendInitialRequest(CoordinationMode mode, const RangesInDataParts & ranges, size_t mark_segment_size) const;
 
-    std::optional<ParallelReadResponse> sendReadRequest(CoordinationMode mode, size_t min_marks_per_request, const RangesInDataPartsDescription & description) const;
+    std::optional<ParallelReadResponse>
+    sendReadRequest(CoordinationMode mode, size_t min_number_of_marks, const RangesInDataPartsDescription & description) const;
 
     size_t getTotalNodesCount() const { return total_nodes_count; }
     size_t getNumberOfCurrentReplica() const { return number_of_current_replica; }
@@ -107,7 +108,8 @@ public:
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
-        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {},
+        const ColumnsDescription * columns_ = nullptr);
 
     String getName() const;
 
@@ -136,7 +138,8 @@ public:
         const IndexReadTasks & index_read_tasks,
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
-        bool force_short_circuit_execution);
+        bool force_short_circuit_execution,
+        const ColumnsDescription * columns = nullptr);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 

@@ -940,8 +940,10 @@ private:
 
                 if constexpr (Impl::use_int_hash_for_pods)
                 {
-                    static_assert(std::is_same_v<ToType, UInt64>, "");
-                    hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                    if constexpr (std::is_same_v<ToType, UInt64>)
+                        hash = IntHash64Impl::apply(bit_cast<UInt64>(vec_from[i]));
+                    else
+                        hash = IntHash32Impl::apply(bit_cast<UInt32>(vec_from[i]));
                 }
                 else
                 {
@@ -971,18 +973,15 @@ private:
                     return executeIntType<FromType, first>(key_cols, full_column.get(), vec_to);
                 }
             }
-            FromType value;
-            if constexpr (std::is_same_v<FromType, float>)
-                /// Float32 doesn't reliably roundtrip through Field (which only has Float64) in practice.
-                value = assert_cast<const ColumnFloat32 &>(col_from_const->getDataColumn()).getData()[0];
-            else
-                value = col_from_const->template getValue<FromType>();
+            auto value = col_from_const->template getValue<FromType>();
 
             ToType hash;
             if constexpr (Impl::use_int_hash_for_pods)
             {
-                static_assert(std::is_same_v<ToType, UInt64>, "");
-                hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+                if constexpr (std::is_same_v<ToType, UInt64>)
+                    hash = IntHash64Impl::apply(bit_cast<UInt64>(value));
+                else
+                    hash = IntHash32Impl::apply(bit_cast<UInt32>(value));
             }
             else
             {

@@ -57,6 +57,7 @@ public:
     bool isNonEmptyTableAllowed() const { return getRestoreSettings().allow_non_empty_tables; }
     std::shared_ptr<IRestoreCoordination> getRestoreCoordination() const { return restore_coordination; }
     ContextMutablePtr getContext() const { return context; }
+    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
 
     /// Adds a data restore task which will be later returned by getDataRestoreTasks().
     /// This function can be called by implementations of IStorage::restoreFromBackup() in inherited storage classes.

@@ -122,9 +122,7 @@ bool SplitFileCachePriority::modifySizeLimits(
     double size_ratio_,
     const CacheStateGuard::Lock & lock)
 {
-    if (max_size == max_size_
-        && max_elements == max_elements_
-        && system_segment_size_ratio == size_ratio_)
+    if (max_size == max_size_ && max_elements == max_elements_)
         return false; /// Nothing to change.
 
     max_data_segment_elements = getRatio(max_elements_, (1 - system_segment_size_ratio));
@@ -170,11 +168,24 @@ IFileCachePriority::IteratorPtr SplitFileCachePriority::add( /// NOLINT
     size_t size,
     const CachePriorityGuard::WriteLock & write_lock,
     const CacheStateGuard::Lock * state_lock,
-    bool best_effort)
+    bool is_initial_load)
 {
     const auto type = getPriorityType(key_metadata->origin.segment_type);
     return priorities_holder.at(type)->add(
-        key_metadata, offset, size, write_lock, state_lock, best_effort);
+        key_metadata, offset, size, write_lock, state_lock, is_initial_load);
+}
+
+IFileCachePriority::IteratorPtr SplitFileCachePriority::addForRestore( /// NOLINT
+    KeyMetadataPtr key_metadata,
+    size_t offset,
+    size_t size,
+    QueueEntryType original_queue_type,
+    const CachePriorityGuard::WriteLock & write_lock,
+    const CacheStateGuard::Lock * state_lock)
+{
+    const auto type = getPriorityType(key_metadata->origin.segment_type);
+    return priorities_holder.at(type)->addForRestore(
+        key_metadata, offset, size, original_queue_type, write_lock, state_lock);
 }
 
 bool SplitFileCachePriority::canFit( /// NOLINT
@@ -183,11 +194,11 @@ bool SplitFileCachePriority::canFit( /// NOLINT
     const CacheStateGuard::Lock & lock,
     IteratorPtr reservee,
     const OriginInfo & origin_info,
-    bool best_effort) const
+    bool is_initial_load) const
 {
     const auto type = getPriorityType(origin_info.segment_type);
     return priorities_holder.at(type)->canFit(
-        size, elements, lock, reservee, origin_info, best_effort);
+        size, elements, lock, reservee, origin_info, is_initial_load);
 }
 
 EvictionInfoPtr SplitFileCachePriority::collectEvictionInfo(

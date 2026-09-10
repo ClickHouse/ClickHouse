@@ -20,6 +20,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -155,6 +156,14 @@ RestCatalog::RestCatalog(
     else if (!auth_header_.empty())
     {
         auth_header = parseAuthHeader(auth_header_);
+        /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
+        /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
+        /// The catalog is built lazily on first use instead; this is where the user-provided
+        /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
+        /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
+        /// validated and the original parsed header is kept.
+        DB::HTTPHeaderEntries header_to_check{auth_header.value()};
+        getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
     }
     config = loadConfig();
 }
@@ -1121,18 +1130,10 @@ std::pair<std::shared_ptr<IStorageCredentials>, String> RestCatalog::getCredenti
     {
         case StorageType::S3:
         {
-            static constexpr auto gcs_token_str = "gcs.oauth2.token";
             static constexpr auto access_key_id_str = "s3.access-key-id";
             static constexpr auto secret_access_key_str = "s3.secret-access-key";
             static constexpr auto session_token_str = "s3.session-token";
             static constexpr auto storage_endpoint_str = "s3.endpoint";
-
-            if (object->has(gcs_token_str))
-            {
-                auto gcs_token = object->get(gcs_token_str).extract<String>();
-                LOG_DEBUG(log, "Using GCS OAuth2 token for location {}", location);
-                return {std::make_shared<GCSCredentials>(gcs_token), ""};
-            }
 
             std::string access_key_id;
             std::string secret_access_key;

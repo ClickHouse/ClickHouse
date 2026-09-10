@@ -85,7 +85,7 @@ public:
     void incrementReader();
     void decrementReader();
 
-    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
 private:

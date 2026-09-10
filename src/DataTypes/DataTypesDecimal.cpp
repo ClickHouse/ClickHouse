@@ -63,7 +63,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
 template <is_decimal T>
 SerializationPtr DataTypeDecimal<T>::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationDecimal<T>::create(this->precision, this->scale);
+    return std::make_shared<SerializationDecimal<T>>(this->precision, this->scale);
 }
 
 

@@ -503,6 +503,35 @@ SELECT d, d.Int64 + 1 AS res, toTypeName(res) FROM test;
 └───────┴──────┴─────────────────┘
 ```
 
+### Type mismatch behavior {#dynamic-type-mismatch-behavior}
+
+The setting `dynamic_throw_on_type_mismatch` controls what happens when a function is applied to a `Dynamic` column and the actual stored type of a row is incompatible with the function:
+
+- `true` (default) — throw an exception (`ILLEGAL_TYPE_OF_ARGUMENT`) on the first incompatible row.
+- `false` — return `NULL` for incompatible rows and keep the result for compatible rows.
+
+**Example:**
+
+```sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES ('world'), (123), (456);
+
+-- Default (throw on mismatch): length() does not accept integers, so the query throws.
+SELECT length(d) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
+
+-- With throw disabled: incompatible rows return NULL.
+SET dynamic_throw_on_type_mismatch = false;
+SELECT d, length(d) FROM test ORDER BY d::String NULLS LAST;
+```
+
+```text
+┌─d─────┬─length(d)─┐
+│ world │         5 │
+│ 123   │      ᴺᵁᴸᴸ │
+│ 456   │      ᴺᵁᴸᴸ │
+└───────┴───────────┘
+```
+
 ## Using Dynamic type in ORDER BY and GROUP BY {#using-dynamic-type-in-order-by-and-group-by}
 
 During `ORDER BY` and `GROUP BY` values of `Dynamic` types are compared similar to values of `Variant` type:

@@ -13,6 +13,7 @@
 #    include <DataTypes/DataTypeDateTime64.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeTime64.h>
+#    include <DataTypes/DataTypesDecimal.h>
 #    include <Columns/ColumnConst.h>
 #    include <Columns/ColumnNullable.h>
 
@@ -214,6 +215,155 @@ llvm::Value * nativeCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type,
 llvm::Value * nativeCast(llvm::IRBuilderBase & b, const ValueWithType & value, const DataTypePtr & to_type)
 {
     return nativeCast(b, value.type, value.value, to_type);
+}
+
+llvm::Value * nativeCastWithDecimalScale(
+    llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value, const DataTypePtr & to_type)
+{
+    if (from_type->equals(*to_type))
+        return value;
+
+    if (from_type->isNullable() && to_type->isNullable())
+    {
+        auto * inner_value = b.CreateExtractValue(value, {0});
+        auto * is_null = b.CreateExtractValue(value, {1});
+        auto * inner = nativeCastWithDecimalScale(b, removeNullable(from_type), inner_value, removeNullable(to_type));
+        auto * to_native_type = toNativeType(b, to_type);
+        llvm::Value * result = llvm::Constant::getNullValue(to_native_type);
+        result = b.CreateInsertValue(result, inner, {0});
+        return b.CreateInsertValue(result, is_null, {1});
+    }
+    if (from_type->isNullable())
+    {
+        return nativeCastWithDecimalScale(b, removeNullable(from_type), b.CreateExtractValue(value, {0}), to_type);
+    }
+    if (to_type->isNullable())
+    {
+        auto * to_native_type = toNativeType(b, to_type);
+        auto * inner = nativeCastWithDecimalScale(b, from_type, value, removeNullable(to_type));
+        return b.CreateInsertValue(llvm::Constant::getNullValue(to_native_type), inner, {0});
+    }
+
+    WhichDataType from_w(*from_type);
+    WhichDataType to_w(*to_type);
+
+    /// Only intercept conversions involving `Decimal` here. Everything else
+    /// — including `DateTime` / `DateTime64` / `Time` / `Time64` scale lifts —
+    /// is already handled correctly by `nativeCast`.
+    if (to_w.isDecimal() || from_w.isDecimal())
+    {
+        auto * from_native_type = toNativeType(b, from_type);
+        auto * to_native_type = toNativeType(b, to_type);
+        const UInt32 to_scale = to_w.isDecimal() ? getDecimalScale(*to_type) : 0;
+        const UInt32 from_scale = from_w.isDecimal() ? getDecimalScale(*from_type) : 0;
+
+        /// Build LLVM integer constant for `10^n` of the requested bit width.
+        auto pow10_int_const = [&](unsigned bit_width, UInt32 n) -> llvm::ConstantInt *
+        {
+            llvm::APInt v(bit_width, 1);
+            for (UInt32 i = 0; i < n; ++i)
+                v *= 10;
+            return llvm::cast<llvm::ConstantInt>(llvm::ConstantInt::get(b.getContext(), v));
+        };
+
+        /// Build LLVM floating-point constant for `10^n` from an `APInt` of the requested bit width.
+        /// This goes through `APFloat::convertFromAPInt` rather than `APInt::getZExtValue` so that
+        /// it stays correct when `10^n` does not fit in 64 bits (e.g. `Decimal128` with `scale = 38`,
+        /// or `Decimal256` with even larger scales).
+        auto pow10_fp_const = [&](unsigned bit_width, UInt32 n, llvm::Type * fp_type) -> llvm::Constant *
+        {
+            llvm::APInt v(bit_width, 1);
+            for (UInt32 i = 0; i < n; ++i)
+                v *= 10;
+            llvm::APFloat fp(fp_type->getFltSemantics());
+            fp.convertFromAPInt(v, /*IsSigned=*/false, llvm::APFloat::rmNearestTiesToEven);
+            return llvm::ConstantFP::get(b.getContext(), fp);
+        };
+
+        if (to_w.isDecimal())
+        {
+            if (from_w.isDecimal())
+            {
+                /// `Decimal` → `Decimal` (possibly different scale and/or precision).
+                /// Widen/narrow the integer storage first, then adjust scale.
+                auto * widened = (from_native_type == to_native_type)
+                    ? value
+                    : b.CreateIntCast(value, to_native_type, /*isSigned=*/true);
+                if (from_scale == to_scale)
+                    return widened;
+                const UInt32 diff = (to_scale > from_scale) ? (to_scale - from_scale) : (from_scale - to_scale);
+                auto * factor = pow10_int_const(to_native_type->getIntegerBitWidth(), diff);
+                return (to_scale > from_scale)
+                    ? b.CreateMul(widened, factor)
+                    : b.CreateSDiv(widened, factor);
+            }
+            if (from_w.isInt() || from_w.isUInt() || from_w.isEnum() || from_w.isDate() || from_w.isDate32())
+            {
+                /// Integer → `Decimal`: widen to `Decimal`'s underlying integer type,
+                /// then multiply by `10^to_scale` to lift the value into `Decimal` scale.
+                auto * widened = (from_native_type == to_native_type)
+                    ? value
+                    : b.CreateIntCast(value, to_native_type, typeIsSigned(*from_type));
+                if (to_scale == 0)
+                    return widened;
+                auto * factor = pow10_int_const(to_native_type->getIntegerBitWidth(), to_scale);
+                return b.CreateMul(widened, factor);
+            }
+            if (from_w.isFloat32() || from_w.isFloat64())
+            {
+                /// Float → `Decimal`: multiply by `10^to_scale` in floating point first,
+                /// then truncate to the target integer storage type.
+                if (to_scale == 0)
+                    return b.CreateFPToSI(value, to_native_type);
+                /// `10^to_scale` may not be exactly representable as a float for very large scales,
+                /// but this matches the precision of the non-JIT path which performs the same
+                /// `value * 10^scale` multiplication in `Float64`. Construct the multiplier through
+                /// `APFloat::convertFromAPInt` so it stays correct when `10^to_scale` exceeds 64 bits
+                /// (`Decimal128` with `to_scale >= 20`, `Decimal256` with even larger scales).
+                auto * factor_fp = pow10_fp_const(to_native_type->getIntegerBitWidth(), to_scale, value->getType());
+                auto * multiplied = b.CreateFMul(value, factor_fp);
+                return b.CreateFPToSI(multiplied, to_native_type);
+            }
+            /// Fall through to `nativeCast` for unusual sources (e.g. `DateTime64` → `Decimal`).
+        }
+        else if (from_w.isDecimal())
+        {
+            if (to_w.isInt() || to_w.isUInt() || to_w.isEnum() || to_w.isDate() || to_w.isDate32())
+            {
+                /// `Decimal` → integer: divide by `10^from_scale`, then narrow.
+                if (from_scale == 0)
+                    return (from_native_type == to_native_type)
+                        ? value
+                        : b.CreateIntCast(value, to_native_type, /*isSigned=*/true);
+                auto * factor = pow10_int_const(from_native_type->getIntegerBitWidth(), from_scale);
+                auto * divided = b.CreateSDiv(value, factor);
+                return (from_native_type == to_native_type)
+                    ? divided
+                    : b.CreateIntCast(divided, to_native_type, /*isSigned=*/true);
+            }
+            if (to_w.isFloat32() || to_w.isFloat64())
+            {
+                /// `Decimal` → float: convert to `Float64`, divide by `10^from_scale`,
+                /// then narrow to the target float type if needed. Construct the divider through
+                /// `APFloat::convertFromAPInt` so it stays correct when `10^from_scale` exceeds
+                /// 64 bits (`Decimal128` with `from_scale >= 20`, `Decimal256` with even larger scales).
+                auto * as_double = b.CreateSIToFP(value, b.getDoubleTy());
+                if (from_scale == 0)
+                    return to_w.isFloat32() ? b.CreateFPCast(as_double, to_native_type) : as_double;
+                auto * divider = pow10_fp_const(from_native_type->getIntegerBitWidth(), from_scale, b.getDoubleTy());
+                auto * divided = b.CreateFDiv(as_double, divider);
+                return to_w.isFloat32() ? b.CreateFPCast(divided, to_native_type) : divided;
+            }
+            /// Fall through to `nativeCast` for unusual targets.
+        }
+    }
+
+    return nativeCast(b, from_type, value, to_type);
+}
+
+llvm::Value * nativeCastWithDecimalScale(llvm::IRBuilderBase & b, const ValueWithType & value, const DataTypePtr & to_type)
+{
+    return nativeCastWithDecimalScale(b, value.type, value.value, to_type);
 }
 
 llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index)

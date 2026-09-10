@@ -57,8 +57,10 @@
 
 #define ENABLE_IPV6
 #define USE_OPENSSL
-#define USE_THREADS_POSIX
+#define HAVE_THREADS_POSIX
 #define USE_ARES
+#define USE_RESOLV_ARES
+#define CURL_ENABLE_NTLM
 
 #ifdef __illumos__
 #define HAVE_POSIX_STRERROR_R 1

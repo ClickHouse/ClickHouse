@@ -1,6 +1,6 @@
 #include <Client.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
+#include <base/scope_guard.h>
 
 #include <Core/Settings.h>
 
@@ -334,15 +334,6 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 #endif
 
             fmt::print(stdout, "Dump of fuzzed AST:\n{}\n", query_to_execute);
-            if (const auto * insert_ast = ast_to_process->as<ASTInsertQuery>(); insert_ast && insert_ast->hasInlinedData())
-            {
-                /// Print insert data
-                String bytes;
-                auto read_buf = getReadBufferFromASTInsertQuery(ast_to_process);
-                WriteBufferFromString write_buf(bytes);
-                copyData(*read_buf, write_buf);
-                fmt::print(stdout, "{}\n", bytes);
-            }
             const auto res = processASTFuzzerStep(query_to_execute, ast_to_process);
             if (!res)
                 return res;
@@ -448,7 +439,7 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
                     WriteBufferFromString write_buf(bytes);
                     copyData(*read_buf, write_buf);
                 }
-                std::cout << bytes;
+                std::cout << std::endl << bytes;
             }
         }
         std::cout << std::endl << std::endl;
@@ -644,12 +635,14 @@ bool Client::buzzHouse()
             const auto rpu = processTextAsSingleQuery(
                 "CREATE USER IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleUser + " IDENTIFIED WITH no_password");
             UNUSED(rpu);
-            const auto rpr = processTextAsSingleQuery("CREATE ROLE IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleRole);
+            const auto rpr = processTextAsSingleQuery(
+                "CREATE ROLE IF NOT EXISTS " + BuzzHouse::FuzzConfig::oracleRole);
             UNUSED(rpr);
-            const auto rpg = processTextAsSingleQuery("GRANT SELECT ON *.* TO " + BuzzHouse::FuzzConfig::oracleRole);
+            const auto rpg = processTextAsSingleQuery(
+                "GRANT SELECT ON *.* TO " + BuzzHouse::FuzzConfig::oracleRole);
             UNUSED(rpg);
-            const auto rpgr
-                = processTextAsSingleQuery("GRANT " + BuzzHouse::FuzzConfig::oracleRole + " TO " + BuzzHouse::FuzzConfig::oracleUser);
+            const auto rpgr = processTextAsSingleQuery(
+                "GRANT " + BuzzHouse::FuzzConfig::oracleRole + " TO " + BuzzHouse::FuzzConfig::oracleUser);
             UNUSED(rpgr);
         }
 

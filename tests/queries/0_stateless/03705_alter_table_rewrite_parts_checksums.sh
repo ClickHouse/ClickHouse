@@ -37,7 +37,10 @@ settings
   -- otherwise sparse info will be different, since for INSERTs the sparse ratio is calculated for the whole block, while for mutations for each granula (FIXME?)
   ratio_of_defaults_for_sparse_serialization=1,
   -- there was a bug with checksums, fixed in https://github.com/ClickHouse/ClickHouse/pull/89381
-  auto_statistics_types=''
+  auto_statistics_types='',
+  --- map serialization version is fixed in serializations.json, but we have different setting for zero level parts, so set it explicitly so we have fixed version in all parts
+  map_serialization_version_for_zero_level_parts='basic',
+  map_serialization_version='basic'
 ;
 insert into test_materialize select number, repeat('a', number), [1 + number/10e3, 0 + number/10e3] from numbers(10e3) settings max_block_size=1e6;
 -- { echo }

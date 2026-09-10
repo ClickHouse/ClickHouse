@@ -337,6 +337,9 @@ public:
     /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
     virtual bool hasDynamicSubcolumnsData() const { return false; }
 
+    /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
+    virtual bool hasDynamicStructure() const { return false; }
+
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
 

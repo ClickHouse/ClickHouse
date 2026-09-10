@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/Replication/Location.h>
 
 #include <Common/SharedMutex.h>
+#include <Common/Logger.h>
 
 #include <base/defines.h>
 
@@ -23,7 +24,7 @@ struct LocationInfo
 class ClusterConfiguration
 {
 public:
-    explicit ClusterConfiguration(std::unordered_map<Location, LocationInfo> locations_);
+    explicit ClusterConfiguration(const std::string & disk_name, std::unordered_map<Location, LocationInfo> locations_);
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
@@ -39,6 +40,8 @@ public:
     Location getLocalLocation() const;
 
 private:
+    const LoggerPtr log;
+
     mutable SharedMutex mutex;
     std::unordered_map<Location, LocationInfo> locations TSA_GUARDED_BY(mutex);
 };

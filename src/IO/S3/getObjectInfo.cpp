@@ -81,6 +81,7 @@ namespace
         const auto & result = outcome.GetResult();
         ObjectInfo object_info;
         object_info.size = static_cast<size_t>(result.GetContentLength());
+        object_info.is_size_known = result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
 

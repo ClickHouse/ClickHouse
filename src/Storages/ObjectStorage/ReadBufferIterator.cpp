@@ -240,7 +240,8 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         if (query_settings.skip_empty_files && current_object_info->getObjectMetadata()
-            && current_object_info->getObjectMetadata()->size_bytes == 0)
+            && current_object_info->getObjectMetadata()->size_bytes == 0
+            && current_object_info->getObjectMetadata()->is_size_known)
             continue;
 
         /// In union mode, check cached columns only for current key.

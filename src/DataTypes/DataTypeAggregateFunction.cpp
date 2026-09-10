@@ -208,7 +208,7 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeAggregateFunction::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return SerializationAggregateFunction::create(function, getName(), getVersion());
+    return std::make_shared<SerializationAggregateFunction>(function, getName(), getVersion());
 }
 
 

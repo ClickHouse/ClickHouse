@@ -223,7 +223,19 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     {
         /// In case when converting to Nullable type, we apply different parsing rule,
         /// that will not throw an exception but return NULL in case of malformed input.
-        FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null>::createFromSettings(settings);
+        FunctionPtr function;
+        switch (settings.cast_string_to_date_time_mode)
+        {
+            case FormatSettings::DateTimeInputFormat::Basic:
+                function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::Basic>::createFromSettings(settings);
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffort:
+                function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffort>::createFromSettings(settings);
+                break;
+            case FormatSettings::DateTimeInputFormat::BestEffortUS:
+                function = FunctionConvertFromString<ToDataType, FunctionCastName, ConvertFromStringExceptionMode::Null, ConvertFromStringParsingMode::BestEffortUS>::createFromSettings(settings);
+                break;
+        }
         return createFunctionAdaptor(function, from_type);
     }
     else if (!can_apply_accurate_cast)
@@ -1187,7 +1199,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
         size_t num_old_variants = column_variant.getNumVariants();
         Columns new_variant_columns;
         new_variant_columns.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
-        VectorWithMemoryTracking<ColumnVariant::Discriminator> new_local_to_global_discriminators;
+        std::vector<ColumnVariant::Discriminator> new_local_to_global_discriminators;
         new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
         for (ColumnVariant::Discriminator i = 0; i != num_old_variants; ++i)
         {

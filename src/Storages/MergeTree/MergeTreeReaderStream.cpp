@@ -105,7 +105,7 @@ void MergeTreeReaderStream::init()
                     estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
-            settings.allow_different_codecs);
+            /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -123,7 +123,7 @@ void MergeTreeReaderStream::init()
             data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
+                estimated_sum_mark_range_bytes), /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -291,7 +291,7 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     /// It consists of 2 parts of data - during the serialization the first part is written before the data and second - after the data.
     /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
     /// whole file size.
-    if (settings.is_dynamic_or_object_structure)
+    if (settings.is_metadata_file)
         return file_size;
 
     /// This is a good scenario. The compressed block is finished within the right mark,

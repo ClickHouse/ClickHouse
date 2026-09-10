@@ -36,7 +36,7 @@
 	url = https://github.com/jemalloc/jemalloc
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
-	url = https://github.com/ClickHouse/google-protobuf.git
+	url = https://github.com/protocolbuffers/protobuf.git
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse/boost
@@ -139,10 +139,10 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/facebook/rocksdb
+	url = https://github.com/ClickHouse/rocksdb
 [submodule "contrib/xz"]
 	path = contrib/xz
-	url = https://github.com/xz-mirror/xz
+	url = https://github.com/tukaani-project/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
 	url = https://github.com/ClickHouse/abseil-cpp.git
@@ -390,3 +390,6 @@
 [submodule "contrib/clickstack"]
 	path = contrib/clickstack
 	url = https://github.com/ClickHouse/clickhouse-clickstack.git
+[submodule "contrib/xsimd"]
+	path = contrib/xsimd
+	url = https://github.com/ClickHouse/xsimd

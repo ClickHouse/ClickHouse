@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+    <!--
+        Keeper with <placement> configured and quorum_reads=true. A Get request
+        for /keeper/availability_zone takes the raft commit path and should
+        return the configured AZ value with stat. This pins the configured
+        branch of the fix: when AZ is registered in system_nodes_with_data the
+        container lookup must still succeed under the quorum-read path.
+    -->
+    <placement>
+        <use_imds>0</use_imds>
+        <availability_zone>az-configured</availability_zone>
+    </placement>
+
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+            <quorum_reads>true</quorum_reads>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node_configured</hostname>
+                <port>2888</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+
+    <zookeeper>
+        <node index="1">
+            <host>node_configured</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>

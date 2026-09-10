@@ -51,7 +51,7 @@ public:
         const CacheStateGuard::Lock &,
         IteratorPtr reservee = nullptr,
         const OriginInfo & origin_info = {},
-        bool best_effort = false) const override;
+        bool is_initial_load = false) const override;
 
     IteratorPtr add( /// NOLINT
         KeyMetadataPtr key_metadata,
@@ -59,7 +59,15 @@ public:
         size_t size,
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock *,
-        bool is_startup = false) override;
+        bool is_initial_load = false) override;
+
+    IteratorPtr addForRestore( /// NOLINT
+        KeyMetadataPtr key_metadata,
+        size_t offset,
+        size_t size,
+        QueueEntryType original_queue_type,
+        const CachePriorityGuard::WriteLock &,
+        const CacheStateGuard::Lock *) override;
 
     bool collectCandidatesForEviction(
         const EvictionInfo & eviction_info,

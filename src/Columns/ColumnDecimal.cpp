@@ -113,6 +113,12 @@ void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 }
 
 template <is_decimal T>
+void ColumnDecimal<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
+{
+    hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
+}
+
+template <is_decimal T>
 WeakHash32 ColumnDecimal<T>::getWeakHash32() const
 {
     auto s = data.size();

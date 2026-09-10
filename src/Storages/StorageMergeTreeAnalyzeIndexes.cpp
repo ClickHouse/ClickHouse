@@ -2,7 +2,6 @@
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Core/Field.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
@@ -161,7 +160,6 @@ protected:
             for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
             {
                 auto query_tree = subquery->detachQueryTree();
-                createUniqueAliasesIfNecessary(query_tree, execution_context);
                 Planner subquery_planner(
                     query_tree,
                     subquery_options,

@@ -6,7 +6,6 @@
 
 #include <Core/Field.h>
 #include <Core/Range.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 
 #include <cstdint>
 #include <memory>
@@ -69,9 +68,8 @@ struct ManifestFileCacheableInfo
 struct ParsedManifestFileEntry : boost::noncopyable
 {
     FileContentType content_type;
-    /// The original path as stored in the Iceberg metadata.
-    /// Must be resolved through IcebergPathResolver before use in storage operations.
-    IcebergPathFromMetadata file_path_key;
+    // It's the original string in the Iceberg metadata
+    String file_path_key;
     Int64 row_number;
 
     ManifestEntryStatus status;
@@ -83,8 +81,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
     std::unordered_map<Int32, std::pair<Field, Field>> value_bounds;
 
     String file_format;
-    std::optional<IcebergPathFromMetadata> lower_reference_data_file_path; // For position delete files only.
-    std::optional<IcebergPathFromMetadata> upper_reference_data_file_path; // For position delete files only.
+    std::optional<String> lower_reference_data_file_path; // For position delete files only.
+    std::optional<String> upper_reference_data_file_path; // For position delete files only.
     std::optional<std::vector<Int32>> equality_ids;
 
     /// Data file is sorted with this sort_order_id (can be read from metadata.json)
@@ -92,7 +90,7 @@ struct ParsedManifestFileEntry : boost::noncopyable
 
     ParsedManifestFileEntry(
         FileContentType content_type_,
-        IcebergPathFromMetadata file_path_key_,
+        String file_path_key_,
         Int64 row_number_,
         ManifestEntryStatus status_,
         std::optional<Int64> written_sequence_number_,
@@ -101,8 +99,8 @@ struct ParsedManifestFileEntry : boost::noncopyable
         std::unordered_map<Int32, ColumnInfo> columns_infos_,
         std::unordered_map<Int32, std::pair<Field, Field>> value_bounds_,
         String file_format_,
-        std::optional<IcebergPathFromMetadata> lower_reference_data_file_path_,
-        std::optional<IcebergPathFromMetadata> upper_reference_data_file_path_,
+        std::optional<String> lower_reference_data_file_path_,
+        std::optional<String> upper_reference_data_file_path_,
         std::optional<std::vector<Int32>> equality_ids_,
         std::optional<Int32> sort_order_id_)
         : content_type(content_type_)
@@ -127,6 +125,9 @@ struct ProcessedManifestFileEntry
 {
     std::shared_ptr<const ParsedManifestFileEntry> parsed_entry;
     std::shared_ptr<const PartitionSpecification> common_partition_specification;
+
+    /// Computed file path for Object Storage (resolved from parsed_entry->file_path_key)
+    String file_path;
 
     // Always zero in case of format version 1
     Int64 sequence_number;

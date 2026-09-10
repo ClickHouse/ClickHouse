@@ -5,11 +5,15 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
+#include <Common/FailPoint.h>
+#include <Common/SipHash.h>
+#include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::S3AuthSetting
@@ -17,8 +21,54 @@ namespace DB::S3AuthSetting
     extern const S3AuthSettingsBool no_sign_request;
 }
 
+namespace DB::FailPoints
+{
+    extern const char delta_kernel_force_credentials_fingerprint_drift[];
+}
+
 namespace DeltaLake
 {
+
+namespace
+{
+
+/// Forwards to `ffi::set_builder_option`, translating a kernel error into a `DB::Exception`.
+/// The Rust FFI decodes the `(ptr, len)` slices as `&str`. Validate the value up front so a
+/// user supplied credential, region, endpoint or SAS token that is not valid UTF-8 (e.g. raw
+/// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
+/// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
+/// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
+void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
+{
+    if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Option '{}' for the DeltaLake engine contains invalid UTF-8 bytes; "
+            "the delta-kernel-rs FFI requires valid UTF-8 input.",
+            name);
+
+    KernelUtils::unwrapResult(
+        ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value)),
+        "set_builder_option");
+}
+
+/// RAII guard that frees an `EngineBuilder` unless released.
+/// `ffi::builder_build` consumes the builder on success; if configuring the builder throws before
+/// that (invalid option, unsupported auth, malformed connection string), the builder must be freed
+/// via `ffi::free_engine_builder` to avoid leaking it.
+class BuilderGuard
+{
+public:
+    explicit BuilderGuard(ffi::EngineBuilder * builder_) : builder(builder_) {}
+    ~BuilderGuard() { if (builder) ffi::free_engine_builder(builder); }
+    BuilderGuard(const BuilderGuard &) = delete;
+    BuilderGuard & operator=(const BuilderGuard &) = delete;
+    ffi::EngineBuilder * release() { auto * b = builder; builder = nullptr; return b; }
+private:
+    ffi::EngineBuilder * builder = nullptr;
+};
+
+}
 
 /// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
@@ -26,12 +76,15 @@ class S3KernelHelper final : public IKernelHelper
 public:
     S3KernelHelper(
         const DB::S3::URI & url_,
-        std::shared_ptr<const DB::S3::Client> client_,
+        DB::ObjectStoragePtr object_storage_,
         const DB::S3::S3AuthSettings & auth_settings)
         : url(url_)
         , table_location(getTableLocation(url_))
-        , client(client_)
+        , object_storage(std::move(object_storage_))
     {
+        /// Resolve the bucket's region once at construction. Region is bucket-bound and
+        /// doesn't rotate; credentials do — fetch the live client every time we need them.
+        auto client = object_storage->getS3StorageClient();
         region = client->getRegion();
         if (region.empty() || region == Aws::Region::AWS_GLOBAL)
             region = client->getRegionForBucket(url.bucket, /* force_detect */true);
@@ -48,6 +101,33 @@ public:
 
     const std::string & getDataPath() const override { return url.key; }
 
+    DB::UInt128 getCredentialsFingerprint() const override
+    {
+        /// Re-fetch the live S3 client. `S3ObjectStorage::applyNewSettings` swaps the
+        /// MultiVersion<S3::Client> when catalog / vended credentials rotate; a captured
+        /// snapshot would keep returning the original session.
+        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
+
+        SipHash hash;
+        hash.update(credentials.GetAWSAccessKeyId());
+        hash.update(credentials.GetAWSSecretKey());
+        hash.update(credentials.GetSessionToken());
+        auto fp = hash.get128();
+        /// Simulates a credentials rotation between consecutive reads of the same cached
+        /// snapshot. Deterministic XOR keeps the perturbed value stable while the failpoint
+        /// is armed, so exactly one rebuild fires before the system re-stabilizes.
+        fiu_do_on(DB::FailPoints::delta_kernel_force_credentials_fingerprint_drift,
+        {
+            fp ^= DB::UInt128(1);
+        });
+        return fp;
+    }
+
+    bool refreshCredentials() override
+    {
+        return object_storage->tryRefreshCredentialsViaCallback();
+    }
+
     ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
@@ -55,13 +135,15 @@ public:
                 KernelUtils::toDeltaString(table_location),
                 &KernelUtils::allocateError),
             "get_engine_builder");
+        BuilderGuard guard(builder);
 
         auto set_option = [&](const std::string & name, const std::string & value)
         {
-            ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
+            setBuilderOption(builder, name, value);
         };
 
-        const auto & credentials = client->getCredentials();
+        /// Read credentials from the *current* client — see `getCredentialsFingerprint`.
+        const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
         auto access_key_id = credentials.GetAWSAccessKeyId();
         auto secret_access_key = credentials.GetAWSSecretKey();
         auto token = credentials.GetSessionToken();
@@ -104,13 +186,13 @@ public:
             url.endpoint, url.uri_str, region, url.bucket, no_sign,
             !access_key_id.empty(), !secret_access_key.empty(), !token.empty());
 
-        return builder;
+        return guard.release();
     }
 
 private:
     DB::S3::URI url;
     const std::string table_location;
-    const std::shared_ptr<const DB::S3::Client> client;
+    const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log = getLogger("S3KernelHelper");
 
     std::string region;
@@ -175,7 +257,7 @@ DeltaLake::KernelHelperPtr getKernelHelper(
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
             return std::make_shared<DeltaLake::S3KernelHelper>(
                 s3_conf->url,
-                object_storage->getS3StorageClient(),
+                object_storage,
                 s3_conf->getAuthSettings());
         }
         case DB::ObjectStorageType::Local:

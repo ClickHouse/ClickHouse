@@ -14,6 +14,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -157,6 +158,17 @@ void fillDynamicColumn(
     for (size_t i = 0; i != indexes_data.size(); ++i)
     {
         auto index = indexes_data[i];
+        if (index > null_index)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Incorrect index {} in indexes column of flattened Dynamic column at row {}: "
+                "the index should be in range [0, {}] (there are {} types, index {} is reserved for NULL values)",
+                static_cast<UInt64>(index),
+                i,
+                null_index,
+                flattened_column.types.size(),
+                null_index);
+
         if (index == null_index)
         {
             local_discriminators.push_back(ColumnVariant::NULL_DISCRIMINATOR);

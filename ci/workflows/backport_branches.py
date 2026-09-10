@@ -12,7 +12,7 @@ workflow = Workflow.Config(
         *[
             job
             for job in JobConfigs.build_jobs
-            if any(t in job.name for t in ("amd_asan_ubsan", "amd_tsan", "debug"))
+            if any(t in job.name for t in ("amd_asan", "amd_tsan", "debug"))
         ],
         *JobConfigs.release_build_jobs,
         *[
@@ -49,7 +49,7 @@ workflow = Workflow.Config(
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
-    enable_automerge=True,
+    enable_automerge=False,
     enable_cidb=True,
     enable_commit_status_on_failure=True,
     enable_gh_summary_comment=True,

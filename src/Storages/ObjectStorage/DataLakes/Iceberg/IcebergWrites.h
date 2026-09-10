@@ -50,7 +50,7 @@ void generateManifestFile(
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
     const std::vector<DataTypePtr> & partition_types,
-    const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
+    const std::vector<String> & data_file_names,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -61,13 +61,13 @@ void generateManifestFile(
     Iceberg::FileContentType content_type);
 
 void generateManifestList(
-    const Iceberg::IcebergPathResolver & path_resolver,
+    const FileNamesGenerator & filename_generator,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
-    const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
+    const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
-    const std::vector<Int64> & manifest_entry_sizes,
+    Int64 manifest_length,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true);
@@ -127,6 +127,8 @@ private:
     Iceberg::PersistentTableComponents persistent_table_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
+    const String blob_storage_type_name;
+    const String blob_storage_namespace_name;
 
 };
 

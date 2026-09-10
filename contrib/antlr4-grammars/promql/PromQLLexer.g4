@@ -77,7 +77,6 @@ POW  : '^';
 AND    : 'and';
 OR     : 'or';
 UNLESS : 'unless';
-ATAN2  : 'atan2';
 
 // Comparison operators
 

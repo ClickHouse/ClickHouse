@@ -5,7 +5,6 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Interpreters/Context_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <functional>
 
@@ -38,7 +37,7 @@ class ISink;
 class ReadProgressCallback;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class QueryResultCacheWriter;
 

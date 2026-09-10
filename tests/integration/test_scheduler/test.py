@@ -228,6 +228,128 @@ def test_s3_resource_request_granularity():
     check_profile_event_for_query("admin", "SchedulerIOReadBytes", read_bytes)
 
 
+def test_s3_disk_transaction_path_resource_scheduling():
+    """
+    Test that workload IO scheduling works when writes go through the real
+    `DiskObjectStorageTransaction` path (i.e. `use_fake_transaction=false`).
+
+    With the regular `s3` disk, `use_fake_transaction` defaults to `true` and writes are
+    routed through `FakeDiskTransaction` -> `DiskObjectStorage::writeFile` ->
+    `updateIOSchedulingSettings`, so the resource link is always set correctly.
+    When `use_fake_transaction=false` (which is the default for `s3_with_keeper` /
+    Keeper metadata storage), writes go directly through
+    `DiskObjectStorageTransaction::writeFile`.  Without the fix in
+    `DiskObjectStorageTransaction::writeFileImpl`, the `WriteSettings` passed by
+    `MergeTreeDataWriter::writeTempPart` had no resource link, so S3 uploads
+    bypassed the IO scheduler entirely.
+    """
+    import uuid
+
+    node.query(
+        """
+        drop table if exists data;
+        create table data (key UInt64 CODEC(NONE), value String CODEC(NONE))
+            engine=MergeTree() order by key
+            settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_fake_tx';
+        """
+    )
+
+    total_bytes = 50000000  # ~50 MB of raw data
+    query_id = str(uuid.uuid4())
+    node.query(
+        "insert into data select number, randomString(10000000) from numbers(5)"
+        " SETTINGS workload='admin'",
+        query_id=query_id,
+    )
+
+    node.query("system flush logs")
+
+    write_requests = int(
+        node.query(
+            f"select ProfileEvents['SchedulerIOWriteRequests'] from system.query_log"
+            f" where query_id='{query_id}' and type='QueryFinish'"
+        ).strip()
+    )
+    write_bytes = int(
+        node.query(
+            f"select ProfileEvents['SchedulerIOWriteBytes'] from system.query_log"
+            f" where query_id='{query_id}' and type='QueryFinish'"
+        ).strip()
+    )
+
+    assert (
+        write_requests > 0
+    ), "No write requests were scheduled through the workload IO scheduler (DiskObjectStorageTransaction path)"
+    assert write_bytes > total_bytes, (
+        f"Expected at least {total_bytes} bytes to be scheduled, got {write_bytes}"
+    )
+
+    node.query("drop table data")
+
+
+def test_s3_disk_move_partition_resource_scheduling():
+    """
+    Test that workload IO scheduling works when data is moved between S3 disks
+    via `ALTER TABLE ... MOVE PARTITION`, which goes through
+    `MultipleDisksObjectStorageTransaction::copyFile`.
+    """
+    import uuid
+
+    node.query(
+        """
+        drop table if exists data_move;
+        create table data_move (key UInt64 CODEC(NONE), value String CODEC(NONE))
+            engine=MergeTree() order by key partition by key
+            settings min_bytes_for_wide_part=1e9, storage_policy='s3_no_fake_tx_move';
+        """
+    )
+
+    node.query(
+        "insert into data_move select 0, randomString(10000000) from numbers(5)"
+        " SETTINGS workload='admin'"
+    )
+
+    query_id = str(uuid.uuid4())
+    node.query(
+        "alter table data_move move partition 0 to disk 's3_no_fake_tx_2'"
+        " SETTINGS workload='admin'",
+        query_id=query_id,
+    )
+
+    node.query("system flush logs")
+
+    read_requests = int(
+        node.query(
+            f"select ProfileEvents['SchedulerIOReadRequests'] from system.query_log"
+            f" where query_id='{query_id}' and type='QueryFinish'"
+        ).strip()
+    )
+    write_requests = int(
+        node.query(
+            f"select ProfileEvents['SchedulerIOWriteRequests'] from system.query_log"
+            f" where query_id='{query_id}' and type='QueryFinish'"
+        ).strip()
+    )
+    write_bytes = int(
+        node.query(
+            f"select ProfileEvents['SchedulerIOWriteBytes'] from system.query_log"
+            f" where query_id='{query_id}' and type='QueryFinish'"
+        ).strip()
+    )
+
+    assert (
+        read_requests > 0
+    ), "No read requests were scheduled through the workload IO scheduler (MultipleDisksObjectStorageTransaction path)"
+    assert (
+        write_requests > 0
+    ), "No write requests were scheduled through the workload IO scheduler (MultipleDisksObjectStorageTransaction path)"
+    assert (
+        write_bytes > 0
+    ), "No write bytes were scheduled through the workload IO scheduler (MultipleDisksObjectStorageTransaction path)"
+
+    node.query("drop table data_move")
+
+
 def test_s3_disk():
     node.query(
         f"""

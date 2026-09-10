@@ -77,29 +77,13 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         ostr << s.nl_or_ws;
     }
 
-    /// When the table has a SAMPLE clause and the query has a standalone OFFSET
-    /// (without LIMIT), use FROM-first syntax so that SELECT separates SAMPLE
-    /// from OFFSET.  Otherwise, the formatted "... SAMPLE r OFFSET n ..." is
-    /// ambiguous: the parser would consume OFFSET as the SAMPLE offset instead
-    /// of a query-level OFFSET.
-    bool format_from_first = sampleSize() && limitOffset() && !limitLength();
-
-    if (format_from_first && tables())
-    {
-        ostr << indent_str << "FROM";
-        tables()->format(ostr, s, state, frame);
-        ostr << s.nl_or_ws << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
-    }
-    else
-    {
-        ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
-    }
+    ostr << indent_str << "SELECT" << (distinct ? " DISTINCT" : "");
 
     s.one_line
         ? select()->format(ostr, s, state, frame)
         : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
 
-    if (!format_from_first && tables())
+    if (tables())
     {
         ostr << s.nl_or_ws << indent_str << "FROM";
         tables()->format(ostr, s, state, frame);
@@ -510,14 +494,27 @@ void ASTSelectQuery::setExpression(Expression expr, ASTPtr && ast)
         else
             children[it->second] = ast;
     }
-    else if (positions.contains(expr))
+    else
     {
-        size_t pos = positions[expr];
-        children.erase(children.begin() + pos);
-        positions.erase(expr);
-        for (auto & pr : positions)
-            if (pr.second > pos)
-                --pr.second;
+        /// Removing the ORDER BY clause must also reset the `order_by_all` flag, because the flag
+        /// without the clause is a malformed state: a later (re-)analysis of such a query would try
+        /// to expand ALL over the missing clause. This cannot be done for `group_by_all`: unlike
+        /// ORDER BY ALL, which is always parsed into a one-element ORDER BY list, GROUP BY ALL is
+        /// legitimately represented as the flag with no GROUP BY expression until `expandGroupByAll`
+        /// materializes the list (and the parser itself ends with `setExpression(GROUP_BY, nullptr)`
+        /// for such queries), so the code that removes GROUP BY resets that flag explicitly.
+        if (expr == Expression::ORDER_BY)
+            order_by_all = false;
+
+        if (positions.contains(expr))
+        {
+            size_t pos = positions[expr];
+            children.erase(children.begin() + pos);
+            positions.erase(expr);
+            for (auto & pr : positions)
+                if (pr.second > pos)
+                    --pr.second;
+        }
     }
 }
 

@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include "config.h"
 
 #if USE_RAPIDJSON
@@ -26,10 +27,45 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
 {
+    /// Parsing is iterative (see RAPIDJSON_PARSE_DEFAULT_FLAGS above), but copying, merging and
+    /// serializing a document all recurse over its tree, so a valid but deeply nested document
+    /// would exhaust the thread stack. Reject such documents right after parsing; the check itself
+    /// is iterative.
+    constexpr size_t max_json_merge_patch_depth = 1000;
+
+    void checkJSONDepth(const rapidjson::Value & root)
+    {
+        VectorWithMemoryTracking<std::pair<const rapidjson::Value *, size_t>> to_visit;
+        to_visit.emplace_back(&root, 1);
+
+        while (!to_visit.empty())
+        {
+            const auto [value, depth] = to_visit.back();
+            to_visit.pop_back();
+
+            if (depth > max_json_merge_patch_depth)
+                throw Exception(ErrorCodes::TOO_DEEP_RECURSION,
+                    "Too deep nesting in a JSON document passed to function JSONMergePatch: the limit is {}",
+                    max_json_merge_patch_depth);
+
+            if (value->IsObject())
+            {
+                for (auto it = value->MemberBegin(); it != value->MemberEnd(); ++it)
+                    to_visit.emplace_back(&it->value, depth + 1);
+            }
+            else if (value->IsArray())
+            {
+                for (const auto * it = value->Begin(); it != value->End(); ++it)
+                    to_visit.emplace_back(&*it, depth + 1);
+            }
+        }
+    }
+
     // select JSONMergePatch('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
     //           ||
     //           \/
@@ -100,6 +136,8 @@ namespace
 
                 if (!document.IsObject())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge. Expected JSON object");
+
+                checkJSONDepth(document);
             };
 
             const bool is_first_const = isColumnConst(*arguments[0].column);

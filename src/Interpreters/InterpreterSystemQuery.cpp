@@ -147,12 +147,6 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int UNSUPPORTED_METHOD;
     extern const int DELTA_KERNEL_ERROR;
-    extern const int FAULT_INJECTED;
-}
-
-namespace FailPoints
-{
-    extern const char restart_replica_fail_after_detach[];
 }
 
 namespace ActionLocks
@@ -167,6 +161,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PullReplicationLog;
     extern const StorageActionBlockType Cleanup;
     extern const StorageActionBlockType ViewRefresh;
+    extern const StorageActionBlockType ViewRefreshPause;
 }
 
 namespace
@@ -224,6 +219,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
     if (action_type == ActionLocks::Cleanup)
         return AccessType::SYSTEM_CLEANUP;
     if (action_type == ActionLocks::ViewRefresh)
+        return AccessType::SYSTEM_VIEWS;
+    if (action_type == ActionLocks::ViewRefreshPause)
         return AccessType::SYSTEM_VIEWS;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -829,11 +826,19 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_VIEW:
         case Type::START_VIEWS:
+            /// `SYSTEM START VIEW` must undo both `SYSTEM STOP VIEW` and `SYSTEM PAUSE VIEW`.
+            /// Each call drops the corresponding lock (if any) and invokes `refresher->start()`;
+            /// `start` is idempotent so calling it twice is safe.
             startStopAction(ActionLocks::ViewRefresh, true);
+            startStopAction(ActionLocks::ViewRefreshPause, true);
             break;
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
             startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::PAUSE_VIEW:
+        case Type::PAUSE_VIEWS:
+            startStopAction(ActionLocks::ViewRefreshPause, false);
             break;
         case Type::START_REPLICATED_VIEW:
             for (const auto & task : getRefreshTasks())
@@ -1125,6 +1130,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
 
         case Type::RESET_DDL_WORKER:
+            getContext()->checkAccess(AccessType::SYSTEM_RESET_DDL_WORKER);
             getContext()->getDDLWorker().requestToResetState();
             break;
         default:
@@ -1260,86 +1266,55 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// metadata, which causes metadata digest mismatches in DatabaseReplicated.
     /// We retry on all exceptions, not just ZooKeeper ones, because re-creating from valid metadata
     /// should always eventually succeed for transient errors.
-    /// If all retries fail (or the query is cancelled), we adjust the in-memory metadata digest
-    /// to reflect the table's absence, preventing false "Digest does not match" assertions.
 
     StoragePtr new_table;
-    try
+    size_t non_zk_retries = 0;
+    constexpr size_t max_non_zk_retries = 10;
+    while (true)
     {
-        size_t non_zk_retries = 0;
-        constexpr size_t max_non_zk_retries = 10;
-        while (true)
+        try
         {
-            try
-            {
-                fiu_do_on(FailPoints::restart_replica_fail_after_detach,
-                {
-                    throw Exception(ErrorCodes::FAULT_INJECTED,
-                        "Injected failure by failpoint restart_replica_fail_after_detach");
-                });
+            new_table = StorageFactory::instance().get(create,
+                data_path,
+                system_context,
+                system_context->getGlobalContext(),
+                columns,
+                constraints,
+                LoadingStrictnessLevel::ATTACH);
 
-                new_table = StorageFactory::instance().get(create,
-                    data_path,
-                    system_context,
-                    system_context->getGlobalContext(),
-                    columns,
-                    constraints,
-                    LoadingStrictnessLevel::ATTACH);
-
-                break;
-            }
-            catch (const Coordination::Exception & e)
-            {
-                /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
-                if (!Coordination::isHardwareError(e.code))
-                    throw;
-
-                tryLogCurrentException(
-                    getLogger("InterpreterSystemQuery"),
-                    fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
-
-                /// Check if the query was cancelled (e.g. server is shutting down)
-                if (auto process_list_element = getContext()->getProcessListElementSafe())
-                    process_list_element->checkTimeLimit();
-
-                sleepForSeconds(1);
-            }
-            catch (...)
-            {
-                if (++non_zk_retries > max_non_zk_retries)
-                    throw;
-
-                tryLogCurrentException(
-                    getLogger("InterpreterSystemQuery"),
-                    fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
-                        replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
-
-                if (auto process_list_element = getContext()->getProcessListElementSafe())
-                    process_list_element->checkTimeLimit();
-
-                sleepForSeconds(1);
-            }
+            break;
         }
-    }
-    catch (...)
-    {
-        /// The table is left permanently detached from the in-memory tables map.
-        /// Adjust the metadata digest so it stays consistent with the tables map,
-        /// preventing false "Digest does not match" LOGICAL_ERROR exceptions.
-        /// The table's metadata file still exists on disk, so it will be restored
-        /// on server restart or after DatabaseReplicated recovery.
-        if (auto * replicated_db = typeid_cast<DatabaseReplicated *>(database.get()))
+        catch (const Coordination::Exception & e)
         {
-            try
-            {
-                replicated_db->adjustDigestOnTableLostFromRestart(replica_table_id.table_name);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Failed to adjust digest after failed SYSTEM RESTART REPLICA for table " + replica_table_id.table_name + "; digest mismatch will persist until server restart or DatabaseReplicated recovery");
-            }
+            /// Only retry on transient ZooKeeper errors (connection loss, session expired, etc.)
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {}, will retry", replica_table_id.getNameForLogs()));
+
+            /// Check if the query was cancelled (e.g. server is shutting down)
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
         }
-        throw;
+        catch (...)
+        {
+            if (++non_zk_retries > max_non_zk_retries)
+                throw;
+
+            tryLogCurrentException(
+                getLogger("InterpreterSystemQuery"),
+                fmt::format("Failed to restart replica {} (attempt {}/{}), will retry",
+                    replica_table_id.getNameForLogs(), non_zk_retries, max_non_zk_retries));
+
+            if (auto process_list_element = getContext()->getProcessListElementSafe())
+                process_list_element->checkTimeLimit();
+
+            sleepForSeconds(1);
+        }
     }
 
     database->attachTable(system_context, replica_table_id.table_name, new_table, data_path);
@@ -1634,7 +1609,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setDDLOrOnClusterInternal(true);
         query_context->setCurrentDatabase(restoring_database_name);
         query_context->setCurrentQueryId("");
 
@@ -2378,6 +2353,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::PAUSE_VIEWS:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
         {
@@ -2527,6 +2504,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
+        case Type::RESET_DDL_WORKER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESET_DDL_WORKER);
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         case Type::FREE_MEMORY:
         {
@@ -2541,7 +2523,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DISABLE_FAILPOINT:
         case Type::RESET_COVERAGE:
         case Type::UNKNOWN:
-        case Type::RESET_DDL_WORKER:
         case Type::END: break;
     }
     return required_access;

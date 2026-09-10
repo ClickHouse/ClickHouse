@@ -72,6 +72,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 
 #include <IO/CompressionMethod.h>
 
@@ -447,7 +448,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
-        elem.formatted_query = query_ast->formatWithSecretsOneLine();
+        elem.formatted_query = query_ast->formatForLogging();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast ? query_ast->getQueryKind() : IAST::QueryKind::Select;
 
@@ -730,7 +731,9 @@ void logQueryFinishImpl(
             auto changes = settings.changes();
             for (const auto & change : changes)
             {
-                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), convertFieldToString(change.value));
+                String value = convertFieldToString(change.value);
+                CoreSettings::maskSettingValue(change.name, change.value, value);
+                query_span->addAttribute(fmt::format("clickhouse.setting.{}", change.name), value);
             }
         }
         query_span->finish(time);
@@ -880,7 +883,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = ast->formatWithSecretsOneLine();
+            elem.formatted_query = ast->formatForLogging();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1606,7 +1609,11 @@ static BlockIO executeQueryImpl(
                 if (settings[Setting::wait_for_async_insert])
                 {
                     auto timeout = settings[Setting::wait_for_async_insert_timeout].totalMilliseconds();
-                    auto source = std::make_shared<WaitForAsyncInsertSource>(std::move(result.future), timeout);
+                    auto source = std::make_shared<WaitForAsyncInsertSource>(
+                        std::move(result.future),
+                        timeout,
+                        context->getProcessListElement(),
+                        context->getProgressCallback());
                     res.pipeline = QueryPipeline(Pipe(std::move(source)));
                     res.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(Block())));
                 }
@@ -2036,37 +2043,15 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     for (size_t i = 0; i < num_runs; ++i)
     {
         ASTPtr fuzzed_ast;
-        NameToNameMap fuzzed_query_params;
         {
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzed_ast = base_ast->clone();
             fuzzer->fuzzMain(fuzzed_ast);
-            fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
-        /// Skip deeply nested ASTs to avoid stack overflow during formatting or execution.
-        try
-        {
-            fuzzed_ast->checkDepth(500);
-        }
-        catch (...) // Ok: skip fuzzed ASTs that are too deeply nested
-        {
-            continue;
-        }
-
-        /// The fuzzer can produce structurally invalid ASTs (e.g. mismatched children counts)
-        /// that cause crashes during formatting. Catch and skip those.
-        String fuzzed_query;
-        try
-        {
-            WriteBufferFromOwnString fuzzed_query_buf;
-            fuzzed_ast->format(fuzzed_query_buf, IAST::FormatSettings(/*one_line=*/true));
-            fuzzed_query = fuzzed_query_buf.str();
-        }
-        catch (...) // Ok: skip fuzzed ASTs that cannot be formatted
-        {
-            continue;
-        }
+        WriteBufferFromOwnString fuzzed_query_buf;
+        fuzzed_ast->format(fuzzed_query_buf, IAST::FormatSettings(/*one_line=*/true));
+        String fuzzed_query = fuzzed_query_buf.str();
 
         if (fuzzed_query.size() > 10000)
         {
@@ -2077,46 +2062,19 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
-        /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-        context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-        context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
-        /// Declare contexts outside try block so we can reset transactions on all paths.
-        /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
-        /// which uses getCurrentExceptionCode with bare `throw;` - that only works
-        /// inside a catch handler, not during stack unwinding.
-        ContextMutablePtr fuzz_session_context;
-        ContextMutablePtr fuzz_context;
-
-        auto reset_transactions = [&]()
-        {
-            if (fuzz_context)
-                fuzz_context->setCurrentTransaction(NO_TRANSACTION_PTR);
-            if (fuzz_session_context)
-                fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
-        };
-
         try
         {
-            fuzz_session_context = Context::createCopy(context);
+            /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
+            context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
+            context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+            auto fuzz_session_context = Context::createCopy(context);
             fuzz_session_context->makeSessionContext();
 
-            fuzz_context = Context::createCopy(fuzz_session_context);
+            auto fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
-            fuzz_context->resetInputCallbacks();
-            fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
-            fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
-
-            /// Limit resources for each fuzzed query to prevent runaway execution.
-            fuzz_context->setSetting("max_execution_time", Field(UInt64(10)));
-            fuzz_context->setSetting("max_memory_usage", Field(UInt64(1024 * 1024 * 1024)));  /// 1 GiB
-            fuzz_context->setSetting("max_result_rows", Field(UInt64(1000)));
-            fuzz_context->setSetting("max_result_bytes", Field(UInt64(10 * 1024 * 1024)));  /// 10 MiB
-
             fuzz_context->setCurrentQueryId("");
-            if (!fuzzed_query_params.empty())
-                fuzz_context->setQueryParameters(fuzzed_query_params);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
@@ -2138,12 +2096,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                 }
             }
 
-            reset_transactions();
             base_ast = fuzzed_ast;
         }
         catch (...)
         {
-            reset_transactions();
             LOG_TRACE(logger, "Fuzzed query failed: {}", getCurrentExceptionMessage(/*with_stacktrace=*/false));
             auto [fuzzer, lock] = getGlobalASTFuzzer();
             fuzzer->notifyQueryFailed(fuzzed_ast);
@@ -2153,7 +2109,7 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 
 
 std::pair<ASTPtr, BlockIO> executeQuery(
-    const String & query,
+    std::string_view query,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage)

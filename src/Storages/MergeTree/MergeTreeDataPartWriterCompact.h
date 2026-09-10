@@ -58,7 +58,7 @@ private:
 
     void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) override;
 
-    void initColumnsSubstreamsIfNeeded(const Block & sample);
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const override;
 
     Block header;
 

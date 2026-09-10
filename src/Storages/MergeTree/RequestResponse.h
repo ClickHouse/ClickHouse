@@ -46,28 +46,26 @@ struct ParallelReadRequest
     /// No default constructor, you must initialize all fields at once.
 
     ParallelReadRequest(
-        CoordinationMode mode_, size_t replica_num_, size_t min_marks_per_request_, RangesInDataPartsDescription description_)
+        CoordinationMode mode_,
+        size_t replica_num_,
+        size_t min_number_of_marks_,
+        RangesInDataPartsDescription description_)
         : mode(mode_)
         , replica_num(replica_num_)
-        , min_marks_per_request(min_marks_per_request_)
+        , min_number_of_marks(min_number_of_marks_)
         , description(std::move(description_))
     {}
 
     CoordinationMode mode;
     size_t replica_num;
-
-    /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK, this value is sent once in the
-    /// initial announcement and the coordinator uses the announced value. Retained here for backward
-    /// compatibility with older initiators that still read it from each request.
-    size_t min_marks_per_request;
-
+    size_t min_number_of_marks;
     /// Extension for Ordered (InOrder or ReverseOrder) mode
     /// Contains only data part names without mark ranges.
     RangesInDataPartsDescription description;
 
-    void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
+    void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe() const;
-    static ParallelReadRequest deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
+    static ParallelReadRequest deserialize(ReadBuffer & in, UInt64 replica_protocol_version);
     void merge(ParallelReadRequest & other);
 };
 
@@ -80,9 +78,9 @@ struct ParallelReadResponse
     bool finish{false};
     RangesInDataPartsDescription description;
 
-    void serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const;
+    void serialize(WriteBuffer & out, UInt64 replica_protocol_version) const;
     String describe() const;
-    void deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
+    void deserialize(ReadBuffer & in, UInt64 replica_protocol_version);
 };
 
 
@@ -95,16 +93,8 @@ struct InitialAllRangesAnnouncement
     /// No default constructor, you must initialize all fields at once.
 
     InitialAllRangesAnnouncement(
-        CoordinationMode mode_,
-        RangesInDataPartsDescription description_,
-        size_t replica_num_,
-        size_t mark_segment_size_,
-        size_t min_marks_per_request_)
-        : mode(mode_)
-        , description(std::move(description_))
-        , replica_num(replica_num_)
-        , mark_segment_size(mark_segment_size_)
-        , min_marks_per_request(min_marks_per_request_)
+        CoordinationMode mode_, RangesInDataPartsDescription description_, size_t replica_num_, size_t mark_segment_size_)
+        : mode(mode_), description(std::move(description_)), replica_num(replica_num_), mark_segment_size(mark_segment_size_)
     {}
 
     CoordinationMode mode;
@@ -112,14 +102,9 @@ struct InitialAllRangesAnnouncement
     size_t replica_num;
     size_t mark_segment_size;
 
-    /// Since DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK,
-    /// this value is sent once in the initial announcement.
-    /// Total number of marks the replica wants per coordinator request.
-    size_t min_marks_per_request;
-
-    void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
+    void serialize(WriteBuffer & out, UInt64 initiator_protocol_version) const;
     String describe();
-    static InitialAllRangesAnnouncement deserialize(ReadBuffer & i, UInt64 replica_pr_protocol_version);
+    static InitialAllRangesAnnouncement deserialize(ReadBuffer & i, UInt64 replica_protocol_version);
 };
 
 

@@ -100,6 +100,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         }
 
         configuration->checkHosts(context);
+        configuration->checkCollection();
 
         return std::make_unique<MongoDBDictionarySource>(dict_struct, std::move(configuration), std::make_shared<const Block>(sample_block));
     };

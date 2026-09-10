@@ -270,3 +270,44 @@ def test_sync_async_deduplicated_with_2512(cluster, insert_type):
 
         for node in nodes:
             node.query("SYSTEM SYNC REPLICA test_sync_async_deduplicated_with_2512")
+
+
+def test_new_unified_hash_self_deduplication_variable_length(cluster):
+    # Regression test for a deduplication hash bug with new_unified_hash.
+    # ColumnString/ColumnArray::updateHashWithValueRange hashed absolute offsets, so equal rows
+    # located at different offsets within one async-insert flush produced different unified
+    # deduplication ids and were not self-deduplicated. Fixed-width columns (e.g. UInt32) are
+    # position-invariant and did not expose the bug, hence the String/Array columns here.
+    node_new = cluster.instances["node_new"]
+
+    create_table_query = \
+"""
+    DROP TABLE IF EXISTS test_unified_self_dedup;
+
+    CREATE TABLE test_unified_self_dedup (key UInt32, s String, a Array(UInt32))
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_unified_self_dedup/', '{replica}')
+    ORDER BY key
+"""
+
+    drop_table_query = "DROP TABLE IF EXISTS test_unified_self_dedup SYNC"
+
+    # Keep the busy timeout high and do not wait for the flush, so both inserts accumulate in the
+    # queue and are combined into a single flush (one block with two offsets) by SYSTEM FLUSH.
+    async_settings = (
+        "async_insert=1, wait_for_async_insert=0, async_insert_use_adaptive_busy_timeout=0, "
+        "async_insert_busy_timeout_min_ms=10000, async_insert_busy_timeout_max_ms=50000, "
+        "deduplicate_insert='enable'"
+    )
+
+    with with_tables(
+        nodes=[node_new],
+        create_query=create_table_query,
+        drop_query=drop_table_query,
+    ):
+        node_new.query(f"INSERT INTO test_unified_self_dedup SETTINGS {async_settings} VALUES (1, 'one line', [10, 20])")
+        node_new.query(f"INSERT INTO test_unified_self_dedup SETTINGS {async_settings} VALUES (1, 'one line', [10, 20])")
+        node_new.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
+
+        # Two identical inserts combined in one flush must self-deduplicate to a single row.
+        result = node_new.query("SELECT key, s, a FROM test_unified_self_dedup ORDER BY key")
+        assert result == "1\tone line\t[10,20]\n"

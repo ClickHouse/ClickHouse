@@ -62,6 +62,13 @@ public:
 
     virtual bool isCached() const { return false; }
 
+    /// Query the actual object size directly from remote storage.
+    /// Unlike tryGetFileSize(), which typically returns a pre-known cached value passed at construction time,
+    /// this method issues a real metadata request (e.g. S3 HeadObject, Azure GetProperties) and reflects
+    /// the current state of the object. Useful for detecting mismatches between the expected and actual size.
+    /// Returns std::nullopt for non-remote or local file buffers.
+    virtual std::optional<size_t> getRemoteFileSize() const { return std::nullopt; }
+
 protected:
     std::optional<size_t> file_size;
     ProfileCallback profile_callback;

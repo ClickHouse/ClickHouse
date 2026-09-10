@@ -43,7 +43,6 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
@@ -59,17 +58,6 @@ DatabaseS3::DatabaseS3(const String & name_, const Configuration& config_, Conte
     , config(config_)
     , log(getLogger("DatabaseS3(" + name_ + ")"))
 {
-}
-
-void DatabaseS3::addTable(const std::string & table_name, StoragePtr table_storage) const
-{
-    std::lock_guard lock(mutex);
-    auto [_, inserted] = loaded_tables.emplace(table_name, table_storage);
-    if (!inserted)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Table with name `{}` already exists in database `{}` (engine {})",
-            table_name, getDatabaseName(), getEngineName());
 }
 
 std::string DatabaseS3::getFullUrl(const std::string & name) const
@@ -98,23 +86,14 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
 
 bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 {
-    std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
-        return true;
-
     return checkUrl(getFullUrl(name), context_, false);
 }
 
 StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) const
 {
-    /// Check if the table exists in the loaded tables map.
-    {
-        std::lock_guard lock(mutex);
-        auto it = loaded_tables.find(name);
-        if (it != loaded_tables.end())
-            return it->second;
-    }
-
+    /// Not cached across sessions: the built S3 client depends on the per-session credential
+    /// restriction, so reuse could let an allowed session prime a client for a restricted one.
+    /// Rebuild every time.
     auto url = getFullUrl(name);
     checkUrl(url, context_, /* throw_on_error */true);
 
@@ -139,11 +118,8 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
         return nullptr;
 
     /// TableFunctionS3 throws exceptions, if table cannot be created.
-    auto table_storage = table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
-    if (table_storage)
-        addTable(name, table_storage);
-
-    return table_storage;
+    /// Intentionally not cached -- see the note above.
+    return table_function->execute(function, context_, name, /*cached_columns_=*/{}, /*use_global_context=*/false, /*is_insert_query=*/true);
 }
 
 StoragePtr DatabaseS3::getTable(const String & name, ContextPtr context_) const
@@ -182,8 +158,7 @@ StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) con
 
 bool DatabaseS3::empty() const
 {
-    std::lock_guard lock(mutex);
-    return loaded_tables.empty();
+    return true;
 }
 
 ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
@@ -213,20 +188,6 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
 
 void DatabaseS3::shutdown()
 {
-    Tables tables_snapshot;
-    {
-        std::lock_guard lock(mutex);
-        tables_snapshot = loaded_tables;
-    }
-
-    for (const auto & kv : tables_snapshot)
-    {
-        auto table_id = kv.second->getStorageID();
-        kv.second->flushAndShutdown();
-    }
-
-    std::lock_guard lock(mutex);
-    loaded_tables.clear();
 }
 
 DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_)
