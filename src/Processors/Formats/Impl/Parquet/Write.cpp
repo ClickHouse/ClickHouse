@@ -877,7 +877,7 @@ void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolde
     }
 
     PODArray<UInt32> & data = indexes.bloom_filter_data;
-    data = unfolded_data;
+    data = std::move(unfolded_data);
 
     const double fill_rate = static_cast<double>(total_set_bits) / (static_cast<double>(num_blocks) * 256);
     const int max_folds = std::countr_zero(num_blocks);
