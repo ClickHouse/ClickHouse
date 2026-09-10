@@ -579,17 +579,6 @@ void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfig
     LOG_INFO(getLogger("KeeperContext"), "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(limit));
 }
 
-void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
-{
-    auto merged = std::make_shared<CoordinationSettings>(*fixed_settings);
-    merged->updateHotReloadableSettings(*new_settings);
-
-    std::lock_guard lock(settings_mutex);
-    merged->version = next_coordination_settings_version++;
-    dynamic_settings = std::move(merged);
-    settings_version.store(dynamic_settings->version);
-}
-
 bool KeeperContext::setShutdownCalled()
 {
     std::unique_lock local_logs_preprocessed_lock(local_logs_preprocessed_cv_mutex);
