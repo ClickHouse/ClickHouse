@@ -72,7 +72,7 @@ Returns the smallest value among the arguments.
 - For DateTime types, the result type is promoted to the largest type (e.g., DateTime64 if mixed with DateTime32).
 
 :::note Use setting `least_greatest_legacy_null_behavior` to change `NULL` behavior
-Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
+Version [24.12](/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`.
 To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`.
 :::
     )";
@@ -85,8 +85,8 @@ To retain the previous behavior, set setting `least_greatest_legacy_null_behavio
     {
         "Numeric types",
         R"(
-SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
         )",
         R"(
 ┌─result─┬─type────┐
@@ -100,21 +100,21 @@ SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 SELECT least(['hello'], ['there'], ['world']);
         )",
         R"(
-┌─least(['hell⋯ ['world'])─┐
-│ ['hello']                │
-└──────────────────────────┘
+┌─least(['hello'], ['there'], ['world'])─┐
+│ ['hello']                              │
+└────────────────────────────────────────┘
         )"
     },
     {
         "DateTime types",
         R"(
-SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
         )",
         R"(
-┌─least(toDate⋯(now(), 3))─┐
-│  2025-05-27 15:55:20.000 │
-└──────────────────────────┘
+┌─least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3))─┐
+│                                                                2025-01-01 12:00:00.000 │
+└────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

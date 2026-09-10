@@ -1,6 +1,8 @@
 services:
   azurite1:
-    image: mcr.microsoft.com/azure-storage/azurite:3.35.0
+    # Mirror of mcr.microsoft.com/azure-storage/azurite:3.35.0 (see compose/mirror-images.sh).
+    # Pulled via the dockerhub-proxy cache; mcr.microsoft.com is not behind the proxy and rate-limits CI.
+    image: clickhouse/azure-storage-azurite:3.35.0
     ports:
       - "${AZURITE_PORT}:${AZURITE_PORT}"
     volumes:

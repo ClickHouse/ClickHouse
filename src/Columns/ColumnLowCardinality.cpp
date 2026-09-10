@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
@@ -187,6 +188,36 @@ void ColumnLowCardinality::doInsertFrom(const IColumn & src, size_t n)
     }
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnLowCardinality::insertManyFrom(const IColumn & src, size_t position, size_t length)
+#else
+void ColumnLowCardinality::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
+#endif
+{
+    if (length == 0)
+        return;
+
+    const auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
+
+    if (!low_cardinality_src)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
+    const size_t source_index = low_cardinality_src->getIndexes().getUInt(position);
+
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
+    {
+        /// Dictionary is shared with src column. Insert only indexes.
+        idx.insertManyIndexes(source_index, length);
+    }
+    else
+    {
+        compactIfSharedDictionary();
+        const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
+        const size_t destination_index = getDictionary().uniqueInsertFrom(nested, source_index);
+        idx.insertManyIndexes(destination_index, length);
+    }
+}
+
 void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 {
     compactIfSharedDictionary();
@@ -203,6 +234,20 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
 
     if (!low_cardinality_src)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnLowCardinality, got {}", src.getName());
+
+    if (length == 0)
+        return;
+
+    /// An already shared, structurally compatible source dictionary is immutable. Reuse it when initializing
+    /// an empty column to avoid rebuilding it and keep its indexes unchanged through generic range insertions.
+    /// A private source dictionary can still be mutated in place, while an incompatible dictionary must be
+    /// rebuilt to perform conversions such as nullable promotion.
+    if (
+        empty()
+        && low_cardinality_src->isSharedDictionary()
+        && getDictionary().nestedColumnIsNullable() == low_cardinality_src->getDictionary().nestedColumnIsNullable()
+        && getDictionary().structureEquals(low_cardinality_src->getDictionary()))
+        setSharedDictionary(low_cardinality_src->getDictionaryPtr());
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
@@ -321,11 +366,6 @@ void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in, const 
     idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in, settings));
 }
 
-void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
-{
-    getDictionary().skipSerializedInArena(in);
-}
-
 void ColumnLowCardinality::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     const auto & nested = getDictionary().getNestedColumn();
@@ -385,6 +425,23 @@ int ColumnLowCardinality::doCompareAt(size_t n, size_t m, const IColumn & rhs, i
 int ColumnLowCardinality::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const
 {
     return compareAtImpl(n, m, rhs, nan_direction_hint, &collator);
+}
+
+size_t ColumnLowCardinality::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    /// The fast path searches over dictionary indexes rather than values: in a sorted column a run of equal
+    /// values maps to a run of equal indexes, so equal indexes are contiguous. This holds only when distinct
+    /// dictionary entries always have distinct values. Floating-point types break that invariant: -0.0 and
+    /// +0.0, as well as the different NaN bit patterns, have distinct bit patterns yet compare equal. A
+    /// dictionary built from deserialized data is not canonicalized (insert-time canonicalization unifies the
+    /// NaNs of freshly inserted data, but does not apply when reading back, and -0.0 is not unified at all), so
+    /// it can hold such value-equal entries separately. So for a floating-point inner type we compare values.
+    if (WhichDataType(getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat())
+        return IColumn::getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
+
+    /// We only require equal values to be contiguous. If the column is sorted, then equal values are contiguous.
+    /// If equal values are contiguous, then equal indexes are also contiguous.
+    return getIndexes().getEqualRangeEndAssumeSorted(begin, end, nan_direction_hint);
 }
 
 bool ColumnLowCardinality::hasEqualValues() const

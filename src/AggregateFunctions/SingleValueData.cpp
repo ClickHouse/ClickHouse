@@ -495,7 +495,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_index_implementation<T>)
     {
         return findExtremeMinIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -530,7 +530,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_index_implementation<T>)
         return findExtremeMaxIndex(vec.getData().data(), row_begin, row_end);
 
     {
@@ -566,7 +566,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
     const auto & vec = assert_cast<const ColVecType &>(column);
     const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_index_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -680,7 +680,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
     const auto & vec = assert_cast<const ColVecType &>(column);
     const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_index_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)

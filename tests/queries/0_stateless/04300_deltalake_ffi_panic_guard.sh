@@ -8,9 +8,11 @@
 # A NUL byte is valid UTF-8, so it passes the option decoding, but it is an invalid HTTP header
 # value. While signing the S3 request, `object_store` does `.unwrap()` on the resulting
 # `InvalidHeaderValue` and panics on a `TokioBackgroundExecutor` worker; the kernel executor then
-# panics on the calling thread inside `ffi::snapshot`. Because the FFI is `extern "C"` (nounwind),
-# that panic used to reach `panic_cannot_unwind` and abort the server. The FFI now wraps `snapshot`
-# and `builder_build` in `catch_unwind`, converting the panic into a `DELTA_KERNEL_ERROR` exception.
+# panics on the calling thread inside `ffi::snapshot_builder_build`. Because the FFI is `extern "C"`
+# (nounwind), that panic used to reach `panic_cannot_unwind` and abort the server. The FFI now wraps
+# `snapshot_builder_build` (the snapshot builder API ClickHouse calls) -- along with `snapshot`, its
+# variants and `builder_build` -- in `catch_unwind`, converting the panic into a `DELTA_KERNEL_ERROR`
+# exception.
 #
 # Written as a `.sh` test through `clickhouse-local`: on the unfixed binary the process aborts, so
 # stdout is empty and mismatches the reference (clean FAIL); on the fixed binary the guarded panic

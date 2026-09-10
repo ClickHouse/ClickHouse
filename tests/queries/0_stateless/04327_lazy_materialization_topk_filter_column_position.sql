@@ -1,5 +1,5 @@
 -- Tags: no-random-merge-tree-settings, no-old-analyzer
--- no-old-analyzer: lazy materialization (and thus __topKFilter) is gated on the new
+-- no-old-analyzer: lazy materialization (and thus __topKFilter) is gated on the
 -- analyzer, so the EXPLAIN actions=1 assertion below never matches under the old one.
 
 DROP TABLE IF EXISTS t_lazy_topk_pos;

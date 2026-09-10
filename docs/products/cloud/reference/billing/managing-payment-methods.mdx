@@ -1,0 +1,124 @@
+---
+sidebarTitle: 'Managing payment methods'
+slug: /manage/manage/billing/managing-payment-methods
+title: 'Managing payment methods'
+description: 'Manage marketplace subscriptions and add a backup credit card'
+keywords: ['billing']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+This doc covers how to manage and update how your organization is billed in ClickHouse Cloud, including switching between credit card and marketplace billing, adding a backup credit card, and sharing a marketplace subscription across multiple organizations.
+
+## Prerequisites {#prerequisites}
+
+- You must have an Admin or Billing role in the organization to update payment methods.
+- The marketplace subscriptions available to you are those that are active on other organizations where you have an Admin or Billing role.
+- To share a marketplace subscription from another organization, you must have an Admin or Billing role in both the current organization and the organization that owns the marketplace subscription.
+- All services in the organization you want to bill via marketplace subscription must be on the same cloud provider as the marketplace (AWS, GCP or Azure).
+
+<Note>
+You can’t share another organization’s credit card.
+If your current payment method is a credit card, and you want to update it, you must enter new card details.
+</Note>
+
+## Add or update a credit card payment method {#add-update-cc-payment-method}
+
+If your organization is currently billed via credit card, you can update your card details from the Billing page.
+
+### Steps to add or update your credit card {#steps-add-update}
+
+1. Navigate to **Billing** in the ClickHouse Cloud console.
+2. If you wish to add a credit card, then at the top of the page, click the button to **add a payment method**.
+
+<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="Add a payment method" size="lg"/>
+
+3. If you wish to edit your credit card, then at the top of the page, click the button to **edit your credit card**.
+
+<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="Edit your credit card" size="lg"/>
+
+4. In both cases, follow the instructions to add or update your credit card’s billing address details.
+
+## Configure an organization's billing to an existing marketplace subscription {#configure-billing-to-existing-mp-sub}
+
+If you have multiple organizations, you can:
+- Switch an organization from credit card billing to a marketplace subscription that's already active on one of your other organizations.
+- Change an organization's current marketplace subscription to one that's used by a different organization.
+
+### Steps to switch an organization from credit card billing to a marketplace subscription that's already active on one of your other organizations {#steps-switch-org-already-active}
+
+1. Navigate to the **Billing** page in the ClickHouse Cloud console.
+2. Click the edit icon next to the **payment method**.
+
+<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="Edit payment method" size="lg"/>
+
+3. In the **Edit payment method** dialog, you will see your current credit card listed as the primary payment method.
+4. Below the credit card, eligible marketplace subscriptions from your other organizations are displayed. Each entry shows the marketplace type (e.g. AWS Marketplace) and the linked organization name.
+5. Select the marketplace subscription you want to bill this organization's usage to.
+6. Click **Update payment method** to confirm.
+
+### Steps to change an organization's current marketplace subscription to one that's used by a different organization {#steps-switch-org-different-org}
+
+1. Navigate to the **Billing** page in the ClickHouse Cloud console.
+2. Click the edit icon next to the **payment method**.
+
+<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="Edit payment method" size="lg"/>
+
+3. In the **Edit payment method** dialog, you will see your current marketplace subscription listed as the payment method.
+4. Below the current marketplace subscription, other eligible marketplace subscriptions from your other organizations are displayed. Each entry shows the marketplace type (e.g. AWS Marketplace) and the linked organization name.
+5. Select the new marketplace subscription you want to bill this organization's usage to.
+6. Click **Update payment method** to confirm.
+
+## Adding a backup credit card to a marketplace organization {#add-backup-cc-to-marketplace-org}
+
+If your organization’s primary payment method is a Marketplace subscription, you can add a credit card as a backup payment method. The backup card will be charged only if we are unable to bill usage to the marketplace subscription (e.g. subscription is cancelled or expired).
+
+<Note>
+Your use of ClickHouse Cloud requires your organization to have at least one active and valid billing method configured (either marketplace subscription or credit card). See more information on billing compliance [here](/products/cloud/reference/billing/billing-compliance#billing-compliance).
+</Note>
+
+### Steps to add a backup credit card {#steps-add-backup-cc}
+
+1. Navigate to the **Billing** page in the ClickHouse Cloud console.
+2. The top of the billing page will show your primary payment method as a Marketplace subscription and the backup payment method as **None**.
+3. Click the **add credit card** button to set a backup payment method.
+
+<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="Add backup credit card" size="lg"/>
+
+4. Follow the instructions to add or update your credit card’s billing address details. After saving, the **Billing** page will reflect the backup credit card alongside the primary marketplace subscription.
+
+<Note>
+After configuring a backup credit card, you will also have the option to click on the button to edit your credit card and set it as the primary payment method.
+However, if you do this, your credit card will become your only payment method for the organization and your Marketplace subscription will be completely removed from ClickHouse Cloud.
+You will need to go back into your marketplace account to reconfigure it based on the steps in the section ["Set up marketplace billing from your cloud provider"](#set-up-marketplace-billing-from-cp).
+</Note>
+
+## Set up marketplace billing from your cloud provider {#set-up-marketplace-billing-from-cp}
+
+You can also set up or update your organization's marketplace subscription directly from the cloud marketplace, rather than through the ClickHouse Cloud console. This can be helpful if you want to switch your ClickHouse organization to bill through a new subscription on a different marketplace billing account.
+
+Follow the instructions below based on the marketplace and subscription type:
+
+- [AWS Marketplace PAYG](/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+- [AWS Marketplace Committed Contract](/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+- [GCP Marketplace PAYG](/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+- [GCP Marketplace Committed Contract](/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+- [Azure Marketplace PAYG](/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+- [Azure Marketplace Committed Contract](/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+After completing this flow, the selected organization’s billing will be linked to the new Marketplace subscription and the billing page in the ClickHouse Cloud console will reflect the update.
+
+## Support {#support}
+
+If you run into any issues, please do not hesitate to [contact our support team](https://clickhouse.com/support/program).
+
+## FAQs {#faqs}
+
+### What happens to my usage charges if I switch billing methods mid billing cycle? {#what-happens-to-my-usage-charges-if-i-switch-billing-methods-mid-billing-cycle}
+
+It depends on the direction of the switch:
+
+Switching from Marketplace to credit card billing: Usage from the start of the billing cycle up to the point of the switch is sent to the Marketplace. The remaining usage from the switch point to the end of the billing cycle is invoiced to the credit card at the end of the billing cycle.
+
+Switching from credit card to Marketplace billing: All uninvoiced usage for the entire billing period is sent to the Marketplace.

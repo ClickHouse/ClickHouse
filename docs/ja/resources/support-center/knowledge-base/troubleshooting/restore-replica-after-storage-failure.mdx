@@ -1,0 +1,79 @@
+---
+date: 2025-11-19
+title: ストレージ障害後にレプリカを復旧する方法
+tags: ['デプロイメントとスケーリング']
+keywords: ['復元', 'レプリカ', 'ストレージ障害', 'atomic データベース']
+description: 'この記事では、ClickHouse の atomic データベースでレプリケートテーブルを使用している環境で、いずれかのレプリカのディスク/ストレージが失われた、または破損した場合にデータを復旧する方法を説明します。'
+---
+
+<Note>
+  このガイドでは、config.xml ファイル内の `<path>` パラメータが次のように設定されていることを前提としています。
+
+  ```text
+  <path>/var/lib/clickhouse/</path>
+  ```
+
+  別の data path を設定している場合は、以下のコマンド内にある `/var/lib/clickhouse` をすべて、実際の `<path>` の設定値に置き換えてください。
+</Note>
+
+<Steps>
+  <Step title="正常なレプリカから access 設定をコピーする" id="copy-access-config">
+    ローカルユーザーを含む `access` フォルダの内容を、正常なレプリカからコピーします。
+
+    ```text
+    /var/lib/clickhouse/access
+    ```
+  </Step>
+
+  <Step title="正常なレプリカから metadata フォルダをバックアップする" id="back-up-the-metadata-folder-from-the-healthy-replica">
+    1. ClickHouse の data directory に移動します。
+
+    ```text
+    cd /var/lib/clickhouse
+    ```
+
+    2. metadata フォルダのバックアップを作成します (symbolic link を含む) 。metadata directory にはデータベースおよびテーブルの DDLs が含まれています。
+       database directory には `/var/lib/clickhouse/store/..` への symlink があり、そこにすべてのテーブル DDLs が格納されています。
+
+    ```bash
+    { find metadata -type f; find metadata -type l; find metadata -type l | xargs readlink -f; } | tar -cPf backup.tar --files-from=-
+    ```
+
+    <Note>
+      このコマンドにより、**metadata files** と symlink の構造の両方がバックアップ内に保持されます。
+    </Note>
+  </Step>
+
+  <Step title="障害のあるレプリカで metadata を復元する" id="restore-the-metadata-on-the-faulty-replica">
+    1. 生成された `backup.tar` ファイルを障害のあるレプリカにコピーします。
+    2. それを ClickHouse の data directory に展開します。
+
+    ```text
+    cd /var/lib/clickhouse/
+    tar -xvPf backup.tar
+    ```
+  </Step>
+
+  <Step title="force restore フラグを作成する" id="create-force-restore-flag">
+    他のレプリカからの自動データ同期をトリガーするには、次のフラグを作成します。
+
+    ```text
+    sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+    ```
+  </Step>
+
+  <Step title="障害のあるレプリカを再起動する" id="restart-faulty-replica">
+    1. 障害のある node 上の ClickHouse server を再起動します。
+    2. server logs を確認すると、正常なレプリカからパーツがダウンロードされていることを確認できるはずです。
+
+    ```bash
+    2025.11.02 00:00:04.047097 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Downloading files 23
+    2025.11.02 00:00:04.055542 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Download of part 202511_0_0_0 onto disk disk2 finished.
+    2025.11.02 00:00:04.101888 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2025_0_0_1 onto disk default.
+    2025.11.02 00:00:04.102005 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    2025.11.02 00:00:04.102210 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2022_0_0_1 onto disk disk1.
+    2025.11.02 00:00:04.102247 [ 688 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2021_0_0_1 onto disk disk2.
+    2025.11.02 00:00:04.102331 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    ```
+  </Step>
+</Steps>

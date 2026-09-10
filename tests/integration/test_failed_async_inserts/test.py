@@ -5,9 +5,8 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node", main_configs=["configs/config.xml"],
+    "node",
     with_zookeeper=True,
-    # Server is very short on memory and may fail while initializing remote database disk
     with_remote_database_disk=False,
 )
 
@@ -33,19 +32,19 @@ def test_failed_async_inserts(started_cluster):
         "CREATE TABLE async_insert_30_10_2022 (id UInt32, s String) ENGINE = Memory"
     )
     node.query(
-        "INSERT INTO async_insert_30_10_2022 SETTINGS async_insert = 1 VALUES ()",
+        "INSERT INTO async_insert_30_10_2022 SETTINGS async_insert = 1, max_memory_usage = 1000 VALUES ()",
         ignore_error=True,
     )
     node.query(
-        "INSERT INTO async_insert_30_10_2022 SETTINGS async_insert = 1 VALUES ([1,2,3], 1)",
+        "INSERT INTO async_insert_30_10_2022 SETTINGS async_insert = 1, max_memory_usage = 1000 VALUES ([1,2,3], 1)",
         ignore_error=True,
     )
     node.query(
-        'INSERT INTO async_insert_30_10_2022 SETTINGS async_insert = 1 FORMAT JSONEachRow {"id" : 1} {"x"}',
+        'INSERT INTO async_insert_30_10_2022 SETTINGS async_insert = 1, max_memory_usage = 1000 FORMAT JSONEachRow {"id" : 1} {"x"}',
         ignore_error=True,
     )
     node.query(
-        "INSERT INTO async_insert_30_10_2022 SETTINGS async_insert = 1 VALUES (throwIf(4),'')",
+        "INSERT INTO async_insert_30_10_2022 SETTINGS async_insert = 1, max_memory_usage = 1000 VALUES (throwIf(4),'')",
         ignore_error=True,
     )
 

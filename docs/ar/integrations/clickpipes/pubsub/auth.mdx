@@ -1,0 +1,170 @@
+---
+slug: /integrations/clickpipes/pubsub/auth
+sidebarTitle: 'أذونات IAM لـ Pub/Sub'
+title: 'أذونات IAM لـ Pub/Sub'
+description: 'توضح هذه المقالة أذونات IAM في GCP التي يتطلبها ClickPipes للمصادقة مع Google Cloud Pub/Sub واستهلاك البيانات من موضوعاتك.'
+doc_type: 'guide'
+keywords: ['Google Cloud Pub/Sub', 'GCP IAM', 'حساب خدمة']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Note>
+  يمكنك الانضمام إلى قائمة انتظار المعاينة الخاصة [من هنا](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview).
+</Note>
+
+توضح هذه المقالة أذونات IAM في GCP التي يتطلبها ClickPipes للمصادقة مع Google Cloud Pub/Sub واستهلاك البيانات من موضوعاتك، كما تشرح كيفية إعداد حساب خدمة يمنح هذه الأذونات تحديدًا.
+
+<div id="prerequisite">
+  ## المتطلبات المسبقة
+</div>
+
+لمتابعة هذا الدليل، ستحتاج إلى:
+
+* خدمة ClickHouse Cloud نشطة
+* مشروع على GCP يحتوي على موضوع في Pub/Sub تريد إدخال البيانات منه
+* أذونات IAM في ذلك المشروع لإنشاء حسابات خدمة ومنح الأدوار
+
+<div id="authentication-model">
+  ## نموذج المصادقة
+</div>
+
+تُجري ClickPipes for Pub/Sub المصادقة مع GCP باستخدام [مفتاح JSON لحساب خدمة](https://cloud.google.com/iam/docs/keys-create-delete). عند إنشاء pipe، ترفع ملف المفتاح؛ وتقوم ClickPipes بتشفيره أثناء السكون وتستخدمه وقت التشغيل من أجل:
+
+* سرد الموضوعات في مشروعك وقراءتها،
+* إنشاء [الاشتراك المُدار](/ar/integrations/clickpipes/pubsub/overview#managed-subscriptions) الذي تستخدمه ClickPipes لاستهلاك الرسائل وحذفه،
+* استهلاك الرسائل من ذلك الاشتراك، و
+* (اختياريًا) قراءة مخططات Pub/Sub الأصلية من سجل المخططات.
+
+لا يتوفر خيار Workload Identity أو لصق بيانات الاعتماد بشكل Inline — مفتاح JSON لحساب خدمة هو طريقة المصادقة الوحيدة المدعومة حاليًا.
+
+<div id="required-permissions">
+  ## الأذونات المطلوبة
+</div>
+
+يتطلب ClickPipes أذونات IAM التالية على مشروع GCP الذي يملك الموضوع. وهي تغطي دورة حياة الـ pipe بالكامل: الاكتشاف (إدراج الموضوع والتحقق منه وأخذ العينات)، وإدارة الاشتراك، وإدخال البيانات في حالة التشغيل المستقرة، والتنظيف.
+
+<div id="topic-access">
+  ### الوصول إلى الموضوعات (الاكتشاف والتحقق)
+</div>
+
+| الإذن                              | الغرض                                           |
+| ---------------------------------- | ----------------------------------------------- |
+| `pubsub.topics.list`               | عرض الموضوعات المتاحة في المشروع أثناء الاكتشاف |
+| `pubsub.topics.get`                | التحقق من وجود الموضوع واسترداد إعدادات المخطط  |
+| `pubsub.topics.attachSubscription` | مطلوب على **الموضوع** عند إنشاء اشتراك عليه     |
+
+<div id="subscription-lifecycle">
+  ### دورة حياة الاشتراك (الاكتشاف والإدخال)
+</div>
+
+| Permission                     | Purpose                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------- |
+| `pubsub.subscriptions.create`  | إنشاء الاشتراك المُدار (`clickpipes-{pipeID}`) واشتراكات الاكتشاف المؤقتة |
+| `pubsub.subscriptions.get`     | فحوصات الحالة (كل 60 ثانية)، واستقصاء التابع، والتحقق من الاشتراك         |
+| `pubsub.subscriptions.delete`  | تنظيف اشتراكات الاكتشاف المؤقتة وحذف الاشتراك المُدار عند حذف الـ pipe    |
+| `pubsub.subscriptions.consume` | عمليات `Receive()` و`Ack()` و`Nack()` وعمليات الانتقال إلى طابع زمني      |
+
+<div id="schema-access">
+  ### الوصول إلى المخطط (اختياري — فقط لموضوعات Avro/Protobuf الأصلية)
+</div>
+
+| الإذن                | الغرض                                                 |
+| -------------------- | ----------------------------------------------------- |
+| `pubsub.schemas.get` | جلب تعريفات المخطط الأصلية من سجل المخططات في Pub/Sub |
+
+<div id="predefined-roles">
+  ## الأدوار المعرفة مسبقًا
+</div>
+
+| الدور                                                                                                | كافٍ؟  | ملاحظات                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| [`roles/pubsub.editor`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.editor)         | نعم    | يغطي جميع الأذونات المطلوبة. وهو الخيار الأوسع.                                                                              |
+| [`roles/pubsub.subscriber`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.subscriber) | **لا** | يفتقر إلى `topics.list` و`topics.attachSubscription` و`subscriptions.create` و`subscriptions.delete` و`schemas.get`.         |
+| [`roles/pubsub.viewer`](https://cloud.google.com/iam/docs/understanding-roles#pubsub.viewer)         | **لا** | للقراءة فقط — لا يتيح إدارة الاشتراكات أو استهلاك البيانات.                                                                  |
+| دور مخصص *(موصى به)*                                                                                 | نعم    | استخدم الأذونات الأساسية السبعة المذكورة أعلاه (بالإضافة إلى `schemas.get` الاختياري) لتطبيق مبدأ الحد الأدنى من الامتيازات. |
+
+<div id="setup">
+  ## الإعداد
+</div>
+
+<div id="create-custom-role">
+  ### أنشئ دورًا مخصصًا (موصى به)
+</div>
+
+لتطبيق مبدأ الحد الأدنى من الامتيازات، أنشئ دورًا مخصصًا يضم فقط الأذونات التي يحتاجها ClickPipes.
+
+يمكنك القيام بذلك باستخدام واجهة CLI ‏`gcloud`:
+
+```bash
+gcloud iam roles create clickpipes.pubsub.ingestion \
+  --project=YOUR_PROJECT_ID \
+  --title="ClickPipes Pub/Sub Ingestion" \
+  --description="Permissions required by ClickHouse ClickPipes to ingest from Pub/Sub" \
+  --permissions=pubsub.topics.list,pubsub.topics.get,pubsub.topics.attachSubscription,pubsub.subscriptions.create,pubsub.subscriptions.get,pubsub.subscriptions.delete,pubsub.subscriptions.consume \
+  --stage=GA
+```
+
+أو من خلال Console في GCP، انتقل إلى **IAM &amp; Admin → Roles → إنشاء دور** وأضف الأذونات الواردة في [الأذونات المطلوبة](#required-permissions).
+
+<Info>
+  **أذونات اختيارية**
+
+  أضِف `pubsub.schemas.get` إلى قائمة `--permissions` إذا كنت تُدخِل البيانات من موضوعات تستخدم مخططات Avro أو Protobuf الأصلية في Pub/Sub. وإلا، فاتركه خارج القائمة للإبقاء على الدور بأقل قدر ممكن من الأذونات.
+</Info>
+
+إذا كنت تفضّل تجاوز الدور المخصّص، فيمكنك بدلاً من ذلك منح `roles/pubsub.editor`.
+
+<div id="create-service-account">
+  ### أنشئ حساب خدمة
+</div>
+
+أنشئ حساب خدمة مخصصًا لـ ClickPipe:
+
+```bash
+gcloud iam service-accounts create clickpipes-pubsub \
+  --project=YOUR_PROJECT_ID \
+  --display-name="ClickPipes Pub/Sub Ingestion"
+```
+
+<div id="grant-role">
+  ### امنح الدور لحساب الخدمة
+</div>
+
+اربط الدور الذي أنشأته (أو `roles/pubsub.editor`) بحساب الخدمة على مستوى المشروع:
+
+```bash
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:clickpipes-pubsub@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="projects/YOUR_PROJECT_ID/roles/clickpipes.pubsub.ingestion"
+```
+
+<div id="create-key">
+  ### أنشئ ونزّل مفتاحًا لحساب الخدمة
+</div>
+
+أنشئ مفتاح JSON لحساب الخدمة ونزّله إلى جهازك المحلي:
+
+```bash
+gcloud iam service-accounts keys create clickpipes-pubsub-key.json \
+  --iam-account=clickpipes-pubsub@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+ستحمّل ملف `clickpipes-pubsub-key.json` هذا في واجهة ClickPipes عند إنشاء pipe.
+
+<Info>
+  **تعامل مع المفتاح كأنه سر**
+
+  تمنح مفاتيح حساب الخدمة حق الوصول إلى مشروعك على GCP. خزّن الملف بأمان، ولا تُضمّنه في نظام التحكم في الإصدارات، واستبدله دوريًا. يشفّر ClickPipes المفتاح في السكون بعد رفعه.
+</Info>
+
+<div id="notes">
+  ## ملاحظات
+</div>
+
+* يتطلب `pubsub.topics.attachSubscription` على **مورد الموضوع**، وليس على الاشتراك. وغالبًا ما يتم إغفال ذلك عند منح أذونات على مستوى الاشتراك فقط.
+* إذا كان الموضوع لديك لا يستخدم مخطط Pub/Sub أصليًا (Avro أو Protobuf)، فلن تحتاج إلى الإذن `pubsub.schemas.get`.
+* تُسمّى الاشتراكات المُدارة `clickpipes-{pipeID}`، مع ack deadline قدره 60 ثانية، والاحتفاظ بالرسائل لمدة 7 أيام، وتمكين ترتيب الرسائل.
+* تُسمّى اشتراكات الاكتشاف المؤقتة `clickpipes-discovery-{uuid}`، مع ack deadline قدره 10 ثوانٍ، والاحتفاظ لمدة 10 دقائق، وTTL لانتهاء الصلاحية تلقائيًا بعد 24 ساعة.
+* يتعامل ClickPipes مع الخطأين `PermissionDenied` و`Unauthenticated` على أنهما غير قابلين لإعادة المحاولة — فإذا كان هناك إذن مفقود، يفشل pipe فورًا بدلًا من الاستمرار في إعادة المحاولة إلى ما لا نهاية.

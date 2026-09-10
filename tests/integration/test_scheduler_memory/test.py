@@ -124,12 +124,14 @@ def test_reserve_memory():
 
     node.query("SYSTEM FLUSH LOGS")
 
+    # NOTE: MemoryReservationDecreases is intentionally not asserted per-query here.
+    # The reservation is released at query teardown (BlockIO::onFinish), after the query's
+    # ProfileEvents have already been snapshotted into query_log, so the decrease is not
+    # reliably attributed to the query. Asserting it per-query would be race-prone.
     assert_profile_event(node, "test_production", "MemoryReservationIncreases", lambda x: x == 1)
-    assert_profile_event(node, "test_production", "MemoryReservationDecreases", lambda x: x == 1)
     assert_profile_event(node, "test_production", "MemoryReservationKilled", lambda x: x == 0)
     assert_profile_event(node, "test_production", "MemoryReservationFailed", lambda x: x == 0)
     assert_profile_event(node, "test_development", "MemoryReservationIncreases", lambda x: x == 1)
-    assert_profile_event(node, "test_development", "MemoryReservationDecreases", lambda x: x == 1)
     assert_profile_event(node, "test_development", "MemoryReservationKilled", lambda x: x == 0)
     assert_profile_event(node, "test_development", "MemoryReservationFailed", lambda x: x == 0)
 
@@ -240,10 +242,12 @@ def test_precedence_kills_lower_priority():
 
     def run_production_query():
         try:
-            # A production query that reserves most of the memory
+            # Reserves most of the memory and holds it. `sleepEachRow(1)` with
+            # `max_block_size=1` ticks the pipeline once per row, and the kill is
+            # delivered between processor executions, so it is observable.
             node.query(
-                "select sleep(3) from numbers(1) "
-                "settings workload='production', reserve_memory='45Mi'",
+                "select sleepEachRow(1) from numbers(60) "
+                "settings max_block_size=1, workload='production', reserve_memory='45Mi'",
                 query_id="test_production_precedence",
             )
             results["production"] = "success"
@@ -253,7 +257,21 @@ def test_precedence_kills_lower_priority():
 
     def run_vip_query():
         try:
-            time.sleep(0.3)  # Let production query start first
+            # Presence in system.processes means the reservation was already admitted:
+            # ProcessList::insert constructs MemoryReservation before publishing the
+            # query, and that constructor throws instead of returning when the
+            # allocation is not admitted. Only then is evicting production correct.
+            while (
+                node.query(
+                    "select count() from system.processes where query_id = 'test_production_precedence'"
+                ).strip()
+                == "0"
+            ):
+                # A settled result means production will never appear here: it was
+                # either refused admission or already finished.
+                if results["production"] is not None:
+                    return
+                time.sleep(0.1)
             # A VIP query with higher precedence that needs memory
             node.query(
                 "select count(*) from numbers(1000000) settings workload='vip', reserve_memory='20Mi'",

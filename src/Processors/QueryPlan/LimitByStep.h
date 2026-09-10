@@ -25,11 +25,13 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     size_t getGroupLength() const { return group_length; }
     size_t getGroupOffset() const { return group_offset; }
     const Names & getColumns() const { return columns; }
 
-    void applyOrder();
+    void applyOrder(const SortDescription & sort_description);
 
     /// Skip the resize-to-one-stream and run one `LimitByTransform` per input stream.
     /// Set by `optimizeLimitByPerPartition`; assumes upstream streams carry disjoint
@@ -47,7 +49,8 @@ private:
 
     Names columns;
 
-    bool input_sorted_by_keys = false;
+    SortDescription sorted_columns_descr;
+
     bool skip_stream_merging = false;
 };
 

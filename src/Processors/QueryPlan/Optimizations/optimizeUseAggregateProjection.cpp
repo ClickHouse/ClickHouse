@@ -1,6 +1,16 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Columns/ColumnConst.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -18,9 +28,13 @@
 #include <Analyzer/QueryNode.h>
 
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -36,11 +50,228 @@ namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
+    extern const SettingsBool use_statistics_for_min_max_aggregation;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
 }
 }
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// ---- BEGIN: Predicate-implication helpers (shared logic with optimizeUseNormalProjection.cpp) ----
+
+/// Extract AND-connected conjuncts from an AST expression tree.
+static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+{
+    if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
+    {
+        for (const auto & child : func->arguments->children)
+            extractConjunctsFromAST(child, result);
+    }
+    else
+    {
+        result.push_back(expr);
+    }
+}
+
+/// Strip a leading analyzer table qualifier (e.g. `__table1.`) from a column name.
+static std::string_view stripTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
+
+/// Structurally compare a query-filter DAG node against a projection-WHERE AST conjunct.
+static bool matchDAGNodeToAST(const ActionsDAG::Node * node, const ASTPtr & ast)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children.front();
+
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            return false;
+        if (node->function_base->getName() != func->name)
+            return false;
+
+        const ASTs empty;
+        const auto & ast_args = func->arguments ? func->arguments->children : empty;
+        if (node->children.size() != ast_args.size())
+            return false;
+
+        for (size_t i = 0; i < ast_args.size(); ++i)
+            if (!matchDAGNodeToAST(node->children[i], ast_args[i]))
+                return false;
+
+        return true;
+    }
+
+    if (const auto * ident = ast->as<ASTIdentifier>())
+    {
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        return stripTableQualifier(node->result_name) == ident->name();
+    }
+
+    if (const auto * literal = ast->as<ASTLiteral>())
+    {
+        if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+            return false;
+        const auto * const_col = typeid_cast<const ColumnConst *>(node->column.get());
+        if (!const_col)
+            return false;
+        return accurateEquals(const_col->getField(), literal->value);
+    }
+
+    return false;
+}
+
+static bool containsAliases(const ASTPtr & expr)
+{
+    if (!expr)
+        return false;
+    if (!expr->tryGetAlias().empty())
+        return true;
+    for (const auto & child : expr->children)
+        if (containsAliases(child))
+            return true;
+    return false;
+}
+
+static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr context)
+{
+    if (!expr)
+        return false;
+    if (const auto * func = expr->as<ASTFunction>())
+    {
+        auto resolver = FunctionFactory::instance().tryGet(func->name, context);
+        if (resolver)
+        {
+            if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
+                return true;
+        }
+        else
+            return true;
+    }
+    for (const auto & child : expr->children)
+        if (containsNonDeterministicFunctions(child, context))
+            return true;
+    return false;
+}
+
+/// Check whether a query's WHERE condition logically implies a projection's WHERE condition.
+static bool doesQueryFilterImplyProjectionWhere(
+    const ActionsDAG::Node * query_filter_node,
+    const ASTPtr & projection_where,
+    const ASTPtr & projection_query_ast,
+    ContextPtr context)
+{
+    if (!projection_where)
+        return true;
+    if (!query_filter_node)
+        return false;
+
+    if (containsAliases(projection_where))
+        return false;
+    if (containsNonDeterministicFunctions(projection_where, context))
+        return false;
+
+    if (projection_query_ast)
+    {
+        if (const auto * projection_select = projection_query_ast->as<ASTSelectQuery>())
+        {
+            if (projection_select->with())
+                return false;
+            if (projection_select->select() && containsAliases(projection_select->select()))
+                return false;
+        }
+    }
+
+    std::vector<ASTPtr> proj_conjuncts;
+    extractConjunctsFromAST(projection_where, proj_conjuncts);
+
+    const auto * filter_root = query_filter_node;
+    while (filter_root->type == ActionsDAG::ActionType::ALIAS && !filter_root->children.empty())
+        filter_root = filter_root->children.front();
+
+    auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+
+    for (const auto & proj_conj : proj_conjuncts)
+    {
+        bool found = std::any_of(
+            query_atoms.begin(),
+            query_atoms.end(),
+            [&](const auto * atom) { return matchDAGNodeToAST(atom, proj_conj); });
+        if (!found)
+            return false;
+    }
+
+    return true;
+}
+
+/// Build a residual query filter by removing conjuncts already covered by the projection's WHERE.
+/// Returns nullptr if all query conjuncts are covered (no residual filter needed).
+static const ActionsDAG::Node * buildResidualFilterNode(
+    const ActionsDAG::Node * query_filter_node,
+    const ASTPtr & projection_where,
+    ActionsDAG & dag)
+{
+    if (!query_filter_node || !projection_where)
+        return query_filter_node;
+
+    const auto * filter_root = query_filter_node;
+    while (filter_root->type == ActionsDAG::ActionType::ALIAS && !filter_root->children.empty())
+        filter_root = filter_root->children.front();
+
+    auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+
+    std::vector<ASTPtr> proj_conjuncts;
+    extractConjunctsFromAST(projection_where, proj_conjuncts);
+
+    /// Keep only query atoms that do NOT match any projection-WHERE conjunct.
+    ActionsDAG::NodeRawConstPtrs residual_atoms;
+    for (const auto * atom : query_atoms)
+    {
+        bool matched = std::any_of(
+            proj_conjuncts.begin(),
+            proj_conjuncts.end(),
+            [&](const ASTPtr & proj_conj) { return matchDAGNodeToAST(atom, proj_conj); });
+        if (!matched)
+            residual_atoms.push_back(atom);
+    }
+
+    if (residual_atoms.size() == query_atoms.size())
+        return query_filter_node; /// Nothing was stripped
+
+    if (residual_atoms.empty())
+        return nullptr; /// All conjuncts matched — no residual filter
+
+    if (residual_atoms.size() == 1)
+        return residual_atoms.front();
+
+    /// Combine remaining atoms with AND.
+    FunctionOverloadResolverPtr func_builder_and =
+        std::make_unique<FunctionToOverloadResolverAdaptor>(
+            std::make_shared<FunctionAnd>());
+
+    return &dag.addFunction(func_builder_and, std::move(residual_atoms), {});
+}
+
+/// ---- END: Predicate-implication helpers ----
 
 using DAGIndex = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
 static DAGIndex buildDAGIndex(const ActionsDAG & dag)
@@ -317,7 +548,6 @@ static std::optional<ActionsDAG> analyzeAggregateProjection(
 }
 
 
-/// Aggregate projection analysis result in case it can be applied.
 struct AggregateProjectionCandidate : public ProjectionCandidate
 {
     AggregateProjectionInfo info;
@@ -325,12 +555,40 @@ struct AggregateProjectionCandidate : public ProjectionCandidate
     /// Actions which need to be applied to columns from projection
     /// in order to get all the columns required for aggregation.
     ActionsDAG dag;
+
+    /// Whether this candidate's DAG includes a filter output (first output).
+    /// False when a filtered projection's WHERE fully covers the query filter
+    /// (residual is empty), so the DAG has no filter column.
+    bool has_filter = false;
 };
 
 struct MinMaxProjectionCandidate
 {
     AggregateProjectionCandidate candidate;
     Block block;
+};
+
+/// A min(column) / max(column) / count() aggregate that can be computed from per-part column
+/// statistics (see StatisticsMinMax) for parts that have them materialized.
+struct StatisticsMinMaxAggregate
+{
+    enum class Kind : UInt8
+    {
+        Min,
+        Max,
+        Count,
+    };
+
+    Kind kind;
+
+    /// Physical column the aggregate is computed over (empty for count).
+    String column_name = {};
+
+    /// The Field type the statistics values must have to be exact. Legacy statistics stored
+    /// min/max as Float64 for any column type; such values are rejected as potentially lossy.
+    Field::Types::Which expected_field_type = Field::Types::Null;
+
+    const AggregateDescription * aggregate = nullptr;
 };
 
 struct AggregateProjectionCandidates
@@ -343,7 +601,131 @@ struct AggregateProjectionCandidates
 
     /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
     String only_count_column;
+
+    /// If not empty, try to answer the aggregation from per-part column statistics.
+    std::vector<StatisticsMinMaxAggregate> statistics_min_max_aggregates;
 };
+
+/// Check if the whole aggregation can be answered from per-part column statistics: there is no
+/// GROUP BY and no filter, and every aggregate is count() or min/max over a physical column
+/// that has statistics with min/max (StatisticsType::MinMax or StatisticsType::Basic) declared
+/// in the table metadata for a type whose min/max these statistics actually track
+/// (canStatisticsTrackMinMax).
+///
+/// Statistics describe the physical rows of a part as they were written, so anything that changes
+/// the visible rows or values at read time disables the optimization: lightweight deletes, pending
+/// ALTER MODIFY/RENAME/DROP COLUMN mutations, the delete bitmap of a unique-key table, and masking
+/// policies.
+/// (Pending data mutations and patch parts are already rejected by canUseProjectionForReadingStep,
+/// and FINAL together with SAMPLE are rejected there as well.)
+static std::vector<StatisticsMinMaxAggregate> getStatisticsMinMaxAggregates(
+    const AggregatingStep & aggregating,
+    ReadFromMergeTree & reading,
+    const StorageMetadataPtr & metadata,
+    const DAGIndex & query_index,
+    const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::use_statistics_for_min_max_aggregation])
+        return {};
+
+    if (!aggregating.getParams().keys.empty())
+        return {};
+
+    const auto & aggregates = aggregating.getParams().aggregates;
+    if (aggregates.empty())
+        return {};
+
+    const auto & query_info = reading.getQueryInfo();
+    if (query_info.prewhere_info || query_info.row_level_filter || query_info.filter_actions_dag)
+        return {};
+
+    /// TODO(unique-key): the delete bitmap of a unique-key table is applied at read time,
+    /// statistics don't reflect it.
+    if (metadata->hasUniqueKey())
+        return {};
+
+    if (reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
+        return {};
+
+    /// Pending metadata mutations (RENAME/DROP COLUMN) are applied at read time by AlterConversions,
+    /// so the column data (and statistics) physically stored in a part may not belong to the column
+    /// the query reads: `DROP COLUMN b, ADD COLUMN b` must read as the new default, and a name freed
+    /// by a drop can be taken over by a rename (see test 04872).
+    auto mutations_snapshot = reading.getMutationsSnapshot();
+    if (mutations_snapshot->hasLightweightDeletedMask() || mutations_snapshot->hasAlterMutations()
+        || mutations_snapshot->hasMetadataMutations())
+        return {};
+
+    const auto & columns = metadata->getColumns();
+
+    std::vector<StatisticsMinMaxAggregate> result;
+    result.reserve(aggregates.size());
+
+    for (const auto & aggregate : aggregates)
+    {
+        if (!aggregate.parameters.empty())
+            return {};
+
+        if (typeid_cast<const AggregateFunctionCount *>(aggregate.function.get()))
+        {
+            /// Only a bare `count()`: `count(expr)` must still evaluate the argument
+            /// (it can throw), even when the result would be the same row count.
+            if (!aggregate.argument_names.empty())
+                return {};
+
+            result.push_back({.kind = StatisticsMinMaxAggregate::Kind::Count, .aggregate = &aggregate});
+            continue;
+        }
+
+        const auto & function_name = aggregate.function->getName();
+        bool is_min = function_name == "min";
+        if (!is_min && function_name != "max")
+            return {};
+
+        if (aggregate.argument_names.size() != 1)
+            return {};
+
+        auto it = query_index.find(aggregate.argument_names.front());
+        if (it == query_index.end())
+            return {};
+
+        const auto * node = it->second;
+        while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+            node = node->children.front();
+
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return {};
+
+        const auto * column = columns.tryGet(node->result_name);
+        if (!column || !column->type->equals(*node->result_type)
+            || !column->type->equals(*aggregate.function->getArgumentTypes().front()))
+            return {};
+
+        /// Statistics don't record whether a part contains NULL values, while min/max over
+        /// a Nullable column must skip them, so only plain columns are supported.
+        if (column->type->isNullable() || column->type->lowCardinality())
+            return {};
+
+        if (!column->statistics.types_to_desc.contains(StatisticsType::MinMax)
+            && !column->statistics.types_to_desc.contains(StatisticsType::Basic))
+            return {};
+
+        /// `basic` is declared for every column type, but it records min/max only for numeric-like
+        /// columns, so a `String` column with the default `auto_statistics_types` passes the check
+        /// above while no part will ever provide min/max. Decline here instead of loading the
+        /// estimates of every part before falling back to a normal read.
+        if (!canStatisticsTrackMinMax(column->type))
+            return {};
+
+        result.push_back({
+            .kind = is_min ? StatisticsMinMaxAggregate::Kind::Min : StatisticsMinMaxAggregate::Kind::Max,
+            .column_name = node->result_name,
+            .expected_field_type = column->type->getDefault().getType(),
+            .aggregate = &aggregate});
+    }
+
+    return result;
+}
 
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
@@ -394,6 +776,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
+            candidate.has_filter = (dag.filter_node != nullptr);
 
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
@@ -441,14 +824,40 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
         candidates.real.reserve(agg_projections.size());
         for (const auto * projection : agg_projections)
         {
+            /// Skip projections whose WHERE condition is not implied by the query's filter.
+            if (projection->where_clause_ast)
+            {
+                if (!doesQueryFilterImplyProjectionWhere(dag.filter_node, projection->where_clause_ast, projection->query_ast, context))
+                    continue;
+            }
+
+            /// When the projection has a WHERE, strip the implied conjuncts from the query
+            /// filter so that analyzeAggregateProjection does not require the filter column
+            /// to be computable from projection keys (it is already satisfied by the projection).
+            const auto * original_filter = dag.filter_node;
+            if (projection->where_clause_ast && dag.filter_node && dag.dag)
+                dag.filter_node = buildResidualFilterNode(original_filter, projection->where_clause_ast, *dag.dag);
+
             auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
             if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
             {
                 AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
                 candidate.projection = projection;
+                candidate.has_filter = (dag.filter_node != nullptr);
                 candidates.real.emplace_back(std::move(candidate));
             }
+
+            dag.filter_node = original_filter;
         }
+    }
+
+    /// When no projection can serve the aggregation, try to answer min/max/count directly
+    /// from per-part column statistics.
+    if (allow_implicit_projections && !candidates.minmax_projection && candidates.real.empty()
+        && candidates.only_count_column.empty() && !dag.filter_node)
+    {
+        candidates.statistics_min_max_aggregates
+            = getStatisticsMinMaxAggregates(aggregating, reading, metadata, query_index, context);
     }
 
     return candidates;
@@ -481,7 +890,8 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     auto query_index = buildDAGIndex(*dag.dag);
     candidates.has_filter = dag.filter_node;
 
-    const auto & keys = distinct.getColumnNames();
+    /// The header is passed through, so a replacement must reproduce all of it, positions included.
+    const Names keys = distinct.getOutputHeader()->getNames();
 
     /// Prefer the user specified projection if any.
     auto it = std::find_if(
@@ -500,16 +910,31 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());
 
-    /// Only select the projection where distinct columns are a subset of projection columns.
+    /// Only select a projection that can compute every column of the output header.
     for (const auto * projection : agg_projections)
     {
+        /// Skip projections whose WHERE condition is not implied by the query's filter.
+        if (projection->where_clause_ast)
+        {
+            if (!doesQueryFilterImplyProjectionWhere(dag.filter_node, projection->where_clause_ast, projection->query_ast, context))
+                continue;
+        }
+
+        /// Strip implied conjuncts from the query filter (see aggregation path above).
+        const auto * original_filter = dag.filter_node;
+        if (projection->where_clause_ast && dag.filter_node && dag.dag)
+            dag.filter_node = buildResidualFilterNode(original_filter, projection->where_clause_ast, *dag.dag);
+
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
         if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
             candidate.projection = projection;
+            candidate.has_filter = (dag.filter_node != nullptr);
             candidates.real.emplace_back(std::move(candidate));
         }
+
+        dag.filter_node = original_filter;
     }
 
     return candidates;
@@ -533,6 +958,166 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
 /// Pseudo projection name used to indicate exact count optimization
 static constexpr const char * EXACT_COUNT_PROJECTION_NAME = "_exact_count_projection";
 
+/// Pseudo projection name used to indicate min/max/count aggregation from column statistics
+static constexpr const char * STATISTICS_MIN_MAX_PROJECTION_NAME = "_statistics_min_max_projection";
+
+/// Compute the states of min/max/count aggregate functions over the parts whose column statistics
+/// can answer them exactly, and remove such parts from `remaining_select_result`. Returns a block
+/// with one row of aggregate function states, or an empty block if no part could be covered.
+static Block makeBlockWithMinMaxFromStatistics(
+    const std::vector<StatisticsMinMaxAggregate> & stats_aggregates,
+    ReadFromMergeTree::AnalysisResult & remaining_select_result,
+    const LoggerPtr & logger)
+{
+    std::vector<Field> folded_values(stats_aggregates.size());
+    size_t covered_parts = 0;
+    size_t covered_rows = 0;
+    size_t covered_marks = 0;
+    size_t covered_ranges = 0;
+
+    auto part_covered_by_statistics = [&](const RangesInDataPart & part_with_ranges)
+    {
+        const auto & part = part_with_ranges.data_part;
+
+        /// A lightweight delete mask hides rows that the statistics still account for.
+        if (part->hasLightweightDelete())
+            return false;
+
+        /// Part-level statistics can only answer a full-part read.
+        if (part->index_granularity->getRowsCountInRanges(part_with_ranges.ranges) != part->rows_count)
+            return false;
+
+        /// An empty part has no extremes, but `getExtremes` reports zeros for it. Read it instead;
+        /// it contributes nothing to the result anyway.
+        if (part->rows_count == 0)
+            return false;
+
+        Estimates estimates;
+        try
+        {
+            estimates = part->getEstimates();
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(logger, fmt::format(
+                "Failed to load statistics for part {}, reading it instead", part->name), LogsLevel::debug);
+            return false;
+        }
+
+        std::vector<const Field *> part_values(stats_aggregates.size(), nullptr);
+        for (size_t i = 0; i < stats_aggregates.size(); ++i)
+        {
+            const auto & stats_aggregate = stats_aggregates[i];
+            if (stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Count)
+                continue;
+
+            auto it = estimates.find(stats_aggregate.column_name);
+            if (it == estimates.end())
+                return false;
+
+            const auto & estimate = it->second;
+
+            /// Statistics that describe a different number of rows than the part cannot be trusted.
+            if (estimate.rows_count != part->rows_count)
+                return false;
+
+            const auto & value = stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Min
+                ? estimate.estimated_min
+                : estimate.estimated_max;
+
+            /// Reject legacy statistics whose min/max were stored lossy (as Float64 for any column type).
+            if (!value || value->getType() != stats_aggregate.expected_field_type)
+                return false;
+
+            part_values[i] = &*value;
+        }
+
+        for (size_t i = 0; i < stats_aggregates.size(); ++i)
+        {
+            if (!part_values[i])
+                continue;
+
+            auto & folded = folded_values[i];
+            bool is_min = stats_aggregates[i].kind == StatisticsMinMaxAggregate::Kind::Min;
+            const Field & value = *part_values[i];
+
+            /// `min`/`max` skip `NaN` and return it only when every value is `NaN`, and a part
+            /// whose values are all `NaN` reports `NaN` as both of its extremes, so fold the
+            /// per-part extrema with the same rule as `SingleValueDataFixed::setIfGreater`
+            /// and `SingleValueDataFixed::setIfSmaller` instead of the raw `Field` ordering.
+            if (folded.isNull() || isNaNField(folded))
+                folded = value;
+            else if (!isNaNField(value) && (is_min ? value < folded : folded < value))
+                folded = value;
+        }
+
+        ++covered_parts;
+        covered_rows += part->rows_count;
+        covered_marks += part_with_ranges.ranges.getNumberOfMarks();
+        covered_ranges += part_with_ranges.ranges.size();
+        return true;
+    };
+
+    auto & parts_with_ranges = remaining_select_result.parts_with_ranges;
+    std::erase_if(parts_with_ranges, part_covered_by_statistics);
+
+    if (covered_parts == 0)
+        return {};
+
+    remaining_select_result.selected_parts = parts_with_ranges.size();
+    remaining_select_result.selected_marks -= covered_marks;
+    remaining_select_result.selected_rows -= covered_rows;
+    remaining_select_result.selected_ranges -= covered_ranges;
+    /// The original result may have exceeded_row_limits set because the full table scan was over
+    /// the limit. The reduced result will be re-checked during execution.
+    remaining_select_result.exceeded_row_limits = false;
+
+    auto & stat = remaining_select_result.projection_stats.emplace_back();
+    stat.name = STATISTICS_MIN_MAX_PROJECTION_NAME;
+    stat.selected_parts = covered_parts;
+    stat.selected_marks = covered_marks;
+    stat.selected_ranges = covered_ranges;
+    stat.selected_rows = covered_rows;
+    stat.filtered_parts = covered_parts;
+    stat.description = fmt::format(
+        "Min/max aggregation from column statistics is applied: {} parts with {} rows are answered from statistics. Remaining parts to read: {}",
+        covered_parts, covered_rows, parts_with_ranges.size());
+    LOG_DEBUG(logger, "{}", stat.description);
+
+    Block block;
+    for (size_t i = 0; i < stats_aggregates.size(); ++i)
+    {
+        const auto & stats_aggregate = stats_aggregates[i];
+        const auto & function = stats_aggregate.aggregate->function;
+
+        auto column = ColumnAggregateFunction::create(function);
+        Arena & arena = column->createOrGetArena();
+        auto * place = arena.alignedAlloc(function->sizeOfData(), function->alignOfData());
+        function->create(place);
+
+        if (stats_aggregate.kind == StatisticsMinMaxAggregate::Kind::Count)
+        {
+            AggregateFunctionCount::set(place, covered_rows);
+        }
+        else
+        {
+            chassert(!folded_values[i].isNull());
+            auto value_column
+                = function->getArgumentTypes().front()->createColumnConst(1, folded_values[i])->convertToFullColumnIfConst();
+            const auto * value_column_ptr = value_column.get();
+            function->add(place, &value_column_ptr, 0, &arena);
+        }
+
+        column->insertFrom(place);
+        block.insert(ColumnWithTypeAndName(
+            std::move(column),
+            std::make_shared<DataTypeAggregateFunction>(function, function->getArgumentTypes(), stats_aggregate.aggregate->parameters),
+            stats_aggregate.aggregate->column_name));
+    }
+
+    return block;
+}
+
 std::optional<String> optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
@@ -552,6 +1137,10 @@ std::optional<String> optimizeUseAggregateProjections(
     if (aggregating && !aggregating->canUseProjection())
         return {};
 
+    /// A merge-only step already consumes aggregate states; requesting projection merge mode for it again makes no sense.
+    if (aggregating && aggregating->getParams().only_merge)
+        return {};
+
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
     if (!reading_node)
         return {};
@@ -562,6 +1151,17 @@ std::optional<String> optimizeUseAggregateProjections(
 
     if (!canUseProjectionForReadingStep(reading))
         return {};
+
+    /// Test hook: make a parallel-replicas follower skip the aggregate-projection short-circuit so it
+    /// plans a real read while the initiator still short-circuits. This deterministically manufactures the
+    /// initiator/follower plan divergence that a homogeneous single-server test cluster cannot otherwise
+    /// produce, reproducing the "unknown stream" coordinator abort. Gated on the follower predicate so it
+    /// never affects the initiator's plan.
+    fiu_do_on(FailPoints::parallel_replicas_skip_aggregate_projection_on_follower,
+    {
+        if (reading->isParallelReplicasLocalPlanForFollower())
+            return {};
+    });
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
@@ -584,11 +1184,31 @@ std::optional<String> optimizeUseAggregateProjections(
 
     /// Stores row count from exact ranges of parts.
     size_t exact_count = 0;
+    /// Stores one row of min/max/count aggregate function states computed from column statistics.
+    Block statistics_min_max_block;
     ReadFromMergeTree::AnalysisResultPtr parent_reading_select_result;
     ReadFromMergeTree::AnalysisResultPtr inexact_ranges_select_result;
     if (candidates.minmax_projection)
     {
         best_candidate = &candidates.minmax_projection->candidate;
+    }
+    else if (!candidates.statistics_min_max_aggregates.empty())
+    {
+        parent_reading_select_result = reading->getAnalyzedResult();
+        if (!parent_reading_select_result)
+            parent_reading_select_result = reading->selectRangesToRead(false);
+
+        if (parent_reading_select_result->parts_with_ranges.empty())
+            return {};
+
+        /// Copy parent analysis result to isolate modifications. This result will store the
+        /// remaining parts (without statistics), to be used for normal reading.
+        inexact_ranges_select_result = std::make_shared<ReadFromMergeTree::AnalysisResult>(*parent_reading_select_result);
+        statistics_min_max_block = makeBlockWithMinMaxFromStatistics(
+            candidates.statistics_min_max_aggregates, *inexact_ranges_select_result, logger);
+
+        if (statistics_min_max_block.empty())
+            return {};
     }
     else if (!candidates.real.empty() || !candidates.only_count_column.empty())
     {
@@ -712,7 +1332,18 @@ std::optional<String> optimizeUseAggregateProjections(
                 auto projection_query_info = query_info;
                 projection_query_info.prewhere_info = nullptr;
                 projection_query_info.row_level_filter = nullptr;
-                projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(candidate.dag.clone());
+                /// `candidate.dag` is the projection-rewrite DAG. Its first output is a real `WHERE` /
+                /// `PREWHERE` filter predicate only when this candidate has a (residual) filter
+                /// (`candidate.has_filter`); otherwise — either the query has no filter, or the projection's
+                /// own `WHERE` fully covers it — the first output is a projection key column. Part selection
+                /// in `MergeTreeDataSelectExecutor::estimateNumMarksToRead` treats
+                /// `filter_actions_dag->getOutputs().front()` as a filter predicate for primary-key and
+                /// skip-index analysis, so installing the rewrite DAG as the pruning filter when there is no
+                /// real filter would make it prune on a bare key column (e.g. since #89222 a numeric key
+                /// column is read as `key != 0`), which is wrong. See #89222.
+                projection_query_info.filter_actions_dag = candidate.has_filter
+                    ? std::make_unique<ActionsDAG>(candidate.dag.clone())
+                    : nullptr;
 
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), candidate.projection);
                 bool analyzed = analyzeProjectionCandidate(
@@ -720,8 +1351,10 @@ std::optional<String> optimizeUseAggregateProjections(
                     reader,
                     empty_mutations_snapshot,
                     required_column_names,
+                    metadata,
                     *parent_reading_select_result,
                     projection_query_info,
+                    reading->getTopKFilterInfo(),
                     context);
 
                 if (!analyzed)
@@ -804,6 +1437,10 @@ std::optional<String> optimizeUseAggregateProjections(
 
     QueryPlanStepPtr projection_reading;
     bool has_parent_parts = false;
+    /// True when the minmax/exact-count short-circuit fully replaces `reading` with a prepared source
+    /// (no projection read of its own to carry the parallel-replicas announcement). See the announcement
+    /// call after the branch below.
+    bool short_circuited_with_prepared_source = false;
     String selected_projection_name;
     if (best_candidate)
         selected_projection_name = best_candidate->projection->name;
@@ -826,6 +1463,29 @@ std::optional<String> optimizeUseAggregateProjections(
             pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(candidates.minmax_projection->block.cloneEmpty())));
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         has_parent_parts = false;
+        short_circuited_with_prepared_source = true;
+    }
+    else if (!statistics_min_max_block.empty())
+    {
+        /// Min/max/count aggregation from column statistics: like the exact count optimization
+        /// below, the block with aggregate function states is a prepared source, and the parts
+        /// without statistics (if any) are read normally.
+        /// When parallel replicas is enabled, only the initiator should read the block to avoid data duplication.
+        chassert(inexact_ranges_select_result);
+
+        Pipe pipe;
+        if (!is_parallel_reading_on_remote_replicas)
+            pipe = Pipe(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(statistics_min_max_block))));
+        else
+            pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(statistics_min_max_block.cloneEmpty())));
+        projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+
+        selected_projection_name = STATISTICS_MIN_MAX_PROJECTION_NAME;
+        has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
+        if (has_parent_parts)
+            reading->setAnalyzedResult(std::move(inexact_ranges_select_result));
+        else
+            short_circuited_with_prepared_source = true;
     }
     else if (best_candidate == nullptr)
     {
@@ -835,17 +1495,8 @@ std::optional<String> optimizeUseAggregateProjections(
 
         auto agg_count = std::make_shared<AggregateFunctionCount>(DataTypes{});
 
-        std::vector<char> state(agg_count->sizeOfData());
-        AggregateDataPtr place = state.data();
-        agg_count->create(place);
-        SCOPE_EXIT_MEMORY_SAFE(agg_count->destroy(place));
-        AggregateFunctionCount::set(place, exact_count);
-
-        auto column = ColumnAggregateFunction::create(agg_count);
-        column->insertFrom(place);
-
         Block block_with_count{
-            {std::move(column),
+            {createSingleCountStateColumn(agg_count, exact_count),
              std::make_shared<DataTypeAggregateFunction>(agg_count, DataTypes{}, Array{}),
              candidates.only_count_column}};
 
@@ -867,6 +1518,8 @@ std::optional<String> optimizeUseAggregateProjections(
         has_parent_parts = !inexact_ranges_select_result->parts_with_ranges.empty();
         if (has_parent_parts)
             reading->setAnalyzedResult(std::move(inexact_ranges_select_result));
+        else
+            short_circuited_with_prepared_source = true;
     }
     else
     {
@@ -904,11 +1557,20 @@ std::optional<String> optimizeUseAggregateProjections(
             Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(
                 proj_snapshot->getSampleBlockForColumns(best_candidate->dag.getRequiredColumnsNames()))));
             projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+            /// The projection read that would have announced the base-table stream is gone (the stored
+            /// projection selected no ranges, or reads only on the initiator). If no parent parts remain
+            /// either, `reading` is detached below with nothing left to announce.
+            short_circuited_with_prepared_source = true;
         }
 
         if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
             fallbackToLocalProjectionReading(projection_reading);
     }
+
+    /// `reading` is detached below without running initializePipeline(), so announce its empty read
+    /// set here instead (issue #110518).
+    if (short_circuited_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
+        reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
@@ -929,7 +1591,7 @@ std::optional<String> optimizeUseAggregateProjections(
     {
         aggregate_projection_node = &nodes.emplace_back();
 
-        if (candidates.has_filter)
+        if (candidates.has_filter && best_candidate->has_filter)
         {
             const auto & result_name = best_candidate->dag.getOutputs().front()->result_name;
             aggregate_projection_node->step = std::make_unique<FilterStep>(

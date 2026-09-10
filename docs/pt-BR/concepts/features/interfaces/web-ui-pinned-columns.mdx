@@ -1,0 +1,48 @@
+---
+description: 'Documentação sobre colunas fixadas (sticky) na interface web SQL integrada (`/play`)'
+sidebarTitle: 'Colunas fixadas na interface web'
+slug: /interfaces/web-ui-pinned-columns
+title: 'Colunas fixadas na interface web'
+doc_type: 'reference'
+sidebar: false
+---
+
+A interface web SQL integrada (`play.html`, disponibilizada no caminho [`/play`](/pt-BR/concepts/features/interfaces/http) de qualquer porta HTTP do ClickHouse) pode manter visíveis as colunas escolhidas de um resultado enquanto o restante da tabela é rolado horizontalmente. Uma coluna fixada fica presa à borda mais próxima da área de resultados em vez de sair de vista com a rolagem, de modo que uma coluna-chave — um identificador, um nome, uma data — continue visível ao lado das colunas mais à direita que você estiver lendo.
+
+<div id="pinning-a-column">
+  ## Fixando uma coluna
+</div>
+
+Um ícone de 📌 aparece à esquerda do cabeçalho de cada coluna. Clique nele para fixar a coluna; clique novamente para desafixá-la. O ícone é um botão de verdade, portanto quem usa teclado pode navegar até ele com a tecla Tab e acioná-lo pelo teclado, e ele expõe seu estado fixado às tecnologias assistivas.
+
+Em dispositivos com ponteiro que permite hover (como um mouse), o ícone é mostrado apenas quando o cursor está sobre o cabeçalho ou quando o toggle está em foco, para não atrapalhar nos demais casos; em dispositivos touch e outros com ponteiro impreciso, que não têm hover, o ícone é sempre exibido para que possa ser tocado diretamente. Uma coluna fixada mantém o ícone sempre visível e com intensidade total, indicando que a coluna está fixada.
+
+<div id="when-pinning-is-available">
+  ## Quando a fixação está disponível
+</div>
+
+A fixação só está disponível quando a tabela é larga o suficiente para permitir rolagem horizontal. Quando a tabela inteira cabe na área de visualização, não há nada para ocultar com a rolagem; por isso, o toggle de fixação fica desabilitado e é removido da ordem de tabulação do teclado. Assim que o resultado passa a permitir rolagem horizontal — seja por ser um resultado largo, uma janela estreita ou um resultado em stream que cresce horizontalmente — os toggles ficam ativos.
+
+<div id="how-a-pinned-column-behaves-when-scrolling">
+  ## Como uma coluna fixada se comporta durante a rolagem
+</div>
+
+Uma coluna fixada se move com o conteúdo durante a rolagem horizontal até o momento em que sairia da área visível; nesse ponto, ela se fixa na borda mais próxima — a borda esquerda para colunas à esquerda e a borda direita para colunas à direita — e permanece visível. Várias colunas fixadas se alinham junto à borda na ordem original, cada uma separada do conteúdo em rolagem por uma borda. Uma célula fixada é exibida sobre as células comuns que passam por baixo dela durante a rolagem, inclusive uma célula selecionada, para que permaneça sempre legível.
+
+<div id="shared-across-results">
+  ## Compartilhado entre os resultados
+</div>
+
+As colunas fixadas são identificadas pelo nome da coluna e compartilhadas entre todas as tabelas de resultados da página, da mesma forma que os [modos de codificação por cores](/pt-BR/concepts/features/interfaces/web-ui-color-coding) por coluna. Fixar uma coluna chamada `id` em um resultado faz com que uma coluna chamada `id` permaneça fixada nos outros resultados e em consultas posteriores que retornem a mesma coluna.
+
+<div id="persistence">
+  ## Persistência
+</div>
+
+O conjunto fixado fica registrado na URL da página, no histórico do navegador e no snapshot de resultados por aba; assim, recarregar a página, compartilhar o link ou navegar para trás e para frente o preserva. Somente as colunas fixadas são armazenadas — um conjunto vazio não adiciona nada à URL nem ao estado do histórico — para mantê-las compactas.
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+* A visualização vertical (transposta) de uma única linha não tem colunas com rolagem horizontal, portanto não permite fixar colunas.

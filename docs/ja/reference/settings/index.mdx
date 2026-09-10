@@ -1,0 +1,30 @@
+---
+description: '設定の目次ページ'
+slug: /operations/settings/
+title: '設定'
+sidebarTitle: '概要'
+doc_type: 'landing-page'
+mode: wide
+---
+
+<CardGroup cols={2}>
+  <Card title="サーバー設定" icon="server" href="/ja/reference/settings/server-settings/settings">
+    ClickHouse サーバー構成に関する設定です。
+  </Card>
+
+  <Card title="セッション設定" icon="user-gear" href="/ja/reference/settings/session-settings">
+    `system.settings` テーブルにある設定です。
+  </Card>
+
+  <Card title="MergeTree テーブルの設定" icon="table" href="/ja/reference/settings/merge-tree-settings">
+    `system.merge_tree_settings` にある `MergeTree` の設定です。
+  </Card>
+
+  <Card title="フォーマット設定" icon="file-lines" href="/ja/reference/settings/formats">
+    入力フォーマットと出力フォーマットを制御する設定です。
+  </Card>
+
+  <Card title="ベータ版および実験的な機能" icon="flask" href="/ja/reference/settings/beta-and-experimental-features">
+    ベータ版または実験的な設定と機能です。
+  </Card>
+</CardGroup>

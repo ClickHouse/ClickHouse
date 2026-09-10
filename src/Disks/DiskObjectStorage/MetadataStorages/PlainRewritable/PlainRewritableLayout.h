@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <string_view>
 #include <optional>
 #include <filesystem>
 
@@ -15,17 +14,17 @@ public:
     constexpr static std::string METADATA_DIRECTORY_TOKEN = "__meta";
     constexpr static std::string ROOT_DIRECTORY_TOKEN = "__root";
 
-    /// Length of randomly generated directory names backing logical directories.
-    constexpr static size_t DIRECTORY_REMOTE_NAME_LENGTH = 32;
-    /// Length of randomly generated ephemeral (temporary) names used as copy/rename targets
-    /// during mutating operations (file move/unlink and recursive directory removal).
-    constexpr static size_t EPHEMERAL_TEMP_NAME_LENGTH = 16;
+    /// Prefix of the names used as copy/rename targets while a mutating operation is in flight (file
+    /// move/unlink, recursive directory removal). It makes such an object identifiable from its name alone,
+    /// so a leftover of an interrupted operation can be told from real data by looking at the path - see
+    /// `system.remote_data_paths`. Names carrying no data have no reason to be indistinguishable from ones
+    /// that do.
+    constexpr static std::string TEMP_NAME_PREFIX = "_tmp_";
 
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 
-    /// Whether `name` looks like an ephemeral temporary name produced during a mutating operation.
-    /// Used to flag leftover blobs of interrupted operations (see `system.remote_data_paths`).
-    static bool looksLikeEphemeralName(std::string_view name);
+    /// A fresh name for an object that only exists for the duration of one operation.
+    static std::string generateTempName();
 
     std::string constructMetadataDirectoryKey() const;
     std::string constructRootFilesDirectoryKey() const;

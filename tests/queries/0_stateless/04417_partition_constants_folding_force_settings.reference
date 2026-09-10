@@ -1,0 +1,5 @@
+force_primary_key result
+1	10
+2	20
+force_index_by_date result
+1	10

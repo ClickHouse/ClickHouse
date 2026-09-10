@@ -1,0 +1,97 @@
+---
+description: 'flipCoordinates のドキュメント'
+sidebarTitle: '座標の反転'
+slug: /sql-reference/functions/geo/flipCoordinates
+title: '座標の反転'
+doc_type: 'reference'
+---
+
+<div id="flipcoordinates">
+  ## flipCoordinates
+</div>
+
+`flipCoordinates` 関数は、point、Ring、Polygon、または multipolygon の座標の順序を入れ替えます。これは、たとえば緯度と経度の並び順が異なる座標系どうしを変換する際に便利です。
+
+```sql
+flipCoordinates(coordinates)
+```
+
+<div id="input-parameters">
+  ### 入力パラメータ
+</div>
+
+* `coordinates` — 点 `(x, y)` を表すタプル、または Ring、Polygon、Multipolygon を表す、そのようなタプルの配列。サポートされる入力型は次のとおりです。
+  * [**Point**](/ja/reference/data-types/geo#point): `x` と `y` が [Float64](/ja/reference/data-types/float) の値であるタプル `(x, y)`。
+  * [**Ring**](/ja/reference/data-types/geo#ring): 点の配列 `[(x1, y1), (x2, y2), ...]`。
+  * [**Polygon**](/ja/reference/data-types/geo#polygon): Ring の配列 `[ring1, ring2, ...]`。各 Ring は点の配列です。
+  * [**Multipolygon**](/ja/reference/data-types/geo#multipolygon): Polygon の配列 `[polygon1, polygon2, ...]`。
+
+<div id="returned-value">
+  ### 戻り値
+</div>
+
+この関数は、座標を反転した入力を返します。例えば、次のとおりです。
+
+* 点 `(x, y)` は `(y, x)` になります。
+* Ring `[(x1, y1), (x2, y2)]` は `[(y1, x1), (y2, x2)]` になります。
+* Polygonやマルチポリゴンのようなネストされた構造は、再帰的に処理されます。
+
+<div id="examples">
+  ### 例
+</div>
+
+<div id="example-1">
+  #### 例 1: 1つの点を反転する
+</div>
+
+```sql
+SELECT flipCoordinates((10, 20)) AS flipped_point
+```
+
+```text
+┌─flipped_point─┐
+│ (20,10)       │
+└───────────────┘
+```
+
+<div id="example-2">
+  #### 例 2: 点のArray (Ring) を反転する
+</div>
+
+```sql
+SELECT flipCoordinates([(10, 20), (30, 40)]) AS flipped_ring
+```
+
+```text
+┌─flipped_ring──────────────┐
+│ [(20,10),(40,30)]         │
+└───────────────────────────┘
+```
+
+<div id="example-3">
+  #### 例 3: Polygon の座標を反転する
+</div>
+
+```sql
+SELECT flipCoordinates([[(10, 20), (30, 40)], [(50, 60), (70, 80)]]) AS flipped_polygon
+```
+
+```text
+┌─flipped_polygon──────────────────────────────┐
+│ [[(20,10),(40,30)],[(60,50),(80,70)]]        │
+└──────────────────────────────────────────────┘
+```
+
+<div id="example-4">
+  #### 例 4: Multipolygonを反転する
+</div>
+
+```sql
+SELECT flipCoordinates([[[10, 20], [30, 40]], [[50, 60], [70, 80]]]) AS flipped_multipolygon
+```
+
+```text
+┌─flipped_multipolygon──────────────────────────────┐
+│ [[[20,10],[40,30]],[[60,50],[80,70]]]             │
+└───────────────────────────────────────────────────┘
+```

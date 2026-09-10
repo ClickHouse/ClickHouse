@@ -1,7 +1,10 @@
 #include <Columns/ColumnConst.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -37,6 +40,12 @@
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
+namespace ProfileEvents
+{
+    extern const Event QueryAnalysisMicroseconds;
+    extern const Event QueryPipelineBuildMicroseconds;
+}
+
 namespace DB
 {
 
@@ -49,6 +58,7 @@ namespace Setting
 {
 extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 extern const SettingsUInt64 automatic_parallel_replicas_mode;
+extern const SettingsBool inject_random_order_for_select_without_order_by;
 extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
@@ -146,12 +156,28 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
         }
     }
+
+    /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
+    /// for a query processed up to the stage `Complete`: the injection wraps the query into
+    /// `SELECT * FROM (...) ORDER BY rand()`, and if the query is planned only up to an intermediate stage
+    /// (e.g. a child plan of a `Merge` table processed to `WithMergeableState` because a sibling child is
+    /// `Distributed`), the plan would be cut at the level of the wrapper. Then such a child would return
+    /// fully aggregated blocks without `AggregatedChunkInfo` where partially aggregated blocks are expected,
+    /// failing with a logical error in `MergingAggregatedTransform`.
+    if (settings[Setting::inject_random_order_for_select_without_order_by]
+        && select_query_options.to_stage != QueryProcessingStage::Complete)
+        result_context->setSetting("inject_random_order_for_select_without_order_by", false);
+
     return result_context;
 }
 
 template <typename... Args>
 QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
-    const ASTPtr & ast, const ContextMutablePtr & ctx, const SelectQueryOptions & select_options, Args &&... interpreter_args)
+    const ASTPtr & ast,
+    const ContextMutablePtr & ctx,
+    const SelectQueryOptions & select_options,
+    const BuiltSetsByHashPtr & built_sets,
+    Args &&... interpreter_args)
 {
     const auto & logger = getLogger("InterpreterSelectQueryAnalyzer");
     if (!ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
@@ -193,6 +219,10 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     optimization_settings.optimize_projection = false;
     optimization_settings.force_use_projection = false;
     optimization_settings.force_projection_name.clear();
+    /// Adopt the sets the single-node plan already filled.
+    /// Without this the same subqueries are executed a second time
+    /// just to plan a candidate that might be thrown away.
+    reuseBuiltSets(plan, built_sets);
     plan.optimize(optimization_settings);
     return std::make_unique<QueryPlan>(std::move(plan));
 }
@@ -217,7 +247,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
             replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
 
-        replacement_map.emplace(node.get(), std::move(replacement_table_expression));
+        replacement_map.emplace(&table_node, std::move(replacement_table_expression));
     }
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
@@ -241,6 +271,8 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const ContextPtr & context,
     const StoragePtr & storage)
 {
+    ProfileEventTimeIncrement<Microseconds> analysis_time_watch(ProfileEvents::QueryAnalysisMicroseconds);
+
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
@@ -275,8 +307,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree, select_query_options, post_filter_)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
-          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
+          [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names](
+              const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -298,7 +331,8 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            ctx = Context::createCopy(context_),
            storage = storage_,
            select_options = select_query_options_,
-           column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
+           column_names](const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, built_sets, storage, column_names); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -312,8 +346,9 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , planner(query_tree_, select_query_options)
     , query_plan_with_parallel_replicas_builder(
           // Copy over the original `context_` since we need the original value of  `enable_parallel_replicas` that might be changed in `buildContext`.
-          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
-          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
+          [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_](
+              const BuiltSetsByHashPtr & built_sets)
+          { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options, built_sets); })
 {
     tweakSettingsForStreamingQuery(context, query_tree);
 }
@@ -368,6 +403,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
 
     if (!select_query_options.ignore_quota && select_query_options.to_stage == QueryProcessingStage::Complete)
         result.pipeline.setQuota(context->getQuota());
+    result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
     return result;
 }
@@ -396,7 +432,13 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+    /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
+    /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
+    /// would double-count the optimization phase.
+    query_plan.optimize(optimization_settings);
+
+    ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
+    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)

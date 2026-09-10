@@ -2,12 +2,13 @@
 
 #include <Common/VariableContext.h>
 #include <Common/Stopwatch.h>
+#include <Common/CacheLine.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
 #include <base/strong_typedef.h>
-#include <Poco/Message.h>
 #include <atomic>
 #include <memory>
+#include <new>
 #include <cstddef>
 
 
@@ -20,13 +21,20 @@ namespace ProfileEvents
 {
     /// Event identifier (index in array).
     using Event = StrongTypedef<size_t, struct EventTag>;
-    using Count = size_t;
+    /// Not `size_t`: counters are 64-bit even on 32-bit platforms, and must match `Increment`.
+    using Count = UInt64;
     using Increment = Int64;
 
-    struct Counter : public std::atomic<Count>
+    /// Counter cells are plain `Count`, accessed atomically via `std::atomic_ref`. Keeping the
+    /// storage trivially default-constructible is what lets the static `global_counters` backing
+    /// array be a guaranteed zero-init BSS with no dynamic initializer (an `atomic` element is not
+    /// trivially constructible, which reintroduces dynamic init for a large enough array).
+    struct AlignedCountersDeleter
     {
-        using std::atomic<Count>::atomic;
+        void operator()(Count * p) const noexcept { ::operator delete[](p, std::align_val_t{DB::CH_CACHE_LINE_SIZE}); }
     };
+    using AlignedCounters = std::unique_ptr<Count[], AlignedCountersDeleter>;
+
     class Counters;
 
     /// Counters - how many times each event happened
@@ -62,17 +70,39 @@ namespace ProfileEvents
     class Counters
     {
     private:
-        Counter * counters = nullptr;
-        std::unique_ptr<Counter[]> counters_holder;
-        /// Used to propagate increments
-        std::atomic<Counters *> parent = {};
-        Counter prev_cpu_wait_microseconds = 0;
-        Counter prev_cpu_virtual_time_microseconds = 0;
+        /// Per-CPU: `cpus * per_cpu_stride` cells, cell for CPU `c`/event `e` at `c * per_cpu_stride + e`
+        /// (stride rounds `num_counters` up to keep rows on separate cache lines). An out-of-range CPU
+        /// falls back to row 0. Otherwise just `num_counters` cells indexed by event.
+        Count * counters = nullptr;
+        /// 0 → no per-CPU. Set once (static init flips it for `global_counters`, ctor for `User`)
+        /// and only grows the view over the same zeroed storage, so relaxed loads suffice; atomic
+        /// because a thread spawned during another TU's dynamic init may increment concurrently
+        /// with the flip.
+        std::atomic<uint32_t> cpus = 0;
+        AlignedCounters counters_holder;
 
-        /// Lazily allocated on first setTraceProfileEvent()
+        /// Used to propagate increments.
+        /// Requires acquire-release:
+        /// 1. Thread A constructs Counters object and attaches Counters pointer
+        ///    (e.g. ProcessList::insert where the user's Counters is constructed right before calling setUserCounters).
+        /// 2. Thread B traverses the chain and dereferences each pointer (e.g. another thread in thread group).
+        /// 3. If Thread B sees a pointer, it should be guaranteed to see the object's memory without data races.
+        ///    Hence, we need the Thread A's pointer store to synchronize-with the Thread B's pointer load.
+        std::atomic<Counters *> parent = {};
+
+        std::atomic<Count> prev_cpu_wait_microseconds = 0;
+        std::atomic<Count> prev_cpu_virtual_time_microseconds = 0;
+
+        /// Lazily allocated on first setTraceProfileEvent().
+        /// The thread which allocates a buffer and updates the should_trace_array pointer
+        /// should synchronize-with any thread that reads the pointer and reads from the buffer.
+        /// Therefore, should_trace_array requires acquire-release.
         std::atomic<std::atomic_bool *> should_trace_array = nullptr;
         std::unique_ptr<std::atomic_bool[]> should_trace_holder;
         std::atomic_bool trace_all_profile_events = false;
+
+        Count load(Event event) const;
+        void fetchAdd(Event event, Count amount, int32_t cpu);
 
     public:
 
@@ -81,32 +111,26 @@ namespace ProfileEvents
         /// By default, any instance have to increment global counters
         explicit Counters(VariableContext level_ = VariableContext::Thread, Counters * parent_ = &global_counters);
 
-        /// Global level static initializer (constexpr to enable constant initialization
-        /// before any dynamic initializer can allocate memory and call ProfileEvents::increment)
-        constexpr explicit Counters(Counter * allocated_counters) noexcept
-            : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
+        /// constexpr so `global_counters` can be `constinit` — usable before any dynamic init.
+        constexpr explicit Counters(Count * allocated_counters) noexcept;
+
+        friend struct ProfileEventsPerCPUInitializer;
 
         Counters(Counters && src) noexcept;
 
-        Counter & operator[] (Event event)
-        {
-            return counters[event];
-        }
-
-        const Counter & operator[] (Event event) const
-        {
-            return counters[event];
-        }
-
         double getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset = false);
+
+        Count operator[] (Event event) const { return load(event); }
 
         void increment(Event event, Count amount = 1);
         void incrementNoTrace(Event event, Count amount = 1);
+        void incrementSignalSafe(Event event, Count amount = 1);
 
         struct Snapshot
         {
             Snapshot();
             Snapshot(Snapshot &&) = default;
+            Snapshot(const Snapshot & other);
 
             Count operator[] (Event event) const noexcept
             {
@@ -114,6 +138,7 @@ namespace ProfileEvents
             }
 
             Snapshot & operator=(Snapshot &&) = default;
+            Snapshot & operator=(const Snapshot & other);
         private:
             std::unique_ptr<Count[]> counters_holder;
 
@@ -127,37 +152,13 @@ namespace ProfileEvents
         /// Reset all counters to zero and reset parent.
         void reset();
 
-        /// Get parent (thread unsafe)
-        Counters * getParent()
-        {
-            return parent.load(std::memory_order_relaxed);
-        }
+        /// Set parent (thread unsafe)
+        void setUserCounters(Counters * user);
 
         /// Set parent (thread unsafe)
-        void setUserCounters(Counters * user)
-        {
-            auto * current_val = this;
-            auto * parent_val = this->parent.load(std::memory_order_relaxed);
+        void setParent(Counters * parent_);
 
-            while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
-            {
-                current_val = parent_val;
-                parent_val = current_val->parent.load(std::memory_order_relaxed);
-            }
-
-            current_val->parent.store(user, std::memory_order_relaxed);
-        }
-
-        /// Set parent (thread unsafe)
-        void setParent(Counters * parent_)
-        {
-            parent.store(parent_, std::memory_order_relaxed);
-        }
-
-        void setTraceAllProfileEvents()
-        {
-            trace_all_profile_events.store(true, std::memory_order_relaxed);
-        }
+        void setTraceAllProfileEvents();
 
         void setTraceProfileEvent(ProfileEvents::Event event);
         void setTraceProfileEvents(const String & events_list);
@@ -195,6 +196,9 @@ namespace ProfileEvents
         Nanoseconds,
     };
 
+    /// Enable/disable per-CPU sharding for newly-created `User`-level `Counters` (server-wide).
+    void setUserPerCPUEnabled(bool enabled);
+
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
 
@@ -202,11 +206,9 @@ namespace ProfileEvents
     /// and never sends profile event to trace log.
     void incrementNoTrace(Event event, Count amount = 1);
 
-    /// Increment a counter for log messages.
-    void incrementForLogMessage(Poco::Message::Priority priority);
-
-    /// Increment time consumed by logging.
-    void incrementLoggerElapsedNanoseconds(UInt64 ns);
+    /// Async-signal-safe variant of `incrementNoTrace` (no `sched_getcpu`). Use ONLY from
+    /// signal/crash handlers.
+    void incrementSignalSafe(Event event, Count amount = 1);
 
     /// Get name of event by identifier. Returns statically allocated string.
     const std::string_view & getName(Event event);

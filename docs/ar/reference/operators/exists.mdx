@@ -1,0 +1,58 @@
+---
+description: 'توثيق المعامل `EXISTS`'
+slug: /sql-reference/operators/exists
+title: 'EXISTS'
+doc_type: 'reference'
+---
+
+يتحقق المعامل `EXISTS` مما إذا كانت نتيجة استعلام فرعي تحتوي على أي سجلات. فإذا كانت النتيجة فارغة، يعيد المعامل `0`. وإلا، يعيد `1`.
+
+يمكن أيضًا استخدام `EXISTS` في عبارة [WHERE](/ar/reference/statements/select/where).
+
+<Tip>
+  لا يدعم الاستعلام الفرعي الإشارة إلى جداول الاستعلام الرئيسي وأعمدته.
+</Tip>
+
+**البنية**
+
+```sql
+EXISTS(subquery)
+```
+
+**مثال**
+
+استعلام يتحقق من وجود قيم ضمن استعلام فرعي:
+
+```sql title="Query"
+SELECT EXISTS(SELECT * FROM numbers(10) WHERE number > 8), EXISTS(SELECT * FROM numbers(10) WHERE number > 11)
+```
+
+```text title="Response"
+┌─in(1, _subquery1)─┬─in(1, _subquery2)─┐
+│                 1 │                 0 │
+└───────────────────┴───────────────────┘
+```
+
+استعلام يحتوي على استعلام فرعي يُرجع عدة صفوف:
+
+```sql title="Query"
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8);
+```
+
+```text title="Response"
+┌─count()─┐
+│      10 │
+└─────────┘
+```
+
+استعلام يتضمن استعلامًا فرعيًا يُرجع مجموعة نتائج فارغة:
+
+```sql title="Query"
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11);
+```
+
+```text title="Response"
+┌─count()─┐
+│       0 │
+└─────────┘
+```

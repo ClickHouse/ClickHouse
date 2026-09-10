@@ -42,7 +42,7 @@ ${CLICKHOUSE_CLIENT} --query "
 # Read with Parquet config (enables PREWHERE) — this used to crash on ORC files.
 # Use explicit PREWHERE (not WHERE + optimizer) because the query plan optimizer
 # cannot push PREWHERE for ObjectStorage tables (getColumnSizes() returns empty).
-# Explicit PREWHERE on mixed-format Iceberg tables requires the new query analyzer
+# Explicit PREWHERE on mixed-format Iceberg tables requires the analyzer
 # because the old analyzer evaluates PREWHERE through a different code path that
 # doesn't go through FormatFilterInfo (our per-file format check). Force enable_analyzer=1
 # to ensure PREWHERE is handled by the new pipeline even in old-analyzer CI configs.

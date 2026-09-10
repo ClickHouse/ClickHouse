@@ -1,13 +1,16 @@
 #include <Storages/NATS/NATSConnection.h>
 
 #include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
-
-#include <boost/algorithm/string/join.hpp>
-
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_CONNECT_NATS;
+}
 
 /// disconnectedCallback may be called after connection destroy
 LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
@@ -16,13 +19,24 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     : configuration(configuration_)
     , log(std::move(log_))
     , options(std::move(options_))
+    , statistics(nullptr, &natsStatistics_Destroy)
     , connection(nullptr, &natsConnection_Destroy)
 {
+    natsStatistics * new_statistics = nullptr;
+    auto status = natsStatistics_Create(&new_statistics);
+    if (status != NATS_OK)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_NATS,
+            "Can not create NATS statistics. Nats error: {}", natsStatus_GetText(status));
+    statistics.reset(new_statistics);
+
     if (!configuration.username.empty() && !configuration.password.empty())
         natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
         natsOptions_SetToken(options.get(), configuration.token.c_str());
-    if (!configuration.credential_file.empty())
+    if (!configuration.credentials.empty())
+        natsOptions_SetUserCredentialsFromMemory(options.get(), configuration.credentials.c_str());
+    else if (!configuration.credential_file.empty())
         natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
 
     if (configuration.secure)
@@ -75,9 +89,9 @@ String NATSConnection::connectionInfoForLog() const
 {
     if (!configuration.url.empty())
     {
-        return "url : " + configuration.url;
+        return "url: [hidden]";
     }
-    return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
+    return "cluster: [hidden]";
 }
 
 bool NATSConnection::isConnected()
@@ -96,6 +110,28 @@ bool NATSConnection::isClosed()
 {
     std::lock_guard lock(mutex);
     return isClosedImpl(lock);
+}
+
+UInt64 NATSConnection::getReconnectCount()
+{
+    std::lock_guard lock(mutex);
+    if (!connection)
+        return 0;
+
+    auto status = natsConnection_GetStats(connection.get(), statistics.get());
+    if (status != NATS_OK)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_NATS,
+            "Can not get statistics of connection to {}. Nats error: {}", connectionInfoForLog(), natsStatus_GetText(status));
+
+    uint64_t reconnects = 0;
+    status = natsStatistics_GetCounts(statistics.get(), nullptr, nullptr, nullptr, nullptr, &reconnects);
+    if (status != NATS_OK)
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_NATS,
+            "Can not read statistics of connection to {}. Nats error: {}", connectionInfoForLog(), natsStatus_GetText(status));
+
+    return reconnects;
 }
 
 bool NATSConnection::connect()
@@ -134,7 +170,7 @@ void NATSConnection::connectImpl(const Lock &)
     if (status != NATS_OK)
     {
         LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
-                  connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
+                  connectionInfoForLog(), natsStatus_GetText(status), getNATSLastError());
         return;
     }
     connection.reset(new_conection);

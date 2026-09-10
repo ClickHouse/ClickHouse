@@ -1,10 +1,10 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 
 #include <base/find_symbols.h>
+#include <Common/getRandomASCIIString.h>
 
 #include <fmt/format.h>
 
-#include <algorithm>
 #include <vector>
 
 namespace DB
@@ -15,14 +15,9 @@ PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_k
 {
 }
 
-bool PlainRewritableLayout::looksLikeEphemeralName(std::string_view name)
+std::string PlainRewritableLayout::generateTempName()
 {
-    /// Ephemeral names are produced by `getRandomASCIIString(EPHEMERAL_TEMP_NAME_LENGTH)`,
-    /// which draws characters uniformly from ['a', 'z']. Backing directory names use a different
-    /// length (DIRECTORY_REMOTE_NAME_LENGTH), so the length check alone disambiguates them.
-    if (name.size() != EPHEMERAL_TEMP_NAME_LENGTH)
-        return false;
-    return std::all_of(name.begin(), name.end(), [](char c) { return c >= 'a' && c <= 'z'; });
+    return TEMP_NAME_PREFIX + getRandomASCIIString(16);
 }
 
 std::string PlainRewritableLayout::constructMetadataDirectoryKey() const

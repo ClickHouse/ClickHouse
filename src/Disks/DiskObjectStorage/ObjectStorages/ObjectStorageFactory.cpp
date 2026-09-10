@@ -239,7 +239,7 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
         }
 
-        return std::make_shared<WebObjectStorage>(uri, context);
+        return std::make_shared<WebObjectStorage>(uri, "", context);
     });
 }
 

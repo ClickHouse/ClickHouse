@@ -7,10 +7,14 @@
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -246,15 +250,6 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
         getNestedColumn().insertDefault();
 }
 
-void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
-{
-    UInt8 val = 0;
-    readBinaryLittleEndian<UInt8>(val, in);
-
-    if (val == 0)
-        getNestedColumn().skipSerializedInArena(in);
-}
-
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnNullable::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 #else
@@ -483,6 +478,30 @@ int ColumnNullable::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nu
 int ColumnNullable::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint, const Collator & collator) const
 {
     return compareAtImpl(n, m, rhs_, null_direction_hint, &collator);
+}
+
+size_t ColumnNullable::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    if (begin >= end)
+        return begin;
+
+    /// In a sorted Nullable column the NULLs are grouped at one end, so null-ness forms a run within this
+    /// range. Rows must be compared by null-ness, not by the raw null map byte: any non-zero byte means
+    /// NULL, so the bytes within the NULL group may be arbitrary non-zero values in arbitrary order.
+    const UInt8 * null_bytes = getNullMapData().data();
+    const bool ref_is_null = null_bytes[begin] != 0;
+
+    /// A null-ness comparison is cheap, so use a longer linear probe (the default is 8).
+    static constexpr size_t linear_probe = 16;
+    size_t run_end = findEqualRangeEndAssumeSorted(
+        begin, end, linear_probe, [&](size_t i) { return (null_bytes[i] != 0) == ref_is_null; });
+
+    /// When the start row is non-NULL the run is additionally bounded by where the nested value changes.
+    /// That nested scan stays within `[begin, run_end)`, which is entirely non-NULL, so it never reads NULL slots.
+    if (!ref_is_null)
+        run_end = getNestedColumn().getEqualRangeEndAssumeSorted(begin, run_end, nan_direction_hint);
+
+    return run_end;
 }
 
 void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -1039,6 +1058,74 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> *)
+{
+    getNestedColumn().fillFromRowRefsWithRowStore(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &getNullMapData());
+}
+
+void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> *)
+{
+    getNestedColumn().fillFromRowStorePtrs(removeNullable(type), row_store_ptrs, field_offset, field_size, begin, count, &getNullMapData());
+}
+
+/// A NULL row emits only the flag byte and never touches the nested column, so an
+/// unsupported nested type (e.g. LowCardinality, Array) would slip through silently.
+/// Probe row 0 once so every row rejects the same types a non-NULL row would, even
+/// in an all-NULL block. Not on the hot path.
+void ColumnNullable::validateNestedComparable() const
+{
+    String probe;
+    nested_column->serializeAsComparable(0, probe);
+}
+
+/// Leading flag byte of a Nullable row's comparable encoding. `\x00` (non-NULL)
+/// sorts before `\x01` (NULL), so NULLs compare greater, matching compareAt with
+/// null_direction_hint = 1. A non-NULL row is `\x00` followed by the nested value's
+/// encoding; a NULL row is just `\x01`.
+void ColumnNullable::serializeAsComparable(size_t n, String & out) const
+{
+    const auto & null_map_data = getNullMapData();
+    if (null_map_data[n])
+    {
+        validateNestedComparable();
+        out.push_back('\x01');
+        return;
+    }
+    out.push_back('\x00');
+    nested_column->serializeAsComparable(n, out);
+}
+
+void ColumnNullable::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const Permutation * permutation,
+    const UInt8 * outer_null_map) const
+{
+    if (num_rows == 0)
+        return;
+
+    validateNestedComparable();
+
+    /// Write the null flag for every row: NULL=0x01 (sorts after), non-NULL=0x00.
+    const auto & null_map_data = getNullMapData();
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, outer_null_map,
+        [&](size_t src, String & dst) { dst.push_back(null_map_data[src] ? '\x01' : '\x00'); });
+
+    /// Encode the nested values with one virtual dispatch; the merged null map
+    /// lets the nested loop skip NULL rows.
+    const UInt8 * effective_null_map = null_map_data.data();
+    PaddedPODArray<UInt8> merged_null_map;
+    if (outer_null_map)
+    {
+        merged_null_map.resize(null_map_data.size());
+        for (size_t i = 0; i < null_map_data.size(); ++i)
+            merged_null_map[i] = null_map_data[i] | outer_null_map[i];
+        effective_null_map = merged_null_map.data();
+    }
+    nested_column->batchSerializeAsComparable(num_rows, out, permutation, effective_null_map);
+}
+
 ColumnPtr makeNullable(const ColumnPtr & column)
 {
     if (isColumnNullable(*column))
@@ -1120,6 +1207,14 @@ ColumnPtr removeNullableOrLowCardinalityNullable(const ColumnPtr & column)
     }
 
     return removeNullable(column);
+}
+
+bool ColumnNullable::hasOnlyTypeDefaults() const
+{
+    const auto & data = getNullMapData();
+    if (data.empty())
+        return true;
+    return memoryIsByte(data.data(), 0, data.size(), 1);
 }
 
 }

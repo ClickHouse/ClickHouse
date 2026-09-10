@@ -1,0 +1,6 @@
+--- while the table is visible ---
+indexes:	1
+projections:	1
+--- after the table is renamed out of reach ---
+indexes:	0
+projections:	0
