@@ -49,8 +49,8 @@ constexpr char ESCAPE_CHARACTER = '\\';
 
 #if defined(__SSSE3__) || defined(__aarch64__)
 
-/// GCC/Clang vector extensions lower each lane operation to one SSE/NEON instruction;
-/// only the byte permutation has no portable spelling.
+/// GCC/Clang vector extensions lower each lane operation to one SSE/NEON instruction.
+/// Only the byte permutation has no portable spelling.
 using UInt8x16 = UInt8 __attribute__((vector_size(16)));
 using UInt64x2 = UInt64 __attribute__((vector_size(16)));
 
@@ -131,10 +131,8 @@ public:
                 return pos;
         }
 
-#if defined(__SSSE3__) || defined(__aarch64__)
         if (vectorized)
             pos = findVectorized<positive>(pos, end);
-#endif
 
         for (; pos < end; ++pos)
         {
@@ -149,12 +147,12 @@ private:
     static constexpr ptrdiff_t SCALAR_PREFIX = 16;
     static constexpr ptrdiff_t VECTOR_SIZE = 16;
 
-#if defined(__SSSE3__) || defined(__aarch64__)
     /// Scans whole 16-byte blocks. Returns the position of the first byte matching the search,
     /// or the position from which fewer than 16 bytes remain.
     template <bool positive>
     const char * findVectorized(const char * pos, const char * end) const
     {
+#if defined(__SSSE3__) || defined(__aarch64__)
         const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
         const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);
 
@@ -178,10 +176,10 @@ private:
             if (halves[1])
                 return pos + 8 + std::countr_zero(halves[1]) / 8;
         }
+#endif
 
         return pos;
     }
-#endif
 
     bool table[256]{};
     UInt8 low_nibble_table[16]{};
