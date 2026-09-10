@@ -10,4 +10,7 @@
     <query>SELECT count() FROM (SELECT [number] a, [number * 2, number] b FROM numbers(10000000)) AS t LEFT ARRAY JOIN a, b WHERE NOT ignore(a + b) SETTINGS enable_unaligned_array_join = 1</query>
 
     <query>with 'clickhouse' as str select arrayJoin(range(number % 10)),  materialize(str) from numbers(10000000)</query>
+
+    <!-- one row with a huge array: the whole block is a single window and must not be copied -->
+    <query>SELECT quantileMerge(x) FROM (SELECT arrayMap(i -> state, range(5000000)) AS arr FROM (SELECT quantileState(rand()) AS state FROM numbers(10000))) ARRAY JOIN arr AS x</query>
 </test>
