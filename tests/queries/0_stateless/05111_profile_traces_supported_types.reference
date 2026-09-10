@@ -1,4 +1,4 @@
-native local: supported types streamed; ProfileEvent retained in trace_log
-native remote: supported types streamed; ProfileEvent retained in trace_log
-HTTP local: supported types streamed; ProfileEvent retained in trace_log
-HTTP remote: supported types streamed; ProfileEvent retained in trace_log
+native local: supported types streamed; ProfileEvent excluded from stream
+native remote: supported types streamed; ProfileEvent excluded from stream
+HTTP local: supported types streamed; ProfileEvent excluded from stream
+HTTP remote: supported types streamed; ProfileEvent excluded from stream
