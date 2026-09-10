@@ -549,6 +549,23 @@ void updateConfigurationFromConfig(
 
 }
 
+namespace
+{
+
+/// Log all properties of a Kafka client configuration. The values of properties that can contain
+/// secrets, e.g. `sasl.password` or `sasl.oauthbearer.client.secret`, are replaced with `[HIDDEN]`.
+/// These log records can reach not only the server log, but also clients that set `send_logs_level`.
+void logConfigProperties(const cppkafka::Configuration & conf, const LoggerPtr & log, std::string_view client_type)
+{
+    for (const auto & property : conf.get_all())
+    {
+        const bool is_secret = property.first.contains("password") || property.first.contains("secret");
+        LOG_TRACE(log, "{} set property {}:{}", client_type, property.first, is_secret ? "[HIDDEN]" : property.second);
+    }
+}
+
+}
+
 template <typename TKafkaStorage>
 cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorage & storage, const ConsumerConfigParams & params, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
 {
@@ -579,12 +596,7 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set("enable.auto.offset.store", "false"); // Update offset automatically - to commit them all at once.
     conf.set("enable.partition.eof", "false"); // Ignore EOF messages
 
-    for (auto & property : conf.get_all())
-    {
-        if (property.first.contains("password"))
-            continue;
-        LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
-    }
+    logConfigProperties(conf, params.log, "Consumer");
 
     return conf;
 }
@@ -605,8 +617,7 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
 
     updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 
-    for (auto & property : conf.get_all())
-        LOG_TRACE(params.log, "Producer set property {}:{}", property.first, property.second);
+    logConfigProperties(conf, params.log, "Producer");
 
     /// compression.codec is a global and topic level property, however compression.level is only a topic level property.
     /// cppkafka::Configuration::get_all returns the global properties only, so we need to check compression.level separately.
