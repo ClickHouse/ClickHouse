@@ -30,6 +30,9 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
+#if USE_LIBPQXX && USE_AWS_S3
+#include <Databases/DataLake/IcebergJdbcCatalog.h>
+#endif
 #if USE_AWS_S3 && USE_SSL
 #include <Databases/DataLake/S3TablesCatalog.h>
 #endif
@@ -95,6 +98,12 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
+    extern const DatabaseDataLakeSettingsString jdbc_host;
+    extern const DatabaseDataLakeSettingsUInt64 jdbc_port;
+    extern const DatabaseDataLakeSettingsString jdbc_database;
+    extern const DatabaseDataLakeSettingsString jdbc_schema;
+    extern const DatabaseDataLakeSettingsString jdbc_user;
+    extern const DatabaseDataLakeSettingsString jdbc_password;
 }
 
 namespace Setting
@@ -296,6 +305,38 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 Context::getGlobalContextInstance());
             break;
+        }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_JDBC:
+        {
+#if USE_LIBPQXX && USE_AWS_S3
+            /// Reads the standard Apache Iceberg JdbcCatalog tables directly
+            /// from Postgres over the pg wire protocol instead of the Iceberg
+            /// REST API. `warehouse` selects the JdbcCatalog `catalog_name`.
+            /// Read-only: writes, views and credential vending are not
+            /// supported, so configure static storage credentials.
+            DataLake::IcebergJdbcCatalog::ConnectionParams jdbc_params;
+            jdbc_params.host = settings[DatabaseDataLakeSetting::jdbc_host].value;
+            const UInt64 jdbc_port = settings[DatabaseDataLakeSetting::jdbc_port].value;
+            if (jdbc_port == 0 || jdbc_port > 65535)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Setting 'jdbc_port' must be a valid TCP port (1-65535), got {}", jdbc_port);
+            }
+            jdbc_params.port = static_cast<UInt16>(jdbc_port);
+            jdbc_params.database = settings[DatabaseDataLakeSetting::jdbc_database].value;
+            jdbc_params.schema = settings[DatabaseDataLakeSetting::jdbc_schema].value;
+            jdbc_params.user = settings[DatabaseDataLakeSetting::jdbc_user].value;
+            jdbc_params.password = settings[DatabaseDataLakeSetting::jdbc_password].value;
+            catalog_impl = std::make_shared<DataLake::IcebergJdbcCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                std::move(jdbc_params),
+                settings,
+                table_engine_definition,
+                Context::getGlobalContextInstance());
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "JDBC catalog requires PostgreSQL and S3 support");
+#endif
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
@@ -526,6 +567,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::S3_TABLES:
         case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
         case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+        case DatabaseDataLakeCatalogType::ICEBERG_JDBC:
         {
             switch (type)
             {
@@ -1463,7 +1505,12 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         ///
         ///  NOTE: it's still possible to provide endpoint argument for Glue. It's used for fake
         ///  mock glue catalog in tests only.
-        bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE;
+        ///
+        /// JDBC catalog is likewise fully identified by its settings (host,
+        /// port, database, schema, catalog name): the engine URL argument is
+        /// meaningless for a Postgres-backed catalog, so it is not required.
+        bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_JDBC;
 
         const ASTFunction * function_define = database_engine_define->engine;
 
@@ -1511,6 +1558,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
             case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+            case DatabaseDataLakeCatalogType::ICEBERG_JDBC:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
@@ -1766,6 +1814,12 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
+| `jdbc_host`      | Hostname of the Postgres server holding the standard Iceberg JdbcCatalog tables (`catalog_type = 'jdbc'`). Default `localhost`. |
+| `jdbc_port`      | Port of the Postgres server holding the standard Iceberg JdbcCatalog tables. Default `5432`. |
+| `jdbc_database`  | Database name holding the standard Iceberg JdbcCatalog tables. Default `postgres`. |
+| `jdbc_schema`    | Postgres schema holding the `iceberg_tables` and `iceberg_namespace_properties` tables. Default `public`. |
+| `jdbc_user`      | Username for the Postgres server holding the standard Iceberg JdbcCatalog tables. Use a dedicated read-only role. Default `postgres`. |
+| `jdbc_password`  | Password for the Postgres server holding the standard Iceberg JdbcCatalog tables. Default empty. |
 
 ## Examples {#examples}
 
@@ -1793,6 +1847,32 @@ SELECT count() from database_name.table_name;
     bearer token (scoped to https://storage.azure.com) instead of
     `onelake_client_id`/`onelake_client_secret`. ClickHouse does not refresh the token, so the
     database must be recreated after it expires.
+* JDBC Catalog
+    Reads PostgreSQL-backed Apache Iceberg `JdbcCatalog` V0/V1 tables (`iceberg_tables`,
+    `iceberg_namespace_properties`) directly from Postgres over the pg wire
+    protocol. `warehouse` selects the JdbcCatalog `catalog_name` (default
+    `"jdbc"` when that is the configured catalog name). Only S3 metadata locations
+    are supported. Use a dedicated PostgreSQL role with `SELECT` access and
+    read-only S3 credentials. This integration has no REST authorization or
+    credential vending: configure a `storage_endpoint` for S3-compatible storage.
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog
+SETTINGS
+    catalog_type = 'jdbc',
+    warehouse = 'jdbc',
+    jdbc_host = 'postgres',
+    jdbc_port = 5432,
+    jdbc_database = 'catalog',
+    jdbc_schema = 'public',
+    jdbc_user = 'reader',
+    jdbc_password = 'secret',
+    storage_endpoint = 'http://minio:9000',
+    aws_access_key_id = 'minio',
+    aws_secret_access_key = 'secret';
+SHOW TABLES IN database_name;
+SELECT count() from database_name.table_name;
+```
 )DOCS_MD",
         .syntax = "ENGINE = DataLakeCatalog('catalog_url'[, 'user', 'password']) SETTINGS catalog_type = '...'",
         .related = {}});

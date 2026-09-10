@@ -51,6 +51,12 @@ namespace ErrorCodes
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
     DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \
+    DECLARE(String, jdbc_host, "localhost", "Hostname of the Postgres server holding the standard Iceberg JdbcCatalog tables (`catalog_type = 'jdbc'`). Only used for that catalog type.", 0) \
+    DECLARE(UInt64, jdbc_port, 5432, "Port of the Postgres server holding the standard Iceberg JdbcCatalog tables. Only used for that catalog type.", 0) \
+    DECLARE(String, jdbc_database, "postgres", "Database name holding the standard Iceberg JdbcCatalog tables. Only used for that catalog type.", 0) \
+    DECLARE(String, jdbc_schema, "public", "Postgres schema holding the `iceberg_tables` and `iceberg_namespace_properties` tables. Only used for that catalog type.", 0) \
+    DECLARE(String, jdbc_user, "postgres", "Username for the Postgres server holding the standard Iceberg JdbcCatalog tables. Use a dedicated read-only role. Only used for that catalog type.", 0) \
+    DECLARE(String, jdbc_password, "", "Password for the Postgres server holding the standard Iceberg JdbcCatalog tables. Only used for that catalog type.", 0) \
 
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS) \

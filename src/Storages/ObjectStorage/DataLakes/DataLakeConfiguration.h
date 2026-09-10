@@ -155,6 +155,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
     {
+        DataLake::throwIfTableWritesUnsupported(catalog, "CREATE TABLE");
         BaseStorageConfiguration::update(object_storage, local_context);
 
         assertLocalPathCorrect(object_storage, local_context);
@@ -180,6 +181,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const std::optional<FormatSettings> & format_settings) override
     {
+        DataLake::throwIfTableWritesUnsupported(catalog, "Mutation");
         getMetadata()->mutate(commands, storage_ptr, context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
@@ -202,6 +204,7 @@ public:
         const StorageID & storage_id,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
+        DataLake::throwIfTableWritesUnsupported(catalog, "ALTER");
         lazyInitializeIfNeeded(object_storage, context);
         getMetadata()->alter(params, context, storage_id, catalog);
     }
@@ -346,6 +349,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
+        DataLake::throwIfTableWritesUnsupported(catalog, "INSERT");
         lazyInitializeIfNeeded(object_storage, context);
         /// When the storage carries no format settings (table functions pass none),
         /// derive them from the context. Substituting FormatSettings{} here (struct
