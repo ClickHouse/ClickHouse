@@ -854,12 +854,16 @@ static ColumnPtr createColumnFromConstantArray(
     if (value_field.getType() != Field::Types::Array)
         return nullptr;
 
+    /// The elements' own type. `convertFieldToType` needs it to convert a value that carries a unit -
+    /// a `Date` day number probed against an `Array(DateTime)` column - instead of re-basing its raw
+    /// number as seconds, which hashes something the column can never hold. Every other call in this
+    /// file passes the same hint.
     DataTypePtr element_type;
-    if (coerce_like_search_function && value_type)
+    if (value_type)
         if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
             element_type = value_array_type->getNestedType();
 
-    const bool coerce = element_type && searchFunctionCoercesConstant(element_type, actual_type);
+    const bool coerce = coerce_like_search_function && element_type && searchFunctionCoercesConstant(element_type, actual_type);
     const bool is_nullable = actual_type->isNullable();
     const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
     auto mutable_column = actual_type->createColumn();
@@ -881,7 +885,7 @@ static ColumnPtr createColumnFromConstantArray(
 
         Field converted = coerce
             ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
-            : convertFieldToType(f, *actual_type);
+            : convertFieldToType(f, *actual_type, element_type.get());
         if (converted.isNull())
             return nullptr;
 
