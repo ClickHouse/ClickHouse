@@ -42,6 +42,7 @@ transport_functions = (
     "WriteBufferFromHTTPServerResponse::nextImpl",
     "HTTPWriteBuffer::nextImpl",
     "ZlibDeflatingWriteBuffer::nextImpl",
+    "LibdeflateDeflatingWriteBuffer::nextImpl",
     "CompressedWriteBuffer::nextImpl",
 )
 
