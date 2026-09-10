@@ -3,6 +3,7 @@
 -- subset having a direct edge.
 -- count() = 3 because only rows where all four ids coincide survive.
 
+SET query_plan_merge_filter_into_join_condition = 1; -- pin (randomized in CI): comma joins get their keys from WHERE through this optimization
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';

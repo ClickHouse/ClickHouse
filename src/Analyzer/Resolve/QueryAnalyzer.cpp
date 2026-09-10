@@ -346,11 +346,6 @@ static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeN
             stack.push(child_join_node->getLeftTableExpressionNode().get());
             stack.push(child_join_node->getRightTableExpressionNode().get());
         }
-
-        if (const auto * child_join_node = current->as<CrossJoinNode>())
-        {
-            stack.push_range(child_join_node->getTableExpressions() | std::views::transform(&QueryTreeNodePtr::get));
-        }
     }
     return false;
 }
@@ -2259,30 +2254,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
             continue;
         }
 
-        auto * cross_join_node = table_expression->as<CrossJoinNode>();
-
-        if (cross_join_node)
-        {
-            size_t stack_size = table_expressions_column_nodes_with_names_stack.size();
-            size_t num_tables = cross_join_node->getTableExpressions().size();
-            if (stack_size < cross_join_node->getTableExpressions().size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least {} table expressions on stack before CROSS_JOIN processing. Actual: {}",
-                    num_tables,
-                    stack_size);
-
-            QueryTreeNodesWithNames matched_expression_nodes_with_column_names;
-            for (size_t i = stack_size - num_tables; i < stack_size; ++i)
-            {
-                for (auto && table_column_with_name : table_expressions_column_nodes_with_names_stack[i])
-                    matched_expression_nodes_with_column_names.push_back(std::move(table_column_with_name));
-            }
-
-            table_expressions_column_nodes_with_names_stack.resize(stack_size - num_tables);
-            table_expressions_column_nodes_with_names_stack.push_back(std::move(matched_expression_nodes_with_column_names));
-            continue;
-        }
-
         auto * join_node = table_expression->as<JoinNode>();
 
         if (join_node)
@@ -3639,8 +3610,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
             [[fallthrough]];
         case QueryTreeNodeType::ARRAY_JOIN:
             [[fallthrough]];
-        case QueryTreeNodeType::CROSS_JOIN:
-            [[fallthrough]];
         case QueryTreeNodeType::LAMBDA_ARGS:
             [[fallthrough]];
         case QueryTreeNodeType::JOIN:
@@ -4398,16 +4367,6 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 auto & array_join = current_join_tree_node->as<ArrayJoinNode &>();
                 join_tree_node_ptrs_to_process_queue.push_back(&array_join.getTableExpressionNode());
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & join = current_join_tree_node->as<CrossJoinNode &>();
-                for (auto & expr : join.getTableExpressions())
-                    join_tree_node_ptrs_to_process_queue.push_back(&expr);
-
-                scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
-                scope.joins_count += join.getTableExpressions().size() - 1;
                 break;
             }
             case QueryTreeNodeType::JOIN:
@@ -5256,19 +5215,6 @@ void QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode &
                             "While processing '{}'", join_node.formatASTForErrorMessage());
 }
 
-/// Resolve join node in scope
-void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
-{
-    auto & cross_join_node_typed = cross_join_node->as<CrossJoinNode &>();
-    auto & expressions = cross_join_node_typed.getTableExpressions();
-
-    for (auto & expr : expressions)
-    {
-        resolveQueryJoinTreeNode(expr, scope, expressions_visitor);
-        validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
-    }
-}
-
 static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
 {
     std::stack<const IQueryTreeNode *> nodes_to_process;
@@ -5329,14 +5275,6 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
 
                 nodes_to_process.push(join_node->getLeftTableExpressionNode().get());
                 nodes_to_process.push(join_node->getRightTableExpressionNode().get());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                const auto * cross_join_node = table_expression->as<CrossJoinNode>();
-                chassert(cross_join_node);
-                for (const auto & table_expr : cross_join_node->getTableExpressions())
-                    nodes_to_process.push(table_expr.get());
                 break;
             }
             default:
@@ -5402,15 +5340,6 @@ static bool getOrderedColumnsFromTableExpression(const QueryTreeNodePtr & root_t
                 chassert(join_node);
                 nodes_to_process.push_back(join_node->getRightTableExpressionNode().get());
                 nodes_to_process.push_back(join_node->getLeftTableExpressionNode().get());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                const auto * cross_join_node = table_expression->as<CrossJoinNode>();
-                chassert(cross_join_node);
-                const auto & exprs = cross_join_node->getTableExpressions();
-                for (auto it = exprs.rbegin(); it != exprs.rend(); ++it)
-                    nodes_to_process.push_back(it->get());
                 break;
             }
             default:
@@ -5601,12 +5530,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     return nullptr;
 
                 /// When expression has no table source (e.g. a constant like `concat('_1', 2, 2) AS id`),
-                /// and left_table_expression is a JOIN or CROSS_JOIN node, we must not assign the JOIN
-                /// as the column source. That would create a ColumnNode with a JOIN/CROSS_JOIN source
+                /// and left_table_expression is a JOIN node, we must not assign the JOIN
+                /// as the column source. That would create a ColumnNode with a JOIN source
                 /// and non-ListNode expression, which CollectSourceColumnsVisitor doesn't expect.
-                if (!expression_source
-                    && (left_table_expression->getNodeType() == QueryTreeNodeType::JOIN
-                        || left_table_expression->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
+                if (!expression_source && left_table_expression->getNodeType() == QueryTreeNodeType::JOIN)
                     return nullptr;
 
                 /// Create ColumnNode with expression from parent projection
@@ -6137,11 +6064,6 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             resolveArrayJoin(join_tree_node, scope, expressions_visitor);
-            break;
-        }
-        case QueryTreeNodeType::CROSS_JOIN:
-        {
-            resolveCrossJoin(join_tree_node, scope, expressions_visitor);
             break;
         }
         case QueryTreeNodeType::JOIN:

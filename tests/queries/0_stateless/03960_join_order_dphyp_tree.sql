@@ -17,6 +17,7 @@
 --
 -- After the fix both algorithms must pick the same optimal join order.
 
+SET query_plan_merge_filter_into_join_condition = 1; -- pin (randomized in CI): comma joins get their keys from WHERE through this optimization
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 -- Statistics are not built on insert by default, so without this the tables would have

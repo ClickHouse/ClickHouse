@@ -259,6 +259,9 @@ inline const auto & getOptimizations()
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
         {tryDeriveNotNullFiltersFromJoin, "deriveNotNullFiltersFromJoin", &QueryPlanOptimizationSettings::derive_not_null_filters_from_joins},
+        /// Before the pushdown: a `WHERE` equality turns a cross join into an inner join with keys, and the
+        /// pushdown then copies a predicate on a key to both join inputs instead of sinking it into one.
+        {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryFuseFilterIntoArrayJoin, "fuseFilterIntoArrayJoin", &QueryPlanOptimizationSettings::fuse_filter_into_array_join},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
@@ -271,7 +274,6 @@ inline const auto & getOptimizations()
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearchWithVectorIndexFirstPass, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
-        {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
         {tryConvertAnyJoinToSemiOrAntiJoin,
          "convertAnyJoinToSemiOrAntiJoin",
          &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
@@ -353,6 +355,10 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+
+/// Turns the comma joins left unrewritten by `mergeFilterIntoJoinCondition` into `Cross`,
+/// or throws if `cross_to_inner_join_rewrite >= 2` demands that every comma join gets join keys.
+void normalizeCommaJoins(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);

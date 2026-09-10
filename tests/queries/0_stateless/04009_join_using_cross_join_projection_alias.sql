@@ -15,7 +15,7 @@ INSERT INTO t1 VALUES (1);
 INSERT INTO t2 VALUES (1);
 
 -- The key structure: constant alias `c0` in projection, CROSS JOIN as left table of INNER JOIN USING (c0).
--- Previously caused LOGICAL_ERROR because a ColumnNode was created with CROSS_JOIN as its source.
+-- Previously caused LOGICAL_ERROR because a ColumnNode was created with the cross join node as its source.
 -- This works because `t1` has a `c0` column, so normal USING resolution finds it.
 SELECT (1::UInt32 AS c0)
 FROM numbers(1) AS n

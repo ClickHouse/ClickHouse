@@ -4635,7 +4635,7 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     {
         const QueryTreeNodePtr & join_tree_node = query_info.query_tree->as<QueryNode &>().getJoinTreeNode();
 
-        if (join_tree_node && (join_tree_node->getNodeType() == QueryTreeNodeType::JOIN || join_tree_node->getNodeType() == QueryTreeNodeType::CROSS_JOIN))
+        if (join_tree_node && join_tree_node->getNodeType() == QueryTreeNodeType::JOIN)
             return false;
     }
 

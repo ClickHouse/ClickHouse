@@ -3,6 +3,7 @@
 -- no single-table filter, no dependence on column statistics - and the optimal
 -- plan is unique across environments. EXPLAIN pins it; the hash must match DPsize.
 
+SET query_plan_merge_filter_into_join_condition = 1; -- pin (randomized in CI): comma joins get their keys from WHERE through this optimization
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;

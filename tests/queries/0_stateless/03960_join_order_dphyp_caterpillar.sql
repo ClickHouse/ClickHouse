@@ -9,6 +9,7 @@
 -- Each spine node Si has at most 3 neighbours (S(i-1), S(i+1), Li).
 -- Each leaf Li has exactly 1 neighbour (Si).
 
+SET query_plan_merge_filter_into_join_condition = 1; -- pin (randomized in CI): comma joins get their keys from WHERE through this optimization
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
 SET query_plan_join_swap_table = 'auto';

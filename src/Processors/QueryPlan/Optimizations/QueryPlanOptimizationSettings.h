@@ -79,6 +79,8 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    /// `cross_to_inner_join_rewrite >= 2`: a comma join that stays a cross product is an error
+    bool force_comma_join_rewrite;
     bool merge_expression_into_join;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;

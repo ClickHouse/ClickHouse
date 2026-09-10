@@ -18,7 +18,7 @@ Actions: INPUT : 0 -> __table1.uid Int16 : 0
 Positions: 6 0 1 2 3 4
   Sorting (Sorting for ORDER BY)
   Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.`u2.uid` ASC, __table1.`u2.name` ASC, __table1.`u2.age` ASC
-    Expression ((Before ORDER BY + (Projection + )))
+    Expression ((Before ORDER BY + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
     Actions: INPUT : 0 -> __table2.uid Int16 : 0
              INPUT : 1 -> __table2.name String : 1
              INPUT : 2 -> __table2.age Int16 : 2
@@ -101,7 +101,7 @@ Actions: INPUT : 0 -> __table1.uid Int16 : 0
 Positions: 6 0 1 2 3 4
   Sorting (Sorting for ORDER BY)
   Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.`u2.uid` ASC, __table1.`u2.name` ASC, __table1.`u2.age` ASC
-    Expression ((Before ORDER BY + (Projection + )))
+    Expression ((Before ORDER BY + (Projection + (WHERE + (Change column names to column identifiers + (Project names + Projection))))))
     Actions: INPUT : 0 -> __table2.uid Int16 : 0
              INPUT : 1 -> __table2.name String : 1
              INPUT : 2 -> __table2.age Int16 : 2

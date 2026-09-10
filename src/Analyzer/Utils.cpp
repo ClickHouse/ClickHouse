@@ -572,8 +572,6 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(
         }
         case QueryTreeNodeType::ARRAY_JOIN:
             [[fallthrough]];
-        case QueryTreeNodeType::CROSS_JOIN:
-            [[fallthrough]];
         case QueryTreeNodeType::JOIN:
         {
             auto table_expression_tables_in_select_query_ast = table_expression->toAST(convert_to_ast_options);
@@ -632,13 +630,6 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 nodes_to_process.push_back(node_to_process->as<ArrayJoinNode>()->getTableExpressionNode());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                     nodes_to_process.push_back(expr);
                 break;
             }
             case QueryTreeNodeType::JOIN:
@@ -709,13 +700,6 @@ TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join
                     result.push_back(std::move(node_to_process));
                 break;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & join_node = node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : std::ranges::reverse_view(join_node.getTableExpressions()))
-                    nodes_to_process.push_front(static_pointer_cast<ITableExpressionNode>(expr));
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
@@ -769,12 +753,6 @@ TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr &
                 nodes_to_process.push_front(array_join_node.getTableExpressionNodeTyped());
                 break;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = node_to_process->as<CrossJoinNode &>();
-                nodes_to_process.push_front(cross_join_node.getTableExpressionTypedAt(0));
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
@@ -818,16 +796,6 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Tab
         {
             auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
             buildTableExpressionsStackImpl(array_join_node.getTableExpressionNode(), result);
-            result.push_back(static_pointer_cast<ITableExpressionNode>(join_tree_node));
-            break;
-        }
-        case QueryTreeNodeType::CROSS_JOIN:
-        {
-            auto & cross_join_node = join_tree_node->as<CrossJoinNode &>();
-
-            for (const auto & expr : cross_join_node.getTableExpressions())
-                buildTableExpressionsStackImpl(expr, result);
-
             result.push_back(static_pointer_cast<ITableExpressionNode>(join_tree_node));
             break;
         }

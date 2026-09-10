@@ -14,7 +14,7 @@ Expression (Project names)
     Limit (TopN merge Sorting for ORDER BY)
       GatherExchange
         Sorting
-          Expression ((Before ORDER BY + (Projection + )))
+          Expression ((Before ORDER BY + (Projection + WHERE)))
             JoinLogical (Broadcast HashJoin )
               JoinLogical (Broadcast HashJoin )
                 JoinLogical (Broadcast HashJoin )

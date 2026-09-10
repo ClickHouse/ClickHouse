@@ -3,6 +3,9 @@ SET explain_query_plan_default = 'legacy';
 SET enable_optimize_predicate_expression = 0;
 SET convert_query_to_cnf = 0;
 SET cross_to_inner_join_rewrite = 1;
+-- The plan shape below depends on these optimizations; the test runner randomizes them.
+SET query_plan_merge_filter_into_join_condition = 1;
+SET query_plan_optimize_join_order_limit = 10;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -15,51 +18,51 @@ CREATE TABLE t3 (a UInt32, b Nullable(Int32)) ENGINE = Memory;
 CREATE TABLE t4 (a UInt32, b Nullable(Int32)) ENGINE = Memory;
 
 -- {echoOn}
---- EXPLAIN QUERY TREE
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 WHERE t1.a = t2.a) SETTINGS enable_analyzer = 1;
+--- EXPLAIN PLAN
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2 WHERE t1.a = t2.a) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 WHERE t1.b = t2.b) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2 WHERE t1.b = t2.b) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3 WHERE t1.b = t2.b AND t1.b = t3.b) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3 WHERE t1.b = t2.b AND t1.b = t3.b) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t1.a = t3.a AND t1.a = t4.a) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t1.a = t3.a AND t1.a = t4.a) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.b = t2.b AND t1.b = t3.b AND t1.b = t4.b) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.b = t2.b AND t1.b = t3.b AND t1.b = t4.b) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t2.a = t1.a AND t2.a = t3.a AND t2.a = t4.a) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3, t4 WHERE t2.a = t1.a AND t2.a = t3.a AND t2.a = t4.a) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t3.a = t1.a AND t3.a = t2.a AND t3.a = t4.a) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3, t4 WHERE t3.a = t1.a AND t3.a = t2.a AND t3.a = t4.a) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t4.a = t1.a AND t4.a = t2.a AND t4.a = t3.a) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3, t4 WHERE t4.a = t1.a AND t4.a = t2.a AND t4.a = t3.a) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t2.a = t3.a AND t3.a = t4.a) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3, t4 WHERE t1.a = t2.a AND t2.a = t3.a AND t3.a = t4.a) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2, t3, t4) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2, t3, t4) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1 CROSS JOIN t2 CROSS JOIN t3 CROSS JOIN t4) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1 CROSS JOIN t2 CROSS JOIN t3 CROSS JOIN t4) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1, t2 CROSS JOIN t3) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1, t2 CROSS JOIN t3) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1 JOIN t2 USING a CROSS JOIN t3) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1 JOIN t2 USING a CROSS JOIN t3) SETTINGS enable_analyzer = 1;
 
-SELECT countIf(explain like '%COMMA%' OR explain like '%CROSS%'), countIf(explain like '%INNER%') FROM (
-    EXPLAIN QUERY TREE SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a CROSS JOIN t3) SETTINGS enable_analyzer = 1;
+SELECT countIf(explain ilike '%Type: COMMA%' OR explain ilike '%Type: CROSS%'), countIf(explain ilike '%Type: INNER%') FROM (
+    EXPLAIN actions = 1 SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a CROSS JOIN t3) SETTINGS enable_analyzer = 1;
 
 -- {echoOff}
 

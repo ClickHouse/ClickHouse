@@ -1,4 +1,4 @@
-Expression ((Project names + Projection))
+Expression ((Project names + (Projection + )))
   Expression (Post Join Actions)
     Join (JOIN FillRightFirst)
       Expression (Left Pre Join Actions)
