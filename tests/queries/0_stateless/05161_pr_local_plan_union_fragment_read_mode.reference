@@ -1,0 +1,10 @@
+the fragment reads both branches, only the one with its own filter in order
+Read type: InOrder
+Read type: Default
+and answers correctly
+200
+5	5
+5	105
+5	205
+5	305
+5	405
