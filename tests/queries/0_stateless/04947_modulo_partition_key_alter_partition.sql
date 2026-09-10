@@ -55,7 +55,8 @@ CREATE TABLE mod_prune (c1 Int32, c0 Int128) ENGINE = MergeTree ORDER BY tuple()
 INSERT INTO mod_prune VALUES (1, 167682982);
 INSERT INTO mod_prune VALUES (2, 167682982);
 SELECT 'pruned read', c1 FROM mod_prune WHERE c1 = 1 SETTINGS use_skip_indexes = 0;
-SELECT 'pruned plan', count() FROM (EXPLAIN indexes = 1 SELECT c1 FROM mod_prune WHERE c1 = 1 SETTINGS use_skip_indexes = 0) WHERE explain LIKE '%Parts: 1/2%';
+SELECT 'pruned plan', countIf(explain LIKE '%Parts: 2/2%') = 1 AND countIf(explain LIKE '%Parts: 1/2%') = 1
+FROM (EXPLAIN indexes = 1 SELECT c1 FROM mod_prune WHERE c1 = 1 SETTINGS use_skip_indexes = 0);
 DROP TABLE mod_prune;
 
 -- A value outside the range of the partition key type addresses no partition and is rejected.
