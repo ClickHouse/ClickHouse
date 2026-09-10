@@ -664,6 +664,16 @@ WhatIfCandidateResult evaluateProjection(
         }
     }
 
+    /// the writer skips these on insert and only builds them on the first merge, so a fresh part has
+    /// no projection part to read and the optimizer charges the parent's marks instead
+    if (projection->with_block_number)
+    {
+        result.not_applicable_reason = fmt::format(
+            "Projection stores {}, so it is built only when a part is merged, which EXPLAIN WHATIF does not estimate yet",
+            backQuote(BlockNumberColumn::name));
+        return result;
+    }
+
     /// the scan reads what the projection stores, so a key over a virtual column has no source there
     for (const auto & required : proj_key.expression->getRequiredColumns())
     {

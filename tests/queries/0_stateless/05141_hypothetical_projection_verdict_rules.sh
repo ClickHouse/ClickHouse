@@ -94,6 +94,31 @@ $CLICKHOUSE_CLIENT -q "
 " | grep -E '^\s+reason:' | awk '{$1=$1; print}'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_co;"
 
+# storing `_block_number` without ordering by it is enough: the writer skips the projection on insert
+echo "--- a projection that merely stores _block_number is not estimated ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_bn;
+    CREATE TABLE t_bn (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+                 allow_commit_order_projection = 1, enable_block_number_column = 1;
+    INSERT INTO t_bn SELECT number, number % 100, number FROM numbers(1000);
+    CREATE HYPOTHETICAL PROJECTION p_bn ON t_bn (SELECT a, b, v, _block_number ORDER BY b);
+    EXPLAIN WHATIF SELECT a, v FROM t_bn WHERE b = 42 SETTINGS ${PIN};
+" | grep -E '^\s+reason:' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_bn;"
+
+# the writer skips such a projection on insert, so a fresh part has none to read
+echo "--- a projection storing _block_number is built only on merge ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_bn;
+    CREATE TABLE t_bn (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, enable_block_number_column = 1, allow_commit_order_projection = 1;
+    INSERT INTO t_bn SELECT number, number % 100, number FROM numbers(1000);
+    CREATE HYPOTHETICAL PROJECTION p_bn ON t_bn (SELECT a, b, _block_number ORDER BY b);
+    EXPLAIN WHATIF SELECT a, b FROM t_bn WHERE b = 42 SETTINGS ${PIN};
+" | grep -E '^\s+reason:' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_bn;"
+
 echo "--- projections disabled by the query ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
