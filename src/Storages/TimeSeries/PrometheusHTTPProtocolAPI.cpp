@@ -46,6 +46,9 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -70,6 +73,7 @@ namespace TimeSeriesSetting
 namespace
 {
 constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
+constexpr size_t MAX_TIMESTAMP_CACHE_SIZE = 4096;
 
 Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_scale)
 {
@@ -473,6 +477,13 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
+    /// A range query commonly returns the same evaluation grid for every series. Cache the
+    /// serialized form of each timestamp so writeText() is not repeated for every series. Keep
+    /// the cache bounded because raw range-vector results may contain many unique timestamps.
+    std::unordered_map<DateTime64, String> timestamp_cache;
+    if (result_block.rows() > 1)
+        timestamp_cache.reserve(std::min<size_t>(offsets.back(), MAX_TIMESTAMP_CACHE_SIZE));
+
     bool need_comma = !first;
 
     for (size_t i = 0; i < result_block.rows(); ++i)
@@ -500,7 +511,29 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseRangeVectorBlock(WriteBuffer &
 
             writeString("[", response);
             DateTime64 timestamp = timestamp_column.getInt(j);
-            writeTimestamp(response, timestamp, timestamp_scale);
+            if (result_block.rows() == 1)
+            {
+                writeTimestamp(response, timestamp, timestamp_scale);
+            }
+            else
+            {
+                auto it = timestamp_cache.find(timestamp);
+                if (it != timestamp_cache.end())
+                {
+                    writeString(it->second, response);
+                }
+                else if (timestamp_cache.size() < MAX_TIMESTAMP_CACHE_SIZE)
+                {
+                    WriteBufferFromOwnString timestamp_buffer;
+                    writeTimestamp(timestamp_buffer, timestamp, timestamp_scale);
+                    it = timestamp_cache.emplace(timestamp, std::move(timestamp_buffer.str())).first;
+                    writeString(it->second, response);
+                }
+                else
+                {
+                    writeTimestamp(response, timestamp, timestamp_scale);
+                }
+            }
             writeString(",\"", response);
             Float64 value = value_column.getFloat64(j);
             writeScalar(response, value);
