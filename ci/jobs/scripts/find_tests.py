@@ -12,6 +12,7 @@ sys.path.append("./")
 
 from ci.jobs.scripts.coverage_selection import (
     build_candidate_query,
+    build_selector_smoke_seed_query,
     canonical_coverage_path,
     parse_rows,
     protect_selection,
@@ -317,10 +318,16 @@ class Targeting:
         if hasattr(self, "_diff_text") and self._diff_text:
             # Reuse already-fetched diff text to extract changed file names — avoids
             # a second diff fetch and works when the diff was pre-fetched via --diff-file.
-            changed_files = [
-                m.group(1)
-                for m in re.finditer(r"^\+\+\+ b/(.+)$", self._diff_text, re.MULTILINE)
-            ]
+            changed_files = sorted(
+                {
+                    m.group(1)
+                    for m in re.finditer(
+                        r"^(?:--- a/|\+\+\+ b/|rename from |rename to )(.+)$",
+                        self._diff_text,
+                        re.MULTILINE,
+                    )
+                }
+            )
         elif self.info.is_local_run:
             changed_files = Shell.get_output(
                 f"gh pr diff {self.info.pr_number} --repo ClickHouse/ClickHouse --name-only"
@@ -343,16 +350,14 @@ class Targeting:
                     )
                 continue
 
-            if not Path(fpath).exists():
-                print(f"File '{fpath}' was removed — skipping")
-                continue
-
             # A file directly at the suite root may itself be a test source, or a
             # supporting file (`.reference`, a `.sql.j2` template, ...) whose sibling
             # test shares its base name.
             if Path(fpath).parent == Path("tests/queries/0_stateless"):
                 test_base_name = self._derive_test_name(fpath)
-                if test_base_name is not None:
+                if test_base_name is not None and self.functional_test_source_file(
+                    test_base_name
+                ):
                     print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
                     # Add '.' suffix to precisely match this test only
                     result.add(f"{test_base_name}.")
@@ -497,25 +502,8 @@ class Targeting:
         snapshots = self.coverage_snapshots()
         # Find an actual narrow region, then use the same diff-path conversion,
         # candidate query and scorer as selection. Never substitute keyword hits.
-        query = f"""
-            SELECT file, line_start, line_end
-            FROM checks_coverage_lines
-            WHERE {snapshot_predicate(snapshots)}
-              AND (file, line_start, line_end) IN (
-                  SELECT file, line_start, line_end FROM checks_coverage_lines
-                  WHERE {snapshot_predicate(snapshots)}
-                    AND test_name IN ('00001_select_1.sql', '00001_select_1')
-                    AND line_end >= line_start
-                    AND line_end - line_start + 1 <= {self.config.narrow_region_max_lines}
-                    AND (startsWith(file, 'src/') OR startsWith(file, './src/'))
-              )
-              AND match(test_name, '^[0-9]{{5}}_')
-            GROUP BY file, line_start, line_end
-            HAVING uniqExact(test_name) <= {self.config.max_precise_region_owners}
-            ORDER BY line_end - line_start, file, line_start
-            LIMIT 100
-            FORMAT JSONEachRow
-        """
+        source = f"checks_coverage_lines WHERE {snapshot_predicate(snapshots)}"
+        query = build_selector_smoke_seed_query(source, self.config)
         started = time.monotonic()
         self.selection_diagnostics["canary"] = {
             "status": "checking",
@@ -523,14 +511,6 @@ class Targeting:
         }
         seeds = parse_rows(self._ci_db().query(query, log_level=""))
         if not seeds:
-            samples = self._ci_db().query(
-                f"SELECT DISTINCT file FROM checks_coverage_lines WHERE {snapshot_predicate(snapshots)} "
-                "AND test_name = '00001_select_1.sql' LIMIT 5 FORMAT JSONEachRow",
-                log_level="",
-            )
-            self.selection_diagnostics["canary"]["stored_path_samples"] = parse_rows(
-                samples
-            )
             raise RuntimeError(
                 f"Coverage canary has no usable regions: {self.selection_diagnostics}"
             )
@@ -549,9 +529,7 @@ class Targeting:
         regions = parse_rows(self._ci_db().query(production_query, log_level=""))
         canary["region_count"] = len(regions)
         candidates = rank_candidates(regions, lines, {}, snapshots, self.config)
-        if not any(
-            self.selection_test_name(c["test"]) == "00001_select_1." for c in candidates
-        ):
+        if not candidates:
             raise RuntimeError(f"Coverage selector canary failed: {json.dumps(canary)}")
         canary.update(
             {

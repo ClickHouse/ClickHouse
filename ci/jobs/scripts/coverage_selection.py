@@ -104,10 +104,16 @@ def build_selector_smoke_seed_query(source, config=SELECTION_CONFIG):
     # Choose repository source coordinates for the smoke, while preserving all
     # recorded paths in the coverage export.
     return f"""
-        SELECT file, line_start, line_end
-        FROM {source}
-          AND (startsWith(file, 'src/') OR startsWith(file, './src/'))
-        GROUP BY file, line_start, line_end
+        SELECT canonical_file AS file, line_start, line_end
+        FROM
+        (
+            SELECT if(startsWith(file, './'), substring(file, 3), file) AS canonical_file,
+                   line_start, line_end, test_name
+            FROM {source}
+              AND (startsWith(file, 'src/') OR startsWith(file, './src/'))
+              AND match(test_name, '^[0-9]{{5}}_')
+        )
+        GROUP BY canonical_file, line_start, line_end
         HAVING line_end >= line_start
            AND line_end - line_start + 1 <= {config.narrow_region_max_lines}
            AND uniqExact(test_name) <= {config.max_precise_region_owners}

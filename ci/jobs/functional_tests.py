@@ -10,10 +10,8 @@ from pathlib import Path
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
-from ci.jobs.scripts.test_selection_manifest import (
-    SELECTION_MANIFEST,
-    load_selection,
-)
+from ci.jobs.scripts.test_selection_manifest import SELECTION_MANIFEST
+from ci.jobs.select_functional_tests import get_selection
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
@@ -825,7 +823,7 @@ def main():
     if is_targeted_check:
         assert not args.test, "--test cannot override a selection manifest"
         try:
-            selection_manifest = load_selection(info)
+            selection_manifest = get_selection(info, targeter)
             tests = [record["test"] for record in selection_manifest["tests"]]
             results.append(
                 Result(

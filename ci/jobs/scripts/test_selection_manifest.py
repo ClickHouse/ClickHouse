@@ -38,12 +38,10 @@ def selection_manifest(diagnostics, info):
         "commit_sha": info.sha,
         "diff_base_sha": diagnostics["diff_base_sha"],
         "workflow_run_id": str(info.run_id),
+        "workflow_run_attempt": info.run_attempt,
         "selector_version": diagnostics["selector_version"],
         "coverage_path_version": diagnostics["coverage_path_version"],
         "config": diagnostics["config"],
-        "cutoff": diagnostics["cutoff"],
-        "coverage_snapshots": diagnostics["coverage_snapshots"],
-        "canary": {"status": diagnostics["canary"]["status"]},
         "coverage_lines": diagnostics["coverage_lines"],
         "hunk_ranges": {
             path: ranges
@@ -57,11 +55,28 @@ def selection_manifest(diagnostics, info):
         ],
         "mandatory_overflow": diagnostics["mandatory_overflow"],
     }
+    if coverage_files:
+        manifest.update(
+            {
+                "cutoff": diagnostics["cutoff"],
+                "coverage_snapshots": diagnostics["coverage_snapshots"],
+                "canary": {"status": diagnostics["canary"]["status"]},
+            }
+        )
     if diagnostics["missing_tests"]:
         manifest["missing_tests"] = [
             record["test"] for record in diagnostics["missing_tests"]
         ]
     return manifest
+
+
+def selection_cache_key(info, config=SELECTION_CONFIG):
+    if not str(info.run_id).isdigit() or int(info.run_id) <= 0 or info.run_attempt <= 0:
+        raise ValueError("Test selection requires a workflow run ID and attempt")
+    return (
+        f"PRs/{info.pr_number}/{info.sha}/test-selection/"
+        f"{config.version}/{info.run_id}/{info.run_attempt}.json"
+    )
 
 
 def cached_manifest(client, bucket, key, produce):
@@ -95,6 +110,8 @@ def load_selection(info, config=SELECTION_CONFIG):
     expected = {
         "commit_sha": info.sha,
         "pr_number": info.pr_number,
+        "workflow_run_id": str(info.run_id),
+        "workflow_run_attempt": info.run_attempt,
         "selector_version": config.version,
         "coverage_path_version": config.path_version,
         "config": asdict(config),
@@ -104,13 +121,14 @@ def load_selection(info, config=SELECTION_CONFIG):
             raise ValueError(
                 f"Selection manifest {key} mismatch: {manifest.get(key)!r} != {value!r}"
             )
-    if manifest.get("canary", {}).get("status") != "OK":
-        raise ValueError("Selection manifest has no successful coverage canary")
-    validate_snapshots(
-        manifest["coverage_snapshots"],
-        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        config,
-    )
+    if manifest["coverage_lines"]:
+        if manifest.get("canary", {}).get("status") != "OK":
+            raise ValueError("Selection manifest has no successful coverage canary")
+        validate_snapshots(
+            manifest["coverage_snapshots"],
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            config,
+        )
     tests = [record["test"] for record in manifest["tests"]]
     if len(tests) != len(set(tests)):
         raise ValueError("Selection manifest contains duplicate tests")

@@ -62,7 +62,7 @@ class FixtureCIDB:
         self.queries.append(query)
         if "AS exported_tests" in query:
             return "\n".join(map(json.dumps, fixture_snapshots()))
-        if "LIMIT 100" in query:
+        if "LIMIT 1 FORMAT JSONEachRow" in query:
             return json.dumps({"file": self.path, "line_start": 10, "line_end": 10})
         if "WITH per_run_region_test" not in query:
             raise AssertionError(f"Unexpected selection query: {query}")

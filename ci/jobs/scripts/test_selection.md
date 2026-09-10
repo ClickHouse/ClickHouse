@@ -1,13 +1,21 @@
 # Precise stateless selection
 
-`Select functional tests` produces a single manifest for a PR SHA and selector
-version. A conditional S3 insert makes the first successful manifest immutable;
-retries and all targeted configurations consume the same artifact.
+`Select functional tests` produces a single manifest for a PR SHA, selector
+version, workflow run, and attempt. A conditional S3 insert makes the first
+successful manifest immutable within that attempt. All targeted configurations
+consume it; a new attempt refreshes previous failures and coverage snapshots.
+If only failed jobs are rerun, the targeted jobs create or retrieve the manifest
+for the new attempt through the same producer.
 Missing, mismatched, stale, or incompatible manifests fail selection. No keyword
 or broad-only replacement is used. Changed tests and previous failures remain
 mandatory even when they exceed the temporary ceiling; the manifest reports the
 overflow explicitly. Changes to CI scripts do not add a fixed smoke-test list
-to the selection.
+to the selection. Deleted and renamed fixtures select their surviving owning tests.
+
+PRs without eligible changed source lines do not query or validate coverage;
+changed tests and previous failures still populate the manifest. When coverage
+is needed, the canary chooses a qualifying source region from the current
+snapshots and exercises the production query and scorer against it.
 
 The query admits regions no wider than 40 lines with at most 150 distinct test
 owners. These are conservative initial limits, not a validated recall claim.
