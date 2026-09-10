@@ -1,9 +1,12 @@
 -- Tags: no-replicated-database
--- Tag no-replicated-database: the experimental TimeSeries table engine does not round-trip through DatabaseReplicated.
+-- Tag no-replicated-database: the DETACH/ATTACH round-trip below hangs in DatabaseReplicated mode
+-- because ATTACH TABLE with a TimeSeries engine goes through the replicated DDL log and requires
+-- replica sync (same as 04146_timeseries_attach_detach.sql).
 
 -- Auto-created `timestamp` and `value` columns of the TimeSeries samples inner table
--- get time-series compression codecs; explicitly declared columns keep the user's codecs
--- (or none), and the normalized table round-trips through DETACH/ATTACH unchanged.
+-- get compression codecs (DoubleDelta + ZSTD for timestamps, plain ZSTD for values);
+-- explicitly declared columns keep the user's codecs (or none), and the normalized
+-- table round-trips through DETACH/ATTACH unchanged.
 
 SET allow_experimental_time_series_table = 1;
 

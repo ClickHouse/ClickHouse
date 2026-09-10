@@ -235,7 +235,8 @@ public:
         UInt64 commit_id,
         time_t commit_time,
         time_t transaction_start_time_,
-        const std::string & exception_message = {});
+        const std::string & exception_message = {},
+        const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths = {});
 
 private:
     Chunk generateImpl();
@@ -296,6 +297,10 @@ private:
         FileState state;
         FileMetadataPtr metadata;
         std::string exception_during_read;
+        int exception_during_read_code = 0;
+        /// The object's own last-modified time, if object storage reported one.
+        /// Used to update the "newest object committed" pipeline-lag watermark.
+        time_t last_modified = 0;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
