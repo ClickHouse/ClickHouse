@@ -1837,12 +1837,14 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
             true /*do_not_skip_offset*/);
     }
 
-    /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
-    /// as it may break `rows_before_limit_at_least` value during the second stage in
-    /// case it also contains LIMIT BY
+    /// Do not apply PreLimit at first stage for LIMIT BY when the full input is required,
+    /// as it may break `rows_before_limit_at_least` during the second stage or drop totals
+    /// from a subquery.
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    if (query_node.hasLimitBy() && settings[Setting::exact_rows_before_limit])
+    if (query_node.hasLimitBy()
+        && (settings[Setting::exact_rows_before_limit]
+            || query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree))
     {
         return;
     }

@@ -19,3 +19,17 @@ LIMIT 1 BY k
 LIMIT 1
 FORMAT JSONCompact
 SETTINGS max_threads = 4, max_block_size = 10, query_plan_push_limit_by_into_sort = 1, enable_analyzer = 1;
+
+-- Cover the first-stage preliminary LIMIT guard when a FROM subquery has WITH TOTALS.
+SELECT g, c, 'grp' AS k
+FROM
+(
+    SELECT number % 3 AS g, count() AS c
+    FROM numbers(12)
+    GROUP BY g WITH TOTALS
+    ORDER BY g
+)
+LIMIT 1 BY k
+LIMIT 1
+FORMAT JSONCompact
+SETTINGS max_threads = 1, max_block_size = 10, enable_analyzer = 1;

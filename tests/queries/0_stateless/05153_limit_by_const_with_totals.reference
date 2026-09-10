@@ -54,3 +54,31 @@
 
 	"rows_before_limit_at_least": 1
 }
+{
+	"meta":
+	[
+		{
+			"name": "g",
+			"type": "UInt64"
+		},
+		{
+			"name": "c",
+			"type": "UInt64"
+		},
+		{
+			"name": "k",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, 4, "grp"]
+	],
+
+	"totals": [0, 12, "grp"],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 1
+}
