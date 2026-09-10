@@ -22,6 +22,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
+namespace avro
+{
+class GenericDatum;
+}
+
 namespace DB::Iceberg
 {
 
