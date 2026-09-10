@@ -636,10 +636,10 @@ size_t readGranulePrefix(
     ISerialization::DeserializeBinaryBulkStatePtr state;
     serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
 
-    ColumnPtr column = DataTypeObject::getTypeOfSharedData()->createColumn();
+    auto column = DataTypeObject::getTypeOfSharedData()->createColumn();
     try
     {
-        serialization->deserializeBinaryBulkWithMultipleStreams(column, /*rows_offset=*/0, /*limit=*/1, settings, state, nullptr);
+        serialization->deserializeBinaryBulkWithMultipleStreams(*column, /*limit=*/1, settings, state, nullptr);
     }
     catch (...)
     {
