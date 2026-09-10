@@ -135,6 +135,13 @@ namespace
         {
             return std::nullopt;
         }
+        else if (non_nullable_type->getTypeId() == DB::TypeIndex::UUID)
+        {
+            /// The spec serializes a `uuid` bound as 16 big-endian bytes and orders the pair by unsigned
+            /// byte comparison, while ClickHouse orders `UUID` by its second half. The two orders
+            /// disagree, so even a byte-swapped pair can exclude a value the file holds.
+            return std::nullopt;
+        }
         else
         {
             /// For all other types except decimal binary representation
