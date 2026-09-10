@@ -98,6 +98,16 @@ SourceColumns makeSources(const DataTypePtr & type, size_t source_count, size_t 
     return sources;
 }
 
+/// The owning source columns must outlive the returned pointers.
+ColumnRawPtrs makeRawSources(const SourceColumns & sources)
+{
+    ColumnRawPtrs raw_sources;
+    raw_sources.reserve(sources.size());
+    for (const auto & source : sources)
+        raw_sources.push_back(source.get());
+    return raw_sources;
+}
+
 void cacheOwnStatistics(IColumn & column)
 {
     if (auto * object = typeid_cast<ColumnObject *>(&column))
@@ -324,8 +334,9 @@ void BM_PrepareForSquashingObject(benchmark::State & state)
 void BM_ChooseDynamicStructureForMergeObject(benchmark::State & state)
 {
     const auto type = getObjectType();
-    auto sources = makeSources(type, state.range(0), state.range(1), true);
-    cacheStatistics(sources);
+    auto source_columns = makeSources(type, state.range(0), state.range(1), true);
+    cacheStatistics(source_columns);
+    const auto sources = makeRawSources(source_columns);
 
     auto allocation_probe_destination = type->createColumn();
     const auto allocation_stats = measureJemallocAllocations(
@@ -352,8 +363,9 @@ void BM_ChooseDynamicStructureForMergeObject(benchmark::State & state)
 void BM_TakeOrCalculateStatisticsFromObject(benchmark::State & state)
 {
     const auto type = getObjectType();
-    auto sources = makeSources(type, state.range(0), state.range(1), true);
-    cacheStatistics(sources);
+    auto source_columns = makeSources(type, state.range(0), state.range(1), true);
+    cacheStatistics(source_columns);
+    const auto sources = makeRawSources(source_columns);
 
     auto allocation_probe_destination = type->createColumn();
     allocation_probe_destination->chooseDynamicStructureForMerge(sources, max_dynamic_subcolumns);
@@ -410,6 +422,38 @@ void BM_TakeStatisticsForPartWritingObject(benchmark::State & state)
     }
 }
 
+void BM_TakeStatisticsFromSingleRawPtrObject(benchmark::State & state)
+{
+    const auto type = getObjectType();
+    auto sources = makeSources(type, 1, state.range(0), true);
+    cacheStatistics(sources);
+    const auto & source = sources.front();
+
+    /// MergedData and ColumnGatherer propagate statistics from a single column whose owner outlives the call.
+    auto allocation_probe_destination = type->createColumn();
+    allocation_probe_destination->takeExactDynamicStructureFrom(*source);
+    const auto allocation_stats
+        = measureJemallocAllocations([&] { allocation_probe_destination->takeOrCalculateStatisticsFrom(source.get()); });
+    benchmark::DoNotOptimize(allocation_probe_destination);
+    allocation_probe_destination.reset();
+    setJemallocAllocationCounters(state, allocation_stats);
+
+    for (auto _ [[maybe_unused]] : state)
+    {
+        state.PauseTiming();
+        auto destination = type->createColumn();
+        destination->takeExactDynamicStructureFrom(*source);
+        state.ResumeTiming();
+
+        destination->takeOrCalculateStatisticsFrom(source.get());
+        benchmark::DoNotOptimize(destination);
+
+        state.PauseTiming();
+        destination.reset();
+        state.ResumeTiming();
+    }
+}
+
 void BM_AdaptiveAggregationCoalescingNestedMap(benchmark::State & state)
 {
     /// The fixtures model the small staged chunks produced after adaptive key extraction. Flushing
@@ -455,8 +499,9 @@ void BM_AdaptiveAggregationCoalescingNestedMap(benchmark::State & state)
 void BM_MergePreparationObject(benchmark::State & state)
 {
     const auto type = getObjectType();
-    auto sources = makeSources(type, state.range(0), state.range(1), true);
-    cacheStatistics(sources);
+    auto source_columns = makeSources(type, state.range(0), state.range(1), true);
+    cacheStatistics(source_columns);
+    const auto sources = makeRawSources(source_columns);
 
     auto allocation_probe_destination = type->createColumn();
     const auto allocation_stats = measureJemallocAllocations(
@@ -501,6 +546,7 @@ BENCHMARK(BM_AdaptiveAggregationCoalescingNestedMap)
     ->Args({32, 32})
     ->ArgNames({"staged_chunks", "rows_per_chunk"});
 BENCHMARK(BM_TakeStatisticsForPartWritingObject)->Arg(32)->ArgName("rows");
+BENCHMARK(BM_TakeStatisticsFromSingleRawPtrObject)->Arg(32)->ArgName("rows");
 
 #undef REGISTER_SOURCE_BENCHMARK
 
