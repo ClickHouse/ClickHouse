@@ -175,12 +175,13 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
                 /// already logged from inside doExecuteTask.
                 tryLogCurrentException(getLogger("StatelessTaskExecutor"),
                     fmt::format("Task {} failed", task_description.task.task_id));
-                fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
-            {
-                if (!DistributedQueryCancellation::isConsequence(failure.code))
-                    sleepForMilliseconds(1000);
-            });
+
                 task_failure = currentTaskFailure();
+                fiu_do_on(FailPoints::distributed_plan_delay_root_cause_report,
+                {
+                    if (!DistributedQueryCancellation::isConsequence(task_failure->code))
+                        sleepForMilliseconds(1000);
+                });
             }
         }
         catch (...)
@@ -247,7 +248,7 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
         std::lock_guard lock(tasks_mutex);
         auto it = tasks.find(task_id);
         if (it == tasks.end())
-            return TaskStatus{Result::UnknownTaskId, "", {}, {}};
+            return TaskStatus{Result::UnknownTaskId, "", {}, {}, {}};
         completion_future = it->second->completion_future;
         progress = it->second->progress;
         logs_queue = it->second->logs_queue;
@@ -266,7 +267,7 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
     const auto & failure = completion_future.get();
 
     if (!failure)
-        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta), 0, std::move(logs)};
+        return TaskStatus{Result::TaskFinished, "", std::move(progress_delta), {}, std::move(logs)};
     else
         return TaskStatus{Result::TaskFailed, failure->message, std::move(progress_delta), failure->code, std::move(logs)};
 }
