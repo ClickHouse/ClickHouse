@@ -126,9 +126,9 @@ Click on “Save External Bucket” to save the settings
 
 External Backups will now happen in your bucket on the default schedule.
 Alternatively, you can configure the backup schedule from the “Settings” page.
-If configured differently, the custom schedule is used to write backups to your
-bucket and the default schedule (backups every 24 hours) is used for backups in
-the ClickHouse cloud owned bucket.
+If configured differently, the custom schedule and retention setting apply to
+backups written to your bucket. Backups in the ClickHouse Cloud-managed bucket
+use the default schedule (backups every 24 hours) and default retention policy.
 </Step>
 <Step title="View backups stored in your bucket" id="view-backups-stored-in-your-bucket">
 
@@ -246,9 +246,9 @@ Click on `Save External Bucket` to save the settings.
 
 External Backups will now happen in your bucket on the default schedule. 
 Alternatively, you can configure the backup schedule from the `Settings` page. 
-If configured differently, the custom schedule is used to write backups to your 
-bucket and the default schedule (backups every 24 hours) is used for backups in 
-ClickHouse cloud owned bucket.
+If configured differently, the custom schedule and retention setting apply to
+backups written to your bucket. Backups in the ClickHouse Cloud-managed bucket
+use the default schedule (backups every 24 hours) and default retention policy.
 </Step>
 <Step title="View backups stored in your bucket" id="gcp-view-backups-stored-in-your-bucket">
 
@@ -348,8 +348,9 @@ Click on `Save External Bucket` to save the settings
 
 External Backups will now happen in your bucket on the default schedule. Alternatively,
 you can configure the backup schedule from the “Settings” page. If configured differently,
-the custom schedule is used to write backups to your bucket and the default schedule
-(backups every 24 hours) is used for backups in ClickHouse cloud owned bucket.
+the custom schedule and retention setting apply to backups written to your bucket.
+Backups in the ClickHouse Cloud-managed bucket use the default schedule (backups every
+24 hours) and default retention policy.
 </Step>
 <Step title="View backups stored in your bucket" id="azure-view-backups-stored-in-your-bucket">
 
