@@ -27,7 +27,7 @@ public:
     explicit PrefixReadCancelledException(const Exception & cause) : Exception(cause) {}
 
     PrefixReadCancelledException * clone() const override { return new PrefixReadCancelledException(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
 /// True when `exception_ptr` holds a `PrefixReadCancelledException`. The one type test for it;
