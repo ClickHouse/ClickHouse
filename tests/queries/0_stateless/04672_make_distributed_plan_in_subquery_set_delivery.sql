@@ -17,28 +17,28 @@ SET allow_experimental_correlated_subqueries = 0, rewrite_in_to_join = 0;
 SET use_index_for_in_with_subqueries = 1, use_query_condition_cache = 0;
 
 SELECT '-- results match local execution';
-SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50);
+SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- NOT IN';
-SELECT count() FROM t_big WHERE k NOT IN (SELECT val FROM t_small WHERE id < 50);
+SELECT count() FROM t_big WHERE k NOT IN (SELECT val FROM t_small WHERE id < 50) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- empty set';
-SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 0);
+SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 0) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- a non-key filter set ships too';
-SELECT count() FROM t_big WHERE v IN (SELECT val FROM t_small WHERE id < 50);
+SELECT count() FROM t_big WHERE v IN (SELECT val FROM t_small WHERE id < 50) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- a set outside storage filters is built by the initiator pipeline at query start';
-SELECT sum(k IN (SELECT val FROM t_small WHERE id < 50)) FROM t_big;
+SELECT sum(k IN (SELECT val FROM t_small WHERE id < 50)) FROM t_big SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- the index retention cap does not limit the shipped set';
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50)
-    SETTINGS use_index_for_in_with_subqueries_max_values = 5;
+    SETTINGS use_index_for_in_with_subqueries_max_values = 5, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- the set subquery itself executes as a distributed plan (deduplicated before the gather)';
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50)
-    SETTINGS distributed_plan_default_reader_bucket_count = 3, distributed_plan_max_rows_to_broadcast = 0;
+    SETTINGS distributed_plan_default_reader_bucket_count = 3, distributed_plan_max_rows_to_broadcast = 0, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- the transfer limits bound the shipped set';
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_rows_to_transfer = 10; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
@@ -48,39 +48,39 @@ SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_rows
 
 -- The set has exactly 100 distinct values, so the boundary is strict in both overflow modes.
 SELECT '-- a set of exactly max_rows_to_transfer rows ships';
-SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_rows_to_transfer = 100;
-SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_rows_to_transfer = 100, transfer_overflow_mode = 'break';
+SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_rows_to_transfer = 100, distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_rows_to_transfer = 100, transfer_overflow_mode = 'break', distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_rows_to_transfer = 99; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- 100 UInt64 values = 800 bytes: a limit above that must pass even though the dedup hash table
 -- allocates more, and a limit below it must throw.
 SELECT '-- the byte limit measures the shipped values, not the build memory';
-SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_bytes_to_transfer = 1000;
+SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_bytes_to_transfer = 1000, distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small) SETTINGS max_bytes_to_transfer = 100; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- Analysis types `in` over a `LowCardinality` argument as plain `UInt8`; the function rebuild
 -- on the receiving side would wrap the type, so the deserializer keeps the serialized one.
 -- Without that, every such query fails on task deserialization.
 SELECT '-- LowCardinality IN subquery';
-SELECT count() FROM t_lc WHERE s IN (SELECT toString(id) FROM t_small WHERE id < 2);
-SELECT sum(s IN (SELECT toString(id) FROM t_small WHERE id < 2)) FROM t_lc;
+SELECT count() FROM t_lc WHERE s IN (SELECT toString(id) FROM t_small WHERE id < 2) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(s IN (SELECT toString(id) FROM t_small WHERE id < 2)) FROM t_lc SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- a set source that cannot be serialized builds locally on the initiator';
-SELECT count() FROM t_big WHERE k IN (SELECT number FROM numbers(200) GROUP BY number);
-SELECT count() FROM t_big WHERE k IN (SELECT number FROM numbers(50) ORDER BY number DESC LIMIT 10);
+SELECT count() FROM t_big WHERE k IN (SELECT number FROM numbers(200) GROUP BY number) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM t_big WHERE k IN (SELECT number FROM numbers(50) ORDER BY number DESC LIMIT 10) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- two sets in one query';
-SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50) AND v IN (SELECT val FROM t_small WHERE id < 25);
+SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50) AND v IN (SELECT val FROM t_small WHERE id < 25) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- IN over a tuple of columns';
-SELECT count() FROM t_big WHERE (k, v) IN (SELECT id, val FROM t_small WHERE id < 50);
+SELECT count() FROM t_big WHERE (k, v) IN (SELECT id, val FROM t_small WHERE id < 50) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- IN in HAVING (the set is consumed above the aggregation)';
-SELECT k % 7 AS g, count() FROM t_big GROUP BY g HAVING g IN (SELECT id FROM t_small WHERE id < 3) ORDER BY g;
+SELECT k % 7 AS g, count() FROM t_big GROUP BY g HAVING g IN (SELECT id FROM t_small WHERE id < 3) ORDER BY g SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- NULL in the set follows transform_null_in';
-SELECT count() FROM t_big WHERE if(k = 999, NULL, k) IN (SELECT if(id = 0, NULL, val) FROM t_small WHERE id < 50);
-SELECT count() FROM t_big WHERE if(k = 999, NULL, k) IN (SELECT if(id = 0, NULL, val) FROM t_small WHERE id < 50) SETTINGS transform_null_in = 1;
+SELECT count() FROM t_big WHERE if(k = 999, NULL, k) IN (SELECT if(id = 0, NULL, val) FROM t_small WHERE id < 50) SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM t_big WHERE if(k = 999, NULL, k) IN (SELECT if(id = 0, NULL, val) FROM t_small WHERE id < 50) SETTINGS transform_null_in = 1, distributed_plan_fallback_to_local_execution = 0;
 
 -- A plan over a non-serializable read collapses to a single local stage; the detached sets are
 -- added back to the collapsed plan and expand the ordinary local way.

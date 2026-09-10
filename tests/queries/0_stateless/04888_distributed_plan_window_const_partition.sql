@@ -37,7 +37,8 @@ SELECT 'constant key', count() FROM
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
     FROM t_const_window
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- A constant partition key must build a gather whose sort description is nothing but that constant.
 -- `make_distributed_plan` is repeated inside because the outer `SETTINGS` propagates into the subquery,
@@ -57,14 +58,16 @@ SELECT 'constant key, LowCardinality', count() FROM
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY toLowCardinality('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
     FROM t_const_window
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'constant key, Nullable', count() FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY toNullable('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
     FROM t_const_window
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- A function that returns its argument column verbatim keeps the key constant, so the description is
 -- still all-constant after the const-strip. `materialize` is the opposite case: it converts to a full
@@ -74,14 +77,16 @@ SELECT 'constant key behind identity', count() FROM
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY identity('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
     FROM t_const_window
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'materialized key is not constant', count() FROM
 (
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY materialize('c') ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
     FROM t_const_window
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- Controls. A real column key, and a mixed key whose second component is a column, both order rows and
 -- must keep using the merge; they passed before the fix and must keep passing.
@@ -90,7 +95,8 @@ SELECT 'column key', count() FROM
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY a ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
     FROM t_const_window
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- A column partition key keeps a column in the gather's sort description, so this arm and the constant
 -- one above are distinguishable rather than both merely returning the same row count.
@@ -108,7 +114,8 @@ SELECT 'mixed key', count() FROM
     SELECT uniq(modulo(v, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c', a ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS roll
     FROM t_const_window
-);
+)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- A constant partition key is one partition, so the distributed and local results must agree.
 SELECT 'values match local', d.h = l.h FROM
@@ -127,6 +134,7 @@ SELECT 'values match local', d.h = l.h FROM
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS roll
         FROM t_const_window
     ) SETTINGS make_distributed_plan = 0
-) AS l;
+) AS l
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_const_window;

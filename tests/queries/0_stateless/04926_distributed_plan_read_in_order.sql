@@ -32,19 +32,25 @@ SET distributed_plan_read_in_order = 1;
 -- Reading in the key's own order used to be rejected outright (SUPPORT_IS_DISABLED) because a bucketed
 -- read is pinned to the coordinator's marks and cannot re-derive it. The contract now travels with the
 -- step, so these return exactly what a non-distributed read returns.
-SELECT k FROM t_dist_read_in_order ORDER BY k LIMIT 5;
-SELECT k FROM t_dist_read_in_order ORDER BY k DESC LIMIT 5;
+SELECT k FROM t_dist_read_in_order ORDER BY k LIMIT 5
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT k FROM t_dist_read_in_order ORDER BY k DESC LIMIT 5
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- A limit spanning many granules of every part, so a stream that is ordered only within its own part
 -- shows up as a wrong sum rather than a wrong first row.
-SELECT sum(k), count() FROM (SELECT k FROM t_dist_read_in_order ORDER BY k LIMIT 1000);
-SELECT sum(k), count() FROM (SELECT k FROM t_dist_read_in_order ORDER BY k DESC LIMIT 1000);
+SELECT sum(k), count() FROM (SELECT k FROM t_dist_read_in_order ORDER BY k LIMIT 1000)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(k), count() FROM (SELECT k FROM t_dist_read_in_order ORDER BY k DESC LIMIT 1000)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- OFFSET makes a wrong merge visible even when the head of the stream happens to be right.
-SELECT k FROM t_dist_read_in_order ORDER BY k LIMIT 5 OFFSET 44444;
+SELECT k FROM t_dist_read_in_order ORDER BY k LIMIT 5 OFFSET 44444
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The key prefix, not the whole key: the merge must compare on the prefix the optimization reported.
-SELECT k, v FROM t_dist_read_in_order WHERE v < 3 ORDER BY k LIMIT 4;
+SELECT k, v FROM t_dist_read_in_order WHERE v < 3 ORDER BY k LIMIT 4
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_dist_read_in_order;
 
@@ -58,9 +64,13 @@ SYSTEM STOP MERGES t_dist_read_in_order_desc;
 INSERT INTO t_dist_read_in_order_desc SELECT number * 2, number FROM numbers(20000);
 INSERT INTO t_dist_read_in_order_desc SELECT number * 2 + 1, number FROM numbers(20000);
 
-SELECT k FROM t_dist_read_in_order_desc ORDER BY k DESC LIMIT 5;
-SELECT k FROM t_dist_read_in_order_desc ORDER BY k ASC LIMIT 5;
-SELECT sum(k), count() FROM (SELECT k FROM t_dist_read_in_order_desc ORDER BY k DESC LIMIT 1000);
-SELECT sum(k), count() FROM (SELECT k FROM t_dist_read_in_order_desc ORDER BY k ASC LIMIT 1000);
+SELECT k FROM t_dist_read_in_order_desc ORDER BY k DESC LIMIT 5
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT k FROM t_dist_read_in_order_desc ORDER BY k ASC LIMIT 5
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(k), count() FROM (SELECT k FROM t_dist_read_in_order_desc ORDER BY k DESC LIMIT 1000)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT sum(k), count() FROM (SELECT k FROM t_dist_read_in_order_desc ORDER BY k ASC LIMIT 1000)
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_dist_read_in_order_desc;

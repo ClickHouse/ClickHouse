@@ -49,7 +49,7 @@ SELECT 'query runs', count() FROM
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
     FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort)
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The same shape with the sort column wrapped. Each of these was rejected before the fix too.
 SELECT 'Nullable key', count() FROM
@@ -57,7 +57,7 @@ SELECT 'Nullable key', count() FROM
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
     FROM (SELECT a_nullable, v, sum(v) OVER (PARTITION BY a_nullable ORDER BY v) AS s FROM t_passthrough_sort)
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'LowCardinality key', count() FROM
 (
@@ -65,7 +65,7 @@ SELECT 'LowCardinality key', count() FROM
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
     FROM (SELECT a_low_cardinality, v, sum(v) OVER (PARTITION BY a_low_cardinality ORDER BY v) AS s
         FROM t_passthrough_sort)
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'LowCardinality(Nullable) key', count() FROM
 (
@@ -73,14 +73,14 @@ SELECT 'LowCardinality(Nullable) key', count() FROM
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
     FROM (SELECT a_low_cardinality_nullable, v,
         sum(v) OVER (PARTITION BY a_low_cardinality_nullable ORDER BY v) AS s FROM t_passthrough_sort)
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'Array key', count() FROM
 (
     SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
     FROM (SELECT a_array, v, sum(v) OVER (PARTITION BY a_array ORDER BY v) AS s FROM t_passthrough_sort)
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- An empty input still builds the plan, so the branch is reached with no rows to merge.
 SELECT 'empty input', count() FROM
@@ -89,7 +89,7 @@ SELECT 'empty input', count() FROM
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
     FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort
         WHERE v > 999999999)
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The move-up witness. A `GatherExchange` is present in this plan whether or not it moved
 -- (`tryMakeDistributedSorting` creates it unconditionally), so its mere presence proves nothing. What
@@ -132,7 +132,7 @@ SELECT 'window values distributed', sum(cityHash64(a, v, s, r)) FROM
     SELECT a, v, s, uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
         OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
     FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_passthrough_sort)
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'window values local', sum(cityHash64(a, v, s, r)) FROM
 (

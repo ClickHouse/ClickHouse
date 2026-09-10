@@ -19,18 +19,7 @@ SELECT DISTINCT t2_04341.val
 FROM t1_04341 INNER JOIN t2_04341 ON intDiv(-1, t1_04341.key + 1) = t2_04341.key
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, serialize_query_plan = 1,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-    enable_parallel_replicas = 0;
-
--- The plan is distributed: the initiator pipeline reads from the distributed executor.
-SELECT sum(explain LIKE '%ReadFromDistributedPlanSource%') > 0
-FROM (
-    EXPLAIN PIPELINE
-    SELECT DISTINCT t2_04341.val
-    FROM t1_04341 INNER JOIN t2_04341 ON intDiv(-1, t1_04341.key + 1) = t2_04341.key
-    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, serialize_query_plan = 1,
-        distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-        enable_parallel_replicas = 0
-);
+    enable_parallel_replicas = 0, distributed_plan_fallback_to_local_execution = 0;
 
 -- A compatible function-wrapped key still distributes via shuffle and returns correct results.
 -- The settings must be on the statement: a SETTINGS clause inside the subquery does not reach the
@@ -41,19 +30,7 @@ SELECT count() FROM (
 )
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, serialize_query_plan = 1,
     distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-    enable_parallel_replicas = 0;
-
-SELECT sum(explain LIKE '%ReadFromDistributedPlanSource%') > 0
-FROM (
-    EXPLAIN PIPELINE
-    SELECT count() FROM (
-        SELECT DISTINCT t2_04341.val
-        FROM t1_04341 INNER JOIN t2_04341 ON intDiv(t1_04341.key, 2) = t2_04341.key
-    )
-    SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, serialize_query_plan = 1,
-        distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
-        enable_parallel_replicas = 0
-);
+    enable_parallel_replicas = 0, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t1_04341;
 DROP TABLE t2_04341;

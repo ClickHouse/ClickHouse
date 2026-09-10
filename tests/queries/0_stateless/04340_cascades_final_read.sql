@@ -30,7 +30,7 @@ INSERT INTO t_dim SELECT number FROM numbers(100000);
 -- Shuffle join over FINAL. With correct (serial) FINAL dedup each key has v = 2, so
 -- sum = 100000 * 2 = 200000. Bucketed FINAL would double-count to 300000.
 SELECT '-- sum over shuffle join on FINAL';
-SELECT sum(a.v) FROM t_final AS a FINAL JOIN t_dim AS b ON a.k = b.k;
+SELECT sum(a.v) FROM t_final AS a FINAL JOIN t_dim AS b ON a.k = b.k SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- Cascades clones the read step; the clone must keep filters deferred until after FINAL
 -- (`apply_prewhere_after_final`). A clone that loses them would filter before deduplication.
@@ -44,7 +44,7 @@ SELECT sum(explain LIKE '%Deferred prewhere filter column%') FROM (
 ) SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 -- FINAL keeps v = 2 for every key, so the deferred filter `v = 1` leaves no rows.
 SELECT count() FROM t_final FINAL PREWHERE v = 1
-SETTINGS apply_prewhere_after_final = 1, distributed_plan_execute_locally = 1;
+SETTINGS apply_prewhere_after_final = 1, distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_final FINAL PREWHERE v = 1
 SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
@@ -59,7 +59,7 @@ SELECT sum(explain LIKE '%Deferred row level filter column%') FROM (
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1
 ) SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 -- FINAL keeps v = 2, so the deferred policy `v = 1` leaves no rows.
-SELECT count() FROM t_final FINAL SETTINGS distributed_plan_execute_locally = 1;
+SELECT count() FROM t_final FINAL SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_final FINAL SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 DROP ROW POLICY policy_04340_deferred ON t_final;
 

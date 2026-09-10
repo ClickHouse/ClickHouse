@@ -19,7 +19,7 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     query_plan_direct_read_from_text_index = 1, use_skip_indexes = 1;
 
 SELECT 'hasAnyTokens over a text index works under make_distributed_plan';
-SELECT count() FROM t_text_dp WHERE hasAnyTokens(s, ['word42']);
+SELECT count() FROM t_text_dp WHERE hasAnyTokens(s, ['word42']) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_text_dp WHERE hasAnyTokens(s, ['word42']) SETTINGS make_distributed_plan = 0;
 
 SELECT 'the query distributes';

@@ -33,7 +33,8 @@ SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_pl
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_force_exchange_kind = 'Streaming',
     max_block_size = 1000, max_threads = 2, join_algorithm = 'hash',
     query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
-    min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0, max_execution_time = 25;
+    min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0, max_execution_time = 25,
+    distributed_plan_fallback_to_local_execution = 0;
 
 -- The same query on remote worker tasks: `StreamingExchangeSink` must stop over the socket too.
 SELECT count() FROM
@@ -48,7 +49,8 @@ SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_pl
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_force_exchange_kind = 'Streaming',
     max_block_size = 1000, max_threads = 2, join_algorithm = 'hash',
     query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
-    min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0, max_execution_time = 25;
+    min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0, max_rows_to_group_by = 0, max_execution_time = 25,
+    distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_dp_limit_stop;
 DROP TABLE t_dp_limit_stop_dim;

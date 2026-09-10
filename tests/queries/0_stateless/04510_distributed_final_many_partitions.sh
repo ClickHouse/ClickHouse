@@ -38,7 +38,7 @@ SETTINGS="enable_parallel_replicas = 0, max_rows_to_group_by = 0,
 echo -n "split groups all partitions into the target tasks "
 if $CLICKHOUSE_CLIENT --send_logs_level=trace -q "
     SELECT count(), sum(v) FROM t_final_many_partitions FINAL FORMAT Null
-    SETTINGS make_distributed_plan = 1, $SETTINGS" 2>&1 \
+    SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, $SETTINGS" 2>&1 \
     | grep -q "Distributed FINAL read bucketed: 150 layers in 38 lanes per task make 4 tasks"
 then echo 1; else echo 0; fi
 
@@ -46,7 +46,7 @@ then echo 1; else echo 0; fi
 echo -n "distributed plan "
 $CLICKHOUSE_CLIENT -q "
     SELECT count(), sum(v) FROM t_final_many_partitions FINAL
-    SETTINGS make_distributed_plan = 1, $SETTINGS"
+    SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0, $SETTINGS"
 echo -n "plain plan "
 $CLICKHOUSE_CLIENT -q "
     SELECT count(), sum(v) FROM t_final_many_partitions FINAL

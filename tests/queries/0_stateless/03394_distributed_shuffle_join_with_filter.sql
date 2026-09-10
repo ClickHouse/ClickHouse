@@ -36,10 +36,10 @@ SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_m
 SELECT '-------------------------';
 
 SELECT count() FROM test AS t1 JOIN test AS t2 ON t1.src_ip = t2.dst_ip WHERE t1.src_ip != 0 AND t1.bytes > 10
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=0, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_optimize_exchanges=0, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count() FROM test AS t1 JOIN test AS t2 ON t1.src_ip = t2.dst_ip WHERE t1.src_ip != 0 AND t1.bytes > 10
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count() FROM test AS t1 JOIN test AS t2 ON t1.src_ip = t2.dst_ip WHERE t1.src_ip != 0 AND t1.bytes > 10
 SETTINGS make_distributed_plan=0;

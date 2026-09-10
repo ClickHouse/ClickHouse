@@ -30,11 +30,11 @@ SET explain_query_plan_default = 'legacy';
 SELECT 'IN (subquery) stays an IN and keeps its set';
 -- Must produce no row: the IN is not rewritten into a join.
 SELECT 'rewritten to join'
-FROM (EXPLAIN SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter) SETTINGS make_distributed_plan = 1)
+FROM (EXPLAIN SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0)
 WHERE explain ILIKE '%Join%' LIMIT 1;
 -- Set expansion is deferred under make_distributed_plan, so the plan keeps a delayed set step.
 SELECT 'keeps the set'
-FROM (EXPLAIN SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter) SETTINGS make_distributed_plan = 1)
+FROM (EXPLAIN SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0)
 WHERE explain ILIKE '%CreatingSet%' LIMIT 1;
 
 SELECT 'the explicit rewrite still turns IN into a JOIN';
@@ -44,17 +44,19 @@ WHERE explain ILIKE '%Join%' LIMIT 1;
 
 SELECT 'distributed result matches single-node';
 SET make_distributed_plan = 1;
-SELECT count(), sum(v) FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter);
+SELECT count(), sum(v) FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter)
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count(), sum(v) FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter)
     SETTINGS make_distributed_plan = 0, rewrite_in_to_join = 0;
-SELECT count() FROM t_in_main WHERE id NOT IN (SELECT id FROM t_in_filter);
+SELECT count() FROM t_in_main WHERE id NOT IN (SELECT id FROM t_in_filter)
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_in_main WHERE id NOT IN (SELECT id FROM t_in_filter)
     SETTINGS make_distributed_plan = 0, rewrite_in_to_join = 0;
 
 SELECT 'the query distributes';
 SET make_distributed_plan = 0;
 SELECT 'distributes'
-FROM (EXPLAIN PIPELINE SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter) SETTINGS make_distributed_plan = 1)
+FROM (EXPLAIN PIPELINE SELECT count() FROM t_in_main WHERE id IN (SELECT id FROM t_in_filter) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0)
 WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
 
 DROP TABLE t_in_main;

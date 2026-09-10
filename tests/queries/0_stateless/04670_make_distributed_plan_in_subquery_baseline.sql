@@ -13,23 +13,28 @@ SET enable_analyzer = 1, make_distributed_plan = 1, distributed_plan_execute_loc
 SET use_index_for_in_with_subqueries = 1, use_query_condition_cache = 0;
 
 SELECT '-- literal IN ships as TupleValues';
-SELECT count() FROM t_big WHERE k IN (1, 2, 3, 1000000);
+SELECT count() FROM t_big WHERE k IN (1, 2, 3, 1000000)
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- IN (subquery): built once at planning, values shipped to tasks';
-SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50);
+SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50)
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- the explicit rewrite executes IN as a distributed join';
 SELECT count() FROM t_big WHERE k IN (SELECT val FROM t_small WHERE id < 50)
-    SETTINGS allow_experimental_correlated_subqueries = 1, rewrite_in_to_join = 1;
+    SETTINGS allow_experimental_correlated_subqueries = 1, rewrite_in_to_join = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- GLOBAL IN over local tables behaves as plain IN';
-SELECT count() FROM t_big WHERE k GLOBAL IN (SELECT val FROM t_small WHERE id < 50);
+SELECT count() FROM t_big WHERE k GLOBAL IN (SELECT val FROM t_small WHERE id < 50)
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- GLOBAL JOIN executes as a distributed join (no external table under the analyzer)';
-SELECT count() FROM t_big GLOBAL ANY LEFT JOIN t_small ON t_big.k = t_small.val;
+SELECT count() FROM t_big GLOBAL ANY LEFT JOIN t_small ON t_big.k = t_small.val
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- value-producing IN builds its set once on the initiator';
-SELECT countIf(flag) FROM (SELECT (k IN (SELECT val FROM t_small WHERE id < 50)) AS flag FROM t_big);
+SELECT countIf(flag) FROM (SELECT (k IN (SELECT val FROM t_small WHERE id < 50)) AS flag FROM t_big)
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_big;
 DROP TABLE t_small;

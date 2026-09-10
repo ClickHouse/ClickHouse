@@ -20,7 +20,7 @@ SYSTEM STOP MERGES t_ni_rep;
 INSERT INTO t_ni_rep SELECT number, number + 5, 2 FROM numbers(800);
 
 SELECT 'rep local', count(), sum(v) FROM t_ni_rep FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'rep distributed', count(), sum(v) FROM t_ni_rep FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'rep distributed', count(), sum(v) FROM t_ni_rep FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT 'rep read distributes', countIf(explain LIKE '%ReadFromDistributedPlanSource%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_ni_rep FINAL SETTINGS make_distributed_plan = 1);
 DROP TABLE t_ni_rep;
@@ -34,7 +34,7 @@ SYSTEM STOP MERGES t_ni_del;
 INSERT INTO t_ni_del SELECT number, number + 5, 2, 0 FROM numbers(800);
 
 SELECT 'del local', count(), sum(v) FROM t_ni_del FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'del distributed', count(), sum(v) FROM t_ni_del FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'del distributed', count(), sum(v) FROM t_ni_del FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 DROP TABLE t_ni_del;
 
 DROP TABLE IF EXISTS t_ni_col;
@@ -46,5 +46,5 @@ SYSTEM STOP MERGES t_ni_col;
 INSERT INTO t_ni_col SELECT number, number, 1 FROM numbers(800);
 
 SELECT 'col local', count(), sum(v) FROM t_ni_col FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'col distributed', count(), sum(v) FROM t_ni_col FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'col distributed', count(), sum(v) FROM t_ni_col FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 DROP TABLE t_ni_col;

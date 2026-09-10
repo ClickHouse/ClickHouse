@@ -68,17 +68,20 @@ EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LE
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy';
 
 SELECT '-- 11. empty left table';
-SELECT t1.k AS k, count() AS c FROM t_corr_empty AS t1 INNER JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SELECT t1.k AS k, count() AS c FROM t_corr_empty AS t1 INNER JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c FROM t_corr_empty AS t1 INNER JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 12. empty right table with LEFT JOIN';
-SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT JOIN t_corr_empty_right AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT JOIN t_corr_empty_right AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT JOIN t_corr_empty_right AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 13. LEFT ANY, variant B (join keys subset of GROUP BY keys)';
-SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
@@ -92,50 +95,59 @@ SELECT '-- 14. INNER ANY is never pushed (at most one row per key, not per pushe
 -- per node under a randomized `index_granularity`/insert split, independent of this rule. The
 -- tripwire still works single-node (a wrongly-pushed partial would still yield 10 vs 1).
 SET param__internal_cascades_cluster_node_count = 1;
-SELECT t1.k AS k, count() AS c FROM t_corr_left AS t1 INNER ANY JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SELECT t1.k AS k, count() AS c FROM t_corr_left AS t1 INNER ANY JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SELECT t1.k AS k, count() AS c FROM t_corr_left AS t1 INNER ANY JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 15. LEFT SEMI, variant B';
-SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT SEMI JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT SEMI JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT SEMI JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 16. LEFT ANTI, variant B';
-SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANTI JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANTI JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANTI JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 17. RIGHT ALL with fan-out (variant A, push-right)';
-SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_multi AS t1 RIGHT JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k;
+SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_multi AS t1 RIGHT JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_multi AS t1 RIGHT JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 18. RIGHT ANY, variant B (per-key-unique left side)';
-SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_uniq AS t1 RIGHT ANY JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k;
+SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_uniq AS t1 RIGHT ANY JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_uniq AS t1 RIGHT ANY JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 19. RIGHT ANTI, variant B';
-SELECT t2.k AS k, count() AS c FROM t_corr_right_multi AS t1 RIGHT ANTI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k;
+SELECT t2.k AS k, count() AS c FROM t_corr_right_multi AS t1 RIGHT ANTI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t2.k AS k, count() AS c FROM t_corr_right_multi AS t1 RIGHT ANTI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 20. RIGHT SEMI, variant B, push-right (last enabled matrix cell without an executed scenario)';
-SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_multi AS t1 RIGHT SEMI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k;
+SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_multi AS t1 RIGHT SEMI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t2.k AS k, count() AS c, sum(t2.v) AS s FROM t_corr_right_multi AS t1 RIGHT SEMI JOIN t_corr_left AS t2 ON t1.k = t2.k GROUP BY t2.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 SELECT '-- 21. global aggregation over a join on an empty left table keeps the single-row result';
-SELECT count() FROM t_corr_empty AS t1 LEFT JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k;
+SELECT count() FROM t_corr_empty AS t1 LEFT JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_corr_empty AS t1 LEFT JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 -- keys 0-5 of t_corr_right_multi match; keys 6-9 of t_corr_left have no match and are dropped by
 -- the INNER JOIN; GROUP BY dedups the fan-out (keys 1 and 2 match more than once) to one row/key.
 SELECT '-- 22. keys-only GROUP BY, empty aggregate list (variant A, push-left)';
-SELECT t1.k AS k FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SELECT t1.k AS k FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT t1.k AS k FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 

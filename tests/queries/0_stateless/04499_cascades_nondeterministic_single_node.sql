@@ -20,7 +20,7 @@ INSERT INTO t_nondet SELECT number, number * 2 FROM numbers(100000);
 
 SELECT '-- rowNumberInAllBlocks filter runs on a single node';
 SELECT count() FROM (SELECT * FROM t_nondet WHERE rowNumberInAllBlocks() < 1000)
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- Baseline without Cascades';
 SELECT count() FROM (SELECT * FROM t_nondet WHERE rowNumberInAllBlocks() < 1000)

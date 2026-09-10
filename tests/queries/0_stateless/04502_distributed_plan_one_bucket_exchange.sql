@@ -20,13 +20,15 @@ SET max_rows_to_group_by = 0;
 -- One-bucket shuffle join, multi-bucket readers
 SELECT sum(l.v + r.w) FROM t_one_bucket_l AS l JOIN t_one_bucket_r AS r ON l.k = r.k
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0,
-         distributed_plan_default_shuffle_join_bucket_count = 1, distributed_plan_default_reader_bucket_count = 3;
+         distributed_plan_default_shuffle_join_bucket_count = 1, distributed_plan_default_reader_bucket_count = 3,
+         distributed_plan_fallback_to_local_execution = 0;
 
 -- Same shape with the right side broadcast (replicated task merged with a partitioned sibling)
 SELECT sum(l.v + r.w) FROM t_one_bucket_l AS l JOIN t_one_bucket_r AS r ON l.k = r.k
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0,
          distributed_plan_default_shuffle_join_bucket_count = 1, distributed_plan_default_reader_bucket_count = 3,
-         distributed_plan_max_rows_to_broadcast = 1000000;
+         distributed_plan_max_rows_to_broadcast = 1000000,
+         distributed_plan_fallback_to_local_execution = 0;
 
 -- One-bucket shuffle join unioned with a plain multi-bucket read
 SELECT sum(x) FROM (
@@ -35,12 +37,14 @@ SELECT sum(x) FROM (
   SELECT v AS x FROM t_one_bucket_l
 )
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0,
-         distributed_plan_default_shuffle_join_bucket_count = 1, distributed_plan_default_reader_bucket_count = 3;
+         distributed_plan_default_shuffle_join_bucket_count = 1, distributed_plan_default_reader_bucket_count = 3,
+         distributed_plan_fallback_to_local_execution = 0;
 
 -- Same join under the cost-based optimizer
 SELECT sum(l.v + r.w) FROM t_one_bucket_l AS l JOIN t_one_bucket_r AS r ON l.k = r.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0,
-         distributed_plan_default_shuffle_join_bucket_count = 1, distributed_plan_default_reader_bucket_count = 3;
+         distributed_plan_default_shuffle_join_bucket_count = 1, distributed_plan_default_reader_bucket_count = 3,
+         distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_one_bucket_l;
 DROP TABLE t_one_bucket_r;
