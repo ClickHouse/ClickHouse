@@ -114,7 +114,7 @@ TEST(WorkersCoordinator, OneIdleWorkerBlocksInThePollerAndTheNextOneSleeps)
     EXPECT_EQ(f.states.data(), popped->state);
     EXPECT_EQ(Task::Kind::AsyncReady, popped->kind);
 
-    f.coordinator.wakeOne();
+    f.coordinator.wake(1);
     sleeping.join();
 
     EXPECT_TRUE(sleeping_result);
@@ -143,7 +143,7 @@ TEST(WorkersCoordinator, NeedsAPollerWhenStatesWaitAndNobodyPolls)
     f.scheduler.push(AsyncTask{.state = f.states.data(), .fd = fds[0], .events = EPOLLIN | EPOLLERR, .timeout_ms = -1});
     EXPECT_TRUE(f.coordinator.needsPoller());
 
-    f.coordinator.wakeOne();
+    f.coordinator.wake(1);
     sleeping.join();
     EXPECT_TRUE(sleeping_result);
     EXPECT_FALSE(f.coordinator.needsPoller());
@@ -186,7 +186,7 @@ TEST(WorkersCoordinator, WakeOneWakesAnIdleWorkerThatThenSteals)
 
     f.scheduler.push(f.task(2), 1);
     f.scheduler.push(f.task(3), 1);
-    f.coordinator.wakeOne();
+    f.coordinator.wake(1);
     idle_worker.join();
 
     ASSERT_TRUE(picked);
@@ -238,7 +238,7 @@ TEST(WorkersCoordinator, NoWakeUpIsLostUnderConcurrentPushAndWait)
     for (size_t i = 0; i < tasks_count; ++i)
     {
         f.scheduler.push(f.task(i), 1);
-        f.coordinator.wakeOne();
+        f.coordinator.wake(1);
     }
     f.coordinator.leave(1);
 

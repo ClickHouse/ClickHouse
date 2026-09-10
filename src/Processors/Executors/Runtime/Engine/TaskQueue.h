@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class WorkStealingQueue
+class TaskQueue
 {
 public:
     void pushBack(Task task);
@@ -16,8 +16,8 @@ public:
     Task popFront();
     Task popBack();
 
-    size_t takeFirst(WorkStealingQueue & victim, size_t max_to_take);
-    size_t takeAll(WorkStealingQueue & victim);
+    void takeFront(TaskQueue & from, size_t count);
+    void takeAll(TaskQueue & from);
 
     bool empty() const;
     size_t size() const;

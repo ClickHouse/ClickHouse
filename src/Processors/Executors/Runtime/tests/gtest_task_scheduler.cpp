@@ -39,13 +39,13 @@ struct Fixture
 
 }
 
-TEST(TaskScheduler, OwnQueueIsPoppedNewestFirst)
+TEST(TaskScheduler, TheLastPushedTaskRunsNextAndIsNotCounted)
 {
     Fixture f(2);
     f.scheduler.push(f.task(0), 0);
     f.scheduler.push(f.task(1, Task::Kind::Work), 0);
-    EXPECT_EQ(2u, f.scheduler.queued());
-    EXPECT_EQ(2u, f.scheduler.total());
+    EXPECT_EQ(1u, f.scheduler.queued());
+    EXPECT_EQ(1u, f.scheduler.total());
 
     auto first = f.scheduler.tryPop(0);
     ASSERT_TRUE(first);
@@ -73,12 +73,12 @@ TEST(TaskScheduler, LocalQueueOverflowsTheOldestHalfIntoTheGlobalQueue)
     Fixture f(2, 200);
     for (size_t i = 0; i < f.states.size(); ++i)
         f.scheduler.push(f.task(i), 0);
-    EXPECT_EQ(f.states.size(), f.scheduler.queued());
+    EXPECT_EQ(f.states.size() - 1, f.scheduler.queued());
 
-    /// The other worker takes a batch of seven from the global front and pops it newest first.
-    EXPECT_EQ(6u, f.popIndex(1));
+    /// The other worker takes the oldest task from the global front.
+    EXPECT_EQ(0u, f.popIndex(1));
     EXPECT_EQ(199u, f.popIndex(0));
-    EXPECT_EQ(5u, f.popIndex(1));
+    EXPECT_EQ(1u, f.popIndex(1));
 }
 
 TEST(TaskScheduler, AChainGetsTheOldestTaskAfterTheCap)
@@ -102,35 +102,35 @@ TEST(TaskScheduler, AChainGetsTheOldestTaskAfterTheCap)
     EXPECT_FALSE(f.scheduler.tryPop(0));
 }
 
-TEST(TaskScheduler, GlobalQueueIsTakenFromTheFrontInBatches)
+TEST(TaskScheduler, GlobalQueueIsTakenFromTheFront)
 {
     Fixture f(2);
     for (size_t i = 0; i < 6; ++i)
         f.scheduler.push(f.task(i));
 
-    /// The oldest half moves into the own queue and is popped newest first; the rest stays for others.
-    EXPECT_EQ(2u, f.popIndex(1));
+    /// One task at a time, the oldest first; the rest stays for others.
+    EXPECT_EQ(0u, f.popIndex(1));
     EXPECT_EQ(5u, f.scheduler.queued());
     EXPECT_EQ(1u, f.popIndex(1));
-    EXPECT_EQ(0u, f.popIndex(1));
-    EXPECT_EQ(4u, f.popIndex(0));
+    EXPECT_EQ(2u, f.popIndex(0));
     EXPECT_EQ(3u, f.popIndex(0));
+    EXPECT_EQ(4u, f.popIndex(1));
     EXPECT_EQ(5u, f.popIndex(1));
     EXPECT_EQ(0u, f.scheduler.queued());
 }
 
-TEST(TaskScheduler, StealTakesTheOldestHalfOfAnotherWorker)
+TEST(TaskScheduler, AnotherWorkerTakesTheOldestTask)
 {
     Fixture f(2);
     for (size_t i = 0; i < 6; ++i)
         f.scheduler.push(f.task(i), 0);
 
-    EXPECT_EQ(2u, f.popIndex(1));
+    EXPECT_EQ(0u, f.popIndex(1));
     EXPECT_EQ(1u, f.popIndex(1));
     EXPECT_EQ(5u, f.popIndex(0));
     EXPECT_EQ(4u, f.popIndex(0));
     EXPECT_EQ(3u, f.popIndex(0));
-    EXPECT_EQ(0u, f.popIndex(0));
+    EXPECT_EQ(2u, f.popIndex(0));
     EXPECT_EQ(0u, f.scheduler.queued());
 }
 
@@ -147,7 +147,7 @@ TEST(TaskScheduler, DrainHandsTheQueueToTheGlobalQueue)
 }
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-TEST(TaskScheduler, FiredFdBecomesAsyncReadyPoppedFirst)
+TEST(TaskScheduler, FiredFdBecomesAnAsyncReadyTaskInTheQueue)
 {
     Fixture f(1, 2);
 
@@ -160,21 +160,23 @@ TEST(TaskScheduler, FiredFdBecomesAsyncReadyPoppedFirst)
     EXPECT_FALSE(f.scheduler.tryPop(0));
 
     f.scheduler.push(f.task(1), 0);
-    EXPECT_EQ(2u, f.scheduler.total());
+    EXPECT_EQ(1u, f.scheduler.total());
 
+    /// The fired state lands in the queue, counted, and runs right after the worker's next task.
     char byte = 0;
     ASSERT_EQ(1, ::write(fds[1], &byte, 1));
     EXPECT_EQ(1u, f.scheduler.poll(0, 0));
     EXPECT_EQ(0u, f.poller.pending());
-    EXPECT_EQ(2u, f.scheduler.queued());
-    EXPECT_EQ(2u, f.scheduler.total());
-
-    auto first = f.scheduler.tryPop(0);
-    ASSERT_TRUE(first);
-    EXPECT_EQ(f.states.data(), first->state);
-    EXPECT_EQ(Task::Kind::AsyncReady, first->kind);
+    EXPECT_EQ(1u, f.scheduler.queued());
+    EXPECT_EQ(1u, f.scheduler.total());
 
     EXPECT_EQ(1u, f.popIndex(0));
+
+    auto fired = f.scheduler.tryPop(0);
+    ASSERT_TRUE(fired);
+    EXPECT_EQ(f.states.data(), fired->state);
+    EXPECT_EQ(Task::Kind::AsyncReady, fired->kind);
+
     EXPECT_FALSE(f.scheduler.tryPop(0));
     EXPECT_EQ(0u, f.scheduler.total());
 

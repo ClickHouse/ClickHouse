@@ -2,7 +2,7 @@
 
 #include <Processors/Executors/Runtime/Engine/Poller.h>
 #include <Processors/Executors/Runtime/Engine/Task.h>
-#include <Processors/Executors/Runtime/Engine/WorkStealingQueue.h>
+#include <Processors/Executors/Runtime/Engine/TaskQueue.h>
 
 #include <atomic>
 #include <mutex>
@@ -23,14 +23,14 @@ class TaskScheduler
     struct alignas(128) GlobalState
     {
         std::mutex mutex;
-        WorkStealingQueue queue;
+        TaskQueue queue;
         std::atomic<size_t> tasks_count = 0;
     };
 
     struct alignas(128) LocalState
     {
         std::mutex mutex;
-        WorkStealingQueue queue;
+        TaskQueue queue;
         std::atomic<size_t> tasks_count = 0;
 
         std::optional<Task> next;
@@ -43,8 +43,8 @@ class TaskScheduler
     void pushToGlobalQueue(Task task);
     std::optional<Task> takeFromNext(LocalState & own);
     std::optional<Task> takeFromLocal(LocalState & own);
-    std::optional<Task> takeFromGlobal(LocalState & own, size_t max_to_take);
-    std::optional<Task> steal(LocalState & own);
+    std::optional<Task> takeFromGlobal();
+    std::optional<Task> takeFromOthers(const LocalState & own);
 
 public:
     TaskScheduler(Poller & poller_, size_t max_workers);
