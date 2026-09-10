@@ -1409,6 +1409,21 @@ String QueryFuzzer::nextFuzzedTableName(const String & full_name)
 /// inner table storage of a materialized view.
 void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
 {
+    /// `table_disk` points the disk at this table's own data instead of the database's, so a renamed
+    /// clone of this definition reads the parts of the table being fuzzed while declaring the mutated
+    /// column list and sorting key below, which those parts do not satisfy. Without it the clone
+    /// stores its own data under its own path.
+    if (storage.settings)
+    {
+        std::erase_if(storage.settings->changes, [](const SettingChange & change) { return change.name == "table_disk"; });
+        std::erase_if(storage.settings->default_settings, [](const String & name) { return name == "table_disk"; });
+        /// The formatter prints `SETTINGS` whenever the slot is non-null, so an emptied node would
+        /// serialize to a bare `SETTINGS` that fails to re-parse.
+        if (storage.settings->changes.empty() && storage.settings->default_settings.empty()
+            && storage.settings->query_parameters.empty())
+            storage.reset(storage.settings);
+    }
+
     if (!storage.engine)
         return;
 
