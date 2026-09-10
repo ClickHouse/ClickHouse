@@ -36,15 +36,19 @@ SELECT a, `a.size0` FROM t_added_size0_implicit;
 
 DROP TABLE t_added_size0_implicit;
 
--- A `Nested` column is read through the same lookup: its flattened columns are collected back into
--- one column of the part and read as its subcolumns, which must keep working.
+-- A `Nested` column is read through the same lookup: in a `Wide` part its flattened columns are
+-- collected back into one column and read as its subcolumns, which must keep working. The parts are
+-- forced to `Wide`, because that collecting - the branch the exact-name guard has to leave alone -
+-- happens for `Wide` parts only, and these tables are far too small to become `Wide` on their own.
 DROP TABLE IF EXISTS t_nested_after_add;
-CREATE TABLE t_nested_after_add (id UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t_nested_after_add (id UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_level_for_wide_part = 0;
 INSERT INTO t_nested_after_add VALUES (1, [1, 2], ['a', 'b']), (2, [3], ['c']);
 ALTER TABLE t_nested_after_add ADD COLUMN z UInt64 DEFAULT 5;
 INSERT INTO t_nested_after_add VALUES (3, [4], ['d'], 9);
 
-SELECT 'a nested column and a column added after it';
+SELECT 'a nested column and a column added after it, in wide parts';
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_after_add' AND active;
 SELECT id, n.x, n.y, z FROM t_nested_after_add ORDER BY id;
 SELECT id, length(n.x) FROM t_nested_after_add ORDER BY id;
 
@@ -53,13 +57,29 @@ DROP TABLE t_nested_after_add;
 -- The same without the shared offsets of `Nested`, which changes the shape of the read request.
 DROP TABLE IF EXISTS t_nested_own_offsets;
 CREATE TABLE t_nested_own_offsets (id UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY id
-SETTINGS share_nested_offsets = 0;
+SETTINGS share_nested_offsets = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_level_for_wide_part = 0;
 INSERT INTO t_nested_own_offsets VALUES (1, [1, 2], ['a', 'b']), (2, [3], ['c']);
 ALTER TABLE t_nested_own_offsets ADD COLUMN z UInt64 DEFAULT 5;
 INSERT INTO t_nested_own_offsets VALUES (3, [4], ['d'], 9);
 
-SELECT 'a nested column with its own offsets';
+SELECT 'a nested column with its own offsets, in wide parts';
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_own_offsets' AND active;
 SELECT id, n.x, n.y, z FROM t_nested_own_offsets ORDER BY id;
 SELECT id, length(n.x) FROM t_nested_own_offsets ORDER BY id;
 
 DROP TABLE t_nested_own_offsets;
+
+-- And in `Compact` parts, where the flattened columns of `Nested` are read under their own names.
+DROP TABLE IF EXISTS t_nested_compact;
+CREATE TABLE t_nested_compact (id UInt64, n Nested(x UInt64, y String)) ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 1099511627776;
+INSERT INTO t_nested_compact VALUES (1, [1, 2], ['a', 'b']), (2, [3], ['c']);
+ALTER TABLE t_nested_compact ADD COLUMN z UInt64 DEFAULT 5;
+INSERT INTO t_nested_compact VALUES (3, [4], ['d'], 9);
+
+SELECT 'a nested column and a column added after it, in compact parts';
+SELECT DISTINCT part_type FROM system.parts WHERE database = currentDatabase() AND table = 't_nested_compact' AND active;
+SELECT id, n.x, n.y, z FROM t_nested_compact ORDER BY id;
+SELECT id, length(n.x) FROM t_nested_compact ORDER BY id;
+
+DROP TABLE t_nested_compact;

@@ -10,14 +10,24 @@ the array is still the array
 4
 the implicit default of the type
 [10,20,30]	0
-a nested column and a column added after it
+a nested column and a column added after it, in wide parts
+Wide
 1	[1,2]	['a','b']	5
 2	[3]	['c']	5
 3	[4]	['d']	9
 1	2
 2	1
 3	1
-a nested column with its own offsets
+a nested column with its own offsets, in wide parts
+Wide
+1	[1,2]	['a','b']	5
+2	[3]	['c']	5
+3	[4]	['d']	9
+1	2
+2	1
+3	1
+a nested column and a column added after it, in compact parts
+Compact
 1	[1,2]	['a','b']	5
 2	[3]	['c']	5
 3	[4]	['d']	9
