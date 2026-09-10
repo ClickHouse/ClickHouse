@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-azure-blob-storage, long
-# Tag no-fasttest: 45 seconds running
-# Tag long: the test uses background `sleepEachRow` queries (~66s of parallel sleeps and
-# a ~20s tuple sleep) as a timing floor, but the wall-clock duration is dominated by the
-# concurrent DDL (`CREATE`/`DROP`/`RENAME`/`EXCHANGE`) on `Atomic` databases running on
-# top of those sleeps. The DDL path is instrumented under ASan/TSan/MSan and coverage
-# builds, so the whole test can exceed 180s (CIDB p95 on `amd_tsan, parallel` is ~356s),
-# which trips the `clickhouse-test` flaky-check `TEST_MAX_RUN_TIME_IN_SECONDS = 180s` cap;
-# the `long` tag exempts the test from that cap. The `sleepEachRow` calls themselves are
-# wall-clock sleeps and are not sped up or slowed down by sanitizers.
+# Tags: no-azure-blob-storage
+
+set -e
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -58,20 +51,56 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE ${DATABASE_2}.mt UUID '$explicit_uuid' (n UI
 $CLICKHOUSE_CLIENT --show_table_uuid_in_table_create_query_if_not_nil=1 -q "SHOW CREATE TABLE ${DATABASE_2}.mt" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 $CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables WHERE database='${DATABASE_2}'" | sed "s/$explicit_uuid/00001114-0000-4000-8000-000000000002/g"
 
-RANDOM_COMMENT="$RANDOM"
-$CLICKHOUSE_CLIENT --max-execution-time 600 --max-threads 5 --function_sleep_max_microseconds_per_block 120000000 -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(3) AS col FROM ${DATABASE_1}.mt) -- ${RANDOM_COMMENT}" &     # 66s (3s * 22 rows per partition [Using 5 threads in parallel]), result: 110, 5995
-$CLICKHOUSE_CLIENT --max-execution-time 600 --max-threads 5 --function_sleep_max_microseconds_per_block 120000000 -q "INSERT INTO ${DATABASE_2}.mt SELECT number + sleepEachRow(2.2) FROM numbers(30) -- ${RANDOM_COMMENT}" &                # 66s (2.2s * 30 rows)
+# Keep each query in flight until the DDL finishes without depending on read parallelism
+# or a fixed sleep duration. Opening the FIFO for writing waits for the server reader;
+# its pipeline then holds the table while waiting for the row and EOF.
+# The gated queries run locally because `file` with a FIFO cannot be distributed to workers;
+# these queries check table lifetime across DDL, independently of distributed execution.
+gate_dir="${CLICKHOUSE_USER_FILES_UNIQUE}/atomic_gates"
+mkdir -p "$gate_dir"
+gate_pids=()
+cleanup_gates()
+{
+    touch "$gate_dir/release"
+    for pid in "${gate_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+}
+trap cleanup_gates EXIT
 
-it=0
-while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_COMMENT}%'") -ne 2 ]]; do
-    it=$((it+1))
-    if [ $it -ge 50 ];
-    then
-        echo "Failed to wait for first batch of queries"
-        $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_COMMENT}%'"
-    fi
-    sleep 0.1
-done
+start_gate()
+{
+    local name=$1
+    mkfifo "$gate_dir/$name.tsv"
+    (
+        exec {gate_fd}>"$gate_dir/$name.tsv"
+        touch "$gate_dir/$name.ready"
+        while [ ! -e "$gate_dir/release" ]; do sleep 0.1; done
+        echo 0 >&${gate_fd}
+    ) &
+    gate_pids+=("$!")
+}
+
+wait_for_gate()
+{
+    local name=$1
+    local query_pid=$2
+    for _ in $(seq 1 600); do
+        if [ -e "$gate_dir/$name.ready" ]; then return; fi
+        if ! kill -0 "$query_pid" 2>/dev/null; then wait "$query_pid"; return 1; fi
+        sleep 0.1
+    done
+    echo "Timed out waiting for $name to open its FIFO" >&2
+    return 1
+}
+
+start_gate select
+$CLICKHOUSE_CLIENT --make_distributed_plan=0 --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "SELECT count(col), sum(col) FROM (SELECT n + gate AS col FROM ${DATABASE_1}.mt CROSS JOIN file('$gate_dir/select.tsv', TSV, 'gate UInt64') AS gate_input)" > "$gate_dir/select.out" &
+select_pid=$!
+wait_for_gate select "$select_pid"
+
+start_gate insert
+$CLICKHOUSE_CLIENT --make_distributed_plan=0 --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "INSERT INTO ${DATABASE_2}.mt SELECT number + gate FROM numbers(30) AS source CROSS JOIN file('$gate_dir/insert.tsv', TSV, 'gate UInt64') AS gate_input" &
+insert_pid=$!
+wait_for_gate insert "$insert_pid"
 
 $CLICKHOUSE_CLIENT -m -q "
 RENAME TABLE ${DATABASE_1}.mt TO ${DATABASE_1}.mt_tmp;
@@ -94,21 +123,20 @@ INSERT INTO ${DATABASE_1}.mt SELECT 's' || toString(number) FROM numbers(5);
 SELECT count() FROM ${DATABASE_1}.mt
 " # result: 5
 
-RANDOM_TUPLE="${RANDOM}_tuple"
-$CLICKHOUSE_CLIENT --max-threads 5 --function_sleep_max_microseconds_per_block 60000000 -q "SELECT tuple(s, sleepEachRow(4)) FROM ${DATABASE_1}.mt -- ${RANDOM_TUPLE}" > /dev/null &    # 20s (4s * 5 rows)
-it=0
-while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_TUPLE}%'") -ne 1 ]]; do
-    it=$((it+1))
-    if [ $it -ge 50 ];
-    then
-        echo "Failed to wait for second batch of queries"
-        $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id != queryID() AND current_database = currentDatabase() AND query LIKE '%-- ${RANDOM_TUPLE}%'"
-    fi
-    sleep 0.1
-done
+start_gate tuple
+$CLICKHOUSE_CLIENT --make_distributed_plan=0 --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "SELECT tuple(s, gate) FROM ${DATABASE_1}.mt CROSS JOIN file('$gate_dir/tuple.tsv', TSV, 'gate UInt64') AS gate_input" > /dev/null &
+tuple_pid=$!
+wait_for_gate tuple "$tuple_pid"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${DATABASE_1}" --database_atomic_wait_for_drop_and_detach_synchronously=0 && echo "dropped"
 
-wait # for INSERT and SELECT
+touch "$gate_dir/release"
+wait "$select_pid"
+wait "$insert_pid"
+wait "$tuple_pid"
+wait
+cat "$gate_dir/select.out"
+trap - EXIT
+rm -r "$gate_dir"
 
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM ${DATABASE_2}.mt"    # result: 30, 435
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${DATABASE_2}" --database_atomic_wait_for_drop_and_detach_synchronously=0
