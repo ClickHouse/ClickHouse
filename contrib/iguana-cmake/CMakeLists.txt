@@ -1,3 +1,20 @@
+option (ENABLE_IGUANA "Enable Iguana" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_IGUANA)
+    message (STATUS "Not using Iguana")
+    return()
+endif ()
+
+if (OS_DARWIN AND ARCH_AMD64)
+    # The x86-64 runtime dispatch calls `__builtin_cpu_supports`, which references compiler-rt's
+    # `__cpu_model`. That symbol is not linked into ClickHouse's macOS cross-build, so linking fails
+    # with "undefined ___cpu_model" (the same reason `zxc` builds scalar-only there). macOS builds
+    # are for local development only and this codec is experimental, so drop it entirely on macOS
+    # x86-64 rather than carry a second dispatch path. macOS on AArch64 is unaffected.
+    message (STATUS "Not using Iguana (macOS x86-64 has no compiler-rt CPU model to dispatch on)")
+    return()
+endif ()
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/iguana/iguana")
 
 # Build the portable code paths of the library (structural LZ compression + the rANS entropy
