@@ -38,22 +38,20 @@
    false-positive failure. Let the `IgnoreMeException` propagate instead; genuine
    unexpected errors (a re-thrown `SQLException`, or an `AssertionError` with a
    message) are unaffected and still reported.
-5. Read the view with an aggregate in `GeneralProvider.checkViewsAreValid`'s
-   per-view validity probe, instead of `SELECT * FROM <view>`. That probe goes
-   through `SQLQueryAdapter.execute`, which closes the statement without draining
-   the result set, so an error ClickHouse reports mid-stream - a generated view
-   body dividing by zero on the generated data, say - arrives only as a truncated
-   chunked body that the driver logs and swallows: `execute` returns `true` and
-   neither `dropView` branch fires. `COUNT(*)` cannot emit its row before it has
-   consumed all input, so the server finishes the view before answering and the
-   failure arrives as a normal error response. `WHERE NOT ignore(*)` stops the
-   view's projection being pruned away (`ignore` takes every view column as an
-   argument, is never constant-folded and returns 0, so the filter keeps every
-   row); a plain `COUNT(*)` returns `1` for a view whose only defect sits in its
-   SELECT list. The existing `if (!execute()) -> dropView` /
-   `catch (Throwable) -> dropView` branches then drop exactly the unreadable
-   view, so it no longer reaches the cross-join size probe below - which is
-   called outside the per-oracle `catch (AssertionError)` and so killed the run.
+5. Read the view with `SELECT sum(ignore(*)) FROM <view>` in
+   `GeneralProvider.checkViewsAreValid`'s per-view validity probe, instead of
+   `SELECT * FROM <view>`. That probe goes through `SQLQueryAdapter.execute`,
+   which closes the statement without draining the result set, so an error
+   ClickHouse reports mid-stream is invisible: `execute` returns `true` and
+   neither `dropView` branch fires. An aggregate cannot emit its row before it
+   has consumed all input, and `ignore(*)` takes every view column as an
+   argument and is never constant-folded, so the projection cannot be pruned.
+   An outer predicate (`... WHERE NOT ignore(*)`) is not equivalent: it is
+   pushed into the view and can filter rows before the failing projection runs.
+   The existing `if (!execute()) -> dropView` / `catch (Throwable) -> dropView`
+   branches then drop exactly the unreadable view, so it no longer reaches the
+   cross-join size probe, which is called outside the per-oracle
+   `catch (AssertionError)` and so killed the run.
 """
 
 import argparse
@@ -176,20 +174,18 @@ def patch_view_validity_probe(repo: pathlib.Path) -> None:
     # `SELECT * FROM <view>` cannot tell this probe that the view is unreadable:
     # `execute` never drains the result set, so ClickHouse's mid-stream error is
     # invisible and the view survives into the cross-join size probe, where the
-    # same error is fatal. An aggregate makes the server finish the view before it
-    # answers; `ignore(*)` keeps the view's projection from being pruned, so a
-    # defect in the SELECT list is caught as well as one in the view's WHERE.
+    # same error is fatal. An aggregate over `ignore(*)` reads the view the way
+    # that size probe does: every column is a required input, and no predicate
+    # sits above the view where it could drop rows before the projection runs.
     anchor = (
         '            SQLQueryAdapter q = new SQLQueryAdapter("SELECT * FROM " + view.getName(),'
         " new ExpectedErrors(), false,\n"
         "                    globalState.getOptions().canonicalizeSqlString());\n"
     )
     replacement = (
-        "            // ClickHouse patch: an aggregate makes the server finish the view before it answers,\n"
-        "            // and ignore(*) keeps its projection from being pruned. A mid-stream error never\n"
-        "            // reaches execute(), which does not drain the result set.\n"
-        "            SQLQueryAdapter q = new SQLQueryAdapter(\n"
-        '                    "SELECT COUNT(*) FROM " + view.getName() + " WHERE NOT ignore(*)",\n'
+        "            // ClickHouse patch: an aggregate makes the server finish the view before it answers, and\n"
+        "            // ignore(*) requires every column, so the view's projection cannot be pruned away.\n"
+        '            SQLQueryAdapter q = new SQLQueryAdapter("SELECT sum(ignore(*)) FROM " + view.getName(),\n'
         "                    new ExpectedErrors(), false, globalState.getOptions().canonicalizeSqlString());\n"
     )
     if anchor not in text:
