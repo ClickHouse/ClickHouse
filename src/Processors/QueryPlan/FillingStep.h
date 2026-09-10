@@ -25,6 +25,7 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const SortDescription & getSortDescription() const override { return sort_description; }
+    const InterpolateDescriptionPtr & getInterpolateDescription() const { return interpolate_description; }
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
