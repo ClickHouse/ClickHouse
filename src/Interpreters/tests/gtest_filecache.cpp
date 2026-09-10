@@ -1271,7 +1271,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, user, read_buffer_creator,
             read_settings.filesystem_cache_settings, read_settings.remote_fs_settings.buffer_size, read_settings.local_fs_settings.buffer_size,
-            "test", s.size(), false, false, std::nullopt, nullptr);
+            "test", /* query_budget */ nullptr, s.size(), false, false, std::nullopt, nullptr);
 
         WriteBufferFromOwnString result;
         copyData(*cached_buffer, result);
@@ -1284,7 +1284,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, user, read_buffer_creator,
             read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 10, /* local_fs_buffer_size */ 10,
-            "test", s.size(), false, false, std::nullopt, nullptr);
+            "test", /* query_budget */ nullptr, s.size(), false, false, std::nullopt, nullptr);
 
         cached_buffer->next();
         assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9)});
@@ -1430,7 +1430,7 @@ TEST_F(FileCacheTest, CachedReadBufferTruncatedObject)
     auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
         file_path, key, cache, user, read_buffer_creator,
         read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", expected_object_size, false, false, std::nullopt, nullptr);
+        "test", /* query_budget */ nullptr, expected_object_size, false, false, std::nullopt, nullptr);
 
     WriteBufferFromOwnString result;
     try
@@ -1493,7 +1493,7 @@ TEST_F(FileCacheTest, CachedReadBufferTruncatedObjectPredownload)
     auto first_reader = std::make_shared<CachedOnDiskReadBufferFromFile>(
         file_path, key, cache, user, read_buffer_creator,
         read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 2, /* local_fs_buffer_size */ 2,
-        "test", expected_object_size, false, false, std::nullopt, nullptr);
+        "test", /* query_budget */ nullptr, expected_object_size, false, false, std::nullopt, nullptr);
 
     ASSERT_TRUE(first_reader->next());
     EXPECT_EQ(std::string(first_reader->buffer().begin(), first_reader->buffer().end()), data.substr(0, 2));
@@ -1506,7 +1506,7 @@ TEST_F(FileCacheTest, CachedReadBufferTruncatedObjectPredownload)
     auto second_reader = std::make_shared<CachedOnDiskReadBufferFromFile>(
         file_path, key, cache, user, read_buffer_creator,
         read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 8, /* local_fs_buffer_size */ 8,
-        "test", expected_object_size, /* allow_seeks_after_first_read */ true, false, std::nullopt, nullptr);
+        "test", /* query_budget */ nullptr, expected_object_size, /* allow_seeks_after_first_read */ true, false, std::nullopt, nullptr);
 
     second_reader->seek(5, SEEK_SET);
     try
@@ -1563,7 +1563,7 @@ TEST_F(FileCacheTest, CachedReadBufferTruncatedObjectReadBigAt)
     auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
         file_path, key, cache, user, read_buffer_creator,
         read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", expected_object_size, false, false, std::nullopt, nullptr);
+        "test", /* query_budget */ nullptr, expected_object_size, false, false, std::nullopt, nullptr);
 
     std::vector<char> to(expected_object_size, 0);
     try
@@ -1622,7 +1622,7 @@ TEST_F(FileCacheTest, CachedReadBufferReadBigAtSourceFailure)
     auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
         file_path, key, cache, user, failing_read_buffer_creator,
         read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", data.size(), false, false, std::nullopt, nullptr);
+        "test", /* query_budget */ nullptr, data.size(), false, false, std::nullopt, nullptr);
 
     std::vector<char> to(data.size(), 0);
     EXPECT_THROW(cached_buffer->readBigAt(to.data(), to.size(), 0, {}), std::runtime_error);
@@ -1641,7 +1641,7 @@ TEST_F(FileCacheTest, CachedReadBufferReadBigAtSourceFailure)
     auto recovered_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
         file_path, key, cache, user, read_buffer_creator,
         read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", data.size(), false, false, std::nullopt, nullptr);
+        "test", /* query_budget */ nullptr, data.size(), false, false, std::nullopt, nullptr);
     WriteBufferFromOwnString result;
     copyData(*recovered_buffer, result);
     EXPECT_EQ(result.str(), data);
@@ -1680,7 +1680,7 @@ TEST_F(FileCacheTest, CachedReadBufferSourceFailure)
     auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
         file_path, key, cache, user, failing_read_buffer_creator,
         read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", data.size(), false, false, std::nullopt, nullptr);
+        "test", /* query_budget */ nullptr, data.size(), false, false, std::nullopt, nullptr);
 
     EXPECT_THROW(cached_buffer->next(), std::runtime_error);
 
@@ -1699,7 +1699,7 @@ TEST_F(FileCacheTest, CachedReadBufferSourceFailure)
     auto recovered_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
         file_path, key, cache, user, read_buffer_creator,
         read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-        "test", data.size(), false, false, std::nullopt, nullptr);
+        "test", /* query_budget */ nullptr, data.size(), false, false, std::nullopt, nullptr);
     WriteBufferFromOwnString result;
     copyData(*recovered_buffer, result);
     EXPECT_EQ(result.str(), data);
@@ -1741,7 +1741,7 @@ TEST_F(FileCacheTest, CachedReadBufferReadDuringExceptionUnwinding)
         return std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, user, read_buffer_creator,
             read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-            "test", data.size(), false, false, std::nullopt, nullptr);
+            "test", /* query_budget */ nullptr, data.size(), false, false, std::nullopt, nullptr);
     };
 
     std::string remote_read_result;
@@ -2000,7 +2000,7 @@ try
             auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
                 file, key, cache, user, read_buffer_creator,
                 read_settings.filesystem_cache_settings, read_settings.remote_fs_settings.buffer_size, read_settings.local_fs_settings.buffer_size,
-                "test", expect_result.size(), false, false, std::nullopt, nullptr);
+                "test", /* query_budget */ nullptr, expect_result.size(), false, false, std::nullopt, nullptr);
 
             WriteBufferFromOwnString result;
             copyData(*cached_buffer, result);
@@ -2112,7 +2112,7 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file, key, cache, user, read_buffer_creator,
             read_settings.filesystem_cache_settings, read_settings.remote_fs_settings.buffer_size, read_settings.local_fs_settings.buffer_size,
-            "test", expect_result.size(), false, false, std::nullopt, nullptr);
+            "test", /* query_budget */ nullptr, expect_result.size(), false, false, std::nullopt, nullptr);
         WriteBufferFromOwnString result;
         copyData(*cached_buffer, result);
         ASSERT_EQ(result.str(), expect_result);
@@ -3918,7 +3918,7 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtWithPrefetch)
         auto cached_buffer = std::make_unique<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, FileCache::getCommonOrigin(), read_buffer_creator,
             read_settings.filesystem_cache_settings, buffer_size, buffer_size,
-            "test", data.size(), false, false, std::nullopt, nullptr);
+            "test", /* query_budget */ nullptr, data.size(), false, false, std::nullopt, nullptr);
 
         AsynchronousBoundedReadBuffer read_buffer(
             std::move(cached_buffer), remote_fs_reader, buffer_size,
@@ -4015,7 +4015,7 @@ TEST_F(FileCacheTest, CachedReadBufferConcurrentReadBigAtUnknownFileSize)
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
             file_path, key, cache, FileCache::getCommonOrigin(), read_buffer_creator,
             read_settings.filesystem_cache_settings, DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE,
-            "test", /* file_size */ 0, false, false, std::nullopt, nullptr);
+            "test", /* query_budget */ nullptr, /* file_size */ 0, false, false, std::nullopt, nullptr);
 
         std::atomic<size_t> ready{0};
         std::array<std::string, num_threads> errors;

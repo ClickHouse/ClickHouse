@@ -38,6 +38,7 @@ public:
         size_t remote_fs_buffer_size_,
         size_t local_fs_buffer_size_,
         const String & query_id_,
+        FileCacheQueryBudgetPtr query_budget_,
         size_t file_size_,
         bool allow_seeks_after_first_read_,
         bool use_external_buffer_,
