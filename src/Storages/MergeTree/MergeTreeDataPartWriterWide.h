@@ -79,6 +79,9 @@ private:
         const NameAndTypePair & name_and_type,
         const WrittenOffsetSubstreams & offset_substreams);
 
+    /// Per-column min_compress_block_size override if set, otherwise the table default.
+    UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
+
     /// Write mark to disk using stream and rows count
     void flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark);
 

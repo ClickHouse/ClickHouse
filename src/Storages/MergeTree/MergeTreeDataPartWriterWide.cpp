@@ -477,17 +477,21 @@ void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stre
         it->second->push_back(stream_with_mark.mark);
 }
 
+UInt64 MergeTreeDataPartWriterWide::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
+{
+    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
+    if (column_desc)
+        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
+            if (UInt64 overridden = value->safeGet<UInt64>())
+                return overridden;
+    return settings.min_compress_block_size;
+}
+
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const NameAndTypePair & name_and_type,
     const WrittenOffsetSubstreams & offset_substreams)
 {
     StreamsWithMarks result;
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    UInt64 min_compress_block_size = 0;
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            min_compress_block_size = value->safeGet<UInt64>();
-    if (!min_compress_block_size)
-        min_compress_block_size = settings.min_compress_block_size;
+    const UInt64 min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
 
     auto callback = [&] (const ISerialization::SubstreamPath & substream_path)
     {
@@ -612,6 +616,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
 
     auto serialize_settings = getSerializationSettings();
     serialize_settings.getter = createStreamGetter(name_and_type, offset_substreams);
+    serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
     serialize_settings.stream_mark_getter = [&](const ISerialization::SubstreamPath & substream_path) -> MarkInCompressedFile
     {
         auto stream_name = getStreamName(name_and_type, substream_path);
