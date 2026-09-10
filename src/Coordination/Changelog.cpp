@@ -6,6 +6,7 @@
 #include <optional>
 #include <ranges>
 #include <variant>
+#include <vector>
 #include <Coordination/Changelog.h>
 #include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperContext.h>
@@ -163,6 +164,25 @@ struct ChangelogFileOperation
     ChangelogFileDescriptionPtr changelog;
     ChangelogFileOperationVariant operation;
     std::atomic<bool> done = false;
+
+    void setError(std::exception_ptr e)
+    {
+        if (!e)
+            return;
+        std::lock_guard lock(error_mutex);
+        if (!error)
+            error = e;
+    }
+
+    std::exception_ptr getError() const
+    {
+        std::lock_guard lock(error_mutex);
+        return error;
+    }
+
+private:
+    mutable std::mutex error_mutex;
+    std::exception_ptr error;
 };
 
 void ChangelogFileDescription::waitAllAsyncOperations()
@@ -1149,7 +1169,7 @@ void validateReadAheadSettings(const ReadAheadSettings & settings)
 }
 
 LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, ReadAheadSettings readahead_settings_, KeeperContextPtr keeper_context_)
-    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold)
+    : latest_logs_cache(log_settings.latest_logs_cache_size_threshold, log_settings.latest_logs_cache_entry_count_threshold)
     , keeper_context(std::move(keeper_context_))
     , log(getLogger("Changelog"))
     , readahead_settings(std::move(readahead_settings_))
@@ -1161,8 +1181,9 @@ LogEntryStorage::~LogEntryStorage()
     shutdown();
 }
 
-LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_)
+LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_, size_t count_threshold_)
     : size_threshold(size_threshold_)
+    , count_threshold(count_threshold_)
 {}
 
 void LogEntryStorage::InMemoryCache::updateStatsWithNewEntry(uint64_t index, size_t size)
@@ -1276,7 +1297,7 @@ void LogEntryStorage::InMemoryCache::clear()
 
 bool LogEntryStorage::InMemoryCache::hasUnlimitedSpace() const
 {
-    return size_threshold == 0;
+    return size_threshold == 0 && count_threshold == 0;
 }
 
 bool LogEntryStorage::InMemoryCache::empty() const
@@ -1294,7 +1315,13 @@ bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) co
     if (hasUnlimitedSpace() || empty())
         return true;
 
-    return cache_size + log_entry_size <= size_threshold;
+    if (size_threshold != 0 && cache_size + log_entry_size > size_threshold)
+        return false;
+
+    if (count_threshold != 0 && numberOfEntries() + 1 > count_threshold)
+        return false;
+
+    return true;
 }
 
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
@@ -1685,11 +1712,15 @@ void LogEntryStorage::refreshCache()
 
     const auto latest_log_cache_over_size_threshold = [&]
     {
-        return latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
+        return latest_logs_cache.size_threshold != 0 && latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
     };
 
+    const auto latest_log_cache_over_count_threshold = [&]
+    {
+        return latest_logs_cache.count_threshold != 0 && latest_logs_cache.numberOfEntries() > latest_logs_cache.count_threshold;
+    };
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
-           && latest_log_cache_over_size_threshold())
+           && (latest_log_cache_over_size_threshold() || latest_log_cache_over_count_threshold()))
         latest_logs_cache.popOldestEntry();
 }
 
@@ -4107,6 +4138,11 @@ void Changelog::appendCompletionThread()
 
 void Changelog::writeThread()
 {
+    /// The only consumer of an exception escaping this thread is the catch-all below, which calls
+    /// `std::terminate`. Rotation allocates (the file buffer, and the zstd buffer when logs are
+    /// compressed), so under memory pressure a refused allocation kills the process outright.
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     WriteOperation write_operation;
     bool batch_append_ok = true;
     size_t pending_appends = 0;
@@ -4263,6 +4299,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
         last_durable_idx = std::min(last_durable_idx, index - 1);
     }
 
+    /// Superseded-segment removals; wait outside writer_mutex so writeThread is not pinned on unlinks.
+    std::vector<ChangelogFileOperationPtr> pending_superseded_removes;
+
     {
         std::lock_guard lock(writer_mutex);
         /// This write_at require to overwrite everything in this file and also in previous file(s)
@@ -4302,9 +4341,26 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             auto to_remove_itr = existing_changelogs.upper_bound(index);
             for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
             {
-                removeChangelogAsync(itr->second);
+                pending_superseded_removes.push_back(removeChangelogAsync(itr->second));
                 itr = existing_changelogs.erase(itr);
             }
+        }
+    }
+
+    /// Append the rewrite only after superseded changelog files are gone.
+    for (const auto & op : pending_superseded_removes)
+    {
+        op->done.wait(false);
+        if (auto error = op->getError())
+        {
+            tryLogException(
+                std::move(error),
+                log,
+                fmt::format(
+                    "Failed to remove a superseded changelog while rewriting at index {}. Terminating to avoid an inconsistent changelog state",
+                    index),
+                LogsLevel::fatal);
+            std::terminate();
         }
     }
 
@@ -4606,6 +4662,11 @@ Changelog::~Changelog()
 
 void Changelog::backgroundChangelogOperationsThread()
 {
+    /// A failed removal here is stored and rethrown by `writeAt`, whose only handling is
+    /// `std::terminate`. A blocker on the write thread cannot help: the exception is created here,
+    /// and suppression applies where an exception is raised, not where it is rethrown.
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     ChangelogFileOperationPtr changelog_operation;
     while (changelog_operation_queue.pop(changelog_operation))
     {
@@ -4626,10 +4687,12 @@ void Changelog::backgroundChangelogOperationsThread()
                     catch (Exception & e)
                     {
                         LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
+                        changelog_operation->setError(std::current_exception());
                     }
                     catch (...)
                     {
                         tryLogCurrentException(log);
+                        changelog_operation->setError(std::current_exception());
                     }
                 });
         }
@@ -4683,9 +4746,11 @@ void Changelog::modifyChangelogAsync(ChangelogFileOperationPtr changelog_operati
     changelog_operation->changelog->file_operations.push_back(changelog_operation);
 }
 
-void Changelog::removeChangelogAsync(ChangelogFileDescriptionPtr changelog)
+ChangelogFileOperationPtr Changelog::removeChangelogAsync(ChangelogFileDescriptionPtr changelog)
 {
-    modifyChangelogAsync(std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{}));
+    auto operation = std::make_shared<ChangelogFileOperation>(std::move(changelog), RemoveChangelog{});
+    modifyChangelogAsync(operation);
+    return operation;
 }
 
 void Changelog::moveChangelogAsync(ChangelogFileDescriptionPtr changelog, std::string new_path, DiskPtr new_disk)

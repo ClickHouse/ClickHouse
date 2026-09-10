@@ -1,0 +1,16 @@
+udf	toTimeWithFixedDate(c0)
+qualified	toTimeWithFixedDate(c0)
+as	toTimeWithFixedDate(c0)
+attach	toTimeWithFixedDate(c0)
+stored_key_type
+part_name	String
+mark_number	UInt64
+rows_in_granule	UInt64
+toTimeWithFixedDate(c0)	DateTime
+replayed	toTimeWithFixedDate(c0)
+replayed_key_type
+part_name	String
+mark_number	UInt64
+rows_in_granule	UInt64
+toTimeWithFixedDate(c0)	DateTime
+ttl_group_by	toTimeWithFixedDate(c0)

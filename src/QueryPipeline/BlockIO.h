@@ -3,9 +3,9 @@
 #include <functional>
 #include <Common/QueryScope.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <Processors/ProcessorsProfileLogInfo.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
-#include <Processors/IProcessor.h>
 
 
 namespace DB
@@ -16,7 +16,7 @@ class ProcessListEntry;
 struct QueryPipelineFinalizedInfo
 {
     std::optional<ResultProgress> result_progress;
-    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
+    VectorWithMemoryTracking<ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
 };
 

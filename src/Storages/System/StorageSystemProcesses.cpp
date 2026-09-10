@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Common/typeid_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Columns/ColumnsNumber.h>
@@ -94,6 +95,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     ProcessList::Info info = context->getProcessList().getInfo(true, true, true);
+    const bool show_secrets = canDisplaySecrets(context);
 
     for (const auto & process : info)
     {
@@ -114,7 +116,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(UInt64(process.client_info.interface));
 
         res_columns[i++]->insert(process.client_info.os_user);
-        res_columns[i++]->insert(process.client_info.client_hostname);
+        res_columns[i++]->insert(process.client_info.getClientHostName());
         res_columns[i++]->insert(process.client_info.client_name);
         res_columns[i++]->insert(process.client_info.client_agent);
         res_columns[i++]->insert(process.client_info.client_tcp_protocol_version);
@@ -169,7 +171,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
             IColumn * column = res_columns[i++].get();
 
             if (process.query_settings)
-                process.query_settings->dumpToMapColumn(column, true);
+                process.query_settings->dumpToMapColumn(column, true, show_secrets);
             else
             {
                 column->insertDefault();
