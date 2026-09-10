@@ -10,6 +10,7 @@
 #include <Processors/Port.h>
 #include <Storages/IStorage.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <base/scope_guard.h>
 
 #include <stdexcept>
@@ -607,7 +608,7 @@ SchemaCache::Keys getKeysForSchemaCache(
     /// entry, so the key of a default session is unchanged.
     const String & session_timezone = context->getSettingsRef()[Setting::session_timezone];
     if (!session_timezone.empty())
-        additional_format_info += ", session_timezone=" + session_timezone;
+        additional_format_info += fmt::format(", session_timezone={}", quoteString(session_timezone));
 
     String schema_inference_mode(magic_enum::enum_name(context->getSettingsRef()[Setting::schema_inference_mode].value));
     SchemaCache::Keys cache_keys;
