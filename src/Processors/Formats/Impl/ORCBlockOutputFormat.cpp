@@ -23,6 +23,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
+#include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -587,6 +588,7 @@ void ORCBlockOutputFormat::prepareWriter()
 {
     const Block & header = getPort(PortKind::Main).getHeader();
     schema = orc::createStructType();
+    options.setMemoryPool(&getORCMemoryPool());
     options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
     options.setRowIndexStride(format_settings.orc.output_row_index_stride);
     options.setDictionaryKeySizeThreshold(format_settings.orc.output_dictionary_key_size_threshold);

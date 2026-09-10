@@ -34,6 +34,16 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+/// Validate that a discriminator value is within bounds (< num_variants) or is NULL_DISCRIMINATOR.
+/// Throws INCORRECT_DATA in native format (untrusted input) or LOGICAL_ERROR otherwise.
+static void checkDiscriminatorValue(ColumnVariant::Discriminator discr, size_t num_variants, bool native_format)
+{
+    if (discr != ColumnVariant::NULL_DISCRIMINATOR && discr >= num_variants)
+        throw Exception(
+            native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR,
+            "Invalid discriminator value {} (num_variants = {})",
+            static_cast<UInt32>(discr), num_variants);
+}
 
 UInt128 SerializationVariant::getHash(const VariantSerializations & variant_serializations_, const String & variant_name_)
 {
@@ -138,7 +148,9 @@ void SerializationVariant::enumerateStreams(
             variant_names[i],
             i,
             column_variant ? column_variant->localDiscriminatorByGlobal(i) : i,
-            make_subcolumn_nullable);
+            make_subcolumn_nullable,
+            nullptr,
+            variant_serializations.size());
 
         auto variant_data = SubstreamData(variant_serializations[i])
                              .withType(type)
@@ -166,7 +178,8 @@ void SerializationVariant::enumerateStreams(
         if (!canExtractedSubcolumnsBeInsideNullable(variant_types[i]))
             continue;
 
-        settings.path.back().creator = std::make_shared<SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator>(local_discriminators, variant_names[i], i, column_variant ? column_variant->localDiscriminatorByGlobal(i) : i);
+        settings.path.back().creator = std::make_shared<SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator>(
+            local_discriminators, variant_names[i], i, column_variant ? column_variant->localDiscriminatorByGlobal(i) : i, variant_serializations.size());
         settings.path.push_back(Substream::VariantElementNullMap);
         settings.path.back().variant_element_name = variant_names[i];
         settings.path.back().data = null_map_data;
@@ -573,7 +586,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         {
             auto variant_pair = deserializeCompactDiscriminators(
                 col.getLocalDiscriminatorsPtr(), rows_offset, limit, discriminators_stream, settings.continuous_reading,
-                *discriminators_state);
+                *discriminators_state, settings);
 
             variant_rows_offsets = variant_pair.first;
             variant_limits = variant_pair.second;
@@ -621,7 +634,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
             {
                 ColumnVariant::Discriminator discr = discriminators_data[i];
                 if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    checkDiscriminatorValue(discr, variant_rows_offsets.size(), settings.native_format);
                     ++variant_rows_offsets[discr];
+                }
             }
         }
     }
@@ -644,7 +660,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         {
             ColumnVariant::Discriminator discr = discriminators_data[i];
             if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                checkDiscriminatorValue(discr, variant_limits.size(), settings.native_format);
                 ++variant_limits[discr];
+            }
         }
     }
 
@@ -743,7 +762,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     }
     settings.path.pop_back();
 
-    col.validateState();
+    col.validateState(/*allow_logical_error=*/ !settings.native_format);
 }
 
 std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deserializeCompactDiscriminators(
@@ -752,7 +771,8 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
     size_t limit,
     ReadBuffer * stream,
     bool continuous_reading,
-    DeserializeBinaryBulkStateVariantDiscriminators & state) const
+    DeserializeBinaryBulkStateVariantDiscriminators & state,
+    const DeserializeBinaryBulkSettings & settings) const
 {
     auto & discriminators = assert_cast<ColumnVariant::ColumnDiscriminators &>(*discriminators_column->assumeMutable());
     auto & discriminators_data = discriminators.getData();
@@ -774,7 +794,7 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
             if (stream->eof())
                 return {variant_rows_offsets, variant_limits};
 
-            readDiscriminatorsGranuleStart(state, stream);
+            readDiscriminatorsGranuleStart(state, stream, variant_serializations.size(), settings);
         }
 
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
@@ -807,14 +827,20 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
             {
                 ColumnVariant::Discriminator discr = discriminators_data[i];
                 if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    checkDiscriminatorValue(discr, variant_rows_offsets.size(), settings.native_format);
                     ++variant_rows_offsets[discr];
+                }
             }
 
             for (size_t i = start + skipped_rows; i != discriminators_data.size(); ++i)
             {
                 ColumnVariant::Discriminator discr = discriminators_data[i];
                 if (discr != ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    checkDiscriminatorValue(discr, variant_limits.size(), settings.native_format);
                     ++variant_limits[discr];
+                }
             }
 
             rows_offset -= skipped_rows;
@@ -827,7 +853,11 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
     return {variant_rows_offsets, variant_limits};
 }
 
-void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkStateVariantDiscriminators & state, DB::ReadBuffer * stream)
+void SerializationVariant::readDiscriminatorsGranuleStart(
+    DeserializeBinaryBulkStateVariantDiscriminators & state,
+    ReadBuffer * stream,
+    size_t num_variants,
+    const DeserializeBinaryBulkSettings & settings)
 {
     UInt64 granule_size = 0;
     readVarUInt(granule_size, *stream);
@@ -839,7 +869,10 @@ void SerializationVariant::readDiscriminatorsGranuleStart(DeserializeBinaryBulkS
 
     state.granule_format = static_cast<CompactDiscriminatorsGranuleFormat>(granule_format);
     if (granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
+    {
         readBinaryLittleEndian(state.compact_discr, *stream);
+        checkDiscriminatorValue(state.compact_discr, num_variants, settings.native_format);
+    }
 }
 
 void SerializationVariant::addVariantElementToPath(DB::ISerialization::SubstreamPath & path, size_t i) const

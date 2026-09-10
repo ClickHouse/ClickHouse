@@ -1445,7 +1445,7 @@ void Aggregator::addBatchSinglePlace(
     if (inst->offsets)
         inst->batch_that->addBatchSinglePlace(
             inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-            inst->offsets[row_end - 1],
+            inst->offsets[static_cast<ssize_t>(row_end) - 1],
             place,
             inst->batch_arguments,
             arena);
@@ -1483,7 +1483,7 @@ void NO_INLINE Aggregator::executeOnIntervalWithoutKey(
         if (inst->offsets)
             inst->batch_that->addBatchSinglePlace(
                 inst->offsets[static_cast<ssize_t>(row_begin) - 1],
-                inst->offsets[row_end - 1],
+                inst->offsets[static_cast<ssize_t>(row_end) - 1],
                 res + inst->state_offset,
                 inst->batch_arguments,
                 data_variants.aggregates_pool);
@@ -1537,7 +1537,12 @@ void Aggregator::prepareAggregateInstructions(
                 && aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
                 allow_sparse_arguments = false;
 
-            auto full_column = allow_sparse_arguments
+            /// Keep the column sparse only when it is a top-level ColumnSparse: the sparse add()
+            /// path (addBatchSparse) works on a literal ColumnSparse. A column that is dense at the
+            /// top level but contains sparse subcolumns (e.g. a Tuple with a sparse element) takes
+            /// the regular add() path, where a function may assume dense leaves, so it must be fully
+            /// materialized. recursiveRemoveSparse() is a no-op when there is nothing sparse to strip.
+            auto full_column = (allow_sparse_arguments && aggregate_columns[i][j]->isSparse())
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
@@ -1606,7 +1611,8 @@ bool Aggregator::executeOnBlock(Columns columns,
       */
     Columns materialized_columns;
     bool all_keys_are_const = false;
-    if (params.optimize_group_by_constant_keys)
+    /// A single key row stands for the whole block, so an empty block would get a group out of nothing.
+    if (params.optimize_group_by_constant_keys && row_begin != row_end)
     {
         all_keys_are_const = true;
         for (size_t i = 0; i < params.keys_size; ++i)

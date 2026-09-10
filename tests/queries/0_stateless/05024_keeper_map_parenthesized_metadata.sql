@@ -1,5 +1,14 @@
 -- Tags: zookeeper, no-ordinary-database, no-fasttest
 
+-- The test rewrites a shared `metadata` znode with `replaceOne`. The stress test profile enables the
+-- server-side AST fuzzer for every query type, and a permuted argument list makes the replacement
+-- literal the haystack, so the znode is left holding that bare literal instead of a full definition.
+SET ast_fuzzer_runs = 0;
+SET ast_fuzzer_any_query = 0;
+
+-- Every assertion below reads the state a preceding statement left in Keeper, so a DROP has to drop.
+SET ignore_drop_queries_probability = 0;
+
 DROP TABLE IF EXISTS 05024_keeper_map_parenthesized_metadata_bad SYNC;
 DROP TABLE IF EXISTS 05024_keeper_map_parenthesized_metadata_malformed SYNC;
 DROP TABLE IF EXISTS 05024_keeper_map_parenthesized_metadata_terminated SYNC;

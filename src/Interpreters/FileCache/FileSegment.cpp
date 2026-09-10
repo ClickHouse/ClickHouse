@@ -22,6 +22,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event FileSegmentWaitMicroseconds;
+    extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
     extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
@@ -50,6 +51,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char cache_filesystem_failure[];
+    extern const char file_segment_pause_before_write[];
 }
 
 String toString(FileSegmentKind kind)
@@ -393,6 +395,9 @@ void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
 
 void FileSegment::write(char * from, size_t size, size_t offset_in_file)
 {
+    /// Keeps the segment in DOWNLOADING state, for testing the concurrent download wait timeout.
+    FailPointInjection::pauseFailPoint(FailPoints::file_segment_pause_before_write);
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentWriteMicroseconds);
     auto file_segment_path = getPath();
     DownloadState * download = nullptr;
@@ -528,7 +533,7 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
     chassert(getCurrentWriteOffset() == offset_in_file + size);
 }
 
-FileSegment::State FileSegment::wait(size_t offset)
+FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
 {
     OpenTelemetry::SpanHolder span("FileSegment::wait");
     span.addAttribute("clickhouse.key", key().toString());
@@ -550,11 +555,23 @@ FileSegment::State FileSegment::wait(size_t offset)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
-        [[maybe_unused]] const auto ok = cv.wait_for(lk, std::chrono::seconds(60), [&, this]()
+        auto downloaded = [&, this]()
         {
             return download_state != State::DOWNLOADING || offset < getCurrentWriteOffset();
-        });
-        /// chassert(ok);
+        };
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        while (true)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline)
+            {
+                ProfileEvents::increment(ProfileEvents::FileSegmentWaitTimeouts);
+                break;
+            }
+            const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
+            if (cv.wait_for(lk, slice, downloaded))
+                break;
+        }
     }
 
     return download_state;
