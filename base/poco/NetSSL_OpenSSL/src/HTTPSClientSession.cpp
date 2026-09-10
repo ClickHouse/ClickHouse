@@ -160,7 +160,7 @@ void HTTPSClientSession::connect(const SocketAddress& address)
 
 	if (useProxy && isProxyTunnel())
 	{
-		StreamSocket proxySocket(proxyConnect());
+		StreamSocket proxySocket(proxyConnect(&address));
 		SecureStreamSocket secureSocket = SecureStreamSocket::attach(proxySocket, getHost(), _pContext, _pSession);
 		attachSocket(secureSocket);
 		if (_pContext->sessionCacheEnabled())

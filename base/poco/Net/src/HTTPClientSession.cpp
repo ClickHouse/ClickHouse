@@ -469,16 +469,12 @@ void HTTPClientSession::reconnect(uint64_t * connect_time)
     try
     {
         connect_watch.restart();
-        if (_proxyConfig.host.empty() || bypassProxy())
-        {
-            SocketAddress addr(_resolved_host.empty() ? _host : _resolved_host, _port);
-            connect(addr);
-        }
-        else
-        {
-            SocketAddress addr(_proxyConfig.host, _proxyConfig.port);
-            connect(addr);
-        }
+        _connect_address.clear();
+        const auto address = (_proxyConfig.host.empty() || bypassProxy())
+            ? SocketAddress(_resolved_host.empty() ? _host : _resolved_host, _port)
+            : SocketAddress(_proxyConfig.host, _proxyConfig.port);
+        _connect_address = address.toString();
+        connect(address);
         if (connect_time)
             *connect_time = connect_watch.elapsed();
     }
@@ -542,7 +538,7 @@ void HTTPClientSession::proxyAuthenticateImpl(HTTPRequest& request)
 }
 
 
-StreamSocket HTTPClientSession::proxyConnect()
+StreamSocket HTTPClientSession::proxyConnect(const SocketAddress * resolvedProxyAddress)
 {
 	URI proxyUri;
 	proxyUri.setScheme(getProxyProtocol());
@@ -550,6 +546,9 @@ StreamSocket HTTPClientSession::proxyConnect()
 	proxyUri.setPort(getProxyPort());
 
 	SharedPtr<HTTPClientSession> proxySession (_proxySessionFactory.createClientSession(proxyUri));
+
+	if (resolvedProxyAddress)
+		proxySession->setResolvedHost(resolvedProxyAddress->host().toString());
 
 	proxySession->setTimeout(getTimeout());
 	std::string targetAddress(_host);
@@ -598,6 +597,7 @@ void HTTPClientSession::assign(Poco::Net::HTTPClientSession & session)
     poco_assert(!connected());
 
     setResolvedHost(session.getResolvedHost());
+    _connect_address = session._connect_address;
     setProxyConfig(session.getProxyConfig());
 
     setTimeout(session.getConnectionTimeout(), session.getSendTimeout(), session.getReceiveTimeout());
