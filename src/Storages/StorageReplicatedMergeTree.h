@@ -278,6 +278,9 @@ public:
     static std::vector<String> getZeroCopyLockPathsForOrphanReplicaDrop(
         zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr local_context, LoggerPtr logger);
 
+    static void dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper,
+                                                std::vector<String> zero_copy_locks_paths, LoggerPtr logger);
+
     /// Removes table from ZooKeeper after the last replica was dropped
     static bool removeTableNodesFromZooKeeper(
         zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info2,
@@ -1048,9 +1051,6 @@ private:
     /// Same as getZookeeperZeroCopyLockPaths(), but for the legacy/compat-mode root that hangs off this table's
     /// own zookeeper_path (see remote_fs_zero_copy_path_compatible_mode).
     std::vector<String> getLegacyZeroCopyLockPaths() const;
-
-    static void dropZookeeperZeroCopyLockPaths(zkutil::ZooKeeperPtr zookeeper,
-                                               std::vector<String> zero_copy_locks_paths, LoggerPtr logger);
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
