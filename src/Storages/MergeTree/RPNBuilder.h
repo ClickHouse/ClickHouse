@@ -199,12 +199,22 @@ public:
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
   */
-/// `indexHint` returns 1 for every row: it exists so that index analysis can see a condition that is
-/// not executed. A consumer that analyses indexes has to descend into it - that is the whole point of
-/// the hint. A consumer that estimates how selective an expression is must not, or it accounts for a
-/// condition that filters nothing; where the hint holds a conjunct derived from the others (see
-/// `LogicalExpressionOptimizerPass`), it would even count that conjunct twice. Such a consumer
-/// specialises this trait, and gets an `ALWAYS_TRUE` leaf for the whole hint.
+/// `indexHint` exists so that index analysis can see a condition that is never executed. A consumer
+/// that analyses indexes has to descend into it - that is the whole point of the hint. A consumer
+/// that estimates how selective an expression is must not: the condition removes no rows, since the
+/// function evaluates to 1 for every row, so descending into it applies a selectivity the query does
+/// not have. Where the hint holds a conjunct derived from its siblings (`LogicalExpressionOptimizerPass`
+/// wraps those it derived from a chain of comparisons), it would also apply that conjunct's
+/// selectivity twice, once for the original and once for the copy. Such a consumer specialises this
+/// trait and gets an `ALWAYS_TRUE` leaf for the whole hint.
+///
+/// `ALWAYS_TRUE` bounds the claim to the number of rows the condition removes; a hint is not inert.
+/// It takes part in index analysis and prunes the read set, so a relation under one can yield fewer
+/// rows than a selectivity-based estimate suggests. That is invisible to
+/// `ConditionSelectivityEstimator` for every predicate, not just hints: it estimates
+/// `total_rows * selectivity`, and `total_rows` counts whole parts, mark ranges included whether the
+/// index selected them or not. Pruning is carried by a separate estimate,
+/// `RowEstimateSource::PrimaryIndex`, which is used only when column statistics are missing.
 template <typename RPNElement>
 struct RPNBuilderTraits
 {
