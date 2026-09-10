@@ -1111,6 +1111,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             }
         }
 
+        /// The partial filters are inserted two levels below this node (this filter -> join -> new
+        /// filter), so ask for a re-traversal deep enough to reach them. Without it they are never
+        /// merged with the expression below them and stay separate steps, and `optimizePrewhere`
+        /// skips them because it requires the filter directly on top of the read step.
+        if (updated_steps && updated_steps < 3)
+            updated_steps = 3;
+
         if (join)
             join->setDisjunctionsOptimizationApplied(true);
         if (logical_join)
