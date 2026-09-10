@@ -35,6 +35,7 @@ namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
     extern const SettingsBool allow_experimental_paimon_storage_engine;
+    extern const SettingsBool allow_experimental_lance;
 }
 
 namespace DataLakeStorageSetting
@@ -2507,11 +2508,23 @@ static ObjectStorageType getLanceDiskObjectStorageType(const DiskPtr & disk, std
 void registerStorageLance(StorageFactory & factory);
 void registerStorageLance(StorageFactory & factory)
 {
+    auto check_lance_enabled = [](const StorageFactory::Arguments & args)
+    {
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_lance])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "`Lance` table engines are experimental. Set `allow_experimental_lance` to enable them");
+        }
+    };
+
 #if USE_AWS_S3
     factory.registerStorage(
         LanceS3Definition::storage_engine_name,
-        [&](const StorageFactory::Arguments & args)
+        [check_lance_enabled](const StorageFactory::Arguments & args)
         {
+            check_lance_enabled(args);
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
                 ? (*storage_settings)[DataLakeStorageSetting::disk].value
@@ -2546,8 +2559,9 @@ void registerStorageLance(StorageFactory & factory)
 
     factory.registerStorage(
         LanceLocalDefinition::storage_engine_name,
-        [&](const StorageFactory::Arguments & args)
+        [check_lance_enabled](const StorageFactory::Arguments & args)
         {
+            check_lance_enabled(args);
             const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
             const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
                 ? (*storage_settings)[DataLakeStorageSetting::disk].value

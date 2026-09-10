@@ -9295,6 +9295,9 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", EXPERIMENTAL, evaluation_time) \
+    DECLARE(Bool, allow_experimental_lance, false, R"(
+Allow creating tables with the `LanceLocal` and `LanceS3` table engines and using the `lanceLocal`, `lanceS3`, and `lanceS3Cluster` table functions.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL) \

@@ -35,6 +35,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_lance;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
@@ -43,6 +44,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -206,6 +208,18 @@ TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::createEmpty
 template <typename Definition, typename Configuration, bool is_data_lake>
 void TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
+#if USE_LANCE
+    if constexpr (std::is_same_v<Definition, LanceLocalDefinition>
+        || std::is_same_v<Definition, LanceS3Definition>
+        || std::is_same_v<Definition, LanceS3ClusterDefinition>)
+    {
+        if (!context->getSettingsRef()[Setting::allow_experimental_lance])
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "`Lance` table functions are experimental. Set `allow_experimental_lance` to enable them");
+    }
+#endif
+
     /// Clone ast function, because we can modify its arguments like removing headers.
     auto ast_copy = ast_function->clone();
     ASTs & args_func = ast_copy->children;

@@ -16,7 +16,7 @@ run_lance_local_test()
 
     local sql_file="${source_dir}/sql/${test_name}.sql"
     sed "s|tests/queries/0_stateless/data_lance|${fixture_dir}|g" "${sql_file}" \
-        | ${CLICKHOUSE_CLIENT} --multiquery
+        | ${CLICKHOUSE_CLIENT} --allow_experimental_lance=1 --multiquery
 
     case "${test_name}" in
         04545_lance_local_schema_validation)
