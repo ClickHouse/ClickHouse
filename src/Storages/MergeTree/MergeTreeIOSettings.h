@@ -69,6 +69,7 @@ struct MergeTreeReaderSettings
     bool use_prefixes_deserialization_thread_pool = false;
     bool prefetch_json_shared_data_substreams = true;
     bool secondary_indices_enable_bulk_filtering = true;
+    bool use_minmax_index_bulk_filtering = false;
     UInt64 merge_tree_min_bytes_for_seek = 0;
     UInt64 merge_tree_min_rows_for_seek = 0;
     UInt64 merge_tree_coarse_index_granularity = 8;
