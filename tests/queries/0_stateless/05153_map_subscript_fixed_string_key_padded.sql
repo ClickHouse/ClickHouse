@@ -180,7 +180,7 @@ FROM (
     FROM (
         EXPLAIN indexes = 1 SELECT count() FROM t_bloom_mixed
         WHERE m[materialize(unhex('6100'))] = 7
-        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, parallel_replicas_local_plan = 1
     )
     WHERE explain LIKE '%Granules:%'
 );
@@ -192,7 +192,7 @@ FROM (
     FROM (
         EXPLAIN indexes = 1 SELECT count() FROM t_text_mixed
         WHERE m[materialize(unhex('6100'))] = 7
-        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, parallel_replicas_local_plan = 1
     )
     WHERE explain LIKE '%Granules:%'
 );
@@ -209,7 +209,7 @@ FROM (
     FROM (
         EXPLAIN indexes = 1 SELECT count() FROM t_text_key
         WHERE m[materialize(unhex('6100000000'))] = 7
-        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, parallel_replicas_local_plan = 1
     )
     WHERE explain LIKE '%Granules:%'
 );
@@ -222,10 +222,21 @@ FROM (
     FROM (
         EXPLAIN indexes = 1 SELECT count() FROM t_bloom_key
         WHERE m[materialize(unhex('6100000000'))] = 7
-        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, parallel_replicas_local_plan = 1
     )
     WHERE explain LIKE '%Granules:%'
 );
+
+-- S33/S34: an explicit `m.key_<serialized>` subcolumn is padded to N by the map type when it is read,
+-- so the index must search for the same padded bytes. The `bloom_filter` family deserializes the
+-- suffix through the index key type and so already agrees; the text family copies it raw.
+SELECT 'S33 text index, explicit key subcolumn, indexed count matches unindexed',
+       (SELECT count() FROM t_text_key WHERE m.key_a = 7 SETTINGS use_skip_indexes = 1),
+       (SELECT count() FROM t_text_key WHERE m.key_a = 7 SETTINGS use_skip_indexes = 0);
+
+SELECT 'S34 control, bloom_filter explicit key subcolumn already matched unindexed',
+       (SELECT count() FROM t_bloom_key WHERE m.key_a = 7 SETTINGS use_skip_indexes = 1),
+       (SELECT count() FROM t_bloom_key WHERE m.key_a = 7 SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_fixed_key;
 DROP TABLE t_lc_fixed_key;

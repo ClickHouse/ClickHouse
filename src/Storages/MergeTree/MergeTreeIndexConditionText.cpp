@@ -1677,6 +1677,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     auto output_column_name = outputs.front()->result_name;
 
     std::optional<String> key_const_value;
+    String indexed_map_column_name;
 
     if (isMap(required_column.type) && header.has(fmt::format("mapKeys({})", required_column.name)))
     {
@@ -1714,17 +1715,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                     return false;
 
                 key_const_value = std::string{const_key_argument->column->getDataAt(0)};
-
-                /// The index tokenizes a `FixedString(N)` key from all N stored bytes, so a shorter
-                /// subscript names that same key only once padded to N. A longer subscript is no key the
-                /// map can hold, so leaving it unpadded lets a granule without it still be pruned.
-                const auto & indexed_keys_type = header.getByName(fmt::format("mapKeys({})", required_column.name)).type;
-                if (const auto * keys_array_type = typeid_cast<const DataTypeArray *>(indexed_keys_type.get()))
-                {
-                    if (const auto * fixed_key_type = typeid_cast<const DataTypeFixedString *>(keys_array_type->getNestedType().get()))
-                        if (key_const_value->size() < fixed_key_type->getN())
-                            key_const_value->resize(fixed_key_type->getN(), '\0');
-                }
+                indexed_map_column_name = required_column.name;
             }
             else
             {
@@ -1744,11 +1735,24 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         if (!header.has(fmt::format("mapKeys({})", map_column_name)))
             return false;
 
+        indexed_map_column_name = map_column_name;
         key_const_value = std::move(serialized_key);
     }
 
     if (!key_const_value.has_value())
         return false;
+
+    /// The index tokenizes a `FixedString(N)` key from all N stored bytes, so a shorter key names that same key only once
+    /// padded to N: a subscript constant is left unpadded by the analyzer, and an explicit `m.key_<serialized>` subcolumn is
+    /// padded only when the map type deserializes it. A longer key is no key the map can hold, so leaving it unpadded lets a
+    /// granule without it still be pruned.
+    const auto & indexed_keys_type = header.getByName(fmt::format("mapKeys({})", indexed_map_column_name)).type;
+    if (const auto * keys_array_type = typeid_cast<const DataTypeArray *>(indexed_keys_type.get()))
+    {
+        if (const auto * fixed_key_type = typeid_cast<const DataTypeFixedString *>(keys_array_type->getNestedType().get()))
+            if (key_const_value->size() < fixed_key_type->getN())
+                key_const_value->resize(fixed_key_type->getN(), '\0');
+    }
 
     /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
     /// The Set may not be ready yet because it is built later during query execution.
