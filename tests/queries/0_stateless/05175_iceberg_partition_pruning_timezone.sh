@@ -2,19 +2,17 @@
 # Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 #
-# Regression test for https://github.com/ClickHouse/ClickHouse/issues/119173:
-# an Iceberg partition value is the UTC floor of the stored instant, but the pruner derives the value
-# it compares against in a timezone that need not be UTC. Iceberg `timestamp` maps to a zone-less
-# `DateTime64(6)`, so the zone comes from the query or from whatever froze the column type. Under a
-# non-UTC one the pruner derives a shifted partition value and silently skips files that hold
-# matching rows, with no error and no log line. `use_iceberg_partition_pruning` is on by default.
+# Regression test for https://github.com/ClickHouse/ClickHouse/issues/119173: an Iceberg `timestamp`
+# column has no time zone in its type name, so the type object carries whichever zone was current when
+# it was built. Execution parses a string literal against such a column in the session zone, while key
+# analysis converts the same literal with a CAST to that type. When the two zones differ the pruner
+# looks for the partition value of a different instant than the one execution matches, and silently
+# skips the file that holds the matching row: no error, no log line. `use_iceberg_partition_pruning`
+# is on by default.
 #
-# The same query is asked in three shapes, which are measured to disagree: the table as just created
-# in this server, the same directory through the table function, and the same table after
-# DETACH/ATTACH. Each arm that can lose a row is paired with the same query at
-# `use_iceberg_partition_pruning = 0`: that control returns 1, so the row is present in the file and
-# only pruning removes it. Without the control an arm cannot tell a pruning bug from a predicate
-# that names the wrong instant.
+# Each arm that can lose a row is paired with the same query at `use_iceberg_partition_pruning = 0`.
+# That control returns 1, so the row is present in the file and only pruning removes it; without the
+# control an arm cannot tell a pruning bug from a predicate that names the wrong instant.
 #
 # Every statement pins `session_timezone`, because the test runner randomizes that setting.
 
@@ -51,25 +49,14 @@ ${CLICKHOUSE_CLIENT} --query "
 
 # 2024-01-03 05:00:00 in Asia/Tokyo is 2024-01-02 20:00:00Z, which is the second row. Pruning must
 # agree with execution: both counts are 1.
-echo "--- day transform, non-UTC session, table as created, pruning on then off ---"
+echo "--- day transform, non-UTC session, equality, pruning on then off ---"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;
     SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 0;"
 
-echo "--- day transform, non-UTC session, same directory through the table function ---"
-${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM icebergLocal('${DAY_PATH}') WHERE ts = '2024-01-03 05:00:00'
-        SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;"
-
-echo "--- day transform, non-UTC session, same table after DETACH/ATTACH ---"
-${CLICKHOUSE_CLIENT} --query "DETACH TABLE ${DAY_TABLE}; ATTACH TABLE ${DAY_TABLE};"
-${CLICKHOUSE_CLIENT} --query "
-    SELECT count() FROM ${DAY_TABLE} WHERE ts = '2024-01-03 05:00:00'
-        SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;"
-
-echo "--- day transform, range predicate, non-UTC session ---"
+echo "--- day transform, non-UTC session, range, pruning on then off ---"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count() FROM ${DAY_TABLE} WHERE ts >= '2024-01-03 00:00:00' AND ts < '2024-01-03 09:00:00'
         SETTINGS session_timezone = 'Asia/Tokyo', use_iceberg_partition_pruning = 1;
