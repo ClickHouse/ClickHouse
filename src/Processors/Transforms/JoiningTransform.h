@@ -112,8 +112,8 @@ private:
     Block readExecute(Chunk & chunk);
 };
 
-class IRuntimeFilter;
-using RuntimeFilterConstPtr = std::shared_ptr<const IRuntimeFilter>;
+class RuntimeFilter;
+using RuntimeFilterConstPtr = std::shared_ptr<const RuntimeFilter>;
 
 /// Attached to the "seal" chunk emitted through the optional seal port of
 /// FillingRightJoinSideTransform when the build side of a JOIN is complete. The seal itself is

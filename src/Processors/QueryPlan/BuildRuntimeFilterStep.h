@@ -26,7 +26,8 @@ public:
         Float64 max_ratio_of_set_bits_in_bloom_filter,
         bool allow_to_use_not_exact_filter_,
         bool track_key_range_,
-        std::optional<UInt64> distinct_keys_hint_ = std::nullopt);
+        std::optional<UInt64> distinct_keys_hint_ = std::nullopt,
+        bool distinct_keys_hint_matches_filter_key_ = false);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -42,7 +43,7 @@ public:
     void enableKeyRangeTracking() { track_key_range = true; }
 
     /// Whether the completed filter is guaranteed to convert into a positive primary-key
-    /// predicate (see convertRuntimeFilterToKeyConditionDAG): positive containment semantics
+    /// predicate (see buildRuntimeRangePredicate): positive containment semantics
     /// (an ANTI-join NOT-contains filter can never prune positively) and a key type whose
     /// [min, max] envelope survives an exact-set overflow. Gating a read on a seal that
     /// fails this could only delay the probe side and then scan it unpruned.
@@ -86,6 +87,8 @@ private:
 
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
     std::optional<UInt64> distinct_keys_hint;
+    /// Whether the filter key is the whole join key, so that the hint counts this filter's distinct keys.
+    bool distinct_keys_hint_matches_filter_key;
 };
 
 }
