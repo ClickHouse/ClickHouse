@@ -2006,19 +2006,25 @@ bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
         [&](const auto & data_column)
         {
             using DataColumn = std::decay_t<decltype(data_column)>;
-            String requested_key = index.safeGet<String>();
 
-            /// A `FixedString(N)` key is stored zero-padded to N bytes, so a shorter subscript names that
-            /// same key once padded. A longer subscript is no key the column can hold, and the equal-width
-            /// comparison in the matcher already finds nothing for it.
             if constexpr (std::is_same_v<DataColumn, ColumnFixedString>)
             {
-                if (requested_key.size() < data_column.getN())
-                    requested_key.resize(data_column.getN(), '\0');
+                /// A `FixedString(N)` key is stored zero-padded to N bytes, so a shorter subscript names that
+                /// same key once padded. A longer subscript is no key the column can hold, and the equal-width
+                /// comparison in the matcher already finds nothing for it.
+                String padded_key = index.safeGet<String>();
+                if (padded_key.size() < data_column.getN())
+                    padded_key.resize(data_column.getN(), '\0');
+
+                MatcherStringConst<DataColumn> matcher{data_column, padded_key};
+                executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+            }
+            else
+            {
+                MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
+                executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             }
 
-            MatcherStringConst<DataColumn> matcher{data_column, requested_key};
-            executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             return true;
         });
 }
