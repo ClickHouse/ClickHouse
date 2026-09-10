@@ -32,8 +32,8 @@
 
     <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_ts', 'sum by (instance) (last_over_time(foo[10])) unless sum by (instance) (last_over_time(bar[10]))', 100, 3090, 10) FORMAT Null</query>
     <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_ts', 'sum by (instance) (last_over_time(foo[10])) unless on(instance) sum by (instance) (last_over_time(bar[10]))', 100, 3090, 10) FORMAT Null</query>
-    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_high_card_ts', 'last_over_time(foo[10]) unless last_over_time(bar[10])', 100, 250, 10) FORMAT Null</query>
-    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_high_card_ts', 'last_over_time(foo[10]) unless on(instance) last_over_time(bar[10])', 100, 250, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_high_card_ts', 'sum by (instance) (last_over_time(foo[10])) unless sum by (instance) (last_over_time(bar[10]))', 100, 250, 10) FORMAT Null</query>
+    <query>SELECT * FROM prometheusQueryRange('promql_set_operators_unless_high_card_ts', 'sum by (instance) (last_over_time(foo[10])) unless on(instance) sum by (instance) (last_over_time(bar[10]))', 100, 250, 10) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_set_operators_unless_high_card_ts</drop_query>
     <drop_query>DROP TABLE IF EXISTS promql_set_operators_unless_ts</drop_query>
