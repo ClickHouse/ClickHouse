@@ -1,5 +1,6 @@
 #include <optional>
 #include <Processors/Formats/IInputFormat.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
@@ -9,6 +10,11 @@
 namespace DB
 {
 
+
+UInt64 FileBucketInfo::getMinProtocolVersion() const
+{
+    return DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO;
+}
 
 ChunkInfoRowNumbers::ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_)
     : row_num_offset(row_num_offset_), applied_filter(std::move(applied_filter_)) { }

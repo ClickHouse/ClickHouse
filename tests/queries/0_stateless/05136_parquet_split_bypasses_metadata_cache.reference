@@ -1,0 +1,10 @@
+3175
+3175
+3175
+3175
+3175
+split_cold	0	1	0	1
+split_warm	0	0	0	1
+plain	1	0	0	0
+qcc_fill	1	0	0	0
+qcc_pruned	0	0	1	0

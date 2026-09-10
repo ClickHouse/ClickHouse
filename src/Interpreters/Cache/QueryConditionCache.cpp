@@ -58,7 +58,7 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 
 void QueryConditionCache::write(
     const UUID & table_id, const String & part_name, UInt64 condition_hash, const String & condition,
-    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
+    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark, UInt64 file_metadata_digest)
 {
     if (table_id == UUIDHelpers::Nil)
         return; /// Issue #92863: Certain database engines provide no table UUIDs
@@ -66,9 +66,9 @@ void QueryConditionCache::write(
     Key key = makeKey(table_id, part_name, condition_hash);
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
+    auto load_func = [&](){ return std::make_shared<Entry>(marks_count, file_metadata_digest, table_id, part_name, condition_hash, condition); };
 #else
-    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
+    auto load_func = [&](){ return std::make_shared<Entry>(marks_count, file_metadata_digest); };
 #endif
 
     auto [entry, inserted] = cache.getOrSet(key, load_func);
@@ -120,7 +120,9 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(
+    const UUID & table_id, const String & part_name, UInt64 condition_hash,
+    bool increment_profile_events, UInt64 * file_metadata_digest)
 {
     if (table_id == UUIDHelpers::Nil)
         return {}; /// Issue #92864: Certain database engines provide no table UUIDs
@@ -131,6 +133,10 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     {
         if (increment_profile_events)
             ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
+
+        /// Immutable after entry creation, so no lock is needed.
+        if (file_metadata_digest)
+            *file_metadata_digest = entry->file_metadata_digest;
 
         std::shared_lock lock(entry->mutex);
 
@@ -180,8 +186,9 @@ size_t QueryConditionCache::maxSizeInBytes() const
     return cache.maxSizeInBytes();
 }
 
-QueryConditionCache::Entry::Entry(size_t mark_count)
+QueryConditionCache::Entry::Entry(size_t mark_count, UInt64 file_metadata_digest_)
     : matching_marks(mark_count, true) /// by default, all marks potentially are potential matches, i.e. we can't skip them
+    , file_metadata_digest(file_metadata_digest_)
 {
 }
 
@@ -189,6 +196,7 @@ QueryConditionCache::Entry::Entry(size_t mark_count)
 #if defined(DEBUG_OR_SANITIZER_BUILD)
 QueryConditionCache::Entry::Entry(
     size_t mark_count_,
+    UInt64 file_metadata_digest_,
     const UUID & table_id_,
     const String & part_name_,
     UInt64 condition_hash_,
@@ -198,6 +206,7 @@ QueryConditionCache::Entry::Entry(
     , condition_hash(condition_hash_)
     , condition(condition_)
     , matching_marks(mark_count_, true)
+    , file_metadata_digest(file_metadata_digest_)
         {}
 #endif
 
