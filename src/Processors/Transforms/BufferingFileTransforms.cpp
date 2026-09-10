@@ -23,7 +23,7 @@ IProcessor::Status BufferingToFileSink::prepare()
 {
     auto status = ISink::prepare();
     if (status == Status::Finished)
-        outputs.front().finish();
+        getCompletionPort().finish();
     return status;
 }
 
@@ -51,12 +51,13 @@ BufferingFromFileSource::BufferingFromFileSource(SharedHeader header, TemporaryB
 
 IProcessor::Status BufferingFromFileSource::prepare()
 {
-    if (!inputs.front().isFinished())
+    auto & completion = getCompletionPort();
+    if (!completion.isFinished())
     {
-        if (inputs.front().hasData())
+        if (completion.hasData())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The completion input of BufferingFromFileSource must not carry data");
 
-        inputs.front().setNeeded();
+        completion.setNeeded();
         return Status::NeedData;
     }
 

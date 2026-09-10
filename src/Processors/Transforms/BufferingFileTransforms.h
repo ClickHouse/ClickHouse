@@ -22,6 +22,7 @@ public:
     void consume(Chunk chunk) override;
     void onFinish() override;
 
+    OutputPort & getCompletionPort() { return outputs.front(); }
     TemporaryBlockStreamHolder & getHolder() { return tmp_stream; }
 
 private:
@@ -45,6 +46,8 @@ public:
 
     Status prepare() override;
     Chunk generate() override;
+
+    InputPort & getCompletionPort() { return inputs.front(); }
 
 private:
     TemporaryBlockStreamHolder & tmp_stream;
