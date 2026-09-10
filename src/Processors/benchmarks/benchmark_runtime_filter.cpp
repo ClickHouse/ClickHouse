@@ -251,70 +251,64 @@ DataTypePtr lowCardinalityStringType()
 
 UniqueRuntimeFilterPtr makeRuntimeFilter(RuntimeFilterKind kind, const DataTypePtr & type, Float64 adaptive_skip_threshold)
 {
+    const RuntimeFilterConfig config{adaptive_skip_threshold, BLOCKS_TO_SKIP_BEFORE_REENABLING};
+
     switch (kind)
     {
         case RuntimeFilterKind::ExactContains:
-            return std::make_unique<ExactContainsRuntimeFilter>(
+            return std::make_unique<RuntimeFilter>(
                 /*filters_to_merge_=*/0,
-                type,
-                adaptive_skip_threshold,
-                BLOCKS_TO_SKIP_BEFORE_REENABLING,
-                EXACT_VALUES_BYTES_LIMIT,
-                EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+                config,
+                RuntimeFilter::ExactContains(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER));
         case RuntimeFilterKind::ExactNotContains:
-            return std::make_unique<ExactNotContainsRuntimeFilter>(
+            return std::make_unique<RuntimeFilter>(
                 /*filters_to_merge_=*/0,
-                type,
-                adaptive_skip_threshold,
-                BLOCKS_TO_SKIP_BEFORE_REENABLING,
-                EXACT_VALUES_BYTES_LIMIT,
-                EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+                config,
+                RuntimeFilter::ExactNotContains(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER));
         case RuntimeFilterKind::Approximate:
-            return std::make_unique<ApproximateRuntimeFilter>(
+            return std::make_unique<RuntimeFilter>(
                 /*filters_to_merge_=*/0,
-                type,
-                adaptive_skip_threshold,
-                BLOCKS_TO_SKIP_BEFORE_REENABLING,
-                BLOOM_FILTER_BYTES,
-                EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
-                BLOOM_FILTER_HASH_FUNCTIONS,
-                DISABLE_BLOOM_FULLNESS_CHECK,
-                /*distinct_keys_hint_=*/std::nullopt);
+                config,
+                RuntimeFilter::Adaptive(
+                    type,
+                    BLOOM_FILTER_BYTES,
+                    EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
+                    BLOOM_FILTER_HASH_FUNCTIONS,
+                    DISABLE_BLOOM_FULLNESS_CHECK,
+                    /*distinct_keys_hint_=*/std::nullopt,
+                    /*distinct_keys_hint_matches_filter_key_=*/false));
     }
     UNREACHABLE();
 }
 
 UniqueRuntimeFilterPtr makeMergeDestination(RuntimeFilterKind kind, const DataTypePtr & type, size_t filters_to_merge)
 {
+    const RuntimeFilterConfig config{DISABLE_ADAPTIVE_SKIP_THRESHOLD, BLOCKS_TO_SKIP_BEFORE_REENABLING};
+
     switch (kind)
     {
         case RuntimeFilterKind::ExactContains:
-            return std::make_unique<ExactContainsRuntimeFilter>(
+            return std::make_unique<RuntimeFilter>(
                 filters_to_merge,
-                type,
-                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
-                BLOCKS_TO_SKIP_BEFORE_REENABLING,
-                EXACT_VALUES_BYTES_LIMIT,
-                EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+                config,
+                RuntimeFilter::ExactContains(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER));
         case RuntimeFilterKind::ExactNotContains:
-            return std::make_unique<ExactNotContainsRuntimeFilter>(
+            return std::make_unique<RuntimeFilter>(
                 filters_to_merge,
-                type,
-                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
-                BLOCKS_TO_SKIP_BEFORE_REENABLING,
-                EXACT_VALUES_BYTES_LIMIT,
-                EXACT_VALUES_LIMIT_FOR_EXACT_FILTER);
+                config,
+                RuntimeFilter::ExactNotContains(type, EXACT_VALUES_BYTES_LIMIT, EXACT_VALUES_LIMIT_FOR_EXACT_FILTER));
         case RuntimeFilterKind::Approximate:
-            return std::make_unique<ApproximateRuntimeFilter>(
+            return std::make_unique<RuntimeFilter>(
                 filters_to_merge,
-                type,
-                DISABLE_ADAPTIVE_SKIP_THRESHOLD,
-                BLOCKS_TO_SKIP_BEFORE_REENABLING,
-                BLOOM_FILTER_BYTES,
-                EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
-                BLOOM_FILTER_HASH_FUNCTIONS,
-                DISABLE_BLOOM_FULLNESS_CHECK,
-                /*distinct_keys_hint_=*/std::nullopt);
+                config,
+                RuntimeFilter::Adaptive(
+                    type,
+                    BLOOM_FILTER_BYTES,
+                    EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
+                    BLOOM_FILTER_HASH_FUNCTIONS,
+                    DISABLE_BLOOM_FULLNESS_CHECK,
+                    /*distinct_keys_hint_=*/std::nullopt,
+                    /*distinct_keys_hint_matches_filter_key_=*/false));
     }
     UNREACHABLE();
 }
@@ -425,9 +419,9 @@ static void BM_RuntimeFilterApproximateFindUInt64(benchmark::State & state)
     benchmarkFind(state, RuntimeFilterKind::Approximate, type, build_column, probe_column);
 }
 
-/// Not a production path: `BuildRuntimeFilterTransform` only builds an `ApproximateRuntimeFilter` when
-/// `ApproximateRuntimeFilter::isDataTypeSupported` holds, and it rejects `Nullable(UInt64)`, so a nullable
-/// join key always goes through `ExactContainsRuntimeFilter`. This measures the approximate filter on a
+/// Not a production path: `BuildRuntimeFilterTransform` only builds a `RuntimeFilter::Adaptive` when
+/// `AdaptiveSetRuntimeFilter::isDataTypeSupported` holds, and it rejects `Nullable(UInt64)`, so a nullable
+/// join key always goes through `RuntimeFilter::ExactContains`. This measures the approximate filter on a
 /// `ColumnNullable` in isolation, as a reference point for the exact nullable benchmark above.
 static void BM_RuntimeFilterApproximateFindNullableUInt64(benchmark::State & state)
 {
@@ -513,7 +507,7 @@ static void BM_RuntimeFilterApproximateMergeUInt64(benchmark::State & state)
     {
         auto destination = makeMergeDestination(RuntimeFilterKind::Approximate, type, filters_to_merge);
         for (const auto & source : sources)
-            destination->merge(source.get());
+            destination->merge(*source);
         destination->finishInsert();
         benchmark::DoNotOptimize(destination);
     }
@@ -539,7 +533,7 @@ static void BM_RuntimeFilterExactMergeUInt64(benchmark::State & state)
     {
         auto destination = makeMergeDestination(RuntimeFilterKind::ExactContains, type, filters_to_merge);
         for (const auto & source : sources)
-            destination->merge(source.get());
+            destination->merge(*source);
         destination->finishInsert();
         benchmark::DoNotOptimize(destination);
     }
@@ -547,9 +541,9 @@ static void BM_RuntimeFilterExactMergeUInt64(benchmark::State & state)
     recordRows(state, filters_to_merge * keys_per_filter);
 }
 
-/// Measures only `IRuntimeFilter::finishInsert` for the approximate filter. With `EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER`
-/// set to 1 the filter switches to the Bloom representation during `insert`, so `finishInsertImpl` runs
-/// `checkBloomFilterWorthiness` — a popcount scan over the whole `BLOOM_FILTER_BYTES` array whose cost is independent
+/// Measures only `RuntimeFilter::finishInsert` for the approximate filter. With `EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER`
+/// set to 1 the filter switches to the Bloom representation during `insert`, so `AdaptiveSetRuntimeFilter::finishInsert` runs
+/// `checkApproximateFilterWorthiness` — a popcount scan over the whole `BLOOM_FILTER_BYTES` array whose cost is independent
 /// of the inserted row count. Construction and `insert` are excluded from the timing.
 static void BM_RuntimeFilterFinishInsertApproximateUInt64(benchmark::State & state)
 {
@@ -614,7 +608,7 @@ static void BM_RuntimeFilterAdaptiveSkipApproximateUInt64(benchmark::State & sta
 }
 
 /// The `InsertOnly` transform benchmarks measure only the per-chunk `transform` path (optional cast plus
-/// `IRuntimeFilter::insert`). The end-of-build work of `BuildRuntimeFilterTransform` — `finish` publishing the filter
+/// `RuntimeFilter::insert`). The end-of-build work of `BuildRuntimeFilterTransform` — `finish` publishing the filter
 /// into `RuntimeFilterLookup::add`, which also runs `finishInsert` — requires a query context with a registered
 /// lookup, so it is exercised only by the XML performance tests (see the note at the top of this file). The
 /// finalization cost itself is measured in isolation by `BM_RuntimeFilterFinishInsertApproximateUInt64` below, and is
@@ -648,6 +642,7 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyUInt64(benchmark::State & st
                 /*allow_to_use_not_exact_filter_=*/true,
                 /*track_key_range_=*/false,
                 /*distinct_keys_hint_=*/std::nullopt,
+                /*distinct_keys_hint_matches_filter_key_=*/false,
                 /*query_context_=*/nullptr);
             state.ResumeTiming();
 
@@ -695,6 +690,7 @@ static void BM_RuntimeFilterBuildTransformInsertOnlyCastUInt32ToUInt64(benchmark
                 /*allow_to_use_not_exact_filter_=*/true,
                 /*track_key_range_=*/false,
                 /*distinct_keys_hint_=*/std::nullopt,
+                /*distinct_keys_hint_matches_filter_key_=*/false,
                 /*query_context_=*/nullptr);
             state.ResumeTiming();
 
@@ -731,7 +727,7 @@ BENCHMARK(BM_RuntimeFilterApproximateFindUInt64)
     ->Args({/*key_count=*/10000, /*rows=*/65536, /*hit_ratio=*/100})
     ->Args({/*key_count=*/100000, /*rows=*/65536, /*hit_ratio=*/50});
 
-/// `ApproximateRuntimeFilter` does not support hashing actual NULL values in `ColumnNullable`, and the planner never
+/// `AdaptiveSetRuntimeFilter` does not support hashing actual NULL values in `ColumnNullable`, and the planner never
 /// selects it for a nullable key (see the comment on the benchmark). Benchmark only the non-null `ColumnNullable`
 /// overhead here; NULL-heavy cases are covered by the exact filter benchmark above.
 BENCHMARK(BM_RuntimeFilterApproximateFindNullableUInt64)->Args({/*key_count=*/10000, /*rows=*/65536, /*null_percent=*/0});

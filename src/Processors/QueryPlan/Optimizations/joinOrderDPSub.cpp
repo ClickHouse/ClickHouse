@@ -259,46 +259,35 @@ std::optional<JoinKind> DPSubJoinOrderOptimizer::isValidJoinOrderMask(UInt32 lef
 std::optional<std::pair<JoinKind, JoinStrictness>>
 DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 right_mask) const
 {
-    /// Unified `applicable` for CD-A (Section 5.2) and CD-C (Section 5.4). The enumerator proposes
-    /// each connected, non-overlapping (left_mask, right_mask) split once. We look at every operator
-    /// whose ON predicate is applied across this split and require it to be `applicable`:
-    ///   required_left(op) subseteq S1  AND  required_right(op) subseteq S2  (forward, or mirrored),
-    ///   AND every conflict rule T1 -> T2 obeyed: T1 met by S implies T2 subseteq S.
-    /// For CD-A the required set is the widened TES and there are no rules; for CD-C it is the SES
-    /// plus conflict rules. Every crossing operator -- inner joins included -- must pass, because a
-    /// conflict between a nested operator and its parent is recorded in the *parent's* descriptor,
-    /// and that parent may itself be an inner join. The single non-inner operator that crosses (if
-    /// any) fixes the resulting join kind/strictness; two of them cannot share one binary node, so
-    /// the split is rejected. If none crosses, the step is a plain inner join.
+    /// Decide whether this (left_mask, right_mask) split is a legal join and what kind/strictness it
+    /// produces. Every operator applied across the split must pass: its required-left relations must
+    /// sit in S1 and required-right in S2 (or mirrored), and each conflict rule T1 -> T2 must hold
+    /// (if any table of T1 is joined, all of T2 must be too). Inner operators are checked too, since
+    /// a nested operator's conflict with its parent is recorded on the parent, which may be inner.
+    /// The single non-inner operator that crosses fixes the kind; two cannot share one node.
     const UInt32 combined = left_mask | right_mask;
     auto subset_of = [](const UInt32 a, const UInt32 b) { return (a & ~b) == 0; };
 
     JoinKind kind = JoinKind::Inner;
     JoinStrictness strictness = JoinStrictness::All;
     bool have_non_inner = false;
+    bool any_involved = false;
 
     for (const auto & op : dpsub_data.conflict_operators)
     {
-        /// The operator is applied at this boundary when its ON predicate (NEL) spans the split.
-        /// Using the operator's *relation set* to detect crossing is wrong: an ancestor's
-        /// relation set is a superset of this subset, and an operator already applied inside a
-        /// child no longer has a crossing predicate. The relation-set cross is a fallback only
-        /// for degenerate (predicate-less) operators (empty NEL, e.g. an ON-TRUE join).
+        /// The operator is applied here when its ON-clause relations (nel) span the split and are all
+        /// present: a predicate that still references a not-yet-joined relation belongs to a higher
+        /// node. A predicate-less operator falls back to its relation set straddling the split.
         const bool within = subset_of(op.relations, combined);
-        /// The predicate can only be applied at this node when every relation it references is
-        /// present. Otherwise it belongs to a higher node (a relation it needs is not joined yet).
-        /// Without this, an ancestor operator whose ON clause happens to reference two relations that
-        /// end up on opposite sides of a *lower* split -- e.g. an inner join `... AND t1.z = t3.z`
-        /// sitting above `t2 LEFT JOIN t1`, whose `nel` spans {t1,t2,t3} -- is wrongly treated as
-        /// crossing the {t1}|{t2} split, and its required set (which includes the not-yet-joined t3)
-        /// can satisfy neither orientation, rejecting every ordering of {t1,t2} and failing to find
-        /// any valid join order.
         const bool nel_within = subset_of(op.nel, combined);
         const bool nel_crosses = (op.nel & left_mask) && (op.nel & right_mask);
         const bool rel_crosses = (op.relations & left_mask) && (op.relations & right_mask);
-        const bool involved = (nel_within && nel_crosses) || (op.nel == 0 && rel_crosses && within);
+        /// A degenerate operator (one-sided or absent predicate) has no crossing predicate, so it is
+        /// located by its relation set crossing the split with all of its relations present.
+        const bool involved = (nel_within && nel_crosses) || (op.degenerate && rel_crosses && within);
         if (!involved)
             continue;
+        any_involved = true;
 
         /// Conflict rules (CD-C; empty for CD-A). A rule T1 -> T2 is disobeyed when some table of T1
         /// is already in the joined set S but not all of T2 is -- that ordering would apply this
@@ -314,6 +303,18 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
         /// predicate, both non-empty, so at most one orientation can hold.
         bool forward = subset_of(op.required_left, left_mask) && subset_of(op.required_right, right_mask);
         bool mirrored = subset_of(op.required_left, right_mask) && subset_of(op.required_right, left_mask);
+
+        /// A one-sided/cross-product operator has an empty required side, so the containment above
+        /// cannot orient it. Require each whole input subtree on its own side instead: this orients
+        /// it and rejects a fragmented split that pulls part of a subtree across the outer-join
+        /// boundary (an invalid plan). Rare -- gated by the flag.
+        if (op.degenerate)
+        {
+            const UInt32 right_relations = op.relations & ~op.left_relations;
+            forward = forward && subset_of(op.left_relations, left_mask) && subset_of(right_relations, right_mask);
+            mirrored = mirrored && subset_of(op.left_relations, right_mask) && subset_of(right_relations, left_mask);
+        }
+
         if (!forward && !mirrored)
             return std::nullopt;
 
@@ -326,25 +327,22 @@ DPSubJoinOrderOptimizer::isValidJoinOrderMaskConflict(UInt32 left_mask, UInt32 r
             return std::nullopt;
         have_non_inner = true;
 
-        /// For a non-degenerate predicate the two required sides are non-empty and disjoint, so
-        /// exactly one orientation holds. A degenerate (predicate-less, e.g. ON TRUE) operator has
-        /// empty required sets, so both orientations pass and the required-set test cannot tell which
-        /// side is preserved. Break the tie by the operator's original subtree placement: its
-        /// (left-canonical) preserved subtree `left_relations` must land on the preserving side.
-        /// Fail closed if it is split across both sides: do not guess and risk flipping the
-        /// preserved side (see `reverseJoinKind`, which flips Left<->Right / the semi/anti preserved
-        /// side while `buildPhysicalPlan` keeps the child order).
+        /// A non-inner operator whose orientation is still ambiguous (both sides admissible) would
+        /// have its preserved side guessed; fail closed instead (see `reverseJoinKind`, which flips
+        /// Left<->Right / the semi/anti preserved side while `buildPhysicalPlan` keeps the child order).
         if (forward && mirrored)
-        {
-            if (subset_of(op.left_relations, right_mask))
-                forward = false;
-            else if (!subset_of(op.left_relations, left_mask))
-                return std::nullopt;
-        }
+            return std::nullopt;
 
         kind = forward ? op.kind : reverseJoinKind(op.kind);
         strictness = op.strictness;
     }
+
+    /// No operator is applied across this split. A real predicate always maps to an operator, so the
+    /// only legitimate no-operator split is a transitive inner join (two sides tied by a column
+    /// equivalence, no direct predicate). Anything else reaching here is the synthetic cross-product
+    /// connectivity with no operator spanning it -- reject rather than invent an inner join.
+    if (!any_involved && !query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask)))
+        return std::nullopt;
 
     return std::make_pair(kind, strictness);
 }
@@ -381,9 +379,8 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
         if (dpsub_data.edge_pinned[i] && (dpsub_data.edge_pin_mask[i] & ~joined))
             continue;
 
-        /// Works much like Extended Eligibility List (EEL) in case of outerjoins:
-        /// encoding relations that must be present for the predicate to be applicable (in `pin` mask)
-        /// For innerjoins its just the sources of the predicate, i.e., NEL, here pin is empty.
+        /// For an outer join the `pin` mask encodes relations that must be present for the predicate
+        /// to be applicable; for an inner join it is just the predicate's source relations (pin empty).
         /// For a single-table conjunct of an outer join's ON
         /// clause (e.g. `t2.value = 'x'` in `... LEFT JOIN t3 ON t2.id = t3.id AND t2.value = 'x'`),
         /// `sources` is only `{t2}` but the pin is `{t3}`: the predicate belongs to the ON condition of
