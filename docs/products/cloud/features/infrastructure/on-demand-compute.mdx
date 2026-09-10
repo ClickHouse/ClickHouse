@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
 
 <PrivatePreviewBadge/>
 
@@ -18,17 +19,22 @@ On-Demand Compute is in private preview. It is not covered by ClickHouse Cloud S
 [Join the waitlist](https://clickhouse.com/cloud/on-demand-compute-waitlist).
 </Note>
 
-On-Demand Compute is a ClickHouse Cloud capability that gives a service (a tenant) additional compute for supported workloads, without requiring you to resize or provision another service. It runs this work on ClickHouse workers outside the service's own compute. Workers come from a managed pool shared across tenants, but each worker is assigned to only one tenant at a time.
+On-Demand Compute is a ClickHouse Cloud capability that gives your cloud service service (a tenant) additional and instant capacity for supported workloads, without requiring you to resize or provision another service. It runs this work on ClickHouse workers outside your service's own compute. Workers come from a managed pool shared across tenants in the same region, but each worker is assigned to only one tenant at a time.
 
-During the private preview, On-Demand Compute supports eligible `SELECT` queries. You opt a query in using settings, and ClickHouse assigns workers from the pool to execute it through your existing service and endpoint. Background operations are part of the broader capability but are not supported in the private preview.
+During the private preview, On-Demand Compute only supports `SELECT` queries. You opt a query in using query/session/user level settings, and ClickHouse assigns workers from the pool to execute it through your existing service and endpoint.
 
-This differs from [compute-compute separation](/products/cloud/features/infrastructure/warehouses). A warehouse provides dedicated, long-lived compute through multiple services that share data. On-Demand Compute provides temporary workers from a shared pool through your existing service. During the private preview, you request this compute at the query level.
+This differs from [compute-compute separation](/products/cloud/features/infrastructure/warehouses). A warehouse provides dedicated, long-lived compute through multiple services that share data. On-Demand Compute provides temporary workers from a shared pool through your existing service.
+
+On-demand compute leverage brand new capabilities:
+- Stateless query execution with on-demand compute
+- A new [CBO](https://github.com/ClickHouse/ClickHouse/pull/86353) (cost-based optimizer)
+- A new [distributed query execution](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
 
 ## When to use On-Demand Compute {#when-to-use-on-demand-compute}
 
 During the private preview, use On-Demand Compute for eligible, compute-intensive `SELECT` queries that you want to run outside the primary service's compute:
 
-- **Ad hoc and analyst queries:** Run compute-intensive `SELECT` queries on additional workers.
+- **Ad hoc and analytical queries:** Run compute-intensive `SELECT` queries on additional workers.
 - **Non-critical read workloads:** Move selected reads off the primary service.
 - **Data lake queries:** Query supported Apache Iceberg, Delta Lake, or `SharedMergeTree` data on additional workers.
 - **Temporary additional compute:** Request workers for eligible queries without resizing the primary service.
@@ -37,21 +43,12 @@ The private preview supports `SELECT` queries only. Workers do not execute `INSE
 
 ## How it works {#how-it-works}
 
-```mermaid
-flowchart LR
-  Client[Client] --> Svc[Your ClickHouse Cloud service]
-  Svc -->|plan and coordinate| Pool[Shared worker pool]
-  Pool -->|lease N workers| W[Workers exclusive to your tenant]
-  W -->|read shared storage| Storage[(Object storage / catalog)]
-  W -->|results| Svc
-  Svc --> Client
-```
-
-1. You send an eligible `SELECT` query to your ClickHouse Cloud service. Your endpoint, authentication, and RBAC configuration do not change.
-2. The service builds a distributed query plan and requests the specified number of workers from the managed pool.
-3. ClickHouse assigns available workers to your service.
-4. The workers execute the plan stages assigned by the distributed planner and read data from supported storage.
-5. Your service coordinates the query and returns the result to the client.
+1. You send an eligible `SELECT` query to your ClickHouse Cloud service requesting a specific number of workers. Your endpoint, authentication, and RBAC configuration do not change.
+2. Your cluster will then connect to the pool and request the specified number of workers.
+3. The workers will be leased for a duration of at least 60 seconds if the query last for longer, the lease will be automatically renewed.
+4. The workers receive the query and execute it
+5. The response is then sent back to your client
+6. The workers are wiped. 
 
 During the private preview, each worker has `8 vCPUs` and `32 GiB` of memory. Use `distributed_plan_workers_num` to specify how many workers the query requests.
 
@@ -59,7 +56,7 @@ During the private preview, each worker has `8 vCPUs` and `32 GiB` of memory. Us
 
 ### Settings {#settings}
 
-Add these settings on the query, on the user, or in a settings profile.
+Use these settings to start using on-demand compute: 
 
 | Setting | Required value | Purpose |
 |---|---|---|
@@ -84,51 +81,11 @@ WHERE
     AND l_quantity < 24
 SETTINGS
     make_distributed_plan = 1,
-    distributed_plan_workers_num = 3,
+    distributed_plan_workers_num = 5,
     enable_parallel_replicas = 0
 ```
 
-This query requests three workers. The number of workers ClickHouse provides depends on the private-preview limit and available pool capacity.
-
-### Worker leasing {#worker-leasing}
-
-A worker lease lasts for at least 60 seconds. ClickHouse renews the lease automatically while a query is running.
-
-After the query finishes, the workers remain assigned to the service until the lease expires. Another eligible query from the same service can reuse those workers while the lease remains active, so ClickHouse does not need to request new workers.
-
-When the lease expires, ClickHouse releases the workers from the service and terminates them.
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Your service
-    participant P as Worker pool
-    participant W as 3 workers
-
-    C->>S: SELECT ... workers_num = 3
-    S->>P: Lease 3 workers
-    P->>W: Exclusive lease to this tenant (min 60s)
-    S->>W: Run distributed plan stages
-    W-->>S: Partial results
-    S-->>C: Query result
-    Note over W: Lease continues (idle, still yours)
-```
-
-After the query finishes, the three workers stay leased to your tenant but idle until the lease expires.
-
-```mermaid
-%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%
-flowchart LR
-    Free["Free<br/>In the shared pool"] -->|Query starts| Active["Leased and active"]
-    Active -->|Query finishes| Idle["Leased and idle<br/>Lease remains"]
-    Idle -->|Another query| Active
-    Idle -->|Lease expires| Free
-    Active -->|Lease renewed| Active
-```
-
-If you send another query while those workers are still leased, they can be reused immediately (no cold start).
-
-If the lease has expired, ClickHouse releases the workers back to the pool (they are terminated rather than left idle for another tenant).
+This query requests five workers. The number of workers ClickHouse provides depends on the private-preview limit and available pool capacity.
 
 ### Concurrent queries {#concurrent-queries}
 
@@ -153,34 +110,12 @@ SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 5,
 
 That query runs on the existing three workers plus two newly leased workers.
 
-```mermaid
-%%{init: {'flowchart': {'defaultRenderer': 'elk'}}}%%
-flowchart TB
-    W1["W1 — already leased"]
-    W2["W2 — already leased"]
-    W3["W3 — already leased"]
-    Q1["Query A (3 workers)"] --> W1
-    Q1 --> W2
-    Q1 --> W3
-    Q2["Query B (3 workers)"] --> W1
-    Q2 --> W2
-    Q2 --> W3
-    Q3["Query C (5 workers)"] --> W1
-    Q3 --> W2
-    Q3 --> W3
-    Q3 --> W4[W4 new]
-    Q3 --> W5[W5 new]
-```
 
 ### When the pool cannot satisfy the request {#pool-capacity}
 
 Worker availability is best effort during the private preview. If fewer workers are available than requested, the query runs with the workers ClickHouse can assign. For example, a request for five workers may run with three.
 
-If no worker can be leased, the query fails:
-
-```text
-No stateless workers available for tenant 'bronzeaws-cm-72': the discovery service leased none.
-```
+If no worker can be leased, the query fails.
 
 Retry the query. If this persists, contact your ClickHouse account team — the preview pool may be exhausted or mis-scaled.
 
@@ -203,10 +138,34 @@ WHERE query_id = '<YOUR_QUERY_ID>'
 Set `log_comment = 'on-demand'` (or a workload name) on On-Demand queries so you can filter them without parsing `Settings`.
 </Tip>
 
+
+```sql
+SELECT
+    sum(l_extendedprice * l_discount) AS revenue
+FROM lineitem
+WHERE
+    l_shipdate >= DATE '1994-01-01'
+    AND l_shipdate < DATE '1994-01-01' + INTERVAL 1 YEAR
+    AND l_discount BETWEEN 0.06 - 0.01 AND 0.06 + 0.01
+    AND l_quantity < 24
+SETTINGS
+    make_distributed_plan = 1,
+    distributed_plan_workers_num = 5,
+    enable_parallel_replicas = 0,
+    log_comment = 'on-demand-private-preview'
+```
+
 ## Available regions {#available-regions}
 
-On-Demand Compute workers run in the same region as your ClickHouse Cloud service. During private preview the feature will initially be available in select cloud providers and regions. As part of the waitlist signup you can specify your preferred provider and region for ClickHouse to evaluate your eligibility.
+On-Demand Compute is regional: workers run in the same region as your service.
 
+| Cloud | Region | Notes |
+|---|---|---|
+| AWS | us-east-1 | |
+| AWS | eu-west-1| |
+
+If your region is missing, request it on the [waitlist](https://clickhouse.com/cloud/on-demand-compute-waitlist). We will enable more region based on demand. 
+ 
 ## Pricing {#pricing}
 
 During private preview, On-Demand Compute is free, with a usage cap (see [Limitations](#limitations)). Ask your ClickHouse account team if you need the cap raised.
@@ -220,69 +179,95 @@ The intended model is the same as ClickHouse Cloud compute: pay for compute you 
 The following limitations apply during the private preview. Other limitations may apply. Report unexpected behavior to ClickHouse Support or your account team.
 
 - **`SELECT` queries only.** Workers do not execute `INSERT` queries, mutations, DDL, or background operations.
-- **Supported data.** The private preview supports Apache Iceberg, Delta Lake, and `SharedMergeTree`.
+- **Supported format.** The private preview supports Apache Iceberg, Delta Lake, and `SharedMergeTree`.
 - **Parallel replicas.** Parallel replicas must be disabled.
 - **Worker size.** Each worker has `8 vCPUs` and `32 GiB` of memory.
 - **Worker limit.** Each query can request up to five workers during the private preview.
 - **Pool capacity.** Worker availability is best effort. A query may receive fewer workers than requested. If no workers are available, the query fails.
-- **Performance.** Performance varies by query. Worker assignment, distributed planning, and the transfer of plan stages can add latency. Some query shapes may perform worse than execution on the primary service.
+- **Performance.** Performance varies by query. Worker assignment, distributed planning, and the transfer of plan stages can add latency. Some query shapes may perform worse than execution on the primary service (your typical sub-second queries will probably perform better in your cluster)
 - **Query compatibility.** The distributed planner cannot execute every query plan remotely. Unsupported queries may return a `SUPPORT_IS_DISABLED` exception.
-
-Typical failures include the following:
-
-| Area | What happens |
-|---|---|
-| Parallel replicas | Rejected; disable the settings above. |
-| Window functions with `PARTITION BY` | Often rejected until the planner can shuffle by the partition key. |
-| `system` table reads | They are not based on shared storage. |
-| Correlated subqueries in some shapes | May be rejected or rewritten less efficiently. |
-| Projections, skip indexes on data read, and expression compilation | Turned off for the query rather than returning an exception. |
 
 ## Roadmap {#roadmap}
 
 On-Demand Compute is a foundation. Work in flight or next:
 
-- Close known limitations (`SUPPORT_IS_DISABLED` gaps).
-- Pools of different worker sizes.
-- Stabilize query performance compared with stateful execution.
-- Background merge support.
-- Pricing.
-- Worker-pool autoscaler calibration.
-- Console metrics and monitoring.
-- Dedicated permissions for On-Demand Compute.
+- Close known limitations (`SUPPORT_IS_DISABLED` gaps)
+- Pools of different worker sizes
+- Stabilize query performance compared to stateful execution
+- Background merge support
+- Pricing
+- Worker-pool autoscaler calibration
+- Built-in observability
+- Dedicated permissions for On-Demand Compute
+- Data Lake workload expansion (write, compaction, etc...)
 
 ## Security {#security}
 
-On-Demand Compute does not change how you connect to ClickHouse Cloud. Clients still authenticate to your service. Workers never expose a public query endpoint.
+Workers come from a pre-warm pool that is shared across services in the same region, so there is one non-negotiable rule: a worker serves one service at a time, and it is never handed from one service to another.
 
-Dedicated On-Demand roles and permissions are not in the preview (see [Roadmap](#roadmap)). Until then, anyone who can run `SELECT` with the settings above on your service can use workers, subject to the preview quota.
+Nothing about how you reach ClickHouse changes. Clients still connect to your service endpoint with your existing authentication, and your service is the only thing that talks to workers on your behalf. Workers have no customer-facing endpoint.
+
+- **One service per worker:** A worker is leased to a single service for the duration of that lease. It is never shared by two services at the same time.
+- **No reuse between services:** When a lease ends, the worker is destroyed and replaced with a fresh one. A worker is never reassigned to a different service.
+- **No persistent data:** Workers keep no persistent storage, and they do not survive the end of a lease.
+- **Same region as your service:** Workers run in the same region as the service that leases them, following strict data residency rules.
+- **Your existing access controls still apply:** IP access lists and private endpoints govern your service endpoint exactly as before. On-Demand Compute adds no endpoint for you to configure or protect.
+- **Your existing authentication and RBAC:** Queries run under the same user and privileges as any other query on your service. Workers carry no separate identity or permission model.
+
+### Network isolation {#network-isolation}
+
+While a worker is leased to your service, the platform permits network traffic between that worker and your service, and blocks everything else. The restriction is applied at the network layer rather than in the query engine, so it does not depend on the query, its settings, or the plan the optimizer produces.
+
+<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Network isolation explanation diagram" />
+
+- **Only your service can reach your workers.** The path exists for the worker's current lease, and for that one service.
+- **Unassigned workers are unreachable.** A worker waiting in the pool has no network path to or from any service until it is leased.
+- **Workers leased to different services cannot reach each other.** Workers within a single lease exchange plan stages and intermediate results between themselves. Workers in different leases stay isolated from one another, even though they share a pool.
+- **The path is removed with the worker.** Ending a lease destroys the worker, which removes the only thing traffic was permitted to reach.
+- **The request path stays narrow.** Your service reaches the worker assignment service to lease and renew workers. That path carries no query data and is limited to the assignment API.
+
+### Internal authentication & authorization {#authentication-and-authorization}
+
+Network isolation governs what can reach a worker. Authentication governs what a caller is allowed to do once it gets there, and the two are enforced independently: a caller has to satisfy both.
+
+Every connection between your service, the worker assignment service, and workers is authenticated. Nothing is trusted, all credentials are minted by the platform and handed out per lease.
+
+- **One credential per worker:** When workers are leased to your service, the platform issues an unique signed token for each one. Each token works only for that one worker, and only for your service.
+- **Short-lived and tied to the lease:** Tokens expire with the lease that produced them. Renewing a lease issues fresh ones, and once a lease is over its tokens no longer authenticate anything.
+- **Verified against the platform:** A worker validates the token it is presented against the platform's identity service, rather than trusting anything supplied in the request.
+
+| Connection | What is authenticated |
+|---|---|
+| Your service → worker assignment service | Your service's platform identity, which determines the leases it may act on. |
+| Your service → a worker leased to it | A signed token scoped to that one worker, for the life of the lease. |
+| Worker → worker within one lease | Each worker's own platform identity, plus a check that the caller still holds a live lease on the receiving worker. |
+
+<Note>
+These credentials are internal to how ClickHouse Cloud executes your query. They are never exposed to your clients, and they are unrelated to how you authenticate to ClickHouse: clients continue to connect with your existing credentials, and query privileges are still governed by your service's RBAC.
+</Note>
 
 ## FAQ {#faq}
 
 <AccordionGroup>
 
 <Accordion title="Is On-Demand Compute open source?">
-No. It is a ClickHouse Cloud architecture: ClickHouse server (distributed plan), data plane (worker pool and leases), and control plane. The experimental `make_distributed_plan` setting exists in ClickHouse, but the shared worker pool and stateless execution is Cloud-only.
+No. It is a ClickHouse Cloud architecture: ClickHouse server (distributed plan), data plane (worker pool and leases), and control plane. The experimental `make_distributed_plan` setting and the CBO exist in ClickHouse OSS, but the shared worker pool and stateless execution is Cloud-only.
 </Accordion>
 
 <Accordion title="Do I need a specific version to join the private preview?">
-Yes. Your ClickHouse team will confirm whether your service requires an upgrade before joining the private preview. Additional upgrades may be required during the preview.
+Yes. The version used during the private preview will be a custom build. Additional upgrades may be required during the preview.
 </Accordion>
 
 <Accordion title="What will pricing look like?">
-There is no additional charge during the private preview, subject to preview limits. Pricing for later release stages will be shared before any charges apply. That said, pricing holds the same philosophy as ClickHouse Cloud: charge for compute used, not for data scanned or rows read. Exact rates will be published before GA or beta billing starts.
+We don't have a public pricing to share for the moment. But the feature is free to use during the private preview. That said, the pricing philosophy will be the same as ClickHouse Cloud: charge for compute used, not for data scanned or rows read. Exact rates will be published before pricing is rolled out.
 </Accordion>
 
 <Accordion title="Can I use this for production?">
-You can run real workloads, but this is a private preview: there are known and unknown limitations, and there is no SLO/SLA for worker-pool availability. ClickHouse is committed to supporting early adopters; treat it as preview, not as a production guarantee.
+You can run real workloads, but this is a private preview: there are known and unknown limitations, and there is no SLO/SLA for worker-pool availability.
 </Accordion>
 
 <Accordion title="How is this different from autoscaling my service?">
 Autoscaling changes the compute assigned to your primary service. During the private preview, On-Demand Compute gives eligible `SELECT` queries temporary access to workers from a managed pool without changing the size of the primary service. Autoscaling manages ongoing service capacity, while On-Demand Compute provides temporary compute for specific workloads.
-</Accordion>
-
-<Accordion title="How is this different from a warehouse or compute-compute separation?">
-Compute-compute separation provides dedicated compute through multiple ClickHouse Cloud services that share data. On-Demand Compute provides temporary compute from a managed pool through your existing service. During the private preview, this compute is requested at the query level. The broader capability is designed to support both query execution and background operations.
 </Accordion>
 
 <Accordion title="Where can I ask questions?">
@@ -290,7 +275,15 @@ Ask your account team; they will introduce you to the product manager for On-Dem
 </Accordion>
 
 <Accordion title="Where can I report bugs?">
-Open a support ticket (severity 3) or report it to the product manager. Include `query_id` and the full exception.
+Open a support ticket (severity 3) or report it to the product manager. Include `query_id`, your service ID and the full exception.
+</Accordion>
+
+<Accordion title="Can another ClickHouse Cloud service reach the workers running my query?">
+No. While a worker is leased to your service, the platform permits traffic between that worker and your service only, and blocks it for every other service. Unassigned workers and workers leased to another service have no network path to yours. See [Network isolation](#network-isolation).
+</Accordion>
+
+<Accordion title="Is a worker reused by another service after my query finishes?">
+No. When a lease ends, the worker is destroyed and replaced with a fresh one rather than passed on to the next service.
 </Accordion>
 
 <Accordion title="Is this available in ClickHouse BYOC or ClickHouse Private?">
