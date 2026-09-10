@@ -23,8 +23,6 @@ reason: Projection orders by the commit order (`_block_number`, `_block_offset`)
 reason: Projection orders by the commit order (`_block_number`, `_block_offset`), which EXPLAIN WHATIF does not estimate yet
 --- a projection that merely stores _block_number is not estimated ---
 reason: Projection stores `_block_number`, so it is built only when a part is merged, which EXPLAIN WHATIF does not estimate yet
---- a projection storing _block_number is built only on merge ---
-reason: Projection stores `_block_number`, so it is built only when a part is merged, which EXPLAIN WHATIF does not estimate yet
 --- projections disabled by the query ---
 reason: Projections are disabled by `optimize_use_projections = 0`
 --- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
