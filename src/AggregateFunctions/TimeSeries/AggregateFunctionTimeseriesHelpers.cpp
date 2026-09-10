@@ -1251,22 +1251,29 @@ SELECT timeSeriesResampleToGridWithStaleness(start_ts, end_ts, step_seconds, win
     FunctionDocumentation::Description description_timeSeriesTimestampToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and, for each point on a regular time grid described by start timestamp, end timestamp and step, returns the timestamp (in seconds since epoch) of the most recent sample within the specified time window. Used to implement [PromQL's `timestamp()` function](https://prometheus.io/docs/prometheus/latest/querying/functions/#timestamp).
 
+The samples can be passed in one of three forms:
+- as two arguments `timestamp` and `value`, where each row holds a single sample;
+- as two arrays of timestamps and values, where each row holds a whole time series;
+- as a single array of `(timestamp, value)` tuples, where each row holds a whole time series.
+
 :::warning
 This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesTimestampToGrid = R"(
 timeSeriesTimestampToGrid(start_timestamp, end_timestamp, grid_step, staleness_window)(timestamp, value)
+timeSeriesTimestampToGrid(start_timestamp, end_timestamp, grid_step, staleness_window)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesTimestampToGrid = {
-        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
-        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
-        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
-        {"staleness_window", "Specifies the maximum staleness of the most recent sample in seconds.", {"UInt32"}}
+        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness_window", "Specifies the maximum staleness of the most recent sample in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesTimestampToGrid = {
-        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
-        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}},
+        {"samples", "Samples of the time series passed as an array of tuples `(timestamp, value)`, where the tuple elements have the timestamp and value types listed above. An alternative to passing the timestamps and the values as two separate arguments.", {"Array(Tuple(T1, T2))"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_timeSeriesTimestampToGrid = {"Returns the timestamp (in seconds since epoch) of the most recent sample within the window, for each point of the specified grid. The returned array contains one value for each time grid point. The value is NULL if there is no sample within the window for a particular grid point.", {"Array(Nullable(Float64))"}};
     FunctionDocumentation::Examples examples_timeSeriesTimestampToGrid = {
