@@ -7,6 +7,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Planner/PlannerContext.h>
 
 namespace DB
 {
@@ -88,5 +89,10 @@ private:
     std::set<std::string> used_row_policies;
     QueryNodeToPlanStepMapping query_node_to_plan_step_mapping;
 };
+
+FiltersForTableExpressionMap collectFiltersForAnalysis(
+    const QueryTreeNodePtr & query_tree_node,
+    const SelectQueryOptions & select_query_options,
+    const ActionsDAG * post_filter);
 
 }

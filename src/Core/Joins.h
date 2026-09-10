@@ -142,6 +142,33 @@ enum class JoinTableSide : uint8_t
 
 const char * toString(JoinTableSide join_table_side);
 
+/// `ANY INNER` / `RightAny INNER` keep one row per key on both sides. Ordinary
+/// (non-equi-key) prefilter can change which duplicate survives. Equi-key
+/// predicates are still pushed through the equivalent-columns path.
+constexpr bool isAnyInnerJoin(JoinKind kind, JoinStrictness strictness)
+{
+    return kind == JoinKind::Inner && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny);
+}
+
+/** Whether ordinary columns from this side of a JOIN can be used as filter inputs
+  * before the JOIN. Skip the null-producing side of an outer JOIN, the right side
+  * of an `ASOF JOIN`, and both sides of a `PASTE JOIN` or `FULL JOIN`.
+  * `ANY INNER` is a separate check (`isAnyInnerJoin`): equivalent-key filters can
+  * still be attached. Dictionary / lookup fill uses `JoinStep::allowPushDownToRight`.
+  */
+constexpr bool canPrefilterJoinSide(JoinKind kind, JoinStrictness strictness, JoinTableSide side)
+{
+    if (isPaste(kind) || isFull(kind))
+        return false;
+    if (strictness == JoinStrictness::Asof && side == JoinTableSide::Right)
+        return false;
+    if (isLeft(kind) && side == JoinTableSide::Right)
+        return false;
+    if (isRight(kind) && side == JoinTableSide::Left)
+        return false;
+    return true;
+}
+
 enum class JoinOrderAlgorithm : uint8_t
 {
     GREEDY = 0,

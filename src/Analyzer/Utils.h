@@ -115,6 +115,10 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 /// Extract table, table function, query, union from join tree.
 TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
+/// Return true when ordinary filter pushdown may prefilter `table` through every
+/// JOIN containing it without changing JOIN semantics.
+bool joinTreePreservesRowsForTable(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & table);
+
 /// Extract left table expression from join tree.
 TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node);
 
@@ -235,13 +239,32 @@ bool hasUnknownColumn(
 /** Suppose we have a table x with columns a, c, d and
   * a an expression like x.a > 2 AND y.b > 3 AND x.c + 1 == x.d
   * This method will remove the part y.b > 3 from it since it depends
-  * on unknown columns from a different table.
+  * on unknown columns from a different table. A non-function root such as
+  * `WHERE y.b` is dropped the same way.
   */
 void removeExpressionsThatDoNotDependOnTableIdentifiers(
     QueryTreeNodePtr & expression,
     const QueryTreeNodePtr & replacement_table_expression,
     const ContextPtr & context);
 
+/** Remove conjuncts that are unsafe to copy into another query tree (not deterministic, not
+  * deterministic in this query, stateful, or server-constant). Nested `and` is flattened the same
+  * way as `removeExpressionsThatDoNotDependOnTableIdentifiers`. Window and aggregate functions are
+  * also dropped. JOIN filter pushdown refuses stateful predicates via
+  * `ActionsDAG::hasStatefulFunctions`.
+  *
+  * The wrap `WHERE` is sent to remote cluster nodes. Node-local functions such as `hostName`,
+  * `dictGet`, `joinGet`, `FQDN`, and `queryID` must stay on the initiator: remotes can miss the
+  * dictionary, see different data, or return a different server-local value. `IN` / `GLOBAL IN`
+  * over a `TABLE` or `TABLE_FUNCTION` set is the same class: remotes can miss the table or see
+  * different rows. Literal and tuple `IN` stay copyable.
+  */
+void removeExpressionsThatAreUnsafeToDuplicate(
+    QueryTreeNodePtr & expression,
+    const ContextPtr & context);
+
+/// Return true when the entire expression can be duplicated into another query tree.
+bool isSafeToDuplicateInQueryTree(const QueryTreeNodePtr & node);
 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
 
