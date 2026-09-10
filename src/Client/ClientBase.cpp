@@ -171,6 +171,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsBool use_client_time_zone;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsSeconds sync_request_timeout;
 }
 
 namespace ErrorCodes
@@ -3051,6 +3052,7 @@ void ClientBase::processParsedSingleQuery(
                     client_context->applySettingChange(change);
             }
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
+            connection_parameters.timeouts.withSyncRequestTimeout(client_context->getSettingsRef()[Setting::sync_request_timeout]);
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
