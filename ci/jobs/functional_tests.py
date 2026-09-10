@@ -26,6 +26,18 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 # `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
+
+def configure_bugfix_profiler(config_dir, build_type):
+    """Match the installed profiler config to the binary used by bugfix validation."""
+    profiler_config = Path(config_dir) / "config.d/serverwide_trace_collector.xml"
+    source_config = Path("tests/config/config.d/serverwide_trace_collector.xml").resolve(
+        strict=True
+    )
+    profiler_config.unlink(missing_ok=True)
+    if "msan" not in build_type:
+        profiler_config.symlink_to(source_config)
+
+
 # Full stacktrace dumps `clickhouse-test` writes on an abort (hung check,
 # server died, per-test timeout). Names must match `SQL_STACKTRACES_LOG` and
 # `C_STACKTRACES_LOG` in tests/clickhouse-test.
@@ -1249,6 +1261,10 @@ def main():
                         CH.set_memory_ratio(0.7)
                     else:
                         CH.reset_memory_ratio()
+                    # `install.sh` omits the global profiler for MSan, which rejects
+                    # its settings. Binary swaps reuse the installed config tree,
+                    # so remove or restore the config for the new build type.
+                    configure_bugfix_profiler(CH.ch_config_dir, bugfix_bt)
                     # Fail closed if the server cannot come back up after the
                     # binary swap: running tests against a dead server would
                     # produce `Server died` FAILs that the bugfix inverter
