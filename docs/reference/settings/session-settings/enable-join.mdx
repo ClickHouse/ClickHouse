@@ -23,6 +23,14 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
 
+## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."}]}]}/>
+
+Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.
+
 ## enable_join_runtime_filters {#enable_join_runtime_filters}
 
 <BetaBadge/>
