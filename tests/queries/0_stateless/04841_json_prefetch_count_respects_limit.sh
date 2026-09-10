@@ -57,9 +57,10 @@ SYSTEM STOP MERGES t_batches;
 -- buffer's state in itself between operations. On the default disk that buffer is an asynchronous
 -- local-descriptor one, and the size it reports for a prefetch comes from exactly that state, so a
 -- chain reading it without swapping the state back would charge zero bytes for a full-size buffer.
+-- Pinned to a local disk: under an object-storage default policy both rows below measure zero.
 CREATE TABLE t_packed ($(seq -f 'c%g UInt64' -s ', ' 1 8)) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 33554432,
-         ratio_of_defaults_for_sparse_serialization = 1.0,
+         ratio_of_defaults_for_sparse_serialization = 1.0, storage_policy = 'default',
          min_bytes_for_full_part_storage = 1000000000, min_rows_for_full_part_storage = 1000000000;
 SYSTEM STOP MERGES t_packed;
 
@@ -171,9 +172,9 @@ batched_read="SELECT * FROM t_batches FORMAT Null"
 run_query 0 4 '10Gi' 1 'batched_limit' "$batched_read" --max_read_buffer_size_remote_fs 4096
 run_query 0 0 '10Gi' 1 'batched_unlim' "$batched_read" --max_read_buffer_size_remote_fs 4096
 
-# The packed read is on the default disk, so the prefetches are local-descriptor ones: hence the local
-# read method and the log, and hence remote prefetching off, so that a run whose default disk is object
-# storage submits nothing rather than a prefetch this row cannot account for.
+# The packed reads are on the local disk pinned above, so their prefetches are local-descriptor ones:
+# hence the local read method and the log rather than a ProfileEvents counter. The remote flag is off
+# because the pin puts the part where only the local one is consulted.
 run_query 0 0 1 1 'packed_bytes' "SELECT * FROM t_packed FORMAT Null" \
     --local_filesystem_read_prefetch 1 --local_filesystem_read_method pread_threadpool \
     --remote_filesystem_read_prefetch 0 --enable_filesystem_read_prefetches_log 1 \
