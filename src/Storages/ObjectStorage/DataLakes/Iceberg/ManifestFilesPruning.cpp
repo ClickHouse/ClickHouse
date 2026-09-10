@@ -191,7 +191,7 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
                 if (field.isNull())
                     field = POSITIVE_INFINITY;
                 else
-                    field = normalizePartitionValue(field, type);
+                    field = convertPartitionValueToType(field, type);
             }
 
             bool can_be_true = partition_key_condition->mayBeTrueInRange(

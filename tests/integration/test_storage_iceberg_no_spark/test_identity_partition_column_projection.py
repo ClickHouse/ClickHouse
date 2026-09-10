@@ -4,6 +4,7 @@ import io
 import json
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -11,7 +12,14 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import NestedField, Schema
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import DateType, LongType, StringType, StructType, TimestampType
+from pyiceberg.types import (
+    DateType,
+    DecimalType,
+    LongType,
+    StringType,
+    StructType,
+    TimestampType,
+)
 
 from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.iceberg_utils import (
@@ -935,3 +943,108 @@ def test_identity_partition_decimal_stored_as_raw_fixed(
             ).strip()
             == "2"
         ), move_to_prewhere
+
+
+def test_identity_partition_decimal_widened_across_schemas(
+    started_cluster_iceberg_no_spark,
+):
+    """Iceberg allows widening `decimal(P, S)` to `decimal(P', S)`, and the two precisions land in
+    different ClickHouse carriers (`Decimal32` and `Decimal128` here). A partition value decoded into
+    the carrier of the schema that wrote its manifest would make the same logical partition compare
+    unequal across the widening, because `Field` ordering dispatches on the variant tag before it
+    looks at the number. The partition value must therefore be normalized into one carrier."""
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    identifier = f"{namespace}.t_decimal_widened"
+    table = catalog.create_table(
+        identifier=identifier,
+        schema=Schema(
+            NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+            NestedField(
+                field_id=2,
+                name="price",
+                field_type=DecimalType(9, 2),
+                required=False,
+            ),
+            NestedField(field_id=3, name="val", field_type=StringType(), required=False),
+        ),
+        location="s3://warehouse-rest/data",
+        partition_spec=PartitionSpec(
+            PartitionField(
+                source_id=2,
+                field_id=1000,
+                transform=IdentityTransform(),
+                name="price",
+            )
+        ),
+    )
+    narrow_arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=True),
+            pa.field("price", pa.decimal128(9, 2), nullable=True),
+            pa.field("val", pa.string(), nullable=True),
+        ]
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 1, "price": Decimal("1.50"), "val": "a"},
+                {"id": 2, "price": Decimal("-3.25"), "val": "b"},
+            ],
+            schema=narrow_arrow_schema,
+        )
+    )
+
+    with table.update_schema() as update:
+        update.update_column("price", field_type=DecimalType(20, 2))
+
+    table = catalog.load_table(identifier)
+    wide_arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=True),
+            pa.field("price", pa.decimal128(20, 2), nullable=True),
+            pa.field("val", pa.string(), nullable=True),
+        ]
+    )
+    table.append(
+        pa.Table.from_pylist(
+            [
+                {"id": 3, "price": Decimal("1.50"), "val": "c"},
+                {"id": 4, "price": Decimal("7.75"), "val": "d"},
+            ],
+            schema=wide_arrow_schema,
+        )
+    )
+
+    for path in data_file_paths(table):
+        drop_column_from_data_file(started_cluster_iceberg_no_spark, path, "price")
+
+    create_clickhouse_iceberg_database(instance, CATALOG_NAME)
+    table_expression = f"{CATALOG_NAME}.`{identifier}`"
+
+    assert (
+        instance.query(
+            f"SELECT id, price, val FROM {table_expression} ORDER BY id",
+            settings={"output_format_decimal_trailing_zeros": 1},
+        ).strip()
+        == "1\t1.50\ta\n2\t-3.25\tb\n3\t1.50\tc\n4\t7.75\td"
+    )
+
+    # The rows of the same logical partition are on both sides of the widening.
+    for move_to_prewhere in [0, 1]:
+        assert (
+            instance.query(
+                f"SELECT id FROM {table_expression} WHERE price = 1.50 ORDER BY id",
+                settings={"optimize_move_to_prewhere": move_to_prewhere},
+            ).strip()
+            == "1\n3"
+        ), move_to_prewhere
+
+    assert (
+        instance.query(
+            f"SELECT id FROM {table_expression} WHERE price > 0 ORDER BY id"
+        ).strip()
+        == "1\n3\n4"
+    )

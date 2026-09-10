@@ -1622,6 +1622,13 @@ namespace
 /// big-endian form, using the minimum number of bytes. ClickHouse reads such a `fixed` as a `String`,
 /// so restore the decimal here. Accumulate into the unsigned counterpart, pre-filled with the sign
 /// bits, so that the sign extension comes out of the shifts themselves.
+///
+/// The result always uses `Decimal256` as its carrier, whatever the width of the ClickHouse type of the
+/// column is: Iceberg allows widening `decimal(P, S)` to `decimal(P', S)`, and `Field` ordering and
+/// equality dispatch on the variant tag before they look at the number, so a `Decimal64` written before
+/// the widening would never match the `Decimal128` of a manifest written after it. Keeping one carrier
+/// makes the normalized tuple of a partition independent of the schema of the manifest that wrote it.
+/// The scale is unaffected: widening a decimal may not change it.
 template <typename DecimalType>
 Field decodePartitionDecimal(const String & bytes, const IDataType & type)
 {
@@ -1640,7 +1647,7 @@ Field decodePartitionDecimal(const String & bytes, const IDataType & type)
     for (const auto byte : bytes)
         unscaled_value = (unscaled_value << 8) | static_cast<UInt8>(byte);
 
-    return DecimalField<DecimalType>(static_cast<NativeType>(unscaled_value), getDecimalScale(type));
+    return DecimalField<Decimal256>(Int256(static_cast<NativeType>(unscaled_value)), getDecimalScale(type));
 }
 
 Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
@@ -1669,7 +1676,26 @@ Field normalizePartitionValue(const Field & value, const DataTypePtr & type)
     if (value.getType() == Field::Types::String && WhichDataType(value_type).isDecimal())
         return decodePartitionDecimalByType(value.safeGet<String>(), *value_type);
 
+    /// A decimal that a manifest already carried in a decoded form: bring it to the canonical carrier
+    /// too, so that it matches the value decoded from the raw `fixed` of another manifest.
+    if (Field::isDecimal(value.getType()) && value.getType() != Field::Types::Decimal256
+        && WhichDataType(value_type).isDecimal())
+        return convertFieldToTypeOrThrow(value, DataTypeDecimal<Decimal256>(DecimalUtils::max_precision<Decimal256>, getDecimalScale(*value_type)));
+
     return value;
+}
+
+Field convertPartitionValueToType(const Field & value, const DataTypePtr & type)
+{
+    Field normalized = normalizePartitionValue(value, type);
+
+    /// Partition values are kept in a canonical decimal carrier, which is not the carrier of the column
+    /// type in general; a consumer that hands the value to code typed by the column has to bring it back.
+    const auto & value_type = removeNullable(type);
+    if (Field::isDecimal(normalized.getType()) && WhichDataType(value_type).isDecimal())
+        return convertFieldToTypeOrThrow(normalized, *value_type);
+
+    return normalized;
 }
 
 DB::Row normalizePartitionKeyValue(
