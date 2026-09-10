@@ -23,11 +23,12 @@ Q1="flush_dist_kill_1_${CLICKHOUSE_DATABASE}_$$"
 Q2="flush_dist_kill_2_${CLICKHOUSE_DATABASE}_$$"
 Q3="flush_dist_kill_3_${CLICKHOUSE_DATABASE}_$$"
 Q4="flush_dist_kill_4_${CLICKHOUSE_DATABASE}_$$"
+QH="flush_dist_hold_${CLICKHOUSE_DATABASE}_$$"
 
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${FP}" 2>/dev/null ||:
-    for q in "$Q1" "$Q2" "$Q3" "$Q4"; do
+    for q in "$Q1" "$Q2" "$Q3" "$Q4" "$QH"; do
         $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${q}' FORMAT Null" 2>/dev/null ||:
     done
     wait 2>/dev/null ||:
@@ -119,7 +120,8 @@ echo "pending dist_t: $(pending_files dist_t)"
 echo "pending dist_batched: $(pending_files dist_batched)"
 
 # S1: a killed SYSTEM FLUSH DISTRIBUTED stops at the next file instead of draining the backlog.
-# Sends stay stopped, so run() never reaches the failpoint and the pause is the flush's own.
+# The pause is the flush's own: the failpoint pauses query-driven sends only, so no background
+# sender on the server can answer the wait, not even one belonging to an unrelated table.
 # S1 also passes on the unfixed base: the non-batching drain connects per file and
 # ConnectionEstablisher already polls cancellation there. It is a regression guard, not proof of the
 # send-boundary poll; S3 is the arm for that.
@@ -131,11 +133,13 @@ wait $! 2>/dev/null ||:
 echo "S1 killed: $(killed_with_394 "${Q1}")"
 echo "S1 pending dist_t: $(pending_files dist_t)"
 
-# S2: a killed DROP TABLE escapes the queue mutex while a send still holds it. The paused sender
-# keeps the mutex for the whole scenario, so leaving system.processes is only possible if the
-# wait for that mutex is cancellable.
+# S2: a killed DROP TABLE escapes the queue mutex while a send still holds it. A second flush is
+# paused inside the drain and keeps the mutex for the whole scenario, so leaving system.processes
+# is only possible if the wait for that mutex is cancellable. The holder has to be a flush and not
+# the background sender: the failpoint pauses query-driven sends only, and sends stay stopped here.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${FP}"
-$CLICKHOUSE_CLIENT --query "SYSTEM START DISTRIBUTED SENDS dist_t"
+$CLICKHOUSE_CLIENT --query_id="${QH}" --query "SYSTEM FLUSH DISTRIBUTED dist_t" 2>/dev/null &
+HOLD_PID=$!
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT ${FP} PAUSE"
 $CLICKHOUSE_CLIENT --query_id="${Q2}" --query "DROP TABLE dist_t SETTINGS ignore_drop_queries_probability = 0" 2>/dev/null &
 DROP_PID=$!
@@ -147,8 +151,9 @@ echo "S2 dist_t exists: $(table_exists dist_t)"
 echo "S2 pending dist_t kept: $(pending_files dist_t)"
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT ${FP}"
 wait $DROP_PID 2>/dev/null ||:
+# The released holder drains the rest of dist_t; it has to finish before S3 arms the failpoint.
+wait $HOLD_PID 2>/dev/null ||:
 echo "S2 killed: $(killed_with_394 "${Q2}")"
-$CLICKHOUSE_CLIENT --query "SYSTEM STOP DISTRIBUTED SENDS dist_t"
 
 # S3: same as S1 on the batching path, where the send loop walks the files of one batch.
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT ${FP}"

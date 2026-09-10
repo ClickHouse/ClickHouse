@@ -86,7 +86,11 @@ void writeRemoteConvert(
     /// file instead of at the end of the backlog. No-op off-query, which is what the background
     /// sender is, so it can never abort a background send.
     CurrentThread::checkIfNotCancelled();
-    FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_pause_before_send);
+
+    /// Query-driven sends only: the fail point is process-global, so pausing a background sender
+    /// would freeze it on behalf of a waiter synchronising on an entirely different table.
+    if (CurrentThread::tryGetQueryContext())
+        FailPointInjection::pauseFailPoint(FailPoints::distributed_async_insert_pause_before_send);
 
     if (remote.getHeader().empty())
     {
