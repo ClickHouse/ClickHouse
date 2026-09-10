@@ -19,6 +19,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
+#include <Processors/QueryPlan/GatherReceiveStep.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
@@ -340,6 +341,42 @@ TEST(ShuffleExchangeParallelism, ReceiverDeserializesOnEveryStream)
         if (processor->getName() == "StreamingExchangeDeserializingTransform")
             ++deserializers;
     EXPECT_EQ(deserializers, max_threads);
+
+    builder.resize(1);
+    auto sink = std::make_shared<CountingSink>(header, /*receives_packets_=*/ false);
+    builder.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    pipeline.setNumThreads(max_threads);
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+    EXPECT_EQ(sink->rows, senders * chunks_per_stream * rows_per_chunk);
+}
+
+/// The merge of partial aggregation results behind a gather expects every sender's buckets on one
+/// input stream, in order. So the gather receive keeps one stream per source, with the deserializer
+/// behind each, even with more threads than sources.
+TEST(ShuffleExchangeParallelism, GatherReceiveKeepsOneStreamPerSource)
+{
+    MainThreadStatus::getInstance();
+    tryRegisterFunctions();
+
+    constexpr size_t senders = 3;
+    constexpr size_t max_threads = 8;
+
+    auto context = Context::createCopy(getContext().context);
+    auto settings = makeSettings(context, max_threads);
+    auto header = makeHeader();
+
+    GatherReceiveStep receive(header, "exchange_0", senders, /*maintain_sort_description=*/ std::nullopt);
+    QueryPipelineBuilder builder;
+    receive.initializePipeline(builder, settings);
+    EXPECT_EQ(builder.getNumStreams(), senders);
+
+    size_t deserializers = 0;
+    for (const auto & processor : builder.getProcessors())
+        if (processor->getName() == "StreamingExchangeDeserializingTransform")
+            ++deserializers;
+    EXPECT_EQ(deserializers, senders);
 
     builder.resize(1);
     auto sink = std::make_shared<CountingSink>(header, /*receives_packets_=*/ false);
