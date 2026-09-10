@@ -102,7 +102,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
     extern const SettingsBool allow_experimental_database_unity_catalog;
-    extern const SettingsBool allow_experimental_database_unity_v2_catalog;
+    extern const SettingsBool allow_database_unity_v2_catalog;
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
@@ -1697,11 +1697,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::UNITY_V2:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_v2_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_database_unity_v2_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DataLake database with Unity v2 catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_unity_v2_catalog");
+                                    "DataLake database with Unity v2 catalog is in beta. "
+                                    "To allow its usage, enable setting allow_database_unity_v2_catalog");
                 }
 
                 /// `auth_header` is not wired through `UnityV2Catalog`; a bearer token goes into
@@ -1781,7 +1781,7 @@ You will need to enable the relevant settings below to use the `DataLakeCatalog`
 ```sql
 SET allow_experimental_database_iceberg = 1;
 SET allow_experimental_database_unity_catalog = 1;
-SET allow_experimental_database_unity_v2_catalog = 1;
+SET allow_database_unity_v2_catalog = 1;
 SET allow_experimental_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
@@ -1826,7 +1826,7 @@ See below sections for examples of using the `DataLakeCatalog` engine:
 * [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
 * Unity v2 Catalog
     Serves both Delta Lake and Iceberg tables from a single Unity Catalog, detecting the format
-    of each table. Can be used by enabling `allow_experimental_database_unity_v2_catalog`.
+    of each table. Can be used by enabling `allow_database_unity_v2_catalog`.
 ```sql
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog('https://<workspace>.cloud.databricks.com/api/2.1/unity-catalog')
