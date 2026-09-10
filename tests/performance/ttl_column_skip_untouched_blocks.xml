@@ -65,8 +65,8 @@
         SETTINGS max_threads = 1, max_insert_threads = 1
     </fill_query>
 
+    <fill_query>SYSTEM START MERGES ttl_column_skip_untouched_blocks_src</fill_query>
     <fill_query>OPTIMIZE TABLE ttl_column_skip_untouched_blocks_src FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
-    <fill_query>SYSTEM STOP MERGES ttl_column_skip_untouched_blocks</fill_query>
 
     <query type="shell"><![CDATA[
         ${CLICKHOUSE_CLIENT} --query "
