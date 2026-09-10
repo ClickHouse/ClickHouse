@@ -121,13 +121,8 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
 }
 
-/// A mutation command's predicate and `UPDATE` expressions are stored as serialized SQL text and
-/// re-parsed on execution. Re-parsing resets any set-operation nodes (`UNION`/`INTERSECT`/`EXCEPT`)
-/// to their un-normalized form (`union_mode` becomes `UNION_DEFAULT` and the `is_normalized` flag is
-/// lost), which the analyzer rejects with "UNION mode UNION_DEFAULT must be normalized". Re-run the
-/// same normalization that `executeQuery` applies to top-level queries so set operators work inside
-/// mutations. The serialized text always carries explicit modes, so the `*_default_mode` fallbacks
-/// are not reached in practice; passing the current context settings just mirrors `executeQuery`.
+/// Stored SQL text always carries explicit modes, so the `*_default_mode` fallbacks are not reached in
+/// practice; passing the current context settings just mirrors `executeQuery`.
 void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
