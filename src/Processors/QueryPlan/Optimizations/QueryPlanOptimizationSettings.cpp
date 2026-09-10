@@ -391,15 +391,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
-
-
-    derive_not_null_filters_from_joins = from[Setting::query_plan_convert_outer_join_to_inner_join]
-        && from[Setting::query_plan_derive_not_null_filters_from_joins];
-
-    allow_derived_not_null_filters_execution = from[Setting::query_plan_allow_derived_not_null_filters_execution];
-
-    max_selectivity_for_not_null_filters_execution = from[Setting::query_plan_max_selectivity_for_not_null_filters_execution];
-    parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
