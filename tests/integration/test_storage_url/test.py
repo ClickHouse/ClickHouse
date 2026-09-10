@@ -835,6 +835,16 @@ def test_url_archive_brace_paths_are_filtered_before_metadata_probe():
         assert all("archive_braces" not in request for request in stats)
 
 
+def test_url_archive_member_glob_infers_compression_from_matched_file():
+    source = "http://resolver:8087/data/simple_archive.zip :: compressed*"
+    table_functions = [
+        f"url('{source}', 'CSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{source}', 'CSV', 'x UInt64')",
+    ]
+    for table_function in table_functions:
+        assert node1.query(f"SELECT sum(x) FROM {table_function}").strip() == "9"
+
+
 def test_url_cluster_archive_processing_modes_do_not_duplicate_members():
     source = "http://resolver:8087/data/multi_member_archive.zip :: *.tsv"
     for process_on_multiple_nodes in (0, 1):

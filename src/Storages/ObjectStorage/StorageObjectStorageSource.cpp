@@ -1394,7 +1394,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+            /// The configured member path can be a glob without a compression suffix. Infer `auto`
+            /// from the concrete member selected by `ArchiveIterator`, e.g. `compressed.csv.gz`.
+            compression_method = chooseCompressionMethod(object_info_in_archive->path_in_archive, configuration->compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
