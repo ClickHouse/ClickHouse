@@ -1,0 +1,48 @@
+---
+description: 'The URL database engine exposes URL-addressed data as tables.'
+sidebarTitle: 'URL'
+slug: /engines/database-engines/url
+title: 'URL'
+doc_type: 'reference'
+---
+
+The `URL` database engine treats table names as URLs and exposes the data at those URLs as tables. It uses the [`url`](/reference/table-functions/url) table function, which dispatches each URL to the appropriate backend, such as `file`, `s3`, HDFS, Azure Blob Storage, or HTTP.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE web_data
+ENGINE = URL([base_url]);
+```
+
+When `base_url` is specified, relative table names are resolved against it. Without a base URL, every table name must be a complete URL.
+
+## Usage {#usage}
+
+```sql
+CREATE DATABASE web_data
+ENGINE = URL('https://example.com/data/');
+
+SELECT * FROM web_data.`daily.csv`;
+```
+
+The database owns no table definitions. Each table is resolved from its URL when it is used, so its schema is inferred from the current data. Table names can also use a full URL, for example `web_data.`s3://bucket/data/events.parquet``.
+
+## Access control {#access-control}
+
+Reading a table requires a `READ` source grant for the resolved backend; writing requires the matching `WRITE` grant. For example:
+
+```sql
+GRANT READ ON URL TO user_name;
+GRANT READ, WRITE ON S3 TO user_name;
+```
+
+For a database with a `file://` base URL, a user needs `READ ON FILE`. On ClickHouse server, local files are additionally restricted to [`user_files_path`](/operations/server-configuration-parameters/settings#user_files_path).
+
+When [`table_engines_require_grant`](/reference/settings/server-settings/settings/access-control#table_engines_require_grant) is enabled, creating the database also requires the relevant `URL` source privilege. See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`url` table function](/reference/table-functions/url)
+- [Filesystem database engine](/reference/engines/database-engines/filesystem)
+- [S3 database engine](/reference/engines/database-engines/s3)

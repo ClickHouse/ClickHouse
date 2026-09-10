@@ -1,0 +1,32 @@
+---
+description: 'The Dictionary database engine exposes configured dictionaries as read-only tables.'
+sidebarTitle: 'Dictionary'
+slug: /engines/database-engines/dictionary
+title: 'Dictionary'
+doc_type: 'reference'
+---
+
+The `Dictionary` database engine exposes every configured [dictionary](/reference/statements/create/dictionary) as a read-only table. It is useful when a query needs to read or join dictionary data using ordinary table syntax.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE dictionaries
+ENGINE = Dictionary;
+```
+
+## Usage {#usage}
+
+After creating the database, use a configured dictionary name as the table name:
+
+```sql
+SELECT *
+FROM dictionaries.products;
+```
+
+The database has no tables of its own. Its tables are the dictionaries configured on the server, so creating, dropping, or altering tables in the database is not supported. Manage the dictionaries themselves with [`CREATE DICTIONARY`](/reference/statements/create/dictionary) or the server configuration.
+
+## See also {#see-also}
+
+- [Dictionaries](/dictionary)
+- [`Dictionary` table engine](/reference/engines/table-engines/special/dictionary)
