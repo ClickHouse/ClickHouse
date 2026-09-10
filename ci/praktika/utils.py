@@ -631,6 +631,16 @@ class Utils:
         return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
+    def timestamp_to_gh_str(timestamp):
+        """UTC timestamp as GitHub writes them, e.g. `2026-08-24T15:49:43Z`."""
+        return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    @staticmethod
+    def gh_str_to_datetime(gh_str):
+        """Parse a GitHub UTC timestamp (`2026-08-24T15:49:43Z`) tz-aware."""
+        return datetime.fromisoformat(gh_str.replace("Z", "+00:00"))
+
+    @staticmethod
     def get_failed_tests_number(description: str) -> Optional[int]:
         description = description.lower()
 

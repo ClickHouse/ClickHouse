@@ -158,11 +158,6 @@ public:
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
 
-    /// Whether the join emits left rows in the same order they arrive. HashJoin/DirectJoin/ConcurrentHashJoin
-    /// stream the probe side, so they do. PartialMergeJoin re-sorts left blocks by the join key, so it does not;
-    /// the read-in-order-through-join optimisation in optimizeReadInOrder.cpp must not propagate through such joins.
-    virtual bool preservesLeftBlockOrder() const { return true; }
-
     virtual IBlocksStreamPtr
         getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
 
@@ -187,9 +182,21 @@ public:
         return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
+    /// Whether the join emits left rows in their original stream order. Read-in-order relies on
+    /// this to keep the left sort property, so the default is fail-closed: a join has to opt in.
+    virtual bool preservesLeftBlockOrder() const { return false; }
+
     /// Notify the join that the query plan requires left-side read-in-order preservation.
     /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
     virtual void keepLeftPipelineInOrder() {}
+
+    /// Spilling under memory pressure, driven by `MemorySpillScheduler`. Asked once while the pipeline is
+    /// built, so do not look at runtime state here.
+    virtual bool canSpillToDisk() const { return false; }
+    /// How many bytes of the right side are still sitting in memory and could go to disk.
+    virtual size_t getSpillableBytes() const { return 0; }
+    /// Move the right side to disk at the next opportunity, at the latest when the build phase ends.
+    virtual void requestSpill() { }
 
     /// Called by `FillingRightJoinSideTransform` after all data is inserted in join.
     virtual void onBuildPhaseFinish() { }

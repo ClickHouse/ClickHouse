@@ -43,6 +43,7 @@ struct LocalQueryState
     UInt64 max_parser_backtracks = 0;
     bool allow_settings_after_format_in_insert = false;
     bool implicit_select = false;
+    bool allow_experimental_trino_dialect = false;
     String promql_database;
     String promql_table;
     Field promql_evaluation_time;
@@ -210,6 +211,11 @@ private:
 
     /// Returns true on executor timeout, meaning a retryable error.
     bool pollImpl();
+
+    /// Store the in-flight exception in `state->exception` (preserving its type and message)
+    /// so that it is delivered to the client as a `Protocol::Server::Exception` packet.
+    /// Must be called from within a catch block.
+    void captureCurrentException();
 
     bool needSendProgressOrMetrics();
     bool needSendLogs();
