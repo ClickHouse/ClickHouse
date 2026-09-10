@@ -105,6 +105,10 @@ StoragePtr StorageFactory::get(
         {
             name = "MaterializedView";
         }
+        else if (query.is_window_view)
+        {
+            name = "WindowView";
+        }
         else
         {
             if (!query.storage)
@@ -138,6 +142,14 @@ StoragePtr StorageFactory::get(
                     "Direct creation of tables with ENGINE MaterializedView "
                     "is not supported, use CREATE MATERIALIZED VIEW statement");
             }
+            if (name == "WindowView")
+            {
+                throw Exception(
+                    ErrorCodes::INCORRECT_QUERY,
+                    "Direct creation of tables with ENGINE WindowView "
+                    "is not supported, use CREATE WINDOW VIEW statement");
+            }
+
             auto it = storages.find(name);
             if (it == storages.end())
             {
@@ -194,11 +206,6 @@ StoragePtr StorageFactory::get(
                 check_feature(
                     "projections",
                     [](StorageFeatures features) { return features.supports_projections; });
-
-            if (query.sql_security)
-                check_feature(
-                    "SQL SECURITY clause",
-                    [](StorageFeatures features) { return features.supports_sql_security; });
         }
     }
 

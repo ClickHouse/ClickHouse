@@ -1,4 +1,3 @@
-#include <Common/StringUtils.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/AccessEntityIO.h>
 #include <Access/AccessChangesNotifier.h>
@@ -14,6 +13,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <base/range.h>
 #include <filesystem>
@@ -142,7 +142,7 @@ namespace
     String getListFilePath(const String & directory_path, AccessEntityType type)
     {
         String file_name = AccessEntityTypeInfo::get(type).plural_raw_name;
-        toLowerASCII(file_name);
+        boost::to_lower(file_name);
         return directory_path + file_name + ".list";
     }
 

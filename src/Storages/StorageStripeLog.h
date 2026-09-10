@@ -61,7 +61,6 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr local_context) override;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
 
@@ -84,10 +83,6 @@ private:
 
     /// Saves the index file.
     void saveIndices(const WriteLock &);
-
-    /// Saves the index file and the file sizes as one unit: either both are committed, or neither is
-    /// and the number of saved indices is left describing the index file as it stands.
-    void saveIndicesAndFileSizes(const WriteLock &);
 
     /// Removes all unsaved indices.
     void removeUnsavedIndices(const WriteLock &);

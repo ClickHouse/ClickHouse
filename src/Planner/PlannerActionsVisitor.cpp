@@ -94,22 +94,6 @@ String calculateActionNodeNameWithCastIfNeeded(const ConstantNode & constant_nod
     return buffer.str();
 }
 
-bool containsQueryOrUnionInSourceExpression(const QueryTreeNodePtr & node)
-{
-    if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
-        return true;
-
-    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression()
-        && containsQueryOrUnionInSourceExpression(constant->getSourceExpression()))
-        return true;
-
-    for (const auto & child : node->getChildren())
-        if (child && containsQueryOrUnionInSourceExpression(child))
-            return true;
-
-    return false;
-}
-
 class ActionNodeNameHelper
 {
 public:
@@ -195,7 +179,8 @@ public:
                 {
                     // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
                     if (constant_node.hasSourceExpression()
-                        && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+                        && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
                     {
                         if (constant_node.receivedFromInitiatorServer())
                             result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -265,31 +250,29 @@ public:
                     break;
                 }
 
-                /// Function tuple with enable_named_columns_in_function_tuple generates a named tuple
-                /// with element names taken from the argument aliases. The element names must be part
-                /// of the action node name in addition to the argument names appended below: the same
-                /// arguments with different aliases produce different result types, and different
-                /// arguments can have the same aliases (e.g. SELECT tuple(1 AS x), tuple(2 AS x)),
-                /// so neither the element names alone nor the argument names alone identify the action,
-                /// and actions with equal names are collapsed into one.
-                String named_tuple_element_names;
-                if (function_node.getFunctionName() == "tuple"
-                    && planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
+                if (planner_context.getQueryContext()->getSettingsRef()[Setting::enable_named_columns_in_function_tuple])
                 {
-                    if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
+                    /// Function "tuple" which generates named tuple should use argument aliases to construct its name.
+                    if (function_node.getFunctionName() == "tuple")
                     {
-                        if (type_tuple->hasExplicitNames())
+                        if (const DataTypeTuple * type_tuple = typeid_cast<const DataTypeTuple *>(function_node.getResultType().get()))
                         {
-                            const auto & names = type_tuple->getElementNames();
-                            size_t size = names.size();
-                            WriteBufferFromOwnString s;
-                            for (size_t i = 0; i < size; ++i)
+                            if (type_tuple->hasExplicitNames())
                             {
-                                if (i != 0)
-                                    s << ", ";
-                                s << backQuoteIfNeed(names[i]);
+                                const auto & names = type_tuple->getElementNames();
+                                size_t size = names.size();
+                                WriteBufferFromOwnString s;
+                                s << "tuple(";
+                                for (size_t i = 0; i < size; ++i)
+                                {
+                                    if (i != 0)
+                                        s << ", ";
+                                    s << backQuoteIfNeed(names[i]);
+                                }
+                                s << ")";
+                                result = s.str();
+                                break;
                             }
-                            named_tuple_element_names = s.str();
                         }
                     }
                 }
@@ -305,11 +288,6 @@ public:
 
                 WriteBufferFromOwnString buffer;
                 buffer << function_node.getFunctionName();
-
-                /// The names of the elements of a named tuple, written like function parameters:
-                /// tuple(`x`, `y`)(1_UInt8, 2_UInt8). Function tuple has no real parameters.
-                if (!named_tuple_element_names.empty())
-                    buffer << '(' << named_tuple_element_names << ')';
 
                 const auto & function_parameters_nodes = function_node.getParameters().getNodes();
 
@@ -379,15 +357,15 @@ public:
                 WriteBufferFromOwnString buffer;
 
                 const auto & lambda_node = node->as<LambdaNode &>();
-                const auto & lambda_argument_names = lambda_node.getArguments().getNames();
-                const auto & lambda_argument_types = lambda_node.getArguments().getTypes();
+                const auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
 
-                size_t lambda_arguments_nodes_size = lambda_argument_names.size();
+                size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
                 for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
                 {
-                    buffer << lambda_argument_names[i];
+                    const auto & lambda_argument_node = lambda_arguments_nodes[i];
+                    buffer << calculateActionNodeName(lambda_argument_node);
                     buffer << ' ';
-                    buffer << lambda_argument_types[i]->getName();
+                    buffer << lambda_argument_node->as<ColumnNode &>().getResultType()->getName();
 
                     if (i + 1 != lambda_arguments_nodes_size)
                         buffer << ", ";
@@ -548,7 +526,7 @@ public:
         return scope_node;
     }
 
-    bool containsNode(const std::string & node_name)
+    [[maybe_unused]] bool containsNode(const std::string & node_name)
     {
         return node_name_to_node.contains(node_name);
     }
@@ -858,16 +836,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         actions_stack[i].addInputColumnIfNecessary(column_node_name, column_node.getColumnType());
 
         auto column_source = column_node.getColumnSourceOrNull();
-        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+        if (column_source &&
+            column_source->getNodeType() == QueryTreeNodeType::LAMBDA &&
+            actions_stack[i].getScopeNode().get() == column_source.get())
         {
-            /// Lambda argument columns are sourced from the lambda's arguments node,
-            /// while the scope node on the actions stack is the owning lambda itself.
-            const auto & scope_node = actions_stack[i].getScopeNode();
-            if (scope_node && scope_node->getNodeType() == QueryTreeNodeType::LAMBDA &&
-                &scope_node->as<LambdaNode &>().getArguments() == column_source.get())
-            {
-                return {column_node_name, Levels(i)};
-            }
+            return {column_node_name, Levels(i)};
         }
 
         /// When a table column's name collides with a lambda argument name (possible
@@ -885,7 +858,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         if (scope && scope->getNodeType() == QueryTreeNodeType::LAMBDA)
         {
             const auto & lambda_node = scope->as<LambdaNode &>();
-            const auto & arg_names = lambda_node.getArguments().getNames();
+            const auto & arg_names = lambda_node.getArgumentNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
                 const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
@@ -917,7 +890,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                     if (outer_scope && outer_scope->getNodeType() == QueryTreeNodeType::LAMBDA)
                     {
                         const auto & outer_lambda = outer_scope->as<LambdaNode &>();
-                        const auto & outer_arg_names = outer_lambda.getArguments().getNames();
+                        const auto & outer_arg_names = outer_lambda.getArgumentNames();
                         outer_lambda_shadows = std::find(outer_arg_names.begin(), outer_arg_names.end(), column_node_name) != outer_arg_names.end();
                     }
 
@@ -1003,7 +976,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
         // Need to check if constant folded from QueryNode/UnionNode until https://github.com/ClickHouse/ClickHouse/issues/60847 is fixed.
         if (constant_node.hasSourceExpression()
-            && !containsQueryOrUnionInSourceExpression(constant_node.getSourceExpression()))
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::QUERY
+            && constant_node.getSourceExpression()->getNodeType() != QueryTreeNodeType::UNION)
         {
             if (constant_node.receivedFromInitiatorServer())
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
@@ -1036,14 +1010,17 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             "Lambda {} is not resolved during query analysis",
             lambda_node.formatASTForErrorMessage());
 
-    const auto & lambda_argument_names = lambda_node.getArguments().getNames();
-    const auto & lambda_argument_types = lambda_node.getArguments().getTypes();
-    size_t lambda_arguments_nodes_size = lambda_argument_names.size();
+    auto & lambda_arguments_nodes = lambda_node.getArguments().getNodes();
+    size_t lambda_arguments_nodes_size = lambda_arguments_nodes.size();
 
     NamesAndTypesList lambda_arguments_names_and_types;
 
     for (size_t i = 0; i < lambda_arguments_nodes_size; ++i)
-        lambda_arguments_names_and_types.emplace_back(lambda_argument_names[i], lambda_argument_types[i]);
+    {
+        const auto & lambda_argument_name = lambda_node.getArgumentNames().at(i);
+        auto lambda_argument_type = lambda_arguments_nodes[i]->getResultType();
+        lambda_arguments_names_and_types.emplace_back(lambda_argument_name, std::move(lambda_argument_type));
+    }
 
     ActionsDAG lambda_actions_dag;
     actions_stack.emplace_back(lambda_actions_dag, node);
@@ -1059,6 +1036,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     actions_stack.pop_back();
     levels.reset(actions_stack.size());
     size_t level = levels.max();
+
+    const auto & lambda_argument_names = lambda_node.getArgumentNames();
 
     for (const auto & required_column_name : required_column_names)
     {
@@ -1260,22 +1239,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (function_node.getFunctionName() == "exists")
         return visitExistsFunction(node);
 
-    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
-
-    /// Fast path for the no-lambda case: when there is a single actions scope, an expression that
-    /// has already been built can be reused as-is instead of re-traversing it. With the analyzer,
-    /// WITH-aliases are shared by pointer in the query tree (a DAG), so without this we would
-    /// re-visit shared subtrees once per reference, which is exponential for deeply nested aliases.
-    /// Keying on the action node name also reuses identical repeated subexpressions that are not
-    /// aliased. Lambda scopes (actions_stack.size() > 1) are intentionally excluded, because the
-    /// captured Levels must be recomputed per scope.
-    if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
-        return {function_node_name, Levels(0)};
-
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
     if (isNameOfInFunction(function_node.getFunctionName()))
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
+
+    auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
      * If we have already visited some expression, we don't need to revisit it or its arguments again.

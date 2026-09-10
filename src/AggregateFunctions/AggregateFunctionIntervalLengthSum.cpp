@@ -1,7 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 
 #include <unordered_set>
@@ -181,8 +179,8 @@ private:
 public:
     String getName() const override { return "intervalLengthSum"; }
 
-    explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments, const Array & parameters_)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, parameters_, createResultType())
+    explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {}, createResultType())
     {
     }
 
@@ -191,17 +189,6 @@ public:
         if constexpr (is_floating_point<T>)
             return std::make_shared<DataTypeFloat64>();
         return std::make_shared<DataTypeUInt64>();
-    }
-
-    /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
-    /// parameterless states share one representation and stay Merge-/CAST-compatible.
-    DataTypePtr getNormalizedStateType() const override
-    {
-        DataTypes normalized_argument_types;
-        normalized_argument_types.reserve(this->argument_types.size());
-        for (const auto & arg : this->argument_types)
-            normalized_argument_types.emplace_back(arg->getNormalizedType());
-        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -222,7 +209,7 @@ public:
         this->data(place).add(begin, end);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -249,7 +236,7 @@ public:
 
 template <template <typename> class Data>
 AggregateFunctionPtr
-createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
+createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
 {
     if (arguments.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -271,7 +258,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
                             "be native integral type, Date/DateTime or Float", arg->getName(), name);
     }
 
-    AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionIntervalLengthSum, Data>(*arguments[0], arguments, parameters));
+    AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionIntervalLengthSum, Data>(*arguments[0], arguments));
 
     if (res)
         return res;
@@ -313,7 +300,7 @@ SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, en
         )",
         R"(
 ┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
-│ a  │            3.0999999046325684 │ Float64                                   │
+│ a  │                           3.1 │ Float64                                   │
 └────┴───────────────────────────────┴───────────────────────────────────────────┘
         )"
     },
