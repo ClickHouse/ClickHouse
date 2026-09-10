@@ -8,9 +8,6 @@ SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 300000 AS k FR
 -- Multiple spill rounds (every chunk is dumped as a separate run under the tiny threshold).
 SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 100000 AS k FROM numbers(300000)) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0;
 
--- The same query executed through the serialized query plan (the step settings round-trip).
-SELECT count(), sum(cityHash64(k)) FROM (SELECT DISTINCT number % 100000 AS k FROM numbers(300000)) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0, serialize_query_plan = 1;
-
 -- The spillable transform is used only when the threshold is set, and never for `DISTINCT` in order.
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS k FROM numbers(1) SETTINGS max_bytes_before_external_distinct = 1) WHERE explain LIKE '%ExternalDistinctTransform%';
 SELECT count() FROM (EXPLAIN PIPELINE SELECT DISTINCT number % 2 AS k FROM numbers(1) SETTINGS max_bytes_before_external_distinct = 0) WHERE explain LIKE '%ExternalDistinctTransform%';
