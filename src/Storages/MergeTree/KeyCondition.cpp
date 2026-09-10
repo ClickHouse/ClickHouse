@@ -4601,6 +4601,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return false;
         }
 
+        /// After every conversion above, this is the value that becomes a range endpoint. The `Field`
+        /// total order puts a `NaN` after all finite values, which SQL comparison does not follow.
+        if (anyFieldSatisfies(const_value, isNaNField))
+            return false;
+
         const auto atom_it = atom_map.find(func_name);
 
         out.key_columns.push_back(key_column_num);
@@ -4614,10 +4619,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
         return atom_it->second(out, const_value);
     }
-    if (node.tryGetConstant(const_value, const_type))
+    /// For cases where it says, for example, `WHERE 0 AND something`.
+    /// A constant whose type has no boolean reading (`String`, `Decimal`, a wide integer) can only
+    /// reach a condition position inside `indexHint`, which never evaluates its arguments, so it
+    /// states nothing about the data and must leave the atom unknown.
+    if (node.tryGetConstant(const_value, const_type) && const_type->canBeUsedInBooleanContext())
     {
-        /// For cases where it says, for example, `WHERE 0 AND something`
-
         if (const_value.isNull())
         {
             out.function = RPNElement::ALWAYS_FALSE;

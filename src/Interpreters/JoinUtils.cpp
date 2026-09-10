@@ -231,7 +231,8 @@ static bool hasNullableLowCardinalityTupleElement(const DataTypePtr & type)
         { return element->isLowCardinalityNullable() || hasNullableLowCardinalityTupleElement(element); });
 }
 
-DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
+DataTypePtr tryGetCommonSubtypeForJoinKeys(
+    const DataTypePtr & left_type, const DataTypePtr & right_type, bool force_support_conversion)
 {
     /// Row shares the ColumnTuple representation with Tuple, and casting a Row to a Tuple is
     /// supported, so lowering here lets the Tuple-only checks below accept Row keys as well.
@@ -249,7 +250,7 @@ DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const 
     if (!std::ranges::all_of(types, hasOnlyIntegerLeaves))
         return nullptr;
 
-    auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false);
+    auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false, force_support_conversion);
     /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be
     /// allowed inside Nullable, and the same holds for the elements of a Tuple, recursively.
     if (isNothing(subtype) || !subtype->canBeInsideNullable() || !isSupportedByAccurateCastOrNull(subtype))
