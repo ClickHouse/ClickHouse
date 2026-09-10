@@ -1,0 +1,8 @@
+-- local drop access
+1
+ok
+ok
+-- system.part_aggregation_cache access
+owner sees own entries: 1
+reader without SHOW TABLES sees: 0
+reader with SHOW TABLES sees: 1
