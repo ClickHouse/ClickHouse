@@ -28,7 +28,7 @@ do
     ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS ${table} SYNC;
     CREATE TABLE ${table} (id UInt64, v UInt64)
-    ENGINE = ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/${table}', '1')
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/${table}', '1')
     ORDER BY id PARTITION BY tuple()
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
 
