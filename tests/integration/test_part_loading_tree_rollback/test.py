@@ -535,9 +535,10 @@ def test_refresh_disk_contains(committed_part_copy):
       all_1_2_1_0  level 1, mut 0, blocks 1-2  committed, contained in 1-4
       all_3_4_1_0  level 1, mut 0, blocks 3-4  committed, contained in 1-4
 
-    Committing the rolled-back top-level node instead of skipping it would reset it to `PreActive`,
-    which is a re-activation of a part that was never committed, and would leave both children
-    covered by it and invisible to queries.
+    Committing the rolled-back top-level node instead of skipping it puts it back into `PreActive`
+    and then throws `LOGICAL_ERROR` out of `assertHasVersionMetadata`, which accepts only a
+    non-transactional creation TID under the null transaction the refresh commits with. The refresh
+    therefore fails, the committed children stay hidden, and a debug or sanitizer build aborts.
     """
     table, disk, store = create_readonly_reader("contains")
 
