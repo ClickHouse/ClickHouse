@@ -7,6 +7,10 @@ SET send_logs_level = 'error';
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_2:Identifier};
+DROP TABLE IF EXISTS rename_db_unqualified_src;
+
+-- A same-named table in the current database: the target the dependency must never move to.
+CREATE TABLE rename_db_unqualified_src (id UInt64) ENGINE = MergeTree ORDER BY id;
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic;
 USE {CLICKHOUSE_DATABASE_1:Identifier};
@@ -35,6 +39,10 @@ RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Ide
 SELECT 'after rename', arraySort(arrayMap((d, t) -> concat(multiIf(d = {CLICKHOUSE_DATABASE_1:String}, 'db1', d = {CLICKHOUSE_DATABASE_2:String}, 'db2', d), '.', t), dependencies_database, dependencies_table))
 FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 'rename_db_unqualified_src';
 
+-- The edge follows the view into the new database, it does not land on the same-named table elsewhere.
+SELECT 'same-named table elsewhere', dependencies_table
+FROM system.tables WHERE database = currentDatabase() AND name = 'rename_db_unqualified_src';
+
 -- An unqualified source is resolved against the current database, so read the view from its own database:
 -- the row it returns comes from the table the re-keyed edge points at.
 DROP TEMPORARY TABLE rename_db_unqualified_src;
@@ -54,3 +62,4 @@ SELECT 'after drop', arraySort(arrayMap((d, t) -> concat(multiIf(d = {CLICKHOUSE
 FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 'rename_db_unqualified_src';
 
 DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
+DROP TABLE rename_db_unqualified_src;
