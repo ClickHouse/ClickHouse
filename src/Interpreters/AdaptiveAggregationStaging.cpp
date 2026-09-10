@@ -147,7 +147,7 @@ void concatenateStagedKeys(StagedChunk::StagedKeys & keys, const std::vector<Mut
     for (const auto & mini : minis)
         total_key_bytes += mini->keys.key_bytes.size();
 
-    keys.routing_hashes.resize(total);
+    keys.routing_hashes.resize_exact(total);
     forEachPartitionedChunkRange(
         num_buckets, minis.size(), stagedOffsets(minis),
         [&](size_t source, size_t begin, size_t length, size_t destination)
@@ -157,8 +157,8 @@ void concatenateStagedKeys(StagedChunk::StagedKeys & keys, const std::vector<Mut
 
     keys.fixed_key_size = minis.front()->keys.fixed_key_size;
     if (!keys.fixed_key_size)
-        keys.key_offsets.resize(total + 1);
-    keys.key_bytes.resize(total_key_bytes);
+        keys.key_offsets.resize_exact(total + 1);
+    keys.key_bytes.resize_exact(total_key_bytes);
     {
         UInt64 byte_pos = 0;
         forEachPartitionedChunkRange(
@@ -186,7 +186,7 @@ void concatenateCountChunks(const std::vector<MutableStagedChunkPtr> & minis, St
     concatenateStagedKeys(chunk.keys, minis);
 
     auto & multiplicities = chunk.payload.emplace<StagedChunk::CountPayload>().multiplicities;
-    multiplicities.resize(chunk.keys.size());
+    multiplicities.resize_exact(chunk.keys.size());
     forEachPartitionedChunkRange(
         ADAPTIVE_AGGREGATION_NUM_BUCKETS, minis.size(), stagedOffsets(minis),
         [&](size_t source, size_t begin, size_t length, size_t destination)
@@ -286,7 +286,7 @@ MutableStagedChunkPtr StagedChunkConverter::flush()
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealedChunks);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, input_records - keys.size());
 
-    static const auto log = getLogger("Aggregator");
+    static const auto log = getLogger("StagedChunkConverter");
     LOG_TRACE(
         log,
         "Adaptive aggregation: coalesced {} staged batches into one chunk of {} records",
@@ -320,11 +320,11 @@ void StagedChunkConverter::coalesceCountChunksWithDeduplication(
     auto & keys = chunk.keys;
     auto & multiplicities = chunk.payload.emplace<StagedChunk::CountPayload>().multiplicities;
     keys.fixed_key_size = minis.front()->keys.fixed_key_size;
-    keys.routing_hashes.resize(total);
-    multiplicities.resize(total);
+    keys.routing_hashes.resize_exact(total);
+    multiplicities.resize_exact(total);
     if (!keys.fixed_key_size)
-        keys.key_offsets.resize(total + 1);
-    keys.key_bytes.resize(total_key_bytes);
+        keys.key_offsets.resize_exact(total + 1);
+    keys.key_bytes.resize_exact(total_key_bytes);
 
     /// Group each bucket's records by a few hash bits before comparing keys. Repeated keys
     /// fall in the same group, so deduplication only scans that group's surviving records.

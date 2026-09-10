@@ -234,11 +234,12 @@ void NO_INLINE StagedChunkConverter::buildCountChunk(
     auto & multiplicities = block.payload.emplace<StagedChunk::CountPayload>().multiplicities;
     if constexpr (!adaptive_key_stages_bytes<SharedKey>)
         keys.fixed_key_size = sizeof(SharedKey);
-    keys.routing_hashes.resize(total);
-    multiplicities.resize(total);
+    /// Deduplication can shrink these buffers; their initial allocation needs no growth headroom.
+    keys.routing_hashes.resize_exact(total);
+    multiplicities.resize_exact(total);
     if constexpr (adaptive_key_stages_bytes<SharedKey>)
-        keys.key_offsets.resize(total + 1);
-    keys.key_bytes.resize(total_bytes);
+        keys.key_offsets.resize_exact(total + 1);
+    keys.key_bytes.resize_exact(total_bytes);
 
     size_t out = 0;
     UInt64 byte_pos = 0;

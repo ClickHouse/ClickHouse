@@ -61,8 +61,8 @@ struct StagedChunk
         /// keys. A fixed-size-key chunk carries no offsets: every position derives from
         /// `fixed_key_size`, which saves eight bytes per staged record.
         PaddedPODArray<UInt64> key_offsets;
-        /// The staged width of a fixed-size key - `sizeof` of the shared method's key type,
-        /// the exact width the kernels stage - or zero for variable-size keys.
+        /// Stores `sizeof` of the shared method's key type for fixed-size keys, matching the
+        /// width staged by the kernels. Variable-size keys use zero.
         UInt64 fixed_key_size = 0;
         std::array<UInt32, ADAPTIVE_AGGREGATION_NUM_BUCKETS + 1> bucket_offsets{};
 
@@ -73,9 +73,8 @@ struct StagedChunk
         std::string_view keyBytesAt(size_t i) const { return {key_bytes.data() + keyByteOffsetAt(i), keySizeAt(i)}; }
     };
 
-    /// Simple-count payload: the record is the key itself plus a run
-    /// length - `multiplicities[i]` is how many source rows record i represents (repeats of a
-    /// key collapse into one record at staging time).
+    /// Stores each count record's contribution in `multiplicities[i]`, the number of source
+    /// rows represented by record i. Repeated keys can collapse into one staged record.
     struct CountPayload
     {
         PaddedPODArray<UInt32> multiplicities;
