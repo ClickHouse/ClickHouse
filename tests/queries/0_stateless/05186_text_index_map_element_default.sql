@@ -63,6 +63,9 @@ SELECT count() FROM tab_str WHERE multiSearchAny(m['abc'], ['hello']) SETTINGS o
 SELECT count() FROM tab_str WHERE multiSearchAny(m['abc'], ['hello']) SETTINGS optimize_functions_to_subcolumns = 1;
 SELECT count() FROM tab_str WHERE m['abc'] = 'hello' SETTINGS force_data_skipping_indices = 'idx';
 
+SELECT '-- a set inside the subscript is prepared, not executed unready';
+SELECT count() FROM tab_str WHERE m[if(0 IN (SELECT number FROM numbers(1)), 'abc', 'zzz')] = 'hello';
+
 DROP TABLE tab_str;
 
 DROP TABLE IF EXISTS tab_key_escape;
@@ -156,6 +159,9 @@ INSERT INTO tab_values VALUES (map('abc', 'hello'));
 SELECT '-- the mapValues carrier reads the same default';
 SELECT count() FROM tab_values WHERE m['nokey'] = '';
 SELECT count() FROM tab_values WHERE m['abc'] = 'hello' SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT '-- and a set inside the subscript on that carrier too';
+SELECT count() FROM tab_values WHERE m[if(0 IN (SELECT number FROM numbers(1)), 'abc', 'zzz')] = 'hello';
 
 DROP TABLE tab_values;
 

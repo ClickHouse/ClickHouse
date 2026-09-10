@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnSet.h>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
@@ -524,7 +525,7 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
 /// granule mask claiming "nothing here matches" when the key term is absent, so it must not be used when the default
 /// matches; a negating atom builds the mirrored mask, claiming "everything here matches", so it must not be used when
 /// the default does not match. A shape this cannot evaluate declines the index, which only costs pruning.
-bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG::Node * predicate_node)
+bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG::Node * predicate_node, const ContextPtr & context)
 {
     const bool negating = function_name == "notEquals" || function_name == "notLike";
 
@@ -537,6 +538,25 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
     const auto & outputs = subdag.getOutputs();
     if (required_columns.size() != 1 || outputs.size() != 1)
         return true;
+
+    /// A Set the predicate reads is built later during execution, so it must be prepared before the evaluation below.
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return true;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(context);
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return true;
+    }
 
     const auto & required_column = required_columns.front();
     const auto output_name = outputs.front()->result_name;
@@ -634,7 +654,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 return false;
 
             /// `arrayElement` returns the map value type's default for a key the row does not have.
-            if (mapElementDefaultBreaksIndex(function_name, predicate_node))
+            if (mapElementDefaultBreaksIndex(function_name, predicate_node, key_node.getTreeContext().getQueryContext()))
                 return false;
 
             if (map_keys_index)
@@ -683,7 +703,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 return false;
 
             /// The subcolumn reads the map value type's default for an absent key, as `arrayElement` does.
-            if (mapElementDefaultBreaksIndex(function_name, predicate_node))
+            if (mapElementDefaultBreaksIndex(function_name, predicate_node, key_node.getTreeContext().getQueryContext()))
                 return false;
 
             if (map_keys_index)
