@@ -50,7 +50,7 @@ users:
         # is no password that matches it. It is not `no_password`, because a
         # server started with `allow_no_password: 0` refuses to parse a users
         # config that defines such a user (`UsersConfigParser.cpp`,
-        # `Authentication type no_password is not allowed`), and the export
+        # `Authentication type NO_PASSWORD is not allowed`), and the export
         # installs this file on servers of the tests that set it, e.g.
         # tests/integration/test_no_password_existing_user.
         password_sha256_hex: "a25c4b2ecd6f5f8bc9f3b06fb4dd41c6338c76f1d8fe1cd1d0e0ee0bcbaef0dd"
