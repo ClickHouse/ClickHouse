@@ -35,6 +35,7 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
@@ -43,8 +44,10 @@
 #include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
+#include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
+#include <limits>
 #include <numeric>
 
 namespace ProfileEvents
@@ -524,6 +527,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
+    positions_codec = text_index_header->positions_codec;
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, *dictionary_stream, state);
@@ -1165,7 +1169,7 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     if (token_info.header & HasPositions)
     {
         writeVarUInt(token_info.position_offset, ostr);
-        writeVarUInt(token_info.position_cardinality, ostr);
+        writeVarUInt(token_info.position_bytes, ostr);
     }
 
     /// Embedded postings will be serialized later into the dictionary block.
@@ -1183,7 +1187,7 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr)
+void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr)
 {
     /// `textIndexCreator` raises the version to one that can represent the codec
     /// and positions, so a violation here is a logical error, not a user error.
@@ -1199,7 +1203,12 @@ void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVers
         writeVarUInt(static_cast<UInt64>(posting_list_codec_type), ostr);
 
     if (version >= MergeTreeTextIndexSerializationVersion::V2_WithPositions)
+    {
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
+        /// Only a part that has positions carries their codec.
+        if (has_positions)
+            writeVarUInt(static_cast<UInt64>(positions_codec), ostr);
+    }
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
     /// The write path never calls optimize, so expect the raw columns here.
@@ -1242,6 +1251,16 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);
         header.has_positions = has_positions != 0;
+
+        if (header.has_positions)
+        {
+            UInt64 positions_codec = 0;
+            readVarUInt(positions_codec, istr);
+            if (positions_codec != static_cast<UInt64>(TextIndexPositionCodec::Encoding::BlockedPfor))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Unknown positions codec {} in text index header", positions_codec);
+            header.positions_codec = static_cast<UInt8>(positions_codec);
+        }
     }
 
     return header;
@@ -1278,9 +1297,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
     if (info.header & HasPositions)
     {
         readVarUInt(info.position_offset, istr);
-        UInt64 position_cardinality = 0;
-        readVarUInt(position_cardinality, istr);
-        info.position_cardinality = static_cast<UInt32>(position_cardinality);
+        readVarUInt(info.position_bytes, istr);
     }
 
     if (info.header & EmbeddedPostings)
@@ -1343,7 +1360,7 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     readVarUInt(header, istr);
     readVarUInt(cardinality, istr);
 
-    /// Position metadata is right after (header, cardinality), before posting data.
+    /// Position metadata (offset, bytes) is right after (header, cardinality).
     if (header & HasPositions)
     {
         ignoreVarUInt(istr);
@@ -1497,9 +1514,8 @@ DictionarySparseIndex serializeTokensAndPostings(
 
                 token_info.header |= PostingsSerialization::Flags::HasPositions;
                 token_info.position_offset = positions_stream->plain_hashing.count();
-                token_info.position_cardinality = static_cast<UInt32>(position_entries.size());
-
-                TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
+                TextIndexBlockedPositionsCodec::encode(position_entries, positions_stream->plain_hashing);
+                token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
             }
 
             TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
@@ -1549,7 +1565,9 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         postings_serialization,
         positions_stream);
 
-    TextIndexSerialization::serializeHeader(params.serialization_version, sparse_index_block, posting_list_codec_type, params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(
+        params.serialization_version, sparse_index_block, posting_list_codec_type, params.positions,
+        params.positions_codec, index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1660,11 +1678,11 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     char * data = arena->alloc(total_size) + pad_left;
 
     bool inserted = false;
-    TokenToPostingsBuilderMap::LookupResult it;
+    TokenToPostingsBuilderMap::LookupResult it{};
     for (const auto & filter_token : filter_tokens)
     {
         memcpy(data, filter_token.data(), filter_token.size());
-        std::string_view key(data, filter_token.size());
+        auto key = PackedStringRef::build(data, filter_token.size(), PackedStringRefHash{});
         data += filter_token.size();
 
         tokens_map.emplace(key, it, inserted);
@@ -1676,11 +1694,13 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
     bool inserted = false;
-    TokenToPostingsBuilderMap::LookupResult it;
+    TokenToPostingsBuilderMap::LookupResult it{};
+
+    auto packed_key = PackedStringRef::build(token.data(), token.size(), PackedStringRefHash{});
 
     if (postprocessor_drop_filter && !postprocessor_drop_filter->drop_on_match)
     {
-        it = tokens_map.find(token);
+        it = tokens_map.find(packed_key);
         if (!it)
             return;
 
@@ -1689,7 +1709,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     }
     else
     {
-        ArenaKeyHolder key_holder(token, *arena);
+        ArenaPackedStringHolder key_holder{packed_key, *arena};
         tokens_map.emplace(key_holder, it, inserted);
 
         if (postprocessor_drop_filter)
@@ -1708,7 +1728,7 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
 
         if (position_map)
         {
-            TokenToPositionListMap::LookupResult pos_it;
+            TokenToPositionListMap::LookupResult pos_it{};
             position_map->emplace(key_holder, pos_it, inserted);
             auto & positions_builder = pos_it->getMapped();
             positions_builder.add(static_cast<UInt32>(current_row), token_position);
@@ -1734,7 +1754,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        std::string_view token = key;
+        std::string_view token = static_cast<std::string_view>(key);
         if (mapped.isFiltered())
             return;
         chassert(!mapped.isEmpty());
@@ -1750,7 +1770,7 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
         size_t attached = 0;
         position_map->forEachValue([&](const auto & key, auto & mapped)
         {
-            const std::string_view token(key);
+            const std::string_view token(static_cast<std::string_view>(key));
             auto it = std::ranges::lower_bound(
                 sorted_tokens, token,
                 [](std::string_view lhs, std::string_view rhs) { return lhs < rhs; },
@@ -2193,6 +2213,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
         positions,
+        static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), /// not user-configurable yet
         std::move(preprocessor_ast),
         std::move(postprocessor_ast),
         serialization_version};

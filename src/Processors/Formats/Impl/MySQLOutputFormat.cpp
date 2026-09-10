@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -24,6 +25,11 @@ using namespace MySQLProtocol::ProtocolBinary;
 namespace ErrorCodes
 {
     extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace FailPoints
+{
+extern const char mysql_output_format_mid_loop_pause[];
 }
 
 MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
@@ -87,6 +93,9 @@ void MySQLOutputFormat::consume(Chunk chunk)
         {
             if (isCancelled())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+
+            if (row == 5)
+                FailPointInjection::pauseFailPoint(FailPoints::mysql_output_format_mid_loop_pause);
 
             ProtocolText::ResultSetRow row_packet(serializations, data_types, chunk.getColumns(), row);
             packet_endpoint->sendPacket(row_packet, false);

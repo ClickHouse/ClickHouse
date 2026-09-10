@@ -29,6 +29,14 @@
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
+
+#if defined(OS_SUNOS)
+/** illumos regset.h includes unprefixed macros for i386 gregset_t indices. These macros aren't used
+  * in ClickHouse, and conflict with `ProgressOption::ERR` and the `FS` namespace.
+  */
+#undef ERR
+#undef FS
+#endif
 #endif
 
 /** The stack trace of the throw that created an exception, recorded inside the `std::exception`
