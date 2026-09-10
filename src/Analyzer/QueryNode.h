@@ -102,9 +102,30 @@ public:
         return settings_changes;
     }
 
+    /// Get names of settings this query node's SETTINGS clause contributes to its context,
+    /// including via an applied profile. Sorted, for binary_search in contributesSetting().
+    const Names & getSettingsContributedNames() const
+    {
+        return settings_contributed_names;
+    }
+
+    /// Set query node settings contributed names. Caller must pass a sorted, deduplicated list.
+    void setSettingsContributedNames(Names settings_contributed_names_value)
+    {
+        settings_contributed_names = std::move(settings_contributed_names_value);
+    }
+
+    /// Returns true if this query node's own SETTINGS clause contributes `name` to its context,
+    /// either directly or through an applied profile.
+    bool contributesSetting(const std::string & name) const
+    {
+        return std::binary_search(settings_contributed_names.begin(), settings_contributed_names.end(), name);
+    }
+
     void clearSettingsChanges()
     {
         settings_changes.clear();
+        settings_contributed_names.clear();
     }
 
     /// Returns true if query node is subquery, false otherwise
@@ -732,6 +753,7 @@ private:
     Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
+    Names settings_contributed_names;
 
     static constexpr size_t with_child_index = 0;
     static constexpr size_t projection_child_index = 1;
