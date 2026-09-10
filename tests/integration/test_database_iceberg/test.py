@@ -415,6 +415,18 @@ def test_namespace_filter_pushdown(started_cluster):
         expected_ns1,
     )
 
+    # `IN (SELECT ...)`: the set of a subquery is only built when the pipeline runs, long after
+    # the catalog has been listed, so the filter extraction builds it on the spot. Without that
+    # the query silently falls back to listing the whole catalog.
+    subquery = " UNION ALL ".join(
+        f"SELECT '{namespace_1}.{t}'" for t in namespace_1_tables
+    )
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name IN ({subquery}) ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
 
 def test_check_database(started_cluster):
     node = started_cluster.instances["node1"]

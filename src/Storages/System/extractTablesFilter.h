@@ -10,7 +10,7 @@ namespace DB
 /// Derives what a query asks of the table names of the databases a system table enumerates, from
 /// its filter on the column that holds the table name (`name` in `system.tables`, `table` almost
 /// everywhere else). Recognizes `col = 'a'` and `col IN ('a', 'b')` - including through `OR`, and
-/// through an `IN` over a subquery once its set is ready - as an exact set of names, and
+/// through an `IN` over a subquery, whose set is built on the spot - as an exact set of names, and
 /// `col LIKE 'prefix%'` (or its analyzer rewrite `startsWith(col, 'prefix')`) as a pattern.
 ///
 /// A database uses the result to enumerate less than everything it holds. It is only ever a way

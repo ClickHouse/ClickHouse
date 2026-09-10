@@ -1,9 +1,14 @@
 #include <Storages/System/extractTablesFilter.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/misc.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/typeid_cast.h>
+
+#include <stack>
 
 namespace DB
 {
@@ -111,12 +116,70 @@ TablesFilter extractLikeFilter(const ActionsDAG::Node * predicate, const String 
     return {};
 }
 
+/// `name IN (SELECT …)` reaches filter analysis with its set not built yet: the subquery only runs
+/// when the pipeline does, and until then `evaluateExpressionOverConstantCondition` sees a
+/// `ColumnSet` it cannot read and gives up - so the enumeration degenerates to the full walk this
+/// is meant to avoid. Build such a set here, the way `system.users` and the `MergeTree` key
+/// condition already do. The subquery has to run for the filter anyway and its result is kept in
+/// the set, so nothing is executed twice.
+void buildSetsForInSubqueries(const ActionsDAG::Node * predicate, const ContextPtr & context)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::stack<const ActionsDAG::Node *> nodes;
+    nodes.push(predicate);
+
+    while (!nodes.empty())
+    {
+        const auto * node = nodes.top();
+        nodes.pop();
+        if (!node || !visited.insert(node).second)
+            continue;
+
+        for (const auto * child : node->children)
+            nodes.push(child);
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION
+            || !node->function_base
+            || node->children.size() != 2)
+            continue;
+
+        /// A `GLOBAL IN` set is deliberately left alone: `ReadFromRemote` has to attach the external
+        /// table to it first, and building it here would leave it created without explicit elements.
+        if (!functionIsInOperator(node->function_base->getName()))
+            continue;
+
+        const auto * set_node = skipAliases(node->children[1]);
+        if (!set_node || !set_node->column)
+            continue;
+
+        const IColumn * column = set_node->column.get();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+            column = &column_const->getDataColumn();
+
+        const auto * column_set = typeid_cast<const ColumnSet *>(column);
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set || future_set->get())
+            continue;
+
+        /// The build is a no-op once the subquery plan has been moved out of the set (that happens
+        /// during plan optimization, in `DelayedCreatingSetsStep::makePlansForSets`); then the set
+        /// stays unbuilt, the extraction below returns nothing, and the enumeration is not narrowed.
+        if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+            set_from_subquery->buildOrderedSetInplace(context);
+    }
+}
+
 }
 
 TablesFilter extractTablesFilter(const ActionsDAG::Node * predicate, const String & table_name_column, const ContextPtr & context)
 {
     if (!predicate)
         return {};
+
+    buildSetsForInSubqueries(predicate, context);
 
     /// An exact set of names is the most useful thing a database can be told, so look for it
     /// first; it also subsumes the plain `col = '…'` case.
@@ -131,6 +194,8 @@ std::function<bool(const String &)> extractNameFilter(
 {
     if (!predicate)
         return {};
+
+    buildSetsForInSubqueries(predicate, context);
 
     auto names = VirtualColumnUtils::extractConstantStringValuesForColumn(predicate, column_name, context, MAX_NAMES);
     if (!names)

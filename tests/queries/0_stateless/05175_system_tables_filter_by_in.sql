@@ -37,8 +37,14 @@ SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN ('
 SELECT name FROM system.tables WHERE database IN (currentDatabase(), 'no_such_database') AND name IN ('t_b') ORDER BY name;
 -- `table` is an alias of `name`.
 SELECT name FROM system.tables WHERE database = currentDatabase() AND table IN ('t_a', 't_b') ORDER BY name;
--- The names come from a set that is only built at execution time.
+-- The names come from a subquery, whose set is only built when the pipeline runs; the filter
+-- extraction builds it on the spot to narrow the enumeration.
 SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN (SELECT 't_' || arrayJoin(['a', 'c'])) ORDER BY name;
+-- The same, with the in-place build of the set turned off, so the enumeration is not narrowed at
+-- all: the rows must be the same either way.
+SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN (SELECT 't_' || arrayJoin(['a', 'c'])) ORDER BY name SETTINGS use_index_for_in_with_subqueries = 0;
+-- A subquery over the very table being enumerated.
+SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN (SELECT name FROM system.tables WHERE database = currentDatabase() AND name != 't_a') AND name LIKE 't\_%' ORDER BY name;
 -- Shapes that pin nothing down must still return everything they should.
 SELECT name FROM system.tables WHERE database = currentDatabase() AND name LIKE 't\_%' AND name NOT IN ('t_a', 't_b') ORDER BY name;
 SELECT name FROM system.tables WHERE database = currentDatabase() AND (name IN ('t_a') OR name LIKE 't\_c') ORDER BY name;
