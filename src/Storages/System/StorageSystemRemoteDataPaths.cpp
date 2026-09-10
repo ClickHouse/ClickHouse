@@ -271,39 +271,12 @@ bool SystemRemoteDataPathsSource::nextDisk()
 
         auto & current = paths_stack.emplace_back();
 
-        if (metadata_type == MetadataStorageType::PlainRewritable)
-        {
-            /// The layout is the same as for local metadata, so `store`/`data` would enumerate the same
-            /// tables. Traverse from the disk root instead: that is the only way to see an object which is
-            /// no longer reachable through them, such as the temporary directory a `removeRecursive`
-            /// relocates a table to and then fails to delete. Those orphans are the reason this table
-            /// covers plain_rewritable at all.
-            ///
-            /// `shadow` is the one root that is not taken unconditionally: it holds frozen data and is
-            /// gated on `traverse_shadow_remote_data_paths`, exactly as in the branch below.
-            const bool traverse_shadow = context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths];
-            std::vector<std::string> roots;
-            disk->listFiles("", roots);
-            for (const auto & root : roots)
-            {
-                if (root == "shadow")
-                {
-                    if (traverse_shadow)
-                        current.names.push_back({root, skipPredicateForShadowDir});
-                    continue;
-                }
-                current.names.push_back({root, nullptr});
-            }
-        }
-        else
-        {
-            /// Add dirs that we want to traverse. It's ok if some of them don't exist because traversal logic handles
-            /// cases when children of a directory get deleted while traversal is running.
-            current.names.push_back({"store", nullptr});
-            current.names.push_back({"data", nullptr});
-            if (context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths])
-                current.names.push_back({"shadow", skipPredicateForShadowDir});
-        }
+        /// Add dirs that we want to traverse. It's ok if some of them don't exist because traversal logic handles
+        /// cases when children of a directory get deleted while traversal is running.
+        current.names.push_back({"store", nullptr});
+        current.names.push_back({"data", nullptr});
+        if (context->getSettingsRef()[Setting::traverse_shadow_remote_data_paths])
+            current.names.push_back({"shadow", skipPredicateForShadowDir});
 
         /// Start and move to the first file
         current.position = -1;
