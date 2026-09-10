@@ -12,6 +12,7 @@ namespace Setting
     extern const SettingsBool allow_preliminary_distinct_abandoning;
     extern const SettingsBool allow_parallel_final_distinct;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 min_outstreams_per_resize_after_split;
@@ -30,6 +31,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     max_threads = getMaxThreadsForAvailableMemory(
         from->getSettingsRef()[Setting::max_threads],
         settings[Setting::max_threads_min_free_memory_per_thread]);
+    max_block_size = settings[Setting::max_block_size];
     aggregation_memory_efficient_merge_threads = from->getSettingsRef()[Setting::aggregation_memory_efficient_merge_threads];
     min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];

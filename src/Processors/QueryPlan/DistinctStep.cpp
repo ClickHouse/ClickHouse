@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
@@ -97,6 +98,14 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             ColumnNumbers key_columns(num_keys);
             for (size_t i = 0; i < num_keys; ++i)
                 key_columns[i] = columns.empty() ? i : header.getPositionByName(columns[i]);
+
+            /// The scatter splits every chunk into one per partition, and the preliminary DISTINCT before it emits
+            /// small chunks whenever it collapses its input (low cardinality, or ranges of a sorted input). Without
+            /// squashing, the per-chunk overhead of the partitions then dominates and makes the step several times
+            /// slower than the single-stream merge.
+            static constexpr size_t min_block_size_bytes = 1024 * 1024;
+            pipeline.addSimpleTransform([&](const SharedHeader & squash_header)
+                { return std::make_shared<SimpleSquashingChunksTransform>(squash_header, settings.max_block_size, min_block_size_bytes); });
             scatterByPartition(pipeline, num_partitions, key_columns);
         }
         else
