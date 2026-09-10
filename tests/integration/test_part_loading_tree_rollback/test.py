@@ -401,6 +401,23 @@ def container_bash(command):
     return node.exec_in_container(["bash", "-c", command], privileged=True)
 
 
+def part_states(table):
+    """
+    Every part `table` has in its parts index, with its state.
+
+    `_state` has to be in the SELECT list: without that virtual column `system.parts` reports at
+    most `Active` and `Outdated` parts (`StoragesInfo::getParts`), and a rolled-back part on a
+    read-only table is in neither state - every refresh ends in `grabOldParts(true)`, which moves it
+    to `Deleting`, while nothing on a read-only table ever finishes the removal that would take it
+    out of the index.
+    """
+    rows = node.query(
+        "SELECT name, _state FROM system.parts"
+        f" WHERE database = 'default' AND table = '{table}'"
+    ).split()
+    return dict(zip(rows[::2], rows[1::2]))
+
+
 def object_dir_of(store, part):
     """
     The directory `plain_rewritable` mapped the logical part name `part` to, read from the
@@ -409,13 +426,13 @@ def object_dir_of(store, part):
     `system.parts.path` cannot answer this: it reports the logical path (`<disk root>/<part>/`),
     which is the key of the mapping rather than the directory the files are in.
     """
+    # `-x` still matches although the mapping files carry no trailing newline, and `|| true`
+    # keeps a missing mapping an assertion below rather than an opaque non-zero exit code.
     found = container_bash(
-        f"for m in {store}__meta/*/prefix.path; do"
-        f'   [ "$(cat "$m")" = "{part}/" ] && basename "$(dirname "$m")";'
-        f" done"
+        f"grep -Fxl '{part}/' {store}__meta/*/prefix.path || true"
     ).split()
     assert len(found) == 1, f"expected one directory mapped to {part}, got {found}"
-    return found[0]
+    return found[0].rsplit("/", 2)[-2]
 
 
 @pytest.fixture(scope="module")
@@ -429,7 +446,7 @@ def committed_part_copy(started_cluster):
     injected only after a reader is loaded, which is what leaves the refresh path, rather than the
     startup loader, responsible for surfacing it.
     """
-    container_bash(f"rm -rf {REFRESH_DISK_ROOT} && mkdir -m 777 -p {REFRESH_DISK_ROOT}")
+    container_bash(f"rm -rf {REFRESH_DISK_ROOT} && mkdir -p {REFRESH_DISK_ROOT}")
     node.query("DROP TABLE IF EXISTS plt_refresh_writer SYNC")
     node.query(
         "CREATE TABLE plt_refresh_writer (x UInt32) ENGINE = MergeTree ORDER BY x"
@@ -491,7 +508,7 @@ def create_readonly_reader(name):
     suffix = f"{name}_{next(reader_seq)}"
     table = f"plt_refresh_{suffix}"
     disk = f"plt_refresh_disk_{suffix}"
-    container_bash(f"mkdir -m 777 -p {REFRESH_DISK_ROOT}/{suffix}/__meta")
+    container_bash(f"mkdir -p {REFRESH_DISK_ROOT}/{suffix}/__meta")
     node.query(
         f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x"
         " SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0, table_disk = true,"
@@ -549,9 +566,9 @@ def test_refresh_disk_contains_across_refreshes(committed_part_copy):
 
     inject_part(store, stage_part(committed_part_copy, "all_1_4_2_1", rolled_back=True))
     node.query(f"SYSTEM RESTART DISK {disk}")
-    # Indexed, not active: this is the state the next refresh has to look past, so asserting the
-    # part is still there is what keeps the second half of the test from becoming vacuous.
-    assert all_parts(table) == {"all_1_4_2_1": False}
+    # In the index and not active: this is the state the next refresh has to look past, so asserting
+    # the part is still there is what keeps the second half of the test from passing vacuously.
+    assert part_states(table) == {"all_1_4_2_1": "Deleting"}
 
     inject_part(store, stage_part(committed_part_copy, "all_1_2_1_0"))
     inject_part(store, stage_part(committed_part_copy, "all_3_4_1_0"))
@@ -579,8 +596,9 @@ def test_refresh_disk_broken_covering_across_refreshes(committed_part_copy):
     inject_part(store, stage_part(committed_part_copy, "all_1_8_3_1", broken=True))
     inject_part(store, stage_part(committed_part_copy, "all_1_4_2_1", rolled_back=True))
     node.query(f"SYSTEM RESTART DISK {disk}")
-    # The broken covering part is absent from the index; the rolled-back one is in it, not active.
-    assert all_parts(table) == {"all_1_4_2_1": False}
+    # The broken covering part never reached the index; the rolled-back one is in it, not active.
+    # Both halves of that are what the next refresh has to handle, so both are asserted here.
+    assert part_states(table) == {"all_1_4_2_1": "Deleting"}
 
     inject_part(store, stage_part(committed_part_copy, "all_1_2_1_0"))
     node.query(f"SYSTEM RESTART DISK {disk}")
