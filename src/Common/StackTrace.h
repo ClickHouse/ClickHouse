@@ -6,6 +6,7 @@
 #include <Common/FramePointers.h>
 
 #include <string>
+#include <string_view>
 #include <array>
 #include <exception>
 #include <optional>
@@ -28,6 +29,14 @@
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
+
+#if defined(OS_SUNOS)
+/** illumos regset.h includes unprefixed macros for i386 gregset_t indices. These macros aren't used
+  * in ClickHouse, and conflict with `ProgressOption::ERR` and the `FS` namespace.
+  */
+#undef ERR
+#undef FS
+#endif
 #endif
 
 /** The stack trace of the throw that created an exception, recorded inside the `std::exception`
@@ -111,6 +120,34 @@ public:
         std::function<void(const Frame &)> callback,
         bool fatal);
 
+    /// Which address space `ResolvedAddress::address` is in. An offset alone does not identify an
+    /// instruction: the offset ranges of the main executable and of the loaded libraries overlap.
+    enum class AddressKind
+    {
+        MainObject,     /// Offset inside the main executable.
+        OtherObject,    /// Offset inside the loaded object named by `object`.
+        UnknownMapping, /// No loaded object contains the address, so it is the runtime address.
+        Unsupported,    /// The platform keeps runtime addresses, so it is the argument unchanged.
+    };
+
+    struct ResolvedAddress
+    {
+        const void * address = nullptr;
+        /// Owned by the `SymbolIndex` singleton, whose object list is built once and never resized.
+        /// Empty unless `kind` is `OtherObject`.
+        std::string_view object;
+        AddressKind kind = AddressKind::Unsupported;
+    };
+
+    /// Converts a runtime instruction address into the ASLR-independent representation that the
+    /// symbolized trace lines use, so that it can be fed to `addr2line` or `llvm-symbolizer`.
+    static ResolvedAddress resolveAddress(const void * virtual_addr);
+
+    /// The form to store an address in a bare integer column: an address in the main executable
+    /// becomes its file offset, which stays valid across restarts and hosts, while any other address
+    /// is kept as is, because a stored offset into a library reads as a main executable one.
+    static UInt64 resolveAddressForStorage(const void * virtual_addr);
+
     void toStringEveryLine(std::function<void(std::string_view)> callback) const;
     static void toStringEveryLine(const FramePointers & frame_pointers, std::function<void(std::string_view)> callback);
     static void toStringEveryLine(void ** frame_pointers_raw, size_t offset, size_t size, std::function<void(std::string_view)> callback);
@@ -119,6 +156,11 @@ public:
     /// If you turn off addresses, it will be more secure, but we will be unable to help you with debugging.
     /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
     static void setShowAddresses(bool show);
+
+    /// Renders the demangled name of a frame for display: shortens well-known libc++ spellings, and returns
+    /// "?" for frames whose name carries no information. @param file is the source location of the frame.
+    /// Public only so that it can be unit tested; use @c toStringEveryLine to format a stack trace.
+    static String collapseDemangledNames(std::optional<std::string_view> file, String symbol_name);
 
 protected:
     void tryCapture();

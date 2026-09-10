@@ -20,14 +20,19 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 控制用户是否可以修改与不同功能层级相关的设置。
 
-* `0` - 允许修改任何设置 (Experimental、Beta、production) 。
-* `1` - 仅允许修改 Beta 和 production 功能设置。对 Experimental 设置的修改将被拒绝。
-* `2` - 仅允许修改 production 功能设置。对 Experimental 或 Beta 设置的修改将被拒绝。
+* `0` - 允许修改任何设置 (Experimental、私有预览、Beta、production) 。
+* `1` - 仅允许修改私有预览、Beta 和 production 功能设置。对 Experimental 设置的修改将被拒绝。
+* `2` - 仅允许修改 Beta 和 production 功能设置。对 Experimental 或私有预览设置的修改将被拒绝。
+* `3` - 仅允许修改 production 功能设置。对 Experimental、私有预览或 Beta 设置的修改将被拒绝。
 
-这等同于对所有 `EXPERIMENTAL` / `BETA` 功能施加 `readonly` 约束。
+这等同于对所有 `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` 功能施加 `readonly` 约束。
 
 <Note>
   值为 &#96;0&#96;&#96; 表示可以修改所有设置。
+</Note>
+
+<Note>
+  `2` 之前表示“仅 production 设置”。现在它也允许 Beta 设置，因此，若某个配置将 `2` 固定为仅允许 production 设置，则必须使用 `3`。
 </Note>
 
 <div id="allow_impersonate_user">
@@ -42,6 +47,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 禁止创建未设置密码的用户，除非明确指定 &#39;IDENTIFIED WITH no&#95;password&#39;。
 
+* **默认值：** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -52,6 +59,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 设置是否允许使用不安全的 no&#95;password 密码类型。
 
+* **默认值：** `true`
+
 ```xml
 <allow_no_password>1</allow_no_password>
 ```
@@ -61,6 +70,8 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 </div>
 
 设置是否允许使用明文密码类型 (不安全) 。
+
+* **默认值：** `true`
 
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>

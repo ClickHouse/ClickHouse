@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
+#include <Common/PODArray_fwd.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -81,6 +82,14 @@ class SegmentedPostingListCodec
         uint32_t first_row_id = 0;
     };
 
+    /// A segment header together with its payload, which points either into the read
+    /// buffer or into the scratch buffer passed to `readSegment`.
+    struct SegmentData
+    {
+        Header header;
+        std::span<const std::byte> payload;
+    };
+
     /// In-memory descriptor of one segment inside `compressed_data`.
     struct SegmentDescriptor
     {
@@ -147,7 +156,11 @@ public:
     ///
     /// Decompression restores delta values and then performs an inclusive scan
     /// to reconstruct absolute row ids.
-    void decode(ReadBuffer & in, PostingList & postings);
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer);
+
+    /// The same, but appends the decoded row ids to the plain array,
+    /// decoding blocks directly into the array without a roaring bitmap.
+    void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer);
 
 private:
     void reset()
@@ -196,16 +209,18 @@ private:
     /// Also updates current segment metadata (count, max, payload size).
     void encodeBlock(std::span<uint32_t> segment);
 
-    /// Decode one compressed block into `current_segment` and reconstruct absolute row ids.
+    /// Decode one compressed block of `out.size()` row ids into `out` and reconstruct absolute row ids.
     ///
     /// - Delegates the block payload to `block_codec` (bitpacking reads a bits-width byte), which fills
-    ///   `current_segment` with delta values
+    ///   `out` with delta values
     /// - inclusive_scan converts deltas -> row ids using `prev_row_id` as initial prefix
     /// - Updates prev_row_id to the last decoded row id
-    /// Decodes into the `current_segment` member and advances `prev_row_id`.
-    void decodeBlock(std::span<const std::byte> & in, size_t count);
+    void decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out);
 
-    /// All segments
+    /// Reads a segment header and returns it together with the segment payload.
+    SegmentData readSegmentData(ReadBuffer & in, PaddedPODArray<char> & buffer);
+
+    /// All segments. Filled on encode only: decode reads the payload from the buffer passed to it.
     std::string compressed_data;
     /// Last encoded/decoded row id
     uint32_t prev_row_id = 0;
@@ -244,10 +259,15 @@ public:
     PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
 
     void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
-    void decode(ReadBuffer & in, PostingList & postings) const override;
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
 };
 
-/// A posting list codec that doesn't compress (no-op).
+/// A codec that applies no compression: a posting list block is stored as
+/// [VarUInt: number of bytes][portable serialization of a roaring bitmap].
+///
+/// Encoding is done by `PostingsSerialization`, which splits the posting list into blocks
+/// without copying the underlying roaring containers, so `encode` is not implemented here.
 class PostingListCodecNone : public IPostingListCodec
 {
 public:
@@ -256,7 +276,8 @@ public:
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
     void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
-    void decode(ReadBuffer &, PostingList &) const override {}
+    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
 };
 
 }

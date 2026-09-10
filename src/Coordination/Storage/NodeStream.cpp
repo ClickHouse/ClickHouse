@@ -68,6 +68,7 @@ void SortedRunNodeStream::dropConsumedFiles(std::vector<SortedFilePtr> & dropped
         SortedFilePtr file = std::move(sorted_run->files[i]);
         sorted_run->total_block_size -= file->total_block_size;
         sorted_run->total_file_size -= file->file_size;
+        sorted_run->total_entries -= file->num_entries;
         dropped.push_back(std::move(file));
     }
     sorted_run->files.erase(sorted_run->files.begin(), sorted_run->files.begin() + file_idx);
@@ -252,17 +253,14 @@ SnapshotWriterNodeStream::SnapshotWriterNodeStream(const StorageState & storage)
 
     if (storage.mutable_memtable)
         memtables.push_back(storage.mutable_memtable->takeSnapshot());
-}
 
-size_t SnapshotWriterNodeStream::getNodeCount() const
-{
     int64_t sum = 0;
     for (const auto & r : sorted_runs)
         sum += r->node_count_delta;
     for (const auto & m : memtables)
         sum += m->node_count_delta;
     chassert(sum >= 0);
-    return size_t(sum);
+    node_count = size_t(sum);
 }
 
 void SnapshotWriterNodeStream::next()

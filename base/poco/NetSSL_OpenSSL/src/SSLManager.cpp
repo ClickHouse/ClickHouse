@@ -314,6 +314,8 @@ void SSLManager::initDefaultContext(bool server)
 			disabledProtocols |= Context::PROTO_TLSV1_1;
 		else if (*it == "tlsv1_2")
 			disabledProtocols |= Context::PROTO_TLSV1_2;
+		else if (*it == "tlsv1_3")
+			disabledProtocols |= Context::PROTO_TLSV1_3;
 	}
 	if (server)
 		_ptrDefaultServerContext->disableProtocols(disabledProtocols);
