@@ -81,8 +81,20 @@ void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 
     writeVarUInt(version, out);
 
-    SerializationFlags flags;
-    flags.version = version;
+    SerializationFlags flags{.version = version};
+    serialize(out, flags);
+}
+
+void QueryPlan::serializeForQueryPlanCache(WriteBuffer & out) const
+{
+    /// A cache entry is written and read by the same server process, so the plan is always
+    /// serialized with the newest format this build knows. The version must be on the same scale as
+    /// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`: individual steps gate their fields on the
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_*` constants and refuse to serialize below
+    /// them, so a cache-private version scale would reject any plan using a newer step feature.
+    writeVarUInt(DBMS_QUERY_PLAN_SERIALIZATION_VERSION, out);
+
+    SerializationFlags flags{.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
     serialize(out, flags);
 }
 
@@ -209,6 +221,22 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
     SerializationFlags flags{.version = version, .skip_data = skip_data};
     return deserialize(in, context, flags, max_type_complexity);
+}
+
+QueryPlanAndSets QueryPlan::deserializeForQueryPlanCache(ReadBuffer & in, const ContextPtr & context)
+{
+    UInt64 version = 0;
+    readVarUInt(version, in);
+
+    if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan cache serialization version {} is not supported. The last supported version is {}",
+            version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    SerializationFlags flags;
+    flags.version = version;
+    /// Cache plans are produced and consumed locally by this server, so binary type decoding is trusted (unlimited).
+    return deserialize(in, context, flags, /*max_type_complexity=*/ 0);
 }
 
 QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity)
