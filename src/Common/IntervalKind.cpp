@@ -12,11 +12,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 std::string_view IntervalKind::toString() const
 {
-    return magic_enum::enum_name(kind);
+    auto name = magic_enum::enum_name(kind);
+    if (name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
+    return name;
 }
 
 Int64 IntervalKind::toAvgNanoseconds() const
@@ -59,6 +63,7 @@ Int32 IntervalKind::toAvgSeconds() const
         case IntervalKind::Kind::Quarter: return 7889238; /// Exactly 1/4 of a year.
         case IntervalKind::Kind::Year: return 31556952;   /// The average length of a Gregorian year is equal to 365.2425 days
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
 }
 
 Float64 IntervalKind::toSeconds() const
@@ -81,9 +86,12 @@ Float64 IntervalKind::toSeconds() const
             return 86400;
         case IntervalKind::Kind::Week:
             return 604800;
-        default:
+        case IntervalKind::Kind::Month:
+        case IntervalKind::Kind::Quarter:
+        case IntervalKind::Kind::Year:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not possible to get precise number of seconds in non-precise interval");
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
 }
 
 bool IntervalKind::isFixedLength() const
@@ -102,6 +110,7 @@ bool IntervalKind::isFixedLength() const
         case IntervalKind::Kind::Quarter:
         case IntervalKind::Kind::Year: return false;
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
 }
 
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
@@ -143,6 +152,7 @@ const char * IntervalKind::toKeyword() const
         case IntervalKind::Kind::Quarter: return "QUARTER";
         case IntervalKind::Kind::Year: return "YEAR";
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
 }
 
 
@@ -162,6 +172,7 @@ const char * IntervalKind::toLowercasedKeyword() const
         case IntervalKind::Kind::Quarter: return "quarter";
         case IntervalKind::Kind::Year: return "year";
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
 }
 
 
@@ -192,6 +203,7 @@ const char * IntervalKind::toDateDiffUnit() const
         case IntervalKind::Kind::Year:
             return "year";
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
 }
 
 
@@ -222,6 +234,7 @@ const char * IntervalKind::toNameOfFunctionToIntervalDataType() const
         case IntervalKind::Kind::Year:
             return "toIntervalYear";
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
 }
 
 
@@ -252,6 +265,7 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
         case IntervalKind::Kind::Year:
             return "toYear";
     }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected IntervalKind: {}", static_cast<unsigned>(kind));
 }
 
 
