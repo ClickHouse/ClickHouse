@@ -950,7 +950,12 @@ void TCPHandler::runImpl()
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
             /// Processing Query
-            std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
+            std::tie(query_state->parsed_query, query_state->io) = executeQuery(
+                query_state->query, query_state->query_context, QueryFlags{}, query_state->stage,
+                [this, &query_state]
+                {
+                    updateProfileTracesQueue(*query_state);
+                });
             updateProfileTracesQueue(*query_state);
 
             after_check_cancelled.restart();
