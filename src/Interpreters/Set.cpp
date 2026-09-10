@@ -9,9 +9,7 @@
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnDecimal.h>
 
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -330,24 +328,6 @@ Columns Set::getSetElements() const
     return result;
 }
 
-/// Identify `DateTime64` values whose fractional seconds cannot match a key with whole-second precision.
-static ColumnUInt8::Ptr getDateTime64PrecisionLossNullMap(const ColumnWithTypeAndName & column)
-{
-    const auto & values = assert_cast<const ColumnDecimal<DateTime64> &>(*column.column).getData();
-    const auto & type = assert_cast<const DataTypeDateTime64 &>(*column.type);
-    auto null_map_column = ColumnUInt8::create(values.size(), static_cast<UInt8>(0));
-    auto & null_map = null_map_column->getData();
-
-    if (type.getScale() > 0)
-    {
-        const auto scale_multiplier = type.getScaleMultiplier().value;
-        for (size_t row = 0; row < values.size(); ++row)
-            null_map[row] = values[row] % scale_multiplier != 0;
-    }
-
-    return null_map_column;
-}
-
 ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) const
 {
     size_t num_key_columns = columns.size();
@@ -419,11 +399,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             result = castColumnAccurate(column_to_cast, data_types[i], cast_cache.get());
         }
 
-        /// Fractional seconds must not match a key after conversion to whole-second precision.
-        if (isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
-        {
-            null_map_holder = mergeNullMaps(std::move(null_map_holder), getDateTime64PrecisionLossNullMap(column_to_cast));
-        }
+        null_map_holder = mergeNullMaps(
+            std::move(null_map_holder), getDateTime64CastLossMap(column_to_cast, data_types[i]));
 
         materialized_columns.emplace_back(std::move(result));
         key_columns.emplace_back(materialized_columns.back().get());

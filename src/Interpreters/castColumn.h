@@ -42,4 +42,10 @@ ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const Data
 ColumnPtr castColumnAccurateSkipNulls(
     const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr);
 
+/// Mark non-NULL values whose `DateTime64` components lose fractional seconds or exceed the
+/// destination `DateTime` range. The cast must have validated all non-NULL source values first.
+/// Follow the cast's structural element mapping and return no column when no check is needed.
+/// SQL NULLs are never marked, including all-NULL columns whose payload conversion was skipped.
+ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const DataTypePtr & target_type);
+
 }

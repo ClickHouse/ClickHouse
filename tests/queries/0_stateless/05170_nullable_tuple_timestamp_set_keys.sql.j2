@@ -1,0 +1,131 @@
+SET enable_nullable_tuple_type = 1;
+
+DROP TABLE IF EXISTS nullable_tuple_timestamps;
+CREATE TABLE nullable_tuple_timestamps (id UInt8, ts DateTime64(9, 'UTC')) ENGINE = Memory;
+INSERT INTO nullable_tuple_timestamps
+SELECT number, fromUnixTimestamp64Nano(arrayElement([
+    -1500000000, -1000000000, -1, 0, 1, 500000000, 1000000000, 1001000000, 1000001000, 1500000000], number + 1), 'UTC')
+FROM numbers(10);
+
+-- Scale conversion excludes only timestamps with digits that the destination cannot represent.
+-- Nullable fields, outer NULLs, empty containers, and tuple field mapping retain their own semantics.
+{% for mode in [0, 1] %}
+{% for source_scale in [0, 3, 6, 9] %}
+{% for target_scale in [0, 3, 6, 9] %}
+{% set source_timestamp_type = "DateTime64(" ~ source_scale ~ ", 'UTC')" %}
+{% set target_timestamp_type = "DateTime64(" ~ target_scale ~ ", 'UTC')" %}
+{% for label, expression, target, null_value, empty in [
+    ('scalar', 't', target_timestamp_type, '0', '0'),
+    ('nullable scalar', 'if(id % 7 = 0, NULL, t)', 'Nullable(' ~ target_timestamp_type ~ ')', 'id % 7 = 0', '0'),
+    ('tuple', 'tuple(t)', 'Tuple(' ~ target_timestamp_type ~ ')', '0', '0'),
+    ('nullable tuple', 'if(id % 7 = 0, NULL, tuple(t))', 'Nullable(Tuple(' ~ target_timestamp_type ~ '))', 'id % 7 = 0', '0'),
+    ('nullable field', 'tuple(if(id % 7 = 0, NULL, t))', 'Tuple(Nullable(' ~ target_timestamp_type ~ '))', '0', 'id % 7 = 0'),
+    ('nested tuple', 'toNullable(tuple(tuple(toNullable(t))))', 'Nullable(Tuple(Tuple(Nullable(' ~ target_timestamp_type ~ '))))', '0', '0'),
+    ('array field', 'toNullable(tuple(if(id % 5 = 0, [], [t, t])))', 'Nullable(Tuple(Array(' ~ target_timestamp_type ~ ')))', '0', 'id % 5 = 0'),
+    ('map field', "toNullable(tuple(if(id % 5 = 0, map(), map('ts', t))))", 'Nullable(Tuple(Map(String, ' ~ target_timestamp_type ~ ')))', '0', 'id % 5 = 0'),
+    ('array to map', "toNullable(tuple([tuple('ts', t)]))", 'Nullable(Tuple(Map(String, ' ~ target_timestamp_type ~ ')))', '0', '0'),
+    ('tuple to map', "toNullable(tuple(tuple(['ts'], [t])))", 'Nullable(Tuple(Map(String, ' ~ target_timestamp_type ~ ')))', '0', '0'),
+    ('named tuple', "CAST(tuple(t, 'bad') AS Nullable(Tuple(ts " ~ source_timestamp_type ~ ", discard String)))", 'Nullable(Tuple(added Nullable(UInt8), ts ' ~ target_timestamp_type ~ '))', '0', '0')
+] %}
+WITH inputs AS
+(
+    SELECT id, toDateTime64(ts, {{ source_scale }}, 'UTC') AS t,
+        {{ expression }} AS k
+    FROM nullable_tuple_timestamps
+)
+SELECT '{{ mode }}, {{ source_scale }} -> {{ target_scale }}, {{ label }}',
+    countIf(actual != expected), countIf(negative != NOT expected)
+FROM
+(
+    SELECT
+        (k, 1) IN (SELECT CAST(k, '{{ target | replace("'", "\\'") }}'), 1 FROM inputs) AS actual,
+        (k, 1) NOT IN (SELECT CAST(k, '{{ target | replace("'", "\\'") }}'), 1 FROM inputs) AS negative,
+        if({{ null_value }}, {{ mode }}, {{ empty }} OR toUnixTimestamp64Nano(t) % {{ 10 ** (9 - target_scale) }} = 0) AS expected
+    FROM inputs
+)
+SETTINGS transform_null_in = {{ mode }}, max_block_size = 3;
+{% endfor %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+-- Whole-second destinations also reject timestamps outside the unsigned `DateTime` range.
+{% for mode in [0, 1] %}
+SELECT {{ mode }}, id, (k, 1) IN (SELECT CAST(k, 'Nullable(Tuple(DateTime(\'UTC\')))'), 1 FROM
+    (SELECT toNullable(tuple(ts)) AS k FROM nullable_tuple_timestamps)),
+    (k, 1) NOT IN (SELECT CAST(k, 'Nullable(Tuple(DateTime(\'UTC\')))'), 1 FROM
+    (SELECT toNullable(tuple(ts)) AS k FROM nullable_tuple_timestamps))
+FROM (SELECT id, toNullable(tuple(ts)) AS k FROM nullable_tuple_timestamps)
+ORDER BY id SETTINGS transform_null_in = {{ mode }};
+SELECT {{ mode }},
+    (toNullable(tuple(fromUnixTimestamp64Nano(toInt64(4294967295000000000), 'UTC'))), 1)
+        IN (SELECT tuple(toDateTime(4294967295, 'UTC')), 1),
+    (toNullable(tuple(fromUnixTimestamp64Nano(toInt64(4294967296000000000), 'UTC'))), 1)
+        IN (SELECT tuple(toDateTime(4294967295, 'UTC')), 1)
+SETTINGS transform_null_in = {{ mode }};
+
+-- Precision rejection is not a SQL NULL and cannot match a NULL on the right.
+SELECT {{ mode }}, (k, 1) IN (SELECT CAST(NULL, 'Nullable(Tuple(DateTime(\'UTC\')))'), 1),
+    (k, 1) NOT IN (SELECT CAST(NULL, 'Nullable(Tuple(DateTime(\'UTC\')))'), 1)
+FROM (SELECT toNullable(tuple(toDateTime64(0.5, 3, 'UTC'))) AS k)
+SETTINGS transform_null_in = {{ mode }};
+
+-- Lossless textual and floating-point conversions preserve fractional timestamps.
+WITH toDateTime64(0.5, 3, 'UTC') AS t
+SELECT {{ mode }},
+    (t, 1) IN (SELECT toString(t), 1),
+    (toNullable(t), 1) IN (SELECT toString(t), 1),
+    (toNullable(tuple(t)), 1) IN (SELECT tuple(toString(t)), 1),
+    (t, 1) IN (SELECT toFloat64(0.5), 1),
+    (toNullable(tuple(t)), 1) IN (SELECT tuple(toFloat64(0.5)), 1)
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}
+
+-- Numeric and clock destinations reject only fractional digits that their scale discards.
+{% for mode in [0, 1] %}
+{% for target, scale in [('Int64', 0), ('Date', 0), ('Date32', 0), ('Time', 0), ('Time64(2)', 2),
+    ('Decimal32(2)', 2), ('Decimal64(2)', 2), ('Decimal128(2)', 2), ('Decimal256(2)', 2)] %}
+WITH inputs AS
+(
+    SELECT number, fromUnixTimestamp64Milli(toInt64(arrayElement([0, 500, 1000, 1250, 1125], number + 1)), 'UTC') AS t,
+        toNullable(tuple(t)) AS k
+    FROM numbers(5)
+)
+SELECT '{{ mode }}, {{ target }}', countIf(actual != expected), countIf(negative != NOT expected)
+FROM
+(
+    SELECT (k, 1) IN (SELECT CAST(k, 'Nullable(Tuple({{ target }}))'), 1 FROM inputs) AS actual,
+        (k, 1) NOT IN (SELECT CAST(k, 'Nullable(Tuple({{ target }}))'), 1 FROM inputs) AS negative,
+        toUnixTimestamp64Milli(t) % {{ 10 ** (3 - scale) }} = 0 AS expected
+    FROM inputs
+)
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}
+{% endfor %}
+
+-- Ordinary casts keep their truncation behavior independently of set membership checks.
+SELECT toUnixTimestamp64Milli(CAST(toDateTime64(1.125, 3, 'UTC'), 'DateTime64(2, \'UTC\')')),
+    toUInt32(CAST(toDateTime64(1.125, 3, 'UTC'), 'DateTime(\'UTC\')'));
+
+-- All-NULL keys skip payload conversion, including structural changes inside the NULL tuple.
+-- Their matching behavior depends only on the target's nullability and `transform_null_in`.
+{% for wrapper in ['', 'materialize'] %}
+SELECT (k, 1) IN (SELECT CAST(NULL, 'Nullable(Tuple(DateTime64(0), UInt8))'), 1),
+    (k, 1) NOT IN (SELECT CAST(NULL, 'Nullable(Tuple(DateTime64(0), UInt8))'), 1)
+FROM (SELECT {{ wrapper }}(CAST(NULL, 'Nullable(Tuple(DateTime64(3)))')) AS k)
+SETTINGS transform_null_in = 1;
+{% for mode in [0, 1] %}
+SELECT (k, 1) IN (SELECT map('ts', toDateTime64(0, 0)), 1),
+    (k, 1) NOT IN (SELECT map('ts', toDateTime64(0, 0)), 1)
+FROM (SELECT {{ wrapper }}(CAST(NULL, 'Nullable(Tuple(Array(DateTime64(3))))')) AS k)
+SETTINGS transform_null_in = {{ mode }};
+SELECT (k, 1) IN (SELECT toNullable(tuple(map('ts', toDateTime64(0, 0)))), 1),
+    (k, 1) NOT IN (SELECT toNullable(tuple(map('ts', toDateTime64(0, 0)))), 1),
+    (k, 1) IN (SELECT CAST(NULL, 'Nullable(Tuple(Map(String, DateTime64(0))))'), 1),
+    (k, 1) NOT IN (SELECT CAST(NULL, 'Nullable(Tuple(Map(String, DateTime64(0))))'), 1)
+FROM (SELECT {{ wrapper }}(CAST(NULL, 'Nullable(Tuple(Tuple(Array(DateTime64(3)))))')) AS k)
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}
+{% endfor %}
+
+DROP TABLE nullable_tuple_timestamps;
