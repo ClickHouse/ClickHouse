@@ -7,7 +7,7 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Core/SortDescription.h>
@@ -21,15 +21,13 @@ namespace DB
 
 void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    Pipes pipes;
-
-    /// Read from all buckets
+    VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
     for (size_t i = 0; i < num_buckets; ++i)
-    {
-        pipes.push_back(Pipe(settings.exchange_lookup->createSource(output_header, ExchangeStreamId(exchange_id, i, 0))));
-    }
+        stream_ids.emplace_back(exchange_id, i, 0);
 
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+    /// A sorted gather merges the streams, so each of them has to keep its order: one stream per
+    /// source. An unsorted gather runs its receive on all threads.
+    pipeline = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ !maintain_sort_description);
 
     if (maintain_sort_description && pipeline.getNumStreams() > 1)
     {

@@ -1,10 +1,15 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 
+#include <Columns/ColumnString.h>
 #include <Common/Exception.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeString.h>
+#include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Chunk.h>
@@ -25,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int EXCHANGE_PEER_DISCONNECTED;
     extern const int NOT_IMPLEMENTED;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
 namespace StreamingExchangeProtocol
@@ -142,6 +148,76 @@ void finishDataPacket(char * packet, size_t packet_bytes)
     /// memcpy: the header may sit at an unaligned offset of the buffer.
     static_assert(sizeof(PacketHeader::bytes_size) == sizeof(packet_data_size));
     memcpy(packet + offsetof(PacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
+}
+
+const SharedHeader & packetStreamHeader()
+{
+    static const SharedHeader header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "__streaming_exchange_packet")});
+    return header;
+}
+
+DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size)
+{
+    ReadBufferFromMemory in(body, body_size);
+    UInt64 flags = 0;
+    readVarUInt(flags, in);
+    DataPacketPrefix prefix;
+    prefix.end_of_stream = flags & 1;
+    readVarUInt(prefix.num_rows, in);
+    return prefix;
+}
+
+DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name)
+{
+    UInt64 flags = 0;
+    readVarUInt(flags, body);
+    const bool end_of_stream = flags & 1;
+    const bool has_aggregated_chunk_info = flags & 2;
+    UInt64 num_rows = 0;
+    readVarUInt(num_rows, body);
+    UInt64 num_columns = 0;
+    readVarUInt(num_columns, body);
+    UInt64 chunk_num = 0;
+    if (has_aggregated_chunk_info)
+        readVarUInt(chunk_num, body);
+
+    /// The end-of-stream packet is empty. One carrying rows would have them dropped once the stream
+    /// is finished, so reject it as a protocol violation.
+    if (end_of_stream && num_rows != 0)
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Final data packet on exchange stream {} carries {} rows; it must be empty", stream_name, num_rows);
+
+    /// A data packet must carry exactly the header's columns, or values would be dropped while the
+    /// row count is kept. A header-less stream (e.g. SELECT count()) sends rows with zero columns.
+    if (num_rows != 0 && num_columns != header.columns())
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Data packet on exchange stream {} carries {} rows with {} columns, but the stream header has {} columns",
+            stream_name, num_rows, num_columns, header.columns());
+
+    DataPacket packet;
+    packet.end_of_stream = end_of_stream;
+    if (num_columns != 0)
+    {
+        CompressedReadBuffer compressed_buf(body);
+        NativeReader reader(compressed_buf, header, DBMS_TCP_PROTOCOL_VERSION);
+        Block block = reader.read();
+        packet.chunk = Chunk(block.getColumns(), num_rows);
+        if (has_aggregated_chunk_info)
+        {
+            auto info = std::make_shared<AggregatedChunkInfo>();
+            info->bucket_num = block.info.bucket_num;
+            info->is_overflows = block.info.is_overflows;
+            info->out_of_order_buckets = block.info.out_of_order_buckets;
+            info->chunk_num = chunk_num;
+            packet.chunk.getChunkInfos().add(std::move(info));
+        }
+    }
+    else if (num_rows == 0)
+        packet.chunk = Chunk(header.cloneEmptyColumns(), 0);
+    else
+        packet.chunk = Chunk(Columns{}, num_rows);
+    return packet;
 }
 
 String describePeer(const Poco::Net::StreamSocket & socket)

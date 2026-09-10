@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
+#include <Processors/Chunk.h>
+
 #include <base/types.h>
 #include <Core/Block_fwd.h>
 
@@ -13,7 +16,6 @@ namespace DB
 
 class ReadBuffer;
 class WriteBuffer;
-class Chunk;
 
 namespace StreamingExchangeProtocol
 {
@@ -93,6 +95,29 @@ namespace StreamingExchangeProtocol
     /// Writes the body size into the header of the packet that starts at `packet` and is
     /// `packet_bytes` long in total.
     void finishDataPacket(char * packet, size_t packet_bytes);
+
+    /// The header of a stream of packets: one `String` column with one packet per row. The
+    /// serializer and a source that hands out packets output it; the deserializer takes it.
+    const SharedHeader & packetStreamHeader();
+
+    /// The leading fields of a Data packet body, read without deserializing the block.
+    struct DataPacketPrefix
+    {
+        bool end_of_stream = false;
+        UInt64 num_rows = 0;
+    };
+    DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size);
+
+    /// One parsed Data packet body. The end-of-stream packet has a chunk without rows.
+    struct DataPacket
+    {
+        Chunk chunk;
+        bool end_of_stream = false;
+    };
+    /// Parses a Data packet body written by `writeDataPacket`: the flags, the counts, the aggregation
+    /// chunk number and the compressed Native block with the columns of `header`. `stream_name` is
+    /// for messages.
+    DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name);
 
     /// The peer address for messages; a socket whose peer is gone may not know it anymore.
     String describePeer(const Poco::Net::StreamSocket & socket);

@@ -992,7 +992,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
 
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
-            Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
+            Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id, /*output_is_serialized=*/ false));
             /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
             /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
             read_result_from.addTransform(makeSkipZeroRowChunksTransform(result_header));

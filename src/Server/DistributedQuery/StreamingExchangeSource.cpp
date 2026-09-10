@@ -1,9 +1,6 @@
 #include <memory>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -13,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/PODArray.h>
+#include <cstring>
 #include <base/scope_guard.h>
 #include <base/types.h>
 
@@ -245,8 +243,9 @@ void StreamingExchangeSource::tryReadHeader()
                 "Data packet body size {} exceeds limit {} on exchange stream {}",
                 current_packet_header.bytes_size, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES, stream_name);
 
-        current_packet_body.resize(current_packet_header.bytes_size);
-        current_packet_body_bytes_filled = 0;
+        current_packet_body.resize(sizeof(current_packet_header) + current_packet_header.bytes_size);
+        memcpy(current_packet_body.data(), &current_packet_header, sizeof(current_packet_header));
+        current_packet_body_bytes_filled = sizeof(current_packet_header);
         packet_receive_state = ReceivingBody;
 
         LOG_TEST(log, "Expecting packet with {} bytes from exchange stream {}, fd: {}", current_packet_header.bytes_size, stream_name, socket->sockfd());
@@ -256,12 +255,14 @@ void StreamingExchangeSource::tryReadHeader()
 void StreamingExchangeSource::tryReadBody()
 {
     /// Read remaining size of the packet
-    readFromSocket(current_packet_body.data() , current_packet_body.size(), current_packet_body_bytes_filled);
+    readFromSocket(reinterpret_cast<char *>(current_packet_body.data()), current_packet_body.size(), current_packet_body_bytes_filled);
     if (current_packet_body_bytes_filled == current_packet_body.size())
     {
         packet_receive_state = ReceivingHeader;
         current_packet_header_bytes_filled = 0;
-        packet_in = std::make_unique<ReadBufferFromMemory>(current_packet_body.data(), current_packet_body.size());
+        packet_in = std::make_unique<ReadBufferFromMemory>(
+            reinterpret_cast<const char *>(current_packet_body.data()) + sizeof(current_packet_header),
+            current_packet_body.size() - sizeof(current_packet_header));
     }
 }
 
@@ -337,70 +338,37 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     if (!packet_in)
         return Chunk(); /// Empty chunk means that we currently heve no data but we have not finished yet.
 
-    UInt64 flags = 0;
-    readVarUInt(flags, *packet_in);
-    const bool final_chunk = (flags & 1);
-    const bool has_aggregated_chunk_info = (flags & 2);
-    UInt64 num_rows = 0;
-    readVarUInt(num_rows, *packet_in);
-    UInt64 num_columns = 0;
-    readVarUInt(num_columns, *packet_in);
-    UInt64 chunk_num = 0;
-    if (has_aggregated_chunk_info)
-        readVarUInt(chunk_num, *packet_in);
-
-    /// The final packet is the empty end-of-stream marker. A final packet carrying rows would have
-    /// them dropped once finished_reading is set, so reject it as a protocol violation.
-    if (final_chunk && num_rows != 0)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-            "Final data packet on exchange stream {} carries {} rows; it must be empty", stream_name, num_rows);
-
-    /// A data packet must carry exactly the header's columns, or values would be dropped while the
-    /// row count is kept. A header-less stream (e.g. SELECT count()) sends rows with zero columns.
-    const size_t expected_columns = output.getHeader().columns();
-    if (num_rows != 0 && num_columns != expected_columns)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-            "Data packet on exchange stream {} carries {} rows with {} columns, but the stream header has {} columns",
-            stream_name, num_rows, num_columns, expected_columns);
-
     std::optional<Chunk> result;
-    if (num_columns != 0)
+    if (output_is_serialized)
     {
-        auto compressed_buf = std::make_unique<CompressedReadBuffer>(*packet_in);
-        auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_TCP_PROTOCOL_VERSION);
-        Block block = reader->read();
-
-        result = Chunk(block.getColumns(), num_rows);
-        if (has_aggregated_chunk_info)
+        /// Hand the whole packet on as one row for the deserializers behind this source. Only the
+        /// end-of-stream marker is read here, because it ends this stream.
+        const auto prefix = StreamingExchangeProtocol::readDataPacketPrefix(packet_in->position(), packet_in->available());
+        rows_read += prefix.num_rows;
+        if (prefix.end_of_stream)
         {
-            auto info = std::make_shared<AggregatedChunkInfo>();
-            info->bucket_num = block.info.bucket_num;
-            info->is_overflows = block.info.is_overflows;
-            info->out_of_order_buckets = block.info.out_of_order_buckets;
-            info->chunk_num = chunk_num;
-            result->getChunkInfos().add(std::move(info));
+            finished_reading = true;
+            result = Chunk();
         }
-        rows_read += num_rows;
-
-        LOG_TEST(log, "Received chunk with {} rows and {} columns from exchange stream {}", num_rows, num_columns, stream_name);
-    }
-    else if (num_rows == 0)
-    {
-        LOG_TEST(log, "Received empty chunk from exchange stream {}", stream_name);
-        result = Chunk(output.getHeader().cloneEmptyColumns(), 0);
+        else
+        {
+            auto column = ColumnString::create();
+            column->getChars().swap(current_packet_body);
+            column->getOffsets().push_back(column->getChars().size());
+            result = Chunk(Columns{std::move(column)}, 1);
+        }
     }
     else
     {
-        LOG_TEST(log, "Received chunk with {} rows and no columns from exchange stream {}", num_rows, stream_name);
-        result = Chunk(Columns{}, num_rows);
+        auto packet = StreamingExchangeProtocol::readDataPacketBody(*packet_in, output.getHeader(), stream_name);
+        rows_read += packet.chunk.getNumRows();
+        if (packet.end_of_stream)
+            finished_reading = true;
+        result = std::move(packet.chunk);
     }
 
-    if (final_chunk)
-    {
-        finished_reading = true;
-        LOG_TRACE(log, "Finished reading from exchange stream {}, total rows: {}, bytes: {}",
-            stream_name, rows_read, bytes_read);
-    }
+    if (finished_reading)
+        LOG_TRACE(log, "Finished reading from exchange stream {}, total rows: {}, bytes: {}", stream_name, rows_read, bytes_read);
 
     packet_in.reset();
     packet_receive_state = ReceivingHeader;

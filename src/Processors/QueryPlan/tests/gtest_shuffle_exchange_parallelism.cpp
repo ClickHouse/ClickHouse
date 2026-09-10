@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -18,6 +19,7 @@
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/GatherSendStep.h>
+#include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -25,6 +27,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
+#include <Server/DistributedQuery/StreamingExchangeDeserializingTransform.h>
 #include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
 #include <Common/ThreadStatus.h>
 #include <Common/typeid_cast.h>
@@ -98,6 +101,28 @@ Chunks makeChunks(size_t stream_index, bool with_rowless_info_chunk = false)
     return chunks;
 }
 
+/// The chunks of `makeChunks` as the packets the serializer makes of them, one per chunk.
+Chunks makePacketChunks(size_t stream_index)
+{
+    Chunks packets;
+    const auto header = makeHeader();
+    for (const auto & chunk : makeChunks(stream_index))
+    {
+        auto column = ColumnString::create();
+        auto & chars = column->getChars();
+        size_t packet_offset = 0;
+        {
+            WriteBufferFromVector<ColumnString::Chars> out(chars);
+            packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, header, out);
+            out.finalize();
+        }
+        StreamingExchangeProtocol::finishDataPacket(reinterpret_cast<char *>(chars.data()) + packet_offset, chars.size() - packet_offset);
+        column->getOffsets().push_back(chars.size());
+        packets.emplace_back(Columns{std::move(column)}, 1);
+    }
+    return packets;
+}
+
 /// Every task of the test is bucket 0.
 class FixedBucketParameterLookup : public IParameterLookup
 {
@@ -123,12 +148,14 @@ public:
     String getName() const override { return "CountingSink"; }
 
     size_t chunks = 0;
+    size_t rows = 0;
     size_t malformed_packets = 0;
 
 protected:
     void consume(Chunk chunk) override
     {
         ++chunks;
+        rows += chunk.getNumRows();
         if (!receives_packets)
             return;
 
@@ -149,8 +176,8 @@ private:
     const bool receives_packets;
 };
 
-/// The streaming exchange without sockets: the real serializer, sinks that discard the packets, and
-/// sources that replay the chunks of the sending bucket.
+/// The streaming exchange without sockets: the real serializer and deserializer, sinks that discard
+/// the packets, and sources that replay the chunks of the sending bucket, as data or as packets.
 class TestExchangeLookup : public IExchangeLookup
 {
 public:
@@ -164,9 +191,17 @@ public:
         return std::make_shared<CountingSink>(std::move(input_header), input_is_serialized);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & stream_id, bool output_is_serialized) override
     {
-        return std::make_shared<SourceFromChunks>(std::move(output_header), makeChunks(parse<size_t>(stream_id.source_bucket)));
+        const size_t bucket = parse<size_t>(stream_id.source_bucket);
+        if (output_is_serialized)
+            return std::make_shared<SourceFromChunks>(StreamingExchangeProtocol::packetStreamHeader(), makePacketChunks(bucket));
+        return std::make_shared<SourceFromChunks>(std::move(output_header), makeChunks(bucket));
+    }
+
+    std::shared_ptr<IProcessor> createDeserializer(SharedHeader output_header, const String & exchange_id) override
+    {
+        return std::make_shared<StreamingExchangeDeserializingTransform>(std::move(output_header), exchange_id);
     }
 };
 
@@ -268,6 +303,45 @@ void expectSpreadOverStreams(const SendingStats & stats)
         << " rows, one stream carries " << rows_per_stream;
 }
 
+}
+
+/// A receiving task gets one exchange source per sending task. Deserialization must not stay in
+/// those sources: with 3 senders and 8 threads it runs on 8 streams, and every row still arrives.
+TEST(ShuffleExchangeParallelism, ReceiverDeserializesOnEveryStream)
+{
+    MainThreadStatus::getInstance();
+    tryRegisterFunctions();
+
+    constexpr size_t senders = 3;
+    constexpr size_t max_threads = 8;
+
+    auto context = Context::createCopy(getContext().context);
+    auto settings = makeSettings(context, max_threads);
+    auto header = makeHeader();
+
+    Strings source_shards;
+    for (size_t sender = 0; sender < senders; ++sender)
+        source_shards.push_back(toString(sender));
+
+    ShuffleReceiveStep receive(header, "exchange_0", source_shards);
+    QueryPipelineBuilder builder;
+    receive.initializePipeline(builder, settings);
+    EXPECT_EQ(builder.getNumStreams(), max_threads);
+
+    size_t deserializers = 0;
+    for (const auto & processor : builder.getProcessors())
+        if (processor->getName() == "StreamingExchangeDeserializingTransform")
+            ++deserializers;
+    EXPECT_EQ(deserializers, max_threads);
+
+    builder.resize(1);
+    auto sink = std::make_shared<CountingSink>(header, /*receives_packets_=*/ false);
+    builder.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    pipeline.setNumThreads(max_threads);
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+    EXPECT_EQ(sink->rows, senders * chunks_per_stream * rows_per_chunk);
 }
 
 /// A sending task scatters its read streams into the destination buckets. The work after the

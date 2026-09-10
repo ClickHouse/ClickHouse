@@ -6,6 +6,7 @@
 #include <Common/WakeupFd.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Processors/ISource.h>
+#include <Columns/ColumnString.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Poco/Net/StreamSocket.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -20,6 +21,10 @@ using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancella
 /// initiator it reads the query result and shares the query's cancellation state: a lost producer is
 /// recorded there and reported by the source driving the plan (see `tryGenerate`). On a worker the
 /// state is null and a lost peer is a plain `EXCHANGE_PEER_DISCONNECTED` failure of the task.
+///
+/// With `output_is_serialized` the source does not deserialize: it hands every packet on as one row
+/// of a `String` column, for the `StreamingExchangeDeserializingTransform` on every stream behind
+/// it, and only reads the end-of-stream marker itself.
 class StreamingExchangeSource final : public ISource
 {
 public:
@@ -30,8 +35,10 @@ public:
         String host_,
         UInt16 port_,
         DistributedQueryCancellationPtr cancellation_,
-        String auth_token_ = {})
-        : ISource(std::move(header_))
+        String auth_token_ = {},
+        bool output_is_serialized_ = false)
+        : ISource(output_is_serialized_ ? StreamingExchangeProtocol::packetStreamHeader() : header_)
+        , output_is_serialized(output_is_serialized_)
         , host(std::move(host_))
         , port(port_)
         , query_id(std::move(query_id_))
@@ -77,6 +84,7 @@ private:
     /// sender is gone.
     void sendNoMoreDataNeeded();
 
+    const bool output_is_serialized;
     const String host;
     const UInt16 port;
     const String query_id;
@@ -99,7 +107,11 @@ private:
     StreamingExchangeProtocol::PacketHeader current_packet_header{};
     size_t current_packet_header_bytes_filled = 0;
 
-    std::vector<char> current_packet_body;
+    /// The whole packet being received: the header, then the body. Kept as column bytes so that a
+
+    /// packet handed on as a row is not copied.
+
+    ColumnString::Chars current_packet_body;
     size_t current_packet_body_bytes_filled = 0;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
