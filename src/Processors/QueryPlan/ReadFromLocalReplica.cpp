@@ -38,16 +38,30 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
     if (!query_plan || !query_plan->isInitialized())
         return;
 
-    const auto own = QueryPlanOptimizations::collectFixedColumnNames(*query_plan->getRootNode());
-    std::vector<QueryPlan::Node *> stack{query_plan->getRootNode()};
+    /// A read derives ordering only from the filters read-in-order can reach above it, and it reaches
+    /// them by taking the first child at every step - through a join or a `UNION ALL` view alike. So a
+    /// read is held to the filters on the longest such chain ending in it, and each read gets its own
+    /// set: a fragment can hold several coordinated reads (see `findReadingSteps`), and one set taken at
+    /// the root would describe only the branch the first children lead to. Handing that set to a read in
+    /// another branch would allow a column its own branch never fixed, whenever the two branches happen
+    /// to name a column alike.
+    struct Frame
+    {
+        QueryPlan::Node * node;
+        QueryPlan::Node * chain_root;
+    };
+
+    std::vector<Frame> stack{{query_plan->getRootNode(), query_plan->getRootNode()}};
     while (!stack.empty())
     {
-        auto * node = stack.back();
+        auto [node, chain_root] = stack.back();
         stack.pop_back();
+
         if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
-            reading->restrictFixedColumns(own);
-        for (auto * child : node->children)
-            stack.push_back(child);
+            reading->restrictFixedColumns(QueryPlanOptimizations::collectFixedColumnNames(*chain_root));
+
+        for (size_t i = 0; i < node->children.size(); ++i)
+            stack.push_back({node->children[i], i == 0 ? chain_root : node->children[i]});
     }
 }
 
