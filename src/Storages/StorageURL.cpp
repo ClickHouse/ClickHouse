@@ -190,6 +190,20 @@ static void checkPostReadDoesNotUseIndexPageWildcards(const String & url, const 
             url);
 }
 
+/// `ENGINE = URL` picks the wildcard (read-only, always `GET`) or the plain URL backend once, when the
+/// table is defined, so it cannot honor an explicit `http_method` and index-page expansion at the same time.
+static void checkIndexPageWildcardsNotCombinedWithHTTPMethod(const String & url, const String & http_method)
+{
+    if (!http_method.empty() && urlPathHasListableGlobs(url))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`*`/`**` wildcards expanded from HTTP index pages cannot be combined with http_method='{}' in "
+            "`ENGINE = URL` (URL '{}'). Remove either the wildcards or `http_method`, or use the `url` table "
+            "function, which chooses the method per query",
+            http_method,
+            url);
+}
+
 String getSampleURI(String uri, ContextPtr context)
 {
     if (urlWithGlobs(uri))
@@ -2674,9 +2688,10 @@ void registerStorageURL(StorageFactory & factory)
 
             if (!use_object_storage)
             {
-                /// The read path rejects this combination, so do not let a new table be defined with it.
+                /// Reached with wildcards only when `http_method` disabled the expansion above; reject that
+                /// combination explicitly instead of silently reading the literal `*` resource.
                 if (is_new_definition)
-                    checkPostReadDoesNotUseIndexPageWildcards(config.url, config.http_method);
+                    checkIndexPageWildcardsNotCombinedWithHTTPMethod(config.url, config.http_method);
 
                 return std::make_shared<StorageURL>(
                     config.url,
@@ -2822,6 +2837,9 @@ You can limit the maximum number of HTTP GET redirect hops using the [max_http_g
 
 When [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
 This is the same mechanism as the [`url`](/reference/functions/table-functions/url#wildcards-with-http-index-pages) table function.
+
+Expansion always reads with `GET`, so an explicit `http_method` cannot be combined with wildcards: the engine chooses its backend once, when the table is defined, and rejects such a definition.
+Use the [`url`](/reference/functions/table-functions/url) table function instead, which chooses the method per query.
 
 Expansion is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) for recursive directory traversal.
 

@@ -74,12 +74,19 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE url_wild_62352 (x String) ENGINE = URL('http
 $CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION url('http://localhost:1/files/*.csv', 'CSV', http_method='POST') VALUES ('a')" 2>&1 | grep -o -m1 'BAD_ARGUMENTS'
 # urlCluster never supports index-page wildcards; a configured http_method must not bypass that.
 $CLICKHOUSE_CLIENT -q "SELECT * FROM urlCluster('test_cluster_two_shards_localhost', 'http://localhost:1/files/*.csv', 'CSV', 'x String', http_method='PUT')" 2>&1 | grep -o -m1 'NOT_IMPLEMENTED'
-# http_method='PUT' keeps the engine (unlike the read-only url() function) on the writable
-# literal-URL backend: the CREATE succeeds without the experimental index-page setting.
+# `ENGINE = URL` picks its backend once, when the table is defined, so it rejects any explicit
+# http_method together with index-page wildcards, naming both instead of silently reading the
+# literal `*` resource.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE url_wild_put_62352 (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV, http_method='PUT')" 2>&1 | grep -c "wildcards expanded from HTTP index pages cannot be combined with http_method='PUT'"
+# The url() table function decides per query instead: `PUT` applies to writes only, so a SELECT
+# takes the same GET-expanded index-page path as the default one (both stop at the experimental gate).
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://localhost:1/files/*.csv', 'CSV', 'x String')" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://localhost:1/files/*.csv', 'CSV', 'x String', http_method='PUT')" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
+# Only the combination is rejected: http_method='PUT' stays accepted on a URL without wildcards.
 $CLICKHOUSE_CLIENT -q "
-    CREATE TABLE url_wild_put_62352 (x String) ENGINE = URL('http://localhost:1/files/*.csv', CSV, http_method='PUT');
-    SHOW CREATE TABLE url_wild_put_62352;
-    DROP TABLE url_wild_put_62352" | grep -c "http_method"
+    CREATE TABLE url_put_62352 (x String) ENGINE = URL('http://localhost:1/plain.csv', CSV, http_method='PUT');
+    SHOW CREATE TABLE url_put_62352;
+    DROP TABLE url_put_62352" | grep -cE "http_method ?= ?'PUT'"
 # A pre-existing table can carry POST + wildcard (a named collection edited after the table
 # was created): ATTACH keeps loading it, and the read path rejects it at use time.
 $CLICKHOUSE_CLIENT -q "

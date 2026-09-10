@@ -616,6 +616,8 @@ Notes:
 - An empty listing is allowed; HTTP errors (e.g. 404) for index pages raise exceptions.
 - The maximum index page size is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size).
 - The maximum number of directories read during recursive expansion is limited by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read).
+- Index pages are always fetched with `GET`, so `http_method='POST'` cannot be combined with them. `http_method='PUT'` applies to writes only, so a `SELECT` expands as usual.
+- `ENGINE = URL` chooses the wildcard or the plain URL backend once, when the table is defined, and therefore rejects any explicit `http_method` together with wildcards.
 
 Example:
 
