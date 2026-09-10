@@ -314,6 +314,14 @@ private:
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
 
+    /// Non-zero while a thread is inside `finish`, the state in which `cancel` has nothing to add:
+    /// `finish` reaches its drain only after `tryCancel` sent the Cancel packet, and on every earlier
+    /// return `cancelUnlocked` would find `finished`, `hasThrownException` or `was_cancelled` already
+    /// set. A counter because `work` and `onUpdatePorts` can enter `finish` on different threads.
+    /// Lock order is always this mutex before `was_cancelled_mutex`, never the reverse.
+    mutable std::mutex finish_gate_mutex;
+    size_t finish_in_progress TSA_GUARDED_BY(finish_gate_mutex) = 0;
+
     /// Whether this replica has sent its initial announcement. Until it does, the only packet it can
     /// owe us is that announcement - see `tryCancel`.
     std::atomic_bool announcement_received = false;
