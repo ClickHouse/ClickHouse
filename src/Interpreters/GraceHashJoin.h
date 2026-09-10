@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -48,30 +49,43 @@ class GraceHashJoin final : public IJoin
 
     using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
 
+    struct GraceHashJoinStats
+    {
+        size_t right_rows = 0;
+        size_t unique_keys = 0;
+        size_t peak_in_memory_bytes = 0;
+        size_t num_rehashes = 0;
+        size_t num_buckets = 0;
+        size_t left_spilled_compressed_bytes = 0;
+        size_t right_spilled_compressed_bytes = 0;
+
+        UInt64 left_rows_total = 0;
+        MatchedRowsAccumulator matched_left;
+        MatchedRowsAccumulator matched_right;
+
+        void foldIn(const HashJoin & in_memory_join);
+    };
+
 public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
 
-    /// `external_join_threshold_` is the auto-spill memory cap supplied by `SpillingHashJoin`
-    /// when this instance is wrapped. It triggers in-bucket rehashing whenever the in-memory
-    /// hash table approaches half of the cap, so the configured spill ceiling is honored.
-    /// Pass 0 for standalone use (`join_algorithm = 'grace_hash'`); the user-visible
-    /// `max_bytes_before_external_join` setting deliberately does NOT apply to standalone
-    /// instances - those still rely on `max_rows_in_join` / `max_bytes_in_join` for spill
-    /// decisions.
+    /// `external_join_threshold_` comes from `max_bytes_before_external_join` (or the ratio): we rehash the
+    /// buckets once the in-memory table reaches half of it. Only legacy mode passes 0.
     GraceHashJoin(
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        bool any_take_last_row_ = false,
-        size_t external_join_threshold_ = 0);
+        bool any_take_last_row_,
+        size_t external_join_threshold_);
 
     ~GraceHashJoin() override;
 
     std::string getName() const override { return "GraceHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     void initialize(const Block & sample_block) override;
 
@@ -84,6 +98,7 @@ public:
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+    StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
@@ -100,7 +115,9 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    void forceSpill() { force_spill = true; }
+    bool canSpillToDisk() const override { return true; }
+    size_t getSpillableBytes() const override;
+    void requestSpill() override { force_spill = true; }
 
 private:
     void initBuckets();
@@ -110,10 +127,13 @@ private:
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);
 
+    /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
+    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover);
+    bool canForceRepartition() const;
+    bool forcedSpillPending() const;
+
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
-    bool hasMemoryOverflow(const InMemoryJoinPtr & hash_join_) const;
-    bool hasMemoryOverflow(const BlocksList & blocks) const;
 
     /// Add bucket_count new buckets
     /// Throws if a bucket creation fails
@@ -129,8 +149,14 @@ private:
     /// Perform some bookkeeping after all calls to @joinBlock.
     void startReadingDelayedBlocks();
 
+    /// `max_rows_in_join` / `max_bytes_in_join` as a hard cap on the whole right side. False means
+    /// `join_overflow_mode = 'break'`; it throws for `'throw'`.
+    bool checkSizeLimits() const;
+
     size_t getNumBuckets() const;
     Buckets getCurrentBuckets() const;
+
+    GraceHashJoinStats collectStats() const;
 
     /// Structure block to store in the HashJoin according to sample_block.
     Block prepareRightBlock(const Block & block);
@@ -154,6 +180,8 @@ private:
     mutable SharedMutex rehash_mutex;
 
     FileBucket * current_bucket = nullptr;
+    /// A bucket crossed the hard cap under `join_overflow_mode = 'break'`: emit it, then stop.
+    bool stop_after_current_bucket = false;
 
     mutable std::mutex current_bucket_mutex;
 
@@ -161,6 +189,13 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+
+    /// What the buckets built and already released held, for the `max_rows_in_join` /
+    /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.
+    std::atomic<size_t> accounted_right_rows = 0;
+    std::atomic<size_t> accounted_right_bytes = 0;
+
+    GraceHashJoinStats stats;
 
     mutable std::mutex totals_mutex;
 };

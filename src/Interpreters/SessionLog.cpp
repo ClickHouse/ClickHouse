@@ -1,11 +1,13 @@
 #include <Interpreters/SessionLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 #include <Core/Protocol.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -117,6 +119,7 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
             {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
+            {"ArrowFlight",            static_cast<Int8>(Interface::ARROW_FLIGHT)},
         });
     static_assert(magic_enum::enum_count<Interface>() == 10, "Please update the array above to match the enum.");
 
@@ -134,6 +137,8 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", lc_string_datatype, "Hostname of the server executing the query."},
+        {"clickhouse_version", lc_string_datatype, "Version of the ClickHouse server that produced the row."},
+        {"system_processor", lc_string_datatype, "CPU architecture of the ClickHouse server that produced the row."},
         {"type", std::move(event_type), "Login/logout result. Possible values: "
             "LoginFailure — Login error. "
             "LoginSuccess — Successful login. "
@@ -187,6 +192,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);
@@ -222,7 +229,7 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
 
     columns[i++]->insert(client_info.interface);
 
-    columns[i++]->insertData(client_info.client_hostname.data(), client_info.client_hostname.length());
+    columns[i++]->insertData(client_info.getClientHostName().data(), client_info.getClientHostName().length());
     columns[i++]->insertData(client_info.client_name.data(), client_info.client_name.length());
     columns[i++]->insert(client_info.client_tcp_protocol_version);
     columns[i++]->insert(client_info.client_version_major);
@@ -284,7 +291,11 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
 
         SettingsChanges changes = settings.changes();
         for (const auto & change : changes)
-            log_entry.settings.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+        {
+            String value = Settings::valueToStringUtil(change.name, change.value);
+            CoreSettings::maskSettingValue(change.name, change.value, value);
+            log_entry.settings.emplace_back(change.name, value);
+        }
     });
 }
 

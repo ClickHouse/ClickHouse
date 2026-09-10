@@ -191,7 +191,7 @@ ClickHouse 在设计时就以充分发挥现代硬件的效率为目标。默认
 查询执行还可通过以下方式进一步并行化：
 
 1. **SIMD 向量化**：对列式数据的操作会使用 [CPU SIMD 指令](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (例如 [AVX512](https://en.wikipedia.org/wiki/AVX-512)) ，从而实现对值的批次处理。
-2. **集群级并行化**：在分布式部署中，每个节点都会在本地执行查询处理。[部分聚合状态](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states)会以流式方式传输到发起节点并进行合并。如果查询的 `GROUP BY` 键与分片键一致，则合并过程可以被[尽量减少，甚至完全避免](/zh/reference/settings/session-settings#distributed_group_by_no_merge)。
+2. **集群级并行化**：在分布式部署中，每个节点都会在本地执行查询处理。[部分聚合状态](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states)会以流式方式传输到发起节点并进行合并。如果查询的 `GROUP BY` 键与分片键一致，则合并过程可以被[尽量减少，甚至完全避免](/zh/reference/settings/session-settings/distributed#distributed_group_by_no_merge)。
 
 <br />
 

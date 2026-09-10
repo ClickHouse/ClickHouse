@@ -1,5 +1,6 @@
 #include <vector>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -102,6 +103,8 @@ ColumnsDescription PartLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"query_id", std::make_shared<DataTypeString>(), "Identifier of the INSERT query that created this data part."},
         {"event_type", std::move(event_type_datatype),
             "Type of the event that occurred with the data part. "
@@ -110,7 +113,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "MergePartsStart — Merging of data parts has started, "
             "MergeParts — Merging of data parts has finished, "
             "DownloadPart — Downloading a data part, "
-            "RemovePart — Removing or detaching a data part using [DETACH PARTITION](/sql-reference/statements/alter/partition#detach-partitionpart)."
+            "RemovePart — Removing or detaching a data part using [DETACH PARTITION](/reference/statements/alter/partition#detach-partitionpart)."
             "MutatePartStart — Mutating of a data part has started, "
             "MutatePart — Mutating of a data part has finished, "
             "MovePart — Moving the data part from the one disk to another one."},
@@ -134,7 +137,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
         {"partition_id", std::make_shared<DataTypeString>(), "ID of the partition that the data part was inserted to. The column takes the `all` value if the partitioning is by `tuple()`."},
         {"partition", std::make_shared<DataTypeString>(), "The partition name."},
         {"part_type", std::make_shared<DataTypeString>(), "The type of the part. Possible values: Wide and Compact."},
-        {"part_storage_type", std::make_shared<DataTypeString>(), "The type of DataPartStorage. Possible values: Packed - all files are stored in a single blob, Full - a blob per file."},
+        {"part_storage_type", std::make_shared<DataTypeString>(), "The type of `DataPartStorage`. Possible values: `Packed` - most part files are stored in a single archive (projections and a few service files such as `txn_version.txt` are written separately), `Full` - each file is stored separately."},
         {"disk_name", std::make_shared<DataTypeString>(), "The disk name data part lies on."},
         {"path_on_disk", std::make_shared<DataTypeString>(), "Absolute path to the folder with data part files."},
 
@@ -177,6 +180,8 @@ void PartLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(query_id);
     columns[i++]->insert(event_type);
     columns[i++]->insert(merge_reason);

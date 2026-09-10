@@ -21,6 +21,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -91,6 +92,9 @@ public:
 protected:
     Chunk generate() override
     {
+        /// Reading part files may issue Keeper requests, which require a component to be set for the scope.
+        auto component_guard = Coordination::setCurrentComponent("MergeTreeCodecBlockCountsSource::generate");
+
         /// One part per call. generate is called repeatedly until it returns an empty chunk.
         /// Thus we skip parts with empty ColumnsSubstreams (e.g. Compact without substream marks) and parts
         /// where keys_filter drops every row, instead of returning an empty chunk for them.

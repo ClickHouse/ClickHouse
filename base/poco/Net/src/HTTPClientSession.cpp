@@ -283,7 +283,8 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
 			reconnect(connect_time);
         if (!request.has(HTTPMessage::CONNECTION))
             request.setKeepAlive(keepAlive);
-        if (keepAlive && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE) && _keepAliveTimeout.totalSeconds() > 0)
+        if (keepAlive && !request.getSuppressKeepAliveHeader() && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE)
+            && _keepAliveTimeout.totalSeconds() > 0)
             request.setKeepAliveTimeout(_keepAliveTimeout.totalSeconds(), _keepAliveMaxRequests);
 		if (!request.has(HTTPRequest::HOST) && !_host.empty())
 			request.setHost(_host, _port);

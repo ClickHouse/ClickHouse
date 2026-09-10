@@ -122,7 +122,7 @@ TEST(DeleteBitmapTest, ContainsBulkMatchesScalar)
     }
 
     /// Randomised cross-check: 10k random probes against a sparse bitmap.
-    std::mt19937 rng(424242); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng(424242); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<UInt32> dist(0, 10'000'000);
     std::vector<UInt64> many(10'000);
     for (auto & r : many)
@@ -275,7 +275,7 @@ TEST(DeleteBitmapTest, RoundtripSingleRow)
 TEST(DeleteBitmapTest, RoundtripSparse1M)
 {
     DeleteBitmap in;
-    std::mt19937 rng(12345); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng(12345); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<UInt32> dist(0, 100'000'000);
     std::vector<UInt64> samples;
     samples.reserve(1'000'000);
@@ -286,7 +286,7 @@ TEST(DeleteBitmapTest, RoundtripSparse1M)
     auto out = roundtrip(in);
     EXPECT_EQ(out->cardinality(), in.cardinality());
     /// Spot-check 1000 random samples.
-    std::mt19937 rng2(9999); // NOLINT(cert-msc32-c, cert-msc51-cpp)
+    std::mt19937 rng2(9999); // NOLINT(bugprone-random-generator-seed,cert-msc32-c, cert-msc51-cpp)
     std::uniform_int_distribution<size_t> idx_dist(0, samples.size() - 1);
     for (size_t i = 0; i < 1000; ++i)
     {

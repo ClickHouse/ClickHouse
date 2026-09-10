@@ -4,6 +4,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTimeInterval.h>
 
+namespace Poco::JSON { class Object; }
+
 namespace DB
 {
 
@@ -29,6 +31,8 @@ public:
     String getID(char) const override { return "Refresh strategy definition"; }
 
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;

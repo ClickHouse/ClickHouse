@@ -47,12 +47,12 @@ ObjectIteratorWithPathAndFileFilter::ObjectIteratorWithPathAndFileFilter(
     const DB::ActionsDAG & filter_,
     const NamesAndTypesList & virtual_columns_,
     const NamesAndTypesList & hive_partition_columns_,
-    const std::string & object_namespace_,
+    StorageObjectStorageConfigurationPtr configuration_,
     const ContextPtr & context_,
     std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
     , iterator(iterator_)
-    , object_namespace(object_namespace_)
+    , configuration(std::move(configuration_))
     , virtual_columns(virtual_columns_)
     , hive_partition_columns(hive_partition_columns_)
     , filter_actions(getExpressionActions(filter_, virtual_columns, context_))
@@ -76,10 +76,9 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             const auto key = object->getPath();
             std::vector<std::string> keys({key});
 
-            auto path = key;
-            if (path.starts_with("/"))
-                path = path.substr(1);
-            path = std::filesystem::path(object_namespace) / path;
+            /// Must be the formatter the `_path` column is produced with: this filter is
+            /// evaluated against that column's values.
+            const auto path = formatObjectPath(*configuration, key, /*include_connection_info=*/false);
 
             VirtualColumnUtils::filterByPathOrFile(
                 keys, std::vector<std::string>{path}, filter_actions,

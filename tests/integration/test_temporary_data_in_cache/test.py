@@ -81,8 +81,6 @@ def test_cache_evicted_by_temporary_data(start_cluster):
             "settings": {
                 "max_bytes_before_external_group_by": "4M",
                 "max_bytes_ratio_before_external_group_by": 0,
-                # TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk).
-                "enable_sharding_aggregator": 0,
             },
         },
         {
@@ -95,7 +93,8 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         {
             "query": "SELECT * FROM numbers(10 * 1024 * 1024) t1 JOIN numbers(10 * 1024 * 1024) t2 USING number",
             "settings": {
-                "max_bytes_in_join": "4M",
+                # Spilling is driven by the byte threshold; `max_bytes_in_join` is a hard cap.
+                "max_bytes_before_external_join": "8M",
                 "join_algorithm": "grace_hash",
             },
         },

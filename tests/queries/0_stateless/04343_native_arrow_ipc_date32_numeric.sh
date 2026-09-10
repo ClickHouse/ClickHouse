@@ -27,18 +27,13 @@ with pa.OSFile(sys.argv[1], "wb") as sink:
         writer.write_batch(batch)
 PY
 
-echo "--- date32 -> Int32 numeric target: raw day numbers, native == library ---"
-for READER in 1 0; do
-    ${CLICKHOUSE_LOCAL} --query "
-        SELECT d FROM file('${DATA_FILE}', 'Arrow', 'd Int32')
-        SETTINGS input_format_arrow_use_native_reader = ${READER}
-    "
-done
+echo "--- date32 -> Int32 numeric target: raw day numbers ---"
+${CLICKHOUSE_LOCAL} --query "
+    SELECT d FROM file('${DATA_FILE}', 'Arrow', 'd Int32')
+"
 
 echo "--- date32 -> Date32 target: out-of-range day is still rejected (native) ---"
 ${CLICKHOUSE_LOCAL} --query "
-    SELECT d FROM file('${DATA_FILE}', 'Arrow', 'd Date32')
-    SETTINGS input_format_arrow_use_native_reader = 1
-" 2>&1 | grep -o "VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE" | head -1
+    SELECT d FROM file('${DATA_FILE}', 'Arrow', 'd Date32')" 2>&1 | grep -o "VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE" | head -1
 
 rm -f "${DATA_FILE}"

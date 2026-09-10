@@ -7,7 +7,7 @@ import random
 import threading
 import time
 
-from kafka import KafkaAdminClient, KafkaProducer
+from kafka import KafkaProducer
 import kafka.errors
 import pytest
 
@@ -53,6 +53,7 @@ instance = cluster.add_instance(
     },
     clickhouse_path_dir="clickhouse_path",
     cpu_limit=5,
+    stay_alive=True,
 )
 
 
@@ -75,6 +76,37 @@ def kafka_setup_teardown():
 
 
 # Tests
+def test_kafka_no_kerberos_kinit_warning(kafka_cluster):
+    suffix = k.random_string(6)
+    kafka_table = f"kafka_{suffix}"
+
+    instance.rotate_logs()
+    instance.query(f"""
+        CREATE TABLE test.{kafka_table} (key UInt64)
+            ENGINE = Kafka()
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'no_kerberos_kinit_warning_{suffix}',
+                     kafka_group_name = 'no_kerberos_kinit_warning_{suffix}',
+                     kafka_format = 'JSONEachRow';
+    """)
+
+    instance.query(f"""
+        CREATE MATERIALIZED VIEW test.{kafka_table}_view
+        ENGINE = MergeTree
+        ORDER BY tuple()
+        AS SELECT * FROM test.{kafka_table}
+    """)
+    instance.wait_for_log_line(f"{kafka_table}.*Created #0 consumer")
+
+    instance.query(f"DROP TABLE test.{kafka_table}_view")
+    instance.query(f"INSERT INTO test.{kafka_table} VALUES (1)")
+
+    assert instance.contains_in_log(f"{kafka_table}.*Kafka producer created")
+    assert not instance.contains_in_log(
+        f"{kafka_table}.*sasl.kerberos.kinit.cmd configuration parameter is ignored."
+    )
+
+
 @pytest.mark.parametrize(
     "create_query_generator",
     [
@@ -2114,9 +2146,7 @@ def test_kafka_insert_avro(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
     topic_config = {
         # default retention, since predefined timestamp_ms is used.
         "retention.ms": "-1",
@@ -2231,9 +2261,7 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
     topic_name = "flush_by_time" + k.get_topic_postfix(create_query_generator)
 
     with k.kafka_topic(admin_client, topic_name):
@@ -2259,10 +2287,19 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
 
         cancel = threading.Event()
 
+        # Reuse one producer: `k.kafka_produce` opens a new connection per call,
+        # and a single broker-version probe there can cost seconds, which is
+        # enough to miss the row count asserted below.
+        producer = k.get_kafka_producer(
+            kafka_cluster.kafka_port, k.producer_serializer, retries=15
+        )
+
         def produce():
             while not cancel.is_set():
-                messages = [json.dumps({"key": 0, "value": 0})]
-                k.kafka_produce(kafka_cluster, topic_name, messages)
+                producer.send(
+                    topic=topic_name, value=json.dumps({"key": 0, "value": 0})
+                )
+                producer.flush()
                 time.sleep(0.8)
 
         kafka_thread = threading.Thread(target=produce)
@@ -2280,6 +2317,7 @@ def test_kafka_flush_by_time(kafka_cluster, create_query_generator):
 
         cancel.set()
         kafka_thread.join()
+        producer.close()
 
         instance.query(f"""
             DROP TABLE test.{kafka_table}_consumer;
@@ -2366,9 +2404,7 @@ def test_kafka_lot_of_partitions_partial_commit_of_bulk(
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
 
     topic_name = "topic_with_multiple_partitions2" + k.get_topic_postfix(
         create_query_generator
@@ -2431,9 +2467,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster, create_query_gen
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
     topic_name = "no_holes_when_write_suffix_failed" + k.get_topic_postfix(
         create_query_generator
     )
@@ -2972,9 +3006,7 @@ def test_kafka_predefined_configuration(kafka_cluster):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
     topic_name = "conf"
     k.kafka_create_topic(admin_client, topic_name)
 
@@ -3311,9 +3343,7 @@ def test_system_kafka_consumers(kafka_cluster, create_query_generator, consumer_
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
 
     topic_name = "system_kafka_cons" + k.get_topic_postfix(create_query_generator)
 
@@ -3413,9 +3443,7 @@ def test_system_kafka_consumers_rebalance(kafka_cluster, max_retries=15):
     kafka_table = f"kafka_{suffix}"
 
     # based on test_kafka_consumer_hang2
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
 
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(cluster.kafka_port),
@@ -3534,9 +3562,7 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
 
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
 
     producer = KafkaProducer(
         bootstrap_servers="localhost:{}".format(cluster.kafka_port),
@@ -3938,13 +3964,13 @@ def test_message_queue_disable_insertion(kafka_cluster):
     )
 
     try:
-        # Enable message_queue_disable_insertion via config replacement + reload
+        # Enable message_queue_disable_insertion via config replacement + restart
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "0",
-            "1",
+            "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
+            "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert (
             "true"
@@ -3971,6 +3997,15 @@ def test_message_queue_disable_insertion(kafka_cluster):
         """
         )
 
+        error_patterns = [
+            "Insert queries are prohibited",
+            "Message queue insertion is disabled",
+            "Failed to process data",
+        ]
+        error_counts = {
+            pattern: int(instance.count_in_log(pattern)) for pattern in error_patterns
+        }
+
         # Produce messages while insertion is disabled
         messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
         k.kafka_produce(kafka_cluster, topic_name, messages)
@@ -3981,7 +4016,20 @@ def test_message_queue_disable_insertion(kafka_cluster):
             instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
         )
 
-        assert instance.contains_in_log("Message queue insertion is disabled")
+        for pattern, count in error_counts.items():
+            assert count == int(instance.count_in_log(pattern))
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(length(exceptions.text)), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(num_rebalance_assignments), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
 
         # Direct INSERT INTO the Kafka table (producer write) must still work
         instance.query(
@@ -3992,10 +4040,10 @@ def test_message_queue_disable_insertion(kafka_cluster):
         # Re-enable insertion
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
+            "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
+            "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert (
             "false"
@@ -4020,10 +4068,10 @@ def test_message_queue_disable_insertion(kafka_cluster):
     finally:
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
+            "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
+            "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.{kafka_table}_mv;
@@ -4031,6 +4079,146 @@ def test_message_queue_disable_insertion(kafka_cluster):
             DROP TABLE IF EXISTS test.{kafka_table};
         """
         )
+
+
+@pytest.mark.parametrize("keeper", [False, True])
+def test_disable_insertion_and_mutation_disables_message_queue_insertion(
+    kafka_cluster, keeper
+):
+    suffix = k.random_string(6)
+    engine = "kafka2" if keeper else "kafka"
+    kafka_table = f"disable_insertion_and_mutation_{engine}_{suffix}"
+    topic_name = f"disable_insertion_and_mutation_{suffix}"
+    keeper_settings = (
+        f", kafka_keeper_path = '/clickhouse/kafka2/{kafka_table}', kafka_replica_name = 'r1'"
+        if keeper
+        else ""
+    )
+
+    try:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+        )
+        # `disable_insertion_and_mutation` is a startup-only server setting.
+        instance.restart_clickhouse()
+
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('disable_insertion_and_mutation')"
+            ).strip()
+        )
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('message_queue_disable_insertion')"
+            ).strip()
+        )
+
+        instance.query(
+            f"""
+            CREATE TABLE test.{kafka_table} (key UInt64, value UInt64)
+                ENGINE = Kafka
+                SETTINGS kafka_broker_list = 'kafka1:19092',
+                         kafka_topic_list = '{topic_name}',
+                         kafka_group_name = '{topic_name}',
+                         kafka_format = 'JSONEachRow',
+                         kafka_flush_interval_ms = 1000{keeper_settings};
+            CREATE TABLE test.{kafka_table}_dst (key UInt64, value UInt64)
+                ENGINE = MergeTree()
+                ORDER BY key;
+            CREATE MATERIALIZED VIEW test.{kafka_table}_mv TO test.{kafka_table}_dst AS
+                SELECT * FROM test.{kafka_table};
+            """,
+            settings=(
+                {"allow_experimental_kafka_offsets_storage_in_keeper": 1}
+                if keeper
+                else {}
+            ),
+        )
+
+        if keeper:
+            zk = kafka_cluster.get_kazoo_client("zoo1")
+            assert (
+                zk.exists(f"/clickhouse/kafka2/{kafka_table}/replicas/r1") is None
+            )
+        else:
+            # Disabled streaming storages must remain registered so they can be renamed.
+            instance.query(
+                f"RENAME TABLE test.{kafka_table} TO test.{kafka_table}_renamed"
+            )
+            instance.query(
+                f"RENAME TABLE test.{kafka_table}_renamed TO test.{kafka_table}"
+            )
+
+        error_patterns = [
+            "Insert queries are prohibited",
+            "Message queue insertion is disabled",
+            "Failed to process data",
+        ]
+        error_counts = {
+            pattern: int(instance.count_in_log(pattern)) for pattern in error_patterns
+        }
+
+        messages = [json.dumps({"key": i, "value": i}) for i in range(10)]
+        k.kafka_produce(kafka_cluster, topic_name, messages)
+
+        instance.query(
+            f"INSERT INTO test.{kafka_table} FORMAT JSONEachRow"
+            ' {"key": 999, "value": 999}'
+        )
+
+        time.sleep(10)
+        assert 0 == int(
+            instance.query(f"SELECT count() FROM test.{kafka_table}_dst")
+        )
+        for pattern, count in error_counts.items():
+            assert count == int(instance.count_in_log(pattern))
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(length(exceptions.text)), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(num_rebalance_assignments), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
+
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+        )
+        instance.restart_clickhouse()
+
+        assert 11 == int(
+            instance.query_with_retry(
+                f"SELECT count() FROM test.{kafka_table}_dst",
+                check_callback=lambda result: int(result) == 11,
+                retry_count=100,
+            )
+        )
+    finally:
+        instance.replace_in_config(
+            "/etc/clickhouse-server/config.d/disable_insertion.xml",
+            "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
+            "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
+        )
+        instance.restart_clickhouse()
+        instance.query(
+            f"""
+            DROP TABLE IF EXISTS test.{kafka_table}_mv;
+            DROP TABLE IF EXISTS test.{kafka_table}_dst;
+            DROP TABLE IF EXISTS test.{kafka_table};
+            """
+        )
+
+
 def test_kafka2_commit_on_select_semantics(kafka_cluster):
     """Test that kafka_commit_on_select controls whether offsets are committed after direct SELECT."""
 

@@ -59,7 +59,6 @@ struct PaimonToken
     const String bearer_token;
     const String dlf_access_key_id;
     const String dlf_access_key_secret;
-    mutable String dlf_generated_authorization;
 
     explicit PaimonToken(const String & bearer_token_)
         : token_provider("bearer")
@@ -110,10 +109,13 @@ private:
     String warehouse_root_path;
     std::optional<StorageType> storage_type;
     const LoggerPtr log;
-    Poco::Net::HTTPBasicCredentials credentials{};
 
     // void listDatabases();
-    void createAuthHeaders(
+    /// Adds provider-specific auth material for the request. For the `dlf` provider this appends the
+    /// signed headers to `current_headers` and returns an empty string; for the `bearer` provider it
+    /// returns the bearer token (to pass to `create`) without adding a header. Returns an empty
+    /// string when no token is configured.
+    String createAuthHeaders(
         DB::HTTPHeaderEntries & current_headers,
         const String & resource_path,
         const std::unordered_map<String, String> & query_params,

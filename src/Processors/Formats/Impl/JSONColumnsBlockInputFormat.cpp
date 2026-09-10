@@ -53,16 +53,16 @@ void registerInputFormatJSONColumns(FormatFactory & factory)
 
 ## Description {#description}
 
-:::tip
+<Tip>
 The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row in the table for that field;
 visually, the data is rotated 90 degrees to the left.
-:::
+</Tip>
 
 In this format, all data is represented as a single JSON Object.
 
-:::note
+<Note>
 The `JSONColumns` format buffers all data in memory and then outputs it as a single block, so, it can lead to high memory consumption.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -112,8 +112,8 @@ The output will be in JSON format:
 
 ## Format settings {#format-settings}
 
-During import, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
-Columns that are not present in the block will be filled with default values (you can use the [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
+During import, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
+Columns that are not present in the block will be filled with default values (you can use the [`input_format_defaults_for_omitted_fields`](/reference/settings/formats/input-format#input_format_defaults_for_omitted_fields) setting here)
 )DOCS_MD"});
 }
 
