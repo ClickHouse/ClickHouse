@@ -6272,11 +6272,12 @@ def get_next_test_progress(progress_counter, total_tests: int) -> str:
 
 
 class ParallelTestScheduler:
-    """A shared queue that never hands out two tests from the same group."""
+    """A shared queue that serializes groups and, optionally, repeated tests."""
 
-    def __init__(self, multiprocessing_manager, tests, test_groups):
+    def __init__(self, multiprocessing_manager, tests, test_groups, no_self_parallel=False):
         self.pending_tests = multiprocessing_manager.list(tests)
         self.test_groups = test_groups
+        self.no_self_parallel = no_self_parallel
         self.active_groups = multiprocessing_manager.dict()
         self.worker_groups = multiprocessing_manager.dict()
         self.lock = multiprocessing_manager.Lock()
@@ -6296,6 +6297,10 @@ class ParallelTestScheduler:
         with self.lock:
             for index, test_name in enumerate(self.pending_tests):
                 group = self.test_groups.get(test_name)
+                if group is not None:
+                    group = ("group", group)
+                elif self.no_self_parallel:
+                    group = ("test", test_name)
                 if group is not None and group in self.active_groups:
                     continue
 
@@ -6306,15 +6311,6 @@ class ParallelTestScheduler:
                 return test_name
 
         raise IndexError
-
-
-def partition_tests_by_serialization_key(test_suite, tests, jobs):
-    worker_queues: List[List[str]] = [[] for _ in range(jobs)]
-    for test_name in tests:
-        group = test_suite.get_parallel_group(test_name)
-        serialization_key = f"group:{group}" if group else f"test:{test_name}"
-        worker_queues[stringhash(serialization_key) % jobs].append(test_name)
-    return worker_queues
 
 
 def do_run_tests(
@@ -6397,37 +6393,23 @@ def do_run_tests(
         workers_to_shed = multiprocessing.Value('i', 0)
         total_failures_shared = multiprocessing.Value('i', 0)
 
-        if args.no_self_parallel:
-            # Partition tests so that all copies of the same test go to the
-            # same worker.  This prevents the same test from running
-            # concurrently on multiple workers, avoiding conflicts when tests
-            # use shared resources (tables with fixed names, files, etc.).
-            worker_queues = partition_tests_by_serialization_key(
-                test_suite, test_suite.parallel_tests, jobs
-            )
-        else:
-            shared_queue = ParallelTestScheduler(
-                multiprocessing_manager,
-                test_suite.parallel_tests,
-                test_suite.parallel_groups,
-            )
+        shared_queue = ParallelTestScheduler(
+            multiprocessing_manager,
+            test_suite.parallel_tests,
+            test_suite.parallel_groups,
+            no_self_parallel=args.no_self_parallel,
+        )
 
         batch_size = len(test_suite.parallel_tests) // jobs
 
         processes = []
         for i in range(jobs):
-            if args.no_self_parallel:
-                queue = worker_queues[i]
-                queue_size = len(queue)
-            else:
-                queue = shared_queue
-                queue_size = batch_size
             process = multiprocessing.Process(
                 target=run_tests_process,
                 args=(
                     (
-                        queue,
-                        queue_size,
+                        shared_queue,
+                        batch_size,
                         test_suite,
                         True,
                         args,
@@ -6462,10 +6444,8 @@ def do_run_tests(
             sys.stdout.flush()
 
             # Periodically check memory pressure and reduce concurrency if needed.
-            # In normal mode workers share a single queue, so shedding one
-            # does not lose work.  In --flaky-check mode each worker has its
-            # own queue, so its remaining tests will not run — acceptable under
-            # memory pressure.
+            # All modes share a queue: a worker releases its serialization key
+            # before exiting, and the remaining workers can claim its pending tests.
             now = time()
             if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
                 last_memory_check = now
@@ -7843,7 +7823,7 @@ def parse_args():
     parser.add_argument(
         "--no-self-parallel",
         action="store_true",
-        help="Partition tests by name or concurrency group so conflicting tests never run on multiple workers. Use with --test-runs to avoid conflicts on shared resources.",
+        help="Serialize repetitions of each test while allowing different tests to run concurrently. Use with --test-runs to avoid conflicts on shared resources.",
     )
     parser.add_argument(
         "--stress-tests",
