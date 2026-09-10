@@ -204,7 +204,7 @@ public:
             /// reject any outer filter under external_table_strict_query.
             rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
             query = buildQueryForExternalDatabaseSubquery(
-                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
+                remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotesPostgreSQL);
         }
         else
         {
@@ -218,7 +218,7 @@ public:
                 query_info,
                 required_source_columns,
                 storage_snapshot->metadata->getColumns().getOrdinary(),
-                IdentifierQuotingStyle::DoubleQuotes,
+                IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
@@ -537,7 +537,7 @@ private:
             , statement_name("insert_" + getHexUIntLowercase(thread_local_rng()))
         {
             WriteBufferFromOwnString buf;
-            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotes);
+            buf << getInsertQuery(schema, table, columns, IdentifierQuotingStyle::DoubleQuotesPostgreSQL);
             buf << " (";
             for (size_t i = 1; i <= columns.size(); ++i)
             {
@@ -833,7 +833,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)

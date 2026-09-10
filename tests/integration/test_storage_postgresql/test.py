@@ -875,6 +875,56 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     cursor.execute(f'DROP TABLE "{table}\'"')
 
 
+def test_postgresql_identifier_quoting(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+
+    # A PostgreSQL quoted identifier escapes '"' by doubling it and gives '\' no special meaning.
+    # Emitting an embedded '"' as '\"' instead ends the identifier at that quote, and the read path
+    # sends its query as COPY (<query>) TO STDOUT over the simple-query protocol, where every
+    # ';'-separated statement runs. Both relations below are legal PostgreSQL names.
+    cursor.execute('DROP TABLE IF EXISTS "ddq_bs\\"')
+    cursor.execute('CREATE TABLE "ddq_bs\\" (c integer)')
+    cursor.execute('INSERT INTO "ddq_bs\\" VALUES (1)')
+    cursor.execute('DROP TABLE IF EXISTS "ddq_q""x"')
+    cursor.execute('CREATE TABLE "ddq_q""x" ("c""o" integer)')
+    cursor.execute('INSERT INTO "ddq_q""x" VALUES (7)')
+
+    # An explicit structure is used throughout so the read path is exercised without going through
+    # structure inference, whose identifier positions are a separate set of call sites.
+
+    # A remote name shaped like a payload must reach PostgreSQL as one identifier, so the statement
+    # after it is never executed and the lookup simply fails.
+    payload = 'ddq_bs") TO STDOUT; SELECT 1; --'
+    node1.query("DROP TABLE IF EXISTS ddq_inject")
+    node1.query(
+        f"CREATE TABLE ddq_inject (c Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', '{payload}', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("SELECT * FROM ddq_inject")
+    assert "does not exist" in error
+    # The whole payload is named as one missing relation, which is what proves it stayed quoted.
+    assert payload in error
+
+    # A relation and a column whose names contain '"' are readable.
+    node1.query("DROP TABLE IF EXISTS ddq_quote")
+    node1.query(
+        f"""CREATE TABLE ddq_quote (`c"o` Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'ddq_q"x', 'postgres', '{pg_pass}')"""
+    )
+    assert node1.query('SELECT `c"o` FROM ddq_quote').strip() == "7"
+
+    # And so is a relation whose name ends in a backslash: it must be sent as that one byte.
+    node1.query("DROP TABLE IF EXISTS ddq_backslash")
+    node1.query(
+        f"CREATE TABLE ddq_backslash (c Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'ddq_bs\\\\', 'postgres', '{pg_pass}')"
+    )
+    assert node1.query("SELECT c FROM ddq_backslash").strip() == "1"
+
+    node1.query("DROP TABLE ddq_inject")
+    node1.query("DROP TABLE ddq_quote")
+    node1.query("DROP TABLE ddq_backslash")
+    cursor.execute('DROP TABLE "ddq_bs\\"')
+    cursor.execute('DROP TABLE "ddq_q""x"')
+
+
 def test_postgres_datetime(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_datetime")

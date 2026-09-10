@@ -149,6 +149,11 @@ void writeProbablyDoubleQuotedString(std::string_view s, WriteBuffer & buf)
     writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedString(s_, buf_); });
 }
 
+void writeProbablyDoubleQuotedStringPostgreSQL(std::string_view s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeDoubleQuotedStringPostgreSQL(s_, buf_); });
+}
+
 void writeProbablyBackQuotedStringMySQL(std::string_view s, WriteBuffer & buf)
 {
     writeProbablyQuotedStringImpl(s, buf, [](std::string_view s_, WriteBuffer & buf_) { writeBackQuotedStringMySQL(s_, buf_); });
