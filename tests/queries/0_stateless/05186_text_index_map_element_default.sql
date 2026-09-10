@@ -98,9 +98,13 @@ INSERT INTO tab_values_ip VALUES (map('abc', toIPv6('2001:db8:1:2:3:4:5:6')));
 
 -- The constant spells the IPv6 default as 15 characters, so the probe has trigrams to build. `'::'`
 -- is shorter than the 3-gram width, which makes the probe empty and the granule survive regardless.
-SELECT '-- the mapValues carrier over a non-String domain';
-SELECT count() FROM tab_values_ip WHERE m['nokey'] = '0:0:0:0:0:0:0:0';
-SELECT count() FROM tab_values_ip WHERE m['nokey'] = '0:0:0:0:0:0:0:0' SETTINGS ignore_data_skipping_indices = 'idx';
+SELECT '-- the mapValues carrier over a non-String domain, arrayElement spelling';
+SELECT count() FROM tab_values_ip WHERE m['nokey'] = '0:0:0:0:0:0:0:0' SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() FROM tab_values_ip WHERE m['nokey'] = '0:0:0:0:0:0:0:0' SETTINGS optimize_functions_to_subcolumns = 0, ignore_data_skipping_indices = 'idx';
+
+SELECT '-- and the same through the map subcolumn spelling';
+SELECT count() FROM tab_values_ip WHERE m['nokey'] = '0:0:0:0:0:0:0:0' SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() FROM tab_values_ip WHERE m['nokey'] = '0:0:0:0:0:0:0:0' SETTINGS optimize_functions_to_subcolumns = 1, ignore_data_skipping_indices = 'idx';
 
 DROP TABLE tab_values_ip;
 
