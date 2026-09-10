@@ -329,10 +329,10 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
                 /// The seal normalized every batch's payload columns to the dense form the
                 /// drain consumes, so the buffered batches always agree at a position and the
                 /// coalescing is a plain concatenation.
-                VectorWithMemoryTracking<ColumnPtr> sources;
+                ColumnRawPtrs sources;
                 sources.reserve(num_minis);
                 for (const auto & mini : minis)
-                    sources.push_back(columns_of(*mini)[position]);
+                    sources.push_back(columns_of(*mini)[position].get());
 
                 auto destination = sources.front()->cloneEmpty();
                 destination->prepareForSquashing(sources, /* factor */ 1);

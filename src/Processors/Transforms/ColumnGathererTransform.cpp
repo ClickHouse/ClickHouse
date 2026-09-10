@@ -58,7 +58,7 @@ void ColumnGathererStream::updateStats(const IColumn & column)
 
 void ColumnGathererStream::initialize(Inputs inputs)
 {
-    VectorWithMemoryTracking<ColumnPtr> source_columns;
+    ColumnRawPtrs source_columns;
     source_columns.reserve(inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i)
     {
@@ -69,7 +69,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
             removeSpecialColumnRepresentations(inputs[i].chunk);
 
         sources[i].update(inputs[i].chunk.detachColumns().at(0));
-        source_columns.push_back(sources[i].column);
+        source_columns.push_back(sources[i].column.get());
     }
 
     if (source_columns.empty())
@@ -109,8 +109,7 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
         else if (result_column->hasStatistics())
         {
             auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
-            ColumnPtr source_column = result_column->getPtr();
-            col->takeOrCalculateStatisticsFrom(source_column);
+            col->takeOrCalculateStatisticsFrom(result_column.get());
             res.addColumn(std::move(col));
         }
         else
@@ -168,8 +167,7 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
         else if (result_column->hasStatistics())
         {
             auto col = IColumn::mutate(std::move(source_to_fully_copy->column));
-            ColumnPtr source_column = result_column->getPtr();
-            col->takeOrCalculateStatisticsFrom(source_column);
+            col->takeOrCalculateStatisticsFrom(result_column.get());
             res.addColumn(std::move(col));
         }
         else
