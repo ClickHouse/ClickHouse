@@ -761,6 +761,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         query_analysis_result.aggregate_overflow_row,
         settings[Setting::max_rows_to_group_by],
         settings[Setting::group_by_overflow_mode],
+        /*max_bytes_to_group_by=*/0,
+        /*limit_errors=*/{},
         settings[Setting::group_by_two_level_threshold],
         settings[Setting::group_by_two_level_threshold_bytes],
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(

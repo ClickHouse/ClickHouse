@@ -115,6 +115,10 @@ public:
     /// (Kafka, RabbitMQ, NATS, S3Queue/AzureQueue).
     virtual bool isStreamingStorage() const { return false; }
 
+    /// Returns true if reads are known to finish without cancellation by their consumer.
+    /// Query-level streaming modifiers are checked separately. Unknown bounds return false.
+    virtual bool hasBoundedRead() const { return false; }
+
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 

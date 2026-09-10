@@ -592,6 +592,43 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(
     }
 }
 
+bool hasBoundedInput(const QueryTreeNodePtr & tree)
+{
+    class BoundedInputVisitor : public ConstInDepthQueryTreeVisitor<BoundedInputVisitor>
+    {
+    public:
+        bool is_bounded = true;
+
+        void visitImpl(const QueryTreeNodePtr & node)
+        {
+            const auto has_bounded_read = [](const auto & table_node)
+            {
+                const auto & modifiers = table_node.getTableExpressionModifiers();
+                return table_node.getStorage()->hasBoundedRead() && (!modifiers || !modifiers->hasStream());
+            };
+
+            if (const auto * table_node = node->as<TableNode>())
+                is_bounded &= has_bounded_read(*table_node);
+            else if (const auto * table_function_node = node->as<TableFunctionNode>())
+                is_bounded &= has_bounded_read(*table_function_node);
+            else if (const auto * query_node = node->as<QueryNode>())
+                is_bounded &= !query_node->isRecursiveWith();
+            else if (const auto * union_node = node->as<UnionNode>())
+                is_bounded &= !union_node->isRecursiveCTE();
+        }
+
+        bool needChildVisit(const QueryTreeNodePtr & parent, const QueryTreeNodePtr &) const
+        {
+            /// A table function's resolved storage defines its read; arguments can remain unresolved.
+            return is_bounded && parent->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION;
+        }
+    };
+
+    BoundedInputVisitor visitor;
+    visitor.visit(tree);
+    return visitor.is_bounded;
+}
+
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
 {
     QueryTreeNodes result;

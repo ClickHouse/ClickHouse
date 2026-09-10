@@ -3235,15 +3235,20 @@ static BlockIO executeQueryImpl(
         {
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
 
+            QueryPlanOptimizationSettings optimization_settings(context);
+            /// The initiator can stop the fragment through a downstream limit that is absent here.
+            /// Keep `DISTINCT` streaming so it can produce rows before consuming its entire input.
+            optimization_settings.convert_distinct_to_aggregation = false;
+
             plan.resolveStorages(context);
-            plan.optimize(QueryPlanOptimizationSettings(context));
+            plan.optimize(optimization_settings);
 
             WriteBufferFromOwnString buf;
             plan.explainPlan(buf, {.header=true, .actions=true});
             LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
 
             auto pipeline = plan.buildQueryPipeline(
-                    QueryPlanOptimizationSettings(context),
+                    optimization_settings,
                     BuildQueryPipelineSettings(context),
                     /*do_optimize=*/ false);
 

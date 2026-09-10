@@ -1024,20 +1024,7 @@ private:
         AggregatedDataVariantsPtr & first = data->at(0);
 
         if (adaptive_session)
-        {
-            /// The adaptive drain and merge create the destination's states in per-bucket
-            /// arenas, for two reasons. Fresh arenas (rather than `pools[thread]`, typically a
-            /// source local's arena) because with a zero-size aggregate state (`Nothing`) an
-            /// arena returns one address for every allocation, so a drained state would alias
-            /// that local's states and the bucket merge would see a state merged into itself.
-            /// And per bucket (rather than per source) so a converted bucket's states free
-            /// with its slot when the bucket retires. The slots live outside
-            /// `aggregates_pools`, which every bucket's output columns capture wholesale;
-            /// each conversion is handed its own slot instead.
-            first->adaptive_merge_bucket_arenas.resize(ConvertingAggregatedToChunksWithMergingSource::NUM_BUCKETS);
-            for (auto & slot : first->adaptive_merge_bucket_arenas)
-                slot = std::make_shared<Arena>();
-        }
+            params->aggregator.prepareAdaptiveMerge(*first);
 
         for (size_t thread = 0; thread < num_threads; ++thread)
         {

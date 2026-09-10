@@ -171,6 +171,11 @@ QueryPlanStepPtr ReadFromSystemPrimesStep::clone() const
         column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size);
 }
 
+bool ReadFromSystemPrimesStep::hasBoundedRead() const
+{
+    return limit.has_value() || storage->hasBoundedRead();
+}
+
 Pipe ReadFromSystemPrimesStep::makePipe()
 {
     auto & primes_storage = storage->as<StorageSystemPrimes &>();

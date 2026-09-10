@@ -30,6 +30,9 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    /// Returns true when arguments or limit pushdown bound the read.
+    bool hasBoundedRead() const;
+
 private:
     Pipe makePipe();
 

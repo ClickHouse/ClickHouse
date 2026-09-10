@@ -23,6 +23,33 @@ StagedChunk::AggregatePayload & StagedChunk::AggregatePayload::operator=(Aggrega
     = default;
 StagedChunk::AggregatePayload::~AggregatePayload() = default;
 
+StagedChunk::~StagedChunk()
+{
+    if (accounted_bytes_total)
+        accounted_bytes_total->fetch_sub(static_cast<Int64>(accounted_bytes), std::memory_order_relaxed);
+}
+
+size_t StagedChunk::allocatedBytes() const
+{
+    size_t bytes = keys.routing_hashes.allocated_bytes() + keys.key_bytes.allocated_bytes() + keys.key_offsets.allocated_bytes();
+    if (const auto * counts = std::get_if<CountPayload>(&payload))
+        return bytes + counts->multiplicities.allocated_bytes();
+
+    for (const auto & column : std::get<AggregatePayload>(payload).argument_columns)
+        if (column)
+            bytes += column->allocatedBytes();
+    return bytes;
+}
+
+void Aggregator::updateAndCheckMemoryUsage(StagedChunk & chunk) const
+{
+    const size_t bytes = chunk.allocatedBytes();
+    const Int64 delta = static_cast<Int64>(bytes) - static_cast<Int64>(chunk.accounted_bytes);
+    chunk.accounted_bytes_total = aggregation_state_bytes;
+    chunk.accounted_bytes = bytes;
+    updateAndCheckMemoryUsage(delta);
+}
+
 void Aggregator::prepareStagedChunk(StagedChunk & block) const
 {
     auto & payload = std::get<StagedChunk::AggregatePayload>(block.payload);
@@ -56,6 +83,8 @@ void Aggregator::initAdaptiveSession(AggregatedDataVariants & local_result, Adap
     early_drain_variants->key_sizes = key_sizes;
     early_drain_variants->init(convertToTwoLevelTypeIfPossible(local_result.type));
 
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(*early_drain_variants);
     shared.drain_type = early_drain_variants->type;
     shared.early_drain_variants = std::move(early_drain_variants);
     shared.initialized.store(true, std::memory_order_release);
@@ -65,6 +94,8 @@ void Aggregator::publishStagedChunk(
     AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const
 {
     chassert(block->wellFormed());
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(*block);
 
     /// The drains claim chunks whole, so a chunk is never let into the backlogs larger than
     /// the part its claim is bounded by (see `splitStagedChunkAtPartBound`).
@@ -96,6 +127,8 @@ void Aggregator::enqueueStagedChunk(AdaptiveAggregationSession & shared, Mutable
     if (std::holds_alternative<StagedChunk::AggregatePayload>(block->payload))
         prepareStagedChunk(*block);
 
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(*block);
     shared.backlog.publish(std::move(block));
 }
 
@@ -148,8 +181,26 @@ std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllFo
     return chunks;
 }
 
+void Aggregator::prepareAdaptiveMerge(AggregatedDataVariants & dest) const
+{
+    /// Each bucket owns its merge arena independently of the producer arenas. Output columns
+    /// retain only their bucket's arena, allowing the remaining buckets to release theirs early.
+    dest.adaptive_merge_bucket_arenas.resize(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
+    size_t bytes = 0;
+    for (auto & arena : dest.adaptive_merge_bucket_arenas)
+    {
+        arena = std::make_shared<Arena>();
+        if (params.max_bytes_to_group_by)
+            bytes += arena->allocatedBytes();
+    }
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(static_cast<Int64>(bytes));
+}
+
 void Aggregator::retireAdaptiveMergedBucket(AggregatedDataVariants & dest, AdaptiveAggregationSession & shared, size_t bucket) const
 {
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(-static_cast<Int64>(dest.adaptive_merge_bucket_arenas[bucket]->allocatedBytes()));
     dest.adaptive_merge_bucket_arenas[bucket].reset();
     shared.backlog.releaseMergedBucket(bucket);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationBucketsRetired);
@@ -262,6 +313,8 @@ void Aggregator::stageChunk(
         return;
     }
 
+    if (params.max_bytes_to_group_by)
+        updateAndCheckMemoryUsage(*block);
     adaptive.pending_chunks.push_back(std::move(block));
     adaptive.pending_staged_bytes += estimated_payload_bytes;
 

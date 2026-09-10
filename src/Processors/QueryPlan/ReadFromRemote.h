@@ -54,6 +54,10 @@ public:
 
     bool hasSerializedPlan() const;
 
+    bool hasBoundedRead() const;
+    bool hasTotals() const;
+    bool hasExtremes() const;
+
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
@@ -69,6 +73,8 @@ private:
     const String cluster_name;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
+
+    bool hasTotals(const ClusterProxy::SelectStreamFactory::Shard & shard) const;
 
     Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
 
@@ -118,6 +124,8 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
+
+    bool hasBoundedRead() const;
 
     StorageID getStorageID() const { return storage_id; }
     ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }

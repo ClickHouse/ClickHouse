@@ -37,6 +37,7 @@ public:
     ~StorageMemory() override;
 
     String getName() const override { return "Memory"; }
+    bool hasBoundedRead() const override { return true; }
 
     size_t getSize() const { return data.get()->size(); }
 

@@ -458,6 +458,11 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::clone() const
     return std::make_unique<ReadFromSystemNumbersStep>(column_names, getQueryInfo(), getStorageSnapshot(), getContext(), storage, max_block_size, num_streams);
 }
 
+bool ReadFromSystemNumbersStep::hasBoundedRead() const
+{
+    return limit.has_value() || storage->hasBoundedRead();
+}
+
 Pipe ReadFromSystemNumbersStep::makePipe()
 {
     auto & numbers_storage = storage->as<StorageSystemNumbers &>();

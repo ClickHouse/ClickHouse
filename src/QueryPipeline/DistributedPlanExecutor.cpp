@@ -823,6 +823,10 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 
+    /// Downstream limits can belong to another fragment. Keep `DISTINCT` streaming so it can
+    /// produce rows before consuming its entire input.
+    optimization_settings.convert_distinct_to_aggregation = false;
+
     /// Disable stats-driven plan-shape rewrites on the worker side: per-worker
     /// stats can diverge and produce incompatible plans across workers (e.g. one
     /// swaps the join sides while the others don't), breaking exchange partitioning.

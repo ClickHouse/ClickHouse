@@ -30,6 +30,10 @@ using NamesAndTypes = VectorWithMemoryTracking<NameAndTypePair>;
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
 
+/// Returns true if all reads in a resolved query tree are known to be bounded.
+/// Streaming reads, recursive queries, and storages with unknown bounds return false.
+bool hasBoundedInput(const QueryTreeNodePtr & tree);
+
 /// Returns true if storage is used in tree, false otherwise
 bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root);
 

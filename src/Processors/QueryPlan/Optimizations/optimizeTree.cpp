@@ -633,6 +633,8 @@ void optimizeTreeSecondPass(
                     local_optimization_settings.enable_join_runtime_filters = false;
             }
 
+            /// Choose blocking deduplication after the fragment is attached to its consumers.
+            local_optimization_settings.convert_distinct_to_aggregation = false;
             auto local_plan = read_from_local->extractQueryPlan();
             local_plan->optimize(local_optimization_settings);
 
@@ -832,16 +834,18 @@ void optimizeTreeSecondPass(
             "Projection {} is specified in setting force_optimize_projection_name but not used",
             optimization_settings.force_projection_name);
 
+    /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
+    /// Runs before `applyOrder`, whose `DISTINCT` to aggregation rewrite leaves alone a final `DISTINCT`
+    /// that already deduplicates disjoint streams without merging them.
+    applyStreamDisjointness(optimization_settings, root);
+
     /// Trying to reuse sorting property for other steps.
-    applyOrder(optimization_settings, root);
+    applyOrder(optimization_settings, root, nodes);
 
     /// Push LIMIT into aggregation-in-order when ORDER BY matches GROUP BY.
     /// Must run after applyOrder, which converts SortingStep to FinishSorting.
     if (optimization_settings.optimize_aggregation_in_order_limit)
         optimizeLimitForAggregationInOrder(root);
-
-    /// Propagate stream disjointness so that DISTINCT / LIMIT BY / GROUP BY can skip merging streams.
-    applyStreamDisjointness(optimization_settings, root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);

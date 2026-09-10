@@ -1036,6 +1036,12 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
 
 void AggregatingStep::serialize(Serialization & ctx) const
 {
+    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS
+        && (params.max_bytes_to_group_by != 0 || params.limit_errors != Aggregator::Params::LimitErrors{}))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Aggregation state byte limits and custom limit errors require query plan serialization version {} or newer",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS);
+
     /// Flags encode boolean properties that affect the data format or plan structure.
     /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
     ///             16=stats_key, 32=in_order_aggregation, 64=explicit_sorting_required,
@@ -1112,6 +1118,14 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS)
+    {
+        writeVarUInt(params.max_bytes_to_group_by, ctx.out);
+        writeStringBinary(params.limit_errors.description, ctx.out);
+        writeIntBinary(params.limit_errors.rows, ctx.out);
+        writeIntBinary(params.limit_errors.bytes, ctx.out);
+    }
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
@@ -1197,12 +1211,24 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
+    size_t max_bytes_to_group_by = 0;
+    Aggregator::Params::LimitErrors limit_errors;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_LIMITS)
+    {
+        readVarUInt(max_bytes_to_group_by, ctx.in);
+        readStringBinary(limit_errors.description, ctx.in);
+        readIntBinary(limit_errors.rows, ctx.in);
+        readIntBinary(limit_errors.bytes, ctx.in);
+    }
+
     Aggregator::Params params{
         keys,
         aggregates,
         overflow_row,
         ctx.settings[QueryPlanSerializationSetting::max_rows_to_group_by],
         ctx.settings[QueryPlanSerializationSetting::group_by_overflow_mode],
+        max_bytes_to_group_by,
+        std::move(limit_errors),
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold],
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],

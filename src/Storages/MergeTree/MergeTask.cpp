@@ -3600,6 +3600,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
 
     {
         QueryPlanOptimizationSettings optimization_settings(global_ctx->context);
+        /// The merge pipeline requires one stream in the merged row order, even with an empty sorting key.
+        optimization_settings.convert_distinct_to_aggregation = false;
         auto pipeline_settings = BuildQueryPipelineSettings(global_ctx->context);
         pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
         auto builder = merge_parts_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);

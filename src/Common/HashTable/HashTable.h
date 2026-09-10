@@ -1478,8 +1478,8 @@ public:
         memset(static_cast<void*>(buf), 0, grower.bufSize() * sizeof(*buf));
     }
 
-    /// After executing this function, the table can only be destroyed,
-    ///  and also you can use the methods `size`, `empty`, `begin`, `end`.
+    /// After executing this function, the table can only be destroyed or inspected through
+    /// `size`, `empty`, `begin`, `end`, and `getBufferSizeInBytes`.
     void clearAndShrink()
     {
         destroyElements();
@@ -1489,7 +1489,7 @@ public:
 
     size_t getBufferSizeInBytes() const
     {
-        return grower.bufSize() * sizeof(Cell);
+        return buf ? grower.bufSize() * sizeof(Cell) : 0;
     }
 
     size_t getBufferSizeInCells() const

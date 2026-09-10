@@ -35,6 +35,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_ROWS;
+    extern const int TOO_MANY_BYTES;
+}
+
 class Arena;
 using ArenaPtr = std::shared_ptr<Arena>;
 using Arenas = std::vector<ArenaPtr>;
@@ -125,6 +131,22 @@ public:
         const size_t max_rows_to_group_by = 0;
         const OverflowMode group_by_overflow_mode = OverflowMode::THROW;
 
+        /// An internal limit on hash-table buffers, arenas, and staged records across aggregation
+        /// workers. Zero disables accounting. Exceeding the cap throws independently of the row
+        /// overflow mode and the spilling threshold.
+        const size_t max_bytes_to_group_by = 0;
+
+        struct LimitErrors
+        {
+            String description = "GROUP BY";
+            int rows = ErrorCodes::TOO_MANY_ROWS;
+            int bytes = ErrorCodes::TOO_MANY_BYTES;
+
+            bool operator==(const LimitErrors &) const = default;
+        };
+
+        const LimitErrors limit_errors;
+
         /// Two-level aggregation settings (used for a large number of keys).
         /// With how many keys or the size of the aggregation state in bytes,
         /// two-level aggregation begins to be used. Enough to reach of at least one of the thresholds.
@@ -213,6 +235,8 @@ public:
             bool overflow_row_,
             size_t max_rows_to_group_by_,
             OverflowMode group_by_overflow_mode_,
+            size_t max_bytes_to_group_by_,
+            LimitErrors limit_errors_,
             size_t group_by_two_level_threshold_,
             size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
@@ -300,6 +324,9 @@ public:
     /// Writes a detached drain table through the ordinary external machinery and tears it
     /// down; skipped for a cancelled query, whose table just destroys itself.
     void spillDetachedAdaptiveTable(AdaptiveAggregationSession & shared, AggregatedDataVariants & table) const;
+
+    /// Creates and accounts for the destination's per-bucket merge arenas.
+    void prepareAdaptiveMerge(AggregatedDataVariants & dest) const;
 
     /// Retires a merged-and-converted bucket's working memory, called by the bucket's merge
     /// task after a successful conversion (the output either copied the values out or captured
@@ -590,6 +617,14 @@ private:
     Int64 memory_usage_before_aggregation = 0;
     /// Track memory held by the aggreagation state during execution.
     std::unique_ptr<MemoryTracker> memory_tracker;
+
+    /// Staged chunks can outlive the worker that produced them, so their byte counter is shared.
+    /// Input and output chunks are outside the aggregation state and are not charged here.
+    std::shared_ptr<std::atomic<Int64>> aggregation_state_bytes;
+    void updateAndCheckMemoryUsage(AggregatedDataVariants & variants) const;
+    void updateAndCheckMemoryUsage(StagedChunk & chunk) const;
+    void updateAndCheckMemoryUsage(Int64 delta) const;
+    bool checkLimits(AggregatedDataVariants & variants, bool & no_more_keys) const;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///

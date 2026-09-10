@@ -61,6 +61,7 @@ public:
     /// In that case the final DISTINCT can deduplicate every stream independently and skip merging them
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
+    bool skipsStreamMerging() const { return skip_stream_merging; }
 
 private:
     void updateOutputHeader() override;
