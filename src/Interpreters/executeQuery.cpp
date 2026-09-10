@@ -57,6 +57,7 @@
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
+#include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Formats/FormatFactory.h>
@@ -172,6 +173,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool allow_experimental_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsBool ast_fuzzer_oracle;
@@ -247,8 +249,6 @@ namespace Setting
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
-    extern const SettingsUInt64Auto insert_quorum;
-    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool ignore_format_null_for_explain;
     extern const SettingsString format;
     extern const SettingsString output_format;
@@ -283,7 +283,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
-    extern const int UNSUPPORTED_PARAMETER;
     extern const int FAULT_INJECTED;
     extern const int QUERY_IS_PROHIBITED;
 }
@@ -2360,6 +2359,37 @@ static BlockIO executeQueryImpl(
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
+        else if (settings[Setting::dialect] == Dialect::trino && !internal)
+        {
+            /// Like `ParserPolyglotQuery`, `ParserTrinoQuery` handles SET queries and
+            /// the feature gate internally so users can always switch the dialect back.
+            ParserTrinoQuery parser(
+                max_query_size,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                end,
+                settings[Setting::allow_experimental_trino_dialect],
+                settings[Setting::allow_settings_after_format_in_insert],
+                settings[Setting::implicit_select]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+            /// Settings that align the query semantics with Trino: outer joins
+            /// produce NULLs (not type defaults), set operations use the numeric
+            /// supertype (not `Variant`), and the analyzer is required - the
+            /// column alias lists (`AS t (x, y)`) and the type resolution the
+            /// translation relies on do not work without it.
+            /// They are applied to the context rather than injected into the
+            /// query text, so that they also hold for a query that carries its
+            /// own `SETTINGS` clause and for wrappers such as `INSERT ... SELECT`
+            /// or `EXPLAIN SELECT`. An explicit `SETTINGS` clause is applied
+            /// afterwards and still wins.
+            if (!out_ast->as<ASTSetQuery>())
+            {
+                context->setSetting("join_use_nulls", true);
+                context->setSetting("use_variant_as_common_type", false);
+                context->setSetting("enable_analyzer", true);
+            }
+        }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
         {
             /// Allow `SET` queries in plain SQL so users can switch back to another dialect
@@ -2929,12 +2959,6 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
             if (settings[Setting::implicit_transaction] && settings[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
-
-            auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
-            if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
-                throw Exception(
-                    ErrorCodes::UNSUPPORTED_PARAMETER,
-                    "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum or set insert_quorum_parallel=1 or do not use async inserts");
 
             quota = context->getQuota();
             if (quota)

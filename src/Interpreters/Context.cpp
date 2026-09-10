@@ -606,7 +606,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
-    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
+    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text, deliberately not exposed to SQL
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
@@ -6288,12 +6288,20 @@ void Context::signalKeeperDispatcherShutdown() const
 #endif
 }
 
-void Context::shutdownKeeperDispatcher([[maybe_unused]] bool closed_all_connections) const
+void Context::shutdownKeeperDispatcherBeforeConnectionsFinish() const
+{
+#if USE_NURAFT
+    if (auto dispatcher = tryGetKeeperDispatcher())
+        dispatcher->shutdownBeforeConnectionsFinish();
+#endif
+}
+
+void Context::shutdownKeeperDispatcherAfterConnectionsFinish([[maybe_unused]] bool closed_all_connections) const
 {
 #if USE_NURAFT
     if (auto dispatcher = tryGetKeeperDispatcher())
     {
-        dispatcher->shutdown(closed_all_connections);
+        dispatcher->shutdownAfterConnectionsFinish(closed_all_connections);
         setKeeperDispatcher(nullptr);
     }
 #endif
