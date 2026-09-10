@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -49,6 +50,8 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "The hostname where this span was captured."},
+        {"clickhouse_version", low_cardinality_string, "Version of the ClickHouse server that produced the row."},
+        {"system_processor", low_cardinality_string, "CPU architecture of the ClickHouse server that produced the row."},
         {"trace_id", std::make_shared<DataTypeUUID>(), "ID of the trace for executed query."},
         {"span_id", std::make_shared<DataTypeUInt64>(), "ID of the trace span."},
         {"parent_span_id", std::make_shared<DataTypeUInt64>(), "ID of the parent trace span."},
@@ -104,6 +107,10 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     /// `SYSTEM FLUSH LOGS opentelemetry_span_log` starts to exceed its 180 s timeout.
     const auto & hostname = getFQDNOrHostName();
     typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    const std::string_view clickhouse_version = VERSION_STRING;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(clickhouse_version.data(), clickhouse_version.size());
+    const std::string_view system_processor = SYSTEM_PROCESSOR;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(system_processor.data(), system_processor.size());
     typeid_cast<ColumnUUID &>(*columns[i++]).getData().push_back(span.trace_id);
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.span_id);
     typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.parent_span_id);
