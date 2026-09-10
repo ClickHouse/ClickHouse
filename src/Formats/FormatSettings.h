@@ -18,6 +18,35 @@ struct JSONParsingState
     std::shared_ptr<JSONParsingPools> pools;
 };
 
+/// Default settings need no `JSON` allocation. Copying establishes shared ownership before either copy can parse.
+struct JSONParsingStateHolder
+{
+    JSONParsingStateHolder() = default;
+    /// Copying initializes only the source's mutable resource cache.
+    JSONParsingStateHolder(const JSONParsingStateHolder & other) : state(other.get()) // NOLINT(cert-oop58-cpp)
+    {
+    }
+    JSONParsingStateHolder & operator=(const JSONParsingStateHolder & other)
+    {
+        if (this != &other)
+            state = other.get(); // NOLINT(cert-oop58-cpp) -- Initialize the source's mutable resource cache.
+        return *this;
+    }
+
+    const std::shared_ptr<JSONParsingState> & get() const
+    {
+        std::call_once(initialization_flag, [&]
+        {
+            if (!state)
+                state = std::make_shared<JSONParsingState>();
+        });
+        return state;
+    }
+
+    mutable std::shared_ptr<JSONParsingState> state;
+    mutable std::once_flag initialization_flag;
+};
+
 /**
   * Various tweaks for input/output formats. Text serialization/deserialization
   * of data types also depend on some of these settings. It is different from
@@ -33,7 +62,7 @@ struct FormatSettings
 {
     /// Copies share parsing resources; independent settings own separate pools.
     /// Parsers and extraction trees are allocated only when decoding JSON text.
-    std::shared_ptr<JSONParsingState> json_parsing_state = std::make_shared<JSONParsingState>();
+    JSONParsingStateHolder json_parsing_state{};
 
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;

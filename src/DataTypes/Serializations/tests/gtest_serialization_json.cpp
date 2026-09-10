@@ -151,21 +151,26 @@ TEST(SerializationJSON, ParsingSettingsOwnResources)
     std::weak_ptr<const ISerialization> weak_serialization;
     std::weak_ptr<const IDataType> weak_type;
     auto settings = std::make_unique<FormatSettings>();
-    EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
+    EXPECT_EQ(settings->json_parsing_state.state, nullptr);
     {
         FormatSettings copy;
-        EXPECT_NE(settings->json_parsing_state, copy.json_parsing_state);
+        EXPECT_EQ(copy.json_parsing_state.state, nullptr);
         copy = *settings;
-        EXPECT_EQ(settings->json_parsing_state, copy.json_parsing_state);
+        EXPECT_NE(settings->json_parsing_state.state, nullptr);
+        EXPECT_EQ(settings->json_parsing_state.get(), copy.json_parsing_state.get());
+        FormatSettings independent;
+        EXPECT_NE(settings->json_parsing_state.get(), independent.json_parsing_state.get());
+        independent = copy;
+        EXPECT_EQ(settings->json_parsing_state.get(), independent.json_parsing_state.get());
         auto type = DataTypeFactory::instance().get("JSON(x UInt64)");
         auto serialization = type->getDefaultSerialization();
         weak_type = type;
         weak_serialization = serialization;
         auto column = type->createColumn();
-        EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
+        EXPECT_EQ(settings->json_parsing_state.get()->pools, nullptr);
         ReadBufferFromString input(std::string_view(R"({"x":42,"nested":{"a":[1,2]}})"));
         serialization->deserializeWholeText(*column, input, copy);
-        EXPECT_NE(settings->json_parsing_state->pools, nullptr);
+        EXPECT_NE(settings->json_parsing_state.get()->pools, nullptr);
     }
     EXPECT_TRUE(weak_type.expired());
     EXPECT_FALSE(weak_serialization.expired());
@@ -199,13 +204,15 @@ TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
     ASSERT_NE(getContext().context, nullptr);
     FormatSettings settings;
     settings.json.try_infer_numbers_from_strings = false;
+    EXPECT_EQ(settings.json_parsing_state.state, nullptr);
     auto type = DataTypeFactory::instance().get("JSON(x UInt64, nested Array(JSON))");
     auto serialization = type->getDefaultSerialization();
     std::vector<std::future<void>> workers;
     for (size_t worker = 0; worker < 4; ++worker)
     {
-        workers.push_back(std::async(std::launch::async, [&, settings]
+        workers.push_back(std::async(std::launch::async, [&]
         {
+            FormatSettings worker_settings = settings; // NOLINT(performance-unnecessary-copy-initialization) -- Test concurrent first copies.
             ThreadStatus thread_status;
             auto context = Context::createCopy(getContext().context);
             context->makeQueryContext();
@@ -217,15 +224,15 @@ TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
                 for (size_t row = 0; row < 100; ++row)
                 {
                     ReadBufferFromString input(std::string_view(R"({"x":42,"nested":[{"a":1}],"d":"2024-01-01 12:00:00"})"));
-                    serialization->deserializeWholeText(*column, input, settings);
+                    serialization->deserializeWholeText(*column, input, worker_settings);
                 }
                 EXPECT_EQ(column->size(), 100);
                 auto x = type->getSubcolumn("x", column->getPtr());
                 EXPECT_EQ(x->getUInt(99), 42);
 
                 WriteBufferFromOwnString output;
-                FormatSettings binary_settings = settings;
-                EXPECT_EQ(binary_settings.json_parsing_state, settings.json_parsing_state);
+                FormatSettings binary_settings = worker_settings;
+                EXPECT_EQ(binary_settings.json_parsing_state.get(), worker_settings.json_parsing_state.get());
                 binary_settings.binary.write_json_as_string = true;
                 binary_settings.binary.read_json_as_string = true;
                 serialization->serializeBinary(*column, 0, output, binary_settings);
@@ -235,7 +242,7 @@ TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
                 EXPECT_EQ(restored->compareAt(0, 0, *column, 1), 0);
 
                 ReadBufferFromString malformed(std::string_view("{bad json}"));
-                EXPECT_THROW(serialization->deserializeWholeText(*restored, malformed, settings), Exception);
+                EXPECT_THROW(serialization->deserializeWholeText(*restored, malformed, worker_settings), Exception);
                 EXPECT_EQ(restored->size(), 1);
                 ReadBufferFromString valid(output.str());
                 serialization->deserializeBinary(*restored, valid, binary_settings);
