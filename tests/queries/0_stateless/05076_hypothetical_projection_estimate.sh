@@ -245,4 +245,19 @@ $CLICKHOUSE_CLIENT -q "
 compare p_d "(SELECT a, b, v ORDER BY b)" "SELECT a, v FROM TABLE WHERE b < 30" t_est_d t_real_d
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;"
 
+# a projection that stores less per row gets bigger granules, so a full scan of it beats the base read
+# even when the predicate cannot prune its key and there is no ORDER BY to help
+echo "--- a full projection scan that is cheaper than the base read ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_n; DROP TABLE IF EXISTS t_real_n;
+    CREATE TABLE t_est_n (a UInt64, b UInt64, pad String) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 8192, index_granularity_bytes = '16Ki', min_bytes_for_wide_part = 0;
+    CREATE TABLE t_real_n AS t_est_n;
+    ALTER TABLE t_real_n ADD PROJECTION p_n (SELECT a, b ORDER BY b);
+    INSERT INTO t_est_n SELECT number, number % 1000, repeat('x', 500) FROM numbers(5000);
+    INSERT INTO t_real_n SELECT number, number % 1000, repeat('x', 500) FROM numbers(5000);
+"
+compare p_n "(SELECT a, b ORDER BY b)" "SELECT sum(b) FROM TABLE WHERE a % 7 = 3" t_est_n t_real_n
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_n; DROP TABLE IF EXISTS t_real_n;"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real; DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;"

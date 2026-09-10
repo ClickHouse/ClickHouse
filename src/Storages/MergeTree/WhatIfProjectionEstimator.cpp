@@ -445,6 +445,7 @@ bool tryEstimateProjection(
     UInt64 scanned_parts = 0;
     UInt64 scanned_marks = 0;
     UInt64 adaptive_parts = 0;
+    UInt64 uneven_width_parts = 0;
 
     for (const auto & part_with_ranges : baseline_parts)
     {
@@ -470,6 +471,20 @@ bool tryEstimateProjection(
         scanned_marks += part_marks;
         if (adaptive)
             ++adaptive_parts;
+        /// the writer sizes a granule from the average width of the block it stores, so once the rows
+        /// differ in width the layout follows the blocks it was fed, and that is not recorded anywhere
+        if (adaptive && part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
+        {
+            UInt32 lo = part_data.row_bytes[0];
+            UInt32 hi = part_data.row_bytes[0];
+            for (const auto row_size : part_data.row_bytes)
+            {
+                lo = std::min(lo, row_size);
+                hi = std::max(hi, row_size);
+            }
+            if (hi != lo)
+                ++uneven_width_parts;
+        }
         /// no key rows out of a part that has rows means the key needs something the scan cannot
         /// provide, `_part_offset` for one, so do not pass a zero-mark estimate off as measured
         if (part_data.rows == 0 && part->rows_count > 0)
@@ -499,7 +514,18 @@ bool tryEstimateProjection(
     auto would_win = [&](UInt64 marks)
     { return marks < baseline_marks || (marks == baseline_marks && sort_help == SortOrderHelp::Helps); };
     const UInt64 fewest = projection_marks > margin ? projection_marks - margin : 0;
-    if (would_win(fewest) != would_win(projection_marks + margin))
+    if (uneven_width_parts != 0)
+    {
+        result.verdict = "too close to call";
+        result.verdict_reason = fmt::format(
+            "{} against {} from the base table, but the rows differ in width on {} of the {} parts read, so the granule "
+            "layout depends on the blocks the writer was fed and the mark count is a model, not a measurement",
+            marks_text(projection_marks),
+            baseline_marks,
+            uneven_width_parts,
+            scanned_parts);
+    }
+    else if (would_win(fewest) != would_win(projection_marks + margin))
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
@@ -711,13 +737,12 @@ WhatIfCandidateResult evaluateProjection(
             key_condition.reset();
     }
 
-    if (!key_condition && sort_help != SortOrderHelp::Helps)
+    /// the same gate as `optimizeUseNormalProjections`: a filter has to exist or the order has to help,
+    /// but a filter the projection key cannot prune still leaves a full projection scan worth measuring,
+    /// which wins whenever the projection stores less per row than the table does
+    if (!filter_dag && sort_help != SortOrderHelp::Helps)
     {
-        result.not_applicable_reason = fmt::format(
-            "{}, and {}",
-            filter_dag ? "Projection sort key cannot filter this predicate (always unknown or true)"
-                       : "Query has no filter predicate",
-            describe(sort_help));
+        result.not_applicable_reason = fmt::format("Query has no filter predicate, and {}", describe(sort_help));
         return result;
     }
 

@@ -107,6 +107,22 @@ $CLICKHOUSE_CLIENT -q "
 " | grep -E '^\s+reason:' | awk '{$1=$1; print}'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_bn;"
 
+# the writer sizes a granule from the block it stores, so rows of differing width leave the layout
+# undetermined and the estimator must refuse a hard verdict rather than model one
+echo "--- uneven row widths withhold the verdict ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_uw;
+    CREATE TABLE t_uw (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 8192, index_granularity_bytes = '16Ki', min_bytes_for_wide_part = 0,
+                 use_const_adaptive_granularity = 0;
+    INSERT INTO t_uw SELECT number, number, if(intDiv(number, 250) % 2 = 1, repeat('y', 500), repeat('x', 20)) FROM numbers(1000);
+    INSERT INTO t_uw SELECT number + 1000, number + 1000, if(intDiv(number, 250) % 2 = 1, repeat('y', 500), repeat('x', 20)) FROM numbers(1000);
+    OPTIMIZE TABLE t_uw FINAL;
+    CREATE HYPOTHETICAL PROJECTION p_uw ON t_uw (SELECT a, b, s ORDER BY b);
+    EXPLAIN WHATIF SELECT a, s FROM t_uw WHERE b >= 1500 SETTINGS ${PIN};
+" | grep -E '^\s+verdict:' | awk '{$1=$1; print}'
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_uw;"
+
 echo "--- projections disabled by the query ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);

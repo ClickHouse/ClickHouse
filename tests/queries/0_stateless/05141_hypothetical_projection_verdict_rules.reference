@@ -1,6 +1,6 @@
 --- not applicable cases ---
 With p_key (normal projection, hypothetical):
-reason: Projection sort key cannot filter this predicate (always unknown or true), and the query has no ORDER BY to serve
+reason: 10 marks would be read instead of 2 from the base table
 With p_agg (aggregate projection, hypothetical):
 reason: EXPLAIN WHATIF estimates normal (sorted) hypothetical projections only, aggregate projections are not estimated yet
 With p_where (normal projection, hypothetical):
@@ -23,10 +23,12 @@ reason: Projection orders by the commit order (`_block_number`, `_block_offset`)
 reason: Projection orders by the commit order (`_block_number`, `_block_offset`), which EXPLAIN WHATIF does not estimate yet
 --- a projection that merely stores _block_number is not estimated ---
 reason: Projection stores `_block_number`, so it is built only when a part is merged, which EXPLAIN WHATIF does not estimate yet
+--- uneven row widths withhold the verdict ---
+verdict: too close to call
 --- projections disabled by the query ---
 reason: Projections are disabled by `optimize_use_projections = 0`
 --- use_primary_key = 0 turns the projection's own pruning off, as in the optimizer ---
-reason: Projection sort key cannot filter this predicate (always unknown or true), and the query has no ORDER BY to serve
+reason: the same 10 marks would be read, and the query has no ORDER BY to serve
 real: read from the base table
 --- empirical = 0 scans nothing, and reports no marks it does not have ---
 status: applicable

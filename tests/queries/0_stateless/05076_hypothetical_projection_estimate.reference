@@ -214,3 +214,17 @@ source: empirical
 real:
 ReadFromMergeTree (p_d)
 Granules: 3
+--- a full projection scan that is cheaper than the base read ---
+hypothetical:
+marks: 162
+rows: 5000
+status: applicable
+marks: 4
+rows: 5000
+read_ratio: 0.02x
+verdict: chosen
+reason: 4 marks would be read instead of 162 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_n)
+Granules: 4
