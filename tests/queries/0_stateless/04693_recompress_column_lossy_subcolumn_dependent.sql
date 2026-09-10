@@ -7,7 +7,7 @@
 -- very stream the recompression rewrites. The required columns are normalized back to their owning
 -- stored column, so a dependent that reads a subcolumn is rejected too.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

@@ -6,7 +6,7 @@
 -- cannot recalculate such a dependent at all (EPHEMERAL values are unavailable during mutations),
 -- so the dependency has to be expanded through the EPHEMERAL default expression and rejected.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 
 -- A MATERIALIZED column depends on the lossy column through one EPHEMERAL helper: rejected.

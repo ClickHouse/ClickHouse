@@ -5,7 +5,7 @@
 -- Both an `ALIAS` and an `EPHEMERAL` helper are expanded here; `arr.size0` and `x.null` do
 -- not change under lossy recompression, so their stored MATERIALIZED dependents stay valid.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS t_recompress_lossy_helper_size0;

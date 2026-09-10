@@ -9,7 +9,7 @@
 -- still live (two separate mutations, with a window where a query sees the stale projection), so it stays
 -- rejected.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

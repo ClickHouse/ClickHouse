@@ -40,7 +40,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES $table"
 ${CLICKHOUSE_CLIENT} --mutations_sync 0 --query "ALTER TABLE $table RECOMPRESS COLUMN val"
 
 # Metadata-only change; makes the queued recompression lossy.
-${CLICKHOUSE_CLIENT} --allow_experimental_codecs 1 --query \
+${CLICKHOUSE_CLIENT} --enable_sz3_codec 1 --query \
     "ALTER TABLE $table MODIFY COLUMN val Float64 CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01))"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES $table"

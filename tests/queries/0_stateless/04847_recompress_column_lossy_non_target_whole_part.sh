@@ -37,7 +37,7 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO $table SELECT number, toString(number)
 ${CLICKHOUSE_CLIENT} --query "SELECT part_type FROM system.parts WHERE database = currentDatabase() AND table = '$table' AND active"
 
 # Metadata-only change: `y` now has a lossy codec, but its stored data is untouched.
-${CLICKHOUSE_CLIENT} --allow_experimental_codecs 1 --query \
+${CLICKHOUSE_CLIENT} --enable_sz3_codec 1 --query \
     "ALTER TABLE $table MODIFY COLUMN y Float64 CODEC(SZ3('ALGO_INTERP', 'ABS', 0.01))"
 
 # Recompressing `x` (a lossless target, accepted by the ALTER-time guard) must not silently

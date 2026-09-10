@@ -15,7 +15,7 @@
 -- what `CHECK TABLE` recomputes for a lossy codec, for normally inserted parts as well -- see
 -- https://github.com/ClickHouse/ClickHouse/issues/111139.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

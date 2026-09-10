@@ -7,7 +7,7 @@
 -- skip index could prune granules that do match. `MergeTreeData::checkMutationIsPossible` rejects the
 -- combination; a lossless codec, and a lossy codec no projection or index depends on, stay allowed.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 SET check_query_single_value_result = 1;
 

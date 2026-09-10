@@ -7,7 +7,7 @@
 -- `m` describing the pre-recompression values. The dependency analysis expands `ALIAS` chains the
 -- same way it expands `EPHEMERAL` ones.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 
 -- A stored MATERIALIZED column depends on the lossy column through an ALIAS: rejected.

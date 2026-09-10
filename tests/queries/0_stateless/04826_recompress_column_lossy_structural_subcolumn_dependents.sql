@@ -6,7 +6,7 @@
 -- a lossy codec is applied only to the value-bearing substreams, while array sizes and null maps
 -- are always written with the generic codecs of the chain, so such dependents stay valid.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 
 -- A skipping index over `arr.size0` does not block the recompression, and its data stays valid.

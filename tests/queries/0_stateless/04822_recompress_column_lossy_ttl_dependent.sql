@@ -6,7 +6,7 @@
 -- unchanged, so rows and parts would keep being expired, moved, or recompressed according to the
 -- values as they were before the recompression.
 
-SET allow_experimental_codecs = 1;
+SET enable_sz3_codec = 1;
 SET mutations_sync = 2;
 
 -- A table (DELETE) TTL reads the lossy column: rejected; removing the TTL unblocks it.
