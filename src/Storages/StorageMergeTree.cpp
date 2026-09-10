@@ -3445,6 +3445,16 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             throwIfTableSizeLimitsExceededForReplacement(
                 data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
 
+            /// The new parts are committed before the replaced ones are removed, and that removal can be
+            /// refused for a part whose creating transaction has not committed. Find that out now, while
+            /// nothing has been published yet, so a refused REPLACE does not leave the partition half
+            /// replaced. The same `data_parts_lock` is held throughout, so no part can gain an in-flight
+            /// creator in between.
+            if (replace && !local_context->getCurrentTransaction())
+                checkPartsCanBeRemovedNonTransactionally(
+                    grabActivePartsToRemoveForDropRange(NO_TRANSACTION_RAW, drop_range, data_parts_lock),
+                    NonTransactionalRemovalKind::Discard);
+
             /** It is important that obtaining new block number and adding that block to parts set is done atomically.
               * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
               */
@@ -3618,6 +3628,14 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             auto src_data_parts_lock = lockParts();
 
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+
+            /// The destination is committed before the source parts are covered by the empty parts, and
+            /// that removal can be refused for a part whose creating transaction has not committed. Find
+            /// that out now, so a refused MOVE does not leave the partition half moved. The check is
+            /// stricter than for a plain removal: a creation that is still running may yet roll back, and
+            /// committing its rows in another table cannot be taken back.
+            if (!txn)
+                checkPartsCanBeRemovedNonTransactionally(src_parts, NonTransactionalRemovalKind::Republish);
 
             for (auto & part : dst_parts)
             {

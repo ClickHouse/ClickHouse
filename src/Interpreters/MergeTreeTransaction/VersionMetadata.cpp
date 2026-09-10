@@ -147,6 +147,17 @@ bool VersionMetadata::isCreatedByUncommittedTransaction() const
     return !TransactionLog::getCSN(current_info.creation_tid);
 }
 
+bool VersionMetadata::isCreationCommitted() const
+{
+    auto current_info = getInfo();
+
+    CSN creation_csn = current_info.creation_csn;
+    if (!creation_csn && !current_info.creation_tid.isNonTransactional())
+        creation_csn = TransactionLog::getCSN(current_info.creation_tid);
+
+    return creation_csn && creation_csn != Tx::RolledBackCSN;
+}
+
 void VersionMetadata::setAndStoreRemovalTID(const TransactionID & tid)
 {
     LOG_TEST(log, "Object {}, setAndStoreRemovalTID {}", getObjectName(), tid);

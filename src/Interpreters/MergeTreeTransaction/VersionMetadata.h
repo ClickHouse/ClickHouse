@@ -92,6 +92,12 @@ public:
     /// transaction log is consulted in that case.
     bool isCreatedByUncommittedTransaction() const;
 
+    /// Returns true if the object's creation is committed, that is, it has a real commit CSN.
+    /// Stricter than `!isCreatedByUncommittedTransaction()`: a creation that was rolled back is not
+    /// committed. Use it when the data is about to be republished somewhere a commit cannot be taken
+    /// back, such as the destination of `MOVE PARTITION TO TABLE`.
+    bool isCreationCommitted() const;
+
     /// Sets `removal_tid` when a transaction starts removing the data part.
     /// Gets current info, updates `removal_tid` (and sets `removal_csn` to `NonTransactionalCSN` if non-transactional),
     /// persists to storage, then updates in-memory state.
