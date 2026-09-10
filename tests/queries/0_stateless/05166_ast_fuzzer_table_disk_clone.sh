@@ -84,8 +84,25 @@ WHERE current_database = currentDatabase() AND query_kind = 'Create'
   AND position(query, 'viewer__fuzz_') > 0
   AND match(query, '(^|[^0-9A-Za-z_])table_disk($|[^0-9A-Za-z_])');
 
+-- Only table_disk aliases another table's data, so disk itself has to survive: clearing the whole
+-- SETTINGS node would satisfy the two lines above while removing the storage settings the fuzzer
+-- exists to exercise. A wrap arm may rewrite a clone's storage clause, hence count() > 0.
+SELECT 'table_clones_keep_disk', count() > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND query_kind = 'Create'
+  AND position(query, 'reader__fuzz_') > 0
+  AND match(query, '(^|[^0-9A-Za-z_])disk = disk[(]');
+
+SELECT 'view_clones_keep_disk', count() > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND query_kind = 'Create'
+  AND position(query, 'viewer__fuzz_') > 0
+  AND match(query, '(^|[^0-9A-Za-z_])disk = disk[(]');
+
 SELECT 'seed_predicate_live', count() > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
   AND position(query, 'CREATE TABLE reader ') > 0
   AND match(query, '(^|[^0-9A-Za-z_])table_disk($|[^0-9A-Za-z_])');
 "
+
+${CLIENT} --query "DROP VIEW IF EXISTS viewer SYNC"
+${CLIENT} --query "DROP TABLE IF EXISTS reader SYNC"
+${CLIENT} --query "DROP TABLE IF EXISTS writer SYNC"
