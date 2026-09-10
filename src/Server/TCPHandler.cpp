@@ -756,6 +756,7 @@ void TCPHandler::runImpl()
                     checkIfQueryCanceled(*query_state);
 
                     query_state->need_receive_data_for_input = true;
+                    query_state->read_all_data = false;
 
                     /// Send ColumnsDescription for input storage.
                     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA
@@ -769,9 +770,6 @@ void TCPHandler::runImpl()
                     sendData(*query_state, query_state->input_header);
                     sendTimezone(*query_state);
                     out->sync();
-
-                    /// Update flag after reading external tables
-                    query_state->read_all_data = false;
                 });
 
                 query_state->query_context->setInputBlocksReaderCallback([this, &query_state] (ContextPtr context) -> Block
@@ -1421,6 +1419,9 @@ void TCPHandler::startInsertQuery(QueryState & state)
 {
     std::lock_guard lock(*callback_mutex);
 
+    /// The client may start uploading as soon as the schema reaches it.
+    state.read_all_data = false;
+
     /// Send ColumnsDescription for insertion table
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
@@ -1435,9 +1436,6 @@ void TCPHandler::startInsertQuery(QueryState & state)
     sendData(state, state.io.pipeline.getHeader());
     sendLogs(state);
     out->sync();
-
-    /// Update flag after reading external tables
-    state.read_all_data = false;
 }
 
 
@@ -1993,6 +1991,17 @@ void TCPHandler::sendPendingProfileTraces(QueryState & state, bool finish)
     if (!state.query_context->getSettingsRef()[Setting::send_profile_traces])
     {
         state.profile_traces_queue->cancel();
+        return;
+    }
+
+    /// Reading replies between upload blocks does not prevent opposing socket writes from blocking.
+    /// Keep samples in the bounded queue until the current input terminator has been received.
+    if (!state.read_all_data)
+    {
+        /// An early exception or detached completion must reach the client before `skipData`.
+        /// Neither a trace batch nor a loss-status packet is safe to send in this phase.
+        if (finish)
+            state.profile_traces_queue->cancel();
         return;
     }
 

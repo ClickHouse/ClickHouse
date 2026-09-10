@@ -123,7 +123,7 @@ struct QueryState
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
-    /// Data was read.
+    /// The current client upload ended: external tables/scalars, insertion rows, or `input` rows.
     bool read_all_data = true;
 
     /// Request requires data from client for function input()
