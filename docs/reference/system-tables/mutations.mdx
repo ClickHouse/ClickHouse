@@ -49,7 +49,7 @@ The table contains information about [mutations](/reference/statements/alter/ind
   - `0` if the mutation is still in process.
 
 <Note>
-Even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not completed yet because of a long-running `INSERT` query, that will create a new data part needed to be mutated.
+Even if `parts_to_do = 0` it is possible that a mutation is not completed yet, because a block number below the mutation's own is still uncommitted and will add a part to its scope once it is published: a long-running `INSERT` query on either table kind, or an `ATTACH`, `REPLACE` or `MOVE PARTITION` on a non-replicated table.
 </Note>
 
 If there were problems with mutating some data parts, the following columns contain additional information:
