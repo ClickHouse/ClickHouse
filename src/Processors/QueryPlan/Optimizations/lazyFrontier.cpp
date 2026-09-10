@@ -52,7 +52,7 @@ public:
     FrontierChooser(const MergedPlanDAG & merged_, const std::vector<bool> & lazy_sources_)
         : merged(merged_), lazy_sources(lazy_sources_)
     {
-        frontier.recomputed_under_mask.resize(merged.sources.size());
+        frontier.recomputed_under_mask.resize(merged.stuffings.size());
         frontier.lazily_read_inputs.resize(merged.sources.size());
     }
 
@@ -71,35 +71,25 @@ public:
         free_to_carry.insert(nodes.begin(), nodes.end());
     }
 
-    /// Tries to compute `output` above the `LIMIT`. Returns false when it cannot be, leaving the
-    /// frontier as it was, so the caller can keep that output eager instead.
-    bool tryDefer(const ActionsDAG::Node * output)
-    {
-        LazyFrontier candidate = frontier;
-        if (!deferNode(output, candidate))
-            return false;
-
-        frontier = std::move(candidate);
-        return true;
-    }
+    /// Places `node` and everything it reads. Every node can be placed: what cannot be recomputed above
+    /// the `LIMIT` is computed below it and carried, which is what the plan did anyway.
+    void place(const ActionsDAG::Node * node) { placeNode(node, frontier); }
 
     LazyFrontier takeFrontier() { return std::move(frontier); }
 
 private:
-    /// A source column is read again by the lazy read; anything else is recomputed from its children,
-    /// which is where the leaked intermediate results disappear. A value the main branch computes anyway
-    /// may instead be taken as it is, but only where that is the cheaper of the two.
-    bool deferNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
+    void placeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
     {
         if (candidate.carried.contains(node) || isPlaced(node, candidate))
-            return true;
+            return;
 
         if (candidate.eager.contains(node))
         {
+            /// The main branch hands this one over regardless, so there is nothing to weigh up.
             if (free_to_carry.contains(node))
             {
-                candidate.carried.insert(node);
-                return true;
+                carry(node, candidate);
+                return;
             }
 
             /// This value was already used below the `LIMIT` and the result has to agree with it, so one
@@ -107,8 +97,8 @@ private:
             /// may still be recomputed above, since that gives the same answer.
             if (!canBeRecomputed(node))
             {
-                candidate.carried.insert(node);
-                return true;
+                carry(node, candidate);
+                return;
             }
 
             /// Recomputing costs nothing below the `LIMIT` and at most `limit` rows above it, while a
@@ -119,52 +109,69 @@ private:
             if (recomputeNode(node, attempt) && countLazyReads(attempt) <= countLazyReads(candidate) + 1)
             {
                 candidate = std::move(attempt);
-                return true;
+                return;
             }
 
-            candidate.carried.insert(node);
-            return true;
+            carry(node, candidate);
+            return;
         }
 
-        return recomputeNode(node, candidate);
+        if (!recomputeNode(node, candidate))
+            carry(node, candidate);
     }
 
+    /// Returns false when the node cannot be computed above the `LIMIT` at all, leaving `candidate` in
+    /// whatever state it reached - the caller either carries the node or drops the attempt.
     bool recomputeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
     {
         if (const auto source = findSourceOfInput(merged, node))
         {
+            /// Without a second read of that source there is no way to get the column up here.
             if (!lazy_sources[*source])
                 return false;
 
             candidate.lazily_read_inputs[*source].insert(node);
-            return true;
+            return placeMasked(node, candidate);
         }
 
         /// An input reading no source, or more than one, is not something this can place.
         if (node->type == ActionsDAG::ActionType::INPUT)
             return false;
 
-        /// Nothing below the `LIMIT` used this value, so computing it above is its first and only
-        /// evaluation, and a non-deterministic function is free to answer whatever it answers. An
-        /// `arrayJoin` is still out: it changes the number of rows the `LIMIT` already counted.
+        /// An `arrayJoin` changes the number of rows the `LIMIT` already counted.
         if (node->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return false;
 
         for (const auto * child : node->children)
-            if (!deferNode(child, candidate))
-                return false;
-
-        /// Where a join can leave this node's source unmatched, the node has a value of its own only on
-        /// the rows that matched. Everything it reads is available above the `LIMIT` all the same, carried
-        /// columns included, so the placement is the same one, restricted by that source's mask.
-        if (const auto masking_source = merged.getMaskingSource(node))
         {
-            candidate.recomputed_under_mask[*masking_source].insert(node);
-            return true;
+            placeNode(child, candidate);
+            /// A child that had to be carried has to be computed below the `LIMIT`, which is where it
+            /// already is: `carry` puts it and everything it reads into the eager set.
         }
 
-        candidate.recomputed_after_merge.insert(node);
+        return placeMasked(node, candidate);
+    }
+
+    /// Where a join can leave this node's side unmatched, the node has a value of its own only on the
+    /// rows where that join matched; the value it stuffed stands everywhere else. Everything the node
+    /// reads is available above the `LIMIT` all the same, carried columns included, so this is the same
+    /// placement, restricted by that join's mask.
+    bool placeMasked(const ActionsDAG::Node * node, LazyFrontier & candidate)
+    {
+        if (const auto stuffing = merged.getNearestStuffing(node))
+            candidate.recomputed_under_mask[*stuffing].insert(node);
+        else
+            candidate.recomputed_after_merge.insert(node);
+
         return true;
+    }
+
+    /// A carried value is computed below the `LIMIT`, so everything it reads is computed there too.
+    void carry(const ActionsDAG::Node * node, LazyFrontier & candidate)
+    {
+        candidate.carried.insert(node);
+        for (const auto * needed : findReachableNodes({node}))
+            candidate.eager.insert(needed);
     }
 
     static bool isPlaced(const ActionsDAG::Node * node, const LazyFrontier & candidate)
@@ -201,58 +208,25 @@ LazyFrontier chooseLazyFrontier(
 
     const auto & outputs = merged.getOutputs();
 
-    ActionsDAG::NodeRawConstPtrs base_eager_roots = merged.filter_nodes;
-    base_eager_roots.append_range(merged.join_condition_nodes);
+    FrontierChooser chooser(merged, lazy_sources);
+
+    ActionsDAG::NodeRawConstPtrs eager_roots = merged.filter_nodes;
+    eager_roots.append_range(merged.join_condition_nodes);
+
+    ActionsDAG::NodeRawConstPtrs free_to_carry;
     for (size_t position : eager_output_positions)
-        base_eager_roots.push_back(outputs[position]);
-
-    /// An output that cannot be deferred is computed below the `LIMIT` after all, which makes the values
-    /// behind it available to carry - so an output that failed for want of one of them can be deferred on
-    /// the next round. Repeat while that keeps happening; the eager set only grows, so it settles.
-    std::vector<bool> is_eager_output(outputs.size(), false);
-    while (true)
     {
-        FrontierChooser chooser(merged, lazy_sources);
-
-        auto eager_roots = base_eager_roots;
-        for (size_t position = 0; position < outputs.size(); ++position)
-            if (is_eager_output[position])
-                eager_roots.push_back(outputs[position]);
-
-        chooser.markEager(eager_roots);
-
-        /// The sort keys and any output that stayed eager are handed over by the main branch in any case.
-        ActionsDAG::NodeRawConstPtrs free_to_carry;
-        for (size_t position : eager_output_positions)
-            free_to_carry.push_back(outputs[position]);
-        for (size_t position = 0; position < outputs.size(); ++position)
-            if (is_eager_output[position])
-                free_to_carry.push_back(outputs[position]);
-        chooser.markFreeToCarry(free_to_carry);
-
-        bool found_new_eager_output = false;
-        for (size_t position = 0; position < outputs.size(); ++position)
-        {
-            if (is_eager_output[position])
-                continue;
-
-            if (!chooser.tryDefer(outputs[position]))
-            {
-                is_eager_output[position] = true;
-                found_new_eager_output = true;
-            }
-        }
-
-        if (found_new_eager_output)
-            continue;
-
-        auto frontier = chooser.takeFrontier();
-        for (size_t position = 0; position < outputs.size(); ++position)
-            if (is_eager_output[position])
-                frontier.eager_outputs.push_back(position);
-
-        return frontier;
+        eager_roots.push_back(outputs[position]);
+        free_to_carry.push_back(outputs[position]);
     }
+
+    chooser.markEager(eager_roots);
+    chooser.markFreeToCarry(free_to_carry);
+
+    for (const auto * output : outputs)
+        chooser.place(output);
+
+    return chooser.takeFrontier();
 }
 
 }

@@ -88,10 +88,12 @@ TEST(MergedPlanDAG, MergesAChainIntoOneDAG)
     ASSERT_EQ(merged->filter_nodes.size(), 1u);
     EXPECT_EQ(merged->filter_nodes.front()->result_name, "cond");
 
+    /// There is no join, so nothing here is gated by one.
+    EXPECT_TRUE(merged->stuffings.empty());
     for (const auto & node : merged->getDAG().getNodes())
     {
         EXPECT_EQ(merged->getSources(&node).count(), 1u) << node.result_name;
-        EXPECT_EQ(merged->getDenseSource(&node), std::optional<size_t>(0)) << node.result_name;
+        EXPECT_EQ(merged->getNearestStuffing(&node), std::nullopt) << node.result_name;
     }
 }
 
