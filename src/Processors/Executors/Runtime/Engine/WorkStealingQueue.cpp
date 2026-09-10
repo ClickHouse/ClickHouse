@@ -17,14 +17,9 @@ void WorkStealingQueue::pushBack(Task task)
     tasks.push_back(task);
 }
 
-void WorkStealingQueue::moveBackToFront()
+void WorkStealingQueue::pushFront(Task task)
 {
-    if (tasks.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "WorkStealingQueue is empty");
-
-    Task newest = tasks.back();
-    tasks.pop_back();
-    tasks.push_front(newest);
+    tasks.push_front(task);
 }
 
 Task WorkStealingQueue::popFront()

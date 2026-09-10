@@ -27,14 +27,15 @@ class TaskScheduler
         WorkStealingQueue queue;
         std::atomic<size_t> queue_size = 0;
 
-        size_t pops_count = 0;
-        size_t lifo_used_count = 0;
-        bool pushed_since_last_pop = false;
+        std::optional<Task> next;
+        size_t next_streak = 0;
+        size_t picks_count = 0;
     };
     using LocalStates = std::vector<LocalState>;
 
     void pushToLocalQueue(LocalState & own, Task task);
     void pushToGlobalQueue(Task task);
+    std::optional<Task> takeFromNext(LocalState & own);
     std::optional<Task> takeFromLocal(LocalState & own);
     std::optional<Task> takeFromGlobal(LocalState & own, size_t max_to_take);
     std::optional<Task> steal(LocalState & own);
@@ -50,7 +51,6 @@ public:
     size_t poll(size_t worker_id, int timeout_ms);
     void drain(size_t worker_id);
 
-    bool hasTasksForOthers(size_t worker_id) const;
     size_t queued() const;
     size_t total() const;
 

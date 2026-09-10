@@ -12,7 +12,7 @@ namespace DB
 namespace
 {
 
-constexpr size_t max_to_steal = 7;
+constexpr size_t max_to_steal = 1;
 constexpr size_t max_local_queue_size = 128;
 constexpr size_t max_sequential_full_rounds = 61;
 constexpr size_t max_sequential_lifo_usages = 79;
@@ -35,7 +35,6 @@ void TaskScheduler::pushToLocalQueue(LocalState & own, Task task)
 {
     std::lock_guard lock(own.mutex);
     own.queue.pushBack(task);
-    own.pushed_since_last_pop = true;
 
     if (own.queue.size() > max_local_queue_size)
     {
@@ -54,23 +53,31 @@ void TaskScheduler::pushToGlobalQueue(Task task)
     global.queue_size.store(global.queue.size());
 }
 
+std::optional<Task> TaskScheduler::takeFromNext(LocalState & own)
+{
+    if (!own.next)
+    {
+        own.next_streak = 0;
+        return std::nullopt;
+    }
+
+    auto task = std::move(std::exchange(own.next, std::nullopt).value());
+    auto lifo_usage = own.next_streak += 1;
+    if (lifo_usage <= max_sequential_lifo_usages)
+        return task;
+
+    std::lock_guard lock(own.mutex);
+    own.next_streak = 0;
+    own.queue.pushFront(task);
+    own.queue_size.store(own.queue.size());
+    return std::nullopt;
+}
+
 std::optional<Task> TaskScheduler::takeFromLocal(LocalState & own)
 {
     std::lock_guard lock(own.mutex);
     if (own.queue.empty())
-    {
-        own.lifo_used_count = 0;
         return std::nullopt;
-    }
-
-    const bool chain_continues = std::exchange(own.pushed_since_last_pop, false);
-    own.lifo_used_count = chain_continues ? own.lifo_used_count + 1 : 0;
-
-    if (own.lifo_used_count > max_sequential_lifo_usages)
-    {
-        own.lifo_used_count = 0;
-        own.queue.moveBackToFront();
-    }
 
     Task task = own.queue.popBack();
     own.queue_size.store(own.queue.size());
@@ -121,7 +128,11 @@ std::optional<Task> TaskScheduler::steal(LocalState & own)
 
 void TaskScheduler::push(Task task, size_t worker_id)
 {
-    pushToLocalQueue(local[worker_id], std::move(task));
+    LocalState & own = local[worker_id];
+    if (own.next)
+        pushToLocalQueue(own, *own.next);
+    else
+        own.next = task;
 }
 
 void TaskScheduler::push(Task task)
@@ -137,15 +148,19 @@ void TaskScheduler::push(AsyncTask task)
 std::optional<Task> TaskScheduler::tryPop(size_t worker_id)
 {
     LocalState & own = local[worker_id];
+    auto picks_streak = own.picks_count += 1;
 
-    if (++own.pops_count % max_sequential_full_rounds == 0)
+    if (picks_streak % max_sequential_full_rounds == 0)
     {
-        if (poller.pending() > 0)
-            poll(worker_id, 0);
+        if (poller.pending() > 0 && poll(worker_id, 0) > 0)
+            return takeFromLocal(own);
 
         if (auto task = takeFromGlobal(own, /*max_to_take=*/1))
             return task;
     }
+
+    if (auto task = takeFromNext(own))
+        return task;
 
     if (auto task = takeFromLocal(own))
         return task;
@@ -161,11 +176,6 @@ std::optional<Task> TaskScheduler::tryPop(size_t worker_id)
             return tryPop(worker_id);
 
     return std::nullopt;
-}
-
-bool TaskScheduler::hasTasksForOthers(size_t worker_id) const
-{
-    return local[worker_id].queue_size.load() > 0 || global.queue_size.load() > 0;
 }
 
 size_t TaskScheduler::poll(size_t worker_id, int timeout_ms)
@@ -189,6 +199,12 @@ void TaskScheduler::drain(size_t worker_id)
         std::lock_guard lock(own.mutex);
         taken.takeAll(own.queue);
         own.queue_size.store(own.queue.size());
+    }
+
+    if (own.next)
+    {
+        taken.pushBack(*own.next);
+        own.next.reset();
     }
 
     std::lock_guard lock(global.mutex);
