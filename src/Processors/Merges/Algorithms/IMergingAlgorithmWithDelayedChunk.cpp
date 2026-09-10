@@ -34,7 +34,12 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Inputs inputs)
         inputs_origin_merge_tree_part_level[source_num] = getPartLevelFromChunk(current_inputs[source_num].chunk);
     }
 
-    queue = SortingQueue<SortCursor>(cursors);
+    /// A single-column key without a collation compares cheaply even through the generic
+    /// `SortCursor`, so it keeps the heap container (see `sortDescriptionCompareIsExpensive`).
+    /// The algorithms consume rows one by one, so the batches only pay off by saving
+    /// comparisons: with a cheap comparator the detection is skipped altogether.
+    bool compare_is_expensive = sortDescriptionCompareIsExpensive(description);
+    queue = SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch>(cursors, compare_is_expensive, compare_is_expensive);
 }
 
 void IMergingAlgorithmWithDelayedChunk::updateCursor(Input & input, size_t source_num)
