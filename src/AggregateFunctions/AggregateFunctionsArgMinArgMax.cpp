@@ -86,6 +86,43 @@ static_assert(
     sizeof(AggregateFunctionArgMinMaxDataGeneric<Int8>) <= 2 * SingleValueDataBase::MAX_STORAGE_SIZE,
     "Incorrect size of AggregateFunctionArgMinMaxData struct");
 
+/// The validation and throw paths are outlined into non-template functions: they would otherwise
+/// be duplicated (together with the exception-message formatting) into the constructor and
+/// `deserialize` of every one of the hundreds of template instantiations below.
+NO_INLINE void validateArgMinMaxValueType(const DataTypePtr & type_val, const String & function_name)
+{
+    if (!type_val->isComparable())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of second argument of aggregate function {} because the values of that data type are not comparable",
+            type_val->getName(),
+            function_name);
+
+    auto check_not_dynamic_or_variant = [&](const IDataType & type)
+    {
+        if (isDynamic(type) || isVariant(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
+                type_val->getName(),
+                function_name,
+                getNumericVariantSupertypeHint(type.getPtr()));
+    };
+    check_not_dynamic_or_variant(*type_val);
+    type_val->forEachChild(check_not_dynamic_or_variant);
+}
+
+[[noreturn]] NO_INLINE void throwArgMinMaxInvalidDeserializedState(const String & function_name, bool has_value, bool has_result)
+{
+    throw Exception(
+        ErrorCodes::INCORRECT_DATA,
+        "Invalid state of the aggregate function {}: has_value ({}) != has_result ({})",
+        function_name,
+        has_value,
+        has_result);
+}
+
 /// Returns the first arg value found for the minimum/maximum value. Example: argMin(arg, value).
 /// When return_both is true, returns tuple (arg, value). Example: argAndMin(arg, value).
 template <typename Data, bool isMin>
@@ -113,26 +150,7 @@ public:
         , result_type_index(WhichDataType(this->argument_types[0]).idx)
         , return_both(return_both_)
     {
-        if (!type_val->isComparable())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of second argument of aggregate function {} because the values of that data type are not comparable",
-                type_val->getName(),
-                getName());
-
-        auto check_not_dynamic_or_variant = [&](const IDataType & type)
-        {
-            if (isDynamic(type) || isVariant(type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
-                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
-                    this->type_val->getName(),
-                    getName(),
-                    getNumericVariantSupertypeHint(type.getPtr()));
-        };
-        check_not_dynamic_or_variant(*this->type_val);
-        this->type_val->forEachChild(check_not_dynamic_or_variant);
+        validateArgMinMaxValueType(type_val, getName());
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool return_both_)
@@ -282,12 +300,7 @@ public:
         this->data(place).result().read(buf, *serialization_res, data_type_res, arena);
         this->data(place).value().read(buf, *serialization_val, data_type_val, arena);
         if (unlikely(this->data(place).value().has() != this->data(place).result().has()))
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Invalid state of the aggregate function {}: has_value ({}) != has_result ({})",
-                getName(),
-                this->data(place).value().has(),
-                this->data(place).result().has());
+            throwArgMinMaxInvalidDeserializedState(getName(), this->data(place).value().has(), this->data(place).result().has());
     }
 
     bool allocatesMemoryInArena() const override

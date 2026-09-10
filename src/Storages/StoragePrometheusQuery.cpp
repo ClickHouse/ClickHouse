@@ -18,6 +18,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -104,7 +105,12 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
+    /// The column types below are read from the TimeSeries table, so reaching them requires what
+    /// describing that table requires.
+    checkAccessToTimeSeriesTable(time_series_storage_id, context, AccessType::SHOW_COLUMNS);
+
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
@@ -186,6 +192,18 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
+    /// Authorized here rather than where this storage is created, so that a persistent table built over this
+    /// table function is authorized on every read, with the reader's own grants. Before the table is
+    /// resolved, so that an unauthorized reader learns nothing about it.
+    checkAccessToTimeSeriesTable(config.evaluation_settings.time_series_storage_id, context, AccessType::SELECT);
+
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
+
+    /// The resolved storage names itself, and that is the table the rows below are read from.
+    checkAccessToTimeSeriesTable(time_series_storage->getStorageID(), context, AccessType::SELECT);
+
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
+
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     ASTPtr select_query = converter.getSQL();
