@@ -622,14 +622,13 @@ class GH:
     ):
         """Run a REST ``gh api`` call with retries and return its stdout.
 
-        ``fields`` become ``-f key=value`` params and ``method`` maps to ``-X``.
-        Returns the trimmed stdout ("" for a no-body response such as DELETE);
-        with ``strict=True`` a persistent failure raises instead of returning "".
+        ``method`` is always passed as ``-X`` so ``fields`` stay query params on a
+        ``GET`` (``gh api`` switches to ``POST`` as soon as a field is present).
+        ``fields`` are sent as ``-f`` string params (no typed or ``@file`` forms).
+        Returns trimmed stdout ("" for a no-body response such as DELETE);
+        ``strict=True`` raises on persistent failure instead of returning "".
         """
-        argv = ["gh", "api"]
-        if method != "GET":
-            argv += ["-X", method]
-        argv.append(endpoint)
+        argv = ["gh", "api", "-X", method, endpoint]
         for key, value in (fields or {}).items():
             argv += ["-f", f"{key}={value}"]
         if jq:
