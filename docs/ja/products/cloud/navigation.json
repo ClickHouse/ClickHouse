@@ -44,6 +44,7 @@
           "expanded": false,
           "group": "Compute and storage",
           "pages": [
+            "ja/products/cloud/features/infrastructure/on-demand-compute",
             "ja/products/cloud/features/large-single-replica-services",
             "ja/products/cloud/features/infrastructure/parallel-replicas",
             "ja/products/cloud/features/infrastructure/replica-aware-routing",

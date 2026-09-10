@@ -26,9 +26,7 @@ Soft limits 适用于三种不同的范围。以下各节从服务级限制开�
   如果你触及了其中某项防护限制，可能说明你实现用例的方式还有优化空间。请联系[支持团队](https://clickhouse.com/support/program)，我们很乐意协助你优化用例以避免超出这些防护限制，或与你一起探讨如何以可控的方式提高上限。
 </Tip>
 
-<div id="service-limits">
-  ## 服务限制
-</div>
+## 服务限制 {#service-limits}
 
 以下限制适用于**独立服务** (对于数据对象数量，则适用于该服务的存储) 。
 
@@ -68,28 +66,28 @@ FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
 
-<div id="warehouse-limits">
-  ## 仓库限制
-</div>
+## 仓库限制 {#warehouse-limits}
 
 [仓库](/zh/products/cloud/features/infrastructure/warehouses)是一组共享同一份数据的服务。
 仓库限制针对该共享组整体生效，而非针对每个服务单独生效，也不是按组织整体计算。
 
-| 维度           | 限制        |
-| ------------ | --------- |
-| **每个仓库的副本数** | 50 (软限制)  |
+| 维度           | 限制       |
+| ------------ | -------- |
+| **每个仓库的副本数** | 50 (软限制) |
 
 该副本限制指仓库中所有服务的**合计**副本数。
 由于仓库中的所有服务共享同一个 ClickHouse Keeper，设置此限制是为了保障 Keeper 的稳定性。默认值 50 为软限制，实际取决于你的数据和工作负载；在 ClickHouse 26.6+ 上该上限更高，我们也计划在未来进一步提高。
 如需调高此限制，请联系[支持团队](https://clickhouse.com/support/program)；有关仓库扩缩容的更多详情，请参阅[仓库](/zh/products/cloud/features/infrastructure/warehouses#scaling)。
 
+<Note>
+  按需计算 (On-Demand Compute) 具有独立的私有预览准入条件和限制，未体现在上表中。有关当前容量、并发和可用性的详情，请参阅[按需计算限制](/zh/products/cloud/features/infrastructure/on-demand-compute#limitations)。
+</Note>
+
 仓库中的**服务数量没有单独的上限**，仅受上述合计副本数限制的约束。
 
 由于同一仓库中的服务共享一个 catalog (相同的表、数据库、视图等) ，上文的[服务级数据对象限制](#service-limits)**按仓库计一次**，而不会随服务数量成倍增加。不同仓库之间相互隔离，因此每个仓库各自统计自己的表和数据库是否达到这些限制。
 
-<div id="organization-limits">
-  ## 组织限制
-</div>
+## 组织限制 {#organization-limits}
 
 这些限制适用于整个 ClickHouse Cloud 组织，即该组织下所有仓库和服务的总和。
 

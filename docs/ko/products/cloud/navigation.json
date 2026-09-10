@@ -44,6 +44,7 @@
           "expanded": false,
           "group": "Compute and storage",
           "pages": [
+            "ko/products/cloud/features/infrastructure/on-demand-compute",
             "ko/products/cloud/features/large-single-replica-services",
             "ko/products/cloud/features/infrastructure/parallel-replicas",
             "ko/products/cloud/features/infrastructure/replica-aware-routing",

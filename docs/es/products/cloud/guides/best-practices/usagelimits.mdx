@@ -33,9 +33,7 @@ Las cifras no cambian; lo único que cambia es el nivel al que se miden.
   o veremos juntos cómo aumentarlas de manera controlada.
 </Tip>
 
-<div id="service-limits">
-  ## Límites de servicio
-</div>
+## Límites de servicio {#service-limits}
 
 Los límites siguientes se aplican a un **servicio independiente** (y, en el caso de los recuentos de objetos de datos, al almacenamiento de dicho servicio).
 
@@ -75,9 +73,7 @@ FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
 
-<div id="warehouse-limits">
-  ## Límites de warehouse
-</div>
+## Límites de warehouse {#warehouse-limits}
 
 Un [warehouse](/es/products/cloud/features/infrastructure/warehouses) es un conjunto de servicios que comparten los mismos datos.
 Los límites de warehouse se aplican a ese grupo compartido en su conjunto, no a cada servicio por separado ni al conjunto de la organización.
@@ -90,13 +86,15 @@ El límite de réplicas corresponde al recuento **combinado** de réplicas de to
 Dado que todos los servicios de un warehouse comparten un único ClickHouse Keeper, este límite existe para proteger la estabilidad de Keeper. El valor predeterminado de 50 es flexible y depende de tus datos y de tu carga de trabajo; el máximo es más alto en ClickHouse 26.6+, y tenemos previsto aumentarlo aún más en el futuro.
 Ponte en contacto con [soporte](https://clickhouse.com/support/program) para ampliarlo; para más detalles sobre el escalado de warehouses, consulta [warehouses](/es/products/cloud/features/infrastructure/warehouses#scaling).
 
+<Note>
+  On-Demand Compute tiene requisitos de elegibilidad y límites propios de la vista previa privada que no se reflejan en la tabla anterior. Consulta las [limitaciones de On-Demand Compute](/es/products/cloud/features/infrastructure/on-demand-compute#limitations) para conocer los detalles actuales de capacidad, concurrencia y disponibilidad.
+</Note>
+
 **No existe un límite independiente para el número de servicios** de un warehouse: solo está acotado por el límite combinado de réplicas indicado arriba.
 
 Como los servicios de un warehouse comparten un mismo catalog (las mismas tablas, bases de datos, vistas, etc.), los [límites de objetos de datos a nivel de servicio](#service-limits) indicados arriba se contabilizan **una vez por warehouse** en lugar de multiplicarse por cada servicio. Los distintos warehouses están aislados entre sí, de modo que cada uno contabiliza sus propias tablas y bases de datos de cara a estos límites.
 
-<div id="organization-limits">
-  ## Límites de la organización
-</div>
+## Límites de la organización {#organization-limits}
 
 Estos límites se aplican a toda una organización de ClickHouse Cloud, es decir, al conjunto de todos sus warehouses y services.
 

@@ -26,9 +26,7 @@ ClickHouse は高速性と信頼性を追求して設計されています。最
   これらのガードレールに抵触した場合、ユースケースの実装が最適化されていない可能性があります。[サポート](https://clickhouse.com/support/program)までお問い合わせください。ガードレールを超えないようユースケースを見直すお手伝いや、制御された形で上限を引き上げる方法の検討を喜んでサポートします。
 </Tip>
 
-<div id="service-limits">
-  ## サービス制限
-</div>
+## サービス制限 {#service-limits}
 
 以下の制限は**スタンドアロンサービス** (およびデータオブジェクト数については、そのサービスのストレージ) に適用されます。
 
@@ -68,28 +66,28 @@ FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
 
-<div id="warehouse-limits">
-  ## ウェアハウスの制限
-</div>
+## ウェアハウスの制限 {#warehouse-limits}
 
 [ウェアハウス](/ja/products/cloud/features/infrastructure/warehouses)とは、同じデータを共有するサービスの集合です。
 ウェアハウスの制限は、その共有グループ全体に対して適用されます。サービスごと、あるいは組織全体に適用されるものではありません。
 
-| 項目                  | 制限          |
-| ------------------- | ----------- |
-| **ウェアハウスあたりのレプリカ数** | 50 (ソフト制限)  |
+| 項目                  | 制限         |
+| ------------------- | ---------- |
+| **ウェアハウスあたりのレプリカ数** | 50 (ソフト制限) |
 
 このレプリカ数の制限は、ウェアハウス内のすべてのサービスを**合計**したレプリカ数に対するものです。
 ウェアハウス内のすべてのサービスは単一の ClickHouse Keeper を共有するため、この制限は Keeper の安定性を保つために設けられています。デフォルトの 50 はソフト制限であり、データやワークロードによって変動します。ClickHouse 26.6 以降では上限がより高く設定されており、今後さらに引き上げる予定です。
 引き上げをご希望の場合は[サポート](https://clickhouse.com/support/program)にお問い合わせください。ウェアハウスのスケーリングの詳細については、[ウェアハウス](/ja/products/cloud/features/infrastructure/warehouses#scaling)を参照してください。
 
+<Note>
+  On-Demand Compute には、上記の表には記載されていない個別のプライベートプレビュー対象条件および制限があります。現在の容量、同時実行数、可用性の詳細については、[On-Demand Compute の制限事項](/ja/products/cloud/features/infrastructure/on-demand-compute#limitations)を参照してください。
+</Note>
+
 ウェアハウス内の**サービス数そのものに対する上限はありません**。上記の合計レプリカ数の制限によってのみ制約されます。
 
 ウェアハウス内のサービスは 1 つのカタログ (同じテーブル、データベース、ビューなど) を共有するため、上記の [サービスレベルのデータオブジェクト制限](#service-limits)は、サービスごとに倍加されるのではなく、**ウェアハウスごとに 1 回**だけカウントされます。ウェアハウス同士は互いに分離されているため、各ウェアハウスは自身のテーブルやデータベースのみをこれらの制限の対象としてカウントします。
 
-<div id="organization-limits">
-  ## 組織の制限
-</div>
+## 組織の制限 {#organization-limits}
 
 これらの制限は、ClickHouse Cloud の組織全体、つまりその組織に属するすべての ウェアハウス と サービス を合わせた単位で適用されます。
 
