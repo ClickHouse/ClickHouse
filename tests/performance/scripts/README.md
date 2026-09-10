@@ -82,6 +82,8 @@ These are the queries for which we observe a statistically significant change in
 You can find flame graphs for queries with performance changes in the test output archive, in files named as 'my_test_0_Cpu_SELECT 1 FROM....FORMAT Null.left.svg'. First goes the test name, then the query number in the test, then the trace type (same as in `system.trace_log`), and then the server version (left is old and right is new). Besides the CPU and real-time profilers, the profile runs also enable allocation sampling, so `MemorySample` (`MemoryTracker` samples) and `JemallocSample` (jemalloc heap samples) flame graphs are produced as well; these are weighted by allocated bytes rather than by sample count. Because allocation sampling can make a query orders of magnitude slower, each statement of a profile run is bounded by the profiling budget (`--profile-seconds`), so a query too slow to finish inside that budget yields a flame graph of the part of it that did run, on both servers alike, and a query item made of several statements can take a multiple of the budget.
 Apart from flame graphs for execution on each of the nodes, we also build differential flame graphs, that can be quite useful to quickly spot the cause of a performance change. See an example [here](https://github.com/ClickHouse/ClickHouse/pull/87366#discussion_r2426184017).
 
+In CI, most tests run only a random sample of their queries (`perf.py --max-queries 10`). A fixed benchmark suite such as `tpch.xml` can opt out with `<test run_all_queries="1">`; the attribute takes effect only when the runner also passes `--soft-max-queries`.
+
 #### Unstable Queries
 Action required for the cells marked in red.
 

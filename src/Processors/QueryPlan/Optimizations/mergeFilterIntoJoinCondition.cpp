@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
@@ -10,6 +11,7 @@
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -162,6 +164,114 @@ const ActionsDAG::Node & createResultPredicate(
 };
 
 
+/// The body of a lambda is a separate `ActionsDAG`, not reachable from the outer one: a
+/// non-deterministic call that depends on a lambda argument stays inside it, and only a nullary one
+/// is hoisted out. Return that inner DAG so that the walk below can descend into it.
+const ActionsDAG * getLambdaBody(const IFunctionBase & function)
+{
+    if (const auto * expression = typeid_cast<const FunctionExpression *>(&function))
+        return &expression->getAcionsDAG();
+
+    if (const auto * capture = typeid_cast<const FunctionCapture *>(&function))
+        return &capture->getAcionsDAG();
+
+    return nullptr;
+}
+
+/// The `ColumnFunction` a `COLUMN` node holds, if it holds one. A lambda that captures nothing but
+/// constants is folded into a constant, and then the lambda exists only as this column value.
+const ColumnFunction * tryGetColumnFunction(const IColumn & column)
+{
+    const IColumn * unwrapped = &column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(unwrapped))
+        unwrapped = &column_const->getDataColumn();
+
+    return typeid_cast<const ColumnFunction *>(unwrapped);
+}
+
+/// Whether the subtree rooted at `node` contains a function that can give different results for two
+/// rows with equal inputs. Such a conjunct has to stay in the filter: the join condition is evaluated
+/// once per join input row rather than once per output row, and with `enable_join_runtime_filters`
+/// the expression is additionally cloned into the build-side runtime filter, a second and independent
+/// evaluation site. The main filter pushdown refuses to move non-deterministic conjuncts for the same
+/// reason.
+bool subtreeContainsNonDeterministicFunction(const ActionsDAG::Node * node)
+{
+    std::vector<const ActionsDAG::Node *> nodes{node};
+    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+
+    /// The columns captured by a folded lambda are not nodes of any `ActionsDAG`, so they need a
+    /// worklist of their own.
+    std::vector<const IColumn *> columns;
+    std::unordered_set<const IColumn *> visited_columns;
+
+    /// Whether `function` itself is non-deterministic; the nodes of its lambda body, if it has one,
+    /// are queued for the walk.
+    auto is_non_deterministic = [&](const IFunctionBase & function)
+    {
+        if (!function.isDeterministicInScopeOfQuery())
+            return true;
+
+        if (const auto * body = getLambdaBody(function))
+            for (const auto & inner : body->getNodes())
+                nodes.push_back(&inner);
+
+        return false;
+    };
+
+    while (!nodes.empty() || !columns.empty())
+    {
+        if (!nodes.empty())
+        {
+            const auto * current = nodes.back();
+            nodes.pop_back();
+
+            if (!visited_nodes.insert(current).second)
+                continue;
+
+            if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base)
+            {
+                if (is_non_deterministic(*current->function_base))
+                    return true;
+            }
+            else if (current->type == ActionsDAG::ActionType::COLUMN && current->column)
+            {
+                /// A lambda that captures nothing takes no arguments, so it is folded into a `COLUMN`
+                /// node holding a `ColumnFunction` and the `FUNCTION` branch above never sees it.
+                columns.push_back(current->column.get());
+            }
+
+            for (const auto * child : current->children)
+                nodes.push_back(child);
+
+            continue;
+        }
+
+        const auto * current = columns.back();
+        columns.pop_back();
+
+        if (!visited_columns.insert(current).second)
+            continue;
+
+        const auto * column_function = tryGetColumnFunction(*current);
+        if (!column_function)
+            continue;
+
+        if (is_non_deterministic(*column_function->getFunction()))
+            return true;
+
+        /// A lambda that captures nothing is hoisted to the outermost level by the planner, so an
+        /// enclosing lambda *captures* it. When that enclosing lambda is folded into a constant in
+        /// turn, its own child edges are gone from the DAG and the nested lambda is reachable only
+        /// through the captured columns.
+        for (const auto & captured : column_function->getCapturedColumns())
+            if (captured.column)
+                columns.push_back(captured.column.get());
+    }
+
+    return false;
+}
+
 std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
     ActionsDAG & filter_dag,
     const std::string & filter_name,
@@ -198,6 +308,12 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         bool is_equality = conjunct->type == ActionsDAG::ActionType::FUNCTION && conjunct->function_base->getName() == "equals";
         if (is_equality)
         {
+            if (subtreeContainsNonDeterministicFunction(conjunct))
+            {
+                rejected_conjuncts.push_back(conjunct);
+                continue;
+            }
+
             const auto * lhs = conjunct->children[0];
             const auto * rhs = conjunct->children[1];
 

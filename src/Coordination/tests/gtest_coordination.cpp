@@ -83,6 +83,29 @@ TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
              "</coordination_settings></keeper_server></clickhouse>"));
 }
 
+TEST(CoordinationSettingsValidation, CommitProfilerRequiresSamplingProfiler)
+{
+    auto load = [](const std::string & xml)
+    {
+        std::istringstream stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+    };
+
+    constexpr auto config = "<clickhouse><keeper_server><coordination_settings>"
+                            "<commit_profiler_real_time_period_ns>1000000</commit_profiler_real_time_period_ns>"
+                            "</coordination_settings></keeper_server></clickhouse>";
+
+#if defined(MEMORY_SANITIZER)
+    /// The sampling profiler is unavailable under `MemorySanitizer`, so accepting this setting
+    /// would make the configured Keeper commit profiler silently do nothing.
+    EXPECT_THROW(load(config), DB::Exception);
+#else
+    EXPECT_NO_THROW(load(config));
+#endif
+}
+
 TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
 {
     auto ctx = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
