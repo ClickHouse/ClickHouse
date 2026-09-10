@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/tests/gtest_global_register.h>
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
@@ -130,13 +131,17 @@ TEST(SerializationJSON, EquivalentSchemasShareAndCustomChildrenDoNotPool)
     EXPECT_NE(serialization, type->getDefaultSerialization());
 }
 
-TEST(SerializationJSON, ValidatesSchemasBeforeParsing)
+TEST(SerializationJSON, ValidatesSchemasWhenConstructingSerialization)
 {
+    tryRegisterAggregateFunctions();
     auto & factory = DataTypeFactory::instance();
     for (const auto * schema : {"JSON(x Map(UInt64, String))", "JSON(x Array(Map(UInt64, String)))",
              "JSON(x Tuple(a Map(UInt64, String)))", "JSON(x AggregateFunction(sum, UInt64))"})
-        EXPECT_THROW(factory.get(schema), Exception);
-    EXPECT_NO_THROW(factory.get("JSON(x Array(Map(String, UInt64)), y Nullable(DateTime), z LowCardinality(String))"));
+    {
+        auto type = factory.get(schema);
+        EXPECT_THROW(type->getDefaultSerialization(), Exception);
+    }
+    EXPECT_NO_THROW(factory.get("JSON(x Array(Map(String, UInt64)), y Nullable(DateTime), z LowCardinality(String))")->getDefaultSerialization());
 }
 
 TEST(SerializationJSON, ParsingSettingsOwnResources)

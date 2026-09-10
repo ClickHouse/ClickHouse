@@ -65,7 +65,6 @@ DataTypeObject::DataTypeObject(
 
     for (const auto & [typed_path, type] : typed_paths)
     {
-        validateJSONType(type, "JSON serialization");
         for (const auto & path_to_skip : paths_to_skip)
         {
             if (typed_path.starts_with(path_to_skip))
@@ -134,8 +133,11 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
+    {
+        validateJSONType(type, "JSON serialization");
         typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types
             ? type->getSerialization(settings) : type->getDefaultSerialization();
+    }
 
     auto dynamic_type = getDynamicType();
     auto dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
