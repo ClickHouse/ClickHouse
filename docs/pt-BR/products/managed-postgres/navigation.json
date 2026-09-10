@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Primeiros passos",
+      "group": "Get started",
       "pages": [
         "pt-BR/products/managed-postgres/overview",
         "pt-BR/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Recursos",
+      "group": "Features",
       "pages": [
         "pt-BR/products/managed-postgres/connection",
         "pt-BR/products/managed-postgres/settings",
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "group": "Preços",
+      "group": "Pricing",
       "pages": [
         "pt-BR/products/managed-postgres/pricing"
       ]
@@ -55,7 +55,7 @@
       ]
     },
     {
-      "group": "Migrações",
+      "group": "Migrations",
       "pages": [
         "pt-BR/products/managed-postgres/migrations/overview",
         "pt-BR/products/managed-postgres/migrations/clickpipes",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "group": "Monitoramento",
+      "group": "Monitoring",
       "pages": [
         "pt-BR/products/managed-postgres/monitoring/overview",
         "pt-BR/products/managed-postgres/monitoring/dashboard",

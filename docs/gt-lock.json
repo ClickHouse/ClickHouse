@@ -7,37 +7,37 @@
       "versionId": "a0e1d0f83df446e79f3e38e9d52d64657cff177f781d2a8caeba01d5f4e79080",
       "translations": {
         "ko": {
-          "updatedAt": "2026-09-10T13:03:38.668Z",
+          "updatedAt": "2026-09-10T13:14:27.424Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-10T13:03:38.868Z",
+          "updatedAt": "2026-09-10T13:14:27.644Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-10T13:03:39.081Z",
+          "updatedAt": "2026-09-10T13:14:28.148Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-10T13:03:39.266Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-10T13:14:28.583Z",
+          "fileName": "docs.json",
+          "postProcessHash": "e416eb74cb9144ba12adaa5f80a7b41d5e945257690e9593b3f0a77c23b384a0"
         },
         "es": {
-          "updatedAt": "2026-09-10T13:03:39.445Z",
+          "updatedAt": "2026-09-10T13:14:26.953Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-10T13:03:39.630Z",
+          "updatedAt": "2026-09-10T13:14:27.905Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-09-10T13:03:39.812Z",
+          "updatedAt": "2026-09-10T13:14:27.197Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-10T13:03:39.998Z",
-          "fileName": "docs.json",
-          "postProcessHash": "afb734706672562f3fc9468f985bbfb894493c5f2171023a18d88f553ad14f9c"
+          "updatedAt": "2026-09-10T13:14:28.385Z",
+          "fileName": "docs.json"
         }
       },
       "fileName": "docs.json"
