@@ -139,3 +139,59 @@ def test_partition_pruning_with_functions_before_epoch(started_cluster_iceberg_w
     assert check_validity_and_get_prunned_files(select("toDate32(ts) < toDate32('1970-01-01')")) == 2
     assert check_validity_and_get_prunned_files(select("toYear(d) = 1969")) == 3
     assert check_validity_and_get_prunned_files(select("toYear(d) >= 1971")) == 2
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_partition_pruning_with_functions_before_epoch_separate_commits(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_partition_pruning_before_epoch_separate_commits_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        return execute_spark_query_general(
+            spark, started_cluster_iceberg_with_spark, storage_type, TABLE_NAME, query
+        )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (ts TIMESTAMP, d DATE, tag INT)
+            USING iceberg
+            PARTITIONED BY (days(ts), years(d))
+            OPTIONS('format-version'='2')
+        """
+    )
+
+    # One manifest file per commit, so the partition summaries of the first manifest are negative on
+    # both of their sides, while the ones of the second manifest are positive on both.
+    execute_spark_query(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (TIMESTAMP '1969-11-15 07:00:00', DATE '1969-11-15', 1),
+        (TIMESTAMP '1969-12-31 23:00:00', DATE '1969-06-01', 2);
+    """
+    )
+
+    execute_spark_query(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (TIMESTAMP '2024-01-20 10:00:00', DATE '2024-01-20', 3);
+    """
+    )
+
+    creation_expression = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
+    )
+
+    def check_validity_and_get_prunned_files(select_expression):
+        settings1 = {"use_iceberg_partition_pruning": 0, "session_timezone": "UTC"}
+        settings2 = {"use_iceberg_partition_pruning": 1, "session_timezone": "UTC"}
+        return check_validity_and_get_prunned_files_general(
+            instance, TABLE_NAME, settings1, settings2, "IcebergPartitionPrunedFiles", select_expression
+        )
+
+    def select(where):
+        return f"SELECT * FROM {creation_expression} WHERE {where} ORDER BY ALL"
+
+    assert check_validity_and_get_prunned_files(select("toDate32(ts) = toDate32('1969-11-15')")) == 2
+    assert check_validity_and_get_prunned_files(select("toDate32(ts) >= toDate32('1970-01-01')")) == 2
+    assert check_validity_and_get_prunned_files(select("toYear(d) = 1969")) == 1
