@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
-#include <Processors/QueryPlan/Optimizations/SipHashingWriteBuffer.h>
 #include <Common/SipHash.h>
 
 using namespace DB;
