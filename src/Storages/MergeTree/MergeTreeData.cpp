@@ -805,7 +805,7 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-            checkPartitionKeyAndInitMinMax(metadata_.partition_key);
+            checkPartitionKeyAndInitMinMax(metadata_.partition_key, !sanity_checks);
             setProperties(metadata_, metadata_, !sanity_checks);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
@@ -820,7 +820,7 @@ MergeTreeData::MergeTreeData(
     else
     {
         is_custom_partitioned = true;
-        checkPartitionKeyAndInitMinMax(metadata_.partition_key);
+        checkPartitionKeyAndInitMinMax(metadata_.partition_key, !sanity_checks);
     }
     setProperties(metadata_, metadata_, !sanity_checks);
 
@@ -977,19 +977,25 @@ bool MergeTreeData::supportsFinal() const
         || merging_params.mode == MergingParams::VersionedCollapsing;
 }
 
-static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
+static void checkKeyExpression(
+    const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key, bool attach)
 {
     if (expr.hasArrayJoin())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain array joins", key_name);
 
-    try
+    /// A function can be marked non-deterministic in a later version, so this must not fire on attach:
+    /// otherwise a table stored by an earlier version stops loading and its data becomes unreachable.
+    if (!attach)
     {
-        expr.assertDeterministic();
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("for {} key", key_name));
-        throw;
+        try
+        {
+            expr.assertDeterministic();
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("for {} key", key_name));
+            throw;
+        }
     }
 
     for (const ColumnWithTypeAndName & element : sample_block)
@@ -1418,7 +1424,7 @@ void MergeTreeData::checkProperties(
         MergeTreeStatisticsFactory::instance().validate(col.statistics, col.type, allow_deprecated_minmax);
     }
 
-    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
+    checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_, attach);
 }
 
 void MergeTreeData::checkMetadataProperties(
@@ -1557,12 +1563,12 @@ MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & 
     return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
-void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
+void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key, bool attach)
 {
     if (new_partition_key.expression_list_ast->children.empty())
         return;
 
-    checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key);
+    checkKeyExpression(*new_partition_key.expression, new_partition_key.sample_block, "Partition", allow_nullable_key, attach);
 
     /// Add all columns used in the partition key to the min-max index.
     const auto minmax_columns = getMinMaxColumns(new_partition_key, getSettings());

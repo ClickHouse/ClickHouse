@@ -1912,7 +1912,7 @@ protected:
 
     void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
-    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
+    void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key, bool attach);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
 
