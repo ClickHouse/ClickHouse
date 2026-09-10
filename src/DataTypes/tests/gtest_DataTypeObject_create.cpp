@@ -295,12 +295,15 @@ TEST(DataTypeObject, SubcolumnLookupUsesCanonicalPathNames)
             {R"(back\slash)", nested_type},
             {"back`tick", nested_type},
             {"spaced path", nested_type},
+            {"", nested_type},
+            {".x", DataTypeFactory::instance().get("UInt16")},
         });
 
     expectSubcolumnType(*object, "escaped.dot.x", "UInt8");
     expectSubcolumnType(*object, R"(back\slash.x)", "UInt8");
     expectSubcolumnType(*object, "back`tick.x", "UInt8");
     expectSubcolumnType(*object, "spaced path.x", "UInt8");
+    expectSubcolumnType(*object, ".x", "UInt8");
 }
 
 TEST(DataTypeObject, SubcolumnLookupDefersToCustomSerialization)

@@ -208,8 +208,7 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
 
     settings.path.push_back(Substream::ObjectData);
 
-    /// First, iterate over typed paths in sorted order, we will always serialize them.
-    for (const auto & path : sorted_typed_paths)
+    auto enumerate_typed_path = [&](const String & path)
     {
         settings.path.back().creator = std::make_shared<TypedPathSubcolumnCreator>(path);
         settings.path.push_back(Substream::ObjectTypedPath);
@@ -224,6 +223,37 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
         serialization->enumerateStreams(settings, callback, path_data);
         settings.path.pop_back();
         settings.path.back().creator.reset();
+    };
+
+    if (settings.subcolumn_name)
+    {
+        /// Include the separator using the canonical stream naming, including empty path elements.
+        settings.path.push_back(Substream::ObjectTypedPath);
+        const auto prefix = getSubcolumnNameForStream(settings.path, false);
+        settings.path.pop_back();
+        auto name = *settings.subcolumn_name;
+        if (name.starts_with(prefix))
+        {
+            name.remove_prefix(prefix.size());
+            /// Only an exact typed path or its descendants can match the requested name.
+            /// Prefixes are already in the same order as `sorted_typed_paths`, preserving collisions.
+            size_t end = 0;
+            while (true)
+            {
+                end = name.find('.', end);
+                if (auto it = typed_paths_serializations.find(String(name.substr(0, end))); it != typed_paths_serializations.end())
+                    enumerate_typed_path(it->first);
+                if (end == std::string_view::npos)
+                    break;
+                ++end;
+            }
+        }
+    }
+    else
+    {
+        /// Full enumeration retains every typed path in serialization order.
+        for (const auto & path : sorted_typed_paths)
+            enumerate_typed_path(path);
     }
 
     /// If column or deserialization state was provided, iterate over dynamic paths,

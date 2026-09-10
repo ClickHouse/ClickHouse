@@ -1,7 +1,9 @@
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -37,6 +39,44 @@ public:
     bool supportsPooling() const override { return false; }
 };
 
+class CountingSerialization : public NonPoolableSerialization
+{
+public:
+    mutable size_t enumerations = 0;
+
+    void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override
+    {
+        ++enumerations;
+        SerializationNumber<UInt64>::enumerateStreams(settings, callback, data);
+    }
+};
+
+}
+
+TEST(SerializationJSON, SubcolumnLookupSkipsUnrelatedTypedPaths)
+{
+    auto child = std::make_shared<CountingType>();
+    auto serialization = std::make_shared<CountingSerialization>();
+    child->setCustomization(std::make_unique<DataTypeCustomDesc>(DataTypeCustomNamePtr{}, serialization));
+    auto object = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
+        std::unordered_map<String, DataTypePtr>{{"a", child}, {"a.b", child}, {"unrelated", child}});
+
+    for (const auto & [type, prefix] : std::vector<std::pair<DataTypePtr, String>>{
+             {object, ""}, {std::make_shared<DataTypeArray>(object), ""},
+             {std::make_shared<DataTypeTuple>(DataTypes{object}, Names{"j"}), "j."}})
+    {
+        serialization->enumerations = 0;
+        EXPECT_NE(type->getSubcolumnType(prefix + "a.b"), nullptr);
+        EXPECT_EQ(serialization->enumerations, 2);
+
+        serialization->enumerations = 0;
+        EXPECT_NE(type->getSubcolumnType(prefix + "dynamic"), nullptr);
+        EXPECT_EQ(serialization->enumerations, 0);
+
+        serialization->enumerations = 0;
+        EXPECT_FALSE(type->getSubcolumnNames().empty());
+        EXPECT_EQ(serialization->enumerations, 3);
+    }
 }
 
 TEST(SerializationJSON, WarmConstructionAndBoundedLifetime)
