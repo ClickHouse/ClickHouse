@@ -710,10 +710,10 @@ RegexpJITMatcher getRegexpJITMatcher(
     if (min_count_to_compile == std::numeric_limits<size_t>::max())
         return {};
 
-    /// A missing cache and a zero-capacity one retain nothing, so every call would pay a full LLVM compile
-    /// under one process-wide lock, which is worse than never compiling. Stay on RE2.
+    /// Without a compiled-expression cache nothing outlives the call that compiled the matcher, so a hot
+    /// pattern pays a full LLVM compile on every call, serialised on one process-wide lock. Stay on RE2.
     auto * compiled_expression_cache = CompiledExpressionCacheFactory::instance().tryGetCache();
-    if (!compiled_expression_cache || compiled_expression_cache->maxSizeInBytes() == 0)
+    if (!compiled_expression_cache)
         return {};
 
     ParseFlags flags;

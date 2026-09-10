@@ -1,4 +1,0 @@
--- zero-capacity compiled-expression cache: nothing is retained, so nothing is compiled
-0
--- default compiled-expression cache: compiled once, then reused by the other three calls
-1
