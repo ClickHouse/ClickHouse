@@ -48,11 +48,9 @@ namespace
         }
     }
 
-    using TransformASTFunc = ASTPtr (*)(ASTPtr && v, const DataTypePtr & scalar_data_type);
-
     struct ImplInfo
     {
-        TransformASTFunc transform_ast;
+        OneArgumentAggregationTransform transform_ast;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
@@ -289,6 +287,13 @@ bool isOneArgumentAggregationOperator(std::string_view operator_name)
 }
 
 
+OneArgumentAggregationTransform getOneArgumentAggregationTransform(std::string_view operator_name)
+{
+    const auto * impl_info = getImplInfo(operator_name);
+    return impl_info ? impl_info->transform_ast : nullptr;
+}
+
+
 SQLQueryPiece applyOneArgumentAggregationOperator(
     const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
@@ -335,13 +340,11 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-        /// Drop empty-values rows: `countForEach([])` returns `[]`, but the array length must match the step count (see StoreMethod::VECTOR_GRID).
-        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
-
         aggregation_query = builder.getSelectQuery();
     }
 
-    /// Step 2: rename `new_group` back to `group`.
+    /// Step 2: rename `new_group` back to `group` and drop empty grids (a WHERE, so `values` cannot bind to the input column
+    /// under prefer_column_name_to_alias).
     {
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
 
@@ -350,6 +353,7 @@ SQLQueryPiece applyOneArgumentAggregationOperator(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
         builder.select_list.back()->setAlias(ColumnNames::Group);
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        builder.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         res.select_query = builder.getSelectQuery();
     }

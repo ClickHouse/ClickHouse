@@ -15,8 +15,8 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_time_series_aggregate_functions;
-    extern const SettingsBool allow_experimental_time_series_table;
+    extern const SettingsBool enable_time_series_aggregate_functions;
+    extern const SettingsBool enable_time_series_table;
 }
 
 namespace
@@ -70,10 +70,10 @@ namespace
     AggregateFunctionPtr createAggregateFunctionTimeSeriesHistogramSumOverGroup(
         const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
     {
-        if (settings && (*settings)[Setting::allow_experimental_time_series_aggregate_functions] == 0 && (*settings)[Setting::allow_experimental_time_series_table] == 0)
+        if (settings && (*settings)[Setting::enable_time_series_aggregate_functions] == 0 && (*settings)[Setting::enable_time_series_table] == 0)
             throw Exception(
                 ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
-                "Aggregate function {} is experimental and disabled by default. Enable it with setting allow_experimental_time_series_aggregate_functions",
+                "Aggregate function {} is in private preview and disabled by default. Enable it with setting enable_time_series_aggregate_functions",
                 name);
 
         assertNoParameters(name, parameters);
@@ -93,7 +93,7 @@ PromQL drops the group element there). A group mixing float and histogram sample
 PromQL converter before this aggregate runs.
 
 :::warning
-This function is experimental, enable it by setting `allow_experimental_time_series_aggregate_functions=true`.
+This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
 :::
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesHistogramSumOverGroup(histogram)";
@@ -105,7 +105,7 @@ This function is experimental, enable it by setting `allow_experimental_time_ser
     {
         "Example",
         R"(
-SET allow_experimental_time_series_aggregate_functions = 1;
+SET enable_time_series_aggregate_functions = 1;
 SELECT timeSeriesHistogramSumOverGroup(h) FROM (SELECT arrayJoin([(0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], []), (0, 0, 0., 8., 21., 0., [(0, 2)], [2., 6.], [], [], [])]::Array(Tuple(flags UInt8, schema Int8, zero_threshold Float64, count Float64, sum Float64, zero_count Float64, positive_spans Array(Tuple(offset Int32, length UInt32)), positive_values Array(Float64), negative_spans Array(Tuple(offset Int32, length UInt32)), negative_values Array(Float64), custom_values Array(Float64)))) AS h)
         )",
         R"(
