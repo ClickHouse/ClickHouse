@@ -202,6 +202,20 @@ public:
                         else
                             result = calculateActionNodeName(constant_node.getSourceExpression());
                     }
+                    else if (!constant_node.hasSourceExpression())
+                    {
+                        /** The constant did not come from the query text: a query tree pass built it the
+                          * same way on this server as on the initiator (for example the index mask that
+                          * `GroupingFunctionsResolvePass` adds as a trailing argument of
+                          * `__groupingOrdinary`). There is no initiator naming to simulate, so name it
+                          * exactly as the initiator does, or a header the initiator expects from this shard
+                          * would not match. A constant that does come from the query text is unaffected:
+                          * the initiator writes the ones that need a cast as `_CAST(...)`, which arrive here
+                          * with a source expression, and the rest need no cast, so their name is the same
+                          * either way.
+                          */
+                        result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+                    }
                     else
                         result = calculateConstantActionNodeName(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
                 }
@@ -1009,6 +1023,21 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
                 return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
             return action_node_name_helper.calculateActionNodeName(constant_node.getSourceExpression());
         }
+
+        if (!constant_node.hasSourceExpression())
+        {
+            /** The constant did not come from the query text: a query tree pass built it the same way
+              * on this server as on the initiator (for example the index mask that
+              * `GroupingFunctionsResolvePass` adds as a trailing argument of `__groupingOrdinary`).
+              * There is no initiator naming to simulate, so name it exactly as the initiator does,
+              * or a header the initiator expects from this shard would not match. A constant that
+              * does come from the query text is unaffected: the initiator writes the ones that need
+              * a cast as `_CAST(...)`, which arrive here with a source expression, and the rest
+              * need no cast, so their name is the same either way.
+              */
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+        }
+
         return calculateConstantActionNodeName(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
     }();
 
