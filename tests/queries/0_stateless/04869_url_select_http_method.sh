@@ -83,9 +83,10 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE url_wild_put_62352 (x String) ENGINE = URL('
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://localhost:1/files/*.csv', 'CSV', 'x String')" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM url('http://localhost:1/files/*.csv', 'CSV', 'x String', http_method='PUT')" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED'
 # Only the combination is rejected: http_method='PUT' stays accepted on a URL without wildcards.
+# TSVRaw: the default TSV output escapes the quotes of SHOW CREATE, so the grep below would never match.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE url_put_62352 (x String) ENGINE = URL('http://localhost:1/plain.csv', CSV, http_method='PUT');
-    SHOW CREATE TABLE url_put_62352;
+    SHOW CREATE TABLE url_put_62352 FORMAT TSVRaw;
     DROP TABLE url_put_62352" | grep -cE "http_method ?= ?'PUT'"
 # A pre-existing table can carry POST + wildcard (a named collection edited after the table
 # was created): ATTACH keeps loading it, and the read path rejects it at use time.
