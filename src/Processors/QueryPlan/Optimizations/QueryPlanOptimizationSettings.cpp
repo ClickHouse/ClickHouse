@@ -153,9 +153,6 @@ namespace Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_plan_based;
-    extern const SettingsBool query_plan_derive_not_null_filters_from_joins;
-    extern const SettingsBool query_plan_allow_derived_not_null_filters_execution;
-    extern const SettingsDouble query_plan_max_selectivity_for_not_null_filters_execution;
 }
 
 namespace ServerSetting
@@ -402,6 +399,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     allow_derived_not_null_filters_execution = from[Setting::query_plan_allow_derived_not_null_filters_execution];
 
     max_selectivity_for_not_null_filters_execution = from[Setting::query_plan_max_selectivity_for_not_null_filters_execution];
+    parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
