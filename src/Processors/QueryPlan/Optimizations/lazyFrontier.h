@@ -10,27 +10,28 @@ namespace DB::QueryPlanOptimizations
 /// the branch above the `LIMIT` computes what is needed there - and a value can well be needed on both.
 struct Placement
 {
-    /// What the main branch does with it.
-    enum class Below : uint8_t
-    {
-        No,                  /// nothing below the `LIMIT` needs it
-        Computed,            /// computed there and consumed there, like a filter condition
-        ComputedAndCrossing, /// computed there and handed over as a column of the block the `LIMIT` cuts
-    };
+    /// Whether the main branch computes it, because a filter, a join condition, the sort order or a
+    /// crossing column needs it there.
+    bool computed_below = false;
 
-    /// Where its value above the `LIMIT` comes from. Nothing more is needed for the rows a join left
-    /// unmatched: whether the value is gated, and by which join, is a property of the DAG rather than of
-    /// this decision - see `MergedPlanDAG::getNearestStuffing` - and it applies to a column the lazy read
-    /// returns just as much as to a recomputed one.
+    /// Where whatever reads it above the `LIMIT` gets it from. Nothing more is needed for the rows a join
+    /// left unmatched: whether the value is gated, and by which join, is a property of the DAG rather
+    /// than of this decision - see `MergedPlanDAG::getNearestStuffing` - and it applies to a column the
+    /// lazy read returns just as much as to a recomputed one.
     enum class Above : uint8_t
     {
-        No,         /// nothing above needs it, or what needs it reads the crossing column
+        No,         /// nothing above the `LIMIT` reads it
+        Crossing,   /// the main branch hands it over as a column of the block the `LIMIT` cuts
         LazyRead,   /// a second, row-addressed read of its source returns it
-        Recomputed, /// computed again there, from the values below that cross and the ones read lazily
+        Recomputed, /// computed again there, from the values that cross and the ones read lazily
     };
 
-    Below below = Below::No;
     Above above = Above::No;
+
+    /// `Crossing` is the one answer that needs the value below as well - the other three are free of
+    /// each other, and `computed_below` with `Recomputed` is the case this is all for: a value the
+    /// filter needs below the `LIMIT` and the result needs again above it.
+    bool isConsistent() const { return above != Above::Crossing || computed_below; }
 };
 
 /// Where each value of the subtree gets computed.
