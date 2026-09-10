@@ -31,33 +31,14 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
-    size_t getMinMarksPerRequest() const { return min_marks_per_request; }
-    size_t getMarkSegmentSize() const { return mark_segment_size; }
-
 private:
-    /// Cuts the next portion of marks assigned by the coordinator (requesting a new assignment
-    /// when the buffer is empty). Returns false if there is no more work.
-    bool cutRangesToRead(size_t & part_idx, size_t & need_marks, MarkRanges & ranges_to_read);
-
-    /// Cuts up to need_marks more marks, or returns false if the assignment buffer
-    /// does not continue with the same part. Never requests more from the coordinator.
-    bool cutMoreRangesToRead(size_t part_idx, size_t need_marks, MarkRanges & ranges_to_read);
-
-    /// Must be called under the mutex.
-    void cutFromCurrentTask(size_t need_marks, MarkRanges & ranges_to_read);
-
     mutable std::mutex mutex;
 
     LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
     const ParallelReadingExtension extension;
     const CoordinationMode coordination_mode;
-
-    /// Retained for backward compatibility with old initiators that read it from each read request.
-    /// New initiators (protocol >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
-    /// use the value from the initial announcement instead.
-    size_t min_marks_per_request{0};
+    size_t min_marks_per_task{0};
     size_t mark_segment_size{0};
-
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};
 

@@ -26,7 +26,7 @@ namespace ErrorCodes
 
 namespace
 {
-class ExecutableFunctionToTimeZone final : public IExecutableFunction
+class ExecutableFunctionToTimeZone : public IExecutableFunction
 {
 public:
     explicit ExecutableFunctionToTimeZone() = default;
@@ -39,7 +39,7 @@ public:
     }
 };
 
-class FunctionBaseToTimeZone final : public IFunctionBase
+class FunctionBaseToTimeZone : public IFunctionBase
 {
 public:
     FunctionBaseToTimeZone(
@@ -84,7 +84,7 @@ private:
 };
 
 /// Just changes time zone information for data type. The calculation is free.
-class ToTimeZoneOverloadResolver final : public IFunctionOverloadResolver
+class ToTimeZoneOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "toTimezone";
