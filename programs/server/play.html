@@ -11066,7 +11066,8 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
     const requested_profile_traces = !!tab.profileTraces;
     const profiler_period_ns = profilerPeriodNs(tab);
-    const framing_settings = await detectFramingSetting(query, paramValuesSnapshot);
+    const connection_params = new URLSearchParams(server_address.split('#', 1)[0].split('?').slice(1).join('?'));
+    const framing_settings = await detectFramingSetting(query, paramValuesSnapshot, connection_params);
     const profile_traces = requested_profile_traces && !framing_settings.user_disables_profile_traces;
     if (profile_traces) url += '&send_profile_traces=1';
     if (profile_traces && profiler_period_ns)
@@ -16270,7 +16271,7 @@ function sqlSettingTokenValue(token)
 /// context rule above) is identical in both paths. The same walk detects explicit profiler opt-outs
 /// so the page does not add profiling overrides to them. A standalone `SET` still changes only
 /// session settings; this classification affects the UI additions to that request, not later runs.
-async function detectFramingSetting(query, param_values = {})
+async function detectFramingSetting(query, param_values = {}, url_settings = [])
 {
     const raw_tokens = await tokenizeWithFallback(query);
     const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant));
@@ -16298,8 +16299,16 @@ async function detectFramingSetting(query, param_values = {})
     let query_setting_disables = false;
     let query_setting_value;
     let query_resets_framing = false;
-    let query_disables_profile_traces = false;
+    let query_disables_profile_traces;
     let query_resets_profile_traces = false;
+    let session_resets_profile_traces = false;
+    const is_analyzer_setting = name => name === 'enable_analyzer' || name === 'allow_experimental_analyzer';
+    const is_false_value = value => ['0', 'false'].includes(String(value).toLowerCase());
+    let analyzer_disabled;
+    let query_resets_analyzer = false;
+    /// Conflicting URL aliases can lose no-op values against an unknown inherited setting.
+    for (const [name, value] of new Map(url_settings))
+        if (is_analyzer_setting(name)) analyzer_disabled = (analyzer_disabled ?? true) && is_false_value(value);
     for (let i = 0; i < tokens.length; ++i) {
         const t = tokens[i];
         const is_top_level_semicolon = depth === 0 && t.type === TT.Semicolon;
@@ -16351,6 +16360,9 @@ async function detectFramingSetting(query, param_values = {})
                 const saved_query_resets_framing = query_resets_framing;
                 const saved_query_disables_profile_traces = query_disables_profile_traces;
                 const saved_query_resets_profile_traces = query_resets_profile_traces;
+                const saved_session_resets_profile_traces = session_resets_profile_traces;
+                const saved_analyzer_disabled = analyzer_disabled;
+                const saved_query_resets_analyzer = query_resets_analyzer;
                 let j = i + 1;
                 while (settingName(tokens[j]) !== null) {
                     const name = settingName(tokens[j]);
@@ -16377,6 +16389,7 @@ async function detectFramingSetting(query, param_values = {})
                             query_setting_value = undefined;
                         }
                         if (name === 'send_profile_traces') query_disables_profile_traces = false;
+                        if (is_settings && is_analyzer_setting(name)) analyzer_disabled = false;
                         ++j;
                         if (continues) { ++j; continue; }
                         break;
@@ -16390,18 +16403,24 @@ async function detectFramingSetting(query, param_values = {})
                     }
                     const value_token = tokens[j];
                     if (!value_token) break;
+                    const is_default = value_token.type === TT.BareWord && value_token.token.toLowerCase() === 'default';
+                    const value = value_token.type === TT.OpeningCurlyBrace
+                        ? param_values[tokens[j + 1]?.token] : sqlSettingTokenValue(value_token);
+                    const is_false = is_false_value(value) || (value_token.type === TT.Number && Number(value) === 0);
                     if (name === 'send_profile_traces')
                     {
-                        /// `DEFAULT` resets follow all value assignments and restore the canonical false value.
-                        if (value_token.type === TT.BareWord && value_token.token.toLowerCase() === 'default')
-                            query_resets_profile_traces = true;
-                        else
+                        if (is_default)
                         {
-                            const value = value_token.type === TT.OpeningCurlyBrace
-                                ? param_values[tokens[j + 1]?.token] : sqlSettingTokenValue(value_token);
-                            query_disables_profile_traces = ['0', 'false'].includes(String(value).toLowerCase())
-                                || (value_token.type === TT.Number && Number(value) === 0);
+                            query_resets_profile_traces = true;
+                            if (is_set) session_resets_profile_traces = true;
                         }
+                        else
+                            query_disables_profile_traces = is_false;
+                    }
+                    if (is_settings && is_analyzer_setting(name))
+                    {
+                        if (is_default) query_resets_analyzer = true;
+                        else analyzer_disabled = is_false;
                     }
                     if (name === 'framing_output_format') {
                         /// A standalone `SET framing_output_format = ...` changes the setting for the
@@ -16457,6 +16476,9 @@ async function detectFramingSetting(query, param_values = {})
                     query_resets_framing = saved_query_resets_framing;
                     query_disables_profile_traces = saved_query_disables_profile_traces;
                     query_resets_profile_traces = saved_query_resets_profile_traces;
+                    session_resets_profile_traces = saved_session_resets_profile_traces;
+                    analyzer_disabled = saved_analyzer_disabled;
+                    query_resets_analyzer = saved_query_resets_analyzer;
                 } else {
                     /// Resume the main walk right after the settings list (the loop's `++i` steps past
                     /// the last consumed token).
@@ -16471,13 +16493,19 @@ async function detectFramingSetting(query, param_values = {})
         return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: true };
     }
     const disables_framing = query_setting_disables || query_resets_framing;
+    /// The analyzer reapplies ordinary query settings after `DEFAULT` resets. A mixed reset and
+    /// opt-in can therefore enable delivery, unless the request explicitly selects the legacy
+    /// analyzer. Unknown session/profile settings stay unknown: retain the checked Flame option's
+    /// sampling periods and let SQL decide delivery. Standalone `SET` always resets last.
+    const profile_reset_disables = query_resets_profile_traces && (session_resets_profile_traces
+        || query_disables_profile_traces === undefined || (analyzer_disabled && !query_resets_analyzer));
     return {
         user_framing: saw_query_setting && !disables_framing,
         user_disables_framing: saw_query_setting && disables_framing,
         user_sets_session_framing: false,
         has_ambiguous_post_format_settings: false,
         user_event_stream: saw_query_setting && !disables_framing && query_setting_value === 'eventstream',
-        user_disables_profile_traces: query_disables_profile_traces || query_resets_profile_traces,
+        user_disables_profile_traces: query_disables_profile_traces === true || profile_reset_disables,
     };
 }
 

@@ -54,12 +54,13 @@ async function main()
         + '({detectFramingSetting, postImpl})', {
             tokenizeOrNull: async () => null,
             fetch: async (url, options) => ({url, options}),
+            URLSearchParams,
             default_format: 'JSONStringsEachRowWithProgress',
             framed_default_format: 'JSONCompactStringsEachRowWithNamesAndTypes',
         });
-    const request = (query, params = {}, enabled = true) => requestApi.postImpl(
+    const request = (query, params = {}, enabled = true, url = 'http://fixture/') => requestApi.postImpl(
         {profileTraces: enabled, profilerPeriodNs: '1000000'}, 1, query, {}, {}, params, '',
-        {url: 'http://fixture/', user: '', password: ''}, 0);
+        {url, user: '', password: ''}, 0);
     for (const value of ['0', "'0'", 'FALSE', "'false'", 'DEFAULT', "'\\x66alse'", '$value$false$value$'])
     {
         const result = await request(`SELECT 1 SETTINGS send_profile_traces = ${value}`);
@@ -70,8 +71,8 @@ async function main()
     }
     for (const query of [
         'SELECT 1 SETTINGS send_profile_traces = 1, send_profile_traces = 0',
-        'SELECT 1 SETTINGS send_profile_traces = DEFAULT, send_profile_traces = 1',
-        'SELECT 1 SETTINGS send_profile_traces = 1, send_profile_traces = DEFAULT',
+        'SELECT 1 SETTINGS send_profile_traces = DEFAULT, send_profile_traces = 0',
+        'SELECT 1 SETTINGS send_profile_traces = 1, send_profile_traces = DEFAULT, send_profile_traces = 0',
         'SELECT 1 SETTINGS `send_profile_traces` = 0',
         'SELECT 1 SETTINGS optimize_move_to_prewhere, send_profile_traces = 0',
         'SELECT 1 SETTINGS send_profile_traces = {enabled:Bool}',
@@ -89,6 +90,11 @@ async function main()
         'SELECT * FROM (SELECT 1 SETTINGS send_profile_traces = 0)',
         'SELECT settings x, send_profile_traces = 0 FROM t',
         'SELECT 1 SETTINGS send_profile_traces = 0, send_profile_traces = 1',
+        'SELECT 1 SETTINGS send_profile_traces = DEFAULT, send_profile_traces = 1',
+        'SELECT 1 SETTINGS send_profile_traces = 1, send_profile_traces = DEFAULT',
+        'SELECT 1 SETTINGS send_profile_traces = DEFAULT, send_profile_traces',
+        'SELECT 1 SETTINGS send_profile_traces, send_profile_traces = DEFAULT',
+        'SELECT 1 SETTINGS send_profile_traces = DEFAULT, send_profile_traces = {enabled:Bool}',
         'SELECT 1 SETTINGS send_profile_traces = 0, send_profile_traces',
         'SELECT 1 SETTINGS send_profile_traces = {enabled:Bool}',
         'SET send_profile_traces = 1',
@@ -119,6 +125,42 @@ async function main()
     assert.equal(new URL(followingRequest.url).searchParams.get('query_profiler_cpu_time_period_ns'), '1000000');
     await assert.rejects(sessionRequest("SET framing_output_format = 'EventStream'"), /whole session/);
     console.log('PASS request settings respect SQL opt-outs, DEFAULT resets, parameters, and lexical query scope');
+    for (const profile_clause of [
+        'send_profile_traces = DEFAULT, send_profile_traces = 1',
+        'send_profile_traces = 1, send_profile_traces = DEFAULT',
+    ])
+    {
+        const query = `SELECT 1 SETTINGS ${profile_clause}`;
+        checkRequest(await request(query), query, true, 'EventStream');
+        checkRequest(await request(query, {}, false), query, false, 'EventStream');
+        checkRequest(await request(query, {}, true, 'http://fixture/?session_id=unknown_legacy'), query, true, 'EventStream');
+        for (const name of ['enable_analyzer', 'allow_experimental_analyzer'])
+        {
+            for (const value of ['0', "'false'", '{analyzer:Bool}'])
+            {
+                const sql = `${query}, ${name} = ${value}`;
+                checkRequest(await request(sql, {analyzer: '0'}), sql, false, 'EventStream');
+            }
+            const url = `http://fixture/?${name}=0&session_id=analyzer`;
+            checkRequest(await request(query, {}, true, url), query, false, 'EventStream');
+            for (const value of ['1', 'DEFAULT'])
+            {
+                const sql = `SELECT 1 SETTINGS ${name} = ${value}, ${profile_clause}`;
+                const result = await request(sql, {}, true, url);
+                checkRequest(result, sql, true, 'EventStream');
+                assert.equal(new URL(result.url).searchParams.get('session_id'), 'analyzer');
+            }
+        }
+        for (const [url_settings, enabled] of [
+            ['enable_analyzer=0&enable_analyzer=1', true],
+            ['enable_analyzer=1&enable_analyzer=0', false],
+            ['enable_analyzer=0&allow_experimental_analyzer=1&enable_analyzer=0', true],
+            ['allow_experimental_analyzer=1&enable_analyzer=0', true],
+            ['allow_experimental_analyzer=0&enable_analyzer=0', false],
+        ])
+            checkRequest(await request(query, {}, true, `http://fixture/?${url_settings}`), query, enabled, 'EventStream');
+    }
+    console.log('PASS mixed DEFAULT retains possible profiling while explicit analyzer opt-outs and standalone SET remain authoritative');
     for (const clause of [
         "framing_output_format = 'EventStream'",
         "framing_output_format = 'Event\\x53tream'",
