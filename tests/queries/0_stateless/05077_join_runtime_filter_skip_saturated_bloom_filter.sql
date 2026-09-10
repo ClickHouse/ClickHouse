@@ -21,6 +21,9 @@ SET enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash', collect_h
     query_plan_join_swap_table = 0;
 -- The hash table statistics are keyed by the join order optimization, which assigns no key when it is disabled.
 SET query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0;
+-- The two-key join below needs both equalities in the hash table key: demotion keys the table on `a`
+-- alone, and the runtime filter pass only sees the kept keys, so one per-column filter is built.
+SET query_plan_hash_join_subset_keys_auto = 0;
 
 -- The first run has no statistics: the filter is built and discarded as too dense. The second run has them.
 SELECT count() FROM t_rf_left SEMI LEFT JOIN t_rf_right USING (k);
