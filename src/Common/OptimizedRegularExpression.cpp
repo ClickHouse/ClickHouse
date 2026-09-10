@@ -625,6 +625,68 @@ catch (...)
     return {};
 }
 
+bool willRE2MatchInUTF8Mode(std::string_view pattern)
+{
+    const auto * pos = reinterpret_cast<const UInt8 *>(pattern.data());
+    const auto * end = pos + pattern.size();
+
+    while (pos < end)
+    {
+        const UInt8 first = *pos;
+        if (first < 0x80)
+        {
+            ++pos;
+            continue;
+        }
+
+        size_t length = 0;
+        UInt32 code_point = 0;
+        UInt32 minimum = 0;
+        if (first >= 0xC0 && first < 0xE0)
+        {
+            length = 2;
+            minimum = 0x80;
+            code_point = first & 0x1F;
+        }
+        else if (first >= 0xE0 && first < 0xF0)
+        {
+            length = 3;
+            minimum = 0x800;
+            code_point = first & 0x0F;
+        }
+        else if (first >= 0xF0 && first < 0xF8)
+        {
+            length = 4;
+            minimum = 0x10000;
+            code_point = first & 0x07;
+        }
+        else
+        {
+            /// A continuation byte in the leading position, or a five-byte lead.
+            return false;
+        }
+
+        if (static_cast<size_t>(end - pos) < length)
+            return false; /// A truncated sequence: `fullrune` in RE2 rejects it.
+
+        for (size_t i = 1; i < length; ++i)
+        {
+            const UInt8 continuation = pos[i];
+            if ((continuation & 0xC0) != 0x80)
+                return false;
+            code_point = (code_point << 6) | (continuation & 0x3F);
+        }
+
+        /// Overlong encodings and code points above `Runemax` are rejected; encoded surrogates are not.
+        if (code_point < minimum || code_point > 0x10FFFF)
+            return false;
+
+        pos += length;
+    }
+
+    return true;
+}
+
 OptimizedRegularExpression::OptimizedRegularExpression(const std::string & regexp_, int options)
 {
     /// Just three following options are supported
