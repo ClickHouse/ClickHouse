@@ -25,7 +25,10 @@ The function implements the operator `(x, y, ...)`.
         .syntax = "tuple([t1[, t2[ ...]])",
         .examples{
             {"typical", "SELECT tuple(1, 2)", "(1,2)"},
-            {"named_tuple", "SELECT tuple('a', 'b')(10, 20)", R"({"a": 10, "b": 20})"}
+            /// The element names live in the type, not in the value, so the value is printed the
+            /// same way as for an unnamed tuple.
+            {"named_tuple", "SELECT tuple('a', 'b')(10, 20)", "(10,20)"},
+            {"named_tuple_names", "SELECT tupleNames(tuple('a', 'b')(10, 20))", "['a','b']"}
         },
         .introduced_in = {1, 1},
         .category = FunctionDocumentation::Category::Tuple});
