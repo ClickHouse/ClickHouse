@@ -6,6 +6,13 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
+#include <Processors/QueryPlan/JoinBranchCosts.h>
+#include <Processors/QueryPlan/JoinStatsAnalyzer.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/TableJoin.h>
+#include <Common/typeid_cast.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <base/defines.h>
@@ -14,7 +21,7 @@
 namespace DB
 {
 
-StepStatsStorage::StepStatsStorage(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_)
+StepStatsStorage::StepStatsStorage(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -23,6 +30,7 @@ StepStatsStorage::StepStatsStorage(const QueryPipeline & pipeline, UInt64 execut
     collectIOStats(processors);
     const auto elapsed_per_step_group = collectTimingStats(pipeline, processors);
     computeDistribution(elapsed_per_step_group);
+    computeJoinBranchCosts(plan);
 }
 
 void StepStatsStorage::collectIOStats(const Processors & processors)
@@ -127,6 +135,80 @@ void StepStatsStorage::computeDistribution(const ElapsedTimesPerStepGroup & elap
     }
 }
 
+void StepStatsStorage::computeJoinBranchCosts(const QueryPlan & plan)
+{
+    if (!plan.isInitialized())
+        return;
+
+    /// Walks the plan rather than the collected stats: those are keyed by the step's id and hold
+    /// no pointer, and deciding whether a step is a join needs the object. The plan is here for
+    /// exactly this reason -- a branch cost is a property of the tree, not of one step.
+    std::vector<const IQueryPlanStep *> join_steps;
+    std::vector<const QueryPlan::Node *> stack;
+    stack.push_back(plan.getRootNode());
+
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!node)
+            continue;
+
+        join_steps.push_back(node->step.get());
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+        for (const auto * child_plan : node->step->getChildPlans())
+            if (child_plan)
+                stack.push_back(child_plan->getRootNode());
+    }
+
+    CardinalityByJoinStep cardinality_by_join_step;
+    for (const auto * step : join_steps)
+    {
+        const auto * join_step = typeid_cast<const JoinStep *>(step);
+        if (!join_step || !join_step->getJoin())
+            continue;
+
+        const auto step_id = step->getUniqID();
+
+        const auto io_stats_it = stats_by_step.find(step_id);
+        if (io_stats_it == stats_by_step.end())
+            continue;
+
+        StepProcessors step_processors;
+        if (const auto processors_it = processors_by_step.find(step_id); processors_it != processors_by_step.end())
+            step_processors = processors_it->second;
+
+        auto report = step->getAnalysisReport(step_processors);
+        const auto & table_join = join_step->getJoin()->getTableJoin();
+        cardinality_by_join_step[join_step]
+            = joinMatchedOutputRows(report, io_stats_it->second.output_rows, table_join.kind(), table_join.strictness());
+
+        join_raw_reports.emplace(step_id, std::move(report));
+    }
+
+    if (join_raw_reports.empty())
+        return;
+
+    const JoinBranchCosts join_branch_costs(plan, cardinality_by_join_step);
+    for (const auto * step : join_steps)
+    {
+        const auto * join_step = typeid_cast<const JoinStep *>(step);
+        if (!join_step)
+            continue;
+
+        const auto report_it = join_raw_reports.find(step->getUniqID());
+        if (report_it == join_raw_reports.end())
+            continue;
+
+        MetricGroup cost_group{MetricGroupKey::Cost, {}};
+        cost_group.metrics.emplace_back(MetricKey::Actual, optionalQuantity(join_branch_costs.getBranchCost(join_step)));
+        report_it->second.push_back(std::move(cost_group));
+    }
+}
+
 StepStatsContext StepStatsStorage::makeContext(const IQueryPlanStep * step) const
 {
     StepStatsContext context;
@@ -148,11 +230,19 @@ StepStatsContext StepStatsStorage::makeContext(const IQueryPlanStep * step) cons
 
 AnalyzedStepData StepStatsStorage::analyzeStep(const IQueryPlanStep * step) const
 {
-    StepProcessors step_processors;
-    if (const auto processors_it = processors_by_step.find(step->getUniqID()); processors_it != processors_by_step.end())
-        step_processors = processors_it->second;
+    StepAnalysisReport raw_report;
+    if (const auto report_it = join_raw_reports.find(step->getUniqID()); report_it != join_raw_reports.end())
+    {
+        raw_report = report_it->second;
+    }
+    else
+    {
+        StepProcessors step_processors;
+        if (const auto processors_it = processors_by_step.find(step->getUniqID()); processors_it != processors_by_step.end())
+            step_processors = processors_it->second;
 
-    StepAnalysisReport raw_report = step->getAnalysisReport(step_processors);
+        raw_report = step->getAnalysisReport(step_processors);
+    }
 
     auto context_for_step = makeContext(step);
     StepStatsAnalyzer step_stats_generator = getStepStatsAnalyzer(step);

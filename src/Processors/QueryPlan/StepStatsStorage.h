@@ -30,9 +30,10 @@ class StepStatsStorage
     using StatsByStep = std::unordered_map<String, StepIOStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
     using ProcessorsByStep = std::unordered_map<String, std::vector<IProcessor *>>;
+    using ReportsByStep = std::unordered_map<String, StepAnalysisReport>;
 
 public:
-    StepStatsStorage(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_);
+    StepStatsStorage(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
     /// Unlike collecting, this needs a live step: getAnalysisReport reads state that only the step
     /// object holds, and getStepGroups and the analyzer dispatch have no id-based equivalent. It
@@ -50,12 +51,17 @@ private:
     void collectIOStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);
     void computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group);
+    void computeJoinBranchCosts(const QueryPlan & plan);
 
     StepStatsContext makeContext(const IQueryPlanStep * step) const;
 
     StatsByStep stats_by_step;
     StatsByStepAndGroup stats_by_step_group;
     ProcessorsByStep processors_by_step;
+
+    /// Reports for join steps, produced up front by computeJoinBranchCosts because a branch cost
+    /// needs the whole plan, not one step. analyzeStep prefers these over asking the step again.
+    ReportsByStep join_raw_reports;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;

@@ -141,7 +141,7 @@ const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
             UInt64 execution_time_ns = 0;
             if (const auto * registry = pipeline->getStepClocks())
                 execution_time_ns = registry->getExecutionTimeNs();
-            stats.emplace(*pipeline, execution_time_ns);
+            stats.emplace(*pipeline, *query_plan, execution_time_ns);
         }
 
         ExplainPlanOptions explain_options

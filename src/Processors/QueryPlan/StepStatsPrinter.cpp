@@ -16,7 +16,7 @@ namespace
 String formatStepMetricValue(const StepMetric & metric)
 {
     if (std::holds_alternative<std::monostate>(metric.value))
-        return "not collected";
+        return String(missingValueText(metric.key));
 
     const MetricFormat format = formatOf(metric.key);
 
@@ -53,6 +53,8 @@ String formatStepMetricValue(const StepMetric & metric)
             return fmt::format("{:.2f}%", numeric);
         case MetricFormat::Ratio:
             return fmt::format("{:.2f}", numeric);
+        case MetricFormat::Selectivity:
+            return fmt::format("{:.4g}", numeric);
         case MetricFormat::Raw:
             return {};
     }

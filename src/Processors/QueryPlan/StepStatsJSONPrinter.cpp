@@ -30,6 +30,11 @@ std::string_view jsonKey(MetricGroupKey key)
         case MetricGroupKey::Spill: return "Spill";
         case MetricGroupKey::Build: return "Build";
         case MetricGroupKey::Probe: return "Probe";
+        case MetricGroupKey::Cost: return "Cost";
+        case MetricGroupKey::Selectivity: return "Selectivity";
+        case MetricGroupKey::Output: return "Output";
+        case MetricGroupKey::InputLeft: return "InputLeft";
+        case MetricGroupKey::InputRight: return "InputRight";
     }
 }
 
@@ -47,9 +52,17 @@ std::string_view jsonKey(MetricKey key)
         case MetricKey::OutputBytes: return "OutputBytes";
 
         case MetricKey::Rows: return "Rows";
+        case MetricKey::RowsEstimated: return "RowsEstimated";
         case MetricKey::Matched: return "Matched";
         case MetricKey::MatchRate: return "MatchRate";
         case MetricKey::Fanout: return "Fanout";
+
+        /// Estimated against actual, as the join-order optimizer's cost model saw it.
+        case MetricKey::Estimated: return "Estimated";
+        case MetricKey::Actual: return "Actual";
+        case MetricKey::EstimatedNDV: return "EstimatedNDV";
+        case MetricKey::ActualCartesian: return "ActualCartesian";
+        case MetricKey::QError: return "QError";
 
         case MetricKey::UniqueKeys: return "UniqueKeys";
         case MetricKey::Memory: return "Memory";
