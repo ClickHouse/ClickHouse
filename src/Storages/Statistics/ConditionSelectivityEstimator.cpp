@@ -33,6 +33,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
@@ -446,16 +451,14 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     }
                     catch (const Exception & e)
                     {
-                        if (!isParseError(e.code()))
+                        if (!isParseError(e.code()) && e.code() != ErrorCodes::TYPE_MISMATCH)
                             throw;
 
-                        /// The string value is not valid for the column type (e.g. unknown enum element).
-                        /// For equality, the condition can never match, so selectivity is 0.
-                        /// For other operators, fall back to default unknown selectivity.
                         LOG_DEBUG(getLogger("ConditionSelectivityEstimator"),
                             "Cannot convert value to column type, skipping statistics estimation. The exception is : {}",
                             getCurrentExceptionMessage(false));
-                        if (func_name == "equals")
+
+                        if (func_name == "equals" && e.code() != ErrorCodes::TYPE_MISMATCH)
                         {
                             out.function = RPNElement::ALWAYS_FALSE;
                             return true;
