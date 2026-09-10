@@ -1804,40 +1804,46 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
     for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
     {
         const std::string & dirname = boost::copy_range<std::string>(*it);
-        Cluster::Address address = Cluster::Address::fromFullString(dirname);
+        auto address = Cluster::Address::tryParseFullString(dirname);
 
-        /// Check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1).
-        if (address.shard_index)
+        /// An unrecognized name is reported and skipped rather than thrown on, otherwise a single
+        /// stray directory would keep the table from attaching at all. This is also where a
+        /// directory written by a server old enough to have used
+        /// use_compact_format_in_distributed_parts_names=0 ends up: its files are not sent.
+        if (!address)
         {
-            if (address.shard_index > shards_info.size())
-            {
-                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-                continue;
-            }
-
-            const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
-            size_t replicas = replicas_addresses.size();
-
-            if (dirname.ends_with("_all_replicas"))
-            {
-                for (const auto & replica_address : replicas_addresses)
-                    addresses.push_back(replica_address);
-                continue;
-            }
-
-            if (address.replica_index == 0 || address.replica_index > replicas)
-            {
-                LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
-                               "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
-                                address.replica_index, dirname, replicas, address.shard_index);
-                continue;
-            }
-
-            addresses.push_back(replicas_addresses[address.replica_index - 1]);
+            LOG_ERROR(log, "Unrecognized directory '{}' in the async INSERT queue of {}, its files will not be sent. "
+                           "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                           dirname, getStorageID().getNameForLogs());
+            continue;
         }
-        else
-            addresses.push_back(address);
+
+        if (address->shard_index > shards_info.size())
+        {
+            LOG_ERROR(log, "No shard with shard_index={} ({})", address->shard_index, name);
+            continue;
+        }
+
+        const auto & replicas_addresses = shards_addresses[address->shard_index - 1];
+        size_t replicas = replicas_addresses.size();
+
+        /// shardN_all_replicas
+        if (address->replica_index == 0)
+        {
+            for (const auto & replica_address : replicas_addresses)
+                addresses.push_back(replica_address);
+            continue;
+        }
+
+        if (address->replica_index > replicas)
+        {
+            LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
+                           "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                            address->replica_index, dirname, replicas, address->shard_index);
+            continue;
+        }
+
+        addresses.push_back(replicas_addresses[address->replica_index - 1]);
     }
     return addresses;
 }

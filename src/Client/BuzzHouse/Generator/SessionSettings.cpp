@@ -1881,7 +1881,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_async_executor_for_materialized_views", trueOrFalseSetting},
     {"use_cache_for_count_from_files", trueOrFalseSetting},
     {"use_client_time_zone", trueOrFalseSettingNoOracle},
-    {"use_compact_format_in_distributed_parts_names", trueOrFalseSettingNoOracle},
     {"use_concurrency_control", trueOrFalseSettingNoOracle},
     {"use_constant_folding_in_index_analysis", trueOrFalseSetting},
     {"use_hash_table_stats_for_join_reordering", trueOrFalseSetting},
