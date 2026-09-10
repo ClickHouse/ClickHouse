@@ -9,9 +9,11 @@
 DROP TABLE IF EXISTS t_grouping_dist;
 -- Pin the granularity: the EXPLAIN below prints the granule count of the read. `index_granularity`
 -- alone is not enough - a randomized `index_granularity_bytes` caps a granule by size and splits the
--- single expected granule, so adaptive granularity has to be switched off as well.
+-- single expected granule, so it has to be pinned as well. Keep it at the default value instead of
+-- disabling adaptive granularity: with `index_granularity_bytes = 0` the server writes a warning to
+-- stderr when a randomized `min_bytes_for_wide_part` is in effect.
 CREATE TABLE t_grouping_dist (k1 String, k2 UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 8192, index_granularity_bytes = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760;
 INSERT INTO t_grouping_dist SELECT 'k' || (number % 3)::String, number % 2, number FROM numbers(1000);
 
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
