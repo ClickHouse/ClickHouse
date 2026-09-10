@@ -9,6 +9,7 @@
 #include <atomic>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -39,6 +40,18 @@ private:
     WorkersCoordinator & coordinator;
     ExecutingPipeline & pipeline;
     WorkerPool & pool;
+
+    /// Graph prepare temporary data.
+    std::vector<Task> found_tasks;
+    std::vector<InputPort *> pending_inputs;
+    std::vector<OutputPort *> pending_outputs;
+    std::vector<IProcessor *> finished_processors;
+
+    /// Single processor prepare temporary data.
+    IProcessor::UpdatedInputPorts hint_inputs;
+    IProcessor::UpdatedOutputPorts hint_outputs;
+    IProcessor::UpdatedInputPorts changed_inputs;
+    IProcessor::UpdatedOutputPorts changed_outputs;
 };
 
 }

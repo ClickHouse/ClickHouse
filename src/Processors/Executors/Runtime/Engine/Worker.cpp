@@ -37,11 +37,6 @@ bool canAddInfoToException(const Exception & exception)
         && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-thread_local std::vector<InputPort *> pending_inputs;
-thread_local std::vector<OutputPort *> pending_outputs;
-thread_local std::vector<Task> found_tasks;
-thread_local std::vector<IProcessor *> finished_processors;
-
 }
 
 Worker::Worker(size_t worker_id_, TaskScheduler & scheduler_, WorkersCoordinator & coordinator_, ExecutingPipeline & pipeline_, WorkerPool & pool_)
@@ -77,13 +72,12 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
 
         if (threads_needed > 0)
         {
-            const size_t idle_threads = coordinator.idle();
+            size_t woken = 0;
+            if (coordinator.idle() > 0)
+                woken = coordinator.wake(threads_needed);
 
-            if (idle_threads > 0)
-                coordinator.wake(threads_needed);
-
-            if (threads_needed > idle_threads)
-                pool.grow(threads_needed - idle_threads);
+            if (threads_needed > woken)
+                pool.grow(threads_needed - woken);
         }
 
         if (pipeline.hasReadyForRemoval())
@@ -215,11 +209,6 @@ void Worker::runPrepare(ProcessorState & state)
 
 void Worker::prepareRound(ProcessorState & state, std::unique_lock<std::mutex>)
 {
-    thread_local IProcessor::UpdatedInputPorts hint_inputs;
-    thread_local IProcessor::UpdatedOutputPorts hint_outputs;
-    thread_local IProcessor::UpdatedInputPorts changed_inputs;
-    thread_local IProcessor::UpdatedOutputPorts changed_outputs;
-
     IProcessor & processor = *state.processor;
 
     state.incoming_updates.drain(hint_inputs, hint_outputs);
