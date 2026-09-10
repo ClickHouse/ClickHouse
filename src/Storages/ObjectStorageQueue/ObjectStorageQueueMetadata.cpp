@@ -1492,10 +1492,18 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     std::filesystem::path nodes_fs_path(nodes_path);
     for (const auto & node : nodes)
     {
-        /// Skip retry-state nodes - only clean up terminal failed nodes.
-        /// Retry-state nodes (.retriable suffix) are ephemeral and self-clean
-        /// when files succeed or reach max retries. Deleting them mid-retry
-        /// resets the retry counter, breaking the retry limit invariant.
+        /// Skip retry-state nodes - only terminal failed nodes are cleaned up here.
+        ///
+        /// The reason is the retry counter, not the node's lifetime: a `.retriable` node carries how
+        /// many attempts a file has already used, and deleting it mid-retry silently resets that count,
+        /// so a file that should have been given up on keeps being retried forever.
+        ///
+        /// These nodes are persistent, not ephemeral, and nothing here reaps them. The transition that
+        /// exhausts the retries removes the marker as it creates the terminal node, but two paths still
+        /// leave one behind: a file that fails and later succeeds, and `loading_retries` being altered
+        /// from a positive value to zero. Fixing those belongs to the success and failure transitions
+        /// rather than to this sweep, and is deliberately left to a separate change - it is a standalone
+        /// bug fix that predates the failed-files TTL work. Until it lands, such markers accumulate.
         if (node.ends_with(".retriable"))
             continue;
 
