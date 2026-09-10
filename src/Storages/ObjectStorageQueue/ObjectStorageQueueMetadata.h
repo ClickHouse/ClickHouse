@@ -255,7 +255,18 @@ private:
         const fs::path & zookeeper_cleanup_lock_path, const std::string & attempt_id) const;
     bool verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
         const std::string & waited_command_id, size_t & out_terminal_failed_count);
-    void waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path);
+    /// What waiting on a concurrent `SYSTEM DROP S3QUEUE FAILED FILES` came to.
+    enum class WaitOutcome
+    {
+        /// The command that held the lock finished and published a verdict this waiter could accept,
+        /// so the work it was waiting for is done and there is nothing left to do.
+        CommandCompleted,
+        /// The lock was already gone when this waiter went to read it, so there is no attempt to bind
+        /// to - and, since the node is ephemeral and unheld, nobody is doing the work either. The
+        /// caller should start its attempt over and try to take the lock itself.
+        LockVanished,
+    };
+    WaitOutcome waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path);
     /// Executes `remove_requests` as a single Keeper `multi` and reconciles the result, retrying
     /// individually the requests that were aborted with `ZRUNTIMEINCONSISTENCY`. For every node that is
     /// confirmed gone, drops the local cache entry (only if its generation still matches the snapshot)

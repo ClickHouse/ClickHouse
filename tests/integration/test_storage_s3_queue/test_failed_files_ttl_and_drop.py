@@ -1087,6 +1087,201 @@ def test_drop_failed_files_on_cluster_concurrent(started_cluster):
         node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
 
 
+PAUSE_BEFORE_CLEANUP_LOCK_READ_FAILPOINT = "object_storage_queue_pause_before_cleanup_lock_read"
+
+
+def _wait_failpoint_paused(node, failpoint, timeout=120):
+    """Block until a thread on `node` parks at `failpoint`.
+
+    `SYSTEM WAIT FAILPOINT ... PAUSE` blocks, so it has to run on a worker thread: a failpoint that is
+    never reached must fail the test rather than hang it. The executor is deliberately not joined on
+    the failure path, because its worker is still stuck inside the blocking query.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    done, _ = concurrent.futures.wait([future], timeout=timeout)
+    if not done:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise AssertionError(f"failpoint {failpoint} was not reached within {timeout}s")
+    pool.shutdown(wait=False)
+    future.result()
+
+
+def test_drop_failed_files_survives_lock_vanishing_before_it_is_read(started_cluster):
+    """A replica that loses `cleanup_lock` and then finds it already released must not fail the command.
+
+    The `tryCreate` -> `get` window: a replica loses the lock race, and by the time it reads the lock to
+    see whose it was, the holder has finished and released it. Its `Stat` was never read, so there is no
+    attempt to bind to and no command id to match a published result against.
+
+    That case used to fall back to "is `/failed` globally empty" as its only observation, which is a
+    stronger postcondition than any winner enforces - a winner deletes the snapshot it opened with and is
+    not answerable for files that fail afterwards. So a single new failure landing after the winner's
+    snapshot made this replica throw `KEEPER_EXCEPTION` about a cleanup that had actually succeeded.
+
+    The window is microseconds wide in production, so it is opened with a failpoint rather than raced
+    for. Two replicas share the queue, `instance2` is parked between its failed `tryCreate` and the
+    `get`, the winner is played by hand so that it publishes and releases while `instance2` is parked,
+    and a new file then fails. On resume, `instance2` must take the lock itself and drop what is there.
+
+    The drop is issued directly on `instance2` rather than `ON CLUSTER`, even though `ON CLUSTER` is how
+    the problem was originally reported. `DDLWorker` classifies `KEEPER_EXCEPTION` as retriable and
+    re-runs the task a few seconds later, by which time the lock is free and the retry succeeds - so the
+    `ON CLUSTER` form hides this bug from the client behind a delay and an error in the log, and a test
+    written on it passes either way. The direct form runs the same `waitForConcurrentDropToComplete`
+    path with nothing to paper over the result.
+    """
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+
+    table_name = f"test_drop_lock_vanished_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+    num_failing_files = 3
+
+    for node in (node1, node2):
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "s3queue_loading_retries": 0,  # fail terminally on the first attempt
+                # Nothing but this test and the command under test may touch /failed.
+                "failed_files_ttl_sec": 0,
+                "tracked_files_limit": 0,
+            },
+        )
+
+    invalid_csv = b"not,valid,numbers\n"
+    for i in range(num_failing_files):
+        put_s3_file_content(started_cluster, f"{files_path}/failed_{i}.csv", invalid_csv)
+
+    for node in (node1, node2):
+        create_mv(node, table_name, dst_table_name)
+
+    def failed_znodes():
+        result = node1.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    def wait_for(predicate, timeout_sec=120):
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.5)
+        return False
+
+    assert wait_for(
+        lambda: failed_znodes() >= num_failing_files
+    ), f"expected {num_failing_files} failed znodes, got {failed_znodes()}"
+
+    # Stop consuming before touching Keeper by hand, so nothing re-fails files behind the test's back.
+    for node in (node1, node2):
+        node.query(f"DROP TABLE {mv_name}")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def take_cleanup_lock():
+        try:
+            zk.create(cleanup_lock_path, TEST_DROP_LOCK_VALUE, ephemeral=True)
+            return True
+        except NodeExistsError:
+            return False
+
+    assert wait_for(
+        take_cleanup_lock, timeout_sec=60
+    ), "could not acquire cleanup_lock for the test"
+
+    # Park instance2 between its failed `tryCreate` and the `get`. Armed before the command starts, so
+    # there is no race over which of the two gets there first.
+    node2.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_CLEANUP_LOCK_READ_FAILPOINT}")
+
+    drop_result = {}
+
+    def run_drop():
+        try:
+            node2.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}")
+        except Exception as e:  # noqa: BLE001 - reported through the assertion below
+            drop_result["error"] = e
+
+    drop_thread = threading.Thread(target=run_drop)
+    drop_thread.start()
+    try:
+        _wait_failpoint_paused(node2, PAUSE_BEFORE_CLEANUP_LOCK_READ_FAILPOINT)
+
+        # Play the winner: delete its whole snapshot, publish the verdict it publishes before releasing,
+        # then release the lock. instance1 polls every 100ms and accepts this result by command id.
+        snapshot = zk.get_children(failed_path)
+        for child in snapshot:
+            zk.delete(f"{failed_path}/{child}")
+        zk.create(
+            f"{keeper_path}/last_drop_result",
+            json.dumps(
+                {
+                    "command_id": TEST_DROP_COMMAND_ID,
+                    "attempt_id": str(zk.exists(cleanup_lock_path).czxid),
+                    "success": True,
+                    "snapshot_size": len(snapshot),
+                    "deleted": len(snapshot),
+                    "error": "",
+                }
+            ).encode(),
+        )
+        zk.delete(cleanup_lock_path)
+
+        # A file fails after the winner's snapshot. It is not part of the completed attempt, and it is
+        # what used to make the parked replica reject a cleanup that had succeeded.
+        zk.create(
+            f"{failed_path}/failed_after_the_winner_released",
+            json.dumps(
+                {
+                    "file_path": "failed_after_the_winner_released.csv",
+                    "last_processed_timestamp": 0,
+                    "last_exception": "failed after the winner released the lock",
+                    "retries": 0,
+                    "processor_id": "",
+                }
+            ).encode(),
+        )
+
+        # Resume instance2. Its `get` now raises ZNONODE: the lock it lost is already gone.
+        node2.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_CLEANUP_LOCK_READ_FAILPOINT}")
+    finally:
+        drop_thread.join(timeout=300)
+
+    assert not drop_thread.is_alive(), "drop did not return"
+    assert "error" not in drop_result, (
+        f"the drop failed on a replica whose lock vanished before it could be read: "
+        f"{drop_result.get('error')}"
+    )
+
+    # The bug's own signature, checked separately: even where something upstream retries the statement
+    # and hides the failure from the client, this line in the log means the replica rejected a cleanup
+    # it could not name rather than redoing it.
+    assert not node2.contains_in_log(
+        "so the cleanup cannot be confirmed"
+    ), "the replica rejected the cleanup instead of retrying it"
+
+    # instance2 could not verify anything, so it had to take the lock and do the work itself - which
+    # means the file that failed after the winner's snapshot is gone too.
+    assert wait_for(
+        lambda: failed_znodes() == 0
+    ), f"failed znodes remain after the drop: {failed_znodes()}"
+
+    for node in (node1, node2):
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
 def test_drop_failed_files_loser_reconciles_cache(started_cluster):
     """The replica that loses the `cleanup_lock` race must still reconcile its own
     `local_file_statuses`, so no stale `Failed` entries survive in
