@@ -1527,6 +1527,22 @@ try
         );
     }
 
+    auto begin_keeper_tcp_connection_drain = [&]
+    {
+#if USE_NURAFT
+        if (auto dispatcher = global_context->tryGetKeeperDispatcher())
+            dispatcher->beginTCPConnectionDrain();
+
+        KeeperTCPHandler::closeAllConnections();
+#endif
+    };
+
+    auto is_keeper_tcp_server = [](const ProtocolServerAdapter & server)
+    {
+        const auto & port_name = server.getPortName();
+        return port_name == "keeper_server.tcp_port" || port_name == "keeper_server.tcp_port_secure";
+    };
+
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
@@ -1556,12 +1572,8 @@ try
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
-
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
-
-        size_t current_connections = 0;
+        size_t keeper_tcp_connections = 0;
+        size_t non_keeper_tcp_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
@@ -1570,25 +1582,64 @@ try
                 for (auto & server : servers_to_start_before_tables)
                 {
                     server.stop();
-                    current_connections += server.currentConnections();
+                    if (is_keeper_tcp_server(server))
+                        keeper_tcp_connections += server.currentConnections();
+                    else
+                        non_keeper_tcp_connections += server.currentConnections();
                 }
             }
-
-            if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all listening sockets.");
-
-            if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
-
-            if (current_connections)
-                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
-            else
-                LOG_INFO(log, "Closed connections to servers for tables.");
         }
 
-        global_context->shutdownKeeperDispatcher(current_connections == 0);
+        /// Stop Keeper TCP handlers before draining the remaining pre-table protocol handlers.
+        /// Those handlers include HTTP control, interserver HTTP/HTTPS, and Prometheus; they need
+        /// the embedded Keeper and RAFT to remain live until they finish.
+        begin_keeper_tcp_connection_drain();
+
+        if (non_keeper_tcp_connections)
+        {
+            LOG_INFO(log, "Closed all non-Keeper-TCP listening sockets. Waiting for {} outstanding connections.", non_keeper_tcp_connections);
+            non_keeper_tcp_connections = waitServersToFinish(
+                servers_to_start_before_tables,
+                servers_lock,
+                server_settings[ServerSetting::shutdown_wait_unfinished],
+                [&](const auto & server) { return !is_keeper_tcp_server(server); });
+        }
+
+        global_context->signalKeeperDispatcherShutdown();
+        global_context->shutdownKeeperDispatcherBeforeConnectionsFinish();
+
+        if (non_keeper_tcp_connections)
+        {
+            global_context->shutdownKeeperDispatcherAfterConnectionsFinish(false);
+            dumpCoverageReportIfPossible();
+            LOG_WARNING(
+                log,
+                "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.",
+                non_keeper_tcp_connections);
+            safeExit(0, LeakCheck::SkipAndReport);
+        }
+
+        if (!servers_to_start_before_tables.empty())
+        {
+            if (keeper_tcp_connections)
+                LOG_INFO(log, "Closed all Keeper TCP listening sockets. Waiting for {} outstanding connections.", keeper_tcp_connections);
+            else
+                LOG_INFO(log, "Closed all Keeper listening sockets.");
+
+            if (keeper_tcp_connections > 0)
+                keeper_tcp_connections = waitServersToFinish(
+                    servers_to_start_before_tables,
+                    servers_lock,
+                    server_settings[ServerSetting::shutdown_wait_unfinished],
+                    is_keeper_tcp_server);
+
+            if (keeper_tcp_connections)
+                LOG_INFO(log, "Closed Keeper TCP connections. But {} remain.", keeper_tcp_connections);
+            else
+                LOG_INFO(log, "Closed Keeper TCP connections.");
+        }
+
+        global_context->shutdownKeeperDispatcherAfterConnectionsFinish(keeper_tcp_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();

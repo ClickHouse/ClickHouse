@@ -11,6 +11,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Columns/ColumnMap.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <city.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ZooKeeper/SystemTablesDataTypes.h>
@@ -28,6 +29,14 @@ ColumnsDescription AggregatedZooKeeperLogElement::getColumnsDescription()
     result.add({"hostname",
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 "Hostname of the server."});
+
+    result.add({"clickhouse_version",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                "Version of the ClickHouse server that produced the row."});
+
+    result.add({"system_processor",
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                "CPU architecture of the ClickHouse server that produced the row."});
 
     result.add({"event_date",
                 std::make_shared<DataTypeDate>(),
@@ -75,6 +84,8 @@ void AggregatedZooKeeperLogElement::appendToBlock(MutableColumns & columns) cons
 {
     size_t i = 0;
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(session_id);
