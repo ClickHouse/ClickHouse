@@ -1,6 +1,7 @@
 -- Tags: no-old-analyzer
 
-SET explain_query_plan_default = 'legacy';
+-- 26.6 has only the legacy EXPLAIN renderer, so `explain_query_plan_default` does not exist here
+-- and the `EXPLAIN` below already prints the form the reference expects.
 -- Distributed aggregation rejects a nonzero global GROUP BY limit.
 SET max_rows_to_group_by = 0;
 SET enable_parallel_replicas = 0;
