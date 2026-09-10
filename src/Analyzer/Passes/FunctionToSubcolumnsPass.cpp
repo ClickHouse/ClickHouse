@@ -650,9 +650,10 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// elsewhere in the query (e.g., in SELECT alongside WHERE m['key'] = val).
 /// Normally the optimizer skips a column if it's used both in a transformable
 /// function and as a plain column reference, because introducing a new
-/// subcolumn identifier complicates analysis. But for Map key lookups, Tuple
-/// element access, Variant element access and QBit element access the transformation is beneficial when the occurrence is in
-/// WHERE/PREWHERE: only the relevant subcolumn is read for the filter (letting a
+/// subcolumn identifier complicates analysis. But for Map subcolumn filters,
+/// Tuple element access, Variant element access and QBit element access, the
+/// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
+/// the relevant subcolumn is read for the filter (letting a
 /// skip index on that subcolumn prune granules), while the full column is still
 /// read for matching rows in SELECT. The reads are independent and semantically
 /// correct.
@@ -661,6 +662,8 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Map, "mapKeys"},
+    {TypeIndex::Map, "mapValues"},
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
@@ -1062,9 +1065,9 @@ public:
         /// When there are also plain column references but a transformable use
         /// exists in WHERE/PREWHERE (recorded in `identifiers_with_filter_optimization`),
         /// the identifier goes into `filter_only` — it is rewritten only inside
-        /// WHERE/PREWHERE by the second pass. This is beneficial for Map key
-        /// lookups: only the relevant bucket is read for the filter while the
-        /// full Map is still read for matching rows in SELECT.
+        /// WHERE/PREWHERE by the second pass. This is beneficial for Map
+        /// subcolumn filters: only the relevant subcolumn is read for the filter,
+        /// while the full Map is still read for matching rows in SELECT.
         ///
         /// Do not optimize index columns (primary, min-max, secondary),
         /// because otherwise analysis of indexes may be broken.
