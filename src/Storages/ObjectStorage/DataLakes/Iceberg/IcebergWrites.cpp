@@ -159,6 +159,27 @@ bool isNaNPartitionValue(const Field & field, DataTypePtr type)
     }
 }
 
+/// The unscaled value of a decimal `Field`, whatever carrier it uses. A partition value read out of a
+/// manifest is canonicalized to `Decimal256` (see `normalizePartitionValue`), so its carrier does not
+/// have to be the carrier of the ClickHouse type of the column it belongs to.
+Int256 getDecimalUnscaledValue(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Decimal32:
+            return Int256(field.safeGet<DecimalField<Decimal32>>().getValue().value);
+        case Field::Types::Decimal64:
+            return Int256(field.safeGet<DecimalField<Decimal64>>().getValue().value);
+        case Field::Types::Decimal128:
+            return Int256(field.safeGet<DecimalField<Decimal128>>().getValue().value);
+        case Field::Types::Decimal256:
+            return field.safeGet<DecimalField<Decimal256>>().getValue().value;
+        default:
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Expected a decimal value of an Iceberg column, got {}", field.getTypeName());
+    }
+}
+
 template <typename T>
 std::vector<uint8_t> dumpValue(T value)
 {
@@ -189,11 +210,11 @@ std::vector<uint8_t> dumpDecimalValue(const Field & field)
     }
     else
     {
-        const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+        const Int256 unscaled_value = getDecimalUnscaledValue(field);
 
         bytes.resize(sizeof(NativeType));
         for (size_t i = 0; i < sizeof(NativeType); ++i)
-            bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+            bytes[sizeof(NativeType) - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & Int256(0xFF)));
     }
 
     size_t first = 0;
@@ -234,10 +255,10 @@ avro::GenericDatum makeDecimalFixedDatum(const Field & field, const avro::NodePt
     }
     else
     {
-        const NativeType unscaled_value = field.safeGet<DecimalField<DecimalType>>().getValue().value;
+        const Int256 unscaled_value = getDecimalUnscaledValue(field);
         bytes.assign(size, unscaled_value < 0 ? 0xFF : 0x00);
         for (size_t i = 0; i < size && i < sizeof(NativeType); ++i)
-            bytes[size - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & NativeType(0xFF)));
+            bytes[size - 1 - i] = static_cast<uint8_t>(static_cast<UInt64>((unscaled_value >> (8 * i)) & Int256(0xFF)));
     }
 
     avro::GenericDatum datum(schema);

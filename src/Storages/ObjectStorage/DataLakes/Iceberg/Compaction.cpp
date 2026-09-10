@@ -257,7 +257,7 @@ static Plan getPlan(
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
-                auto partition_index = plan.partition_encoder.encodePartition(data_file->parsed_entry->partition_key_value);
+                auto partition_index = plan.partition_encoder.encodePartition(data_file->normalized_partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
@@ -294,7 +294,7 @@ static Plan getPlan(
 
     for (const auto & delete_file : all_positional_delete_files)
     {
-        auto partition_index = plan.partition_encoder.encodePartition(delete_file->parsed_entry->partition_key_value);
+        auto partition_index = plan.partition_encoder.encodePartition(delete_file->normalized_partition_key_value);
         if (partition_index >= plan.partitions.size())
             continue;
 
@@ -664,7 +664,7 @@ static bool writeConsolidatedManifestFile(
             const Int32 source_schema_id = data_file->resolved_schema_id;
             String partition_key = std::to_string(source_partition_spec_id) + "|" + std::to_string(source_schema_id) + "|";
             FieldVisitorDump dump_visitor;
-            for (const auto & val : data_file->parsed_entry->partition_key_value)
+            for (const auto & val : data_file->normalized_partition_key_value)
                 partition_key += applyVisitor(dump_visitor, val) + "|";
 
             if (!partitions_map.contains(partition_key))
@@ -673,7 +673,7 @@ static bool writeConsolidatedManifestFile(
             auto & pd = partitions_map.at(partition_key);
             pd.partition_spec_id = source_partition_spec_id;
             pd.schema_id = source_schema_id;
-            pd.partition_values = data_file->parsed_entry->partition_key_value;
+            pd.partition_values = data_file->normalized_partition_key_value;
             // A single manifest file should not list the same data file twice
             if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->parsed_entry->file_path_key) == pd.file_paths.end())
             {
