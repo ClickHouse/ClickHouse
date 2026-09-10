@@ -61,11 +61,11 @@ UInt128 ISerialization::getHash() const
     return *cached_hash;
 }
 
-SerializationPtr ISerialization::pooled(UInt128 hash, absl::FunctionRef<ISerialization *()> creator)
+SerializationPtr ISerialization::pooled(UInt128 hash, std::function<ISerialization *()> creator)
 {
-    return SerializationObjectPool::getOrCreate(hash, [&]() -> ISerialization *
+    return SerializationObjectPool::getOrCreate(hash, [hash, c = std::move(creator)]() -> ISerialization *
     {
-        auto * obj = creator();
+        auto * obj = c();
         obj->cached_hash = hash;
         return obj;
     });
@@ -176,10 +176,6 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedVariantDiscriminators,
     QuantizedCodes,
     ProductQuantizationCodebook,
-    MapKeyValue,
-    ObjectDistinctPaths,
-    ObjectSubObject,
-    ObjectCombinedPath,
 };
 
 String ISerialization::Substream::toString() const

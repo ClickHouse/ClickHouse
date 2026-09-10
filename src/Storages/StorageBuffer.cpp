@@ -930,21 +930,6 @@ void StorageBuffer::startup()
 }
 
 
-size_t StorageBuffer::flushBufferedRowsBeforeShutdown()
-{
-    /// Sequential and without the threshold check: this runs once per shutdown, before any database
-    /// is gone, and every buffer that holds anything has to move now. The destination may be another
-    /// `Buffer` that is drained by a later pass of the caller's loop.
-    size_t buffers_flushed = 0;
-    for (auto & buffer : buffers)
-    {
-        if (flushBuffer(buffer, /*check_thresholds=*/ false, /*locked=*/ false))
-            ++buffers_flushed;
-    }
-    return buffers_flushed;
-}
-
-
 void StorageBuffer::flushAndPrepareForShutdown()
 {
     if (!flush_handle)

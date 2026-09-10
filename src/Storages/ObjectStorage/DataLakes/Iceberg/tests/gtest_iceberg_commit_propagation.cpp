@@ -102,10 +102,7 @@ private:
 /// Drives the real commit against a stub whose write fails with `write_error_code`.
 bool commitWithFailingWrite(int write_error_code)
 {
-    Iceberg::IcebergPathResolver resolver(
-        "/table",
-        "/table",
-        Iceberg::BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
+    Iceberg::IcebergPathResolver resolver("/table", "/table");
     GeneratedMetadataFileWithInfo metadata_file_info{
         .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
         .version = 2,

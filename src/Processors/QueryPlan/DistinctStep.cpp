@@ -25,11 +25,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-bool preliminaryDistinctIsUseful(size_t max_threads)
-{
-    return max_threads > 1;
-}
-
 static ITransformingStep::Traits getTraits(bool pre_distinct)
 {
     const bool preserves_number_of_streams = pre_distinct;
@@ -73,7 +68,7 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
-void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// The final distinct deduplicates across the whole input, so it needs all data in a single
     /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
@@ -81,11 +76,6 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// can be deduplicated independently, so we keep the streams and skip merging them into one.
     if (!pre_distinct && !skip_stream_merging)
         pipeline.resize(1);
-
-    /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
-    /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
-    /// hint is set: an abandoned transform cannot count the distinct rows to stop the input early.
-    const bool allow_abandoning = pre_distinct && settings.allow_preliminary_distinct_abandoning && limit_hint == 0;
 
     pipeline.addSimpleTransform(
         [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
@@ -99,7 +89,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (!distinct_sort_desc.empty())
                 return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns, allow_abandoning);
+            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
         });
 }
 

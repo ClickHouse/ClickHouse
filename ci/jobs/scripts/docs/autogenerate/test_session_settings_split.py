@@ -1309,9 +1309,9 @@ def main():
         observed_beta_rewrite = []
 
         def fake_generate_artifacts(
-                gen, binary, docs_dir, repo_root, migrate, lk, file_map,
+                gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
                 generated_routes=None):
-            del binary, migrate, lk, file_map
+            del binary, migrate, lk, file_map, remap
             if gen["name"] in mod.SETTINGS_SPLIT_FAMILIES:
                 family = mod.SETTINGS_SPLIT_FAMILIES[gen["name"]]
                 return [mod.GeneratedArtifact(

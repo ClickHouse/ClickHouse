@@ -50,7 +50,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -177,7 +176,6 @@ void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<Qu
     for (auto & plan : plans)
     {
         max_threads = std::max(max_threads, plan->max_threads);
-        concurrency_control = concurrency_control || plan->concurrency_control;
         resources = std::move(plan->resources);
     }
 }
@@ -963,13 +961,8 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         /// We cannot use query_id from the context because user can put any string there and it might be not unique
         UUID unique_query_id = UUIDHelpers::generateV4();
 
-        /// Shared by the source driving the plan and the source reading the result, so the client gets
-        /// the failure that stopped the query and not one it caused.
-        auto cancellation = std::make_shared<DistributedQueryCancellation>();
-
         /// Make plan stub that reads from the executor that executes the distributed plan
-        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(
-            result_header, unique_query_id, std::move(distributed_plan), task_to_host_map, cancellation));
+        Pipe run_distributed_plan(std::make_shared<ReadFromDistributedPlanSource>(result_header, unique_query_id, std::move(distributed_plan), task_to_host_map));
         Pipes pipes;
         pipes.emplace_back(std::move(run_distributed_plan));
 
@@ -987,8 +980,7 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             task_to_host_map ? ExchangeStreamSources{task_to_host_map->getExchangeStreamSourceHosts()} : ExchangeStreamSources{},
             temporary_files,
             context,
-            execute_locally,
-            cancellation);
+            execute_locally);
 
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
@@ -1223,14 +1215,6 @@ QueryPlan QueryPlan::extractSubplan(Node * subplan_root)
             new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
     }
 
-    /// A subplan extracted from this plan inherits the same execution limits and resource holder.
-    /// The splice above moves only the node tree; without this the extracted subplan would run with the
-    /// default thread fan-out and no concurrency control instead of this plan's caps. append copies the
-    /// shared handles, so ownership is only shared, never moved out of this plan.
-    new_plan.max_threads = max_threads;
-    new_plan.concurrency_control = concurrency_control;
-    new_plan.resources.append(resources);
-
     return new_plan;
 }
 
@@ -1248,18 +1232,6 @@ QueryPlan QueryPlan::clone() const
     result.cloneInplace(current_subplan_copy_root, root);
     result.root = current_subplan_copy_root;
 
-    /// Preserve the plan-level execution limits. They are not part of the node tree, so cloneInplace
-    /// does not copy them; without this a cloned plan runs with the default thread fan-out and no
-    /// concurrency control instead of the caps the source plan carries.
-    result.max_threads = max_threads;
-    result.concurrency_control = concurrency_control;
-
-    /// Preserve the resource holder (storage holders, table locks, interpreter contexts, etc.).
-    /// These keep the objects a cloned plan reads (e.g. MergeTree parts in the direct-join lookup
-    /// path) alive for as long as the clone lives. append copies the shared handles, so ownership is
-    /// only ever shared, never moved out of the source: strictly a lifetime extension for the clone.
-    result.resources.append(resources);
-
     return result;
 }
 
@@ -1272,15 +1244,6 @@ QueryPlan QueryPlan::cloneSubtree(Node * subplan_root)
     result.cloneInplace(subplan_copy_root, subplan_root);
     result.root = subplan_copy_root;
 
-    return result;
-}
-
-QueryPlan QueryPlan::cloneSubtree(Node * subplan_root, const QueryPlan & source_plan)
-{
-    auto result = cloneSubtree(subplan_root);
-    result.max_threads = source_plan.max_threads;
-    result.concurrency_control = source_plan.concurrency_control;
-    result.resources.append(source_plan.resources);
     return result;
 }
 
@@ -1306,15 +1269,6 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
         auto & frame = nodes_to_process.back();
         if (frame.children.size() == frame.node->children.size())
         {
-            /// A `DelayedCreatingSetsStep` holding sets cannot be part of a cloned plan: its clone is
-            /// shallow, so both copies would claim the same one-shot `FutureSetFromSubquery::source`,
-            /// only the first claimant would get a builder, and the set the other copy reads would
-            /// stay unbuilt. A step whose sets were detached is inert and clones fine.
-            if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(frame.node->step.get());
-                delayed && !delayed->getSets().empty())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED, "Cannot clone a plan holding a {} step with sets", delayed->getName());
-
             frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
 
@@ -1390,7 +1344,6 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader ex
     node->children = std::move(plan.getRootNode()->children);
 
     max_threads = std::max(max_threads, plan.max_threads);
-    concurrency_control = concurrency_control || plan.concurrency_control;
     resources = std::move(plan.resources);
 }
 

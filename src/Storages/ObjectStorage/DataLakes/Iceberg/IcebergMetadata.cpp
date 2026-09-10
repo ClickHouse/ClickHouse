@@ -217,7 +217,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .table_path = table_path,
         .table_uuid = table_uuid,
         .path_resolver = IcebergPathResolver(
-            table_location, root_derivation.table_root, Iceberg::BlobStorageDescription::fromConfiguration(*configuration)),
+            table_location, root_derivation.table_root, configuration->getTypeName(), configuration->getNamespace()),
         .table_root_was_derived = root_derivation.relation == IcebergPathResolver::RootRelation::AdoptedDescendant,
     };
 }
@@ -839,7 +839,15 @@ void IcebergMetadata::createInitial(
     }
     else
     {
-        std::vector<String> metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        std::vector<String> metadata_files;
+        try
+        {
+            metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+        }
+        catch (const Exception & ex)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
+        }
         if (!metadata_files.empty())
         {
             if (if_not_exists)
@@ -851,11 +859,11 @@ void IcebergMetadata::createInitial(
     }
 
     String location_path = configuration_ptr->getRawPath().path;
-    if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
-        location_path = Iceberg::makeIcebergLocationURI(
-            configuration_ptr->getTypeName(), configuration_ptr->getNamespace(), location_path);
-    else if (!location_path.contains("://") && !location_path.starts_with('/'))
+    if (!location_path.contains("://") && !location_path.starts_with('/'))
         location_path = "/" + location_path;
+    if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
+        location_path
+            = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
 
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
@@ -903,10 +911,8 @@ void IcebergMetadata::createInitial(
 
     if (catalog)
     {
-        auto catalog_filename = Iceberg::makeIcebergLocationURI(
-            configuration_ptr->getTypeName(),
-            configuration_ptr->getNamespace(),
-            configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix));
+        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
+            + configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix);
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
 }
@@ -1109,7 +1115,6 @@ IcebergFileRecord buildIcebergFileRecord(
     record.schema_id = processed->resolved_schema_id;
     record.sequence_number = processed->sequence_number;
     record.sort_order_id = parsed.sort_order_id;
-    record.first_row_id = processed->first_row_id;
 
     for (const auto & [column_id, info] : parsed.columns_infos)
     {
@@ -1638,7 +1643,8 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         .path_resolver = IcebergPathResolver(
             table_location,
             standard_persistent_components.table_path,
-            Iceberg::BlobStorageDescription::fromConfiguration(*configuration_ptr)),
+            configuration_ptr->getTypeName(),
+            configuration_ptr->getNamespace()),
         /// Consistent with the resolver above, which is rooted at `table_path` itself.
         .table_root_was_derived = false};
     auto metadata = std::make_unique<IcebergMetadata>(object_storage, configuration.lock(), std::move(deserialized_persistent_components), local_context);

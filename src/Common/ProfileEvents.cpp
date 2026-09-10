@@ -8,13 +8,13 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
-#include <Common/NamePrompter.h>
-#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/iter_find.hpp>
 
 #include <cfloat>
 #include <random>
-#include <ranges>
 
 // clang-format off
 /// Available events. Add something here as you wish.
@@ -44,9 +44,6 @@
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
-    M(ASTFuzzerOracleChecks, "Number of oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
-    M(ASTFuzzerOracleTLPAggregateChecks, "Number of TLP Aggregate (State/Merge) oracle checks attempted by the server-side AST fuzzer.", ValueType::Number) \
-    M(ASTFuzzerOracleMismatches, "Number of oracle mismatches detected by the server-side AST fuzzer.", ValueType::Number) \
     M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
     M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
@@ -143,13 +140,7 @@
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
     M(TextIndexPositionsDecodeMicroseconds, "Total time spent decoding text index position lists (.pos) for phrase search.", ValueType::Microseconds) \
-    M(TextIndexPhraseMatchMicroseconds, "Total time spent matching phrase positions over candidate rows.", ValueType::Microseconds) \
-    M(TextIndexPositionsBlocksRead, "Number of position blocks read to match phrase queries over a text index. A block spanning two candidate windows is counted once per read.", ValueType::Number) \
-    M(TextIndexPositionsBlocksTotal, "Number of total position blocks of the phrase tokens before selecting which ones to read.", ValueType::Number) \
-    M(TextIndexPositionsBytesRead, "Bytes of position blocks read to match phrase queries over a text index.", ValueType::Bytes) \
-    M(TextIndexPhraseCandidates, "Candidate rows (postings intersection) examined by candidate-driven phrase search.", ValueType::Number) \
-    M(TextIndexPhraseSearches, "Number of phrase searches executed over a text index. Repeated searches of the same phrase in the same part are served from the cache and are not counted.", ValueType::Number) \
-    M(TextIndexPhraseFallbacks, "Number of times a phrase query skipped the text index because the phrase was estimated to match more rows than 'text_index_hint_max_selectivity', and was evaluated on the column instead.", ValueType::Number) \
+    M(TextIndexPhraseMatchMicroseconds, "Total time spent in the roaringish phrase-match intersection.", ValueType::Microseconds) \
     M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
     M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
@@ -189,7 +180,6 @@
     M(NetworkSendElapsedMicroseconds, "Total time spent waiting for data to send to network or sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Microseconds) \
     M(NetworkReceiveBytes, "Total number of bytes received from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
-    M(NativeProtocolSend, "Number of non-empty native protocol output buffer flushes.", ValueType::Number) \
     M(FilterPartsByVirtualColumnsMicroseconds, "Total time spent in filterPartsByVirtualColumns function.", ValueType::Microseconds) \
     \
     M(GlobalThreadPoolExpansions, "Counts the total number of times new threads have been added to the global thread pool. This metric indicates the frequency of expansions in the global thread pool to accommodate increased processing demands.", ValueType::Number) \
@@ -317,7 +307,6 @@
     M(ReadTasksWithAppliedMutationsOnFly, "Total number of read tasks for which there was any mutation applied on fly", ValueType::Number) \
     M(MutationsAppliedOnFlyInAllReadTasks, "Total number of applied mutations on-fly among all read tasks", ValueType::Number) \
     M(PatchesAcquireLockTries, "Total number of tries to acquire lock for executing lightweight updates", ValueType::Number) \
-    M(PatchesAcquireLockBadVersionRetries, "Total number of retries while acquiring the lock for lightweight updates caused by a concurrent update committing first", ValueType::Number) \
     M(PatchesAcquireLockMicroseconds, "Total number of microseconds spent to acquire lock for executing lightweight updates", ValueType::Number) \
     \
     M(DiskObjectStorageWaitBlobRemovalMicroseconds, "Time spent waiting for pending blob removal after committing metadata transaction", ValueType::Microseconds) \
@@ -1019,7 +1008,6 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationTopKKeysEvicted, "How many grouping keys were evicted from the bounded top-K heap during aggregation (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(AggregationTopKKeysPruned, "How many evicted grouping keys were also erased from the intermediate hash table, with their aggregate states destroyed (see `enable_group_by_top_k_optimization`). Lower than `AggregationTopKKeysEvicted` when the aggregation method cannot erase keys, or when only a prefix of the key is ranked: the heap then still skips rows, but the hash table keeps every admitted group.", ValueType::Number) \
     M(AggregationTopKHeapsFrozen, "How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
-    M(DistinctTransformsAbandonedDeduplication, "How many deduplication transforms dropped their hash table and stopped deduplicating because the observed input was almost entirely unique and a consumer downstream deduplicates anyway: the preliminary `DISTINCT` (see `allow_preliminary_distinct_abandoning`) and the per-stream pre-deduplication in front of an `IN`-subquery set fill.", ValueType::Number) \
     M(HashJoinPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for hash join.", ValueType::Number) \
     \
     M(MetadataFromKeeperCacheHit, "Number of times an object storage metadata request was answered from cache without making request to Keeper", ValueType::Number) \
@@ -1650,8 +1638,6 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedAllocationSampleTracking, "Total number of times tracking of jemalloc allocation sample failed", ValueType::Number) \
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
-    M(SetsBuiltFromSubquery, "Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.", ValueType::Number) \
-    \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
     M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
     M(SelectivityEstimatorInSetEstimatedFromSize, "Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`", ValueType::Number) \
@@ -1668,13 +1654,10 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterRowsChecked, "Number of rows checked by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsPassed, "Number of rows that passed (not filtered out by) JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterRowsSkipped, "Number of rows in blocks that were skipped by JOIN Runtime Filters", ValueType::Number) \
-    M(RuntimeFilterBloomFilterBuildsSkipped, "Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side key count from the hash table statistics predicted that the filter would exceed the maximal ratio of set bits", ValueType::Number) \
     M(RuntimeFilterGranulesConsidered, "Number of granules examined for read time pruning by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterGranulesDropped, "Number of granules pruned at read time by JOIN Runtime Filters", ValueType::Number) \
     \
     M(JoinBuildPostProcessingMicroseconds, "Elapsed time of post-processing steps after building the right JOIN side.", ValueType::Microseconds) \
-    \
-    M(JoinBuildRowStoreMicroseconds, "Elapsed time transforming the right JOIN side payload into row-major format.", ValueType::Microseconds) \
     \
     M(AIInputTokens, "Total prompt tokens consumed across all AI function calls in the query.", ValueType::Number) \
     M(AIOutputTokens, "Total completion tokens consumed across all AI function calls in the query.", ValueType::Number) \
@@ -1750,7 +1733,6 @@ The server successfully detected this situation and will download merged part fr
 
 namespace DB::ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int SERVER_OVERLOADED;
 }
 
@@ -1949,22 +1931,15 @@ Counters::Snapshot::Snapshot()
 {}
 
 Counters::Snapshot::Snapshot(const Snapshot & other)
-    /// Every counter is overwritten right below, so zeroing the 12 KB first is pure waste. A query log
-    /// element carries a snapshot and is copied on every logged query.
-    : counters_holder(std::make_unique_for_overwrite<Count[]>(num_counters))
+    : counters_holder(new Count[num_counters] {})
 {
     std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
 }
 
 Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
 {
-    if (this == &other)
-        return *this;
-
-    if (!counters_holder)
-        counters_holder = std::make_unique_for_overwrite<Count[]>(num_counters);
-
-    std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
+    Snapshot tmp(other);
+    counters_holder = std::move(tmp.counters_holder);
     return *this;
 }
 
@@ -2003,26 +1978,14 @@ const std::string_view & getDocumentation(Event event)
 /// Get ProfileEvent by its name
 Event getByName(std::string_view name)
 {
-    static const std::unordered_map<std::string_view, Event> map =
+    static std::unordered_map<std::string_view, Event> map =
     {
 #define M(NAME, DOCUMENTATION, VALUE_TYPE) {#NAME, ProfileEvents::NAME},
         APPLY_FOR_EVENTS(M)
 #undef M
     };
 
-    auto it = map.find(name);
-    if (it == map.end())
-    {
-        DB::VectorWithMemoryTracking<String> all_names;
-        all_names.reserve(names.size());
-        for (const auto & known_name : names)
-            all_names.emplace_back(known_name);
-
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown profile event: {}{}",
-            name, DB::getHintsErrorMessageSuffix(DB::NamePrompter<3>::getHints(String(name), all_names)));
-    }
-
-    return it->second;
+    return map.at(name);
 }
 
 void Counters::setTraceProfileEvent(Event event)
@@ -2044,31 +2007,14 @@ void Counters::setTraceProfileEvent(Event event)
     trace_array[event].store(true, std::memory_order_relaxed);
 }
 
-/// A range adaptor that applies `trimWhitespace` to every element,
-/// e.g. `std::views::split(list, ',') | trimWhitespaceTransform`.
-/// It is kept local to this file on purpose: `Common/StringUtils.h` is directly included by more than
-/// two hundred translation units, and exporting this adaptor from there would pull `<ranges>` into all of them.
-static constexpr auto trimWhitespaceTransform = std::views::transform([](auto && token)
-{
-    return trimWhitespace(std::string_view(token.begin(), token.end()));
-});
-
 void Counters::setTraceProfileEvents(const String & events_list)
 {
-    /// The list is written by a human, so allow spaces around the names and a trailing comma.
-    bool has_any = false;
-    for (const auto name : std::views::split(std::string_view(events_list), ',') | trimWhitespaceTransform)
+    for (auto it = boost::make_split_iterator(events_list, boost::first_finder(",", boost::is_equal()));
+        it != decltype(it)();
+        ++it)
     {
-        if (name.empty())
-            continue;
-
-        setTraceProfileEvent(getByName(name));
-        has_any = true;
+        setTraceProfileEvent(getByName(std::string_view(*it)));
     }
-
-    /// An empty list means "trace everything" - keep this behaviour when the list contains only separators and spaces.
-    if (!has_any)
-        setTraceAllProfileEvents();
 }
 
 

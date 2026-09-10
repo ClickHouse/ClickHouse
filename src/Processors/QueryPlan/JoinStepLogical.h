@@ -193,20 +193,6 @@ public:
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
-    UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
-    void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }
-
-    const NameSet & notNullFiltersDerivedColumns(JoinTableSide side) const
-    {
-        return side == JoinTableSide::Left ? not_null_filters_derived_left : not_null_filters_derived_right;
-    }
-
-    void addNotNullFiltersDerivedColumns(JoinTableSide side, const NameSet & columns)
-    {
-        auto & derived = side == JoinTableSide::Left ? not_null_filters_derived_left : not_null_filters_derived_right;
-        derived.insert(columns.begin(), columns.end());
-    }
-
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
@@ -236,7 +222,6 @@ protected:
     /// rather than column statistics (because `use_statistics` is enabled but statistics are missing).
     bool imprecise_estimate = false;
     UInt64 right_hash_table_cache_key = 0;
-    UInt64 join_output_cache_key = 0;
 
     RelationEstimateInfo left_relation;
     RelationEstimateInfo right_relation;
@@ -248,10 +233,6 @@ protected:
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
-
-    /// Columns of each input for which an IS NOT NULL filter was already derived.
-    NameSet not_null_filters_derived_left;
-    NameSet not_null_filters_derived_right;
 
 private:
 

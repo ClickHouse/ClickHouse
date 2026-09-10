@@ -16,7 +16,6 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -71,13 +70,8 @@ public:
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
 
-    /// Element type of the result array. It is `ValueType` for most functions, but e.g. the `ts_of_*` functions
-    /// return timestamps in seconds as `Float64` regardless of the value type.
-    using ResultType = typename Traits::ResultType;
-
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
-    using ColVecValueType = ColumnVectorOrDecimal<ValueType>;
-    using ColVecResultType = ColumnVectorOrDecimal<ResultType>;
+    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
 
     using Bucket = typename Traits::Bucket;
 
@@ -96,8 +90,7 @@ public:
             argument_types_,
             parameters_,
             createResultType())
-        , array_of_pairs_argument(argument_types_.size() == 1)
-        , array_arguments(!array_of_pairs_argument && (argument_types_[1]->getTypeId() == TypeIndex::Array))
+        , array_arguments(argument_types_[1]->getTypeId() == TypeIndex::Array)
         , step(checkStep(start_timestamp_, end_timestamp_, step_))
         , window(checkWindow(window_))
         , grid_size(gridSize(start_timestamp_, end_timestamp_, step))
@@ -149,14 +142,14 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        if (array_of_pairs_argument || array_arguments)
+        if (array_arguments)
         {
             addBatchSinglePlace(row_num, row_num + 1, place, columns, arena, -1);
         }
         else
         {
             const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
+            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
             add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
         }
     }
@@ -175,7 +168,7 @@ public:
         Arena * arena,
         ssize_t if_argument_pos) const override
     {
-        if (array_of_pairs_argument || array_arguments)
+        if (array_arguments)
         {
             /// A row of arrays holds a whole series, so the generic path's per-row overhead is amortized.
             Base::addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
@@ -187,7 +180,7 @@ public:
             flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
 
         const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
+        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
         const TimestampType * timestamp_data = timestamp_column.getData().data();
         const ValueType * value_data = value_column.getData().data();
 
@@ -244,8 +237,7 @@ public:
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            combined_exclude_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+            combined_exclude_flags = std::make_unique<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
                 combined_exclude_flags[i] = (!!null_map[i]) | !if_flags[i]; /// Exclude if NULL or if condition is false
             exclude_flags_data = combined_exclude_flags.get();
@@ -403,7 +395,7 @@ protected:
         data_to.resize(old_size + grid_size);
         nulls_to.resize(old_size + grid_size);
 
-        ResultType * values = data_to.data() + old_size;
+        ValueType * values = data_to.data() + old_size;
         UInt8 * nulls = nulls_to.data() + old_size;
 
         const auto & buckets = data(place)->buckets;
@@ -451,7 +443,6 @@ protected:
         }
     }
 
-    const bool array_of_pairs_argument{};   /// Whether samples are passed as a single argument of type Array(Tuple(timestamp, value))
     const bool array_arguments{};           /// Whether timestamp/value arguments are arrays (one row holds a whole series) or scalars
     const IntervalType step{};              /// Grid step (0 for a single-point grid). IntervalType represents a time difference between timestamps
     const IntervalType window{};            /// Window size used by derived functions (e.g. for rate and delta calculations)
@@ -497,7 +488,7 @@ private:
 
     static DataTypePtr createResultType()
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ResultType>>()));
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ValueType>>()));
     }
 
     /// Upper bound on the number of grid points (the output array length) for a single grid.
@@ -1150,103 +1141,81 @@ private:
         const IColumn ** columns,
         const UInt8 * flags_data) const
     {
-        if (!array_of_pairs_argument && !array_arguments)
+        if (array_arguments)
         {
-            /// Each row holds a single sample.
-            const TimestampType * timestamp_data = typeid_cast<const ColVecType &>(*columns[0]).getData().data();
-            const ValueType * value_data = typeid_cast<const ColVecValueType &>(*columns[1]).getData().data();
+            const auto & timestamp_column = typeid_cast<const ColumnArray &>(*columns[0]);
+            const auto & value_column = typeid_cast<const ColumnArray &>(*columns[1]);
+            const auto & timestamp_offsets = timestamp_column.getOffsets();
+            const auto & value_offsets = value_column.getOffsets();
+            const TimestampType * timestamp_data = typeid_cast<const ColVecType *>(timestamp_column.getDataPtr().get())->getData().data();
+            const ValueType * value_data = typeid_cast<const ColVecResultType *>(value_column.getDataPtr().get())->getData().data();
 
-            if (!flags_data)
-                addMany(place, timestamp_data, value_data, row_begin, row_end);
-            else if constexpr (flag_value_to_include)
-                addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+            if (flags_data)
+            {
+                size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+                size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
+                for (size_t i = row_begin; i < row_end; ++i)
+                {
+                    const auto timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
+                    const auto value_array_size = value_offsets[i] - previous_value_offset;
+
+                    if (flags_data[i] == flag_value_to_include)
+                    {
+                        /// Check that timestamp and value arrays have the same size for the selected rows
+                        if (timestamp_array_size != value_array_size)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
+                                i, timestamp_array_size, value_array_size);
+
+                        /// A flag is per row, and each row is a pair of arrays
+                        addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size);
+                    }
+
+                    previous_timestamp_offset = timestamp_offsets[i];
+                    previous_value_offset = value_offsets[i];
+                }
+            }
             else
-                addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+            {
+                {
+                    /// Check that timestamp and value arrays have the same size for each row
+                    size_t previous_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+                    for (size_t i = row_begin; i < row_end; ++i)
+                    {
+                        const auto timestamp_array_size = timestamp_offsets[i] - previous_offset;
+                        const auto value_array_size = value_offsets[i] - previous_offset;
 
-            return;
-        }
+                        if (timestamp_array_size != value_array_size)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
+                                i, timestamp_array_size, value_array_size);
 
-        /// Each row holds a whole series.
-        const ColumnArray::Offset * timestamp_offsets = nullptr;
-        const ColumnArray::Offset * value_offsets = nullptr;
-        const TimestampType * timestamp_data = nullptr;
-        const ValueType * value_data = nullptr;
+                        previous_offset = timestamp_offsets[i];
+                    }
+                }
 
-        if (array_of_pairs_argument)
-        {
-            const auto & array_column = typeid_cast<const ColumnArray &>(*columns[0]);
-            const auto & tuple_column = typeid_cast<const ColumnTuple &>(array_column.getData());
+                const size_t data_row_begin = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
+                const size_t data_row_end = (row_end == 0 ? 0 : timestamp_offsets[row_end - 1]);
 
-            /// The timestamps and the values are stored in the same array, so they share the offsets.
-            timestamp_offsets = array_column.getOffsets().data();
-            value_offsets = timestamp_offsets;
-            timestamp_data = typeid_cast<const ColVecType &>(tuple_column.getColumn(0)).getData().data();
-            value_data = typeid_cast<const ColVecValueType &>(tuple_column.getColumn(1)).getData().data();
+                addMany(place, timestamp_data, value_data, data_row_begin, data_row_end);
+            }
         }
         else
         {
-            const auto & timestamp_array_column = typeid_cast<const ColumnArray &>(*columns[0]);
-            const auto & value_array_column = typeid_cast<const ColumnArray &>(*columns[1]);
+            const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
+            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+            const TimestampType * timestamp_data = timestamp_column.getData().data();
+            const ValueType * value_data = value_column.getData().data();
 
-            timestamp_offsets = timestamp_array_column.getOffsets().data();
-            value_offsets = value_array_column.getOffsets().data();
-            timestamp_data = typeid_cast<const ColVecType &>(timestamp_array_column.getData()).getData().data();
-            value_data = typeid_cast<const ColVecValueType &>(value_array_column.getData()).getData().data();
-        }
-
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
-
-        if (!flags_data)
-        {
-            checkSeriesSizes(row_begin, row_end, timestamp_offsets, value_offsets);
-
-            /// No row is skipped, so the samples of all the rows are stored contiguously and are added
-            /// in a single call, which lets the vectorized kernel work on the whole batch.
-            const size_t samples_count = (row_end == 0 ? 0 : timestamp_offsets[row_end - 1]) - previous_timestamp_offset;
-            addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, samples_count);
-            return;
-        }
-
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
-            const size_t value_array_size = value_offsets[i] - previous_value_offset;
-
-            /// A flag is per row, and each row holds a whole series
-            if (flags_data[i] == flag_value_to_include)
+            if (flags_data)
             {
-                /// Check that timestamp and value arrays have the same size for the selected rows
-                if (timestamp_array_size != value_array_size)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
-                        i, timestamp_array_size, value_array_size);
-
-                addMany(place, timestamp_data + previous_timestamp_offset, value_data + previous_value_offset, 0, timestamp_array_size);
+                if constexpr (flag_value_to_include)
+                    addManyConditional(place, timestamp_data, value_data, flags_data, row_begin, row_end);
+                else
+                    addManyNotNull(place, timestamp_data, value_data, flags_data, row_begin, row_end);
             }
-
-            previous_timestamp_offset = timestamp_offsets[i];
-            previous_value_offset = value_offsets[i];
-        }
-    }
-
-    /// Checks that the timestamp array and the value array have the same size in each row.
-    static void checkSeriesSizes(size_t row_begin, size_t row_end,
-        const ColumnArray::Offset * timestamp_offsets, const ColumnArray::Offset * value_offsets)
-    {
-        size_t previous_timestamp_offset = (row_begin == 0 ? 0 : timestamp_offsets[row_begin - 1]);
-        size_t previous_value_offset = (row_begin == 0 ? 0 : value_offsets[row_begin - 1]);
-
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const size_t timestamp_array_size = timestamp_offsets[i] - previous_timestamp_offset;
-            const size_t value_array_size = value_offsets[i] - previous_value_offset;
-
-            if (timestamp_array_size != value_array_size)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Timestamp and value arrays have different sizes at row {} : {} and {}",
-                    i, timestamp_array_size, value_array_size);
-
-            previous_timestamp_offset = timestamp_offsets[i];
-            previous_value_offset = value_offsets[i];
+            else
+            {
+                addMany(place, timestamp_data, value_data, row_begin, row_end);
+            }
         }
     }
 
@@ -1271,7 +1240,7 @@ private:
     }
 
     /// Stores the window's result value (or NULL when there is no result) at grid point `grid_index`.
-    void storeGridResult(size_t grid_index, const std::optional<ResultType> & result, ResultType * values, UInt8 * nulls) const
+    void storeGridResult(size_t grid_index, const std::optional<ValueType> & result, ValueType * values, UInt8 * nulls) const
     {
         chassert(grid_index < grid_size);
         if (result)
@@ -1281,7 +1250,7 @@ private:
         }
         else
         {
-            values[grid_index] = ResultType{};
+            values[grid_index] = ValueType{};
             nulls[grid_index] = 1;
         }
     }

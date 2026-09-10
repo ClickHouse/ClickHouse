@@ -105,10 +105,6 @@ public:
     {
         virtual ~BloomFilter() = default;
 
-        /// `hashes` are the hashes of the query constants of one atom for one column. They are sorted
-        /// and deduplicated (see `prepareBloomFilterData`), which lets an implementation with a sorted
-        /// value set intersect the two sequences in one pass instead of searching for each hash
-        /// separately. Returns true if any of them may be present.
         virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
     };
 
@@ -578,7 +574,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
-        bool & out_atom_is_exact);
+        bool & out_is_injective);
 
     /// Checks if node is a subexpression of any of key columns expressions,
     /// wrapped by deterministic functions, and if so, returns `true`, and

@@ -48,7 +48,6 @@ namespace ErrorCodes
     extern const int READONLY;
     extern const int FAULT_INJECTED;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_LINK;
     extern const int CANNOT_STAT;
@@ -786,16 +785,8 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     /// `PreconditionFailed`.
     struct stat file_stat{};
     if (0 != ::stat(resolved_path.c_str(), &file_stat))
-    {
-        const int stat_errno = errno;
-        const bool does_not_exist = isVanishedEntryError(std::error_code(stat_errno, std::generic_category()));
-        ErrnoException::throwFromPathWithErrno(
-            does_not_exist ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_STAT,
-            resolved_path,
-            stat_errno,
-            "Cannot get metadata of file {}",
-            resolved_path);
-    }
+        throw fs::filesystem_error(
+            "Got unexpected error while getting file metadata", resolved_path, std::error_code(errno, std::generic_category()));
 
     return makeObjectMetadata(file_stat);
 }

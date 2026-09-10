@@ -56,7 +56,6 @@
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
-#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCodingIP.h>
@@ -3291,8 +3290,6 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// A NULL input converts to NULL only when the target is Nullable.
-    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
@@ -3486,19 +3483,6 @@ public:
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
         return Monotonic::get(type, left, right);
-    }
-
-    bool hasInformationAboutPreimage() const override
-    {
-        return std::is_same_v<ToDataType, DataTypeDate>;
-    }
-
-    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
-    {
-        if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
-            return Monotonic::getPreimage(type, point);
-
-        return IFunction::getPreimage(type, point);
     }
 
 private:
@@ -3814,16 +3798,9 @@ public:
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             if (isTime64<Name, ToDataType>(arguments))
-            {
-                if (to_time64 || scale != 0)
-                    res = std::make_shared<DataTypeTime64>(scale);
-                else
-                    res = std::make_shared<DataTypeTime>();
-            }
-            else if (to_datetime64 || scale != 0)
-                res = std::make_shared<DataTypeDateTime64>(scale, timezone);
+                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
             else
-                res = std::make_shared<DataTypeDateTime>(timezone);
+                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
         {
@@ -4038,7 +4015,7 @@ public:
                 if (arguments.size() > 1)
                     scale = extractToDecimalScale(arguments[1]);
 
-                if (!to_datetime64 && scale == 0)
+                if (scale == 0)
                 {
                     result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
                 }
@@ -4061,7 +4038,7 @@ public:
                 if (arguments.size() > 1)
                     scale = extractToDecimalScale(arguments[1]);
 
-                if (!to_time64 && scale == 0)
+                if (scale == 0)
                 {
                     result_column = executeInternal<DataTypeTime>(arguments, result_type, input_rows_count, 0);
                 }
@@ -4359,13 +4336,6 @@ template <typename T>
 struct ToDateMonotonicity
 {
     static bool has() { return true; }
-
-    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
-    {
-        /// The helper only accepts `DateTime`: with `date_time_overflow_behavior=ignore` a
-        /// `DateTime64` or `Date32` source can wrap and have several disjoint preimages.
-        return getPreimageForDateRounding(type, point, DateRoundingInterval::Day);
-    }
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
@@ -4944,9 +4914,6 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    /// A NULL input converts to NULL only when the target is Nullable; otherwise the conversion
-    /// throws rather than returning a NULL, so it must not be treated as propagating.
-    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     /// CAST(Nothing, T) -> T
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
