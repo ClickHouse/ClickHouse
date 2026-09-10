@@ -51,5 +51,28 @@ SELECT count() FROM t_probe_nullable2 WHERE v IN t_set_engine;
 SELECT count() FROM t_probe_nullable2 WHERE v IN (1);
 DROP TABLE t_probe_nullable2;
 
+SELECT 'a NULL that is an ordinary value: `nullIn` and `transform_null_in`';
+-- `FunctionIn` unwraps a `Nullable` argument for plain `IN`, but `nullIn` reaches the set with it,
+-- so the out-of-range value must be a non-member there as well instead of failing the conversion.
+SELECT nullIn(CAST(-1 AS Nullable(Int64)), t_set_engine);
+SELECT nullIn(CAST(NULL AS Nullable(Int64)), t_set_engine);
+SELECT nullIn(CAST(1 AS Nullable(Int64)), t_set_engine);
+SELECT CAST(-1 AS Nullable(Int64)) IN t_set_engine SETTINGS transform_null_in = 1;
+SELECT CAST(-1 AS Nullable(Int64)) IN (SELECT toUInt64(1)) SETTINGS transform_null_in = 1;
+SELECT CAST(-1 AS Int64) IN (SELECT toUInt64(1)) SETTINGS transform_null_in = 1;
+SELECT v, nullIn(v, t_set_engine) FROM t_set_probe ORDER BY v;
+
+SELECT 'a Nullable set key with a NULL of its own';
+DROP TABLE IF EXISTS t_set_nullable2;
+CREATE TABLE t_set_nullable2 (k Nullable(UInt64)) ENGINE = Set;
+INSERT INTO t_set_nullable2 VALUES (1), (NULL);
+-- Under `transform_null_in` a NULL matches the set's NULL, while a value that merely does not fit
+-- the key type is a non-member - the invented NULL of the lenient conversion is not a match.
+SELECT nullIn(CAST(NULL AS Nullable(Int64)), t_set_nullable2);
+SELECT nullIn(CAST(-1 AS Nullable(Int64)), t_set_nullable2);
+SELECT nullIn(CAST(1 AS Nullable(Int64)), t_set_nullable2);
+SELECT nullIn(CAST(-1 AS Int64), t_set_nullable2);
+DROP TABLE t_set_nullable2;
+
 DROP TABLE t_set_engine;
 DROP TABLE t_set_probe;

@@ -19,3 +19,17 @@ a Nullable set key: the cross-type probe agrees with the same-type one
 a non-nullable set key with a nullable probe
 1
 1
+a NULL that is an ordinary value: `nullIn` and `transform_null_in`
+0
+0
+1
+0
+0
+0
+-1	0
+1	1
+a Nullable set key with a NULL of its own
+1
+0
+1
+0
