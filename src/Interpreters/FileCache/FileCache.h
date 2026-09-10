@@ -5,6 +5,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <unordered_map>
 #include <boost/functional/hash.hpp>
@@ -228,8 +229,10 @@ public:
     /// operation).
     FileCacheQueryBudgetPtr getQueryBudget(size_t query_limit_bytes) const;
 
-    /// The budget of the current query if it already has one for this cache.
-    FileCacheQueryBudgetPtr getQueryBudgetIfExists() const;
+    /// The budget of the current query for this cache, if it already has one. Nullopt when the
+    /// calling thread has no query at all (a background operation), which the caller has to tell
+    /// apart from a query which set no limit.
+    std::optional<FileCacheQueryBudgetPtr> getCurrentQueryBudget() const;
 
     size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
 

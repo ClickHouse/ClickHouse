@@ -325,8 +325,8 @@ private:
     struct DownloadState
     {
         DownloaderId downloader_id; /// The one who prepares the download.
-        /// The budget of the query which queued the background download, charged by its
-        /// continuation.
+        /// The budget of the query which downloaded this segment last, charged by the background
+        /// continuation of its download.
         FileCacheQueryBudgetPtr query_budget;
         RemoteFileReaderPtr remote_file_reader;
         LocalCacheWriterPtr cache_writer;

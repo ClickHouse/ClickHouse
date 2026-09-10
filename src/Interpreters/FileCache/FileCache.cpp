@@ -530,13 +530,16 @@ FileCacheQueryBudgetPtr FileCache::getQueryBudget(size_t query_limit_bytes) cons
     return query_context->getFilesystemCacheQueryBudget(*this, query_limit_bytes);
 }
 
-FileCacheQueryBudgetPtr FileCache::getQueryBudgetIfExists() const
+std::optional<FileCacheQueryBudgetPtr> FileCache::getCurrentQueryBudget() const
 {
-    if (!query_limit_allowed)
-        return nullptr;
-
     auto query_context = getCurrentQueryContext();
-    return query_context ? query_context->tryGetFilesystemCacheQueryBudget(*this) : nullptr;
+    if (!query_context)
+        return {};
+
+    if (!query_limit_allowed)
+        return FileCacheQueryBudgetPtr{};
+
+    return query_context->tryGetFilesystemCacheQueryBudget(*this);
 }
 
 void FileCache::assertInitialized() const

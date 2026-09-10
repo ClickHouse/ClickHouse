@@ -299,7 +299,13 @@ String FileSegment::getOrSetDownloader()
         if (!allow_new_downloader)
             return "notAllowed:" + stateToString(download_state);
 
-        current_downloader = getOrCreateDownloadDataUnlocked(lk).downloader_id = caller_id;
+        auto & download = getOrCreateDownloadDataUnlocked(lk);
+        current_downloader = download.downloader_id = caller_id;
+        /// A background continuation of this download is charged to the query downloading now,
+        /// including when it sets no limit. The background thread itself has no query and keeps
+        /// the stamp: it downloads on behalf of that query.
+        if (auto budget = cache->getCurrentQueryBudget())
+            download.query_budget = std::move(*budget);
         setDownloadState(State::DOWNLOADING, lk);
         chassert(key_metadata.lock());
     }
@@ -1133,9 +1139,6 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                 {
                     ProfileEvents::increment(ProfileEvents::FilesystemCacheBackgroundDownloadQueuePush);
                     added_to_download_queue = locked_key->addToDownloadQueue(offset(), segment_lock); /// Finish download in background.
-
-                    if (added_to_download_queue && download_data)
-                        download_data->query_budget = cache->getQueryBudgetIfExists();
                 }
 
                 if (!added_to_download_queue)
