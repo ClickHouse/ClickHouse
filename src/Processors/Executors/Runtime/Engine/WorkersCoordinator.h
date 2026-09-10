@@ -33,7 +33,7 @@ public:
     void leave(size_t worker_id);
 
     bool wait(size_t worker_id);
-    void wake(size_t to_wake);
+    size_t wake(size_t to_wake);
     bool needsPoller() const;
 
     void stop();

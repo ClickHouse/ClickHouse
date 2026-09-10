@@ -1,5 +1,4 @@
 #include <Processors/Executors/Runtime/Engine/WorkersCoordinator.h>
-#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -38,6 +37,7 @@ std::optional<size_t> WorkersCoordinator::takeAnySleepingThread()
     size_t worker_id = sleeping_threads.back();
     sleeping_threads.pop_back();
     --sleeping_count;
+    --idle_count;
     return worker_id;
 }
 
@@ -92,15 +92,17 @@ bool WorkersCoordinator::wait(size_t worker_id)
     if (is_stopped)
         return false;
 
-    /// Counted as idle before the recheck, so a pusher that does not see us idle has pushed a task we see.
     ++idle_count;
-    SCOPE_EXIT(--idle_count);
 
     if (scheduler.queued() > 0)
+    {
+        --idle_count;
         return true;
+    }
 
     if (allIdle(idle_count))
     {
+        --idle_count;
         stopLocked();
         return false;
     }
@@ -112,26 +114,31 @@ bool WorkersCoordinator::wait(size_t worker_id)
         scheduler.poll(worker_id, -1);
         lock.lock();
         --polling_count;
+        --idle_count;
+        return !is_stopped;
     }
-    else
-    {
-        sleeping_threads.push_back(worker_id);
-        ++sleeping_count;
-        lock.unlock();
-        sleeping_spots[worker_id].park();
-    }
+
+    sleeping_threads.push_back(worker_id);
+    ++sleeping_count;
+    lock.unlock();
+    sleeping_spots[worker_id].park();
 
     return !is_stopped;
 }
 
-void WorkersCoordinator::wake(size_t to_wake)
+size_t WorkersCoordinator::wake(size_t to_wake)
 {
     std::vector<size_t> woken;
     {
         std::lock_guard lock(mutex);
+        woken.reserve(std::min(to_wake, sleeping_threads.size()));
         while (woken.size() < to_wake)
+        {
             if (auto worker_id = takeAnySleepingThread())
                 woken.push_back(*worker_id);
+            else
+                break;
+        }
     }
 
     for (size_t worker_id : woken)
@@ -139,6 +146,8 @@ void WorkersCoordinator::wake(size_t to_wake)
 
     if (woken.empty() && polling_count > 0)
         poller.wakeup();
+
+    return woken.size();
 }
 
 bool WorkersCoordinator::needsPoller() const
