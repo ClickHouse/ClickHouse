@@ -58,6 +58,11 @@ public:
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
 
+    /// Rejects a `CHECK` constraint whose expression changes the number of rows. Only for fresh DDL:
+    /// rejecting while loading stored metadata would fail the whole load rather than the one table.
+    static void assertConstraintPreservesRowCount(const ASTPtr & constraint);
+    void assertPreserveRowCount() const;
+
     struct AtomId
     {
         size_t group_id;
