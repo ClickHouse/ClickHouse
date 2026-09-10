@@ -926,8 +926,8 @@ static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpress
 }
 
 /// Relations R such that the boolean `node` is false or unknown when all of R's columns are NULL
-/// (null-rejecting, Definition 1 of the paper). Conservative: when unsure it returns a subset of
-/// the true answer, which only widens a TES downstream and so keeps CD-A correct.
+/// (null-rejecting). Conservative: when unsure it returns a subset of the true answer, which only
+/// tightens the reordering constraints downstream and so stays correct.
 static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
 {
     if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
@@ -1491,6 +1491,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
+    const UInt64 cluster_id = ++optimization_settings.join_reorder_next_cluster_id;
 
     auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);
@@ -1818,7 +1819,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate);
+            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 
             /// Demote before the cache keys below are derived: they hash the equalities left in the ON
             /// expression, so the key then identifies the hash table that is actually built.
