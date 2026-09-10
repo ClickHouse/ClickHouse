@@ -2120,8 +2120,11 @@ class JobConfigs:
             [
                 job
                 for job in functional_tests_jobs
-                if any(
-                    sanitizer in job.parameter for sanitizer in ("asan_ubsan", "tsan")
+                if job.parameter.startswith(
+                    (
+                        "amd_asan_ubsan, db disk, distributed plan,",
+                        "amd_tsan, s3 storage,",
+                    )
                 )
             ],
             allow_failure=False,

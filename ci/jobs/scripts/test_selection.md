@@ -79,11 +79,13 @@ unhealthy snapshots are errors. Changed regression tests are reported separately
 and do not establish coverage recall. A review-ready dataset needs at least 60
 days, actual failures, later flaky fixes, linked regressions, and controls.
 
-PRs run targeted checks in four sanitizer configurations and the original ARM
-ASan configuration. Each job repeats the complete related test list up to 50
-times with randomized settings; the existing time and failure limits can stop
-execution earlier. Targeted jobs run only in the PR workflow. Master continues
-to run the full functional suite.
+PRs run targeted checks in three configurations: AMD ASan with database disk
+and distributed plan, AMD TSan with S3 storage, and ARM ASan. Each job repeats
+the complete related test list up to 50 times with randomized settings and a
+30-minute budget with setup time deducted. The runner stops gracefully, allowing
+in-flight tests and cleanup to finish. The failure limit can stop execution earlier.
+Targeted jobs run only in the PR workflow. Master continues to run the full
+functional suite.
 
 `expanded_targeted_matrix` remains disabled pending replay and shadow review.
 It adds targeted checks for the other regular PR functional configurations.

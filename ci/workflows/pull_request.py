@@ -27,9 +27,7 @@ CORE_BLOCKING_JOB_NAMES = [
             "_debug, parallel",
             "_binary, parallel",
             "_binary, sequential",
-            "_asan_ubsan, distributed plan, targeted",
             "_asan_ubsan, db disk, distributed plan, targeted",
-            "_tsan, targeted",
         )
     )
 ] + [
