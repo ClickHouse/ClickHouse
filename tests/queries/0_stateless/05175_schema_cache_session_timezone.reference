@@ -1,0 +1,11 @@
+-- the time zone of the type, Tokyo first
+Asia/Tokyo
+Europe/Berlin
+-- the time zone of the type, Berlin first
+Europe/Berlin
+Asia/Tokyo
+-- the values, Tokyo first
+1590980400	12
+1591005600	12
+-- one entry per distinct time zone
+2	2
