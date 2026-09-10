@@ -588,16 +588,22 @@ template <typename RPNElement>
 RPNBuilder<RPNElement>::RPNBuilder(
     const ActionsDAG::Node * filter_actions_dag_node,
     ContextPtr query_context_,
-    const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
+    const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_,
+    bool expand_index_hint_)
     : extract_atom_from_tree_function(extract_atom_from_tree_function_)
+    , expand_index_hint(expand_index_hint_)
 {
     RPNBuilderTreeContext tree_context(query_context_);
     traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
 }
 
 template <typename RPNElement>
-RPNBuilder<RPNElement>::RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
+RPNBuilder<RPNElement>::RPNBuilder(
+    const RPNBuilderTreeNode & node,
+    const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_,
+    bool expand_index_hint_)
     : extract_atom_from_tree_function(extract_atom_from_tree_function_)
+    , expand_index_hint(expand_index_hint_)
 {
     traverseTree(node);
 }
@@ -616,6 +622,16 @@ void RPNBuilder<RPNElement>::traverseTree(const RPNBuilderTreeNode & node)
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
+
+        /// The conditions inside `indexHint` are a copy of conditions the expression already carries,
+        /// and the function itself returns 1 for every row. A consumer that does not analyse indexes
+        /// must not descend into them, or it counts the same conditions twice.
+        if (!expand_index_hint && function_node.getFunctionName() == "indexHint")
+        {
+            element.function = RPNElement::ALWAYS_TRUE;
+            rpn_elements.emplace_back(std::move(element));
+            return;
+        }
 
         if (extractLogicalOperatorFromTree(function_node, element))
         {

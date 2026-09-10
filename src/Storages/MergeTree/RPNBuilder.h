@@ -206,18 +206,29 @@ public:
     using RPNElements = std::vector<RPNElement>;
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
 
+    /// `indexHint` carries a copy of conditions that are also present in the expression itself, kept
+    /// only so that index analysis can still see them. Consumers that analyse indexes must descend
+    /// into it (that is the whole point of the hint), but a consumer that estimates how selective the
+    /// expression is must not: it would count those conditions a second time. Such a consumer passes
+    /// `expand_index_hint = false` and gets an `ALWAYS_TRUE` leaf instead, which is what the function
+    /// actually evaluates to for every row.
     explicit RPNBuilder(
         const ActionsDAG::Node * filter_actions_dag_node,
         ContextPtr query_context_,
-        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
+        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_,
+        bool expand_index_hint_ = true);
 
-    explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
+    explicit RPNBuilder(
+        const RPNBuilderTreeNode & node,
+        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_,
+        bool expand_index_hint_ = true);
     RPNElements && extractRPN() &&;
 
 private:
     void traverseTree(const RPNBuilderTreeNode & node);
     bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out);
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function;
+    bool expand_index_hint = true;
     RPNElements rpn_elements;
 };
 
