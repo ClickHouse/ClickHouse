@@ -25,7 +25,7 @@ keywords: ['native protocol', 'tcp protocol', 'client-server', 'protocol specifi
 | 14    | [ProfileEvents](#profile-events) | Packet with profile events from server                          |
 | 19    | [`ProfileTraces`](/reference/interfaces/specs/NativeProtocol#profiletraces) | Sampled query stacks and delivery status; revision `54493`+ with `send_profile_traces = 1` |
 
-The `Data`, `Totals`, `Extremes`, and `ProfileTraces` block bodies follow the query's compression flag. `Log` and `ProfileEvents` do so from revision `54481`; below that revision their block bodies are uncompressed. The packet-type code and `table_name` string remain outside the compressed block body. See the [compression frame specification](/reference/interfaces/specs/NativeFormat#compression-frame) and the current [native protocol specification](/reference/interfaces/specs/NativeProtocol) for the revision gates and interleaving rules.
+The `Data`, `Totals`, `Extremes`, and `ProfileTraces` block bodies follow the query's compression flag. `Log`, `ProfileEvents`, and `TableColumns` do so from revision `54481`; below that revision their bodies are uncompressed. `TableColumns` contains two strings, `external_table` and `columns_description`, and both are inside its compressed body. The packet-type code always remains outside the compressed payload; for packets carrying a `Native` block, the `table_name` string also remains outside. See the [compression frame specification](/reference/interfaces/specs/NativeFormat#compression-frame) and the current [native protocol specification](/reference/interfaces/specs/NativeProtocol) for the revision gates and interleaving rules.
 
 ## Hello {#hello}
 

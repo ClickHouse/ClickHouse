@@ -1452,11 +1452,13 @@ The invariant runs one way only: because the sender flushes the compressed buffe
 
 A receiver streams the frames: read 16 + 9 bytes, read exactly `compressed_size - 9` body bytes, decompress to exactly `uncompressed_size` bytes, and serve those bytes to the block decoder; when the decoder needs more than the current frame holds, pull the next frame. Because the sender flushes per block, after a block is fully decoded the frame buffer is empty and the next block begins at a fresh frame.
 
-On the native TCP protocol, the packet envelope — the packet-type VarUInt and the `table_name` string — is written to the **raw** stream, outside the compressed payload; only the block body (BlockInfo + columns) is framed. The HTTP `compress`/`decompress` path has no such envelope: the whole stream is framed blocks.
+For packets carrying a `Native` block over TCP, the packet envelope — the packet-type VarUInt and the `table_name` string — is written to the **raw** stream, outside the compressed payload; only the block body (BlockInfo + columns) is framed. The HTTP `compress`/`decompress` path has no such envelope: the whole stream is framed blocks.
 
 ### Negotiation {#compression-negotiation}
 
 On the native TCP protocol, compression is per-query, not per-connection. The Query packet's `compression: bool` field requests it for that single query. The server honours the request and emits compressed `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents`/`ProfileTraces` bodies for the lifetime of the query (`Log`/`ProfileEvents` only at v54481+, `ProfileTraces` available at v54493+). It also expects the client's *outgoing* Data blocks — external tables, the empty end-of-data marker, and INSERT rows — to be framed the same way. Subsequent queries on the same connection may differ.
+
+[`TableColumns`](/reference/interfaces/specs/NativeProtocol#tablecolumns) also follows the query's compression flag from revision `54481`. Its body contains two strings, `external_table` and `columns_description`, rather than a `Native` block; both strings are inside the compressed payload, while the packet-type code remains outside. Below that revision the body is uncompressed.
 
 Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`ZSTD(3)`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
 
