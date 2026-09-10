@@ -122,6 +122,26 @@ static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerP
 #endif
 }
 
+/// Whether reading this object goes through row-level delete transformers (Iceberg
+/// position/equality deletes, Delta Lake deletion vectors). The count-from-files cache
+/// is keyed only by the file path and its modification time, but delete files change the
+/// number of rows the file contributes WITHOUT touching the file itself, so both
+/// directions are unsafe: a count cached before a delete resurfaces deleted rows, and a
+/// count cached after it goes stale once the deletes are compacted away. Such files must
+/// neither use nor populate the cache.
+static bool hasAttachedDeletes(const ObjectInfo & object_info)
+{
+#if USE_AVRO
+    if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
+    {
+        if (!iceberg_object->info.position_deletes_objects.empty() || !iceberg_object->info.equality_deletes_objects.empty())
+            return true;
+    }
+#endif
+    return object_info.data_lake_metadata && object_info.data_lake_metadata->excluded_rows
+        && object_info.data_lake_metadata->excluded_rows->size() > 0;
+}
+
 StorageObjectStorageSource::StorageObjectStorageSource(
     const StorageID & storage_id_,
     String name_,
@@ -473,7 +493,7 @@ Chunk StorageObjectStorageSource::generate()
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (dynamic_cast<const DeltaLakeMetadata *>(configuration->getExternalMetadata()))
+                if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
                 {
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
@@ -604,7 +624,7 @@ Chunk StorageObjectStorageSource::generate()
         }
 
         if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && !format_filter_info->filter_actions_dag)
+            && !format_filter_info->filter_actions_dag && !hasAttachedDeletes(*reader.getObjectInfo()))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -766,6 +786,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
+    /// Row-level delete transformers need real row values: an equality-delete FilterTransform
+    /// evaluates its predicate against column values, but the count-only fast path
+    /// (`input_format->needOnlyCount()`) makes the format emit synthetic chunks filled with
+    /// default values, so the predicate would filter the wrong rows and count() would come
+    /// back wrong. Position deletes and deletion vectors filter by row index, which synthetic
+    /// chunks do preserve, but they would still build the huge synthetic chunks only to drop
+    /// rows from them, so the fast path is disabled for any attached deletes. This also
+    /// covers the count-from-cache shortcut below: a cached per-file row count is keyed only
+    /// by path + mtime, both untouched by delete files, so it must not be used either.
+    need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
+
     std::optional<size_t> num_rows_from_cache
         = need_only_count && context_->getSettingsRef()[Setting::use_cache_for_count_from_files] ? try_get_num_rows_from_cache() : std::nullopt;
 
@@ -854,14 +885,32 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 if (auto mapper = configuration->getColumnMapperForObject(object_info))
                 {
-                    if (format_supports_prewhere)
-                        return std::make_shared<FormatFilterInfo>(
-                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                            mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
-                    else
-                        return std::make_shared<FormatFilterInfo>(
-                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                            mapper, nullptr, nullptr);
+                    /// `schema_changed` is true for real schema evolution (a schema-id
+                    /// mismatch: renamed / type-changed columns) AND for current-schema
+                    /// files that merely carry equality deletes. Strip the reader-side
+                    /// filters ONLY for the former: there the old-schema mapper resolves
+                    /// field-ids to the file's OLD names while PREWHERE / row-level filter
+                    /// reference the CURRENT names, so in-reader evaluation matches nothing
+                    /// (re-applied as fallback FilterTransforms after the schema transform
+                    /// renames the columns below). For equality-delete-only files
+                    /// (getSchemaTransformer() == null, no rename) the mapper already yields
+                    /// the current names, so keep the filters in the reader to preserve
+                    /// Parquet row-group / page pruning.
+                    const bool has_schema_transform
+                        = configuration->getSchemaTransformer(context_, object_info) != nullptr;
+                    if (format_supports_prewhere && has_schema_transform)
+                    {
+                        if (format_filter_info->row_level_filter)
+                            stripped_row_level_filter = format_filter_info->row_level_filter;
+                        if (format_filter_info->prewhere_info)
+                            stripped_prewhere_info = format_filter_info->prewhere_info;
+                    }
+                    const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
+                    return std::make_shared<FormatFilterInfo>(
+                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        mapper,
+                        keep_in_reader ? format_filter_info->row_level_filter : nullptr,
+                        keep_in_reader ? format_filter_info->prewhere_info : nullptr);
                 }
             }
 

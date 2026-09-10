@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
     extern const int SYNTAX_ERROR;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
