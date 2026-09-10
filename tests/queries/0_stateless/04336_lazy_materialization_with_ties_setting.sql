@@ -1,4 +1,6 @@
 -- Tags: no-random-settings, no-parallel-replicas
+-- `LIMIT ... WITH TIES` gets no preliminary shard-local limit, so under parallel replicas the shard
+-- fragment has no `LimitStep` over the read and the optimization cannot apply at all.
 
 DROP TABLE IF EXISTS test_lazy_materialization_with_ties_setting;
 

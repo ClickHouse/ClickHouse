@@ -502,6 +502,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     }
 
     const auto limit = limit_step->getLimit();
+    /// `LIMIT ... WITH TIES` is opt-in: the tied rows past the limit are materialized lazily as well,
+    /// so the number of lazily read rows is not bounded by `max_limit_for_lazy_materialization`.
+    /// This only ever fires when the limit and the reading step share a fragment: the planner never
+    /// adds a preliminary limit for `WITH TIES`, so a remote shard's fragment has no `LimitStep` to match.
     if (limit_step->withTies() && !settings.optimize_lazy_materialization_with_ties)
         return false;
 
