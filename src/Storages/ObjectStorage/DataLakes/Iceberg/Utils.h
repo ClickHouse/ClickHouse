@@ -2,7 +2,6 @@
 
 #include <string>
 #include <string_view>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
 #include <Columns/IColumn.h>
@@ -23,11 +22,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
-namespace avro
-{
-class GenericDatum;
-}
-
 namespace DB::Iceberg
 {
 
@@ -44,13 +38,17 @@ void writeMessageToFile(
 /// Maybe return false if failed to write metadata.json
 /// Will try to write hint multiple times, but will not report failure to write hint.
 bool writeMetadataFileAndVersionHint(
-    const IcebergPathResolver & resolver,
-    const DB::GeneratedMetadataFileWithInfo & metadata_file_info,
+    const std::string & metadata_file_path,
     const std::string & metadata_file_content,
-    const IcebergPathFromMetadata & version_hint_path,
+    const std::string & version_hint_path,
+    std::string version_hint_content,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    bool try_write_version_hint);
+    DB::CompressionMethod compression_method,
+    bool try_write_version_hint
+);
+
+std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
 struct TransformAndArgument
 {
@@ -59,8 +57,6 @@ struct TransformAndArgument
 };
 
 std::optional<TransformAndArgument> parseTransformAndArgument(const String & transform_name_src);
-
-CompressionMethod getCompressionMethodFromMetadataFile(const String & path);
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
@@ -92,9 +88,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
-    CompressionMethod known_compression_method,
-    bool force_fetch_latest_metadata = true,
-    bool ignore_explicit_metadata_file_path = false);
+    bool force_fetch_latest_metadata = true);
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
@@ -102,29 +96,9 @@ std::string normalizeUuid(const std::string & uuid);
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 
-enum class FileCategory : uint8_t
-{
-    DATA_FILE,
-    POSITION_DELETE_FILE,
-    EQUALITY_DELETE_FILE,
-    MANIFEST_FILE,
-    MANIFEST_LIST,
-    METADATA_JSON,
-    STATISTICS_FILE,
-};
-
-FileCategory inspectFileCategory(const String & relative_path);
-
 KeyDescription getSortingKeyDescriptionFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
-
-void forEachAvroEntry(
-    const String & filename,
-    ObjectStoragePtr object_storage,
-    ContextPtr context,
-    const String & logger_name,
-    std::function<void(const avro::GenericDatum &)> callback);
 }
 
 #endif

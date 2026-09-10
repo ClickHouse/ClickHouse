@@ -18,7 +18,7 @@ namespace DB
 namespace
 {
 
-class FunctionAddressToLine final : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
+class FunctionAddressToLine : public FunctionAddressToLineBase<std::string_view, Dwarf::LocationInfoMode::FAST>
 {
 public:
     static constexpr auto name = "addressToLine";

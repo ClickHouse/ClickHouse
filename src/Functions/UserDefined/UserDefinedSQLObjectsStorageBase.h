@@ -12,7 +12,7 @@ namespace DB
 {
 using Strings = std::vector<String>;
 
-class UserDefinedSQLObjectsStorageBase : public IUserDefinedSQLObjectsStorage, private WithContext
+class UserDefinedSQLObjectsStorageBase : public IUserDefinedSQLObjectsStorage
 {
 public:
     explicit UserDefinedSQLObjectsStorageBase(ContextPtr global_context_);
@@ -59,8 +59,6 @@ protected:
         const String & object_name,
         bool throw_if_not_exists) = 0;
 
-    using WithContext::getContext;
-
     std::unique_lock<std::recursive_mutex> getLock() const;
     void setAllObjects(const std::vector<std::pair<String, ASTPtr>> & new_objects);
     void setObject(const String & object_name, const IAST & create_object_query);
@@ -69,6 +67,8 @@ protected:
 
     std::unordered_map<String, ASTPtr> object_name_to_create_object_map;
     mutable std::recursive_mutex mutex;
+
+    ContextPtr global_context;
 };
 
 }

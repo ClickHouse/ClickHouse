@@ -304,7 +304,7 @@ private:
 
 
 template <typename Impl, typename Name>
-class FunctionTranslate final : public IFunction
+class FunctionTranslate : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

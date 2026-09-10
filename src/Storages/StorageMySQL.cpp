@@ -12,7 +12,6 @@
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -67,7 +66,7 @@ StorageMySQL::StorageMySQL(
     const String & comment,
     ContextPtr context_,
     const MySQLSettings & mysql_settings_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
@@ -89,16 +88,7 @@ StorageMySQL::StorageMySQL(
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-}
-
-VirtualColumnsDescription StorageMySQL::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
 }
 
 ColumnsDescription StorageMySQL::getTableStructureFromData(
@@ -118,7 +108,7 @@ ColumnsDescription StorageMySQL::getTableStructureFromData(
     return columns->second;
 }
 
-void StorageMySQL::readImpl(
+void StorageMySQL::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -162,7 +152,7 @@ void StorageMySQL::readImpl(
 }
 
 
-class StorageMySQLSink final : public SinkToStorage
+class StorageMySQLSink : public SinkToStorage
 {
 public:
     explicit StorageMySQLSink(

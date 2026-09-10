@@ -105,7 +105,7 @@ void MergeTreeReaderStream::init()
                     estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
-            settings.allow_different_codecs);
+            /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -123,7 +123,7 @@ void MergeTreeReaderStream::init()
             data_part_storage->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                estimated_sum_mark_range_bytes), settings.allow_different_codecs);
+                estimated_sum_mark_range_bytes), /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -176,24 +176,6 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 
         plain_file_buffer->seek(mark.offset_in_compressed_file, SEEK_SET);
     }
-}
-
-bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
-{
-    auto marks = marks_loader->loadMarks();
-    size_t num_transitions = 0;
-    MarkInCompressedFile last_mark{std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()};
-    for (size_t i = 0; i < marks_count; ++i)
-    {
-        auto mark = marks->getMark(i, 0);
-        if (mark != last_mark)
-        {
-            last_mark = mark;
-            if (++num_transitions > max_transitions)
-                return false;
-        }
-    }
-    return true;
 }
 
 void MergeTreeReaderStream::seekToStart()

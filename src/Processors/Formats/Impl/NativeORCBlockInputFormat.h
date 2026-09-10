@@ -34,10 +34,7 @@ public:
 protected:
     SeekableReadBuffer & in;
     size_t file_size;
-    /// Use offset-based reads (ReadBuffer::readBigAt) instead of seek+read; needed for ORC tail.
-    bool use_offset_based_read;
-    /// Async wrapper only when caller enabled prefetch and the buffer supports read-at.
-    bool use_async_prefetch;
+    bool supports_read_at;
     ThreadPoolCallbackRunnerUnsafe<void> async_runner;
 
     std::string name = "ORCInputStream";
@@ -59,11 +56,16 @@ asORCInputStream(ReadBuffer & in, const FormatSettings & settings, bool use_pref
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
 std::unique_ptr<orc::InputStream> asORCInputStreamLoadIntoMemory(ReadBuffer & in, std::atomic<int> & is_cancelled);
 
+/// The memory pool to set on the options of every ORC reader and writer we create: unlike the
+/// default one of the library, it is accounted for by the memory tracker and it throws on failure
+/// instead of returning a null pointer that the library dereferences.
+orc::MemoryPool & getORCMemoryPool();
+
 std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     const KeyCondition & key_condition, const Block & header, const orc::Type & schema, const FormatSettings & format_settings);
 
 class ORCColumnToCHColumn;
-class NativeORCBlockInputFormat final : public IInputFormat
+class NativeORCBlockInputFormat : public IInputFormat
 {
 public:
     NativeORCBlockInputFormat(
@@ -121,7 +123,7 @@ private:
     std::atomic<int> is_stopped{0};
 };
 
-class NativeORCSchemaReader final : public ISchemaReader
+class NativeORCSchemaReader : public ISchemaReader
 {
 public:
     NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

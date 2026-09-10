@@ -21,7 +21,7 @@ namespace Setting
 }
 
 /// array(c1, c2, ...) - create an array.
-class FunctionArray final : public IFunction
+class FunctionArray : public IFunction
 {
 public:
     static constexpr auto name = "array";

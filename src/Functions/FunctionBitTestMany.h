@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/range.h>
 
@@ -21,7 +22,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-struct FunctionBitTestMany final : public IFunction
+struct FunctionBitTestMany : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

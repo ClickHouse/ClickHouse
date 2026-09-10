@@ -4,8 +4,8 @@
 #include <Core/Defines.h>
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
-#include <Interpreters/FileCache/FileCache_fwd.h>
-#include <Interpreters/FileCache/FileCacheOriginInfo.h>
+#include <Interpreters/Cache/FileCache_fwd.h>
+#include <Interpreters/Cache/FileCacheOriginInfo.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/IThrottler.h>
@@ -53,6 +53,9 @@ struct ReadSettings
     bool enable_filesystem_cache_log = false;
     size_t filesystem_cache_segments_batch_size = 20;
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
+    /// How long a read may wait for a file segment which is being downloaded by a concurrent query
+    /// before bypassing the cache and reading directly from remote storage.
+    size_t filesystem_cache_wait_for_concurrent_download_timeout_milliseconds = 1000;
     bool filesystem_cache_allow_background_download = true;
     bool filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage = true;
     bool filesystem_cache_allow_background_download_during_fetch = true;
@@ -67,7 +70,6 @@ struct ReadSettings
     bool page_cache_inject_eviction = false;
     size_t page_cache_block_size = 1 << 20;
     size_t page_cache_lookahead_blocks = 16;
-    size_t page_cache_max_coalesced_bytes = 16 << 20;
     std::shared_ptr<PageCache> page_cache;
 
     size_t filesystem_cache_max_download_size = (128UL * 1024 * 1024 * 1024);
@@ -94,7 +96,6 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
     std::optional<FileCacheOriginInfo> filecache_origin_info;
     bool enable_hdfs_pread = true;
-    bool enable_blob_storage_log_for_read_operations = false;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
     ReadSettings withNestedBuffer(bool seekable = false) const;

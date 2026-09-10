@@ -12,7 +12,7 @@ namespace DB
 namespace
 {
 
-class FunctionWKT final : public IFunction
+class FunctionWKT : public IFunction
 {
 public:
     static inline const char * name = "wkt";

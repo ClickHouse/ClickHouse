@@ -36,7 +36,7 @@ namespace
 
 /// Implements the function geoToH3 which takes 3 arguments (latitude, longitude and h3 resolution)
 /// and returns h3 index of this point
-class FunctionGeoToH3 final : public IFunction
+class FunctionGeoToH3 : public IFunction
 {
     GeoToH3ArgumentOrder geotoh3_argument_order;
 public:

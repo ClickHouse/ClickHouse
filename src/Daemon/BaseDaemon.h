@@ -21,8 +21,6 @@
 #include <Common/StatusFile.h>
 #include <Loggers/Loggers.h>
 
-class SignalListener;
-
 
 /// \brief Base class for applications that can run as daemons.
 ///
@@ -129,7 +127,8 @@ protected:
 
     virtual void logRevision() const;
 
-    void onTerminateRequestSignal();
+    /// thread safe
+    void handleSignal(int signal_id);
 
     /// initialize termination process and signal handlers
     virtual void initializeTerminationAndSignalProcessing();
@@ -154,9 +153,13 @@ protected:
 
     /// A thread that acts on HUP and USR1 signal (close logs).
     Poco::Thread signal_listener_thread;
-    std::unique_ptr<SignalListener> signal_listener;
+    std::unique_ptr<Poco::Runnable> signal_listener;
 
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
+
+    std::mutex signal_handler_mutex;
+    std::condition_variable signal_event;
+    std::atomic_size_t terminate_signals_counter{0};
 
     std::string config_path;
     DB::ConfigProcessor::LoadedConfig loaded_config;

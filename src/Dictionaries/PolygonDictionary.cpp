@@ -5,7 +5,6 @@
 #include <base/sort.h>
 
 #include <Common/iota.h>
-#include <Columns/ColumnSparse.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -156,44 +155,6 @@ ColumnPtr IPolygonDictionary::getColumn(
                         default_value_provider.value());
                 }
             }
-            else if constexpr (std::is_same_v<ValueType, Map>)
-            {
-                if (is_short_circuit)
-                {
-                    getItemsShortCircuitImpl<ValueType>(
-                        requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Map>(); },
-                        [&](Map & value) { result_column_typed.insert(value); },
-                        default_mask.value());
-                }
-                else
-                {
-                    getItemsImpl<ValueType>(
-                        requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Map>(); },
-                        [&](Map & value) { result_column_typed.insert(value); },
-                        default_value_provider.value());
-                }
-            }
-            else if constexpr (std::is_same_v<ValueType, Object>)
-            {
-                if (is_short_circuit)
-                {
-                    getItemsShortCircuitImpl<ValueType>(
-                        requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Object>(); },
-                        [&](Object & value) { result_column_typed.insert(value); },
-                        default_mask.value());
-                }
-                else
-                {
-                    getItemsImpl<ValueType>(
-                        requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Object>(); },
-                        [&](Object & value) { result_column_typed.insert(value); },
-                        default_value_provider.value());
-                }
-            }
             else if constexpr (std::is_same_v<ValueType, std::string_view>)
             {
                 if (is_short_circuit)
@@ -309,7 +270,7 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
     for (size_t i = 0; i < attributes_columns.size(); ++i)
     {
         const auto & block_column = block.safeGetByPosition(i + skip_key_column_offset);
-        auto column = removeSpecialRepresentations(block_column.column->convertToFullColumnIfConst());
+        const auto & column = block_column.column;
 
         attributes_columns[i]->assumeMutable()->insertRangeFrom(*column, 0, column->size());
     }

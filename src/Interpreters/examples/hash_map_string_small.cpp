@@ -20,9 +20,6 @@
 #include <Interpreters/AggregationCommon.h>
 
 
-namespace
-{
-
 struct SmallStringView
 {
     size_t size = 0;
@@ -50,11 +47,11 @@ struct SmallStringView
             data_big = data_;
     }
 
-    [[maybe_unused]] SmallStringView(const unsigned char * data_, size_t size_) : SmallStringView(reinterpret_cast<const char *>(data_), size_) {}
-    [[maybe_unused]] explicit SmallStringView(const std::string & s) : SmallStringView(s.data(), s.size()) {}
+    SmallStringView(const unsigned char * data_, size_t size_) : SmallStringView(reinterpret_cast<const char *>(data_), size_) {}
+    explicit SmallStringView(const std::string & s) : SmallStringView(s.data(), s.size()) {}
     SmallStringView() = default;
 
-    [[maybe_unused]] std::string toString() const { return std::string(data(), size); }
+    std::string toString() const { return std::string(data(), size); }
 };
 
 
@@ -73,15 +70,14 @@ inline bool operator==(SmallStringView lhs, SmallStringView rhs)
 #endif
 }
 
-} /// close anonymous namespace for ZeroTraits/DefaultHash specializations
 
 namespace ZeroTraits
 {
     template <>
-    [[maybe_unused]] inline bool check<SmallStringView>(SmallStringView x) { return x.size == 0; }
+    inline bool check<SmallStringView>(SmallStringView x) { return x.size == 0; }
 
     template <>
-    [[maybe_unused]] inline void set<SmallStringView>(SmallStringView & x) { x.size = 0; }
+    inline void set<SmallStringView>(SmallStringView & x) { x.size = 0; }
 }
 
 template <>
@@ -93,14 +89,11 @@ struct DefaultHash<SmallStringView>
     }
 };
 
-namespace
-{
 
 using Value = UInt64;
 
-} /// anonymous namespace
 
-int mainEntryExampleHashMapStringSmall(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 3)
     {

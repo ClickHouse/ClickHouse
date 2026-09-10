@@ -105,23 +105,23 @@ static NamesAndTypesList getColumnsFromTableExpression(
         }
 
         const auto & function_storage = query_context->executeTableFunction(table_function);
-        auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr(query_context, false);
+        auto function_metadata_snapshot = function_storage->getInMemoryMetadataPtr();
         const auto & columns = function_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = function_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList();
+        virtuals = function_storage->getVirtualsList();
     }
     else if (table_expression.database_and_table_name)
     {
         auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
-        auto table_metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        auto table_metadata_snapshot = table->getInMemoryMetadataPtr();
         const auto & columns = table_metadata_snapshot->getColumns();
         names_and_type_list = columns.getOrdinary();
         materialized = columns.getMaterialized();
         aliases = columns.getAliases();
-        virtuals = table_metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList();
+        virtuals = table->getVirtualsList();
     }
 
     return names_and_type_list;

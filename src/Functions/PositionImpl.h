@@ -45,8 +45,7 @@ struct PositionCaseSensitiveASCII
 
     static const char * advancePos(const char * pos, const char * end, size_t n)
     {
-        /// Clamp `n` to the available range to avoid pointer-arithmetic overflow when `n` is huge.
-        return pos + std::min(n, static_cast<size_t>(end - pos));
+        return std::min(pos + n, end);
     }
 
     /// Number of code points between 'begin' and 'end' (this has different behaviour for ASCII and UTF-8).
@@ -82,8 +81,7 @@ struct PositionCaseInsensitiveASCII
 
     static const char * advancePos(const char * pos, const char * end, size_t n)
     {
-        /// Clamp `n` to the available range to avoid pointer-arithmetic overflow when `n` is huge.
-        return pos + std::min(n, static_cast<size_t>(end - pos));
+        return std::min(pos + n, end);
     }
 
     static size_t countChars(const char * begin, const char * end) { return end - begin; }

@@ -52,7 +52,7 @@ bool sourceHasAggregateProjections(const QueryTreeNodePtr & source, const Contex
     if (!context->getSettingsRef()[Setting::optimize_use_projections])
         return false;
 
-    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr(context, false);
+    auto metadata = table_node->getStorage()->getInMemoryMetadataPtr();
     for (const auto & projection : metadata->projections)
     {
         if (projection.type == ProjectionDescription::Type::Aggregate)

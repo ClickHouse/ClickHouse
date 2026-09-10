@@ -202,6 +202,19 @@ public:
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
 
+    /// Returns true if a reader earlier in the chain than PREWHERE can skip whole marks based on
+    /// secondary indexes (skip-index or projection-index). When true, marks that appear in
+    /// `read_mark_ranges` with `row_count == 0` may have been filtered before PREWHERE evaluated
+    /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
+    /// See Issue #104781.
+    bool readersChainCanSkipMarksBeforePrewhere() const;
+
+    /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
+    /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
+    /// fully filtered by the mutation rather than by the predicate, so it must not be attributed to
+    /// the PREWHERE or WHERE predicate in the QueryConditionCache.
+    bool appliesMutationsBeforePrewhere() const;
+
     Readers releaseReaders() { return std::move(readers); }
 
     size_t getNumMarksToRead() const { return mark_ranges.getNumberOfMarks(); }

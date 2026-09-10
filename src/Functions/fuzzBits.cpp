@@ -48,7 +48,7 @@ namespace
     }
 
 
-class FunctionFuzzBits final : public IFunction
+class FunctionFuzzBits : public IFunction
 {
 public:
     static constexpr auto name = "fuzzBits";

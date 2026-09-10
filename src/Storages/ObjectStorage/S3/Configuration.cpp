@@ -45,7 +45,6 @@ namespace Setting
     extern const SettingsSchemaInferenceMode schema_inference_mode;
     extern const SettingsBool schema_inference_use_cache_for_s3;
     extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
-    extern const SettingsS3UriStyle s3_uri_style;
 }
 
 namespace S3AuthSetting
@@ -59,6 +58,7 @@ namespace S3AuthSetting
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
@@ -110,6 +110,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
+    "external_id", /// for extra_credentials
     "http_client", /// For GCP
     "metadata_service", /// For GCP
     "service_account", /// For GCP
@@ -198,14 +199,12 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         url = S3::URI(
             std::filesystem::path(collection.get<String>("url")) / filename,
             settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
     else
         url = S3::URI(
             collection.get<String>("url"),
             settings[Setting::allow_archive_path_syntax],
-            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
-            /*uri_style*/ settings[Setting::s3_uri_style]);
+            /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path]);
 
     const auto & config = context->getConfigRef();
 
@@ -245,6 +244,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         "partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
+    s3_settings->auth_settings[S3AuthSetting::external_id] = collection.getOrDefault<String>("external_id", "");
 
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
@@ -320,6 +320,8 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
             auth_settings_[S3AuthSetting::role_arn] = arg_value.safeGet<String>();
         else if (arg_name == "role_session_name")
             auth_settings_[S3AuthSetting::role_session_name] = arg_value.safeGet<String>();
+        else if (arg_name == "external_id")
+            auth_settings_[S3AuthSetting::external_id] = arg_value.safeGet<String>();
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid credential argument found: {}", arg_name);
     }
@@ -330,12 +332,6 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
 void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure)
 {
     auto object_storage = disk->getObjectStorage();
-    /// Unwrap decorator object storages (e.g. `CachedObjectStorage`) before the cast.
-    /// `assert_cast` checks `typeid` exactly, so calling it on a wrapper would throw a
-    /// LOGICAL_ERROR even though the wrapper exposes the same interface and ultimately
-    /// holds an `S3ObjectStorage`. See https://github.com/ClickHouse/ClickHouse/issues/89300.
-    while (auto inner = object_storage->getUnderlying())
-        object_storage = std::move(inner);
     const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
     s3_settings = std::make_unique<S3Settings>();
     *s3_settings = s3_object_storage.getS3Settings();
@@ -609,8 +605,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     url = S3::URI(
         checkAndGetLiteralArgument<String>(args[0], "url"),
         context->getSettingsRef()[Setting::allow_archive_path_syntax],
-        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
-        /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
+        /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path]);
 
     s3_settings = std::make_unique<S3Settings>();
     s3_settings->loadFromConfigForObjectStorage(
@@ -623,12 +618,6 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
-
-    /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
-    s3_settings->request_settings.updateFromSettings(
-        context->getSettingsRef(),
-        /* if_changed */ true,
-        context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
     if (auto format_value = getFromPositionOrKeyValue<String>("format", args, engine_args_to_idx, key_value_args);
         format_value.has_value())

@@ -15,7 +15,7 @@ namespace DB
 
 class SchemaCache;
 
-class StorageObjectStorageSource final : public ISource
+class StorageObjectStorageSource : public ISource
 {
     friend class ObjectStorageQueueSource;
 
@@ -26,7 +26,6 @@ public:
     class ArchiveIterator;
 
     StorageObjectStorageSource(
-        const StorageID & storage_id_,
         String name_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
@@ -69,7 +68,6 @@ public:
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
 protected:
-    StorageID storage_id;
     const String name;
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -127,7 +125,6 @@ protected:
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
-        const StorageID & storage_id,
         const std::shared_ptr<IObjectIterator> & file_iterator,
         const StorageObjectStorageConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,

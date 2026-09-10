@@ -30,7 +30,7 @@ namespace
 /**
  *  Returns a point (longitude, latitude) in degrees
  */
-class FunctionS2ToGeo final : public IFunction
+class FunctionS2ToGeo : public IFunction
 {
 public:
     static constexpr auto name = "s2ToGeo";

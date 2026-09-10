@@ -7,6 +7,8 @@ title: 'Join table engine'
 doc_type: 'reference'
 ---
 
+# Join table engine
+
 Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
 
 :::note

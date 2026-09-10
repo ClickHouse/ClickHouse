@@ -12,7 +12,7 @@
 #include <IO/ReadHelpers.h>
 
 
-int mainEntryExampleZlibBuffers(int, char **)
+int main(int, char **)
 try
 {
     std::cout << std::fixed << std::setprecision(2);

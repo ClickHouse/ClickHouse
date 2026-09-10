@@ -143,11 +143,11 @@ protected:
 
     Namespaces getNamespaces(const std::string & base_namespace) const;
 
-    Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const;
+    Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace) const;
 
     DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
 
-    DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
+    DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit) const;
 
     bool getTableMetadataImpl(
         const std::string & namespace_name,

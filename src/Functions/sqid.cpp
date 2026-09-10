@@ -26,7 +26,7 @@ namespace ErrorCodes
 }
 
 /// sqidEncode(number1, ...)
-class FunctionSqidEncode final : public IFunction
+class FunctionSqidEncode : public IFunction
 {
 public:
     static constexpr auto name = "sqidEncode";
@@ -89,7 +89,7 @@ private:
 };
 
 /// sqidDecode(number1, ...)
-class FunctionSqidDecode final : public IFunction
+class FunctionSqidDecode : public IFunction
 {
 public:
     static constexpr auto name = "sqidDecode";

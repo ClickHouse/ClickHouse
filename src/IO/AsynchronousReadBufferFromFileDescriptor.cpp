@@ -277,7 +277,12 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
                         "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}"
                         ") >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());
 
-    return seek_pos;
+    /// Return the position we are actually at, not `seek_pos`. With O_DIRECT (`required_alignment > 1`)
+    /// `seek_pos` is `new_pos` rounded down to the alignment, and the difference is accounted for by
+    /// `bytes_to_ignore` (which `getPosition` includes), so the buffer is positioned at `new_pos`.
+    /// Returning `seek_pos` would break callers that take the returned value as the new position
+    /// (see `ReadBufferFromEncryptedFile`).
+    return static_cast<off_t>(new_pos);
 }
 
 
@@ -294,10 +299,6 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
     pos = working_buffer.begin();
     file_offset_of_buffer_end = 0;
     bytes_to_ignore = 0;
-
-    /// A previous read cycle may have failed, leaving the buffer in a canceled state.
-    /// Reset so the next read cycle can proceed normally after rewind.
-    canceled = false;
 }
 
 std::optional<size_t> AsynchronousReadBufferFromFileDescriptor::tryGetFileSize()

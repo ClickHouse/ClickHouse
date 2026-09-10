@@ -4,7 +4,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -19,16 +18,11 @@
 #include <Storages/MutationCommands.h>
 
 #include <memory>
+#include <mutex>
 
 #include <Storages/IPartitionStrategy.h>
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 class ReadBufferIterator;
 class SchemaCache;
 struct StorageObjectStorageSettings;
@@ -40,7 +34,7 @@ struct IPartitionStrategy;
  * such as StorageS3, StorageAzure, StorageHDFS.
  * Works with an object of IObjectStorage class.
  */
-class StorageObjectStorage : public IStorage, public IBackgroundOperation
+class StorageObjectStorage : public IStorage
 {
 public:
     StorageObjectStorage(
@@ -169,34 +163,14 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    ObjectStoragePtr getObjectStorage() const
-    {
-        return object_storage;
-    }
-
-    StorageObjectStorageConfigurationPtr getObjectStorageConfiguration() const
-    {
-        return configuration;
-    }
-
-    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
-
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & /*assignee*/) override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "scheduleDataMovingJob is not implemented for object storage");
-    }
-
-    void startup() override;
-    void shutdown(bool is_drop) override;
-
-    Int32 getBiasBackoffSeconds() const override
-    {
-        return configuration->getBiasBackoffSeconds();
-    }
-
 protected:
     /// Get path sample for hive partitioning implementation.
     String getPathSample(ContextPtr context);
+
+    /// Resolve the deferred hive partitioning sample path. Requires listing the object storage.
+    void resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context);
+
+    VirtualColumnsDescription createVirtualColumns(ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const;
 
     /// Creates ReadBufferIterator for schema inference implementation.
     static std::unique_ptr<ReadBufferIterator> createReadBufferIterator(
@@ -223,11 +197,16 @@ protected:
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
 
+    /// Set only in the constructor when hive partitioning detection is deferred to the first use.
+    bool hive_partitioning_sample_path_deferred = false;
+    std::mutex hive_partitioning_resolution_mutex;
+    /// Stays false on a failed resolution, so the next query retries it.
+    bool hive_partitioning_sample_path_resolved TSA_GUARDED_BY(hive_partitioning_resolution_mutex) = false;
+
     LoggerPtr log;
 
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
-    BackgroundJobsAssignee background_operations_assignee;
 };
 
 }

@@ -168,26 +168,23 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
 
 bool InstrumentationManager::shouldPatchFunction(String function_to_patch, String full_qualified_function)
 {
-    /// We need to check all occurrences of function_to_patch, not just the first one,
-    /// because earlier matches may be inside template arguments while later ones are not.
     size_t found_pos = full_qualified_function.find(function_to_patch);
-    while (found_pos != std::string::npos)
+    if (found_pos != std::string::npos)
     {
-        /// Check whether the match is within a template argument by counting bracket depth.
-        size_t depth = 0;
+        /// Once we find a possible match, we need to ensure the match is not within a template argument
+        std::stack<bool> brackets;
         for (size_t pos = 0; pos < found_pos; ++pos)
         {
             if (full_qualified_function[pos] == '<')
-                ++depth;
-            else if (full_qualified_function[pos] == '>' && depth > 0)
-                --depth;
+                brackets.push(true);
+            else if (full_qualified_function[pos] == '>')
+                brackets.pop();
         }
 
-        if (depth == 0)
+        if (brackets.empty())
             return true;
 
         LOG_INFO(logger, "Not instrumenting function '{}' because the match is within a template argument: '{}'", function_to_patch, full_qualified_function);
-        found_pos = full_qualified_function.find(function_to_patch, found_pos + 1);
     }
     return false;
 }

@@ -19,15 +19,11 @@
 #include <Common/HashTable/HashMap.h>
 
 
-namespace
-{
-
 using Key = UInt64;
 using Value = UInt64;
 
-} /// anonymous namespace
 
-int mainEntryExampleTwoLevelHashMap(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     if (argc < 2)
     {

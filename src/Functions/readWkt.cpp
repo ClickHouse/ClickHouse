@@ -17,28 +17,13 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 namespace
 {
 
-template <typename T>
-void readWKT(const String & str, T & out)
-{
-    try
-    {
-        boost::geometry::read_wkt(str, out);
-    }
-    catch (std::exception & e)
-    {
-        /// Rethrow a more convenient exception type.
-        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse WKT string: {}", e.what());
-    }
-}
-
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWKT final : public IFunction
+class FunctionReadWKT : public IFunction
 {
 public:
     explicit FunctionReadWKT() = default;
@@ -77,7 +62,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const std::string str{column_string.getDataAt(i)};
-            readWKT(str, geometry);
+            boost::geometry::read_wkt(str, geometry);
             serializer.add(geometry);
         }
 
@@ -95,7 +80,7 @@ public:
     }
 };
 
-class FunctionReadWKTCommon final : public IFunction
+class FunctionReadWKTCommon : public IFunction
 {
 public:
     enum class WKTTypes
@@ -160,7 +145,7 @@ public:
                     [&]
                     {
                         CartesianPoint point;
-                        readWKT(str, point);
+                        boost::geometry::read_wkt(str, point);
                         point_serializer.add(point);
                     },
                     str, "point", WKTTypes::Point))
@@ -170,7 +155,7 @@ public:
                     [&]
                     {
                         LineString<CartesianPoint> linestring;
-                        readWKT(str, linestring);
+                        boost::geometry::read_wkt(str, linestring);
                         linestring_serializer.add(linestring);
                     },
                     str, "linestring", WKTTypes::LineString))
@@ -180,7 +165,7 @@ public:
                     [&]
                     {
                         Polygon<CartesianPoint> polygon;
-                        readWKT(str, polygon);
+                        boost::geometry::read_wkt(str, polygon);
                         polygon_serializer.add(polygon);
                     },
                     str, "polygon", WKTTypes::Polygon))
@@ -190,7 +175,7 @@ public:
                     [&]
                     {
                         MultiLineString<CartesianPoint> multilinestring;
-                        readWKT(str, multilinestring);
+                        boost::geometry::read_wkt(str, multilinestring);
                         multilinestring_serializer.add(multilinestring);
                     },
                     str, "multilinestring", WKTTypes::MultiLineString))
@@ -200,7 +185,7 @@ public:
                     [&]
                     {
                         MultiPolygon<CartesianPoint> multipolygon;
-                        readWKT(str, multipolygon);
+                        boost::geometry::read_wkt(str, multipolygon);
                         multipolygon_serializer.add(multipolygon);
                     },
                     str, "multipolygon", WKTTypes::MultiPolygon))
@@ -210,7 +195,7 @@ public:
                     [&]
                     {
                         Ring<CartesianPoint> ring;
-                        readWKT(str, ring);
+                        boost::geometry::read_wkt(str, ring);
                         ring_serializer.add(ring);
                     },
                     str, "ring", WKTTypes::Ring))
@@ -435,7 +420,7 @@ Parses a Well-Known Text (WKT) representation of Geometry and returns it in the 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_common = {25, 12};
+    FunctionDocumentation::IntroducedIn introduced_in_common = {25, 7};
     FunctionDocumentation::Category category_common = FunctionDocumentation::Category::Geo;
     FunctionDocumentation function_documentation_common = {description_common, syntax_common, arguments_common, {}, returned_value_common, examples_common, introduced_in_common, category_common};
 

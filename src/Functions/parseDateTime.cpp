@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int ILLEGAL_COLUMN;
+    extern const int NOT_ENOUGH_SPACE;
     extern const int NOT_IMPLEMENTED;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
@@ -639,7 +640,7 @@ namespace
 
     /// _FUNC_(str[, format, timezone])
     template <typename Name, ParseSyntax parse_syntax, ReturnType return_type, ErrorHandling error_handling>
-    class FunctionParseDateTimeImpl final : public IFunction
+    class FunctionParseDateTimeImpl : public IFunction
     {
     public:
         const bool mysql_M_is_month_name;
@@ -991,7 +992,7 @@ namespace
             {
                 if (cur > end || cur + len > end) [[unlikely]]
                     RETURN_ERROR(
-                        ErrorCodes::CANNOT_PARSE_DATETIME,
+                        ErrorCodes::NOT_ENOUGH_SPACE,
                         "Unable to parse fragment {} from {} because {}",
                         fragment,
                         std::string_view(cur, end - cur),

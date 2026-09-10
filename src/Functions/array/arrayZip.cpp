@@ -21,7 +21,7 @@ extern const int ILLEGAL_COLUMN;
 
 /// arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']) = [('a', 'd'), ('b', 'e'), ('c', 'f')]
 /// arrayZipUnaligned(['a', 'b', 'c'], ['d', 'e']) = [('a', 'd'), ('b', 'e'), ('c', null)]
-class FunctionArrayZip final : public IFunction
+class FunctionArrayZip : public IFunction
 {
 public:
     FunctionArrayZip(const char * name_, bool allow_unaligned_)

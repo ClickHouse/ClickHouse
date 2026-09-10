@@ -38,7 +38,7 @@ namespace
   *
   * So, result of function depends on partition of data to columns and on order of data in columns.
   */
-class FunctionRunningAccumulate final : public IFunction
+class FunctionRunningAccumulate : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";

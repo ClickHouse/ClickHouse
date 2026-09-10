@@ -20,6 +20,7 @@ namespace DB
 {
 
 class PipelineExecutor;
+class QueryStatus;
 
 class StorageMaterializedView;
 class ASTRefreshStrategy;
@@ -99,14 +100,8 @@ public:
     /// Returns false if `deadline` was reached before the work completed. Used by server shutdown.
     bool tryJoinBackgroundTask(std::chrono::steady_clock::time_point deadline);
 
-    struct DependencyRefreshInfo
-    {
-        std::chrono::sys_seconds next_refresh_timeslot;
-        String last_refresh_replica;
-    };
-
-    /// Used information needed for views that depend on this one.
-    DependencyRefreshInfo getDependencyInfo() const;
+    /// A measure of how far this view has progressed. Used by dependent views.
+    std::chrono::sys_seconds getNextRefreshTimeslot() const;
 
     /// Called when refresh scheduling needs to be reconsidered, e.g. after a refresh happens in
     /// any task that this task depends on.
@@ -201,8 +196,6 @@ private:
         struct WatchState
         {
             std::atomic_bool should_reread_znodes {true};
-            std::atomic_bool root_watch_active {false};
-            std::atomic_bool children_watch_active {false};
         };
 
         CoordinationZnode root_znode;
@@ -237,7 +230,7 @@ private:
             Finished,
         };
 
-        /// Protects interrupt_execution and executor.
+        /// Protects interrupt_execution, executor and executing_query_status.
         /// Can be locked while holding `mutex`.
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
@@ -245,6 +238,9 @@ private:
         /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
         PipelineExecutor * executor = nullptr;
+        /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
+        /// killed. Set as soon as the query enters the process list, before it is interpreted.
+        std::shared_ptr<QueryStatus> executing_query_status;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;
         Progress progress;
@@ -266,15 +262,10 @@ private:
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
 
-        bool should_recalculate_dependencies = true;
-
         /// Timestamp representing the progress of refreshable views we depend on. We're allowed to do
         /// refreshes for timeslots <= dependencies_satisfied_until without waiting for dependencies.
-        std::chrono::sys_seconds dependencies_satisfied_until {};
-
-        /// If set, we should wait until this time before considering dependencies satisfied.
-        /// Used for giving higher-priority replicas a chance to start the refresh before us.
-        std::optional<std::chrono::system_clock::time_point> dependencies_delay;
+        /// If negative, we should recalculate this value.
+        std::chrono::sys_seconds dependencies_satisfied_until {std::chrono::seconds(-1)};
 
         /// Used in tests. If not INT64_MIN, we pretend that this is the current time, instead of calling system_clock::now().
         std::atomic<Int64> fake_clock {INT64_MIN};

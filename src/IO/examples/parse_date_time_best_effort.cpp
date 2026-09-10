@@ -10,7 +10,7 @@
 
 using namespace DB;
 
-int mainEntryExampleParseDateTimeBestEffort(int, char **)
+int main(int, char **)
 try
 {
     const DateLUTImpl & local_time_zone = DateLUT::instance();

@@ -327,7 +327,7 @@ namespace
         }
     }
 
-    class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
+    class AddingAggregatedChunkInfoTransform : public ISimpleTransform
     {
     public:
         explicit AddingAggregatedChunkInfoTransform(SharedHeader header) : ISimpleTransform(header, header, false) { }
@@ -466,7 +466,7 @@ bool StorageWindowView::optimize(
 {
     throwIfWindowViewIsDisabled(local_context);
     auto storage_ptr = getInnerTable();
-    auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr();
     return getInnerTable()->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
@@ -477,8 +477,8 @@ void StorageWindowView::alter(
 {
     throwIfWindowViewIsDisabled(local_context);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
-    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(new_metadata, local_context);
 
     const auto & new_select = new_metadata.select;
@@ -520,7 +520,7 @@ void StorageWindowView::alter(
     {
         /// If this window view has an inner target table it should always have the same columns as this window view.
         /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner target table).
-        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
+        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr();
         const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. in data types).
@@ -553,7 +553,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         inner_fetch_query,
         getContext(),
         inner_table,
-        inner_table->getInMemoryMetadataPtr(getContext(), false),
+        inner_table->getInMemoryMetadataPtr(),
         SelectQueryOptions(QueryProcessingStage::FetchColumns));
 
     auto builder = fetch.buildQueryPipeline();
@@ -635,7 +635,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto source_table_metadata = getSourceTable()->getInMemoryMetadataPtr(getContext(), false);
+        auto source_table_metadata = getSourceTable()->getInMemoryMetadataPtr();
         auto required_columns = source_table_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::WithMergeableState);
@@ -647,7 +647,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         getFinalQuery(),
         getContext(),
         blocks_storage.getTable(),
-        blocks_storage.getTable()->getInMemoryMetadataPtr(getContext(), false),
+        blocks_storage.getTable()->getInMemoryMetadataPtr(),
         SelectQueryOptions(QueryProcessingStage::Complete));
 
     builder = select.buildQueryPipeline();
@@ -727,7 +727,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto adding_missing_defaults_dag = addMissingDefaults(
             pipe.getHeader(),
             block_io.pipeline.getHeader().getNamesAndTypesList(),
-            getTargetTable()->getInMemoryMetadataPtr(context, false)->getColumns(),
+            getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
             context,
             context->getSettingsRef()[Setting::insert_null_as_default]);
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
@@ -770,6 +770,23 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     {
         modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
         modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+        modified_select.group_by_all = false;
+        /// Same for the GROUP BY modifiers: a leftover WITH TOTALS/ROLLUP/CUBE/GROUPING SETS
+        /// flag makes the interpreter reject the rewritten aggregation-free query.
+        modified_select.group_by_with_totals = false;
+        modified_select.group_by_with_rollup = false;
+        modified_select.group_by_with_cube = false;
+        modified_select.group_by_with_grouping_sets = false;
+        /// WINDOW definitions and LIMIT BY expressions may reference aliases of the original
+        /// select list, which is rewritten to raw source columns below, so they must not
+        /// survive either (removeJoin does the same for the join branch above). QUALIFY is
+        /// cleared for the same reason.
+        modified_select.setExpression(ASTSelectQuery::Expression::WINDOW, {});
+        modified_select.setExpression(ASTSelectQuery::Expression::QUALIFY, {});
+        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
+        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
+        modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
+        modified_select.limit_by_all = false;
     }
 
     auto select_list = make_intrusive<ASTExpressionList>();
@@ -792,9 +809,24 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
         order_by_elem->direction = 1;
         order_by->children.push_back(order_by_elem);
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
+        /// The original query may have used ORDER BY ALL, but the clause was replaced above,
+        /// so the flag must not survive: otherwise the analysis of this query would treat
+        /// the timestamp sort element as the ALL keyword and expand it over all columns.
+        modified_select.order_by_all = false;
     }
     else
+    {
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+        /// LIMIT ... WITH TIES requires an ORDER BY clause, which was just removed;
+        /// a stale flag would be a logical error in InterpreterSelectQuery.
+        modified_select.limit_with_ties = false;
+    }
+
+    /// INTERPOLATE belongs to the replaced (or removed) ORDER BY ... WITH FILL clause, and it may
+    /// reference aliases of the original select list, which was rewritten to raw source columns above.
+    /// `RequiredSourceColumnsVisitor` traverses INTERPOLATE independently of ORDER BY, so a stale
+    /// clause would pull unknown identifiers into the source query.
+    modified_select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
 
     const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
@@ -1181,7 +1213,7 @@ void StorageWindowView::read(
 
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
+    auto target_metadata_snapshot = storage->getInMemoryMetadataPtr();
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, local_context);
 
     if (query_info.order_optimizer)
@@ -1598,7 +1630,7 @@ void StorageWindowView::writeIntoWindowView(
 
     auto creator = [&](const StorageID & blocks_id_global)
     {
-        auto source_metadata = window_view.getSourceTable()->getInMemoryMetadataPtr(local_context, false);
+        auto source_metadata = window_view.getSourceTable()->getInMemoryMetadataPtr();
         auto required_columns = source_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::FetchColumns);
@@ -1609,7 +1641,7 @@ void StorageWindowView::writeIntoWindowView(
         window_view.getMergeableQuery(),
         local_context,
         blocks_storage.getTable(),
-        blocks_storage.getTable()->getInMemoryMetadataPtr(local_context, false),
+        blocks_storage.getTable()->getInMemoryMetadataPtr(),
         QueryProcessingStage::WithMergeableState);
 
     builder = select_block.buildQueryPipeline();
@@ -1667,7 +1699,7 @@ void StorageWindowView::writeIntoWindowView(
 
     auto inner_table = window_view.getInnerTable();
     auto lock = inner_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto metadata_snapshot = inner_table->getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = inner_table->getInMemoryMetadataPtr();
     auto output = inner_table->write(window_view.getMergeableQuery(), metadata_snapshot, local_context, /*async_insert=*/false);
     output->addTableLock(lock);
 
@@ -1763,7 +1795,7 @@ void StorageWindowView::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 
 Block StorageWindowView::getInputHeader() const
 {
-    auto metadata = getSourceTable()->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata = getSourceTable()->getInMemoryMetadataPtr();
     return metadata->getSampleBlockNonMaterialized();
 }
 

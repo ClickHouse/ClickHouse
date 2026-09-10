@@ -7,6 +7,7 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeArray.h>
@@ -179,7 +180,7 @@ namespace DB
 {
 
 template <typename Point, typename FunctionToCalculate>
-class FunctionGeometry final : public IFunction
+class FunctionGeometry : public IFunction
 {
 public:
     static const char * name;

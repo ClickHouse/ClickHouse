@@ -1,16 +1,18 @@
 #pragma once
 
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Core/callOnTypeIndex.h>
 #include <Columns/ColumnVector.h>
 #include <Common/intExp10.h>
 #include <Interpreters/castColumn.h>
 #include <Functions/IFunction.h>
 #include <Common/intExp.h>
-#include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <cmath>
@@ -676,7 +678,7 @@ public:
 /// Functions that round the value of an input parameter of type (U)Int8/16/32/64, Float32/64 or Decimal32/64/128.
 /// Accept an additional optional parameter of type (U)Int8/16/32/64 (0 by default).
 template <typename Name, RoundingMode rounding_mode, TieBreakingMode tie_breaking_mode>
-class FunctionRounding final : public IFunction
+class FunctionRounding : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -754,10 +756,8 @@ public:
         return true;
     }
 
-    Monotonicity getMonotonicityForRange(const IDataType &, const Field & left, const Field & right) const override
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        if (isNaNField(left) || isNaNField(right))
-            return {};
         return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };
@@ -765,7 +765,7 @@ public:
 
 /// Rounds down to a number within explicitly specified array.
 /// If the value is less than the minimal bound - returns the minimal bound.
-class FunctionRoundDown final : public IFunction
+class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
@@ -887,10 +887,6 @@ private:
         size_t size = src.size();
         dst.resize(size);
 
-        /// NaN inputs have no defined position in the boundary ordering: every comparison
-        /// against NaN is false, which breaks both the linear-search carry-over hint and
-        /// `std::upper_bound`'s strict-weak-ordering contract. Propagate NaN through
-        /// unchanged so the result is the same in scalar and vector paths.
         if (boundary_values.size() < 32)    /// Just a guess
         {
             /// Linear search with value on previous iteration as a hint.
@@ -903,15 +899,6 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 auto value = src[i];
-
-                if constexpr (is_floating_point<ValueType>)
-                {
-                    if (isNaN(value))
-                    {
-                        dst[i] = value;
-                        continue;
-                    }
-                }
 
                 if (*it < value)
                 {
@@ -933,15 +920,6 @@ private:
         {
             for (size_t i = 0; i < size; ++i)
             {
-                if constexpr (is_floating_point<ValueType>)
-                {
-                    if (isNaN(src[i]))
-                    {
-                        dst[i] = src[i];
-                        continue;
-                    }
-                }
-
                 auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
                 if (it == boundary_values.end())
                 {

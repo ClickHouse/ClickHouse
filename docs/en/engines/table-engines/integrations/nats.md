@@ -8,6 +8,8 @@ title: 'NATS table engine'
 doc_type: 'guide'
 ---
 
+# NATS table engine {#redisstreams-engine}
+
 This engine allows integrating ClickHouse with [NATS](https://nats.io/).
 
 `NATS` lets you:

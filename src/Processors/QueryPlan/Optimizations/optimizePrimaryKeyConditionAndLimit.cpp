@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/QueryPlan/ObjectFilterStep.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -58,10 +57,6 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         {
             expression_dags.push_back(&expression_step->getExpression());
             continue;
-        }
-        else if (auto * object_filter_step = typeid_cast<ObjectFilterStep *>(iter->node->step.get()))
-        {
-            source_step_with_filter->addFilter(object_filter_step->getExpression().clone(), object_filter_step->getFilterColumnName());
         }
         else
         {

@@ -3,6 +3,8 @@
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -21,7 +23,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionMathBinaryFloat64 final : public IFunction
+class FunctionMathBinaryFloat64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;

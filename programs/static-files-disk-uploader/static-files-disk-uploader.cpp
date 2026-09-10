@@ -156,7 +156,7 @@ try
     using namespace DB;
     namespace po = boost::program_options;
 
-    po::options_description description = createOptionsDescription("Allowed options", getTerminalWidth());
+    po::options_description description("Allowed options", getTerminalWidth());
     description.add_options()
         ("help,h", "produce help message")
         ("metadata-path", po::value<std::string>(), "Metadata path (SELECT data_paths FROM system.tables WHERE name = 'table_name' AND database = 'database_name')")

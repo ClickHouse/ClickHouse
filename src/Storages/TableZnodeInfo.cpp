@@ -19,8 +19,8 @@ namespace ErrorCodes
 
 TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const String & requested_replica_name, const StorageID & table_id, const ASTCreateQuery & query, LoadingStrictnessLevel mode, const ContextPtr & context)
 {
-    bool is_on_cluster = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-    bool is_replicated_database = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+    bool is_on_cluster = context->isDDLOrOnClusterInternal();
+    bool is_replicated_database = context->isDDLOrOnClusterInternal() &&
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
 
     /// Allow implicit {uuid} macros only for zookeeper_path in ON CLUSTER queries

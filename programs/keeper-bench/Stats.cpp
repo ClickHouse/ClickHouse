@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include <rapidjson/document.h>
+#include <rapidjson/rapidjson.h>
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
 
@@ -24,26 +25,10 @@ void Stats::addWrite(uint64_t microseconds, size_t requests_inc, size_t bytes_in
     write_collector.add(microseconds, requests_inc, bytes_inc);
 }
 
-void Stats::merge(Stats & from)
-{
-    std::scoped_lock lock(mutex, from.mutex);
-
-    errors += from.errors;
-    watches_fired += from.watches_fired;
-    read_collector.merge(from.read_collector);
-    write_collector.merge(from.write_collector);
-}
-
-void Stats::extractInto(Stats & target)
+void Stats::addOp(Coordination::OpNum op_num, uint64_t microseconds, size_t requests_inc, size_t bytes_inc)
 {
     std::lock_guard lock(mutex);
-    target.read_collector.merge(read_collector);
-    target.write_collector.merge(write_collector);
-    target.errors += errors.exchange(0);
-    target.watches_fired += watches_fired.exchange(0);
-
-    read_collector.clear();
-    write_collector.clear();
+    op_collectors[op_num].add(microseconds, requests_inc, bytes_inc);
 }
 
 void Stats::StatsCollector::clear()
@@ -53,20 +38,12 @@ void Stats::StatsCollector::clear()
     sampler.clear();
 }
 
-void Stats::StatsCollector::merge(const StatsCollector & from)
-{
-    requests += from.requests;
-    requests_bytes += from.requests_bytes;
-    sampler.merge(from.sampler);
-}
-
 void Stats::clear()
 {
-    std::lock_guard lock(mutex);
     read_collector.clear();
     write_collector.clear();
+    op_collectors.clear();
     errors = 0;
-    watches_fired = 0;
     elapsed.restart();
 }
 
@@ -81,7 +58,7 @@ double Stats::StatsCollector::getPercentile(double percent)
     return sampler.quantileNearest(percent / 100.0) / 1000.0;
 }
 
-void Stats::report(const Stats & cumulative)
+void Stats::report()
 {
     std::lock_guard lock(mutex);
     std::cerr << "\n";
@@ -106,25 +83,33 @@ void Stats::report(const Stats & cumulative)
     if (write_requests != 0)
         std::tie(write_rps, write_bps) = write_collector.getThroughput(seconds);
 
-    std::cerr << "Total: read " << cumulative.read_collector.requests
-              << ", write " << cumulative.write_collector.requests;
-    if (cumulative.errors)
-        std::cerr << ", errors " << cumulative.errors;
-    if (cumulative.watches_fired)
-        std::cerr << ", watches fired " << cumulative.watches_fired;
-    std::cerr << "\n";
+    std::cerr << "read requests " << read_requests << ", write requests " << write_requests << ", ";
+    if (errors)
+        std::cerr << "errors " << errors << ", ";
 
-    std::cerr << "Last " << seconds << "s:";
     if (0 != read_requests)
-        std::cerr << " Read " << read_rps << " RPS, " << read_bps / 1048576 << " MiB/s.";
+    {
+        std::cerr
+            << "Read RPS: " << read_rps << ", "
+            << "Read MiB/s: " << read_bps / 1048576;
+
+        if (0 != write_requests)
+            std::cerr << ", ";
+    }
+
     if (0 != write_requests)
-        std::cerr << " Write " << write_rps << " RPS, " << write_bps / 1048576 << " MiB/s.";
+    {
+        std::cerr
+            << "Write RPS: " << write_rps << ", "
+            << "Write MiB/s: " << write_bps / 1048576 << ". "
+            << "\n";
+    }
     std::cerr << "\n";
 
     auto print_percentile = [&](double percent, Stats::StatsCollector & collector)
     {
         std::cerr << percent << "%\t\t";
-        std::cerr << collector.getPercentile(percent) << " ms.\t";
+        std::cerr << collector.getPercentile(percent) << " msec.\t";
         std::cerr << "\n";
     };
 
@@ -141,14 +126,31 @@ void Stats::report(const Stats & cumulative)
 
     if (0 != read_requests)
     {
-        std::cerr << "Read latency:\n";
+        std::cerr << "Read sampler:\n";
         print_all_percentiles(read_collector);
     }
 
     if (0 != write_requests)
     {
-        std::cerr << "Write latency:\n";
+        std::cerr << "Write sampler:\n";
         print_all_percentiles(write_collector);
+    }
+
+    /// Per-operation-type breakdown
+    if (!op_collectors.empty())
+    {
+        std::cerr << "\nPer-operation breakdown:\n";
+        for (auto & [op_num, collector] : op_collectors)
+        {
+            if (collector.requests == 0)
+                continue;
+
+            auto op_name = Coordination::opNumToString(op_num);
+            auto [rps, bps] = collector.getThroughput(seconds);
+            std::cerr << "  " << op_name << ": " << collector.requests << " requests, "
+                      << rps << " RPS, p50 " << collector.getPercentile(50) << " ms, "
+                      << "p99 " << collector.getPercentile(99) << " ms\n";
+        }
     }
 }
 
@@ -167,9 +169,6 @@ void Stats::writeJSON(DB::WriteBuffer & out, int64_t start_timestamp)
     results.AddMember("timestamp", Value(start_timestamp), allocator);
     results.AddMember("errors", Value(static_cast<uint64_t>(errors.load())), allocator);
     results.AddMember("ops", Value(static_cast<uint64_t>(read_collector.requests + write_collector.requests)), allocator);
-
-    if (watches_fired)
-        results.AddMember("watches_fired", Value(static_cast<uint64_t>(watches_fired.load())), allocator);
 
     const auto get_results = [&](auto & collector)
     {
@@ -209,6 +208,22 @@ void Stats::writeJSON(DB::WriteBuffer & out, int64_t start_timestamp)
 
     if (write_collector.requests != 0)
         results.AddMember("write_results", get_results(write_collector), results.GetAllocator());
+
+    /// Per-operation-type breakdown
+    if (!op_collectors.empty())
+    {
+        Value op_results(kObjectType);
+        for (auto & [op_num, collector] : op_collectors)
+        {
+            if (collector.requests == 0)
+                continue;
+
+            auto op_name = Coordination::opNumToString(op_num);
+            Value key(std::string(op_name).c_str(), allocator);
+            op_results.AddMember(key, get_results(collector), allocator);
+        }
+        results.AddMember("per_op_results", op_results, allocator);
+    }
 
     StringBuffer strbuf;
     strbuf.Clear();

@@ -6,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -22,7 +23,7 @@ namespace ErrorCodes
   * formatReadableQuantity - prints the quantity in form of 123 million.
   */
 
-class FunctionFormatReadable final : public IFunction
+class FunctionFormatReadable : public IFunction
 {
 public:
     using FormatFunc = void (*)(double, WriteBuffer &, int);

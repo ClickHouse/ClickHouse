@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetClientHTTPHeader final : public IFunction, WithContext
+class FunctionGetClientHTTPHeader : public IFunction, WithContext
 {
 public:
     explicit FunctionGetClientHTTPHeader(ContextPtr context_)
@@ -80,14 +80,14 @@ REGISTER_FUNCTION(GetClientHTTPHeader)
     FunctionDocumentation::Description description = R"(
 Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
-Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
+Certain HTTP headers (e.g., `Authorization`, `Authentication` and `X-ClickHouse-*`) are restricted.
 
 :::note Setting `allow_get_client_http_header` is required
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
 :::
 
-HTTP headers are case sensitive for this function.
+HTTP headers are case-insensitive per RFC 9110.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
 )";
     FunctionDocumentation::Syntax syntax = "getClientHTTPHeader(name)";

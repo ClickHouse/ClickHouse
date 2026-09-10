@@ -26,8 +26,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/ExecutableSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -102,7 +100,7 @@ StorageExecutable::StorageExecutable(
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints,
     const String & comment)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , settings(std::make_unique<ExecutableSettings>(settings_))
     , input_queries(input_queries_)
     , log(settings->is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
@@ -111,7 +109,6 @@ StorageExecutable::StorageExecutable(
     storage_metadata.setColumns(columns);
     storage_metadata.setConstraints(constraints);
     storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     ShellCommandSourceCoordinator::Configuration configuration
@@ -134,14 +131,6 @@ StorageExecutable::StorageExecutable(
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
 }
 
-VirtualColumnsDescription StorageExecutable::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
 StorageExecutable::~StorageExecutable() = default;
 
 String StorageExecutable::getName() const
@@ -151,7 +140,7 @@ String StorageExecutable::getName() const
     return "Executable";
 }
 
-void StorageExecutable::readImpl(
+void StorageExecutable::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,

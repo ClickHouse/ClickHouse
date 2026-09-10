@@ -29,7 +29,7 @@ namespace ErrorCodes
     }
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
-class FunctionIcebergHash final : public IFunction
+class FunctionIcebergHash : public IFunction
 {
 
 public:
@@ -285,7 +285,7 @@ REGISTER_FUNCTION(IcebergHash)
     factory.registerFunction<FunctionIcebergHash>(documentation);
 }
 
-class FunctionIcebergBucket final : public IFunction
+class FunctionIcebergBucket : public IFunction
 {
 
 public:

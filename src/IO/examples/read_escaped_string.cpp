@@ -9,7 +9,7 @@
 
 using namespace DB;
 
-int mainEntryExampleReadEscapedString(int, char **)
+int main(int, char **)
 try
 {
     std::string s1 = "abc\\x\n";

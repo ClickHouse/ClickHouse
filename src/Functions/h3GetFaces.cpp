@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/h3Common.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
@@ -23,7 +24,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3GetFaces final : public IFunction
+class FunctionH3GetFaces : public IFunction
 {
 public:
     static constexpr auto name = "h3GetFaces";
@@ -87,11 +88,11 @@ public:
                 continue;
             }
 
-            int max_faces = 0;
-            maxFaceCount(data[row], &max_faces);
+            int max_faces = maxFaceCount(data[row]);
 
             faces.resize(max_faces);
 
+            // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(data[row], faces.data());
 
             for (int i = 0; i < max_faces; ++i)

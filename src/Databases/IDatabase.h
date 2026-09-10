@@ -180,14 +180,18 @@ public:
     /// Get name of database engine.
     virtual String getEngineName() const = 0;
 
-    /// External database (i.e. PostgreSQL/Datalake/...) does not support any of ClickHouse internal tables:
-    /// - *MergeTree
-    /// - Distributed
-    /// - RocksDB
+    /// External database (i.e. `PostgreSQL`/Datalake/...) does not support any of ClickHouse internal tables:
+    /// - `*MergeTree`
+    /// - `Distributed`
+    /// - `RocksDB`
     /// - ...
     virtual bool isExternal() const { return true; }
 
     virtual bool isDatalakeCatalog() const { return false; }
+
+    /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
+    /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
+    virtual bool isRemoteDatabase() const { return false; }
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
@@ -404,11 +408,6 @@ public:
         return database_name;
     }
 
-    virtual void checkDatabase() const
-    {
-        //No-op
-    }
-
     // Alter comment of database.
     virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
 
@@ -434,7 +433,7 @@ public:
 
     virtual void assertCanBeDetached(bool /*cleanup*/) {}
 
-    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/, std::function<void()> /*throw_if_cancelled*/) { }
+    virtual void waitDetachedTableNotInUse(const UUID & /*uuid*/) { }
     virtual void checkDetachedTableNotInUse(const UUID & /*uuid*/) { }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.

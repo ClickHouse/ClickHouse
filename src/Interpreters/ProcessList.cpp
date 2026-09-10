@@ -47,8 +47,14 @@ namespace Setting
     extern const SettingsUInt64 max_network_bandwidth_for_user;
     extern const SettingsUInt64 max_temporary_data_on_disk_size_for_user;
     extern const SettingsUInt64 memory_usage_overcommit_max_wait_microseconds;
+    extern const SettingsUInt64 memory_overcommit_ratio_denominator;
     extern const SettingsUInt64 memory_overcommit_ratio_denominator_for_user;
+    extern const SettingsUInt64 memory_profiler_step;
+    extern const SettingsUInt64 memory_profiler_sample_min_allocation_size;
+    extern const SettingsUInt64 memory_profiler_sample_max_allocation_size;
+    extern const SettingsFloat memory_profiler_sample_probability;
     extern const SettingsUInt64 max_temporary_data_on_disk_size_for_query;
+    extern const SettingsFloat memory_tracker_fault_probability;
     extern const SettingsUInt64 priority;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool replace_running_query;
@@ -296,24 +302,38 @@ ProcessList::EntryPtr ProcessList::insert(
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
-            configureMemoryTrackerFromSettings(query_context->hasTraceCollector(), thread_group->memory_tracker, settings);
+            thread_group->memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator]);
 
-            if (query_context->hasTraceCollector() && settings[Setting::trace_profile_events])
+            if (query_context->hasTraceCollector())
             {
-                const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
-                if (!list_of_events_to_trace.empty())
+                /// Set up memory profiling
+                thread_group->memory_tracker.setProfilerStep(settings[Setting::memory_profiler_step]);
+
+                thread_group->memory_tracker.setSampleProbability(settings[Setting::memory_profiler_sample_probability]);
+                thread_group->memory_tracker.setSampleMinAllocationSize(settings[Setting::memory_profiler_sample_min_allocation_size]);
+                thread_group->memory_tracker.setSampleMaxAllocationSize(settings[Setting::memory_profiler_sample_max_allocation_size]);
+
+                /// Set up tracing of profile events
+                if (settings[Setting::trace_profile_events])
                 {
-                    /// Trace specific profile events
-                    thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
-                }
-                else
-                {
-                    /// Trace all profile events
-                    thread_group->performance_counters.setTraceAllProfileEvents();
+                    const String & list_of_events_to_trace = settings[Setting::trace_profile_events_list];
+                    if (!list_of_events_to_trace.empty())
+                    {
+                        /// Trace specific profile events
+                        thread_group->performance_counters.setTraceProfileEvents(list_of_events_to_trace);
+                    }
+                    else
+                    {
+                        /// Trace all profile events
+                        thread_group->performance_counters.setTraceAllProfileEvents();
+                    }
                 }
             }
 
             thread_group->memory_tracker.setDescription("Query");
+            if (settings[Setting::memory_tracker_fault_probability] > 0.0)
+                thread_group->memory_tracker.setFaultProbability(settings[Setting::memory_tracker_fault_probability]);
+
             thread_group->memory_tracker.setOvercommitWaitingTime(settings[Setting::memory_usage_overcommit_max_wait_microseconds]);
 
             /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
@@ -637,12 +657,6 @@ void QueryStatus::throwIfKilled()
     throwProperExceptionIfNeeded(limits.max_execution_time.totalMilliseconds(), 0);
 }
 
-CancelReason QueryStatus::getCancelReason() const
-{
-    std::lock_guard<std::mutex> lock(cancel_mutex);
-    return cancel_reason;
-}
-
 bool QueryStatus::checkTimeLimitSoft()
 {
     if (is_killed.load())
@@ -740,6 +754,59 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
     /// The ProcessListEntry cannot be destroy if is_cancelling is true.
     {
         LockAndBlocker lock(mutex);
+        elem->is_cancelling = true;
+    }
+
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        Lock lock(mutex);
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
+}
+
+
+void ProcessList::registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys[{connection_id, secret_key}] = query_id;
+}
+
+
+void ProcessList::unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key)
+{
+    LockAndBlocker lock(mutex);
+    postgresql_cancellation_keys.erase({connection_id, secret_key});
+}
+
+
+CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key)
+{
+    QueryStatusPtr elem;
+
+    {
+        LockAndBlocker lock(mutex);
+
+        /// The request is unauthenticated, so a wrong secret must be indistinguishable from an
+        /// unknown connection.
+        auto cancellation_key = postgresql_cancellation_keys.find({process_id, secret_key});
+        if (cancellation_key == postgresql_cancellation_keys.end())
+            return CancellationCode::NotFound;
+
+        const String & current_query_id = cancellation_key->second;
+        auto query_user = queries_to_user.find(current_query_id);
+        if (query_user == queries_to_user.end())
+            return CancellationCode::NotFound;
+
+        /// Other interfaces can forge this query-id shape, so only cancel PostgreSQL queries.
+        elem = tryGetProcessListElement(current_query_id, query_user->second);
+        if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
+            return CancellationCode::NotFound;
+
+        /// Keep the verified entry by pointer to prevent query-id reuse races.
         elem->is_cancelling = true;
     }
 

@@ -18,7 +18,7 @@ extern const int BAD_ARGUMENTS;
 namespace
 {
 
-class FunctionWKB final : public IFunction
+class FunctionWKB : public IFunction
 {
 public:
     static inline const char * name = "wkb";

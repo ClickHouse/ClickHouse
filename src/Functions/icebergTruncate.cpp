@@ -22,7 +22,7 @@ namespace
 {
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
-class FunctionIcebergTruncate final : public IFunction
+class FunctionIcebergTruncate : public IFunction
 {
 
 public:

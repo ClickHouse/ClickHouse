@@ -10,7 +10,7 @@ namespace
 
 /** ignore(...) is a function that takes any arguments, and always returns 0.
   */
-class FunctionIgnore final : public IFunction
+class FunctionIgnore : public IFunction
 {
 public:
     static constexpr auto name = "ignore";

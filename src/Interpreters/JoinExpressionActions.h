@@ -232,9 +232,6 @@ public:
     bool isFunction(JoinConditionOperator op) const;
     std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef> asBinaryPredicate() const;
 
-    /// Follow alias chain to the underlying non-alias node.
-    JoinActionRef resolveAliases() const;
-
     String dump() const;
 
     friend bool operator==(const JoinActionRef & left, const JoinActionRef & right) { return left.node_ptr == right.node_ptr; }

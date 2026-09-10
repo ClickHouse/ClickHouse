@@ -76,9 +76,6 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
     std::shared_ptr<AzureBlobStorage::StaticCredential>>;
-
-
-struct ConnectionParams;
 }
 
 #endif
@@ -317,16 +314,10 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
-    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
-    }
-
     virtual AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
-
 #endif
 
 #if USE_AWS_S3
@@ -337,6 +328,13 @@ public:
     virtual std::shared_ptr<const S3::Client> tryGetS3StorageClient() { return nullptr; }
 #endif
 
+    /// Invokes the catalog-vended credentials refresh callback (e.g. for Glue / Unity / REST
+    /// data-lake tables) and atomically swaps the internal S3 client to one signed with the
+    /// fresh credentials. Returns true if the callback was present and a new client was
+    /// installed. Used by delta-kernel's `ExpiredToken` recovery path, which bypasses the
+    /// `ReadBufferFromS3` / `getObjectMetadata` error handlers that normally invoke this.
+    virtual bool tryRefreshCredentialsViaCallback() { return false; }
+
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
     virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &)
@@ -344,10 +342,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }
 #endif
-
-    /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
-    /// Returns nullptr for non-decorator types, meaning this storage is already the base.
-    virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

@@ -12,6 +12,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 #include "config.h"
 

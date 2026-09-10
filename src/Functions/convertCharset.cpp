@@ -40,7 +40,7 @@ namespace
   * When bytes are illegal in 'from' charset or are not representable in 'to' charset,
   *  behavior is implementation specific.
   */
-class FunctionConvertCharset final : public IFunction
+class FunctionConvertCharset : public IFunction
 {
 private:
     struct Converter : private boost::noncopyable

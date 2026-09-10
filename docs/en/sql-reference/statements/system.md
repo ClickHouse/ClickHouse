@@ -101,10 +101,6 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
-## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE {#drop-avro-schema-cache}
-
-Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` format. This drops both the schema-fetch cache (id → schema) and the schema-registration cache (subject + schema → id), so subsequent reads and writes fall back to the registry server. Useful when a schema was deleted or rewritten on the registry side, or to verify the registry's idempotency in tests.
-
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
@@ -403,8 +399,6 @@ SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]me
 
 ### SYSTEM STOP TTL MERGES {#stop-ttl-merges}
 
-<CloudNotSupportedBadge/>
-
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
 
@@ -413,8 +407,6 @@ SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_n
 ```
 
 ### SYSTEM START TTL MERGES {#start-ttl-merges}
-
-<CloudNotSupportedBadge/>
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:
@@ -692,11 +684,23 @@ SYSTEM UNLOAD PRIMARY KEY [db.]name
 SYSTEM UNLOAD PRIMARY KEY
 ```
 
-## Managing Refreshable Materialized Views {#managing-refreshable-materialized-views}
+## Managing Refreshable Materialized Views {#refreshable-materialized-views}
 
 Commands to control background tasks performed by [Refreshable Materialized Views](../../sql-reference/statements/create/view.md#refreshable-materialized-view)
 
 Keep an eye on [`system.view_refreshes`](../../operations/system-tables/view_refreshes.md) while using them.
+
+### SYSTEM REFRESH VIEW {#refresh-view}
+
+Trigger an immediate out-of-schedule refresh of a given view.
+
+```sql
+SYSTEM REFRESH VIEW [db.]name
+```
+
+### SYSTEM WAIT VIEW {#wait-view}
+
+Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
 ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS {#stop-view-stop-views}
 
@@ -750,13 +754,13 @@ SYSTEM PAUSE VIEWS
 
 ### SYSTEM REFRESH VIEW {#refresh-view}
 
-Trigger an immediate out-of-schedule refresh of a given view.
+If there's a refresh in progress for the given view on the current replica, interrupt and cancel it. Otherwise do nothing.
 
 ```sql
-SYSTEM REFRESH VIEW [db.]name
+SYSTEM CANCEL VIEW [db.]name
 ```
 
-### SYSTEM WAIT VIEW {#wait-view}
+### SYSTEM WAIT VIEW {#system-wait-view}
 
 Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
 
@@ -766,20 +770,4 @@ If the view is in a Replicated or Shared database, and refresh is running on ano
 
 ```sql
 SYSTEM WAIT VIEW [db.]name
-```
-
-### SYSTEM CANCEL VIEW {#cancel-view}
-
-If there's a refresh in progress for the given view on the current replica, interrupt and cancel it. Otherwise do nothing.
-
-```sql
-SYSTEM CANCEL VIEW [db.]name
-```
-
-## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
-
-Blocks until the given file has been processed or permanently failed by the given [S3Queue](../../engines/table-engines/integrations/s3queue.md) or [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) table. Returns immediately if the file was already processed. Raises an error if the file has permanently failed (all retries exhausted).
-
-```sql
-SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```

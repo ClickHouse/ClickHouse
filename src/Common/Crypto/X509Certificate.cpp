@@ -17,6 +17,9 @@ extern const int BAD_ARGUMENTS;
 X509Certificate::X509Certificate(X509 * cert_)
     : certificate(cert_)
 {
+    /// Every accessor dereferences the certificate, so a null pointer here turns into a segfault later.
+    if (!certificate)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create a certificate from a null pointer");
 }
 
 X509Certificate::operator X509 *() const
@@ -131,14 +134,10 @@ std::string X509Certificate::serialNumber() const
 {
     ASN1_INTEGER * serial = X509_get_serialNumber(certificate);
     BIGNUM * bn = ASN1_INTEGER_to_BN(serial, nullptr);
-    if (!bn)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "ASN1_INTEGER_to_BN failed: {}", getOpenSSLErrors());
 
     SCOPE_EXIT({ BN_free(bn); });
 
     char * hex = BN_bn2hex(bn);
-    if (!hex)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "BN_bn2hex failed: {}", getOpenSSLErrors());
     std::string result(hex);
 
     SCOPE_EXIT({ OPENSSL_free(hex); });

@@ -43,7 +43,7 @@ enum class OpTypes : uint8_t
     SUBTRACT = 1
 };
 
-class FunctionMapOp final : public IFunction
+class FunctionMapOp : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr, OpTypes op_type_) { return std::make_shared<FunctionMapOp>(op_type_); }

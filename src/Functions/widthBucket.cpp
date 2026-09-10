@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionWidthBucket final : public IFunction
+class FunctionWidthBucket : public IFunction
 {
     template <typename TDataType>
     void throwIfInvalid(

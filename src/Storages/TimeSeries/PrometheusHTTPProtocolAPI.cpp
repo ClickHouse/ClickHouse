@@ -49,7 +49,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     const Params & params)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr(getContext(), false);
+    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr();
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
     auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
@@ -86,7 +86,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto sql_query = converter.getSQL();
 
     chassert(sql_query);
-    LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
     PullingPipelineExecutor executor(io.pipeline);
@@ -98,30 +97,16 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
     WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
 {
-    /// Pull until the first non-empty block is ready before writing the header
-    /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
-    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryAPIImpl.
-    bool has_output = false;
-    Block block;
-    while (pulling_executor.pull(block))
-    {
-        if (block.rows() > 0)
-        {
-            has_output = true;
-            break;
-        }
-    }
-
     writeQueryResponseHeader(response, result_type);
 
-    if (has_output)
-    {
-        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+    Block result_block;
+    bool first = true;
 
-        while (pulling_executor.pull(block))
-        {
-            if (block.rows() > 0)
-                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
+    while (pulling_executor.pull(result_block))
+    {
+        if (result_block.rows() > 0)
+        {   writeQueryResponseBlock(response, result_type, result_block, first);
+            first = false;
         }
     }
 

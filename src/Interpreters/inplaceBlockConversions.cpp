@@ -27,7 +27,6 @@
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
-#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -237,11 +236,10 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
 
-    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
-    collectSets(expression, *planner_context);
+    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
@@ -315,12 +313,9 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
 }
 
 static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
-    const NamesAndTypesList & available_columns, const Columns & res_columns, bool share_nested_offsets)
+    const NamesAndTypesList & available_columns, const Columns & res_columns)
 {
     std::unordered_map<String, ColumnPtr> offsets_columns;
-
-    ISerialization::StreamFileNameSettings stream_settings;
-    stream_settings.share_nested_offsets = share_nested_offsets;
 
     auto available_column = available_columns.begin();
     for (size_t i = 0; i < available_columns.size(); ++i, ++available_column)
@@ -338,7 +333,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, stream_settings);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -424,8 +419,7 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets)
+    StorageSnapshotPtr storage_snapshot)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -438,10 +432,7 @@ void fillMissingColumns(
     /// but a column of arrays of correct length.
 
     /// First, collect offset columns for all arrays in the block.
-    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns, share_nested_offsets);
-
-    ISerialization::StreamFileNameSettings stream_settings;
-    stream_settings.share_nested_offsets = share_nested_offsets;
+    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns);
 
     /// Insert default values only for columns without default expressions.
     auto requested_column = requested_columns.begin();
@@ -474,7 +465,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, stream_settings);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;
