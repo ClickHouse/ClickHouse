@@ -2906,7 +2906,9 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                     auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
                     nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
                 }
-                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
+                /// The requested spelling, not the lower-cased one: the helper matches names
+                /// case-insensitively itself, and an exact element name outranks a folded match.
+                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(header_column.name);
                 if (nested_column)
                 {
                     column = *nested_column;

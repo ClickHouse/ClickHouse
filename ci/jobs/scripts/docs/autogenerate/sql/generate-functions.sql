@@ -33,7 +33,7 @@ SELECT
         '## ' || fd.name || ' ' || printf('{#%s}', fd.name) || '\n\n',
         'Introduced in: v' || fd.introduced_in || '\n\n',
         fd.description || '\n\n',
-        if(coalesce(fd.deterministic, 1) = 0, ':::note\nThis function is non-deterministic: it can return different results for the same arguments.\n:::\n\n', ''),
+        if(coalesce(fd.deterministic, 1) = 0, '<Note>\nThis function is non-deterministic: it can return different results for the same arguments.\n</Note>\n\n', ''),
         '**Syntax**\n\n' || printf('```sql\n%s\n```', fd.syntax) || '\n\n',
         if(fa.aliases IS NOT NULL AND length(fa.aliases) > 0,
            '**Aliases**: ' || arrayStringConcat(arrayMap(x -> '`' || x || '`', fa.aliases), ', ') || '\n\n',
