@@ -16,6 +16,7 @@
 #include <base/EnumReflection.h>
 
 #include <bit>
+#include <cstring>
 
 #if defined(__SSSE3__)
 #    include <tmmintrin.h>
@@ -46,6 +47,25 @@ namespace
 
 constexpr char ESCAPE_CHARACTER = '\\';
 
+#if defined(__SSSE3__) || defined(__aarch64__)
+
+/// GCC/Clang vector extensions lower each lane operation to one SSE/NEON instruction;
+/// only the byte permutation has no portable spelling.
+using UInt8x16 = UInt8 __attribute__((vector_size(16)));
+using UInt64x2 = UInt64 __attribute__((vector_size(16)));
+
+/// Returns a vector with `table[indexes[i]]` in lane `i`; every index must be less than 16.
+inline UInt8x16 lookupBytes(UInt8x16 table, UInt8x16 indexes)
+{
+#if defined(__SSSE3__)
+    return std::bit_cast<UInt8x16>(_mm_shuffle_epi8(std::bit_cast<__m128i>(table), std::bit_cast<__m128i>(indexes)));
+#else
+    return std::bit_cast<UInt8x16>(vqtbl1q_u8(std::bit_cast<uint8x16_t>(table), std::bit_cast<uint8x16_t>(indexes)));
+#endif
+}
+
+#endif
+
 /// A set of bytes with a vectorized search for the first byte that is (or is not) in the set.
 /// The lookup tables are built once per set, so a search has no setup cost.
 class ByteSet
@@ -59,12 +79,22 @@ public:
 
         table[byte] = true;
 
-        /// The vectorized search classifies a byte by two nibble lookups: it is in the set iff
-        /// `low_nibble_table[low] & high_nibble_table[high]` is non-zero, where each distinct high
-        /// nibble present in the set owns one bit. That supports at most 8 distinct high nibbles,
-        /// which covers any set of ASCII punctuation; other sets use the scalar search only.
+        /// Tables for the vectorized search, which can only look up
+        /// 16-entry tables and therefore classifies a byte by its two nibbles:
+        ///
+        /// - Every high nibble that occurs in the set gets its own bit (`high_nibble_bit`).
+        /// - `high_nibble_table[high]` is that bit, or 0 if no member has this high nibble.
+        /// - `low_nibble_table[low]` is the union of the bits of all high nibbles that are
+        ///   combined with this low nibble in some member.
+        /// - A byte is in the set iff the two lookups share a bit:
+        ///   `low_nibble_table[low] & high_nibble_table[high] != 0`.
+        ///
+        /// The bits fit in one byte, so at most 8 distinct high nibbles are supported. That is
+        /// enough for any set of ASCII characters; a set that needs more is searched by the
+        /// scalar loop only.
         UInt8 high = byte >> 4;
         UInt8 low = byte & 0x0F;
+
         if (!high_nibble_bit[high])
         {
             if (num_high_nibbles == 8)
@@ -81,7 +111,7 @@ public:
         high_nibble_table[high] = high_nibble_bit[high];
     }
 
-    bool contains(char c) const
+    ALWAYS_INLINE bool contains(char c) const
     {
         return table[static_cast<UInt8>(c)];
     }
@@ -101,8 +131,10 @@ public:
                 return pos;
         }
 
+#if defined(__SSSE3__) || defined(__aarch64__)
         if (vectorized)
             pos = findVectorized<positive>(pos, end);
+#endif
 
         for (; pos < end; ++pos)
         {
@@ -117,54 +149,43 @@ private:
     static constexpr ptrdiff_t SCALAR_PREFIX = 16;
     static constexpr ptrdiff_t VECTOR_SIZE = 16;
 
+#if defined(__SSSE3__) || defined(__aarch64__)
     /// Scans whole 16-byte blocks. Returns the position of the first byte matching the search,
     /// or the position from which fewer than 16 bytes remain.
     template <bool positive>
     const char * findVectorized(const char * pos, const char * end) const
     {
-#if defined(__SSSE3__)
-        const __m128i low_table = _mm_loadu_si128(reinterpret_cast<const __m128i *>(low_nibble_table));
-        const __m128i high_table = _mm_loadu_si128(reinterpret_cast<const __m128i *>(high_nibble_table));
-        const __m128i low_mask = _mm_set1_epi8(0x0F);
-        const __m128i zero = _mm_setzero_si128();
+        const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
+        const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);
 
         for (; end - pos >= VECTOR_SIZE; pos += VECTOR_SIZE)
         {
-            __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-            __m128i low = _mm_shuffle_epi8(low_table, _mm_and_si128(bytes, low_mask));
-            __m128i high = _mm_shuffle_epi8(high_table, _mm_and_si128(_mm_srli_epi16(bytes, 4), low_mask));
-            __m128i not_in_set = _mm_cmpeq_epi8(_mm_and_si128(low, high), zero);
-            auto mask = static_cast<UInt32>(_mm_movemask_epi8(not_in_set));
-            if constexpr (positive)
-                mask = ~mask & 0xFFFFu;
-            if (mask)
-                return pos + std::countr_zero(mask);
-        }
-#elif defined(__aarch64__)
-        const uint8x16_t low_table = vld1q_u8(low_nibble_table);
-        const uint8x16_t high_table = vld1q_u8(high_nibble_table);
-        const uint8x16_t low_mask = vdupq_n_u8(0x0F);
+            UInt8x16 bytes;
+            memcpy(&bytes, pos, VECTOR_SIZE);
 
-        for (; end - pos >= VECTOR_SIZE; pos += VECTOR_SIZE)
-        {
-            uint8x16_t bytes = vld1q_u8(reinterpret_cast<const uint8_t *>(pos));
-            uint8x16_t low = vqtbl1q_u8(low_table, vandq_u8(bytes, low_mask));
-            uint8x16_t high = vqtbl1q_u8(high_table, vshrq_n_u8(bytes, 4));
-            uint8x16_t not_in_set = vceqzq_u8(vandq_u8(low, high));
-            /// Narrow each 0x00/0xFF byte of the comparison result to a nibble of a 64-bit mask.
-            UInt64 mask = vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(not_in_set), 4)), 0);
-            if constexpr (positive)
-                mask = ~mask;
-            if (mask)
-                return pos + (std::countr_zero(mask) >> 2);
+            UInt8x16 low = lookupBytes(low_table, bytes & 0x0F);
+            UInt8x16 high = lookupBytes(high_table, bytes >> 4);
+
+            /// 0xFF in the lanes of the bytes that match the search, 0x00 in the others.
+            auto match = (low & high) != UInt8x16{};
+            if constexpr (!positive)
+                match = ~match;
+
+            /// The first matching byte is the lowest non-zero byte, little-endian.
+            const auto halves = std::bit_cast<UInt64x2>(match);
+            if (halves[0])
+                return pos + std::countr_zero(halves[0]) / 8;
+            if (halves[1])
+                return pos + 8 + std::countr_zero(halves[1]) / 8;
         }
-#endif
+
         return pos;
     }
+#endif
 
     bool table[256]{};
-    alignas(16) UInt8 low_nibble_table[16]{};
-    alignas(16) UInt8 high_nibble_table[16]{};
+    UInt8 low_nibble_table[16]{};
+    UInt8 high_nibble_table[16]{};
     UInt8 high_nibble_bit[16]{};
     size_t num_high_nibbles = 0;
     bool vectorized = true;
@@ -192,6 +213,7 @@ public:
             buffer.clear();
             in_buffer = true;
         }
+
         buffer.append(chunk_begin, pos);
 
         ReadBufferFromMemory in(pos, end - pos);
@@ -228,6 +250,17 @@ enum class Stop
     InvalidEscapeSequence,
 };
 
+/// Outcome of reading a key or a value.
+enum class ReadResult
+{
+    /// The token was read: for a key `pos` is at the start of the value, for a value the pair is complete.
+    Ok,
+    /// The token is invalid, go back to waiting for a key.
+    Discard,
+    /// The input is over.
+    End,
+};
+
 }
 
 struct KeyValuePairExtractor::Impl
@@ -235,14 +268,15 @@ struct KeyValuePairExtractor::Impl
     Configuration configuration;
 
     /// Bytes skipped while waiting for a key: the delimiters, and the escape character with escaping.
-    ByteSet waiting_key_skip;
-    /// Bytes that end an unquoted key: both delimiters, the quoting character unless the strategy is
-    /// `ACCEPT`, and the escape character with escaping.
-    ByteSet key_stop;
+    ByteSet waiting_key_bytes;
+    /// Bytes that end an unquoted key: both delimiters, the quoting character
+    /// unless the strategy is `ACCEPT`, and the escape character with escaping.
+    ByteSet key_stop_bytes;
     /// Bytes that end an unquoted value: same as for a key, except the key-value delimiter is a regular byte.
-    ByteSet value_stop;
+    ByteSet value_stop_bytes;
     /// Bytes that end a quoted key or value: the quoting character, and the escape character with escaping.
-    ByteSet quoted_stop;
+    ByteSet quoted_stop_bytes;
+    /// Bytes that end a pair: the pair delimiters.
     ByteSet pair_delimiters;
 
     explicit Impl(const Configuration & configuration_)
@@ -250,31 +284,31 @@ struct KeyValuePairExtractor::Impl
     {
         validate();
 
-        waiting_key_skip.add(configuration.key_value_delimiter);
-        key_stop.add(configuration.key_value_delimiter);
+        waiting_key_bytes.add(configuration.key_value_delimiter);
+        key_stop_bytes.add(configuration.key_value_delimiter);
 
         for (char c : configuration.pair_delimiters)
         {
-            waiting_key_skip.add(c);
-            key_stop.add(c);
-            value_stop.add(c);
+            waiting_key_bytes.add(c);
+            key_stop_bytes.add(c);
+            value_stop_bytes.add(c);
             pair_delimiters.add(c);
         }
 
         if (configuration.unexpected_quoting_character_strategy != UnexpectedQuotingCharacterStrategy::ACCEPT)
         {
-            key_stop.add(configuration.quoting_character);
-            value_stop.add(configuration.quoting_character);
+            key_stop_bytes.add(configuration.quoting_character);
+            value_stop_bytes.add(configuration.quoting_character);
         }
 
-        quoted_stop.add(configuration.quoting_character);
+        quoted_stop_bytes.add(configuration.quoting_character);
 
         if (configuration.with_escaping)
         {
-            waiting_key_skip.add(ESCAPE_CHARACTER);
-            key_stop.add(ESCAPE_CHARACTER);
-            value_stop.add(ESCAPE_CHARACTER);
-            quoted_stop.add(ESCAPE_CHARACTER);
+            waiting_key_bytes.add(ESCAPE_CHARACTER);
+            key_stop_bytes.add(ESCAPE_CHARACTER);
+            value_stop_bytes.add(ESCAPE_CHARACTER);
+            quoted_stop_bytes.add(ESCAPE_CHARACTER);
         }
     }
 
@@ -297,23 +331,27 @@ struct KeyValuePairExtractor::Impl
         if (pair_delimiters_str.contains(configuration.quoting_character))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, quoting_character conflicts with pair delimiters");
 
-        if (configuration.with_escaping
-            && (configuration.key_value_delimiter == ESCAPE_CHARACTER
+        if (configuration.with_escaping)
+        {
+            bool used_escape_character = configuration.key_value_delimiter == ESCAPE_CHARACTER
                 || configuration.quoting_character == ESCAPE_CHARACTER
-                || pair_delimiters_str.contains(ESCAPE_CHARACTER)))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, {} is reserved for the escaping character", ESCAPE_CHARACTER);
+                || pair_delimiters_str.contains(ESCAPE_CHARACTER);
+
+            if (used_escape_character)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, {} is reserved for the escaping character", ESCAPE_CHARACTER);
+        }
     }
 
     /// Reads a token starting at `pos` until a byte from `stop_set` and moves `pos` past that byte
     /// (or to `end`). With escaping, escape sequences are decoded into the token.
     template <bool with_escaping>
-    Stop readToken(const ByteSet & stop_set, Token & token, std::string_view & result, const char *& pos, const char * end) const
+    Stop readToken(const ByteSet & stop_bytes, Token & token, std::string_view & result, const char *& pos, const char * end) const
     {
         token.start(pos);
 
         while (true)
         {
-            pos = stop_set.find<true>(pos, end);
+            pos = stop_bytes.find<true>(pos, end);
             if (pos == end)
             {
                 result = token.finish(pos);
@@ -327,6 +365,7 @@ struct KeyValuePairExtractor::Impl
                 {
                     if (token.consumeEscapeSequence(pos, end))
                         continue;
+
                     result = token.finish(pos);
                     return Stop::InvalidEscapeSequence;
                 }
@@ -337,10 +376,98 @@ struct KeyValuePairExtractor::Impl
 
             if (c == configuration.key_value_delimiter)
                 return Stop::KeyValueDelimiter;
+
             if (c == configuration.quoting_character)
                 return Stop::QuotingCharacter;
+
             return Stop::PairDelimiter;
         }
+    }
+
+    /// Reads an unquoted key starting at `pos`. Depending on the strategy, an unexpected quoting
+    /// character either discards the key or restarts it as a quoted key.
+    template <bool with_escaping>
+    ReadResult readUnquotedKey(Token & key, std::string_view & key_view, const char *& pos, const char * end) const
+    {
+        Stop stop = readToken<with_escaping>(key_stop_bytes, key, key_view, pos, end);
+        switch (stop)
+        {
+            case Stop::End:
+                return ReadResult::End;
+            case Stop::KeyValueDelimiter:
+                return ReadResult::Ok;
+            case Stop::PairDelimiter:
+            case Stop::InvalidEscapeSequence:
+                return ReadResult::Discard;
+            case Stop::QuotingCharacter:
+            {
+                if (configuration.unexpected_quoting_character_strategy == UnexpectedQuotingCharacterStrategy::INVALID)
+                    return ReadResult::Discard;
+
+                return readQuotedKey<with_escaping>(key, key_view, pos, end);
+            }
+        }
+    }
+
+    /// Reads a quoted key, `pos` is right after the opening quote. The key must be non-empty
+    /// and the closing quote must be followed by the key-value delimiter.
+    template <bool with_escaping>
+    ReadResult readQuotedKey(Token & key, std::string_view & key_view, const char *& pos, const char * end) const
+    {
+        Stop stop = readToken<with_escaping>(quoted_stop_bytes, key, key_view, pos, end);
+        if (stop == Stop::End)
+            return ReadResult::End;
+
+        if (stop == Stop::InvalidEscapeSequence || key_view.empty())
+            return ReadResult::Discard;
+
+        if (pos == end || *pos != configuration.key_value_delimiter)
+            return ReadResult::Discard;
+
+        ++pos;
+        return ReadResult::Ok;
+    }
+
+    /// Reads an unquoted value starting at `pos`. It ends at a pair delimiter or at the end of the input;
+    /// an invalid escape sequence ends it as well and what was read so far is kept. Depending on the
+    /// strategy, an unexpected quoting character either discards the value or restarts it as a quoted value.
+    template <bool with_escaping>
+    ReadResult readUnquotedValue(Token & value, std::string_view & value_view, const char *& pos, const char * end) const
+    {
+        if constexpr (with_escaping)
+        {
+            /// A value cannot start with an escape sequence.
+            if (pos != end && *pos == ESCAPE_CHARACTER)
+                return ReadResult::Discard;
+        }
+
+        Stop stop = readToken<with_escaping>(value_stop_bytes, value, value_view, pos, end);
+        if (stop != Stop::QuotingCharacter)
+            return ReadResult::Ok;
+
+        if (configuration.unexpected_quoting_character_strategy == UnexpectedQuotingCharacterStrategy::INVALID)
+            return ReadResult::Discard;
+
+        return readQuotedValue<with_escaping>(value, value_view, pos, end);
+    }
+
+    /// Reads a quoted value, `pos` is right after the opening quote. Only a pair delimiter may follow
+    /// the closing quote, everything up to it is skipped.
+    template <bool with_escaping>
+    ReadResult readQuotedValue(Token & value, std::string_view & value_view, const char *& pos, const char * end) const
+    {
+        Stop stop = readToken<with_escaping>(quoted_stop_bytes, value, value_view, pos, end);
+        if (stop == Stop::End)
+            return ReadResult::End;
+
+        if (stop == Stop::InvalidEscapeSequence)
+            return ReadResult::Discard;
+
+        pos = pair_delimiters.find<true>(pos, end);
+        if (pos != end)
+            ++pos;
+
+        return ReadResult::Ok;
     }
 
     template <bool with_escaping, typename OnPair>
@@ -361,100 +488,58 @@ struct KeyValuePairExtractor::Impl
         auto commit = [&]
         {
             ++num_pairs;
+
             if (configuration.max_number_of_pairs && num_pairs > configuration.max_number_of_pairs)
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Number of pairs produced exceeded the limit of {}", configuration.max_number_of_pairs);
+
             on_pair(key_view, value_view);
         };
-
-        const auto strategy = configuration.unexpected_quoting_character_strategy;
 
         while (true)
         {
             /// Waiting for a key.
-            pos = waiting_key_skip.find<false>(pos, end);
+            pos = waiting_key_bytes.find<false>(pos, end);
             if (pos == end)
                 return num_pairs;
 
-            bool quoted_key = *pos == configuration.quoting_character;
-            if (quoted_key)
+            ReadResult key_result{};
+            if (*pos == configuration.quoting_character)
+            {
                 ++pos;
+                key_result = readQuotedKey<with_escaping>(key, key_view, pos, end);
+            }
             else
             {
-                /// Reading an unquoted key.
-                Stop stop = readToken<with_escaping>(key_stop, key, key_view, pos, end);
-                if (stop == Stop::End)
-                    return num_pairs;
-                if (stop == Stop::PairDelimiter || stop == Stop::InvalidEscapeSequence)
-                    continue;
-                if (stop == Stop::QuotingCharacter)
-                {
-                    if (strategy == UnexpectedQuotingCharacterStrategy::INVALID)
-                        continue;
-                    /// PROMOTE: discard what was read and read a quoted key instead.
-                    quoted_key = true;
-                }
+                key_result = readUnquotedKey<with_escaping>(key, key_view, pos, end);
             }
 
-            if (quoted_key)
-            {
-                /// Reading a quoted key.
-                Stop stop = readToken<with_escaping>(quoted_stop, key, key_view, pos, end);
-                if (stop == Stop::End)
-                    return num_pairs;
-                if (stop == Stop::InvalidEscapeSequence || key_view.empty())
-                    continue;
-                /// The closing quote must be followed by the key-value delimiter.
-                if (pos == end || *pos != configuration.key_value_delimiter)
-                    continue;
-                ++pos;
-            }
+            if (key_result == ReadResult::End)
+                return num_pairs;
+
+            if (key_result == ReadResult::Discard)
+                continue;
 
             /// Waiting for a value.
-            bool quoted_value = false;
-            if (pos != end)
+            ReadResult value_result{};
+            if (pos != end && *pos == configuration.quoting_character)
             {
-                if (*pos == configuration.quoting_character)
-                {
-                    quoted_value = true;
-                    ++pos;
-                }
-                else if (with_escaping && *pos == ESCAPE_CHARACTER)
-                {
-                    /// A value cannot start with an escape sequence, the key is discarded.
-                    continue;
-                }
+                ++pos;
+                value_result = readQuotedValue<with_escaping>(value, value_view, pos, end);
+            }
+            else
+            {
+                value_result = readUnquotedValue<with_escaping>(value, value_view, pos, end);
             }
 
-            if (!quoted_value)
-            {
-                /// Reading an unquoted value. It ends at a pair delimiter or at the end of the input.
-                /// An invalid escape sequence ends it as well and what was read so far is kept.
-                Stop stop = readToken<with_escaping>(value_stop, value, value_view, pos, end);
-                if (stop != Stop::QuotingCharacter)
-                {
-                    commit();
-                    if (pos == end)
-                        return num_pairs;
-                    continue;
-                }
-                if (strategy == UnexpectedQuotingCharacterStrategy::INVALID)
-                    continue;
-                /// PROMOTE: discard what was read and read a quoted value instead.
-            }
-
-            /// Reading a quoted value.
-            Stop stop = readToken<with_escaping>(quoted_stop, value, value_view, pos, end);
-            if (stop == Stop::End)
+            if (value_result == ReadResult::End)
                 return num_pairs;
-            if (stop == Stop::InvalidEscapeSequence)
-                continue;
-            commit();
 
-            /// After a quoted value only a pair delimiter may follow, everything up to it is skipped.
-            pos = pair_delimiters.find<true>(pos, end);
+            if (value_result == ReadResult::Discard)
+                continue;
+
+            commit();
             if (pos == end)
                 return num_pairs;
-            ++pos;
         }
     }
 
@@ -515,14 +600,18 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.empty() || arguments.size() > MAX_NUMBER_OF_ARGUMENTS)
+        {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires at least 1 argument and at most {}. {} was provided",
                 getName(), MAX_NUMBER_OF_ARGUMENTS, arguments.size());
+        }
 
         for (size_t i = 0; i < arguments.size(); ++i)
+        {
             if (!isStringOrFixedString(arguments[i].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument {}. Must be String.", arguments[i].type, ARGUMENT_NAMES[i]);
+        }
 
         return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
     }
