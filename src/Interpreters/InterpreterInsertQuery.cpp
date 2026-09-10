@@ -66,6 +66,7 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
+    extern const SettingsBool parallel_view_processing;
     extern const SettingsDeduplicateInsertSelectMode deduplicate_insert_select;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_insert_threads;
@@ -495,6 +496,9 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     pipeline.addChains(std::move(sink_chains));
 
     pipeline.setMaxThreads(max_threads);
+    // Cap to 1 when parallel_view_processing=0. Pipe::max_parallel_streams is a watermark that
+    // resize() does not lower, so limitMaxThreads is needed even after resize(sink_stream_size).
+    pipeline.limitMaxThreads(insert_dependencies->getViewProcessingNumThreads());
 
     pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
@@ -767,7 +771,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     /// from full parallelism, so we use max_threads. Without MVs the insert
     /// pipeline is 1-wide and requesting max_threads would only waste
     /// ConcurrencyControl slots and spawn unnecessary threads (see #102947).
-    pipeline.setNumThreads(insert_dependencies->isViewsInvolved() ? max_threads : max_insert_threads);
+    const bool views_involved = insert_dependencies->isViewsInvolved();
+    const bool serial_views = !settings[Setting::parallel_view_processing] && views_involved;
+    pipeline.setNumThreads(serial_views ? 1 : (views_involved ? max_threads : max_insert_threads));
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)

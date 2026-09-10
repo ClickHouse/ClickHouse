@@ -135,7 +135,7 @@ public:
 
     void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
-    IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
+    std::shared_ptr<IDataLakeMetadata> getExternalMetadata(ContextPtr query_context);
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;

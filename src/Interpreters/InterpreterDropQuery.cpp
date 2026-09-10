@@ -316,7 +316,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
         }
         else if (query.kind == ASTDropQuery::Kind::Drop)
         {
-            context_->checkAccess(drop_storage, table_id);
+            if (!query.no_access_check)
+                context_->checkAccess(drop_storage, table_id);
 
             if (table->isDictionary())
             {
@@ -777,10 +778,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
-        else if (drop.kind == ASTDropQuery::Kind::Drop)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
+        /// `DROP`, `DETACH` and `TRUNCATE` of a database are all authorized by `DROP DATABASE`,
+        /// which is the single privilege `executeToDatabaseImpl` requires for each of them.
+        required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)
     {

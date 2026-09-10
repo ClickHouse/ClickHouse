@@ -29,6 +29,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -186,8 +187,24 @@ void FormatSchemaInfo::handleSchemaContent(const String & content, const String 
 void FormatSchemaInfo::handleSchemaSourceQuery(
     const String & format_schema, const String & format, bool is_server, const String & format_schema_path)
 {
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    auto user_id = query_context ? query_context->getUserID() : std::nullopt;
+
+    /// The query comes from the user-controlled `format_schema` setting, and a context without a user
+    /// has full access, so an unattributed execution would run an arbitrary SELECT with all privileges.
+    /// The check is on the user, not on the presence of a query context: streaming engines do build a
+    /// query context of their own, just without a user.
+    if (!user_id)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "The schema query of format_schema_source='query' can only be executed on behalf of a user, "
+            "and the current context has none. This is the case in background tasks, such as streaming "
+            "engine consumers, and when INSERT data is parsed on the client side");
+
     String default_file_extension = getFormatSchemaDefaultFileExtension(format);
-    auto file_name = generateSchemaFileName(format_schema, default_file_extension);
+    /// The query is access-checked only when it is actually executed, so an entry cached for one user
+    /// must not be served to another one.
+    auto file_name = generateSchemaFileName(format_schema, default_file_extension, toString(*user_id));
     auto cached_file_path = fs::path(CACHE_DIR_NAME) / file_name;
     auto file_path = fs::path(format_schema_path) / cached_file_path;
     if (fs::exists(file_path))
@@ -196,18 +213,14 @@ void FormatSchemaInfo::handleSchemaSourceQuery(
     }
     else
     {
-        auto content = querySchema(format_schema);
+        auto content = querySchema(format_schema, query_context);
         storeSchemaOnDisk(/*file_path=*/file_path, /*content=*/content);
     }
     processSchemaFile(cached_file_path, default_file_extension, is_server, format_schema_path);
 }
 
-String FormatSchemaInfo::querySchema(const String & query)
+String FormatSchemaInfo::querySchema(const String & query, const ContextPtr & current_query_context)
 {
-    auto current_query_context = CurrentThread::get().tryGetQueryContext();
-    if (!current_query_context)
-        current_query_context = Context::getGlobalContextInstance();
-
     ParserSelectQuery parser;
     ASTPtr select_ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
@@ -330,15 +343,16 @@ void FormatSchemaInfo::processSchemaFile(
     }
 }
 
-String FormatSchemaInfo::generateSchemaFileName(const String & hashing_content, const String & file_extention)
+String FormatSchemaInfo::generateSchemaFileName(const String & hashing_content, const String & file_extention, const String & key_salt)
 {
+    const String salted_content = key_salt + hashing_content;
 #if USE_SSL
     String content_hash_hex;
-    auto hash = encodeSHA256(hashing_content);
+    auto hash = encodeSHA256(salted_content);
     content_hash_hex.resize(hash.size() * 2);
     boost::algorithm::hex(hash.begin(), hash.end(), content_hash_hex.data());
 #else
-    String content_hash_hex = getHexUIntLowercase(sipHash64(hashing_content));
+    String content_hash_hex = getHexUIntLowercase(sipHash64(salted_content));
 #endif
 
     static constexpr size_t CONTENT_SAMPLE_MAX_LEN = 32;

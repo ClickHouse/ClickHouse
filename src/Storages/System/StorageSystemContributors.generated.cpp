@@ -417,6 +417,7 @@ const char * auto_contributors[] {
     "Desel72",
     "Diana Carroll",
     "Didier Franc",
+    "Diego Gomes Tomé",
     "Diego Nieto",
     "Diego Nieto (lesandie)",
     "DimaAmega",

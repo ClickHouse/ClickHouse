@@ -488,7 +488,7 @@ Chunk StorageObjectStorageSource::generate()
             if (chunk_size && chunk.hasColumns())
             {
                 /// Old delta lake code which needs to be deprecated in favour of DeltaLakeMetadataDeltaKernel.
-                if (dynamic_cast<const DeltaLakeMetadata *>(configuration->getExternalMetadata()))
+                if (std::dynamic_pointer_cast<const DeltaLakeMetadata>(configuration->getExternalMetadata()))
                 {
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
@@ -817,18 +817,11 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                             stripped_prewhere_info = format_filter_info->prewhere_info;
                     }
                     const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
-                    auto result = std::make_shared<FormatFilterInfo>(
+                    return std::make_shared<FormatFilterInfo>(
                         format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
                         mapper,
                         keep_in_reader ? row_level_filter : nullptr,
                         keep_in_reader ? prewhere_info : nullptr);
-                    /// `mapper` is scoped to the schema this specific file was written under, so it
-                    /// maps field_id -> the column name *that file* used. Keep the current/query-side
-                    /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
-                    /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
-                    /// pruning) back to a field_id.
-                    result->current_schema_column_mapper = format_filter_info->column_mapper;
-                    return result;
                 }
             }
 

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <utility>
 
+#include <base/arithmeticOverflow.h>
 #include <base/sort.h>
 
 #include <Common/ArenaAllocator.h>
@@ -17,6 +18,12 @@
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int CANNOT_READ_ALL_DATA;
+}
 
 /// Because ranks are adjusted, we have to store each of them in Float type.
 using RanksArray = VectorWithMemoryTracking<Float64>;
@@ -107,14 +114,37 @@ struct StatisticalSample
         buf.write(reinterpret_cast<const char *>(y.data()), size_y * sizeof(y[0]));
     }
 
+    /// Grows `sample` by what the buffer already holds; `MixedAlignedArenaAllocator` reallocates and frees for real at these sizes.
+    template <typename Sample>
+    static void readSample(Sample & sample, size_t count, ReadBuffer & buf, Arena * arena)
+    {
+        using Element = typename Sample::value_type;
+
+        size_t bytes = 0;
+        if (common::mulOverflow(count, sizeof(Element), bytes))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large array size ({}) in aggregate function state", count);
+
+        sample.clear();
+        while (sample.size() < count)
+        {
+            if (buf.eof())
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Cannot read all data. Bytes read: {}. Bytes expected: {}.", sample.size() * sizeof(Element), bytes);
+
+            const size_t done = sample.size();
+            const size_t batch = std::min(count - done, std::max<size_t>(1, buf.available() / sizeof(Element)));
+            sample.resize(done + batch, arena);
+            buf.readStrict(reinterpret_cast<char *>(sample.data() + done), batch * sizeof(Element));
+        }
+    }
+
     void read(ReadBuffer & buf, Arena * arena)
     {
         readVarUInt(size_x, buf);
         readVarUInt(size_y, buf);
-        x.resize(size_x, arena);
-        y.resize(size_y, arena);
-        buf.readStrict(reinterpret_cast<char *>(x.data()), size_x * sizeof(x[0]));
-        buf.readStrict(reinterpret_cast<char *>(y.data()), size_y * sizeof(y[0]));
+        readSample(x, size_x, buf, arena);
+        readSample(y, size_y, buf, arena);
     }
 };
 
