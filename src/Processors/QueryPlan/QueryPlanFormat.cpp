@@ -208,14 +208,13 @@ namespace QueryPlanFormat
             return node->children[0]->result_name;
         }
 
-        /// An ActionsDAG node reached by several parents is one node in memory, but rendering the DAG as
-        /// a tree prints its whole subtree once per path that reaches it, so the text is exponential in
-        /// expression depth while the DAG stays small. Hence a cap on one rendered expression.
+        /// Rendering a DAG as a tree prints a subtree once per path that reaches it, so the text can be
+        /// exponential in expression depth while the DAG stays small. Hence a cap per expression.
         constexpr size_t MAX_EXPRESSION_LENGTH = 8192;
         constexpr std::string_view TRUNCATED_MARKER = "...";
 
-        /// One budget is shared by every recursive call rendering a single expression. A per-call
-        /// allowance would leave the total exponential, since each sibling would start over.
+        /// One budget for the whole of one expression: a per-call allowance would leave the total
+        /// exponential, since every sibling would start over.
         struct LengthBudget
         {
             size_t remaining = MAX_EXPRESSION_LENGTH;
@@ -223,8 +222,7 @@ namespace QueryPlanFormat
             bool exhausted() const { return remaining == 0; }
             void charge(size_t size) { remaining -= std::min(size, remaining); }
 
-            /// Returned text is clipped to what is left, so a single oversized leaf (an already-rendered
-            /// column name substituted from `pretty_names`) cannot carry the expression past the cap.
+            /// Clips to what is left, so one oversized leaf cannot carry the expression past the cap.
             String take(String text)
             {
                 if (text.size() > remaining)
@@ -239,10 +237,9 @@ namespace QueryPlanFormat
             }
         };
 
-        /// Counted per class rather than per conjunction, because each class below is rendered as its own
-        /// output line under its own budget. Larger than the atom count either budget can render, since
-        /// a rendered atom costs a character and all but the first also a five-character separator, so
-        /// the cap can only drop atoms that would not have been printed.
+        /// The atoms of a conjunction fall into two classes, the user condition and the runtime filters,
+        /// each printed as its own line with a budget of its own, so the quota is per class as well. The
+        /// quota exceeds the atoms one budget can render, so on its own it never drops a printable atom.
         constexpr size_t MAX_CONJUNCTION_ATOMS_PER_CLASS = MAX_EXPRESSION_LENGTH / 2;
 
         bool isRuntimeFilterAtom(const ActionsDAG::Node * node)
@@ -257,19 +254,14 @@ namespace QueryPlanFormat
             ActionsDAG::NodeRawConstPtrs runtime_filter_atoms;
             bool user_truncated = false;
             bool runtime_filter_truncated = false;
-            /// A user atom was left unreached, so an empty user class means "not reached" rather than
-            /// "not present". The atom lists alone cannot tell those apart.
-            bool user_atom_unreached = false;
         };
 
-        /// Splits a conjunction like `ActionsDAG::extractConjunctionAtoms`, but stops at `max_atoms` per
-        /// class: that walk yields one atom per path into a shared subtree, so it grows with conjunction
-        /// depth while the DAG does not. No visited set, so shown atoms stay the ones the optimizer sees.
+        /// Splits a conjunction into its atoms, at most `max_atoms` per class. Duplicates are kept, so
+        /// the atoms shown stay the ones the optimizer sees.
         ConjunctionAtoms extractConjunctionAtomsBounded(const ActionsDAG::Node * predicate, size_t max_atoms)
         {
-            /// The quotas bound what is stored; a conjunction of them cannot bound the walk, because a
-            /// query holding only one class never fills the other. Both classes together store at most
-            /// twice `max_atoms`, which already exceeds the atoms a budget can render.
+            /// The quotas alone cannot stop the walk: a conjunction holding only one class never fills
+            /// the other. Bound the visits as well, at what filling both quotas would take.
             const size_t max_visits = 2 * max_atoms;
             size_t visits = 0;
 
@@ -298,7 +290,6 @@ namespace QueryPlanFormat
                     continue;
                 }
 
-                /// Classified once here, so a dropped atom costs no second function-name lookup.
                 const bool is_runtime_filter = isRuntimeFilterAtom(node);
                 auto & atoms = is_runtime_filter ? result.runtime_filter_atoms : result.user_atoms;
                 bool & truncated = is_runtime_filter ? result.runtime_filter_truncated : result.user_truncated;
@@ -309,9 +300,8 @@ namespace QueryPlanFormat
                     atoms.push_back(node);
             }
 
-            /// What is outstanding decides which line is short of content and whether an empty class is
-            /// absent or merely unreached; either class can be the one left, so the stop alone cannot say.
-            /// Presence is all that is asked, so one visit per node answers it and needs no bound.
+            /// Whatever is left on the stack belongs to one class or the other, and that alone decides
+            /// which line is marked partial. Presence is all this asks, so one visit per node answers it.
             std::unordered_set<const ActionsDAG::Node *> seen;
             while (!stack.empty())
             {
@@ -332,13 +322,8 @@ namespace QueryPlanFormat
                 if (isRuntimeFilterAtom(node))
                     result.runtime_filter_truncated = true;
                 else
-                    result.user_atom_unreached = true;
+                    result.user_truncated = true;
             }
-
-            /// A class is short of content only if something of that class was actually left behind, so a
-            /// class the scan proves complete keeps no marker even though the walk itself stopped early.
-            if (result.user_atom_unreached && !result.user_atoms.empty())
-                result.user_truncated = true;
 
             return result;
         }
@@ -422,8 +407,7 @@ namespace QueryPlanFormat
     {
         using ActionType = ActionsDAG::ActionType;
 
-        /// Stopping the descent once the shared budget is spent is what bounds the expression, however
-        /// many parents reach a shared subtree.
+        /// Stopping the descent is what bounds the expression, however many parents reach a subtree.
         if (budget.exhausted())
             return String(TRUNCATED_MARKER);
 
@@ -637,8 +621,8 @@ namespace QueryPlanFormat
         return true;
     }
 
-    /// The budget stops the descent, but each subtree collapsed after it ran out still contributes its
-    /// own marker, so clip afterwards to make the limit exact rather than approached from above.
+    /// Every subtree collapsed after the budget ran out still contributes a marker of its own, so the
+    /// text can end up slightly above the cap. Clip to make the limit exact.
     void clipToMaxLength(String & text)
     {
         if (text.size() > MAX_EXPRESSION_LENGTH)
@@ -659,9 +643,8 @@ namespace QueryPlanFormat
         if (!root)
             return PrettyColumnName(trimColumnIdentifier(column_name));
 
-        /// The split is bounded because it cannot be budgeted: it runs before anything is rendered, and
-        /// it alone allocates one atom per path. The condition and the runtime-filter annotation are
-        /// separate output lines, so one bound across both would erase whichever the walk reaches last.
+        /// The split cannot be budgeted: it runs before anything is rendered, and allocates one atom per
+        /// path on its own. Each class gets a quota, or the class the walk reaches last would be erased.
         auto split = extractConjunctionAtomsBounded(root, MAX_CONJUNCTION_ATOMS_PER_CLASS);
 
         const auto render = [&](const ActionsDAG::NodeRawConstPtrs & atoms, bool dropped_atoms)
@@ -691,18 +674,14 @@ namespace QueryPlanFormat
         bool expression_truncated = user_truncated;
         if (!user_parts.empty())
             expression = fmt::format(" {}", fmt::join(user_parts, " AND "));
-        /// A condition left unreached is indistinguishable here from one that is absent, so name the
-        /// filter column and mark it partial. The caller drops an empty expression entirely, and a
-        /// dropped line reads as "there is no condition" rather than "there is more".
-        if (expression.empty() && (rf_parts.empty() || split.user_atom_unreached))
-        {
+        /// An empty condition is not printed at all, so a marker with nothing before it would read as
+        /// "no condition" rather than "more to come": name the filter column to attach the marker to.
+        if (expression.empty() && (rf_parts.empty() || expression_truncated))
             expression = fmt::format(" {}", trimColumnIdentifier(column_name));
-            expression_truncated |= split.user_atom_unreached;
-        }
         if (expression_truncated)
             expression += fmt::format(" {}", TRUNCATED_MARKER);
 
-        /// Marked even once nothing nameable is left, so an annotation cut short does not read as absent.
+        /// Marked even when nothing nameable is left, so an annotation cut short does not read as absent.
         String annotation;
         if (!rf_parts.empty() || rf_truncated)
         {
@@ -973,9 +952,8 @@ namespace QueryPlanFormat
         }
     }
 
-    /// Names a node's children and child plans before the node itself, so every node sees its inputs as
-    /// already-rendered names. The traversal is iterative because plan depth is not bounded by the query
-    /// text: a join builds one nested runtime-filter node per key.
+    /// Names children and child plans before the node itself, so every node sees its inputs as
+    /// already-rendered names. Iterative, because plan depth is not bounded by the query text.
     static void buildPrettyNamesForNode(
         const QueryPlan::Node * root,
         PrettyColumnNameMap & root_columns,
