@@ -419,7 +419,10 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     if (setting_name == "profile")
         return true;
 
-    if (reaction != CLAMP_ON_VIOLATION)
+    /// Invalid changes (an unknown or disallowed name, an uncastable value) throw in every mode but `CLAMP_ON_VIOLATION`.
+    const bool throw_on_invalid_change = reaction != CLAMP_ON_VIOLATION;
+
+    if (throw_on_invalid_change)
     {
         try
         {
@@ -441,7 +444,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
         return false;
 
     Field new_value = getNewValueToCheck(
-        current_settings, change, ignore_unchanged_settings, /*throw_on_failure=*/ reaction != CLAMP_ON_VIOLATION);
+        current_settings, change, ignore_unchanged_settings, /*throw_on_failure=*/ throw_on_invalid_change);
     if (new_value.isNull())
         return false;
 
@@ -456,9 +459,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
             return true;
     }
 
-    /// `Checker::check` only distinguishes throwing from clamping.
-    return getChecker(current_settings, setting_name)
-        .check(change, new_value, reaction == THROW_ON_VIOLATION ? THROW_ON_VIOLATION : CLAMP_ON_VIOLATION, source);
+    return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
@@ -486,9 +487,12 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
                                          ReactionOnViolation reaction,
                                          SettingSource source) const
 {
+    /// Every reaction other than `THROW_ON_VIOLATION` clamps or drops a violating change.
+    const bool throw_on_violation = reaction == THROW_ON_VIOLATION;
+
     if (!explain.text.empty())
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             throw Exception(explain, code);
         return false;
     }
@@ -497,7 +501,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     auto less_or_cannot_compare = [=](const Field & left, const Field & right)
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             return accurateLess(left, right);
         try
         {
@@ -511,7 +515,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     auto equals_or_cannot_compare = [=](const Field & left, const Field & right)
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             return accurateEquals(left, right);
         try
         {
@@ -526,7 +530,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     if (constraint.writability == SettingConstraintWritability::CONST)
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
         return false;
     }
@@ -537,7 +541,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     if (!min_value.isNull() && !max_value.isNull() && less_or_cannot_compare(max_value, min_value))
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             throw Exception(
                 ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
                 "The maximum ({}) value is less than the minimum ({}) value for setting {}",
@@ -554,7 +558,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     if (!min_value.isNull() && less_or_cannot_compare(effective_value, min_value))
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
         {
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be less than {}",
                 setting_name, applyVisitor(FieldVisitorToString(), min_value));
@@ -565,7 +569,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     if (!max_value.isNull() && less_or_cannot_compare(max_value, effective_value))
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
         {
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be greater than {}",
                 setting_name, applyVisitor(FieldVisitorToString(), max_value));
@@ -579,7 +583,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         bool equals = equals_or_cannot_compare(value, effective_value);
         if (equals)
         {
-            if (reaction == THROW_ON_VIOLATION)
+            if (throw_on_violation)
                 throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} shouldn't be {}",
                     setting_name, applyVisitor(FieldVisitorToString(), value));
             /// On clamp paths there is no sensible value to clamp to — disallowed entries are a
@@ -591,7 +595,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
 
     if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
     {
-        if (reaction == THROW_ON_VIOLATION)
+        if (throw_on_violation)
             throw Exception(ErrorCodes::READONLY, "Setting {} is not allowed to be set by {}", setting_name, toString(source));
         return false;
     }
