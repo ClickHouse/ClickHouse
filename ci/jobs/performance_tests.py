@@ -22,7 +22,9 @@ from ci.jobs.scripts.dataset_download import (
     ICEBERG_DATASETS,
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
+    iceberg_s3_database_ddl_commands,
 )
+from ci.jobs.scripts.perf import minio_service
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -1845,6 +1847,42 @@ def populate_data_both(left_port, right_port):
     return not errors
 
 
+# --- MinIO S3 endpoints for the iceberg_suite_s3_* tests -------------------------------
+#
+# The service itself (runtime binary download, one private instance per server, seeding)
+# lives in ci/jobs/scripts/perf/minio_service.py. The ports live next to the stateless
+# S3 endpoint (11111) and are clear of the measured servers' ports: LEFT tcp 9001 /
+# http 8123 / keeper 9181, RIGHT tcp 19001 / http 18123 / keeper 19181.
+#
+# The named collection config whose presence enables the whole S3 path. A release_base
+# run checks out `tests/performance` at the reference vintage, which may predate it.
+MINIO_COLLECTION_XML = "tests/performance/scripts/config/config.d/iceberg_s3_perf.xml"
+
+
+def write_minio_endpoint_overrides():
+    """Point each server's `iceberg_s3_perf` named collection at its own MinIO.
+
+    Runs after the right->left config copy in Configure. The port is rewritten from
+    scratch on each side (not shifted relative to its current value), so a re-run of the
+    stage cannot leave both sides on the same instance. This is the only per-server
+    config delta introduced by the S3 endpoints."""
+    for config_dir, port in (
+        (perf_left_config, minio_service.LEFT_PORT),
+        (perf_right_config, minio_service.RIGHT_PORT),
+    ):
+        path = Path(config_dir) / "config.d" / "iceberg_s3_perf.xml"
+        content = re.sub(r"127\.0\.0\.1:\d+", f"127.0.0.1:{port}", path.read_text())
+        path.write_text(content)
+        print(f"{path}: endpoint set to 127.0.0.1:{port}")
+    return True
+
+
+def stop_minio():
+    # The daemons are job-scoped: on a local run nothing else would stop them, and a
+    # leftover daemon would hold the ports (and stale data) of the next run.
+    minio_service.stop_matching(perf_wd)
+
+
 def main():
 
     args = parse_args()
@@ -2154,6 +2192,56 @@ def main():
         # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
         commands += iceberg_database_ddl_commands(perf_left)
         commands += iceberg_database_ddl_commands(perf_right)
+
+        # Bring up the per-server MinIO S3 endpoints for the iceberg_suite_s3_* tests.
+        # Gated on the named collection existing in the tests/performance vintage under
+        # test: a release_base run checks out the reference vintage of tests/performance
+        # (see the checkout above), which may predate the S3 endpoints; once the feature
+        # is part of a release the gate passes there too, with no code change.
+        if Path(MINIO_COLLECTION_XML).is_file():
+
+            def fetch_minio_binaries():
+                # Runtime download into ci/tmp (cached across local runs), like the
+                # reference binary and the dataset tarballs - no image change needed.
+                return minio_service.ensure_binaries(temp_dir)
+
+            def start_minio_left():
+                return minio_service.start(temp_dir, perf_left, minio_service.LEFT_PORT)
+
+            def start_minio_right():
+                return minio_service.start(
+                    temp_dir, perf_right, minio_service.RIGHT_PORT
+                )
+
+            def seed_minio_iceberg_datasets():
+                ok = True
+                for directory, _tables in ICEBERG_DATASETS.values():
+                    ok = (
+                        minio_service.seed_tree(
+                            temp_dir, f"{db_path}/user_files/{directory}", directory
+                        )
+                        and ok
+                    )
+                return ok
+
+            commands += [
+                fetch_minio_binaries,
+                start_minio_left,
+                start_minio_right,
+                seed_minio_iceberg_datasets,
+                # Must come after the right->left `cp -rv` above: it introduces the
+                # only per-server config delta (each side's MinIO port).
+                write_minio_endpoint_overrides,
+            ]
+            # Attach the S3 twins of the Iceberg datasets (tpch_ice10_s3.<table>),
+            # reading each server's own MinIO through the iceberg_s3_perf collection.
+            commands += iceberg_s3_database_ddl_commands(perf_left)
+            commands += iceberg_s3_database_ddl_commands(perf_right)
+        else:
+            print(
+                f"Skip MinIO S3 endpoints: [{MINIO_COLLECTION_XML}] is not part of "
+                "this tests/performance vintage"
+            )
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
@@ -2601,6 +2689,11 @@ def main():
                 results=check_sub_results,
             )
         )
+
+    # All reads of the object store are over: the Tests stage is done and the Report
+    # stage above only talks to the ClickHouse servers. Each instance's minio.log stays
+    # under perf_wd and is picked up by the logs.tar.zst archive below.
+    stop_minio()
 
     files_to_attach = []
     if res:

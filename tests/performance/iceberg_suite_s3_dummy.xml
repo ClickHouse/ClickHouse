@@ -1,0 +1,72 @@
+<test run_all_queries="1" profile_all_queries="1">
+    <!-- Smoke test for the per-server MinIO S3 endpoints the performance job provisions
+         (ci/jobs/scripts/perf/minio_service.py): builds a fresh Iceberg dataset on
+         this server's own object store through the `iceberg_s3_perf` named collection
+         (tests/performance/scripts/config/config.d/iceberg_s3_perf.xml), then polls it
+         through both the table engine and the table function.
+
+         The `iceberg_suite_s3_` name prefix is load-bearing: profile collection for
+         PGO/BOLT (ci/jobs/collect_clickhouse_profiles.py) runs no MinIO and skips tests
+         with this prefix. -->
+
+    <settings>
+        <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+        <iceberg_delete_data_on_drop>1</iceberg_delete_data_on_drop>
+        <!-- 1M rows / 250K per file: the polls below read a multi-file table over S3. -->
+        <iceberg_insert_max_rows_in_data_file>250000</iceberg_insert_max_rows_in_data_file>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>database</name>
+            <values>
+                <value>iceberg_suite_s3_dummy</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE DATABASE IF NOT EXISTS {database}</create_query>
+
+    <!-- The path is fixed (a named-collection override must stay a literal, and both
+         servers must run identical DDL - each writes to its own MinIO instance, so
+         there is no cross-server collision); the drop_query below plus
+         iceberg_delete_data_on_drop keeps reruns clean. -->
+    <create_query>DROP TABLE IF EXISTS {database}.events</create_query>
+    <create_query>
+        CREATE TABLE {database}.events
+        (
+            id UInt64,
+            ts DateTime,
+            value Float64,
+            tag String
+        )
+        ENGINE = IcebergS3(iceberg_s3_perf, filename = 'scratch/iceberg_suite_s3_dummy_events/')
+    </create_query>
+
+    <fill_query>
+        INSERT INTO {database}.events
+        SELECT
+            number AS id,
+            toDateTime('2024-01-01 00:00:00') + (number % 86400) AS ts,
+            (number % 1000) / 7 AS value,
+            'tag_' || toString(number % 100) AS tag
+        FROM numbers(1000000)
+        SETTINGS max_threads = 1, max_insert_threads = 1
+    </fill_query>
+
+    <!-- full_scan: read every data file from S3. -->
+    <query>SELECT count(), sum(value) FROM {database}.events</query>
+
+    <!-- filtered_scan: predicate over all files, exercises Parquet reads over S3. -->
+    <query>SELECT avg(value), max(id) FROM {database}.events WHERE id % 10 = 0</query>
+
+    <!-- group_by: aggregation over the low-cardinality tag column. -->
+    <query>SELECT tag, count() FROM {database}.events GROUP BY tag ORDER BY tag LIMIT 10</query>
+
+    <!-- table_function_resolution: the same data through icebergS3, paying table
+         resolution + schema inference against the object store on each run. -->
+    <query>SELECT count() FROM icebergS3(iceberg_s3_perf, filename = 'scratch/iceberg_suite_s3_dummy_events/') WHERE ts &lt; toDateTime('2024-01-01 12:00:00')</query>
+
+    <drop_query>DROP TABLE IF EXISTS {database}.events</drop_query>
+</test>

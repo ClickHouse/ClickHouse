@@ -39,6 +39,31 @@ def iceberg_database_ddl_commands(server_path):
     return commands
 
 
+def iceberg_s3_database_ddl_commands(server_path):
+    """Attach the S3 twin of every Iceberg dataset as `<database>_s3` on one server.
+
+    The tables read the copy of the dataset that the performance job mirrors into the
+    server's private MinIO instance (ci/jobs/scripts/perf/minio_service.py). The
+    `iceberg_s3_perf` named collection
+    (tests/performance/scripts/config/config.d/iceberg_s3_perf.xml) supplies the
+    per-server endpoint and the credentials, so the DDL below is identical on both
+    servers - a precondition for a valid left/right comparison."""
+    metadata = f"{server_path}/db/metadata"
+    commands = []
+    for database, (directory, tables) in ICEBERG_DATASETS.items():
+        database = f"{database}_s3"
+        commands.append(f"mkdir -p {metadata}/{database}")
+        commands.append(
+            f'echo "ATTACH DATABASE {database} ENGINE=Ordinary" > {metadata}/{database}.sql'
+        )
+        for table in tables:
+            commands.append(
+                f"echo \"ATTACH TABLE {table} ENGINE = IcebergS3(iceberg_s3_perf, filename = '{directory}/{table}/')\""
+                f" > {metadata}/{database}/{table}.sql"
+            )
+    return commands
+
+
 def download_and_extract_datasets(dataset_urls, target_dir, retries=5):
     """Download dataset tarballs in parallel and extract them into target_dir.
 
