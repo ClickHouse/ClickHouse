@@ -14,6 +14,7 @@
 #include <base/types.h>
 
 #include <benchmark/benchmark.h>
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <memory>
@@ -103,10 +104,10 @@ UInt64 presentKey(size_t row, size_t key_count, ValuePattern pattern)
 
 UInt64 absentKey(size_t row, size_t key_count, ValuePattern pattern)
 {
-    UInt64 value = key_count + 1 + row;
-    if (pattern == ValuePattern::Mixed)
-        value = key_count + 1 + mix(row);
-    return value;
+    if (key_count == 0)
+        return row + 1;
+
+    return key_count + presentKey(row, key_count, pattern);
 }
 
 UInt64 probeKey(size_t row, size_t key_count, HitRatio hit_ratio, ValuePattern pattern)
@@ -122,7 +123,7 @@ UInt64 probeKey(size_t row, size_t key_count, HitRatio hit_ratio, ValuePattern p
 
 String stringKey(UInt64 value)
 {
-    return "runtime_filter_key_" + std::to_string(value);
+    return fmt::format("runtime_filter_key_{:016x}", value);
 }
 
 std::vector<UInt64> makeShuffledKeyPermutation(size_t rows, UInt64 offset = 0)
