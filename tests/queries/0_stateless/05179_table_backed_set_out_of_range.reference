@@ -33,3 +33,10 @@ a Nullable set key with a NULL of its own
 0
 1
 0
+the same through a LowCardinality(Nullable(...)) probe
+-1	0
+1	1
+\N	1
+-1	0
+1	1
+\N	0

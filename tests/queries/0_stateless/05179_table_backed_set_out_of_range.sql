@@ -72,6 +72,17 @@ SELECT nullIn(CAST(NULL AS Nullable(Int64)), t_set_nullable2);
 SELECT nullIn(CAST(-1 AS Nullable(Int64)), t_set_nullable2);
 SELECT nullIn(CAST(1 AS Nullable(Int64)), t_set_nullable2);
 SELECT nullIn(CAST(-1 AS Int64), t_set_nullable2);
+
+SELECT 'the same through a LowCardinality(Nullable(...)) probe';
+DROP TABLE IF EXISTS t_probe_lc;
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_probe_lc (v LowCardinality(Nullable(Int64))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_probe_lc VALUES (1), (-1), (NULL);
+-- A NULL of a wrapped probe is still the set's NULL, and only the value that does not fit the key
+-- type is a non-member.
+SELECT v, nullIn(v, t_set_nullable2) FROM t_probe_lc ORDER BY v NULLS LAST;
+SELECT v, nullIn(v, t_set_engine) FROM t_probe_lc ORDER BY v NULLS LAST;
+DROP TABLE t_probe_lc;
 DROP TABLE t_set_nullable2;
 
 DROP TABLE t_set_engine;
