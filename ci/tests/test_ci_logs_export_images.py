@@ -37,8 +37,9 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "ci"))
 
 from ci.defs.defs import DOCKERS
-from ci.jobs.scripts import log_export
+from ci.jobs.scripts import log_cluster, log_export
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV
+from ci.jobs.scripts.log_cluster import LogCluster
 
 BASE_IMAGE = "clickhouse/integration-test"
 
@@ -153,6 +154,7 @@ class _FakeInfo:
     job_name = "Some job"
     instance_type = "c5.large"
     instance_id = "i-01234567"
+    workflow_start_time = "2026-01-01T00:00:00Z"
 
 
 SETUP_LOG_CLUSTER = (
@@ -164,7 +166,7 @@ def _shell_default(variable):
     """The default value of a `VAR=${VAR:-"..."}` assignment in
     setup_log_cluster.sh."""
     match = re.search(
-        "^" + variable + r"=\$\{" + variable + r':-"(.*)"\}$',
+        r"^\s*" + variable + r"=\$\{" + variable + r':-"(.*)"\}$',
         SETUP_LOG_CLUSTER.read_text(),
         re.MULTILINE,
     )
@@ -175,8 +177,10 @@ def _shell_default(variable):
 def test_destination_structure_is_shared_with_the_functional_tests():
     """The structure hash of a destination table is computed from the columns,
     so the functional and the integration tests only share a table while these
-    two declarations are identical."""
-    assert _shell_default("EXTRA_COLUMNS") == HELPER.EXTRA_COLUMNS
+    two declarations are identical. The functional tests build `EXTRA_COLUMNS`
+    from `LogCluster.META_COLUMNS`; the helper cannot import it (it runs in the
+    test runner container) and repeats it."""
+    assert LogCluster.extra_columns_ddl() == HELPER.EXTRA_COLUMNS
     assert _shell_default("EXTRA_ORDER_BY_COLUMNS") == HELPER.EXTRA_ORDER_BY_COLUMNS
 
 
@@ -186,15 +190,17 @@ def test_job_expression_follows_the_column_order(monkeypatch):
     `Distributed` converts every exported batch by name and logs a warning for
     each of them - which `system.text_log` then exports as well."""
     monkeypatch.setattr(log_export, "Info", _FakeInfo)
-    assert _aliases(log_export.extra_columns_expression(0)) == _extra_column_names(
-        HELPER.EXTRA_COLUMNS
-    )
+    monkeypatch.setattr(log_cluster, "Info", _FakeInfo)
+    assert _aliases(
+        LogCluster.extra_columns_expression("2026-01-01 00:00:00")
+    ) == _extra_column_names(HELPER.EXTRA_COLUMNS)
 
 
 def test_helper_expression_follows_the_column_order(monkeypatch):
     """The integration tests take the expression in two parts and insert the
     per-server `test_name` and `node_name` between them."""
     monkeypatch.setattr(log_export, "Info", _FakeInfo)
+    monkeypatch.setattr(log_cluster, "Info", _FakeInfo)
     monkeypatch.delenv(HELPER.EXTRA_COLUMNS_EXPRESSION_HEAD_ENV, raising=False)
     monkeypatch.delenv(HELPER.EXTRA_COLUMNS_EXPRESSION_TAIL_ENV, raising=False)
     expected = _extra_column_names(HELPER.EXTRA_COLUMNS)

@@ -48,15 +48,18 @@ import time
 from pathlib import Path
 
 # Extra columns added to every exported table, and the values for them.
-# Keep in sync with EXTRA_COLUMNS in
-# ci/jobs/scripts/functional_tests/setup_log_cluster.sh: the same columns give
+# Keep in sync with `LogCluster.extra_columns_ddl` (ci/jobs/scripts/log_cluster.py),
+# the source of `EXTRA_COLUMNS` for the functional tests: the same columns give
 # the same structure hash, so functional and integration tests share the
-# destination tables.
+# destination tables. This module runs inside the test runner container, where
+# the `ci` package is not importable, so the definition is repeated here and
+# their identity is checked by ci/tests/test_ci_logs_export_images.py.
 EXTRA_COLUMNS = (
     "repo LowCardinality(String), pull_request_number UInt32, commit_sha String, "
     "check_start_time DateTime('UTC'), check_name LowCardinality(String), "
     "test_name LowCardinality(String), node_name LowCardinality(String), "
     "instance_type LowCardinality(String), instance_id String, "
+    "workflow_start_time DateTime('UTC'), "
     "INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), "
     "INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "
     "INDEX ix_test (test_name) TYPE set(100), "
@@ -80,10 +83,11 @@ EXTRA_COLUMNS_EXPRESSION_TAIL_ENV = "EXTRA_COLUMNS_EXPRESSION_TAIL"
 # the credentials exported by hand).
 DEFAULT_EXTRA_COLUMNS_EXPRESSION_HEAD = (
     "toLowCardinality('') AS repo, CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, "
-    "now() AS check_start_time, toLowCardinality('') AS check_name"
+    "now('UTC') AS check_start_time, toLowCardinality('') AS check_name"
 )
 DEFAULT_EXTRA_COLUMNS_EXPRESSION_TAIL = (
-    "toLowCardinality('') AS instance_type, '' AS instance_id"
+    "toLowCardinality('') AS instance_type, '' AS instance_id, "
+    "now('UTC') AS workflow_start_time"
 )
 
 # Set by tests/integration/conftest.py for a run without a `--run-id`, see

@@ -1,10 +1,31 @@
 import time
 import traceback
+from dataclasses import dataclass
 
 import requests
 
 from ci.praktika.info import Info
 from ci.praktika.secret import Secret
+from ci.praktika.utils import Utils
+
+# The build profile collect and diff jobs
+BUILD_PROFILE_USER = "ci_build_profiler"
+
+
+@dataclass(frozen=True)
+class MetaColumn:
+    """One CI metadata column prepended to every row exported to LogCluster.
+
+    `cast` renders the value where the destination column is created from this
+    very definition (the `system.*_log` export), `literal` where the
+    destination table already declares the type.
+    """
+
+    name: str
+    type: str
+    cast: str = "'{}'"
+    literal: str = "'{}'"
+    index: str = ""
 
 
 class LogCluster:
@@ -16,12 +37,209 @@ class LogCluster:
     # profile uploads of the whole CI fleet do not compete for one endpoint.
     # Not a secret, unlike the writer endpoint, hence no AWS SSM parameter.
     READONLY_URL = "https://t6h0zvqlgy.us-east-2.aws.clickhouse-staging.com"
-    USER = "ci"
 
-    def __init__(self, url="", user="", password=None, readonly=False):
+    # The CI metadata every export to this cluster carries, defined once so
+    # that the DDL of the destination table, the INSERT column list and the
+    # values cannot disagree in name, order or type.
+    #
+    # A new column reaches the `system.*_log` tables on its own: their names
+    # embed a hash of the structure, so the next job creates fresh ones. The
+    # tables of LogClusterBuildProfileQueries are hand-made, so add the column
+    # there with `ALTER TABLE` before merging, otherwise every upload fails.
+    META_COLUMNS = (
+        MetaColumn(
+            name="repo",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+            index="INDEX ix_repo (repo) TYPE set(100)",
+        ),
+        MetaColumn(
+            name="pull_request_number",
+            type="UInt32",
+            cast="CAST({} AS UInt32)",
+            literal="{}",
+            index="INDEX ix_pr (pull_request_number) TYPE set(100)",
+        ),
+        MetaColumn(
+            name="commit_sha",
+            type="String",
+            index="INDEX ix_commit (commit_sha) TYPE set(100)",
+        ),
+        MetaColumn(
+            name="check_start_time",
+            type="DateTime('UTC')",
+            cast="toDateTime('{}', 'UTC')",
+            index="INDEX ix_check_time (check_start_time) TYPE minmax",
+        ),
+        MetaColumn(
+            name="check_name",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+        ),
+        MetaColumn(
+            name="instance_type",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+        ),
+        MetaColumn(name="instance_id", type="String"),
+        MetaColumn(
+            name="workflow_start_time",
+            type="DateTime('UTC')",
+            cast="toDateTime('{}', 'UTC')",
+        ),
+    )
+
+    # The columns that tell apart the servers of one check: the integration
+    # tests run many servers per check and fill these in per instance (see
+    # tests/integration/helpers/ci_logs_export.py), every other job exports one
+    # server and leaves them empty. They belong to the `system.*_log` export
+    # only - the hand-made tables of LogClusterBuildProfileQueries do not have
+    # them - so they extend META_COLUMNS in `log_export_columns` rather than
+    # being a part of it.
+    PER_SERVER_COLUMNS = (
+        MetaColumn(
+            name="test_name",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+            index="INDEX ix_test (test_name) TYPE set(100)",
+        ),
+        MetaColumn(
+            name="node_name",
+            type="LowCardinality(String)",
+            cast="toLowCardinality('{}')",
+        ),
+    )
+
+    # The META_COLUMNS column the per-server columns follow.
+    PER_SERVER_COLUMNS_AFTER = "check_name"
+
+    @classmethod
+    def meta_columns(cls):
+        return cls.META_COLUMNS
+
+    @classmethod
+    def log_export_columns(cls):
+        """The columns of the `system.*_log` export: META_COLUMNS with
+        PER_SERVER_COLUMNS spliced in after PER_SERVER_COLUMNS_AFTER."""
+        columns = []
+        for column in cls.META_COLUMNS:
+            columns.append(column)
+            if column.name == cls.PER_SERVER_COLUMNS_AFTER:
+                columns.extend(cls.PER_SERVER_COLUMNS)
+        return tuple(columns)
+
+    @classmethod
+    def workflow_start_time(cls):
+        """Start of the workflow this job belongs to, as a UTC datetime string.
+
+        `Info().workflow_start_time` is GitHub's `created_at` of the run
+        (`2026-08-14T17:01:52Z`), resolved by the config job: the same value
+        for every job of the run, and a rerun keeps it. Grouping rows by it
+        therefore reconstructs one workflow run.
+        """
+        return Utils.gh_str_to_datetime(Info().workflow_start_time).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    @classmethod
+    def meta_values(cls, check_start_time, check_name="", commit_sha=""):
+        """Value of every metadata column for the current job.
+
+        `check_start_time` is a UTC datetime string. `check_name` overrides the
+        job name where one job uploads on behalf of several checks, as the
+        build profile hook does for each build variant. `commit_sha` overrides
+        the job's own sha where a job exports on behalf of another commit.
+        """
+        info = Info()
+        return {
+            "repo": info.repo_name,
+            "pull_request_number": info.pr_number,
+            "commit_sha": commit_sha or info.sha,
+            "check_start_time": check_start_time,
+            "check_name": check_name or info.job_name,
+            "instance_type": info.instance_type,
+            "instance_id": info.instance_id,
+            "workflow_start_time": cls.workflow_start_time(),
+        }
+
+    @classmethod
+    def extra_columns_ddl(cls):
+        """`EXTRA_COLUMNS` for setup_log_cluster.sh: the column definitions
+        followed by their skip indexes. The trailing separator belongs to it,
+        the script splices the fragment right after the opening parenthesis of
+        a `SHOW CREATE TABLE` output."""
+        columns = cls.log_export_columns()
+        return "".join(
+            [f"{c.name} {c.type}, " for c in columns]
+            + [f"{c.index}, " for c in columns if c.index]
+        )
+
+    @classmethod
+    def _expression(cls, columns, values):
+        return ", ".join(
+            f"{c.cast.format(values[c.name])} AS {c.name}" for c in columns
+        )
+
+    @classmethod
+    def log_export_values(
+        cls, check_start_time, check_name="", commit_sha="", test_name="", node_name=""
+    ):
+        """Value of every column of the `system.*_log` export."""
+        values = cls.meta_values(check_start_time, check_name, commit_sha)
+        values["test_name"] = test_name
+        values["node_name"] = node_name
+        return values
+
+    @classmethod
+    def extra_columns_expression(
+        cls, check_start_time, check_name="", commit_sha="", test_name="", node_name=""
+    ):
+        """`EXTRA_COLUMNS_EXPRESSION` for setup_log_cluster.sh: the same
+        columns as SELECT expressions, in the same order as the DDL above."""
+        return cls._expression(
+            cls.log_export_columns(),
+            cls.log_export_values(
+                check_start_time, check_name, commit_sha, test_name, node_name
+            ),
+        )
+
+    @classmethod
+    def extra_columns_expression_head(
+        cls, check_start_time, check_name="", commit_sha=""
+    ):
+        """The part of `extra_columns_expression` before the per-server columns.
+
+        A job that runs more than one server per check - the integration tests -
+        gets the expression in two parts and fills the per-server columns in
+        itself, for every server it starts."""
+        columns = cls.log_export_columns()
+        head = columns[: columns.index(cls.PER_SERVER_COLUMNS[0])]
+        return cls._expression(
+            head, cls.meta_values(check_start_time, check_name, commit_sha)
+        )
+
+    @classmethod
+    def extra_columns_expression_tail(cls):
+        """The part of `extra_columns_expression` after the per-server columns.
+
+        None of these columns depends on the check, so it takes no arguments."""
+        columns = cls.log_export_columns()
+        tail = columns[columns.index(cls.PER_SERVER_COLUMNS[-1]) + 1 :]
+        return cls._expression(tail, cls.meta_values(""))
+
+    @classmethod
+    def meta_column_names(cls):
+        return [c.name for c in cls.meta_columns()]
+
+    @classmethod
+    def meta_column_literals(cls, check_start_time, check_name=""):
+        values = cls.meta_values(check_start_time, check_name)
+        return [c.literal.format(values[c.name]) for c in cls.meta_columns()]
+
+    def __init__(self, user, url="", password=None, readonly=False):
         # Explicit url/user/password skip the AWS SSM secret lookup - used for
         # running the consumers locally against the cluster.
-        self.user = user or self.USER
+        self.user = user
         self.readonly = readonly
         self.url = url or (self.READONLY_URL if readonly else "")
         self._session = None
@@ -248,9 +466,18 @@ class LogClusterBuildProfileQueries:
         "PerformPendingInstantiations",
     )
 
-    def __init__(self):
+    def __init__(self, user):
         self._info = Info()
-        self._log_cluster = LogCluster()
+        self._log_cluster = LogCluster(user=user)
+
+    def _columns(self, table_columns):
+        names = LogCluster.meta_column_names() + list(table_columns)
+        return ",\n".join(f"        {name}" for name in names)
+
+    def _values(self, build_name, start_time):
+        return ", ".join(
+            LogCluster.meta_column_literals(start_time, check_name=build_name)
+        )
 
     def insert_profile_data(self, build_name, start_time, file, reduced=False):
         query = self._profile_query(build_name, start_time, reduced=reduced)
@@ -278,30 +505,29 @@ class LogClusterBuildProfileQueries:
         if reduced:
             names = ", ".join(f"'{name}'" for name in self.REDUCED_PROFILE_EVENTS)
             where = f"\n    WHERE name IN ({names}) OR name LIKE 'Total %'"
+        columns = self._columns(
+            (
+                "file",
+                "library",
+                "time",
+                "pid",
+                "tid",
+                "ph",
+                "ts",
+                "dur",
+                "cat",
+                "name",
+                "detail",
+                "count",
+                "avgMs",
+                "args_name",
+            )
+        )
         return f"""INSERT INTO build_time_trace
     (
-        pull_request_number,
-        commit_sha,
-        check_start_time,
-        check_name,
-        instance_type,
-        instance_id,
-        file,
-        library,
-        time,
-        pid,
-        tid,
-        ph,
-        ts,
-        dur,
-        cat,
-        name,
-        detail,
-        count,
-        avgMs,
-        args_name
+{columns}
     )
-    SELECT {self._info.pr_number}, '{self._info.sha}', '{start_time}', '{build_name}', '{self._info.instance_type}', '{self._info.instance_id}', *
+    SELECT {self._values(build_name, start_time)}, *
     FROM input('
         file String,
         library String,
@@ -320,44 +546,24 @@ class LogClusterBuildProfileQueries:
     FORMAT JSONCompactEachRow"""
 
     def _build_size_query(self, build_name, start_time):
+        columns = self._columns(("file", "size"))
         return f"""INSERT INTO binary_sizes
     (
-        pull_request_number,
-        commit_sha,
-        check_start_time,
-        check_name,
-        instance_type,
-        instance_id,
-        file,
-        size
+{columns}
     )
-    SELECT {self._info.pr_number}, '{self._info.sha}', '{start_time}', '{build_name}', '{self._info.instance_type}', '{self._info.instance_id}', file, size
+    SELECT {self._values(build_name, start_time)}, file, size
     FROM input('size UInt64, file String')
     SETTINGS format_regexp = '^\\s*(\\d+) (.+)$'
     FORMAT Regexp"""
 
     def _binary_symbol_query(self, build_name, start_time):
+        columns = self._columns(("file", "address", "size", "type", "symbol"))
         return f"""INSERT INTO binary_symbols
     (
-        pull_request_number,
-        commit_sha,
-        check_start_time,
-        check_name,
-        instance_type,
-        instance_id,
-        file,
-        address,
-        size,
-        type,
-        symbol
+{columns}
     )
-    SELECT {self._info.pr_number}, '{self._info.sha}', '{start_time}', '{build_name}', '{self._info.instance_type}', '{self._info.instance_id}',
+    SELECT {self._values(build_name, start_time)},
     file, reinterpretAsUInt64(reverse(unhex(address))), reinterpretAsUInt64(reverse(unhex(size))), type, symbol
     FROM input('file String, address String, size String, type String, symbol String')
     SETTINGS format_regexp = '^([^ ]+) ([0-9a-fA-F]+)(?: ([0-9a-fA-F]+))? (.) (.+)$'
     FORMAT Regexp"""
-
-
-if __name__ == "__main__":
-    LogCluster = LogCluster()
-    assert LogCluster.is_ready()
