@@ -156,7 +156,7 @@ SET lance_enable_fragment_parallelism = 0;
 
 | Setting | Default | Description |
 |---|---|---|
-| `lance_scan_in_order` | `1` | When true, batches are returned in deterministic fragment order **within one stream**. Set to `0` to allow higher internal fragment concurrency. |
+| `lance_scan_in_order` | `0` | When true, batches are returned in deterministic fragment order **within one stream**. Set to `0` to allow higher internal fragment concurrency. |
 | `lance_fragment_readahead` | `0` | Fragments to read ahead inside one scanner (`0` = library default). Effective only when `lance_scan_in_order = 0`. |
 | `lance_batch_readahead` | `0` | Batches to prefetch inside one scanner (`0` = library default). |
 | `lance_io_buffer_size` | `0` | Max bytes queued in the Lance I/O buffer (`0` = library default). Avoid very small values. |
