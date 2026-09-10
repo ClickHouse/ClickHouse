@@ -167,7 +167,10 @@ public:
     /// max_type_complexity guards binary type decoding (0 == unlimited). Callers pass the effective
     /// input_format_binary_max_type_complexity for client-reachable QueryPlan packets, or leave it at the
     /// default 0 for trusted internal metadata (e.g. data-lake schema transforms).
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
+    /// `max_elements` caps every count read from the stream (nodes, children, inputs, outputs) so a
+    /// bogus count cannot request a huge allocation; 0 means no cap. A caller reading from a bounded
+    /// in-memory frame should pass the bytes remaining in that frame.
+    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0, size_t max_elements = 0);
 
     static Node createAlias(const Node & child, std::string alias);
 

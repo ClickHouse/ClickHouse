@@ -69,6 +69,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
+    extern const SettingsUInt64 query_plan_serialization_version;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
     extern const SettingsBool http_allow_filters_as_path;
@@ -1092,7 +1093,9 @@ void executeQueryWithParallelReplicas(
         if (new_context->getSettingsRef()[Setting::serialize_query_plan])
         {
             remote_query_plan = createRemotePlanForParallelReplicas(query_tree, *header, new_context, processed_stage);
-            remote_query_plan->ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+            remote_query_plan->ensureSerialized(
+                DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+                new_context->getSettingsRef()[Setting::query_plan_serialization_version]);
         }
 
         /// The subquery carries its own SETTINGS (shipped to remote replicas via the AST). Pass its

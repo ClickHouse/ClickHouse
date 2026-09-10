@@ -87,6 +87,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
+    extern const SettingsUInt64 query_plan_serialization_version;
     extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -760,8 +761,12 @@ static String serializeQueryPlan(const QueryPlan & query_plan, const ContextPtr 
     SizeLimits sets_transfer_limits(
         settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], OverflowMode::THROW);
 
+    /// This path has no per-worker version negotiation. While `make_distributed_plan` stays
+    /// experimental that is acceptable: a worker too old for the plan rejects it by the leading
+    /// version (or by the plan's needed-to-read version) with a clear error, never misreads it.
     WriteBufferFromOwnString out;
-    query_plan.serializeForDistributedTask(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, sets_transfer_limits);
+    query_plan.serializeForDistributedTask(
+        out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, sets_transfer_limits, settings[Setting::query_plan_serialization_version]);
     return out.str();
 }
 
@@ -1774,6 +1779,14 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
+        /// A worker only reads the plan, and reading needs no version choice. Sending the setting
+        /// would make a worker that predates it reject the task before reading a plan it can read,
+        /// which is the opposite of what holding the writer back is for. Named as a string because
+        /// changes carry names; the assertion catches a rename that would silently stop filtering.
+        static constexpr std::string_view writer_version_setting = "query_plan_serialization_version";
+        chassert(Settings::hasBuiltin(writer_version_setting));
+        std::erase_if(task_description.settings_changes,
+            [](const SettingChange & change) { return change.name == writer_version_setting; });
 
         const String unique_temp_file_path = toString(unique_query_id);
 

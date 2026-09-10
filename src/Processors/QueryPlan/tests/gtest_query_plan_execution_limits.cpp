@@ -14,11 +14,6 @@
 
 using namespace DB;
 
-namespace DB
-{
-void registerReadNothingStep(QueryPlanStepRegistry & registry);
-}
-
 namespace
 {
 
@@ -30,11 +25,15 @@ SharedHeader makeHeader()
 
 void tryRegisterReadNothingStep()
 {
+    /// The registry is shared by every suite in this binary and refuses a second registration of
+    /// the same step, so each suite registers the full production set once, whichever gets there
+    /// first. Registering only `ReadNothing` here would leave the other suites without the rest.
     static struct Register
     {
         Register()
         {
-            registerReadNothingStep(QueryPlanStepRegistry::instance());
+            if (!QueryPlanStepRegistry::instance().hasStep("Expression"))
+                QueryPlanStepRegistry::registerPlanSteps();
         }
     } registered;
 }
@@ -42,8 +41,6 @@ void tryRegisterReadNothingStep()
 /// Smallest plan that owns a root node: a single source step.
 QueryPlan makeSourcePlan()
 {
-    /// `registerStep` rejects duplicate names, and other tests in this binary register
-    /// overlapping subsets. Register only the step deserialized in this test file.
     tryRegisterReadNothingStep();
 
     QueryPlan plan;

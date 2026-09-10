@@ -16,6 +16,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -413,7 +414,54 @@ bool FilterStep::canUseType(const DataTypePtr & filter_type)
 }
 
 
+namespace
+{
+
+constexpr auto FILTER_MANIFEST = StepManifest<FilterStep, FilterWire>("Filter")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("actions_dag", WireFieldClass::Logical, &FilterWire::actions_dag),
+        field("filter_column_name", WireFieldClass::Logical, &FilterWire::filter_column_name),
+        field("remove_filter_column", WireFieldClass::Logical, &FilterWire::remove_filter_column),
+        field("condition", WireFieldClass::Physical, &FilterWire::condition));
+
+}
+
+FilterWire FilterStep::toWire() const
+{
+    return FilterWire{actions_dag.clone(), filter_column_name, remove_filter_column, condition};
+}
+
+QueryPlanStepPtr FilterStep::fromWire(FilterWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
+
+    auto step = std::make_unique<FilterStep>(
+        ctx.input_headers.front(), std::move(wire.actions_dag), std::move(wire.filter_column_name), wire.remove_filter_column);
+    /// `prevent_input_removal` is not carried on the wire: it only guides `removeUnusedColumns` during
+    /// optimization, and the plan reaching here is already optimized, so the receiver does not need it.
+    if (wire.condition)
+        step->setConditionForQueryConditionCache(wire.condition->first, wire.condition->second);
+    return step;
+}
+
 void FilterStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(FILTER_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(FILTER_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void FilterStep::serializeLegacy(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (remove_filter_column)
@@ -425,7 +473,7 @@ void FilterStep::serialize(Serialization & ctx) const
     actions_dag.serialize(ctx.out, ctx.registry);
 }
 
-QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FilterStep::deserializeLegacy(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
@@ -438,7 +486,7 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
 
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
 }
@@ -507,7 +555,7 @@ QueryPlanStepPtr FilterStep::clone() const
 void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Filter", FilterStep::deserialize);
+    registerManifest<FILTER_MANIFEST>(registry, FilterStep::deserialize);
 }
 
 }

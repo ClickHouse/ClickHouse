@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -236,7 +237,7 @@ const SortDescription & MergingAggregatedStep::getSortDescription() const
     return IQueryPlanStep::getSortDescription();
 }
 
-void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+void MergingAggregatedStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes] = memory_bound_merging_max_block_bytes;
@@ -249,7 +250,7 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
 
     /// A peer whose query-plan serialization version knows the name receives the value whenever the legacy method is
     /// requested; towards an older peer it is written only when this step can actually choose the single-`String`
-    /// method - see the corresponding condition in `AggregatingStep::serializeSettings`.
+    /// method - see the corresponding condition in `AggregatingStep::serializeSettingsLegacy`.
     ///
     /// Unlike there, no two-level-threshold narrowing applies to the old-peer condition, not even for
     /// `memory_efficient_aggregation = false`. This step's method choice is not local to the server that merges:
@@ -266,7 +267,124 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
 
+namespace
+{
+
+constexpr auto MERGING_AGGREGATED_MANIFEST = StepManifest<MergingAggregatedStep, MergingAggregatedWire>("MergingAggregated")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("keys", WireFieldClass::Logical, &MergingAggregatedWire::keys),
+        field("aggregates", WireFieldClass::Logical, &MergingAggregatedWire::aggregates),
+        field("grouping_sets", WireFieldClass::Logical, &MergingAggregatedWire::grouping_sets),
+        field("final", WireFieldClass::Logical, &MergingAggregatedWire::final),
+        field("overflow_row", WireFieldClass::Logical, &MergingAggregatedWire::overflow_row),
+        field("group_by_sort_description", WireFieldClass::Logical, &MergingAggregatedWire::group_by_sort_description),
+        field("should_produce_results_in_order_of_bucket_number", WireFieldClass::Physical, &MergingAggregatedWire::should_produce_results_in_order_of_bucket_number),
+        field("memory_bound_merging_of_aggregation_results_enabled", WireFieldClass::Physical, &MergingAggregatedWire::memory_bound_merging_of_aggregation_results_enabled))
+    .settings(
+        setting(QueryPlanSerializationSetting::max_block_size, WireFieldClass::Physical, &MergingAggregatedWire::max_block_size),
+        setting(QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes, WireFieldClass::Physical, &MergingAggregatedWire::aggregation_in_order_max_block_bytes),
+        setting(QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization, WireFieldClass::Physical, &MergingAggregatedWire::min_hit_rate_to_use_consecutive_keys_optimization),
+        setting(QueryPlanSerializationSetting::distributed_aggregation_memory_efficient, WireFieldClass::Physical, &MergingAggregatedWire::distributed_aggregation_memory_efficient),
+        setting(QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte, WireFieldClass::Physical, &MergingAggregatedWire::serialize_string_in_memory_with_zero_byte),
+        setting(QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation, WireFieldClass::Physical, &MergingAggregatedWire::enable_packed_string_keys_in_aggregation));
+
+/// The missing keys of a grouping set are the keys it does not use, in key order.
+GroupingSetsParamsList groupingSetsFromUsedKeys(const Names & keys, std::vector<Names> used_keys_per_set)
+{
+    GroupingSetsParamsList result;
+    for (auto & used_keys : used_keys_per_set)
+    {
+        NameSet used(used_keys.begin(), used_keys.end());
+        Names missing_keys;
+        for (const auto & key : keys)
+            if (!used.contains(key))
+                missing_keys.push_back(key);
+        result.emplace_back(std::move(used_keys), std::move(missing_keys));
+    }
+    return result;
+}
+}
+
+MergingAggregatedWire MergingAggregatedStep::toWire() const
+{
+    MergingAggregatedWire wire;
+    wire.keys = params.keys;
+    wire.aggregates = params.aggregates;
+    for (const auto & grouping_set : grouping_sets_params)
+        wire.grouping_sets.push_back(grouping_set.used_keys);
+    wire.final = final;
+    wire.overflow_row = params.overflow_row;
+    wire.group_by_sort_description = group_by_sort_description;
+    wire.should_produce_results_in_order_of_bucket_number = should_produce_results_in_order_of_bucket_number;
+    wire.memory_bound_merging_of_aggregation_results_enabled = memory_bound_merging_of_aggregation_results_enabled;
+
+    wire.max_block_size = max_block_size;
+    wire.aggregation_in_order_max_block_bytes = memory_bound_merging_max_block_bytes;
+    wire.min_hit_rate_to_use_consecutive_keys_optimization = params.min_hit_rate_to_use_consecutive_keys_optimization;
+    wire.distributed_aggregation_memory_efficient = memory_efficient_aggregation;
+    wire.serialize_string_in_memory_with_zero_byte = params.serialize_string_with_zero_byte;
+    wire.enable_packed_string_keys_in_aggregation = params.enable_packed_string_keys;
+    return wire;
+}
+
+QueryPlanStepPtr MergingAggregatedStep::fromWire(MergingAggregatedWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "MergingAggregatedStep must have one input stream");
+
+    const auto & query_settings = ctx.context->getSettingsRef();
+
+    /// The merge does not collect hash table statistics, so the statistics members stay unused.
+    Aggregator::Params params(
+        wire.keys,
+        wire.aggregates,
+        wire.overflow_row,
+        query_settings[Setting::max_threads],
+        wire.max_block_size,
+        wire.min_hit_rate_to_use_consecutive_keys_optimization,
+        wire.serialize_string_in_memory_with_zero_byte,
+        wire.enable_packed_string_keys_in_aggregation);
+
+    auto step = std::make_unique<MergingAggregatedStep>(
+        ctx.input_headers.front(),
+        std::move(params),
+        groupingSetsFromUsedKeys(wire.keys, std::move(wire.grouping_sets)),
+        wire.final,
+        wire.distributed_aggregation_memory_efficient,
+        query_settings[Setting::aggregation_memory_efficient_merge_threads],
+        wire.should_produce_results_in_order_of_bucket_number,
+        wire.max_block_size,
+        wire.aggregation_in_order_max_block_bytes,
+        wire.memory_bound_merging_of_aggregation_results_enabled);
+    step->applyOrder(std::move(wire.group_by_sort_description));
+    return step;
+}
+
+void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(MERGING_AGGREGATED_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings, version);
+}
+
 void MergingAggregatedStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(MERGING_AGGREGATED_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(MERGING_AGGREGATED_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void MergingAggregatedStep::serializeLegacy(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (final)
@@ -308,7 +426,7 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
-QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr MergingAggregatedStep::deserializeLegacy(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "MergingAggregatedStep must have one input stream");
@@ -402,7 +520,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry);
 void registerMergingAggregatedStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("MergingAggregated", MergingAggregatedStep::deserialize);
+    registerManifest<MERGING_AGGREGATED_MANIFEST>(registry, MergingAggregatedStep::deserialize);
 }
 
 }

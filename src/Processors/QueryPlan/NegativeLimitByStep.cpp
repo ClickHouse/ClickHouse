@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/NegativeLimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -90,7 +91,48 @@ void NegativeLimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Negative Offset", group_offset);
 }
 
+namespace
+{
+
+constexpr auto NEGATIVE_LIMIT_BY_MANIFEST = StepManifest<NegativeLimitByStep, NegativeLimitByWire>("NegativeLimitBy")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("group_length", WireFieldClass::Logical, &NegativeLimitByWire::group_length),
+        field("group_offset", WireFieldClass::Logical, &NegativeLimitByWire::group_offset),
+        field("columns", WireFieldClass::Logical, &NegativeLimitByWire::columns),
+        field("sorted_columns_descr", WireFieldClass::Logical, &NegativeLimitByWire::sorted_columns_descr));
+
+}
+
+NegativeLimitByWire NegativeLimitByStep::toWire() const
+{
+    return NegativeLimitByWire{group_length, group_offset, columns, sorted_columns_descr};
+}
+
+QueryPlanStepPtr NegativeLimitByStep::fromWire(NegativeLimitByWire wire, Deserialization & ctx)
+{
+    auto step = std::make_unique<NegativeLimitByStep>(ctx.input_headers.front(), wire.group_length, wire.group_offset, std::move(wire.columns));
+    if (!wire.sorted_columns_descr.empty())
+        step->applyOrder(wire.sorted_columns_descr);
+    return step;
+}
+
 void NegativeLimitByStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(NEGATIVE_LIMIT_BY_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(NEGATIVE_LIMIT_BY_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void NegativeLimitByStep::serializeLegacy(Serialization & ctx) const
 {
     writeVarUInt(group_length, ctx.out);
     writeVarUInt(group_offset, ctx.out);
@@ -100,7 +142,7 @@ void NegativeLimitByStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr NegativeLimitByStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt64 group_length = 0;
     UInt64 group_offset = 0;
@@ -125,7 +167,7 @@ void NegativeLimitByStep::applyOrder(const SortDescription & sort_description)
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("NegativeLimitBy", NegativeLimitByStep::deserialize);
+    registerManifest<NEGATIVE_LIMIT_BY_MANIFEST>(registry, NegativeLimitByStep::deserialize);
 }
 
 }

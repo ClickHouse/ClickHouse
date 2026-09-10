@@ -6,6 +6,8 @@
 namespace DB
 {
 
+struct IntersectOrExceptWire;
+
 class IntersectOrExceptStep : public IQueryPlanStep
 {
 public:
@@ -28,7 +30,15 @@ public:
     void serialize(Serialization & ctx) const override;
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `IntersectOrExceptStep.cpp` declares.
+    IntersectOrExceptWire toWire() const;
+    static QueryPlanStepPtr fromWire(IntersectOrExceptWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
+
     void updateOutputHeader() override;
 
     Operator current_operator;

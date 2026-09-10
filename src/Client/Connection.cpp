@@ -73,6 +73,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString network_compression_method;
+    extern const SettingsUInt64 query_plan_serialization_version;
     extern const SettingsInt64 network_zstd_compression_level;
 }
 
@@ -1063,6 +1064,10 @@ void Connection::sendQuery(
     socket->setReceiveTimeout(timeouts.receive_timeout);
     socket->setSendTimeout(timeouts.send_timeout);
 
+    /// Remembered here because `sendQueryPlan` runs later on this connection and the settings are
+    /// not passed to it.
+    query_plan_serialization_version = settings ? (*settings)[Setting::query_plan_serialization_version] : 0;
+
     compression_codec = chooseNetworkCompressionCodec(settings);
 
     query_id = query_id_;
@@ -1211,19 +1216,18 @@ void Connection::sendQuery(
 
 void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
-    writeVarUInt(Protocol::Client::QueryPlan, *out);
+    /// The whole plan is serialized and validated into a buffer before any byte of the packet is
+    /// written. A step can fail late (unrepresentable at the chosen version, an `IN` set not ready
+    /// or over the transfer limit, a codec error); serializing first keeps such a failure from
+    /// leaving a half-written packet the peer cannot turn into a clean error.
+    ///
+    /// The plan is serialized once at this server's version and every peer is sent those bytes. A
+    /// framed replica reads them by their own version check; a replica too old for the framed format
+    /// is refused here rather than served a separate older serialization.
+    query_plan.ensureSerialized(server_query_plan_serialization_version, query_plan_serialization_version);
 
-    if (query_plan.isSerialized())
-    {
-        // Use cached serialization
-        auto serialized_data = query_plan.getSerializedData();
-        out->write(serialized_data.data(), serialized_data.size());
-    }
-    else
-    {
-        // Fallback: serialize on-the-fly
-        query_plan.serialize(*out, server_query_plan_serialization_version);
-    }
+    writeVarUInt(Protocol::Client::QueryPlan, *out);
+    query_plan.writeSerializedTo(*out, server_query_plan_serialization_version, query_plan_serialization_version);
 }
 
 void Connection::sendCancel()

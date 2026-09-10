@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -55,12 +56,47 @@ void NegativeOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Negative Offset", offset);
 }
 
+namespace
+{
+
+constexpr auto NEGATIVE_OFFSET_MANIFEST = StepManifest<NegativeOffsetStep, NegativeOffsetWire>("NegativeOffset")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("offset", WireFieldClass::Logical, &NegativeOffsetWire::offset));
+
+}
+
+NegativeOffsetWire NegativeOffsetStep::toWire() const
+{
+    return NegativeOffsetWire{offset};
+}
+
+QueryPlanStepPtr NegativeOffsetStep::fromWire(NegativeOffsetWire wire, Deserialization & ctx)
+{
+    return std::make_unique<NegativeOffsetStep>(ctx.input_headers.front(), wire.offset);
+}
+
 void NegativeOffsetStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(NEGATIVE_OFFSET_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr NegativeOffsetStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(NEGATIVE_OFFSET_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void NegativeOffsetStep::serializeLegacy(Serialization & ctx) const
 {
     writeVarUInt(offset, ctx.out);
 }
 
-QueryPlanStepPtr NegativeOffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr NegativeOffsetStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt64 offset = 0;
     readVarUInt(offset, ctx.in);
@@ -71,7 +107,7 @@ QueryPlanStepPtr NegativeOffsetStep::deserialize(Deserialization & ctx)
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("NegativeOffset", NegativeOffsetStep::deserialize);
+    registerManifest<NEGATIVE_OFFSET_MANIFEST>(registry, NegativeOffsetStep::deserialize);
 }
 
 }

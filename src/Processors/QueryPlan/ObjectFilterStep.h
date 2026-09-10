@@ -5,6 +5,8 @@
 namespace DB
 {
 
+struct ObjectFilterWire;
+
 /// Implements WHERE condition only to filter objects in object storage
 /// Difference with FilterStep is that ObjectFilterStep is added only for distributed calls
 /// (table functions like `s3Cluster`) and is used only to filter objects,
@@ -33,9 +35,23 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `ObjectFilterStep.cpp` declares.
+    ObjectFilterWire toWire() const;
+    static QueryPlanStepPtr fromWire(ObjectFilterWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
+    ActionsDAG actions_dag;
+    String filter_column_name;
+};
+
+/// What `ObjectFilterStep` puts on the wire in the framed format.
+struct ObjectFilterWire
+{
     ActionsDAG actions_dag;
     String filter_column_name;
 };

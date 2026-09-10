@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/ResizeProcessor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -190,10 +191,57 @@ QueryPlanStepPtr IntersectOrExceptStep::clone() const
     return std::make_unique<IntersectOrExceptStep>(*this);
 }
 
-/// First query-plan serialization version that registers the "IntersectOrExcept" step.
+/// First query-plan serialization version that registers the "IntersectOrExcept" step in the older,
+/// pre-framed stream.
 static constexpr auto MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP = 14;
 
+/// The framed payload carries only the set operator. The two input streams and `max_threads = 0`
+/// (which makes `updatePipeline` use the executing server's own setting) are supplied on reconstruction.
+struct IntersectOrExceptWire
+{
+    IntersectOrExceptStep::Operator current_operator = IntersectOrExceptStep::Operator::UNKNOWN;
+};
+
+constexpr auto INTERSECT_OR_EXCEPT_MANIFEST = StepManifest<IntersectOrExceptStep, IntersectOrExceptWire>("IntersectOrExcept")
+    .nameIntroducedIn(1)
+    .inputs(2)
+    .baseFormat(
+        field("operator", WireFieldClass::Logical, &IntersectOrExceptWire::current_operator));
+
+IntersectOrExceptWire IntersectOrExceptStep::toWire() const
+{
+    return IntersectOrExceptWire{current_operator};
+}
+
+QueryPlanStepPtr IntersectOrExceptStep::fromWire(IntersectOrExceptWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "IntersectOrExceptStep must have two input streams");
+
+    /// `UNKNOWN` is a member of the enum but not a valid operator, reject it too.
+    if (wire.current_operator == Operator::UNKNOWN)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected intersect/except operator value {}",
+            static_cast<UInt32>(wire.current_operator));
+
+    return std::make_unique<IntersectOrExceptStep>(ctx.input_headers, wire.current_operator, /*max_threads_=*/0);
+}
+
 void IntersectOrExceptStep::serialize(Serialization & ctx) const
+{
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
+        writeManifestPayload(INTERSECT_OR_EXCEPT_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr IntersectOrExceptStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
+        return fromWire(readManifestPayload(INTERSECT_OR_EXCEPT_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void IntersectOrExceptStep::serializeLegacy(Serialization & ctx) const
 {
     /// Throw rather than send a step name an older peer does not know.
     if (ctx.version < MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP)
@@ -205,9 +253,9 @@ void IntersectOrExceptStep::serialize(Serialization & ctx) const
     writeIntBinary(static_cast<UInt8>(current_operator), ctx.out);
 }
 
-QueryPlanStepPtr IntersectOrExceptStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr IntersectOrExceptStep::deserializeLegacy(Deserialization & ctx)
 {
-    /// Mirrors the guard in `serialize`: a peer below this version cannot have written this step.
+    /// Mirrors the guard in `serializeLegacy`: a peer below this version cannot have written this step.
     if (ctx.version < MIN_SERIALIZATION_VERSION_WITH_INTERSECT_OR_EXCEPT_STEP)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan: deserializing an IntersectOrExceptStep requires query plan serialization "
@@ -228,7 +276,7 @@ QueryPlanStepPtr IntersectOrExceptStep::deserialize(Deserialization & ctx)
 void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry);
 void registerIntersectOrExceptStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("IntersectOrExcept", &IntersectOrExceptStep::deserialize);
+    registerManifest<INTERSECT_OR_EXCEPT_MANIFEST>(registry, &IntersectOrExceptStep::deserialize);
 }
 
 }

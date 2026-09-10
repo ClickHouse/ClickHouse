@@ -2,6 +2,7 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
+#include <Core/SettingIndex.h>
 #include <Core/SettingsFields.h>
 
 namespace DB
@@ -58,6 +59,38 @@ struct QueryPlanSerializationSettings
     void writeChangedBinary(WriteBuffer & out) const;
     /// Read settings updating only those present in the stream; missing ones keep defaults.
     void readBinary(ReadBuffer & in);
+
+    /// Whether a setting with this name, or an alias of it, exists. Validation uses it to spot an
+    /// unknown setting without trying to decode its value.
+    static bool hasSetting(std::string_view name);
+
+    /// A changed setting as it travels in the plan outline. The value has its length in front of
+    /// it, so a reader can skip a setting it does not know when the writer marked it ignorable.
+    /// Otherwise it has to refuse the plan: leaving an unknown setting at its default would change
+    /// how the query runs without saying so.
+    struct SerializedEntry
+    {
+        String name;
+        UInt8 flags = 0;
+        String value;   /// the setting-field binary encoding
+
+        static constexpr UInt8 FLAG_IGNORABLE = 1;
+    };
+
+    /// Changed settings as outline entries.
+    std::vector<SerializedEntry> getChangedEntries() const;
+
+    /// Applies the entries. An unknown one is skipped if it is marked ignorable and refused if it
+    /// is not, and a value that does not use up exactly its own bytes is refused.
+    void applyEntries(const std::vector<SerializedEntry> & entries);
+
+    /// The registered name of a setting, for the manifest baseline.
+    template <typename FieldType>
+    static String settingName(const SettingIndex<QueryPlanSerializationSettings, FieldType> & index)
+    {
+        return settingNameAtOffset(index.offset);
+    }
+    static String settingNameAtOffset(size_t offset);
 
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)

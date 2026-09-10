@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -77,7 +78,47 @@ void FractionalLimitStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("With Ties", with_ties);
 }
 
+namespace
+{
+
+constexpr auto FRACTIONAL_LIMIT_MANIFEST = StepManifest<FractionalLimitStep, FractionalLimitWire>("FractionalLimit")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("limit_fraction", WireFieldClass::Logical, &FractionalLimitWire::limit_fraction),
+        field("offset_fraction", WireFieldClass::Logical, &FractionalLimitWire::offset_fraction),
+        field("offset", WireFieldClass::Logical, &FractionalLimitWire::offset),
+        field("with_ties", WireFieldClass::Logical, &FractionalLimitWire::with_ties),
+        field("description", WireFieldClass::Logical, &FractionalLimitWire::description));
+
+}
+
+FractionalLimitWire FractionalLimitStep::toWire() const
+{
+    return FractionalLimitWire{limit_fraction, offset_fraction, offset, with_ties, description};
+}
+
+QueryPlanStepPtr FractionalLimitStep::fromWire(FractionalLimitWire wire, Deserialization & ctx)
+{
+    return std::make_unique<FractionalLimitStep>(
+        ctx.input_headers.front(), wire.limit_fraction, wire.offset_fraction, wire.offset, wire.with_ties, std::move(wire.description));
+}
+
 void FractionalLimitStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(FRACTIONAL_LIMIT_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(FRACTIONAL_LIMIT_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void FractionalLimitStep::serializeLegacy(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (with_ties)
@@ -93,7 +134,7 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
         serializeSortDescription(description, ctx.out);
 }
 
-QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FractionalLimitStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
@@ -118,7 +159,7 @@ QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
 void registerFractionalLimitStep(QueryPlanStepRegistry & registry);
 void registerFractionalLimitStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("FractionalLimit", FractionalLimitStep::deserialize);
+    registerManifest<FRACTIONAL_LIMIT_MANIFEST>(registry, FractionalLimitStep::deserialize);
 }
 
 }

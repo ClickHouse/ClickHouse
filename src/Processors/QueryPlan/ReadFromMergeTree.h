@@ -88,6 +88,8 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 /// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
 
+struct ReadFromMergeTreeWire;
+
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
 class ReadFromMergeTree final : public SourceStepWithFilter
@@ -531,7 +533,14 @@ public:
     bool isSerializable() const override { return true; }
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `ReadFromMergeTree.cpp` declares.
+    ReadFromMergeTreeWire toWire() const;
+    static QueryPlanStepPtr fromWire(ReadFromMergeTreeWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 
@@ -721,6 +730,36 @@ private:
     /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its bucket
     /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
     std::vector<DistributedReadBucket> distributed_read_task_buckets;
+};
+
+/// The read-in-order request of a bucketed distributed read.
+struct ReadInOrderWire
+{
+    UInt64 sorting_key_prefix_size = 0;
+    bool reverse = false;
+    UInt64 limit = 0;
+};
+
+/// What `ReadFromMergeTree` puts on the wire in the framed format. The marks of a bucketed
+/// distributed read travel in a per-read task parameter, not in the step.
+struct ReadFromMergeTreeWire
+{
+    String database;
+    String table;
+    Names columns;
+    UInt64 max_block_size = 0;
+    UInt64 num_streams = 0;
+    bool final = false;
+    std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
+    std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+    FilterDAGInfoPtr row_level_filter;
+    PrewhereInfoPtr prewhere_info;
+    /// The replica rebuilds the read in parallel-reading mode and takes the coordinator from its context.
+    bool parallel_reading_from_replicas = false;
+    UInt64 distributed_read_bucket_count = 0;
+    /// The key of the task parameter with this read's marks; empty when the read is not bucketed.
+    String distributed_read_param_name;
+    std::optional<ReadInOrderWire> read_in_order;
 };
 
 }

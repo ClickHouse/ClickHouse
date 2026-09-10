@@ -174,21 +174,28 @@ TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteTrueSurv
     EXPECT_TRUE(roundTripSerializeStringWithZeroByte(*makeMergingAggregatedStep(true)));
 }
 
-/// A receiver predating the name serializes String keys the way `false` does, so both values must reach
-/// the wire, and at every version: `v25.8.12.129-lts` lacks the name while `v25.8.13.73-lts` has it, yet
-/// both advertise version 0.
-TEST(AggregatingStepSettingsRoundTrip, BothDirectionsReachTheWireAtEveryVersion)
+/// A receiver predating the name serializes String keys the way `false` does, so the value must reach
+/// the receiver, and at every version: `v25.8.12.129-lts` lacks the name while `v25.8.13.73-lts` has it, yet
+/// both advertise version 0. A legacy stream names this one unconditionally; the framed format names it only
+/// when it differs from the default, and an absent framed entry is reconstructed from that same default.
+TEST(AggregatingStepSettingsRoundTrip, BothDirectionsReachTheReceiverAtEveryVersion)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
+    const bool default_value = QueryPlanSerializationSettings{}[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte];
     for (UInt64 version : {UInt64{0}, UInt64{DBMS_QUERY_PLAN_SERIALIZATION_VERSION}})
     {
+        const bool framed = version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
         for (bool value : {false, true})
         {
-            EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(value), version))
+            /// A legacy stream names this one unconditionally; the framed format names it only when it
+            /// differs from the default. Either way the receiver ends up with the initiator's value:
+            /// an absent framed entry is reconstructed from the default the writer also omitted for.
+            const bool named_on_wire = !framed || value != default_value;
+            EXPECT_EQ(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(value), version), named_on_wire)
                 << "version " << version << ", value " << value;
-            EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(value), version))
+            EXPECT_EQ(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(value), version), named_on_wire)
                 << "version " << version << ", value " << value;
 
             /// And survive the full write -> read round trip, not merely appear on the wire.
@@ -230,10 +237,11 @@ TEST(AggregatingStepOnlyMergeVersionGates, Bit128InStreamBelowMinVersionThrows)
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
-    /// The exact bytes a current initiator emits, replayed as a stream one version older than
-    /// the flag: the bit is garbage there and must be rejected, mirroring the serialize gate.
+    /// A legacy stream that carries the only_merge flag (bit 128), written at the version that
+    /// introduced it and replayed one version older: the bit is garbage there and must be rejected,
+    /// mirroring the serialize gate. (In the framed format the flag is an ordinary manifest field.)
     auto step = makeAggregatingStep(false);
-    String bytes = serializeStep(*step, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    String bytes = serializeStep(*step, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION);
 
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;

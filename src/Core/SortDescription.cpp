@@ -1,4 +1,5 @@
 #include <Core/Block.h>
+#include <IO/LimitReadBuffer.h>
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <IO/Operators.h>
@@ -30,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_DATA;
 }
 
 String checkFillDescription(const FillColumnDescription & fill, int direction)
@@ -351,12 +353,21 @@ void deserializeSortDescription(SortDescription & sort_description, ReadBuffer &
 {
     size_t size = 0;
     readVarUInt(size, in);
+    /// Each column takes at least one wire byte, so a count above what is left is malformed; caps
+    /// the resize against a payload that reads from a bounded in-memory frame.
+    if (const size_t frame_remaining = bytesRemainingInFrame(in); size > frame_remaining)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Sort description claims {} columns but only {} payload bytes remain", size, frame_remaining);
     sort_description.resize(size);
     for (auto & desc : sort_description)
     {
         readStringBinary(desc.column_name, in);
         UInt8 flags = 0;
         readIntBinary(flags, in);
+        /// Only four bits are defined; a set bit beyond them is a format this reader does not know
+        /// and must not silently ignore.
+        if (flags & ~UInt8(0b1111))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Sort description has unknown flag bits set: {}", static_cast<UInt16>(flags));
 
         desc.direction = (flags & 1) ? 1 : -1;
         desc.nulls_direction = (flags & 2) ? 1 : -1;

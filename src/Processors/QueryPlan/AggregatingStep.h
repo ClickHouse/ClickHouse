@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Defines.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -27,6 +28,8 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
 
 class AggregatingProjectionStep;
+
+struct AggregatingWire;
 
 /// Aggregation. See AggregatingTransform.
 class AggregatingStep : public ITransformingStep
@@ -125,6 +128,10 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `AggregatingStep.cpp` declares.
+    AggregatingWire toWire() const;
+    static QueryPlanStepPtr fromWire(AggregatingWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
     void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
@@ -156,6 +163,10 @@ public:
     }
 
 private:
+    /// Streams below the framed format.
+    void serializeSettingsLegacy(QueryPlanSerializationSettings & settings, UInt64 version) const;
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
     Aggregator::Params params;
@@ -220,6 +231,56 @@ private:
     size_t temporary_data_merge_threads;
 
     Processors aggregating;
+};
+
+/// What `AggregatingStep` puts on the wire in the framed format. The members from `max_block_size` on
+/// travel through the settings channel.
+struct AggregatingWire
+{
+    Names keys;
+    AggregateDescriptions aggregates;
+    /// The used keys of every grouping set; the missing keys of a set are the other keys.
+    std::vector<Names> grouping_sets;
+    /// Stage marker: a partial aggregation emits states, a final one emits values.
+    bool final = false;
+    bool overflow_row = false;
+    bool group_by_use_nulls = false;
+    /// Set on the merge step synthesized by the Cascades aggregation pushdown; changes how the input
+    /// columns are read, so it must round-trip and take part in the cache key.
+    bool only_merge = false;
+    /// Both non-empty for aggregation in order.
+    SortDescription sort_description_for_merging;
+    SortDescription group_by_sort_description;
+    bool explicit_sorting_required_for_aggregation_in_order = false;
+    /// The key of the hash table statistics; 0 when collection is off.
+    UInt64 hash_table_stats_key = 0;
+
+    UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+    UInt64 aggregation_in_order_max_block_bytes = 50000000;
+    bool aggregation_sort_result_by_bucket_number = true;
+    bool aggregation_in_order_memory_bound_merging = true;
+    UInt64 max_rows_to_group_by = 0;
+    OverflowMode group_by_overflow_mode = OverflowMode::THROW;
+    UInt64 group_by_two_level_threshold = 100000;
+    UInt64 group_by_two_level_threshold_bytes = 50000000;
+    UInt64 max_bytes_before_external_group_by = 0;
+    bool empty_result_for_aggregation_by_empty_set = false;
+    UInt64 min_free_disk_space_for_temporary_data = 0;
+    bool compile_aggregate_expressions = true;
+    UInt64 min_count_to_compile_aggregate_expression = 3;
+    bool enable_software_prefetch_in_aggregation = true;
+    bool optimize_group_by_constant_keys = true;
+    Float32 min_hit_rate_to_use_consecutive_keys_optimization = 0.5;
+    bool collect_hash_table_stats_during_aggregation = true;
+    UInt64 max_entries_for_hash_table_stats = 10000;
+    UInt64 max_size_to_preallocate_for_aggregation = 100000000;
+    bool enable_producing_buckets_out_of_order_in_aggregation = true;
+    bool enable_parallel_single_level_merge = false;
+    bool enable_adaptive_aggregator = false;
+    UInt64 adaptive_aggregator_freeze_threshold = 0;
+    UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
+    bool serialize_string_in_memory_with_zero_byte = true;
+    bool enable_packed_string_keys_in_aggregation = true;
 };
 
 }

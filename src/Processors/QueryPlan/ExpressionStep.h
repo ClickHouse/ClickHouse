@@ -9,6 +9,8 @@ namespace DB
 class ExpressionTransform;
 class JoiningTransform;
 
+struct ExpressionWire;
+
 /// Calculates specified expression. See ExpressionTransform.
 class ExpressionStep : public ITransformingStep
 {
@@ -37,6 +39,10 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `ExpressionStep.cpp` declares.
+    ExpressionWire toWire() const;
+    static QueryPlanStepPtr fromWire(ExpressionWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
@@ -55,10 +61,19 @@ public:
     bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
     bool prevent_input_removal = false;
+};
+
+/// What `ExpressionStep` puts on the wire in the framed format.
+struct ExpressionWire
+{
+    ActionsDAG actions_dag;
 };
 
 }

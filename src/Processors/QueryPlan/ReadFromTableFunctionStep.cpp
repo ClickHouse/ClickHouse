@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/QueryPlan/StepManifest.h>
 
 namespace DB
 {
@@ -32,7 +33,50 @@ enum class TableFunctionSerializationKind : UInt8
     AST = 0,
 };
 
+namespace
+{
+
+constexpr auto READ_FROM_TABLE_FUNCTION_MANIFEST = StepManifest<ReadFromTableFunctionStep, ReadFromTableFunctionWire>("ReadFromTableFunction")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("serialized_ast", WireFieldClass::Logical, &ReadFromTableFunctionWire::serialized_ast),
+        field("final", WireFieldClass::Logical, &ReadFromTableFunctionWire::final),
+        field("sample_size_ratio", WireFieldClass::Logical, &ReadFromTableFunctionWire::sample_size_ratio),
+        field("sample_offset_ratio", WireFieldClass::Logical, &ReadFromTableFunctionWire::sample_offset_ratio));
+
+}
+
+ReadFromTableFunctionWire ReadFromTableFunctionStep::toWire() const
+{
+    return ReadFromTableFunctionWire{
+        serialized_ast,
+        table_expression_modifiers.hasFinal(),
+        table_expression_modifiers.getSampleSizeRatio(),
+        table_expression_modifiers.getSampleOffsetRatio()};
+}
+
+QueryPlanStepPtr ReadFromTableFunctionStep::fromWire(ReadFromTableFunctionWire wire, Deserialization & ctx)
+{
+    TableExpressionModifiers modifiers(wire.final, wire.sample_size_ratio, wire.sample_offset_ratio);
+    return std::make_unique<ReadFromTableFunctionStep>(ctx.output_header, std::move(wire.serialized_ast), modifiers);
+}
+
 void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(READ_FROM_TABLE_FUNCTION_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(READ_FROM_TABLE_FUNCTION_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ReadFromTableFunctionStep::serializeLegacy(Serialization & ctx) const
 {
     writeIntBinary(TableFunctionSerializationKind::AST, ctx.out);
 
@@ -54,7 +98,7 @@ void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
         serializeRational(*table_expression_modifiers.getSampleOffsetRatio(), ctx.out);
 }
 
-QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ReadFromTableFunctionStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt8 kind = 0;
     readIntBinary(kind, ctx.in);
@@ -88,7 +132,7 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromTableFunction", &ReadFromTableFunctionStep::deserialize);
+    registerManifest<READ_FROM_TABLE_FUNCTION_MANIFEST>(registry, ReadFromTableFunctionStep::deserialize);
 }
 
 }

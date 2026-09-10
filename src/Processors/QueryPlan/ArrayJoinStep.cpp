@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/ArrayJoinTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ArrayJoinAction.h>
@@ -126,12 +127,74 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void ArrayJoinStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 }
 
+namespace
+{
+
+constexpr auto ARRAY_JOIN_MANIFEST = StepManifest<ArrayJoinStep, ArrayJoinWire>("ArrayJoin")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("columns", WireFieldClass::Logical, &ArrayJoinWire::columns),
+        field("is_left", WireFieldClass::Logical, &ArrayJoinWire::is_left),
+        field("is_unaligned", WireFieldClass::Logical, &ArrayJoinWire::is_unaligned),
+        field("enable_lazy_columns_replication", WireFieldClass::Physical, &ArrayJoinWire::enable_lazy_columns_replication),
+        field("element_filter", WireFieldClass::Logical, &ArrayJoinWire::element_filter),
+        field("element_filter_column_name", WireFieldClass::Logical, &ArrayJoinWire::element_filter_column_name),
+        field("remove_element_filter_column", WireFieldClass::Logical, &ArrayJoinWire::remove_element_filter_column))
+    .settings(
+        setting(QueryPlanSerializationSetting::max_block_size, WireFieldClass::Physical, &ArrayJoinWire::max_block_size));
+
+}
+
+ArrayJoinWire ArrayJoinStep::toWire() const
+{
+    return ArrayJoinWire{
+        array_join.columns, array_join.is_left, is_unaligned, enable_lazy_columns_replication,
+        element_filter ? std::optional<ActionsDAG>(element_filter->clone()) : std::nullopt,
+        element_filter_column_name, remove_element_filter_column, max_block_size};
+}
+
+QueryPlanStepPtr ArrayJoinStep::fromWire(ArrayJoinWire wire, Deserialization & ctx)
+{
+    ArrayJoin array_join;
+    array_join.columns = std::move(wire.columns);
+    array_join.is_left = wire.is_left;
+
+    auto step = std::make_unique<ArrayJoinStep>(
+        ctx.input_headers.front(), std::move(array_join), wire.is_unaligned, wire.max_block_size, wire.enable_lazy_columns_replication);
+    if (wire.element_filter)
+        step->setElementFilter(std::move(*wire.element_filter), std::move(wire.element_filter_column_name), wire.remove_element_filter_column);
+    return step;
+}
+
+void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(ARRAY_JOIN_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings);
+}
+
 void ArrayJoinStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(ARRAY_JOIN_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(ARRAY_JOIN_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ArrayJoinStep::serializeLegacy(Serialization & ctx) const
 {
     /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys); fusion bails for
     /// distributed/serialized plans, so an older worker never receives it and no version bump is needed
@@ -170,7 +233,7 @@ QueryPlanStepPtr ArrayJoinStep::clone() const
     return std::make_unique<ArrayJoinStep>(*this);
 }
 
-QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ArrayJoinStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
@@ -202,7 +265,7 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
     {
         String filter_column_name;
         readStringBinary(filter_column_name, ctx.in);
-        ActionsDAG filter_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        ActionsDAG filter_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
         step->setElementFilter(std::move(filter_dag), std::move(filter_column_name), remove_element_filter_column);
     }
 
@@ -212,7 +275,7 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize);
+    registerManifest<ARRAY_JOIN_MANIFEST>(registry, ArrayJoinStep::deserialize);
 }
 
 }

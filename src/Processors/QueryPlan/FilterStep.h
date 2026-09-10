@@ -22,6 +22,8 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     const std::vector<size_t> & required_output_positions,
     bool remove_inputs);
 
+struct FilterWire;
+
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
 {
@@ -61,6 +63,10 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `FilterStep.cpp` declares.
+    FilterWire toWire() const;
+    static QueryPlanStepPtr fromWire(FilterWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return actions_dag.hasCorrelatedColumns(); }
@@ -76,6 +82,9 @@ public:
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
@@ -84,6 +93,17 @@ private:
     bool prevent_input_removal = false;
 
     std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
+};
+
+/// What `FilterStep` puts on the wire in the framed format.
+struct FilterWire
+{
+    ActionsDAG actions_dag;
+    String filter_column_name;
+    bool remove_filter_column = false;
+    /// The key of the query condition cache: a hash and the condition text. It changes how fast a
+    /// later read runs, never which rows the filter emits.
+    std::optional<std::pair<UInt64, String>> condition;
 };
 
 }

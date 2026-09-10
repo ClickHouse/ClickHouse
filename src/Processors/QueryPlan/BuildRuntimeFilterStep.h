@@ -6,6 +6,8 @@
 namespace DB
 {
 
+struct BuildRuntimeFilterWire;
+
 /// Implements a step that doesn't modify the data but builds a bloom filter from the values of the specified column.
 /// This bloom filter is put into a per-query map and can be used with `filterContains` function.
 /// This is used for filtering left side af a JOIN based on key values collected from the right side.
@@ -45,11 +47,19 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `BuildRuntimeFilterStep.cpp` declares.
+    BuildRuntimeFilterWire toWire() const;
+    static QueryPlanStepPtr fromWire(BuildRuntimeFilterWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
     void describeActions(FormatSettings & settings) const override;
 
 private:
+    /// Streams below the framed format.
+    void serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const;
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
     String filter_column_name;
@@ -77,6 +87,28 @@ private:
     std::optional<UInt64> distinct_keys_hint;
     /// Whether the filter key is the whole join key, so that the hint counts this filter's distinct keys.
     bool distinct_keys_hint_matches_filter_key;
+};
+
+/// What `BuildRuntimeFilterStep` puts on the wire in the framed format. The six limits travel
+/// through the settings channel. The rendezvous key, the key-range tracking and the distinct-keys
+/// hint stay local: runtime filters are derived again per plan build, and a step built from the
+/// wire is inert.
+struct BuildRuntimeFilterWire
+{
+    String filter_column_name;
+    /// The data type by name.
+    String filter_column_type;
+    String filter_name;
+    bool allow_to_use_not_exact_filter = false;
+
+    UInt64 exact_values_limit = 10000;
+    UInt64 bloom_filter_bytes = 512 * 1024;
+    UInt64 bloom_filter_hash_functions = 3;
+    Float64 pass_ratio_threshold_for_disabling = 0.7;
+    UInt64 blocks_to_skip_before_reenabling = 30;
+    Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
+
+    bool operator==(const BuildRuntimeFilterWire &) const = default;
 };
 
 }

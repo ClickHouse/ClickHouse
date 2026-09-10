@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
@@ -730,7 +731,7 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void SortingStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const
 {
     sort_settings.updatePlanSettings(settings);
 }
@@ -738,7 +739,152 @@ void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, U
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT = 8;
 
+namespace
+{
+
+constexpr auto SORTING_MANIFEST = StepManifest<SortingStep, SortingWire>("Sorting")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("result_description", WireFieldClass::Logical, &SortingWire::result_description),
+        field("partition_by_description", WireFieldClass::Logical, &SortingWire::partition_by_description),
+        field("finish_sorting", WireFieldClass::Logical, &SortingWire::finish_sorting),
+        field("prefix_description", WireFieldClass::Logical, &SortingWire::prefix_description),
+        field("limit", WireFieldClass::Logical, &SortingWire::limit),
+        field("use_buffering", WireFieldClass::Physical, &SortingWire::use_buffering),
+        field("apply_virtual_row_conversions", WireFieldClass::Logical, &SortingWire::apply_virtual_row_conversions),
+        field("skip_scatter_by_partition", WireFieldClass::Logical, &SortingWire::skip_scatter_by_partition),
+        field("is_sorting_for_merge_join", WireFieldClass::Physical, &SortingWire::is_sorting_for_merge_join),
+        field("is_partial_top_n", WireFieldClass::Logical, &SortingWire::is_partial_top_n),
+        field("always_read_till_end", WireFieldClass::Logical, &SortingWire::always_read_till_end),
+        field("limit_by_columns", WireFieldClass::Logical, &SortingWire::limit_by_columns),
+        field("limit_by_group_length", WireFieldClass::Logical, &SortingWire::limit_by_group_length),
+        field("read_in_order_use_buffering", WireFieldClass::Physical, &SortingWire::read_in_order_use_buffering),
+        field("read_in_order_use_virtual_row_per_block", WireFieldClass::Physical, &SortingWire::read_in_order_use_virtual_row_per_block))
+    .settings(
+        setting(QueryPlanSerializationSetting::max_block_size, WireFieldClass::Physical, &SortingWire::max_block_size),
+        setting(QueryPlanSerializationSetting::max_rows_to_sort, WireFieldClass::Logical, &SortingWire::max_rows_to_sort),
+        setting(QueryPlanSerializationSetting::max_bytes_to_sort, WireFieldClass::Logical, &SortingWire::max_bytes_to_sort),
+        setting(QueryPlanSerializationSetting::sort_overflow_mode, WireFieldClass::Logical, &SortingWire::sort_overflow_mode),
+        setting(QueryPlanSerializationSetting::max_bytes_before_remerge_sort, WireFieldClass::Physical, &SortingWire::max_bytes_before_remerge_sort),
+        setting(QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio, WireFieldClass::Physical, &SortingWire::remerge_sort_lowered_memory_bytes_ratio),
+        setting(QueryPlanSerializationSetting::max_bytes_before_external_sort, WireFieldClass::Physical, &SortingWire::max_bytes_before_external_sort),
+        setting(QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort, WireFieldClass::Physical, &SortingWire::max_bytes_ratio_before_external_sort),
+        setting(QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data, WireFieldClass::Physical, &SortingWire::min_free_disk_space_for_temporary_data),
+        setting(QueryPlanSerializationSetting::prefer_external_sort_block_bytes, WireFieldClass::Physical, &SortingWire::prefer_external_sort_block_bytes),
+        setting(QueryPlanSerializationSetting::temporary_files_codec, WireFieldClass::Physical, &SortingWire::temporary_files_codec),
+        setting(QueryPlanSerializationSetting::temporary_files_buffer_size, WireFieldClass::Physical, &SortingWire::temporary_files_buffer_size));
+
+}
+
+SortingWire SortingStep::toWire() const
+{
+    if (type != Type::Full && type != Type::FinishSorting)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Serialization of SortingStep is implemented only for Full and FinishSorting");
+
+    SortingWire wire;
+    wire.result_description = result_description;
+    wire.partition_by_description = partition_by_description;
+    wire.finish_sorting = type == Type::FinishSorting;
+    if (wire.finish_sorting)
+        wire.prefix_description = prefix_description;
+    wire.limit = limit;
+    wire.use_buffering = use_buffering;
+    wire.apply_virtual_row_conversions = apply_virtual_row_conversions;
+    wire.skip_scatter_by_partition = skip_scatter_by_partition;
+    wire.is_sorting_for_merge_join = is_sorting_for_merge_join;
+    wire.is_partial_top_n = is_partial_top_n;
+    wire.always_read_till_end = always_read_till_end;
+    wire.limit_by_columns = limit_by_columns;
+    wire.limit_by_group_length = limit_by_group_length;
+    wire.read_in_order_use_buffering = sort_settings.read_in_order_use_buffering;
+    wire.read_in_order_use_virtual_row_per_block = sort_settings.read_in_order_use_virtual_row_per_block;
+
+    wire.max_block_size = sort_settings.max_block_size;
+    wire.max_rows_to_sort = sort_settings.size_limits.max_rows;
+    wire.max_bytes_to_sort = sort_settings.size_limits.max_bytes;
+    wire.sort_overflow_mode = sort_settings.size_limits.overflow_mode;
+    wire.max_bytes_before_remerge_sort = sort_settings.max_bytes_before_remerge;
+    wire.remerge_sort_lowered_memory_bytes_ratio = sort_settings.remerge_lowered_memory_bytes_ratio;
+    wire.max_bytes_before_external_sort = sort_settings.max_bytes_in_block_before_external_sort;
+    wire.max_bytes_ratio_before_external_sort = sort_settings.max_bytes_ratio_before_external_sort;
+    wire.min_free_disk_space_for_temporary_data = sort_settings.min_free_disk_space;
+    wire.prefer_external_sort_block_bytes = sort_settings.max_block_bytes;
+    wire.temporary_files_codec = sort_settings.temporary_files_codec;
+    /// The `Settings(size_t)` constructor leaves the buffer size at 0, which means the default; the
+    /// plan setting does not accept 0.
+    wire.temporary_files_buffer_size
+        = sort_settings.temporary_files_buffer_size ? sort_settings.temporary_files_buffer_size : DBMS_DEFAULT_BUFFER_SIZE;
+    return wire;
+}
+
+QueryPlanStepPtr SortingStep::fromWire(SortingWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "SortingStep must have one input stream");
+
+    Settings sort_settings(wire.max_block_size);
+    sort_settings.size_limits = SizeLimits(wire.max_rows_to_sort, wire.max_bytes_to_sort, wire.sort_overflow_mode);
+    sort_settings.max_bytes_before_remerge = wire.max_bytes_before_remerge_sort;
+    sort_settings.remerge_lowered_memory_bytes_ratio = wire.remerge_sort_lowered_memory_bytes_ratio;
+    sort_settings.max_bytes_ratio_before_external_sort = wire.max_bytes_ratio_before_external_sort;
+    sort_settings.max_bytes_in_block_before_external_sort = wire.max_bytes_before_external_sort;
+    sort_settings.max_bytes_in_query_before_external_sort = getMaxBytesInQueryBeforeExternalSort(wire.max_bytes_ratio_before_external_sort);
+    sort_settings.min_free_disk_space = wire.min_free_disk_space_for_temporary_data;
+    sort_settings.max_block_bytes = wire.prefer_external_sort_block_bytes;
+    sort_settings.read_in_order_use_buffering = wire.read_in_order_use_buffering;
+    sort_settings.read_in_order_use_virtual_row_per_block = wire.read_in_order_use_virtual_row_per_block;
+    sort_settings.temporary_files_codec = std::move(wire.temporary_files_codec);
+    sort_settings.temporary_files_buffer_size = clampTemporaryFilesBufferSize(wire.temporary_files_buffer_size);
+
+    std::unique_ptr<SortingStep> step;
+    if (wire.partition_by_description.empty())
+        step = std::make_unique<SortingStep>(
+            ctx.input_headers.front(), std::move(wire.result_description), wire.limit, sort_settings, wire.is_sorting_for_merge_join);
+    else
+        step = std::make_unique<SortingStep>(
+            ctx.input_headers.front(), wire.result_description, wire.partition_by_description, wire.limit, sort_settings);
+    step->is_sorting_for_merge_join = wire.is_sorting_for_merge_join;
+
+    if (wire.finish_sorting)
+        step->convertToFinishSorting(std::move(wire.prefix_description), wire.use_buffering, wire.apply_virtual_row_conversions);
+    else
+    {
+        step->use_buffering = wire.use_buffering;
+        step->apply_virtual_row_conversions = wire.apply_virtual_row_conversions;
+    }
+    step->skip_scatter_by_partition = wire.skip_scatter_by_partition;
+    step->is_partial_top_n = wire.is_partial_top_n;
+    step->always_read_till_end = wire.always_read_till_end;
+    step->limit_by_columns = std::move(wire.limit_by_columns);
+    step->limit_by_group_length = wire.limit_by_group_length;
+    return step;
+}
+
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(SORTING_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings);
+}
+
 void SortingStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(SORTING_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(SORTING_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void SortingStep::serializeLegacy(Serialization & ctx) const
 {
     if (type != Type::Full && type != Type::FinishSorting)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -784,7 +930,7 @@ void SortingStep::serialize(Serialization & ctx) const
             "all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORT_LIMIT);
 }
 
-QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr SortingStep::deserializeLegacy(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "SortingStep must have one input stream");
@@ -899,7 +1045,7 @@ void SortingStep::describePipeline(FormatSettings & settings) const
 void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Sorting", SortingStep::deserialize);
+    registerManifest<SORTING_MANIFEST>(registry, SortingStep::deserialize);
 }
 
 }

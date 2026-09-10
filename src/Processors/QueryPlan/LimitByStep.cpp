@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -172,7 +173,59 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Skip stream merging", true);
 }
 
+namespace
+{
+
+/// A step with disjoint input streams and no merge is not the same relation as one that merges,
+/// so it has no logical digest; the full digest still has it.
+constexpr bool mergesStreams(const LimitByWire & wire)
+{
+    return !wire.skip_stream_merging;
+}
+
+constexpr auto LIMIT_BY_MANIFEST = StepManifest<LimitByStep, LimitByWire>("LimitBy")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("group_length", WireFieldClass::Logical, &LimitByWire::group_length),
+        field("group_offset", WireFieldClass::Logical, &LimitByWire::group_offset),
+        field("columns", WireFieldClass::Logical, &LimitByWire::columns),
+        field("sorted_columns_descr", WireFieldClass::Logical, &LimitByWire::sorted_columns_descr),
+        field("skip_stream_merging", WireFieldClass::Physical, &LimitByWire::skip_stream_merging))
+    .logicalDigest(mergesStreams);
+
+}
+
+LimitByWire LimitByStep::toWire() const
+{
+    return LimitByWire{group_length, group_offset, columns, sorted_columns_descr, skip_stream_merging};
+}
+
+QueryPlanStepPtr LimitByStep::fromWire(LimitByWire wire, Deserialization & ctx)
+{
+    auto step = std::make_unique<LimitByStep>(ctx.input_headers.front(), wire.group_length, wire.group_offset, std::move(wire.columns));
+    if (!wire.sorted_columns_descr.empty())
+        step->applyOrder(wire.sorted_columns_descr);
+    if (wire.skip_stream_merging)
+        step->skipStreamMerging();
+    return step;
+}
+
 void LimitByStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(LIMIT_BY_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(LIMIT_BY_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void LimitByStep::serializeLegacy(Serialization & ctx) const
 {
     writeVarUInt(group_length, ctx.out);
     writeVarUInt(group_offset, ctx.out);
@@ -183,7 +236,7 @@ void LimitByStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr LimitByStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt64 group_length = 0;
     UInt64 group_offset = 0;
@@ -213,7 +266,7 @@ QueryPlanStepPtr LimitByStep::clone() const
 void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("LimitBy", LimitByStep::deserialize);
+    registerManifest<LIMIT_BY_MANIFEST>(registry, LimitByStep::deserialize);
 }
 
 }

@@ -5,6 +5,8 @@
 namespace DB
 {
 
+struct NegativeLimitByWire;
+
 /// Executes negative LIMIT BY for specified columns. See NegativeLimitByTransform.
 class NegativeLimitByStep : public ITransformingStep
 {
@@ -25,11 +27,18 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `NegativeLimitByStep.cpp` declares.
+    NegativeLimitByWire toWire() const;
+    static QueryPlanStepPtr fromWire(NegativeLimitByWire wire, Deserialization & ctx);
+
     const Names & getColumns() const { return columns; }
 
     void applyOrder(const SortDescription & sort_description);
 
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override
     {
         output_header = input_headers.front();
@@ -41,6 +50,18 @@ private:
     Names columns;
 
     SortDescription sorted_columns_descr;
+};
+
+/// What `NegativeLimitByStep` puts on the wire in the framed format.
+struct NegativeLimitByWire
+{
+    UInt64 group_length = 0;
+    UInt64 group_offset = 0;
+    Names columns;
+    /// Selects the sorted-stream transform, which is correct only for an input sorted this way.
+    SortDescription sorted_columns_descr;
+
+    bool operator==(const NegativeLimitByWire &) const = default;
 };
 
 }

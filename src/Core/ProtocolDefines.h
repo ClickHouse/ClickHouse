@@ -102,19 +102,40 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 11 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
 /// properties of individual steps, so a remote plan fragment would otherwise execute with its default
 /// execution limits after deserialization.
-/// Version 12 adds the ReadInOrder info in the reading step in the plan
+/// Version 12 adds the ReadInOrder info in the reading step in the plan.
 /// Version 13 adds the `only_merge` flag (bit 128) on `AggregatingStep`, set on the merge step
 /// synthesized by the Cascades aggregation-pushdown transformation. Both sides gate the flag on
 /// the version, so a mixed-version cluster fails at plan time instead of at runtime.
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
 /// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
-/// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
-/// that one blob is reused for every replica, so a replica below this version must be excluded up front
-/// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
-/// future bump can't silently leave this gate behind.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// Version 16 is the framed format. The head is two fixed fields, `[version][format_kind]`, and does
+/// not change again: every later body layout keeps those two fields, so a reader that does not know
+/// the layout can still reject the plan on the kind. The version is a coarse gate - a reader refuses a
+/// version above the one it supports - but the deciding checks are the step names, settings and set
+/// kinds, which fail closed on anything the reader does not know. The body starts with an outline: the
+/// plan-level fields, the node and set counts, then for each step its name, header and changed
+/// settings. Each step payload and each set follows the outline as its own sized frame - a size then
+/// that many bytes - so a reader walks the plan one payload at a time and to its exact end with no
+/// total length. A reader can check the whole plan or print its shape from the outline alone.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
+/// The version writers use unless a query asks for another one. It can stay below
+/// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` for a release after a new version lands: the fleet then
+/// reads the new version everywhere before anyone writes it, and users can try it per query with
+/// `query_plan_serialization_version`. Move it up once the new version has proven itself.
+static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 16;
+/// Body layout of a framed stream, named in the head so a reader knows what it is looking at instead
+/// of inferring it from the version. 0 is never written. Every new layout takes the next value and
+/// names the plan version that introduced it.
+static constexpr auto DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE = 1;
+/// First version with the framed format.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 16;
+/// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
+/// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
+/// Not tied to `DBMS_QUERY_PLAN_SERIALIZATION_VERSION`: the plan is written per peer version (clamped
+/// to what the peer can read), so a replica that is merely older is served a stream it can read rather
+/// than the newest one, and only a replica below the flag itself has to be left out.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;

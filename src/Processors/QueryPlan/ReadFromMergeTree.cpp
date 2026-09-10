@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
@@ -6482,7 +6483,93 @@ void ReadFromMergeTree::verifyBucketedReadSupported() const
 }
 
 
-void ReadFromMergeTree::serialize(Serialization & ctx) const
+/// A filter travels as it is or not at all.
+template <>
+struct WireCodec<FilterDAGInfoPtr>
+{
+    static constexpr const char * name = "optional<FilterDAGInfo>";
+
+    static void write(const FilterDAGInfoPtr & value, IQueryPlanStep::Serialization & ctx)
+    {
+        WireEncoding::write(value != nullptr, ctx);
+        if (value)
+            value->serialize(ctx);
+    }
+
+    static void read(FilterDAGInfoPtr & target, IQueryPlanStep::Deserialization & ctx)
+    {
+        bool present = false;
+        WireEncoding::read(present, ctx);
+        if (present)
+            target = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
+    }
+};
+
+template <>
+struct WireCodec<PrewhereInfoPtr>
+{
+    static constexpr const char * name = "optional<PrewhereInfo>";
+
+    static void write(const PrewhereInfoPtr & value, IQueryPlanStep::Serialization & ctx)
+    {
+        WireEncoding::write(value != nullptr, ctx);
+        if (value)
+            value->serialize(ctx);
+    }
+
+    static void read(PrewhereInfoPtr & target, IQueryPlanStep::Deserialization & ctx)
+    {
+        bool present = false;
+        WireEncoding::read(present, ctx);
+        if (present)
+            target = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
+    }
+};
+
+template <>
+struct WireCodec<ReadInOrderWire>
+{
+    static constexpr const char * name = "ReadInOrder";
+
+    static void write(const ReadInOrderWire & value, IQueryPlanStep::Serialization & ctx)
+    {
+        WireEncoding::write(value.sorting_key_prefix_size, ctx);
+        WireEncoding::write(value.reverse, ctx);
+        WireEncoding::write(value.limit, ctx);
+    }
+
+    static void read(ReadInOrderWire & target, IQueryPlanStep::Deserialization & ctx)
+    {
+        WireEncoding::read(target.sorting_key_prefix_size, ctx);
+        WireEncoding::read(target.reverse, ctx);
+        WireEncoding::read(target.limit, ctx);
+    }
+};
+
+namespace
+{
+
+constexpr auto READ_FROM_MERGE_TREE_MANIFEST = StepManifest<ReadFromMergeTree, ReadFromMergeTreeWire>("ReadFromMergeTree")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("database", WireFieldClass::Logical, &ReadFromMergeTreeWire::database),
+        field("table", WireFieldClass::Logical, &ReadFromMergeTreeWire::table),
+        field("columns", WireFieldClass::Logical, &ReadFromMergeTreeWire::columns),
+        field("max_block_size", WireFieldClass::Physical, &ReadFromMergeTreeWire::max_block_size),
+        field("num_streams", WireFieldClass::Physical, &ReadFromMergeTreeWire::num_streams),
+        field("final", WireFieldClass::Logical, &ReadFromMergeTreeWire::final),
+        field("sample_size_ratio", WireFieldClass::Logical, &ReadFromMergeTreeWire::sample_size_ratio),
+        field("sample_offset_ratio", WireFieldClass::Logical, &ReadFromMergeTreeWire::sample_offset_ratio),
+        field("row_level_filter", WireFieldClass::Logical, &ReadFromMergeTreeWire::row_level_filter),
+        field("prewhere_info", WireFieldClass::Logical, &ReadFromMergeTreeWire::prewhere_info),
+        field("parallel_reading_from_replicas", WireFieldClass::Physical, &ReadFromMergeTreeWire::parallel_reading_from_replicas),
+        field("distributed_read_bucket_count", WireFieldClass::Physical, &ReadFromMergeTreeWire::distributed_read_bucket_count),
+        field("distributed_read_param_name", WireFieldClass::Physical, &ReadFromMergeTreeWire::distributed_read_param_name),
+        field("read_in_order", WireFieldClass::Logical, &ReadFromMergeTreeWire::read_in_order));
+
+}
+
+ReadFromMergeTreeWire ReadFromMergeTree::toWire() const
 {
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
@@ -6492,6 +6579,154 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             "make_distributed_plan does not support a distributed read with the STREAM modifier");
 
     verifyBucketedReadSupported();
+
+    /// The replica path serializes deferred FINAL filters as ordinary read filters, which would apply them
+    /// before FINAL. The coordinator only buckets a deferred-FINAL read for the stateless worker, so a
+    /// bucketed deferred read must never reach this replica serializer -- reject it rather than return
+    /// rows filtered before the merge.
+    if (distributed_read_bucket_count > 0 && (deferred_row_level_filter || deferred_prewhere_info))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support a bucketed distributed read with deferred FINAL filters on the replica path");
+
+    ReadFromMergeTreeWire wire;
+    StorageID table_id = data.getStorageID();
+    wire.database = table_id.getDatabaseName();
+    wire.table = table_id.getTableName();
+    wire.columns = getAllColumnNames();
+    wire.max_block_size = getMaxBlockSize();
+    wire.num_streams = getNumStreams();
+
+    if (const auto & modifiers = query_info.table_expression_modifiers)
+    {
+        wire.final = modifiers->hasFinal();
+        wire.sample_size_ratio = modifiers->getSampleSizeRatio();
+        wire.sample_offset_ratio = modifiers->getSampleOffsetRatio();
+    }
+    wire.row_level_filter = query_info.row_level_filter;
+    wire.prewhere_info = query_info.prewhere_info;
+    wire.parallel_reading_from_replicas = is_parallel_reading_from_replicas;
+
+    /// `join_runtime_filters_for_index_analysis` is not on the wire: the receiver builds the read without
+    /// the descriptors and skips the runtime granule pruning, which costs performance, not correctness.
+    /// Propagating the descriptors is a follow-up.
+
+    /// Only a bucketed read carries the read-in-order request: the receiver installs the order the
+    /// coordinator chose, which is meaningful only for a read that was made distributed.
+    wire.distributed_read_bucket_count = distributed_read_bucket_count;
+    if (distributed_read_bucket_count > 0)
+    {
+        wire.distributed_read_param_name = distributed_read_param_name;
+        if (const auto & order = query_info.input_order_info)
+            wire.read_in_order = ReadInOrderWire{order->used_prefix_of_sorting_key_size, order->direction < 0, order->limit};
+    }
+    return wire;
+}
+
+QueryPlanStepPtr ReadFromMergeTree::fromWire(ReadFromMergeTreeWire wire, Deserialization & ctx)
+{
+    /// The plan is only being drained off the buffer (TCPHandler::skipData) and will be discarded, so a
+    /// placeholder that carries the header (satisfies the header check) replaces the table lookup, the
+    /// index analysis and the parallel-replicas callback wiring for a step that is never executed.
+    if (ctx.skipping)
+        return std::make_unique<ReadNothingStep>(ctx.output_header);
+
+    SelectQueryInfo query_info;
+    query_info.table_expression_modifiers.emplace(wire.final, wire.sample_size_ratio, wire.sample_offset_ratio);
+    query_info.row_level_filter = std::move(wire.row_level_filter);
+    query_info.prewhere_info = std::move(wire.prewhere_info);
+
+    /// The table could be dropped concurrently after the plan was serialized,
+    /// so a failed lookup is a regular error, not a logical one.
+    StorageID table_id(wire.database, wire.table);
+    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, ctx.context);
+
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(storage_ptr.get());
+    if (!merge_tree)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+            "Table {} is not a MergeTree table", table_id.getNameForLogs());
+
+    MergeTreeData & table = *merge_tree;
+    MergeTreeDataSelectExecutor executor(table);
+
+    const auto metadata_snapshot = table.getInMemoryMetadataPtr(ctx.context, false);
+    StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+
+    auto step = executor.readFromParts(
+        snapshot_data.parts,
+        snapshot_data.mutations_snapshot,
+        wire.columns,
+        storage_snapshot,
+        query_info,
+        ctx.context,
+        wire.max_block_size,
+        wire.num_streams,
+        /*max_block_numbers_to_read*/ nullptr,
+        /*merge_tree_select_result_ptr*/ nullptr,
+        /// On a replica this rebuilds the read in parallel-reading mode: the ReadFromMergeTree ctor
+        /// resolves the coordinator callbacks from ctx.context (set by TCPHandler) and the replica number
+        /// from client_info. Passing no extension keeps those resolved from the context. This path is
+        /// only reached for a plan that will actually be executed (see the ctx.skipping short-circuit
+        /// above), so the callbacks are always present.
+        wire.parallel_reading_from_replicas,
+        /*extension*/ nullptr);
+
+    if (wire.distributed_read_bucket_count)
+    {
+        auto * read_from_merge_tree_step = dynamic_cast<ReadFromMergeTree *>(step.get());
+        if (!read_from_merge_tree_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
+        read_from_merge_tree_step->setDistributedRead(wire.distributed_read_bucket_count);
+
+        /// Inject the "read in order" the coordinator chose. This replica's ReadFromMergeTree step
+        /// drives the ordinary in-order path, including the per-layer merge and the reverse transform.
+        if (wire.read_in_order
+            && !read_from_merge_tree_step->requestReadingInOrder(
+                wire.read_in_order->sorting_key_prefix_size, wire.read_in_order->reverse ? -1 : 1, wire.read_in_order->limit))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Coordinator asked for a read-in-order distributed read that this node refused");
+        read_from_merge_tree_step->setDistributedReadParamName(std::move(wire.distributed_read_param_name));
+    }
+
+    /// Need to keep shared pointer to MergeTree table till the end of plan execution
+    ctx.storage_holders.push_back(storage_ptr);
+    return step;
+}
+
+void ReadFromMergeTree::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(READ_FROM_MERGE_TREE_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ReadFromMergeTree::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(READ_FROM_MERGE_TREE_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ReadFromMergeTree::serializeLegacy(Serialization & ctx) const
+{
+    /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
+    /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
+    /// earlier in checkDistributedReadSupported.)
+    if (query_info.isStream())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support a distributed read with the STREAM modifier");
+
+    verifyBucketedReadSupported();
+
+    /// A replica reading a stream older than version 3 would not know the parallel-replicas flag bit,
+    /// silently ignore it and do a full non-parallel read. Refuse before any bytes are written.
+    if (is_parallel_reading_from_replicas
+        && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot serialize a parallel-replicas read for query plan version {} (requires at least {})",
+            ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS);
+
     /// The replica path serializes deferred FINAL filters as ordinary read filters, which would apply them
     /// before FINAL. The coordinator only buckets a deferred-FINAL read for the stateless worker, so a
     /// bucketed deferred read must never reach this replica serializer -- reject it rather than return
@@ -6582,7 +6817,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         writeStringBinary(distributed_read_param_name, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ReadFromMergeTree::deserializeLegacy(Deserialization & ctx)
 {
     String database_name;
     String table_name;
@@ -6730,7 +6965,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromMergeTree", ReadFromMergeTree::deserialize);
+    registerManifest<READ_FROM_MERGE_TREE_MANIFEST>(registry, ReadFromMergeTree::deserialize);
 }
 
 }

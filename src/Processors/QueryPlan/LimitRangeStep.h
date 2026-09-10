@@ -8,6 +8,8 @@
 namespace DB
 {
 
+struct LimitRangeWire;
+
 /** Executes LIMIT [n] AFTER expr [ALL] [UNTIL expr]. See LimitRangeTransform. */
 class LimitRangeStep : public ITransformingStep
 {
@@ -38,11 +40,19 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `LimitRangeStep.cpp` declares.
+    LimitRangeWire toWire() const;
+    static QueryPlanStepPtr fromWire(LimitRangeWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return conditions.hasCorrelatedColumns(); }
 
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
+
     void updateOutputHeader() override
     {
         output_header = input_headers.front();

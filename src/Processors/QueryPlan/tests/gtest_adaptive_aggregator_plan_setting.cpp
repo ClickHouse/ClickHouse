@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -32,6 +33,7 @@ namespace
 {
 
 constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+constexpr UInt64 last_legacy_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE - 1;
 constexpr UInt64 pre_setting_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR - 1;
 
 QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_aggregator, UInt64 version)
@@ -82,15 +84,36 @@ bool wireCarries(const QueryPlanSerializationSettings & settings, std::string_vi
     return out.str().contains(name);
 }
 
+/// What a peer reads from the binary settings stream, as `QueryPlan::deserialize` does per step.
+QueryPlanSerializationSettings readAsPeer(const QueryPlanSerializationSettings & settings)
+{
+    WriteBufferFromOwnString out;
+    settings.writeChangedBinary(out);
+    ReadBufferFromString in(out.str());
+    QueryPlanSerializationSettings peer;
+    peer.readBinary(in);
+    return peer;
+}
+
 }
 
 TEST(AdaptiveAggregatorPlanSetting, CarriedTowardsAPeerThatKnowsTheNames)
 {
-    /// Both values are written for a peer at the current version, whichever way the setting is resolved, so the
-    /// initiator's decision - including an admission that turned it off - reaches the remote aggregation.
+    /// A peer at the current version reads the initiator's decision whichever way the setting is resolved,
+    /// including an admission that turned it off. The framed format names a setting only when its value differs
+    /// from the default, and the peer reconstructs the default for an absent name.
     for (bool enabled : {false, true})
     {
-        const auto settings = serializeAggregatingStep(enabled, current_version);
+        const auto peer = readAsPeer(serializeAggregatingStep(enabled, current_version));
+        EXPECT_EQ(peer[QueryPlanSerializationSetting::enable_adaptive_aggregator], enabled) << "enabled = " << enabled;
+        EXPECT_EQ(peer[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold], 4096u) << "enabled = " << enabled;
+        EXPECT_EQ(peer[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes], 4096u) << "enabled = " << enabled;
+    }
+
+    /// A legacy stream names all three values.
+    for (bool enabled : {false, true})
+    {
+        const auto settings = serializeAggregatingStep(enabled, last_legacy_version);
         EXPECT_TRUE(wireCarries(settings, "enable_adaptive_aggregator")) << "enabled = " << enabled;
         EXPECT_TRUE(wireCarries(settings, "adaptive_aggregator_freeze_threshold")) << "enabled = " << enabled;
         EXPECT_TRUE(wireCarries(settings, "adaptive_aggregator_freeze_threshold_bytes")) << "enabled = " << enabled;

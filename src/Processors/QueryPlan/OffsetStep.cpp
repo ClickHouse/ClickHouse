@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/OffsetTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -56,12 +57,46 @@ void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Offset", offset);
 }
 
+namespace
+{
+
+constexpr auto OFFSET_MANIFEST = StepManifest<OffsetStep, OffsetWire>("Offset")
+    .nameIntroducedIn(1)
+    .baseFormat(field("offset", WireFieldClass::Logical, &OffsetWire::offset));
+
+}
+
+OffsetWire OffsetStep::toWire() const
+{
+    return OffsetWire{offset};
+}
+
+QueryPlanStepPtr OffsetStep::fromWire(OffsetWire wire, Deserialization & ctx)
+{
+    return std::make_unique<OffsetStep>(ctx.input_headers.front(), wire.offset);
+}
+
 void OffsetStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(OFFSET_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr OffsetStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(OFFSET_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void OffsetStep::serializeLegacy(Serialization & ctx) const
 {
     writeVarUInt(offset, ctx.out);
 }
 
-QueryPlanStepPtr OffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr OffsetStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt64 offset = 0;
     readVarUInt(offset, ctx.in);
@@ -77,7 +112,7 @@ QueryPlanStepPtr OffsetStep::clone() const
 void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Offset", OffsetStep::deserialize);
+    registerManifest<OFFSET_MANIFEST>(registry, OffsetStep::deserialize);
 }
 
 }

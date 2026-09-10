@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/BroadcastSendStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -53,13 +54,50 @@ QueryPipelineBuilderPtr BroadcastSendStep::updatePipeline(QueryPipelineBuilders 
     return std::move(pipelines.front());
 }
 
+namespace
+{
+
+constexpr auto BROADCAST_SEND_MANIFEST = StepManifest<BroadcastSendStep, BroadcastSendWire>("BroadcastSend")
+    .nameIntroducedIn(1)
+    .inputs(1)
+    .baseFormat(
+        field("exchange_id", WireFieldClass::Logical, &BroadcastSendWire::exchange_id),
+        field("num_buckets", WireFieldClass::Physical, &BroadcastSendWire::num_buckets));
+
+}
+
+BroadcastSendWire BroadcastSendStep::toWire() const
+{
+    return BroadcastSendWire{exchange_id, num_buckets};
+}
+
+QueryPlanStepPtr BroadcastSendStep::fromWire(BroadcastSendWire wire, Deserialization & ctx)
+{
+    return std::make_unique<BroadcastSendStep>(ctx.input_headers.front(), std::move(wire.exchange_id), wire.num_buckets);
+}
+
 void BroadcastSendStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(BROADCAST_SEND_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr BroadcastSendStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(BROADCAST_SEND_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void BroadcastSendStep::serializeLegacy(Serialization & ctx) const
 {
     writeStringBinary(exchange_id, ctx.out);
     writeVarUInt(num_buckets, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> BroadcastSendStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr BroadcastSendStep::deserializeLegacy(Deserialization & ctx)
 {
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
@@ -73,7 +111,7 @@ std::unique_ptr<IQueryPlanStep> BroadcastSendStep::deserialize(Deserialization &
 void registerBroadcastSendStep(QueryPlanStepRegistry & registry);
 void registerBroadcastSendStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("BroadcastSend", BroadcastSendStep::deserialize);
+    registerManifest<BROADCAST_SEND_MANIFEST>(registry, BroadcastSendStep::deserialize);
 }
 
 }

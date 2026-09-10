@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -126,7 +127,7 @@ void CubeStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(generateOutputHeader(params.getHeader(*input_headers.front(), final), params.keys, use_nulls));
 }
 
-void CubeStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void CubeStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const
 {
     /// Only the parameters the transform's block merge reads; the reader rebuilds merge-only
     /// `Aggregator::Params` from them, like `MergingAggregatedStep` does.
@@ -138,7 +139,76 @@ void CubeStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt
     settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = params.enable_packed_string_keys;
 }
 
+namespace
+{
+
+constexpr auto CUBE_MANIFEST = StepManifest<CubeStep, CubeWire>("Cube")
+    .nameIntroducedIn(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_CUBE_STEP)
+    .baseFormat(
+        field("keys", WireFieldClass::Logical, &CubeWire::keys),
+        field("aggregates", WireFieldClass::Logical, &CubeWire::aggregates),
+        field("final", WireFieldClass::Logical, &CubeWire::final),
+        field("overflow_row", WireFieldClass::Logical, &CubeWire::overflow_row),
+        field("use_nulls", WireFieldClass::Logical, &CubeWire::use_nulls))
+    .settings(
+        setting(QueryPlanSerializationSetting::max_block_size, WireFieldClass::Physical, &CubeWire::max_block_size),
+        setting(QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization, WireFieldClass::Physical, &CubeWire::min_hit_rate_to_use_consecutive_keys_optimization),
+        setting(QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte, WireFieldClass::Physical, &CubeWire::serialize_string_in_memory_with_zero_byte),
+        setting(QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation, WireFieldClass::Physical, &CubeWire::enable_packed_string_keys_in_aggregation));
+
+}
+
+CubeWire CubeStep::toWire() const
+{
+    return CubeWire{
+        params.keys, {params.aggregates}, final, params.overflow_row, use_nulls,
+        params.max_block_size, params.min_hit_rate_to_use_consecutive_keys_optimization,
+        params.serialize_string_with_zero_byte, params.enable_packed_string_keys};
+}
+
+QueryPlanStepPtr CubeStep::fromWire(CubeWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "CubeStep must have one input stream");
+
+    Aggregator::Params params(
+        wire.keys,
+        wire.aggregates.value,
+        wire.overflow_row,
+        ctx.context->getSettingsRef()[Setting::max_threads],
+        wire.max_block_size,
+        wire.min_hit_rate_to_use_consecutive_keys_optimization,
+        wire.serialize_string_in_memory_with_zero_byte,
+        wire.enable_packed_string_keys_in_aggregation);
+    params.only_merge = false;
+
+    return std::make_unique<CubeStep>(ctx.input_headers.front(), std::move(params), wire.final, wire.use_nulls);
+}
+
+void CubeStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(CUBE_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings);
+}
+
 void CubeStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(CUBE_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(CUBE_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void CubeStep::serializeLegacy(Serialization & ctx) const
 {
     /// A "Cube" step is only registered under `QueryPlanStepRegistry` since query-plan serialization
     /// version 8; an older peer does not know the step name and would throw on it. Throw here rather
@@ -167,7 +237,7 @@ void CubeStep::serialize(Serialization & ctx) const
     serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
 }
 
-QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr CubeStep::deserializeLegacy(Deserialization & ctx)
 {
     /// Mirrors the guard in `serialize`: a "Cube" step never legitimately arrives from a stream
     /// written below this version, since a peer that old cannot have written one.
@@ -219,7 +289,7 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
 void registerCubeStep(QueryPlanStepRegistry & registry);
 void registerCubeStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Cube", CubeStep::deserialize);
+    registerManifest<CUBE_MANIFEST>(registry, CubeStep::deserialize);
 }
 
 }

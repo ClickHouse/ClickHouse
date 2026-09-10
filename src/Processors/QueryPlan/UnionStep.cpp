@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -218,7 +219,43 @@ void UnionStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
+namespace
+{
+
+constexpr auto UNION_MANIFEST = StepManifest<UnionStep, UnionWire>("Union")
+    .nameIntroducedIn(1)
+    .variableInputs()
+    .baseFormat(
+        field("allow_narrowing", WireFieldClass::Logical, &UnionWire::allow_narrowing));
+
+}
+
+UnionWire UnionStep::toWire() const
+{
+    return UnionWire{allow_narrowing};
+}
+
+QueryPlanStepPtr UnionStep::fromWire(UnionWire wire, Deserialization & ctx)
+{
+    return std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, wire.allow_narrowing);
+}
+
 void UnionStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(UNION_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(UNION_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void UnionStep::serializeLegacy(Serialization & ctx) const
 {
     /// Only the planner knows whether this union may be narrowed (SQL UNION) or feeds an
     /// order-sensitive consumer that forbids it, so the flag must survive the round trip.
@@ -230,7 +267,7 @@ void UnionStep::serialize(Serialization & ctx) const
     writeIntBinary(flags, ctx.out);
 }
 
-QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr UnionStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
@@ -245,7 +282,7 @@ QueryPlanStepPtr UnionStep::clone() const
 void registerUnionStep(QueryPlanStepRegistry & registry);
 void registerUnionStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Union", &UnionStep::deserialize);
+    registerManifest<UNION_MANIFEST>(registry, &UnionStep::deserialize);
 }
 
 }

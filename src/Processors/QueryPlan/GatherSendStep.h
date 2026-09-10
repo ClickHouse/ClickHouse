@@ -9,6 +9,8 @@
 namespace DB
 {
 
+struct GatherSendWire;
+
 /// Send part of GatherExchangeStep
 class GatherSendStep final : public IQueryPlanStep
 {
@@ -33,11 +35,28 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `GatherSendStep.cpp` declares.
+    GatherSendWire toWire() const;
+    static QueryPlanStepPtr fromWire(GatherSendWire wire, Deserialization & ctx);
+
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override {}
 
     const String exchange_id;
     const std::optional<SortDescription> maintain_sort_description;
+};
+
+/// What `GatherSendStep` puts on the wire in the framed format.
+struct GatherSendWire
+{
+    String exchange_id;
+    /// Present when the gather keeps the input order.
+    std::optional<SortDescription> maintain_sort_description;
+
+    bool operator==(const GatherSendWire &) const = default;
 };
 
 }

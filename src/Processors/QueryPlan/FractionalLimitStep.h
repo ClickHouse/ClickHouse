@@ -6,6 +6,8 @@
 namespace DB
 {
 
+struct FractionalLimitWire;
+
 /// Executes Fractional LIMIT, See FractionalLimitTransform.
 class FractionalLimitStep : public ITransformingStep
 {
@@ -34,6 +36,10 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `FractionalLimitStep.cpp` declares.
+    FractionalLimitWire toWire() const;
+    static QueryPlanStepPtr fromWire(FractionalLimitWire wire, Deserialization & ctx);
+
     bool hasCorrelatedExpressions() const override { return false; }
 
     /// The fraction is resolved against the whole result, so `apply_prelimit` never pushes this to a
@@ -41,6 +47,9 @@ public:
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override { output_header = input_headers.front(); }
 
     Float64 limit_fraction;
@@ -50,6 +59,19 @@ private:
 
     bool with_ties;
     const SortDescription description;
+};
+
+/// What `FractionalLimitStep` puts on the wire in the framed format.
+struct FractionalLimitWire
+{
+    Float64 limit_fraction = 0;
+    Float64 offset_fraction = 0;
+    UInt64 offset = 0;
+    bool with_ties = false;
+    /// Empty unless `with_ties`; one byte on the wire when empty.
+    SortDescription description;
+
+    bool operator==(const FractionalLimitWire &) const = default;
 };
 
 }

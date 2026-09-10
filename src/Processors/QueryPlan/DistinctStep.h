@@ -5,6 +5,8 @@
 namespace DB
 {
 
+struct DistinctWire;
+
 /// Whether adding a hashing preliminary DISTINCT can pay off, given the effective number of threads the
 /// caller has already resolved. Such a step deduplicates each stream on its own so that the final,
 /// single-stream DISTINCT has fewer rows left to merge, which takes a second stream to be worth
@@ -49,6 +51,11 @@ public:
     static QueryPlanStepPtr deserializeNormal(Deserialization & ctx);
     static QueryPlanStepPtr deserializePre(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifests in `DistinctStep.cpp` declare,
+    /// one per serialization name.
+    DistinctWire toWire() const;
+    static QueryPlanStepPtr fromWire(DistinctWire wire, Deserialization & ctx, bool pre_distinct_);
+
     QueryPlanStepPtr clone() const override;
 
     const SizeLimits & getSetSizeLimits() const { return set_size_limits; }
@@ -65,12 +72,36 @@ public:
 private:
     void updateOutputHeader() override;
 
+    /// Streams below the framed format.
+    void serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const;
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx, bool pre_distinct_);
+
     SizeLimits set_size_limits;
     UInt64 limit_hint;
     const Names columns;
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+};
+
+/// What `DistinctStep` puts on the wire in the framed format. The first four members are the
+/// payload; the last three travel through the settings channel.
+struct DistinctWire
+{
+    Names columns;
+    /// Both DISTINCT transforms stop once this many distinct rows were produced.
+    UInt64 limit_hint = 0;
+    /// Selects the sorted-stream transform, which is correct only for an input sorted this way.
+    SortDescription distinct_sort_desc;
+    /// Lets the final DISTINCT skip the merge into one stream.
+    bool skip_stream_merging = false;
+
+    UInt64 max_rows = 0;
+    UInt64 max_bytes = 0;
+    OverflowMode overflow_mode = OverflowMode::THROW;
+
+    bool operator==(const DistinctWire &) const = default;
 };
 
 }

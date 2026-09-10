@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/TotalsHavingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -165,13 +166,78 @@ void TotalsHavingStep::updateOutputHeader()
             getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
-void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void TotalsHavingStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
     settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;
 }
 
+namespace
+{
+
+constexpr auto TOTALS_HAVING_MANIFEST = StepManifest<TotalsHavingStep, TotalsHavingWire>("TotalsHaving")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("aggregates", WireFieldClass::Logical, &TotalsHavingWire::aggregates),
+        field("overflow_row", WireFieldClass::Logical, &TotalsHavingWire::overflow_row),
+        field("actions_dag", WireFieldClass::Logical, &TotalsHavingWire::actions_dag),
+        field("filter_column_name", WireFieldClass::Logical, &TotalsHavingWire::filter_column_name),
+        field("remove_filter", WireFieldClass::Logical, &TotalsHavingWire::remove_filter),
+        field("final", WireFieldClass::Logical, &TotalsHavingWire::final))
+    .settings(
+        setting(QueryPlanSerializationSetting::totals_mode, WireFieldClass::Logical, &TotalsHavingWire::totals_mode),
+        setting(QueryPlanSerializationSetting::totals_auto_threshold, WireFieldClass::Logical, &TotalsHavingWire::auto_include_threshold));
+
+}
+
+TotalsHavingWire TotalsHavingStep::toWire() const
+{
+    return TotalsHavingWire{
+        aggregates, overflow_row, actions_dag ? std::optional<ActionsDAG>(actions_dag->clone()) : std::nullopt,
+        filter_column_name, remove_filter, final, totals_mode, auto_include_threshold};
+}
+
+QueryPlanStepPtr TotalsHavingStep::fromWire(TotalsHavingWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
+
+    return std::make_unique<TotalsHavingStep>(
+        ctx.input_headers.front(),
+        std::move(wire.aggregates),
+        wire.overflow_row,
+        std::move(wire.actions_dag),
+        std::move(wire.filter_column_name),
+        wire.remove_filter,
+        wire.totals_mode,
+        wire.auto_include_threshold,
+        wire.final);
+}
+
+void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(TOTALS_HAVING_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings);
+}
+
 void TotalsHavingStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(TOTALS_HAVING_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(TOTALS_HAVING_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void TotalsHavingStep::serializeLegacy(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (final)
@@ -194,7 +260,7 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
     }
 }
 
-QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr TotalsHavingStep::deserializeLegacy(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
@@ -216,7 +282,7 @@ QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
     {
         readStringBinary(filter_column_name, ctx.in);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
     }
 
     return std::make_unique<TotalsHavingStep>(
@@ -239,7 +305,7 @@ QueryPlanStepPtr TotalsHavingStep::clone() const
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);
+    registerManifest<TOTALS_HAVING_MANIFEST>(registry, TotalsHavingStep::deserialize);
 }
 
 }

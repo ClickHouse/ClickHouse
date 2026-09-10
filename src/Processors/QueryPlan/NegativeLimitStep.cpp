@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -94,7 +95,50 @@ void NegativeLimitStep::describeActions(JSONBuilder::JSONMap & map) const
 /// bumping the plan version would make the old server reject *every* serialized plan from the newer
 /// initiator (including plain negative `LIMIT`), whereas the `flags` byte rejects only the plans
 /// that genuinely use the unsupported feature.
+namespace
+{
+
+constexpr auto NEGATIVE_LIMIT_MANIFEST = StepManifest<NegativeLimitStep, NegativeLimitWire>("NegativeLimit")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("limit", WireFieldClass::Logical, &NegativeLimitWire::limit),
+        field("offset", WireFieldClass::Logical, &NegativeLimitWire::offset),
+        field("with_ties", WireFieldClass::Logical, &NegativeLimitWire::with_ties),
+        field("description", WireFieldClass::Logical, &NegativeLimitWire::description),
+        field("is_shard_limit", WireFieldClass::Logical, &NegativeLimitWire::is_shard_limit));
+
+}
+
+NegativeLimitWire NegativeLimitStep::toWire() const
+{
+    return NegativeLimitWire{limit, offset, with_ties, description, is_shard_limit};
+}
+
+QueryPlanStepPtr NegativeLimitStep::fromWire(NegativeLimitWire wire, Deserialization & ctx)
+{
+    auto step = std::make_unique<NegativeLimitStep>(
+        ctx.input_headers.front(), wire.limit, wire.offset, wire.with_ties, std::move(wire.description));
+    if (wire.is_shard_limit)
+        step->markAsShardLimit();
+    return step;
+}
+
 void NegativeLimitStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(NEGATIVE_LIMIT_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(NEGATIVE_LIMIT_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void NegativeLimitStep::serializeLegacy(Serialization & ctx) const
 {
     UInt8 flags = 0;
     if (with_ties)
@@ -108,7 +152,7 @@ void NegativeLimitStep::serialize(Serialization & ctx) const
         serializeSortDescription(description, ctx.out);
 }
 
-QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr NegativeLimitStep::deserializeLegacy(Deserialization & ctx)
 {
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
@@ -136,7 +180,7 @@ QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
 void registerNegativeLimitStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("NegativeLimit", NegativeLimitStep::deserialize);
+    registerManifest<NEGATIVE_LIMIT_MANIFEST>(registry, NegativeLimitStep::deserialize);
 }
 
 }

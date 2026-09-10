@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <Core/Defines.h>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -44,6 +45,7 @@ struct PreparedJoinStorage
     }
 };
 
+struct JoinWire;
 
 /** JoinStepLogical is a logical step for JOIN operation.
   * Doesn't contain any specific join algorithm or other execution details.
@@ -108,6 +110,10 @@ public:
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    /// The framed format: the wire struct is what the manifest in `JoinStepLogical.cpp` declares.
+    JoinWire toWire() const;
+    static QueryPlanStepPtr fromWire(JoinWire wire, Deserialization & ctx);
 
     QueryPlanStepPtr clone() const override;
 
@@ -254,6 +260,10 @@ protected:
     NameSet not_null_filters_derived_right;
 
 private:
+    /// Streams below the framed format.
+    void serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const;
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
 
     bool disjunctions_optimization_applied = false;
 };
@@ -292,5 +302,75 @@ std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness);
 /// prepared `Join` storage (which those passes exclude on their own).
 bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings);
 
+
+/// The join expression DAG with the two things that refer into it by node id: the join operator
+/// and the after-join node list. They go on the wire as one unit. Reading also builds the
+/// expression actions around the DAG, because the operator's references bind to them.
+struct JoinExpressionsWire
+{
+    std::shared_ptr<const ActionsDAG> actions_dag = std::make_shared<const ActionsDAG>();
+    JoinOperator join_operator{};
+    ActionsDAG::NodeRawConstPtrs actions_after_join;
+    std::optional<JoinExpressionActions> expression_actions;
+};
+
+/// What `JoinStepLogical` puts on the wire in the framed format. The members from `join_algorithm`
+/// on travel through the settings channel; they are the join settings and the sorting settings of a
+/// merge join.
+struct JoinWire
+{
+    JoinExpressionsWire join;
+
+    std::vector<JoinAlgorithm> join_algorithm = {JoinAlgorithm::DIRECT, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::HASH};
+    UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+    UInt64 max_rows_in_join = 0;
+    UInt64 max_bytes_in_join = 0;
+    UInt64 default_max_bytes_in_join = 1000000000;
+    UInt64 max_joined_block_size_rows = DEFAULT_BLOCK_SIZE;
+    UInt64 max_joined_block_size_bytes = 4 * 1024 * 1024;
+    UInt64 min_joined_block_size_rows = DEFAULT_BLOCK_SIZE;
+    UInt64 min_joined_block_size_bytes = 524288;
+    bool joined_block_split_single_row = false;
+    bool parallel_non_joined_rows_processing = true;
+    OverflowMode join_overflow_mode = OverflowMode::THROW;
+    bool join_any_take_last_row = false;
+    UInt64 cross_join_min_rows_to_compress = 10000000;
+    UInt64 cross_join_min_bytes_to_compress = 1024ULL * 1024 * 1024;
+    UInt64 partial_merge_join_left_table_buffer_bytes = 0;
+    UInt64 partial_merge_join_rows_in_right_blocks = 65536;
+    UInt64 join_on_disk_max_files_to_merge = 64;
+    UInt64 grace_hash_join_initial_buckets = 1;
+    UInt64 grace_hash_join_max_buckets = 1024;
+    UInt64 max_bytes_before_external_join = 0;
+    Float64 max_bytes_ratio_before_external_join = 0;
+    UInt64 max_rows_in_set_to_optimize_join = 0;
+    String temporary_files_codec = "LZ4";
+    UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+    bool collect_hash_table_stats_during_joins = true;
+    UInt64 max_size_to_preallocate_for_joins = 1000000000000;
+    UInt64 parallel_hash_join_threshold = 100000;
+    UInt64 join_output_by_rowlist_perkey_rows_threshold = 5;
+    bool allow_experimental_join_right_table_sorting = false;
+    UInt64 join_to_sort_minimum_perkey_rows = 40;
+    UInt64 join_to_sort_maximum_table_rows = 10000;
+    bool allow_dynamic_type_in_join_keys = false;
+    bool use_join_disjunctions_push_down = false;
+    bool enable_lazy_columns_replication = false;
+    bool enable_software_prefetch_in_join = true;
+    bool use_hash_table_stats_for_join_reordering = false;
+    bool enable_hash_join_row_store = true;
+    Float64 min_rows_ratio_for_hash_join_row_store = 5.0;
+    bool enable_join_fixed_hash_table_conversion = true;
+    bool join_runtime_filter_from_fixed_hash_table = true;
+    UInt64 max_rows_to_sort = 0;
+    UInt64 max_bytes_to_sort = 0;
+    OverflowMode sort_overflow_mode = OverflowMode::THROW;
+    UInt64 max_bytes_before_remerge_sort = 1000000000;
+    Float32 remerge_sort_lowered_memory_bytes_ratio = 2.0f;
+    UInt64 max_bytes_before_external_sort = 0;
+    Float64 max_bytes_ratio_before_external_sort = 0.5;
+    UInt64 min_free_disk_space_for_temporary_data = 0;
+    UInt64 prefer_external_sort_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+};
 
 }

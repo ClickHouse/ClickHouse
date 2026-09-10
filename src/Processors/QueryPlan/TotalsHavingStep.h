@@ -1,4 +1,5 @@
 #pragma once
+#include <Core/SettingsEnums.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/finalizeChunk.h>
 #include <Interpreters/ActionsDAG.h>
@@ -7,6 +8,8 @@ namespace DB
 {
 
 enum class TotalsMode : uint8_t;
+
+struct TotalsHavingWire;
 
 /// Execute HAVING and calculate totals. See TotalsHavingTransform.
 class TotalsHavingStep : public ITransformingStep
@@ -61,9 +64,17 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `TotalsHavingStep.cpp` declares.
+    TotalsHavingWire toWire() const;
+    static QueryPlanStepPtr fromWire(TotalsHavingWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
 private:
+    /// Streams below the framed format.
+    void serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const;
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
     const AggregateDescriptions aggregates;
@@ -75,6 +86,22 @@ private:
     TotalsMode totals_mode;
     float auto_include_threshold;
     bool final;
+};
+
+/// What `TotalsHavingStep` puts on the wire in the framed format. The last two members travel
+/// through the settings channel.
+struct TotalsHavingWire
+{
+    AggregateDescriptions aggregates;
+    bool overflow_row = false;
+    /// The HAVING filter; absent when there is none. The name and the flag below are then empty.
+    std::optional<ActionsDAG> actions_dag;
+    String filter_column_name;
+    bool remove_filter = false;
+    bool final = false;
+
+    TotalsMode totals_mode = TotalsMode::AFTER_HAVING_EXCLUSIVE;
+    Float32 auto_include_threshold = 0.5;
 };
 
 }

@@ -4475,7 +4475,8 @@ static ColumnConst::Ptr deserializeConstant(
     ReadBuffer & in,
     DeserializedSetsRegistry & registry,
     const ContextPtr & context,
-    size_t max_type_complexity)
+    size_t max_type_complexity,
+    size_t max_elements)
 {
     if (WhichDataType(type).isSet())
     {
@@ -4499,7 +4500,7 @@ static ColumnConst::Ptr deserializeConstant(
     {
         LambdaCapture capture;
         deserializeCapture(capture, in, max_type_complexity);
-        auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
+        auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, max_elements);
 
         UInt64 num_captured_columns = 0;
         readVarUInt(num_captured_columns, in);
@@ -4508,7 +4509,7 @@ static ColumnConst::Ptr deserializeConstant(
         for (auto & captured_column : captured_columns)
         {
             captured_column.type = decodeDataType(in, max_type_complexity);
-            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context, max_type_complexity);
+            captured_column.column = deserializeConstant(*captured_column.type, in, registry, context, max_type_complexity, max_elements);
             /// `deserializeConstant` returns size-0 ColumnConsts to match the DAG node invariant,
             /// but a `ColumnFunction` requires its captured columns to share its `elements_size`
             /// (1 below) — `ColumnFunction::replicate` calls `replicate(offsets)` on each capture,
@@ -4673,14 +4674,24 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         writeVarUInt(node_to_id.at(output), out);
 }
 
-ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity)
+ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity, size_t max_elements)
 {
+    /// Every element read below (a node, a child id, an input id, an output id) takes at least one
+    /// wire byte, so a count above `max_elements` cannot be honored by the remaining bytes and is
+    /// malformed. Caps the allocations a count drives; 0 leaves them unbounded for a trusted caller.
+    auto check_count = [&](size_t count, const char * what)
+    {
+        if (max_elements && count > max_elements)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Serialized ActionsDAG claims {} {} which exceeds the {} bytes it can occupy", count, what, max_elements);
+    };
     /// max_type_complexity is the type-complexity guard resolved once by the caller: the effective setting for
     /// client-reachable QueryPlan packets, or unlimited (0) for trusted internal metadata (e.g. data-lake
     /// schema transforms deserialized with the global context).
 
     size_t nodes_size = 0;
     readVarUInt(nodes_size, in);
+    check_count(nodes_size, "nodes");
 
     std::list<Node> nodes;
     std::unordered_map<size_t, Node *> id_to_node;
@@ -4702,6 +4713,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
 
         size_t children_size = 0;
         readVarUInt(children_size, in);
+        check_count(children_size, "children");
         for (size_t j = 0; j < children_size; ++j)
         {
             size_t child_id = 0;
@@ -4718,7 +4730,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             if ((column_flags & 2) == 0)
                 node.is_deterministic_constant = false;
 
-            node.column = deserializeConstant(*node.result_type, in, registry, context, max_type_complexity);
+            node.column = deserializeConstant(*node.result_type, in, registry, context, max_type_complexity, max_elements);
         }
 
         if (node.type == ActionType::INPUT)
@@ -4760,7 +4772,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
             {
                 LambdaCapture capture;
                 deserializeCapture(capture, in, max_type_complexity);
-                auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity);
+                auto capture_dag = ActionsDAG::deserialize(in, registry, context, max_type_complexity, max_elements);
 
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(
@@ -4813,6 +4825,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     readVarUInt(inputs_size, in);
     std::vector<const Node *> inputs;
     std::unordered_set<const Node *> inputs_set;
+    check_count(inputs_size, "inputs");
     inputs.reserve(inputs_size);
     for (size_t i = 0; i < inputs_size; ++i)
     {
@@ -4835,6 +4848,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     size_t outputs_size = 0;
     readVarUInt(outputs_size, in);
     std::vector<const Node *> outputs;
+    check_count(outputs_size, "outputs");
     outputs.reserve(outputs_size);
     for (size_t i = 0; i < outputs_size; ++i)
     {

@@ -27,6 +27,11 @@ struct IQueryPlanStep::Serialization
 
     /// Query-plan serialization version the stream is being written with (DBMS_QUERY_PLAN_SERIALIZATION_VERSION).
     UInt64 version = 0;
+
+    /// The payload format the step is writing, in a framed stream. Each step name owns exactly one
+    /// payload layout, so this is always 1; a format change takes a new step name, not a higher
+    /// number here. Kept as a reserved field the reader checks.
+    UInt64 step_format_version = 1;
 };
 
 struct SerializedSetsRegistry;
@@ -55,6 +60,15 @@ struct IQueryPlanStep::Deserialization
     /// Steps that are expensive or need execution-only context (index analysis, parallel-replicas
     /// callbacks) may read their bytes but build a lightweight placeholder instead of a real step.
     bool skipping = false;
+
+    /// The payload format the step was written with. Each step name owns exactly one payload layout,
+    /// so this is always 1; the reader refuses any other value before building the step.
+    UInt64 step_format_version = 1;
 };
+
+/// How a header goes on the wire, the same in the older stream and in the outline: column names and
+/// encoded types only. Steps refill the constants.
+void serializeQueryPlanHeader(const Block & header, WriteBuffer & out);
+Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity);
 
 }

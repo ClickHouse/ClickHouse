@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Core/Defines.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -9,6 +10,8 @@ namespace DB
 {
 
 class QueryPipelineProcessorsCollector;
+
+struct SortingWire;
 
 /// Sort data stream
 class SortingStep : public ITransformingStep
@@ -170,6 +173,10 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `SortingStep.cpp` declares.
+    SortingWire toWire() const;
+    static QueryPlanStepPtr fromWire(SortingWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
@@ -183,6 +190,10 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
 private:
+    /// Streams below the framed format.
+    void serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const;
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;
 
@@ -251,6 +262,47 @@ private:
     Processors merge_streams;
     Processors finalizing;
 
+};
+
+/// What `SortingStep` puts on the wire in the framed format: a full sort, or the finish of an input
+/// already sorted by a prefix. Only these two kinds are serialized. The members from `max_block_size`
+/// on travel through the settings channel.
+struct SortingWire
+{
+    SortDescription result_description;
+    SortDescription partition_by_description;
+    bool finish_sorting = false;
+    /// Empty unless `finish_sorting`.
+    SortDescription prefix_description;
+    UInt64 limit = 0;
+    bool use_buffering = false;
+    bool apply_virtual_row_conversions = false;
+    /// A partitioned full sort either reshuffles rows across streams by the partition hash or does not.
+    bool skip_scatter_by_partition = false;
+    /// Tells the optimizer what the sort is for; decides whether other passes may reshard it.
+    bool is_sorting_for_merge_join = false;
+    /// The partial stage of a two-stage top-N; a digest blind to it would fold the stage into its source.
+    bool is_partial_top_n = false;
+    /// Whether exhausted but unneeded inputs of the final merge are still drained.
+    bool always_read_till_end = false;
+    /// A per-stream LIMIT BY that drops rows when these columns are a prefix of the sort order.
+    Names limit_by_columns;
+    UInt64 limit_by_group_length = 0;
+    bool read_in_order_use_buffering = false;
+    bool read_in_order_use_virtual_row_per_block = false;
+
+    UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
+    UInt64 max_rows_to_sort = 0;
+    UInt64 max_bytes_to_sort = 0;
+    OverflowMode sort_overflow_mode = OverflowMode::THROW;
+    UInt64 max_bytes_before_remerge_sort = 1000000000;
+    Float32 remerge_sort_lowered_memory_bytes_ratio = 2.0f;
+    UInt64 max_bytes_before_external_sort = 0;
+    Float64 max_bytes_ratio_before_external_sort = 0.5;
+    UInt64 min_free_disk_space_for_temporary_data = 0;
+    UInt64 prefer_external_sort_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+    String temporary_files_codec = "LZ4";
+    UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 };
 
 }

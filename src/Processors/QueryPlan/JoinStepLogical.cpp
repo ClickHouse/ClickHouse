@@ -55,6 +55,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
@@ -79,6 +80,60 @@ constexpr std::string_view join_dummy_result_name = "__join_result_dummy";
 }
 namespace DB
 {
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsBool allow_dynamic_type_in_join_keys;
+    extern const QueryPlanSerializationSettingsBool allow_experimental_join_right_table_sorting;
+    extern const QueryPlanSerializationSettingsBool collect_hash_table_stats_during_joins;
+    extern const QueryPlanSerializationSettingsUInt64 cross_join_min_bytes_to_compress;
+    extern const QueryPlanSerializationSettingsUInt64 cross_join_min_rows_to_compress;
+    extern const QueryPlanSerializationSettingsUInt64 default_max_bytes_in_join;
+    extern const QueryPlanSerializationSettingsBool enable_hash_join_row_store;
+    extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
+    extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
+    extern const QueryPlanSerializationSettingsBool enable_software_prefetch_in_join;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_max_buckets;
+    extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
+    extern const QueryPlanSerializationSettingsBool join_any_take_last_row;
+    extern const QueryPlanSerializationSettingsUInt64 join_on_disk_max_files_to_merge;
+    extern const QueryPlanSerializationSettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
+    extern const QueryPlanSerializationSettingsOverflowMode join_overflow_mode;
+    extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const QueryPlanSerializationSettingsUInt64 join_to_sort_maximum_table_rows;
+    extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
+    extern const QueryPlanSerializationSettingsBool joined_block_split_single_row;
+    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_join;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
+    extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_join;
+    extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_to_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_bytes;
+    extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
+    extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
+    extern const QueryPlanSerializationSettingsUInt64 max_rows_in_set_to_optimize_join;
+    extern const QueryPlanSerializationSettingsUInt64 max_rows_to_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_size_to_preallocate_for_joins;
+    extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const QueryPlanSerializationSettingsUInt64 min_joined_block_size_bytes;
+    extern const QueryPlanSerializationSettingsUInt64 min_joined_block_size_rows;
+    extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
+    extern const QueryPlanSerializationSettingsUInt64 parallel_hash_join_threshold;
+    extern const QueryPlanSerializationSettingsBool parallel_non_joined_rows_processing;
+    extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_left_table_buffer_bytes;
+    extern const QueryPlanSerializationSettingsUInt64 partial_merge_join_rows_in_right_blocks;
+    extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
+    extern const QueryPlanSerializationSettingsFloat remerge_sort_lowered_memory_bytes_ratio;
+    extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
+    extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
+}
 
 namespace ErrorCodes
 {
@@ -2193,7 +2248,7 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void JoinStepLogical::serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const
 {
     join_settings.updatePlanSettings(settings);
     sorting_settings.updatePlanSettings(settings);
@@ -2214,23 +2269,15 @@ static void serializeNodeList(
     }
 }
 
-void JoinStepLogical::serialize(Serialization & ctx) const
-{
-    UInt8 flags = 0;
-    writeIntBinary(flags, ctx.out);
-
-    writeVarUInt(1, ctx.out);
-    auto actions_dag = expression_actions.getActionsDAG();
-    actions_dag->serialize(ctx.out, ctx.registry);
-
-    join_operator.serialize(ctx.out, actions_dag.get());
-    serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
-}
-
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
 {
     size_t num_nodes = 0;
     readVarUInt(num_nodes, in);
+    /// Each node id takes at least one wire byte, so a count above what is left is malformed; caps
+    /// the allocation against a payload that reads from a bounded in-memory frame.
+    if (const size_t frame_remaining = bytesRemainingInFrame(in); num_nodes > frame_remaining)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Node list claims {} nodes but only {} payload bytes remain", num_nodes, frame_remaining);
 
     size_t max_node_id = id_to_node.size();
 
@@ -2247,7 +2294,162 @@ static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const A
     return nodes;
 }
 
+template <>
+struct WireCodec<JoinExpressionsWire>
+{
+    static constexpr const char * name = "JoinExpressions";
+
+    static void write(const JoinExpressionsWire & value, IQueryPlanStep::Serialization & ctx)
+    {
+        value.actions_dag->serialize(ctx.out, ctx.registry);
+        value.join_operator.serialize(ctx.out, value.actions_dag.get());
+        serializeNodeList(ctx.out, value.actions_dag->getNodeToIdMap(), value.actions_after_join);
+    }
+
+    static void read(JoinExpressionsWire & target, IQueryPlanStep::Deserialization & ctx)
+    {
+        if (ctx.input_headers.size() != 2)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");
+
+        ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
+        auto id_to_node = actions_dag.getIdToNode();
+        JoinExpressionActions expression_actions(*ctx.input_headers.front(), *ctx.input_headers.back(), std::move(actions_dag));
+
+        target.join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
+        target.actions_after_join = deserializeNodeList(ctx.in, id_to_node);
+        target.actions_dag = expression_actions.getActionsDAG();
+        target.expression_actions.emplace(std::move(expression_actions));
+    }
+};
+
+namespace
+{
+
+constexpr auto JOIN_MANIFEST = StepManifest<JoinStepLogical, JoinWire>("Join")
+    .nameIntroducedIn(1)
+    .inputs(2)
+    .baseFormat(field("join", WireFieldClass::Logical, &JoinWire::join))
+    .settings(
+        setting(QueryPlanSerializationSetting::join_algorithm, WireFieldClass::Physical, &JoinWire::join_algorithm),
+        setting(QueryPlanSerializationSetting::max_block_size, WireFieldClass::Physical, &JoinWire::max_block_size),
+        setting(QueryPlanSerializationSetting::max_rows_in_join, WireFieldClass::Logical, &JoinWire::max_rows_in_join),
+        setting(QueryPlanSerializationSetting::max_bytes_in_join, WireFieldClass::Logical, &JoinWire::max_bytes_in_join),
+        setting(QueryPlanSerializationSetting::default_max_bytes_in_join, WireFieldClass::Logical, &JoinWire::default_max_bytes_in_join),
+        setting(QueryPlanSerializationSetting::max_joined_block_size_rows, WireFieldClass::Physical, &JoinWire::max_joined_block_size_rows),
+        setting(QueryPlanSerializationSetting::max_joined_block_size_bytes, WireFieldClass::Physical, &JoinWire::max_joined_block_size_bytes),
+        setting(QueryPlanSerializationSetting::min_joined_block_size_rows, WireFieldClass::Physical, &JoinWire::min_joined_block_size_rows),
+        setting(QueryPlanSerializationSetting::min_joined_block_size_bytes, WireFieldClass::Physical, &JoinWire::min_joined_block_size_bytes),
+        setting(QueryPlanSerializationSetting::joined_block_split_single_row, WireFieldClass::Physical, &JoinWire::joined_block_split_single_row),
+        setting(QueryPlanSerializationSetting::parallel_non_joined_rows_processing, WireFieldClass::Physical, &JoinWire::parallel_non_joined_rows_processing),
+        setting(QueryPlanSerializationSetting::join_overflow_mode, WireFieldClass::Logical, &JoinWire::join_overflow_mode),
+        setting(QueryPlanSerializationSetting::join_any_take_last_row, WireFieldClass::Logical, &JoinWire::join_any_take_last_row),
+        setting(QueryPlanSerializationSetting::cross_join_min_rows_to_compress, WireFieldClass::Physical, &JoinWire::cross_join_min_rows_to_compress),
+        setting(QueryPlanSerializationSetting::cross_join_min_bytes_to_compress, WireFieldClass::Physical, &JoinWire::cross_join_min_bytes_to_compress),
+        setting(QueryPlanSerializationSetting::partial_merge_join_left_table_buffer_bytes, WireFieldClass::Physical, &JoinWire::partial_merge_join_left_table_buffer_bytes),
+        setting(QueryPlanSerializationSetting::partial_merge_join_rows_in_right_blocks, WireFieldClass::Physical, &JoinWire::partial_merge_join_rows_in_right_blocks),
+        setting(QueryPlanSerializationSetting::join_on_disk_max_files_to_merge, WireFieldClass::Physical, &JoinWire::join_on_disk_max_files_to_merge),
+        setting(QueryPlanSerializationSetting::grace_hash_join_initial_buckets, WireFieldClass::Physical, &JoinWire::grace_hash_join_initial_buckets),
+        setting(QueryPlanSerializationSetting::grace_hash_join_max_buckets, WireFieldClass::Physical, &JoinWire::grace_hash_join_max_buckets),
+        setting(QueryPlanSerializationSetting::max_bytes_before_external_join, WireFieldClass::Physical, &JoinWire::max_bytes_before_external_join),
+        setting(QueryPlanSerializationSetting::max_bytes_ratio_before_external_join, WireFieldClass::Physical, &JoinWire::max_bytes_ratio_before_external_join),
+        setting(QueryPlanSerializationSetting::max_rows_in_set_to_optimize_join, WireFieldClass::Logical, &JoinWire::max_rows_in_set_to_optimize_join),
+        setting(QueryPlanSerializationSetting::temporary_files_codec, WireFieldClass::Physical, &JoinWire::temporary_files_codec),
+        setting(QueryPlanSerializationSetting::temporary_files_buffer_size, WireFieldClass::Physical, &JoinWire::temporary_files_buffer_size),
+        setting(QueryPlanSerializationSetting::collect_hash_table_stats_during_joins, WireFieldClass::Physical, &JoinWire::collect_hash_table_stats_during_joins),
+        setting(QueryPlanSerializationSetting::max_size_to_preallocate_for_joins, WireFieldClass::Physical, &JoinWire::max_size_to_preallocate_for_joins),
+        setting(QueryPlanSerializationSetting::parallel_hash_join_threshold, WireFieldClass::Physical, &JoinWire::parallel_hash_join_threshold),
+        setting(QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold, WireFieldClass::Physical, &JoinWire::join_output_by_rowlist_perkey_rows_threshold),
+        setting(QueryPlanSerializationSetting::allow_experimental_join_right_table_sorting, WireFieldClass::Physical, &JoinWire::allow_experimental_join_right_table_sorting),
+        setting(QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows, WireFieldClass::Physical, &JoinWire::join_to_sort_minimum_perkey_rows),
+        setting(QueryPlanSerializationSetting::join_to_sort_maximum_table_rows, WireFieldClass::Physical, &JoinWire::join_to_sort_maximum_table_rows),
+        setting(QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys, WireFieldClass::Physical, &JoinWire::allow_dynamic_type_in_join_keys),
+        setting(QueryPlanSerializationSetting::use_join_disjunctions_push_down, WireFieldClass::Physical, &JoinWire::use_join_disjunctions_push_down),
+        setting(QueryPlanSerializationSetting::enable_lazy_columns_replication, WireFieldClass::Physical, &JoinWire::enable_lazy_columns_replication),
+        setting(QueryPlanSerializationSetting::enable_software_prefetch_in_join, WireFieldClass::Physical, &JoinWire::enable_software_prefetch_in_join),
+        setting(QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering, WireFieldClass::Physical, &JoinWire::use_hash_table_stats_for_join_reordering),
+        setting(QueryPlanSerializationSetting::enable_hash_join_row_store, WireFieldClass::Physical, &JoinWire::enable_hash_join_row_store),
+        setting(QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store, WireFieldClass::Physical, &JoinWire::min_rows_ratio_for_hash_join_row_store),
+        setting(QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion, WireFieldClass::Physical, &JoinWire::enable_join_fixed_hash_table_conversion),
+        setting(QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table, WireFieldClass::Physical, &JoinWire::join_runtime_filter_from_fixed_hash_table),
+        setting(QueryPlanSerializationSetting::max_rows_to_sort, WireFieldClass::Logical, &JoinWire::max_rows_to_sort),
+        setting(QueryPlanSerializationSetting::max_bytes_to_sort, WireFieldClass::Logical, &JoinWire::max_bytes_to_sort),
+        setting(QueryPlanSerializationSetting::sort_overflow_mode, WireFieldClass::Logical, &JoinWire::sort_overflow_mode),
+        setting(QueryPlanSerializationSetting::max_bytes_before_remerge_sort, WireFieldClass::Physical, &JoinWire::max_bytes_before_remerge_sort),
+        setting(QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio, WireFieldClass::Physical, &JoinWire::remerge_sort_lowered_memory_bytes_ratio),
+        setting(QueryPlanSerializationSetting::max_bytes_before_external_sort, WireFieldClass::Physical, &JoinWire::max_bytes_before_external_sort),
+        setting(QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort, WireFieldClass::Physical, &JoinWire::max_bytes_ratio_before_external_sort),
+        setting(QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data, WireFieldClass::Physical, &JoinWire::min_free_disk_space_for_temporary_data),
+        setting(QueryPlanSerializationSetting::prefer_external_sort_block_bytes, WireFieldClass::Physical, &JoinWire::prefer_external_sort_block_bytes));
+
+}
+
+JoinWire JoinStepLogical::toWire() const
+{
+    JoinWire wire;
+    wire.join.actions_dag = expression_actions.getActionsDAG();
+    wire.join.join_operator = join_operator;
+    wire.join.actions_after_join = actions_after_join;
+
+    /// The join and the sorting settings each know their plan settings; the wire mirrors those.
+    QueryPlanSerializationSettings settings;
+    join_settings.updatePlanSettings(settings);
+    sorting_settings.updatePlanSettings(settings);
+    readManifestSettings(JOIN_MANIFEST, wire, settings);
+    return wire;
+}
+
+QueryPlanStepPtr JoinStepLogical::fromWire(JoinWire wire, Deserialization & ctx)
+{
+    QueryPlanSerializationSettings settings;
+    writeManifestSettings(JOIN_MANIFEST, wire, settings);
+
+    return std::make_unique<JoinStepLogical>(
+        ctx.input_headers.front(),
+        ctx.input_headers.back(),
+        std::move(wire.join.join_operator),
+        std::move(wire.join.expression_actions.value()),
+        std::move(wire.join.actions_after_join),
+        JoinSettings(settings),
+        SortingStep::Settings(settings));
+}
+
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(JOIN_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings);
+}
+
+void JoinStepLogical::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(JOIN_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
 QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(JOIN_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void JoinStepLogical::serializeLegacy(Serialization & ctx) const
+{
+    UInt8 flags = 0;
+    writeIntBinary(flags, ctx.out);
+
+    writeVarUInt(1, ctx.out);
+    auto actions_dag = expression_actions.getActionsDAG();
+    actions_dag->serialize(ctx.out, ctx.registry);
+
+    join_operator.serialize(ctx.out, actions_dag.get());
+    serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
+}
+
+QueryPlanStepPtr JoinStepLogical::deserializeLegacy(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");
@@ -2263,7 +2465,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         if (num_dags != 1)
             throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical deserialization expect 3 DAGs, got {}", num_dags);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity, bytesRemainingInFrame(ctx.in));
     }
     auto id_to_node = actions_dag.getIdToNode();
 
@@ -2361,7 +2563,7 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+    registerManifest<JOIN_MANIFEST>(registry, JoinStepLogical::deserialize);
 }
 
 

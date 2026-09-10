@@ -5,6 +5,8 @@
 namespace DB
 {
 
+struct LimitWire;
+
 /// Executes LIMIT. See LimitTransform.
 class LimitStep : public ITransformingStep
 {
@@ -44,6 +46,10 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `LimitStep.cpp` declares.
+    LimitWire toWire() const;
+    static QueryPlanStepPtr fromWire(LimitWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return false; }
@@ -58,6 +64,10 @@ private:
         output_header = input_headers.front();
     }
 
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
+
     size_t limit;
     size_t offset;
     bool always_read_till_end;
@@ -65,6 +75,21 @@ private:
     bool with_ties;
     const SortDescription description;
     bool is_shard_limit = false;
+};
+
+/// What `LimitStep` puts on the wire in the framed format.
+struct LimitWire
+{
+    UInt64 limit = 0;
+    UInt64 offset = 0;
+    bool always_read_till_end = false;
+    bool with_ties = false;
+    /// Empty unless `with_ties`; one byte on the wire when empty.
+    SortDescription description;
+    /// Reaches the transform, so the receiver needs it to build the same pipeline.
+    bool is_shard_limit = false;
+
+    bool operator==(const LimitWire &) const = default;
 };
 
 }

@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -94,7 +95,55 @@ void deserializeNames(Names & names, ReadBuffer & in)
 
 }
 
+namespace
+{
+
+constexpr auto SHUFFLE_SEND_MANIFEST = StepManifest<ShuffleSendStep, ShuffleSendWire>("ShuffleSend")
+    .nameIntroducedIn(1)
+    .inputs(1)
+    .baseFormat(
+        field("exchange_id", WireFieldClass::Logical, &ShuffleSendWire::exchange_id),
+        field("key_names", WireFieldClass::Logical, &ShuffleSendWire::key_names),
+        field("num_buckets", WireFieldClass::Physical, &ShuffleSendWire::num_buckets),
+        field("hash_cast_type_names", WireFieldClass::Logical, &ShuffleSendWire::hash_cast_type_names));
+
+}
+
+ShuffleSendWire ShuffleSendStep::toWire() const
+{
+    Strings type_names;
+    type_names.reserve(hash_cast_types.size());
+    for (const auto & type : hash_cast_types)
+        type_names.push_back(type ? type->getName() : "");
+    return ShuffleSendWire{exchange_id, key_names, num_buckets, std::move(type_names)};
+}
+
+QueryPlanStepPtr ShuffleSendStep::fromWire(ShuffleSendWire wire, Deserialization & ctx)
+{
+    DataTypes hash_cast_types;
+    hash_cast_types.reserve(wire.hash_cast_type_names.size());
+    for (const auto & type_name : wire.hash_cast_type_names)
+        hash_cast_types.push_back(type_name.empty() ? nullptr : DataTypeFactory::instance().get(type_name));
+    return std::make_unique<ShuffleSendStep>(
+        ctx.input_headers.front(), std::move(wire.exchange_id), std::move(wire.key_names), wire.num_buckets, std::move(hash_cast_types));
+}
+
 void ShuffleSendStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(SHUFFLE_SEND_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ShuffleSendStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(SHUFFLE_SEND_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ShuffleSendStep::serializeLegacy(Serialization & ctx) const
 {
     writeStringBinary(exchange_id, ctx.out);
     serializeNames(key_names, ctx.out);
@@ -105,7 +154,7 @@ void ShuffleSendStep::serialize(Serialization & ctx) const
         writeStringBinary(type ? type->getName() : "", ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> ShuffleSendStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ShuffleSendStep::deserializeLegacy(Deserialization & ctx)
 {
     String exchange_id;
     readStringBinary(exchange_id, ctx.in);
@@ -133,7 +182,7 @@ std::unique_ptr<IQueryPlanStep> ShuffleSendStep::deserialize(Deserialization & c
 void registerShuffleSendStep(QueryPlanStepRegistry & registry);
 void registerShuffleSendStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ShuffleSend", ShuffleSendStep::deserialize);
+    registerManifest<SHUFFLE_SEND_MANIFEST>(registry, ShuffleSendStep::deserialize);
 }
 
 }

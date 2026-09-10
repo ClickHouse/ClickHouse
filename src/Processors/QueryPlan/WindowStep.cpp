@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
@@ -271,6 +272,11 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 {
     UInt64 num_functions = 0;
     readVarUInt(num_functions, in);
+    /// Each function takes at least one wire byte, so a count above what is left is malformed;
+    /// caps the allocation against a payload that reads from a bounded in-memory frame.
+    if (const size_t frame_remaining = bytesRemainingInFrame(in); num_functions > frame_remaining)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "WindowStep claims {} functions but only {} payload bytes remain", num_functions, frame_remaining);
 
     std::vector<WindowFunctionDescription> window_functions(num_functions);
     for (auto & func : window_functions)
@@ -279,6 +285,10 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 
         UInt64 num_argument_names = 0;
         readVarUInt(num_argument_names, in);
+        if (const size_t frame_remaining = bytesRemainingInFrame(in); num_argument_names > frame_remaining)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "WindowStep function claims {} argument names but only {} payload bytes remain",
+                num_argument_names, frame_remaining);
         func.argument_names.resize(num_argument_names);
         for (auto & argument_name : func.argument_names)
             readStringBinary(argument_name, in);
@@ -304,6 +314,10 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
 
         UInt64 num_parameters = 0;
         readVarUInt(num_parameters, in);
+        if (const size_t frame_remaining = bytesRemainingInFrame(in); num_parameters > frame_remaining)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "WindowStep function claims {} parameters but only {} payload bytes remain",
+                num_parameters, frame_remaining);
         func.function_parameters.resize(num_parameters);
         for (auto & param : func.function_parameters)
             param = readFieldBinary(in);
@@ -321,7 +335,86 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     return window_functions;
 }
 
+/// The two encodings that only this step uses, as codecs of its wire struct.
+template <>
+struct WireCodec<WindowFrame>
+{
+    static constexpr const char * name = "WindowFrame";
+    static void write(const WindowFrame & frame, IQueryPlanStep::Serialization & ctx) { serializeWindowFrame(frame, ctx.out); }
+    static void read(WindowFrame & frame, IQueryPlanStep::Deserialization & ctx) { frame = deserializeWindowFrame(ctx.in); }
+};
+
+template <>
+struct WireCodec<std::vector<WindowFunctionDescription>>
+{
+    static constexpr const char * name = "WindowFunctions";
+    static void write(const std::vector<WindowFunctionDescription> & functions, IQueryPlanStep::Serialization & ctx)
+    {
+        serializeWindowFunctions(functions, ctx.out);
+    }
+    static void read(std::vector<WindowFunctionDescription> & functions, IQueryPlanStep::Deserialization & ctx)
+    {
+        functions = deserializeWindowFunctions(ctx.in, *ctx.input_headers.front());
+    }
+};
+
+namespace
+{
+
+constexpr auto WINDOW_MANIFEST = StepManifest<WindowStep, WindowWire>("Window")
+    .nameIntroducedIn(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP)
+    .baseFormat(
+        field("window_name", WireFieldClass::Logical, &WindowWire::window_name),
+        field("partition_by", WireFieldClass::Logical, &WindowWire::partition_by),
+        field("order_by", WireFieldClass::Logical, &WindowWire::order_by),
+        field("frame", WireFieldClass::Logical, &WindowWire::frame),
+        field("window_functions", WireFieldClass::Logical, &WindowWire::window_functions),
+        field("streams_fan_out", WireFieldClass::Physical, &WindowWire::streams_fan_out));
+
+}
+
+WindowWire WindowStep::toWire() const
+{
+    return WindowWire{
+        window_description.window_name, window_description.partition_by, window_description.order_by,
+        window_description.frame, window_functions, streams_fan_out};
+}
+
+QueryPlanStepPtr WindowStep::fromWire(WindowWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep must have one input stream");
+
+    WindowDescription window_description;
+    window_description.window_name = std::move(wire.window_name);
+    window_description.partition_by = std::move(wire.partition_by);
+    window_description.order_by = std::move(wire.order_by);
+    window_description.frame = wire.frame;
+    window_description.full_sort_description = window_description.partition_by;
+    window_description.full_sort_description.insert(
+        window_description.full_sort_description.end(), window_description.order_by.begin(), window_description.order_by.end());
+    window_description.window_functions = std::move(wire.window_functions);
+
+    return std::make_unique<WindowStep>(
+        ctx.input_headers.front(), window_description, window_description.window_functions, wire.streams_fan_out);
+}
+
 void WindowStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(WINDOW_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(WINDOW_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void WindowStep::serializeLegacy(Serialization & ctx) const
 {
     /// `WindowStep` is only registered under `QueryPlanStepRegistry` since query-plan serialization
     /// version 4; an older worker does not know the "Window" step name at all and would throw
@@ -347,7 +440,7 @@ void WindowStep::serialize(Serialization & ctx) const
     serializeWindowFunctions(window_functions, ctx.out);
 }
 
-QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr WindowStep::deserializeLegacy(Deserialization & ctx)
 {
     /// Mirrors the guard in `serialize`: a "Window" step never legitimately arrives from a stream
     /// written below this version, since a peer that old cannot have written one (see `serialize`).
@@ -391,7 +484,7 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
 void registerWindowStep(QueryPlanStepRegistry & registry);
 void registerWindowStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Window", WindowStep::deserialize);
+    registerManifest<WINDOW_MANIFEST>(registry, WindowStep::deserialize);
 }
 
 }

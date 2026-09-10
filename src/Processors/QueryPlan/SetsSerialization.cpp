@@ -1,14 +1,24 @@
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanOutline.h>
 #include <Processors/QueryPlan/Serialization.h>
+
+#include <Core/ProtocolDefines.h>
+#include <IO/LimitReadBuffer.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/resolveStorages.h>
+
+#include <base/scope_guard.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <algorithm>
+#include <tuple>
+
 #include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Set.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -30,6 +40,11 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_serialized_query_plan_size;
+}
+
 namespace Setting
 {
     extern const SettingsBool transform_null_in;
@@ -42,12 +57,17 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
-enum class SetSerializationKind : UInt8
+/// Sanity caps for a hostile set payload; checked before allocation.
+static constexpr UInt64 MAX_SET_COLUMNS = 1'000'000;
+static constexpr UInt64 MAX_SET_STORAGE_NAME_BYTES = 16ULL << 20;
+
+static void checkSetColumnsCount(UInt64 num_columns, const PreparedSets::Hash & hash)
 {
-    StorageSet = 1,
-    TupleValues = 2,
-    SubqueryPlan = 3,
-};
+    if (num_columns > MAX_SET_COLUMNS)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Serialized set {}_{} declares {} columns which exceeds the limit of {}",
+            hash.low64, hash.high64, num_columns, MAX_SET_COLUMNS);
+}
 
 QueryPlanAndSets::QueryPlanAndSets() = default;
 QueryPlanAndSets::~QueryPlanAndSets() = default;
@@ -72,6 +92,53 @@ struct QueryPlanAndSets::SetFromSubquery : public QueryPlanAndSets::Set
 {
     QueryPlanAndSets plan_and_sets;
 };
+
+std::vector<std::pair<FutureSet::Hash, FutureSet *>> SerializedSetsRegistry::entriesSortedByHash() const
+{
+    std::vector<std::pair<FutureSet::Hash, FutureSet *>> ordered;
+    ordered.reserve(sets.size());
+    for (const auto & [hash, set] : sets)
+        ordered.emplace_back(hash, set.get());
+    std::sort(ordered.begin(), ordered.end(), [](const auto & lhs, const auto & rhs)
+    {
+        return std::tie(lhs.first.high64, lhs.first.low64) < std::tie(rhs.first.high64, rhs.first.low64);
+    });
+    return ordered;
+}
+
+/// The values of a subquery set, ready to ship to a distributed-plan worker task. A task binds a
+/// ready set before its own planning; shipping the subquery plan instead would make every task run
+/// the subquery again. Throws when the set is not complete or is over the transfer limits: a
+/// truncated set would change `IN` results on the workers, so `transfer_overflow_mode = 'break'`
+/// does not apply here.
+static Columns readySubquerySetValues(const FutureSetFromSubquery & from_subquery, const SizeLimits & transfer_limits, DataTypes & types)
+{
+    auto built_set = from_subquery.get();
+    if (!built_set || !built_set->hasExplicitSetElements() || built_set->isTruncated())
+    {
+        String reason = !built_set ? "the set is not built"
+            : built_set->isTruncated() ? "the set was truncated by `set_overflow_mode = 'break'`"
+                                       : "the set was built without its values";
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot ship an IN-subquery set to distributed-plan worker tasks ({}): {}",
+            reason,
+            from_subquery.getSourceAST() ? from_subquery.getSourceAST()->formatForErrorMessage() : "");
+    }
+
+    auto columns = built_set->getSetElements();
+    UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
+    size_t num_bytes = 0;
+    for (const auto & column : columns)
+        num_bytes += column->byteSize();
+    if (!transfer_limits.check(
+            num_rows, num_bytes, "IN-subquery set shipped to distributed-plan tasks", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+        throw Exception(ErrorCodes::SET_SIZE_LIMIT_EXCEEDED,
+            "Cannot ship an IN-subquery set of {} rows ({} bytes) to distributed-plan worker tasks: "
+            "it exceeds the transfer limits", num_rows, num_bytes);
+
+    types = built_set->getElementsTypes();
+    return columns;
+}
 
 /// The payload of a `TupleValues` record: column count, row count, then per column the encoded
 /// type and the native-encoded data.
@@ -103,12 +170,16 @@ static void writeSetValues(const DataTypes & types, const Columns & columns, Wri
 
 void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const SerializationFlags & flags)
 {
-    writeVarUInt(registry.sets.size(), out);
-    for (const auto & [hash, set] : registry.sets)
+    /// Write sets sorted by hash, not in the unordered map iteration order,
+    /// so the same plan serializes to the same bytes in every process.
+    auto ordered_sets = registry.entriesSortedByHash();
+
+    writeVarUInt(ordered_sets.size(), out);
+    for (const auto & [hash, set_ptr] : ordered_sets)
     {
         writeBinary(hash, out);
 
-        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set.get()))
+        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::StorageSet, out);
             const auto & storage_id = from_storage->getStorageID();
@@ -118,45 +189,19 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
             auto storage_name = storage_id->getFullTableName();
             writeStringBinary(storage_name, out);
         }
-        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set.get()))
+        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set_ptr))
         {
             writeIntBinary(SetSerializationKind::TupleValues, out);
             writeSetValues(from_tuple->getTypes(), from_tuple->getKeyColumns(), out);
         }
-        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
+        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
         {
             if (flags.sets_must_be_ready)
             {
-                /// A worker task binds a ready set before its own planning; shipping the
-                /// subquery plan instead would make every task re-run the subquery.
-                auto built_set = from_subquery->get();
-                if (!built_set || !built_set->hasExplicitSetElements() || built_set->isTruncated())
-                {
-                    String reason = !built_set ? "the set is not built"
-                        : built_set->isTruncated() ? "the set was truncated by `set_overflow_mode = 'break'`"
-                                                   : "the set was built without its values";
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Cannot ship an IN-subquery set to distributed-plan worker tasks ({}): {}",
-                        reason,
-                        from_subquery->getSourceAST() ? from_subquery->getSourceAST()->formatForErrorMessage() : "");
-                }
-
-                auto columns = built_set->getSetElements();
-                UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
-                size_t num_bytes = 0;
-                for (const auto & column : columns)
-                    num_bytes += column->byteSize();
-                /// `transfer_overflow_mode = 'break'` cannot apply here: truncating the set
-                /// would change `IN` results on the workers, so an over-limit set always
-                /// throws, whatever the overflow mode.
-                if (!flags.sets_transfer_limits.check(
-                        num_rows, num_bytes, "IN-subquery set shipped to distributed-plan tasks", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-                    throw Exception(ErrorCodes::SET_SIZE_LIMIT_EXCEEDED,
-                        "Cannot ship an IN-subquery set of {} rows ({} bytes) to distributed-plan worker tasks: "
-                        "it exceeds the transfer limits", num_rows, num_bytes);
-
+                DataTypes types;
+                auto columns = readySubquerySetValues(*from_subquery, flags.sets_transfer_limits, types);
                 writeIntBinary(SetSerializationKind::TupleValues, out);
-                writeSetValues(built_set->getElementsTypes(), columns, out);
+                writeSetValues(types, columns, out);
             }
             else
             {
@@ -170,10 +215,197 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
         }
         else
         {
-            const auto & set_ref = *set;
+            const auto & set_ref = *set_ptr;
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type {}", typeid(set_ref).name());
         }
     }
+}
+
+void serializeFramedSets(
+    SerializedSetsRegistry & registry,
+    const QueryPlan::SerializationFlags & flags,
+    PlanOutline & outline,
+    std::vector<String> & payloads)
+{
+    auto ordered_sets = registry.entriesSortedByHash();
+    outline.sets.reserve(ordered_sets.size());
+    payloads.reserve(ordered_sets.size());
+
+    for (const auto & [hash, set_ptr] : ordered_sets)
+    {
+        PlanOutline::SetEntry entry;
+        entry.hash = hash;
+
+        WriteBufferFromOwnString body;
+
+        if (auto * from_storage = typeid_cast<FutureSetFromStorage *>(set_ptr))
+        {
+            entry.kind = UInt8(SetSerializationKind::StorageSet);
+            const auto & storage_id = from_storage->getStorageID();
+            if (!storage_id)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "FutureSetFromStorage without storage id");
+            writeStringBinary(storage_id->getFullTableName(), body);
+        }
+        else if (auto * from_tuple = typeid_cast<FutureSetFromTuple *>(set_ptr))
+        {
+            entry.kind = UInt8(SetSerializationKind::TupleValues);
+            auto types = from_tuple->getTypes();
+            writeSetValues(types, from_tuple->getKeyColumns(), body);
+        }
+        else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set_ptr))
+        {
+            if (flags.sets_must_be_ready)
+            {
+                entry.kind = UInt8(SetSerializationKind::TupleValues);
+                DataTypes types;
+                auto columns = readySubquerySetValues(*from_subquery, flags.sets_transfer_limits, types);
+                writeSetValues(types, columns, body);
+            }
+            else
+            {
+                entry.kind = UInt8(SetSerializationKind::SubqueryPlan);
+                const auto * plan = from_subquery->getQueryPlan();
+                if (!plan)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
+
+                /// A whole plan with its own leading version, so it says how long it is and what it
+                /// is, which the older stream did not: there the nested plan just ran on inline. It
+                /// is written at the version the outer plan settled on rather than choosing again,
+                /// because a query that asks for a version has to get it for the nested plans too.
+                plan->serialize(body, flags.version, flags.version);
+            }
+        }
+        else
+        {
+            const auto & set_ref = *set_ptr;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown FutureSet type {}", typeid(set_ref).name());
+        }
+
+        body.finalize();
+        outline.sets.push_back(entry);
+        /// `body` is finalized and goes out of scope here, so a large set moves rather than copies.
+        payloads.push_back(std::move(body.str()));
+    }
+}
+
+QueryPlanAndSets deserializeFramedSets(
+    QueryPlan plan,
+    DeserializedSetsRegistry & registry,
+    const PlanOutline & outline,
+    ReadBuffer & in,
+    const QueryPlan::SerializationFlags & flags,
+    const ContextPtr & context,
+    size_t max_type_complexity,
+    UInt64 max_plan_bytes,
+    size_t body_start,
+    UInt64 & frames_consumed)
+{
+    auto budget_left = [&]() -> UInt64
+    {
+        const size_t used = in.count() - body_start;
+        return used >= max_plan_bytes ? 0 : max_plan_bytes - used;
+    };
+
+    QueryPlanAndSets res;
+    res.plan = std::move(plan);
+
+    for (const auto & entry : outline.sets)
+    {
+        auto it = registry.sets.find(entry.hash);
+        if (it == registry.sets.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is not registered", entry.hash.low64, entry.hash.high64);
+
+        auto & columns = it->second;
+        if (columns.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", entry.hash.low64, entry.hash.high64);
+
+        /// The set size is read inline, right before its bytes. Reading it at a frame boundary keeps
+        /// the stream aligned for the drain if this or a later set fails.
+        UInt64 payload_size = 0;
+        readVarUInt(payload_size, in);
+
+        /// Reading through a buffer that stops at the set's own bytes keeps a nested plan from
+        /// running into the next set or into the protocol after the plan. The scope guard steps over
+        /// the frame and counts it whatever happens, so a failure here leaves the stream at a frame
+        /// boundary for the drain the caller runs.
+        LimitReadBuffer body(in, {.read_no_more = payload_size});
+        SCOPE_EXIT({
+            try { body.ignoreAll(); } catch (...) {} // Ok: best-effort step over the frame; a stream ending here is taken by the caller's drain // NOLINT(bugprone-empty-catch)
+            ++frames_consumed;
+        });
+
+        /// The plan as a whole must fit the size limit; a set that pushes it past the limit is taken
+        /// off the stream by the guard and refused, without losing the connection.
+        if (payload_size > budget_left())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Serialized set {}_{} pushes the plan past `max_serialized_query_plan_size`",
+                entry.hash.low64, entry.hash.high64);
+
+        if (entry.kind == UInt8(SetSerializationKind::StorageSet))
+        {
+            String storage_name;
+            readStringBinary(storage_name, body, MAX_SET_STORAGE_NAME_BYTES);
+            res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{entry.hash, std::move(columns)}, std::move(storage_name)});
+        }
+        else if (entry.kind == UInt8(SetSerializationKind::TupleValues))
+        {
+            UInt64 num_columns = 0;
+            UInt64 num_rows = 0;
+            readVarUInt(num_columns, body);
+            readVarUInt(num_rows, body);
+            checkSetColumnsCount(num_columns, entry.hash);
+
+            /// Without this a few bytes could ask for an arbitrary allocation: `NativeReader::readData`
+            /// sizes the column from the row count before reading it, and a row costs at least a byte.
+            if (num_rows > body.bytesUntilLimit())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Serialized set {}_{} declares {} rows but only {} bytes of its frame remain",
+                    entry.hash.low64, entry.hash.high64, num_rows, body.bytesUntilLimit());
+
+            ColumnsWithTypeAndName set_columns;
+
+            FormatSettings format_settings;
+            format_settings.binary.max_binary_type_complexity = max_type_complexity;
+
+            for (size_t col = 0; col < num_columns; ++col)
+            {
+                auto type = decodeDataType(body, max_type_complexity);
+                auto serialization = type->getDefaultSerialization();
+                auto column = type->createColumn();
+                NativeReader::readData(*serialization, *column, body, &format_settings, num_rows, nullptr, nullptr);
+
+                set_columns.emplace_back(std::move(column), std::move(type), String{});
+            }
+
+            res.sets_from_tuple.emplace_back(QueryPlanAndSets::SetFromTuple{{entry.hash, std::move(columns)}, std::move(set_columns)});
+        }
+        else if (entry.kind == UInt8(SetSerializationKind::SubqueryPlan))
+        {
+            auto plan_for_set = QueryPlan::deserialize(body, context, max_type_complexity, flags.skip_data);
+
+            res.sets_from_subquery.emplace_back(QueryPlanAndSets::SetFromSubquery{
+                {entry.hash, std::move(columns)},
+                std::move(plan_for_set)});
+        }
+        else
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} has unknown kind {}",
+                entry.hash.low64, entry.hash.high64, int(entry.kind));
+
+        if (body.bytesUntilLimit() != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Serialized set {}_{} did not consume its payload frame ({} bytes left)",
+                entry.hash.low64, entry.hash.high64, body.bytesUntilLimit());
+    }
+
+    /// Every set a step referenced must have had its data in the outline. A binding left unfilled
+    /// means the plan points at a set with no serialized payload, which would fail only later at
+    /// execution ("No Set is passed"); reject it here at the serialization boundary instead.
+    for (const auto & [hash, columns] : registry.sets)
+        if (!columns.empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Set {}_{} is referenced by the plan but no serialized data for it is present", hash.low64, hash.high64);
+
+    return res;
 }
 
 QueryPlanAndSets QueryPlan::deserializeSets(
@@ -208,7 +440,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
         if (kind == UInt8(SetSerializationKind::StorageSet))
         {
             String storage_name;
-            readStringBinary(storage_name, in);
+            readStringBinary(storage_name, in, MAX_SET_STORAGE_NAME_BYTES);
             res.sets_from_storage.emplace_back(QueryPlanAndSets::SetFromStorage{{hash, std::move(columns)}, std::move(storage_name)});
         }
         else if (kind == UInt8(SetSerializationKind::TupleValues))
@@ -217,9 +449,17 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             UInt64 num_rows = 0;
             readVarUInt(num_columns, in);
             readVarUInt(num_rows, in);
+            checkSetColumnsCount(num_columns, hash);
+
+            /// Without this the row count could ask for an arbitrary allocation. A legacy stream
+            /// has no frame, so the bound is the accepted plan size: a row costs at least a byte.
+            const UInt64 max_plan_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
+            if (num_rows > max_plan_bytes)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Serialized set {}_{} declares {} rows, more than the {} bytes a plan may have",
+                    hash.low64, hash.high64, num_rows, max_plan_bytes);
 
             ColumnsWithTypeAndName set_columns;
-            set_columns.reserve(num_columns);
 
             /// The set data comes from the same plan stream, so it carries the plan's resolved type-complexity
             /// limit (the effective setting for client packets, 0 for trusted server-to-server plans). Pass it

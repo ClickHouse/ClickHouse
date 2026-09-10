@@ -4,11 +4,13 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -152,7 +154,7 @@ void BuildRuntimeFilterStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void BuildRuntimeFilterStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const
 {
     settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit] = exact_values_limit;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = bloom_filter_bytes;
@@ -162,7 +164,79 @@ void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits] = max_ratio_of_set_bits_in_bloom_filter;
 }
 
+namespace
+{
+
+constexpr auto BUILD_RUNTIME_FILTER_MANIFEST = StepManifest<BuildRuntimeFilterStep, BuildRuntimeFilterWire>("BuildRuntimeFilter")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("filter_column_name", WireFieldClass::Logical, &BuildRuntimeFilterWire::filter_column_name),
+        field("filter_column_type", WireFieldClass::Logical, &BuildRuntimeFilterWire::filter_column_type),
+        field("filter_name", WireFieldClass::Logical, &BuildRuntimeFilterWire::filter_name),
+        field("allow_to_use_not_exact_filter", WireFieldClass::Logical, &BuildRuntimeFilterWire::allow_to_use_not_exact_filter))
+    .settings(
+        setting(QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit, WireFieldClass::Physical, &BuildRuntimeFilterWire::exact_values_limit),
+        setting(QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes, WireFieldClass::Physical, &BuildRuntimeFilterWire::bloom_filter_bytes),
+        setting(QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions, WireFieldClass::Physical, &BuildRuntimeFilterWire::bloom_filter_hash_functions),
+        setting(QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling, WireFieldClass::Physical, &BuildRuntimeFilterWire::pass_ratio_threshold_for_disabling),
+        setting(QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling, WireFieldClass::Physical, &BuildRuntimeFilterWire::blocks_to_skip_before_reenabling),
+        setting(QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits, WireFieldClass::Physical, &BuildRuntimeFilterWire::max_ratio_of_set_bits_in_bloom_filter));
+
+}
+
+BuildRuntimeFilterWire BuildRuntimeFilterStep::toWire() const
+{
+    return BuildRuntimeFilterWire{
+        filter_column_name, filter_column_type->getName(), filter_name, allow_to_use_not_exact_filter,
+        exact_values_limit, bloom_filter_bytes, bloom_filter_hash_functions, pass_ratio_threshold_for_disabling,
+        blocks_to_skip_before_reenabling, max_ratio_of_set_bits_in_bloom_filter};
+}
+
+QueryPlanStepPtr BuildRuntimeFilterStep::fromWire(BuildRuntimeFilterWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep must have one input stream");
+
+    return std::make_unique<BuildRuntimeFilterStep>(
+        ctx.input_headers.front(),
+        std::move(wire.filter_column_name),
+        DataTypeFactory::instance().get(wire.filter_column_type),
+        std::move(wire.filter_name),
+        /*filter_key_=*/String{},
+        wire.exact_values_limit,
+        wire.bloom_filter_bytes,
+        wire.bloom_filter_hash_functions,
+        wire.pass_ratio_threshold_for_disabling,
+        wire.blocks_to_skip_before_reenabling,
+        wire.max_ratio_of_set_bits_in_bloom_filter,
+        wire.allow_to_use_not_exact_filter,
+        /*track_key_range_=*/false);
+}
+
+void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(BUILD_RUNTIME_FILTER_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings);
+}
+
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(BUILD_RUNTIME_FILTER_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(BUILD_RUNTIME_FILTER_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void BuildRuntimeFilterStep::serializeLegacy(Serialization & ctx) const
 {
     writeStringBinary(filter_column_name, ctx.out);
     encodeDataType(filter_column_type, ctx.out);
@@ -170,7 +244,7 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
     writeBinary(allow_to_use_not_exact_filter, ctx.out);
 }
 
-QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr BuildRuntimeFilterStep::deserializeLegacy(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "BuildRuntimeFilterStep must have one input stream");
@@ -246,7 +320,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("BuildRuntimeFilter", BuildRuntimeFilterStep::deserialize);
+    registerManifest<BUILD_RUNTIME_FILTER_MANIFEST>(registry, BuildRuntimeFilterStep::deserialize);
 }
 
 }

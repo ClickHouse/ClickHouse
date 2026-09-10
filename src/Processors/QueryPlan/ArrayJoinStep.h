@@ -11,6 +11,8 @@ namespace DB
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
+struct ArrayJoinWire;
+
 class ArrayJoinStep : public ITransformingStep
 {
 public:
@@ -50,9 +52,17 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `ArrayJoinStep.cpp` declares.
+    ArrayJoinWire toWire() const;
+    static QueryPlanStepPtr fromWire(ArrayJoinWire wire, Deserialization & ctx);
+
     QueryPlanStepPtr clone() const override;
 
 private:
+    /// Streams below the framed format.
+    void serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const;
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
     ArrayJoin array_join;
@@ -63,6 +73,24 @@ private:
     std::optional<ActionsDAG> element_filter;
     String element_filter_column_name;
     bool remove_element_filter_column = false;
+};
+
+/// What `ArrayJoinStep` puts on the wire in the framed format. The last member travels through
+/// the settings channel.
+struct ArrayJoinWire
+{
+    Names columns;
+    bool is_left = false;
+    bool is_unaligned = false;
+    /// A performance-only flag: a receiver without it keeps eager replication.
+    bool enable_lazy_columns_replication = false;
+    /// The filter fused into the array join; absent when there is none. The name and the flag
+    /// below are then empty.
+    std::optional<ActionsDAG> element_filter;
+    String element_filter_column_name;
+    bool remove_element_filter_column = false;
+
+    UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
 }

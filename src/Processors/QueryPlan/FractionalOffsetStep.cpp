@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/types.h>
@@ -59,12 +60,47 @@ void FractionalOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Fractional Offset", fractional_offset);
 }
 
+namespace
+{
+
+constexpr auto FRACTIONAL_OFFSET_MANIFEST = StepManifest<FractionalOffsetStep, FractionalOffsetWire>("FractionalOffset")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("fractional_offset", WireFieldClass::Logical, &FractionalOffsetWire::fractional_offset));
+
+}
+
+FractionalOffsetWire FractionalOffsetStep::toWire() const
+{
+    return FractionalOffsetWire{fractional_offset};
+}
+
+QueryPlanStepPtr FractionalOffsetStep::fromWire(FractionalOffsetWire wire, Deserialization & ctx)
+{
+    return std::make_unique<FractionalOffsetStep>(ctx.input_headers.front(), wire.fractional_offset);
+}
+
 void FractionalOffsetStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(FRACTIONAL_OFFSET_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(FRACTIONAL_OFFSET_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void FractionalOffsetStep::serializeLegacy(Serialization & ctx) const
 {
     writeFloatBinary(fractional_offset, ctx.out);
 }
 
-QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr FractionalOffsetStep::deserializeLegacy(Deserialization & ctx)
 {
     Float64 offset = 0;
     readFloatBinary(offset, ctx.in);
@@ -75,7 +111,7 @@ QueryPlanStepPtr FractionalOffsetStep::deserialize(Deserialization & ctx)
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry);
 void registerFractionalOffsetStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("FractionalOffset", FractionalOffsetStep::deserialize);
+    registerManifest<FRACTIONAL_OFFSET_MANIFEST>(registry, FractionalOffsetStep::deserialize);
 }
 
 }

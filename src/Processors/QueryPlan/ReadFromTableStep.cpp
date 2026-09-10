@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/QueryPlan/StepManifest.h>
 
 namespace DB
 {
@@ -29,7 +30,52 @@ void ReadFromTableStep::initializePipeline(QueryPipelineBuilder &, const BuildQu
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "initializePipeline is not implementad for ReadFromTableStep");
 }
 
+namespace
+{
+
+constexpr auto READ_FROM_TABLE_MANIFEST = StepManifest<ReadFromTableStep, ReadFromTableWire>("ReadFromTable")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("table", WireFieldClass::Logical, &ReadFromTableWire::table),
+        field("final", WireFieldClass::Logical, &ReadFromTableWire::final),
+        field("sample_size_ratio", WireFieldClass::Logical, &ReadFromTableWire::sample_size_ratio),
+        field("sample_offset_ratio", WireFieldClass::Logical, &ReadFromTableWire::sample_offset_ratio),
+        field("use_parallel_replicas", WireFieldClass::Physical, &ReadFromTableWire::use_parallel_replicas));
+
+}
+
+ReadFromTableWire ReadFromTableStep::toWire() const
+{
+    return ReadFromTableWire{
+        table_name,
+        table_expression_modifiers.hasFinal(),
+        table_expression_modifiers.getSampleSizeRatio(),
+        table_expression_modifiers.getSampleOffsetRatio(),
+        use_parallel_replicas};
+}
+
+QueryPlanStepPtr ReadFromTableStep::fromWire(ReadFromTableWire wire, Deserialization & ctx)
+{
+    TableExpressionModifiers modifiers(wire.final, wire.sample_size_ratio, wire.sample_offset_ratio);
+    return std::make_unique<ReadFromTableStep>(ctx.output_header, std::move(wire.table), modifiers, wire.use_parallel_replicas);
+}
+
 void ReadFromTableStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(READ_FROM_TABLE_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(READ_FROM_TABLE_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void ReadFromTableStep::serializeLegacy(Serialization & ctx) const
 {
     writeStringBinary(table_name, ctx.out);
 
@@ -54,7 +100,7 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         writeIntBinary(use_parallel_replicas, ctx.out);
 }
 
-QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ReadFromTableStep::deserializeLegacy(Deserialization & ctx)
 {
     String table_name;
     readStringBinary(table_name, ctx.in);
@@ -91,7 +137,7 @@ QueryPlanStepPtr ReadFromTableStep::clone() const
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ReadFromTable", &ReadFromTableStep::deserialize);
+    registerManifest<READ_FROM_TABLE_MANIFEST>(registry, ReadFromTableStep::deserialize);
 }
 
 }

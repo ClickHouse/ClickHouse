@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -86,7 +87,7 @@ QueryPlanStepPtr RollupStep::clone() const
     return std::make_unique<RollupStep>(*this);
 }
 
-void RollupStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void RollupStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings) const
 {
     /// Only the parameters the transform's block merge reads; the reader rebuilds merge-only
     /// `Aggregator::Params` from them, like `MergingAggregatedStep` does.
@@ -98,7 +99,76 @@ void RollupStep::serializeSettings(QueryPlanSerializationSettings & settings, UI
     settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = params.enable_packed_string_keys;
 }
 
+namespace
+{
+
+constexpr auto ROLLUP_MANIFEST = StepManifest<RollupStep, RollupWire>("Rollup")
+    .nameIntroducedIn(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROLLUP_STEP)
+    .baseFormat(
+        field("keys", WireFieldClass::Logical, &RollupWire::keys),
+        field("aggregates", WireFieldClass::Logical, &RollupWire::aggregates),
+        field("final", WireFieldClass::Logical, &RollupWire::final),
+        field("overflow_row", WireFieldClass::Logical, &RollupWire::overflow_row),
+        field("use_nulls", WireFieldClass::Logical, &RollupWire::use_nulls))
+    .settings(
+        setting(QueryPlanSerializationSetting::max_block_size, WireFieldClass::Physical, &RollupWire::max_block_size),
+        setting(QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization, WireFieldClass::Physical, &RollupWire::min_hit_rate_to_use_consecutive_keys_optimization),
+        setting(QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte, WireFieldClass::Physical, &RollupWire::serialize_string_in_memory_with_zero_byte),
+        setting(QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation, WireFieldClass::Physical, &RollupWire::enable_packed_string_keys_in_aggregation));
+
+}
+
+RollupWire RollupStep::toWire() const
+{
+    return RollupWire{
+        params.keys, {params.aggregates}, final, params.overflow_row, use_nulls,
+        params.max_block_size, params.min_hit_rate_to_use_consecutive_keys_optimization,
+        params.serialize_string_with_zero_byte, params.enable_packed_string_keys};
+}
+
+QueryPlanStepPtr RollupStep::fromWire(RollupWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "RollupStep must have one input stream");
+
+    Aggregator::Params params(
+        wire.keys,
+        wire.aggregates.value,
+        wire.overflow_row,
+        ctx.context->getSettingsRef()[Setting::max_threads],
+        wire.max_block_size,
+        wire.min_hit_rate_to_use_consecutive_keys_optimization,
+        wire.serialize_string_in_memory_with_zero_byte,
+        wire.enable_packed_string_keys_in_aggregation);
+    params.only_merge = false;
+
+    return std::make_unique<RollupStep>(ctx.input_headers.front(), std::move(params), wire.final, wire.use_nulls);
+}
+
+void RollupStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(ROLLUP_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings);
+}
+
 void RollupStep::serialize(Serialization & ctx) const
+{
+    if (usesManifest(ctx.version))
+        writeManifestPayload(ROLLUP_MANIFEST, toWire(), ctx);
+    else
+        serializeLegacy(ctx);
+}
+
+QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(ROLLUP_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void RollupStep::serializeLegacy(Serialization & ctx) const
 {
     /// A "Rollup" step is only registered under `QueryPlanStepRegistry` since query-plan serialization
     /// version 8; an older peer does not know the step name and would throw on it. Throw here rather
@@ -127,7 +197,7 @@ void RollupStep::serialize(Serialization & ctx) const
     serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
 }
 
-QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr RollupStep::deserializeLegacy(Deserialization & ctx)
 {
     /// Mirrors the guard in `serialize`: a "Rollup" step never legitimately arrives from a stream
     /// written below this version, since a peer that old cannot have written one.
@@ -179,7 +249,7 @@ QueryPlanStepPtr RollupStep::deserialize(Deserialization & ctx)
 void registerRollupStep(QueryPlanStepRegistry & registry);
 void registerRollupStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Rollup", RollupStep::deserialize);
+    registerManifest<ROLLUP_MANIFEST>(registry, RollupStep::deserialize);
 }
 
 }

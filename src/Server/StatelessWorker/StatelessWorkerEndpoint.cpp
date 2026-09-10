@@ -10,9 +10,16 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/ServerSettings.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_serialized_query_plan_size;
+}
 
 namespace ErrorCodes
 {
@@ -115,7 +122,12 @@ void deserializeTask(DistributedQueryTaskDescription & task_description, ReadBuf
     auto & task = task_description.task;
 
     readStringBinary(task.task_id, in);
-    readStringBinary(task_description.serialized_query_plan, in);
+
+    /// The plan travels length-prefixed, from a peer this worker does not trust, so the declared
+    /// length is capped by the plan-size limit before the string is allocated. The plan itself is
+    /// checked against the same limit again when it is deserialized.
+    const UInt64 max_plan_bytes = Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
+    readStringBinary(task_description.serialized_query_plan, in, max_plan_bytes);
 
     size_t parameters_size = 0;
     readVarUInt(parameters_size, in);

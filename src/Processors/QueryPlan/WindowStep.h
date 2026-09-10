@@ -8,6 +8,8 @@ namespace DB
 
 class WindowTransform;
 
+struct WindowWire;
+
 class WindowStep : public ITransformingStep
 {
 public:
@@ -58,6 +60,10 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    /// The framed format: the wire struct is what the manifest in `WindowStep.cpp` declares.
+    WindowWire toWire() const;
+    static QueryPlanStepPtr fromWire(WindowWire wire, Deserialization & ctx);
+
     const WindowDescription & getWindowDescription() const;
 
     const std::vector<WindowFunctionDescription> & getWindowFunctions() const { return window_functions; }
@@ -68,11 +74,25 @@ public:
     QueryPlanStepPtr clone() const override;
 
 private:
+    /// Streams below the framed format.
+    void serializeLegacy(Serialization & ctx) const;
+    static QueryPlanStepPtr deserializeLegacy(Deserialization & ctx);
     void updateOutputHeader() override;
 
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
     bool streams_fan_out;
+};
+
+/// What `WindowStep` puts on the wire in the framed format.
+struct WindowWire
+{
+    String window_name;
+    SortDescription partition_by;
+    SortDescription order_by;
+    WindowFrame frame;
+    std::vector<WindowFunctionDescription> window_functions;
+    bool streams_fan_out = false;
 };
 
 }

@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/StepManifest.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
@@ -945,7 +946,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
 }
 
 
-void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+void AggregatingStep::serializeSettingsLegacy(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes] = aggregation_in_order_max_block_bytes;
@@ -1034,7 +1035,201 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
         settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
 
+namespace
+{
+
+constexpr auto AGGREGATING_MANIFEST = StepManifest<AggregatingStep, AggregatingWire>("Aggregating")
+    .nameIntroducedIn(1)
+    .baseFormat(
+        field("keys", WireFieldClass::Logical, &AggregatingWire::keys),
+        field("aggregates", WireFieldClass::Logical, &AggregatingWire::aggregates),
+        field("grouping_sets", WireFieldClass::Logical, &AggregatingWire::grouping_sets),
+        field("final", WireFieldClass::Logical, &AggregatingWire::final).notInCacheKey(),
+        field("overflow_row", WireFieldClass::Logical, &AggregatingWire::overflow_row),
+        field("group_by_use_nulls", WireFieldClass::Logical, &AggregatingWire::group_by_use_nulls),
+        field("only_merge", WireFieldClass::Logical, &AggregatingWire::only_merge),
+        field("sort_description_for_merging", WireFieldClass::Logical, &AggregatingWire::sort_description_for_merging),
+        field("group_by_sort_description", WireFieldClass::Logical, &AggregatingWire::group_by_sort_description),
+        field("explicit_sorting_required_for_aggregation_in_order", WireFieldClass::Physical, &AggregatingWire::explicit_sorting_required_for_aggregation_in_order),
+        field("hash_table_stats_key", WireFieldClass::Physical, &AggregatingWire::hash_table_stats_key))
+    .settings(
+        setting(QueryPlanSerializationSetting::max_block_size, WireFieldClass::Physical, &AggregatingWire::max_block_size),
+        setting(QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes, WireFieldClass::Physical, &AggregatingWire::aggregation_in_order_max_block_bytes),
+        setting(QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number, WireFieldClass::Physical, &AggregatingWire::aggregation_sort_result_by_bucket_number),
+        setting(QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging, WireFieldClass::Physical, &AggregatingWire::aggregation_in_order_memory_bound_merging),
+        setting(QueryPlanSerializationSetting::max_rows_to_group_by, WireFieldClass::Logical, &AggregatingWire::max_rows_to_group_by),
+        setting(QueryPlanSerializationSetting::group_by_overflow_mode, WireFieldClass::Logical, &AggregatingWire::group_by_overflow_mode),
+        setting(QueryPlanSerializationSetting::group_by_two_level_threshold, WireFieldClass::Physical, &AggregatingWire::group_by_two_level_threshold),
+        setting(QueryPlanSerializationSetting::group_by_two_level_threshold_bytes, WireFieldClass::Physical, &AggregatingWire::group_by_two_level_threshold_bytes),
+        setting(QueryPlanSerializationSetting::max_bytes_before_external_group_by, WireFieldClass::Physical, &AggregatingWire::max_bytes_before_external_group_by),
+        setting(QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set, WireFieldClass::Logical, &AggregatingWire::empty_result_for_aggregation_by_empty_set),
+        setting(QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data, WireFieldClass::Physical, &AggregatingWire::min_free_disk_space_for_temporary_data),
+        setting(QueryPlanSerializationSetting::compile_aggregate_expressions, WireFieldClass::Physical, &AggregatingWire::compile_aggregate_expressions),
+        setting(QueryPlanSerializationSetting::min_count_to_compile_aggregate_expression, WireFieldClass::Physical, &AggregatingWire::min_count_to_compile_aggregate_expression),
+        setting(QueryPlanSerializationSetting::enable_software_prefetch_in_aggregation, WireFieldClass::Physical, &AggregatingWire::enable_software_prefetch_in_aggregation),
+        setting(QueryPlanSerializationSetting::optimize_group_by_constant_keys, WireFieldClass::Physical, &AggregatingWire::optimize_group_by_constant_keys),
+        setting(QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization, WireFieldClass::Physical, &AggregatingWire::min_hit_rate_to_use_consecutive_keys_optimization),
+        setting(QueryPlanSerializationSetting::collect_hash_table_stats_during_aggregation, WireFieldClass::Physical, &AggregatingWire::collect_hash_table_stats_during_aggregation),
+        setting(QueryPlanSerializationSetting::max_entries_for_hash_table_stats, WireFieldClass::Physical, &AggregatingWire::max_entries_for_hash_table_stats),
+        setting(QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation, WireFieldClass::Physical, &AggregatingWire::max_size_to_preallocate_for_aggregation),
+        setting(QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation, WireFieldClass::Physical, &AggregatingWire::enable_producing_buckets_out_of_order_in_aggregation),
+        setting(QueryPlanSerializationSetting::enable_parallel_single_level_merge, WireFieldClass::Physical, &AggregatingWire::enable_parallel_single_level_merge),
+        setting(QueryPlanSerializationSetting::enable_adaptive_aggregator, WireFieldClass::Physical, &AggregatingWire::enable_adaptive_aggregator),
+        setting(QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold, WireFieldClass::Physical, &AggregatingWire::adaptive_aggregator_freeze_threshold),
+        setting(QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes, WireFieldClass::Physical, &AggregatingWire::adaptive_aggregator_freeze_threshold_bytes),
+        setting(QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte, WireFieldClass::Physical, &AggregatingWire::serialize_string_in_memory_with_zero_byte),
+        setting(QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation, WireFieldClass::Physical, &AggregatingWire::enable_packed_string_keys_in_aggregation));
+
+/// The missing keys of a grouping set are the keys it does not use, in key order.
+GroupingSetsParamsList groupingSetsFromUsedKeys(const Names & keys, std::vector<Names> used_keys_per_set)
+{
+    GroupingSetsParamsList result;
+    for (auto & used_keys : used_keys_per_set)
+    {
+        NameSet used(used_keys.begin(), used_keys.end());
+        Names missing_keys;
+        for (const auto & key : keys)
+            if (!used.contains(key))
+                missing_keys.push_back(key);
+        result.emplace_back(std::move(used_keys), std::move(missing_keys));
+    }
+    return result;
+}
+}
+
+AggregatingWire AggregatingStep::toWire() const
+{
+    AggregatingWire wire;
+    wire.keys = params.keys;
+    wire.aggregates = params.aggregates;
+    for (const auto & grouping_set : grouping_sets_params)
+        wire.grouping_sets.push_back(grouping_set.used_keys);
+    wire.final = final;
+    wire.overflow_row = params.overflow_row;
+    wire.group_by_use_nulls = group_by_use_nulls;
+    wire.only_merge = params.only_merge;
+    wire.sort_description_for_merging = sort_description_for_merging;
+    wire.group_by_sort_description = group_by_sort_description;
+    wire.explicit_sorting_required_for_aggregation_in_order = explicit_sorting_required_for_aggregation_in_order;
+    wire.hash_table_stats_key = params.stats_collecting_params.key;
+
+    wire.max_block_size = max_block_size;
+    wire.aggregation_in_order_max_block_bytes = aggregation_in_order_max_block_bytes;
+    wire.aggregation_sort_result_by_bucket_number = should_produce_results_in_order_of_bucket_number;
+    wire.aggregation_in_order_memory_bound_merging = memory_bound_merging_of_aggregation_results_enabled;
+    wire.max_rows_to_group_by = params.max_rows_to_group_by;
+    wire.group_by_overflow_mode = params.group_by_overflow_mode;
+    wire.group_by_two_level_threshold = params.group_by_two_level_threshold;
+    wire.group_by_two_level_threshold_bytes = params.group_by_two_level_threshold_bytes;
+    wire.max_bytes_before_external_group_by = params.max_bytes_before_external_group_by;
+    wire.empty_result_for_aggregation_by_empty_set = params.empty_result_for_aggregation_by_empty_set;
+    wire.min_free_disk_space_for_temporary_data = params.min_free_disk_space;
+    wire.compile_aggregate_expressions = params.compile_aggregate_expressions;
+    wire.min_count_to_compile_aggregate_expression = params.min_count_to_compile_aggregate_expression;
+    wire.enable_software_prefetch_in_aggregation = params.enable_prefetch;
+    wire.optimize_group_by_constant_keys = params.optimize_group_by_constant_keys;
+    wire.min_hit_rate_to_use_consecutive_keys_optimization = params.min_hit_rate_to_use_consecutive_keys_optimization;
+    wire.collect_hash_table_stats_during_aggregation = params.stats_collecting_params.isCollectionAndUseEnabled();
+    wire.max_entries_for_hash_table_stats = params.stats_collecting_params.max_entries_for_hash_table_stats;
+    wire.max_size_to_preallocate_for_aggregation = params.stats_collecting_params.max_size_to_preallocate;
+    wire.enable_producing_buckets_out_of_order_in_aggregation = params.enable_producing_buckets_out_of_order_in_aggregation;
+    wire.enable_parallel_single_level_merge = params.enable_parallel_single_level_merge;
+    wire.enable_adaptive_aggregator = params.enable_adaptive_aggregator;
+    wire.adaptive_aggregator_freeze_threshold = params.adaptive_aggregator_freeze_threshold;
+    wire.adaptive_aggregator_freeze_threshold_bytes = params.adaptive_aggregator_freeze_threshold_bytes;
+    wire.serialize_string_in_memory_with_zero_byte = params.serialize_string_with_zero_byte;
+    wire.enable_packed_string_keys_in_aggregation = params.enable_packed_string_keys;
+    return wire;
+}
+
+QueryPlanStepPtr AggregatingStep::fromWire(AggregatingWire wire, Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "AggregatingStep must have one input stream");
+
+    StatsCollectingParams stats_collecting_params(
+        wire.hash_table_stats_key,
+        wire.collect_hash_table_stats_during_aggregation,
+        wire.max_entries_for_hash_table_stats,
+        wire.max_size_to_preallocate_for_aggregation);
+
+    Aggregator::Params params{
+        wire.keys,
+        wire.aggregates,
+        wire.overflow_row,
+        wire.max_rows_to_group_by,
+        wire.group_by_overflow_mode,
+        wire.group_by_two_level_threshold,
+        wire.group_by_two_level_threshold_bytes,
+        wire.max_bytes_before_external_group_by,
+        wire.empty_result_for_aggregation_by_empty_set,
+        Context::getGlobalContextInstance()->getTempDataOnDisk(),
+        /*max_threads=*/0,
+        wire.min_free_disk_space_for_temporary_data,
+        wire.compile_aggregate_expressions,
+        wire.min_count_to_compile_aggregate_expression,
+        wire.max_block_size,
+        wire.enable_software_prefetch_in_aggregation,
+        /*only_merge=*/wire.only_merge,
+        wire.optimize_group_by_constant_keys,
+        wire.min_hit_rate_to_use_consecutive_keys_optimization,
+        stats_collecting_params,
+        wire.enable_producing_buckets_out_of_order_in_aggregation,
+        wire.serialize_string_in_memory_with_zero_byte,
+        wire.enable_parallel_single_level_merge,
+        wire.enable_packed_string_keys_in_aggregation,
+        wire.enable_adaptive_aggregator,
+        wire.adaptive_aggregator_freeze_threshold,
+        wire.adaptive_aggregator_freeze_threshold_bytes};
+
+    return std::make_unique<AggregatingStep>(
+        ctx.input_headers.front(),
+        std::move(params),
+        groupingSetsFromUsedKeys(wire.keys, std::move(wire.grouping_sets)),
+        wire.final,
+        wire.max_block_size,
+        wire.aggregation_in_order_max_block_bytes,
+        /*merge_threads=*/0,
+        /*temporary_data_merge_threads=*/0,
+        /*storage_has_evenly_distributed_read=*/false,
+        wire.group_by_use_nulls,
+        std::move(wire.sort_description_for_merging),
+        std::move(wire.group_by_sort_description),
+        wire.aggregation_sort_result_by_bucket_number,
+        wire.aggregation_in_order_memory_bound_merging,
+        wire.explicit_sorting_required_for_aggregation_in_order);
+}
+
+void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    if (usesManifest(version))
+        writeManifestSettings(AGGREGATING_MANIFEST, toWire(), settings);
+    else
+        serializeSettingsLegacy(settings, version);
+}
+
 void AggregatingStep::serialize(Serialization & ctx) const
+{
+    if (!usesManifest(ctx.version))
+    {
+        serializeLegacy(ctx);
+        return;
+    }
+
+    /// The cache key must be the same for the single-node and the parallel-replicas build of a query.
+    /// They differ in `final` and `hash_table_stats_key`, both kept out of the cache key by the
+    /// manifest (`final` is marked `notInCacheKey`, `hash_table_stats_key` is a physical field).
+    writeManifestPayload(AGGREGATING_MANIFEST, toWire(), ctx);
+}
+
+QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
+{
+    if (usesManifest(ctx.version))
+        return fromWire(readManifestPayload(AGGREGATING_MANIFEST, ctx), ctx);
+    return deserializeLegacy(ctx);
+}
+
+void AggregatingStep::serializeLegacy(Serialization & ctx) const
 {
     /// Flags encode boolean properties that affect the data format or plan structure.
     /// Bit layout: 1=final, 2=overflow_row, 4=group_by_use_nulls, 8=grouping_sets,
@@ -1114,7 +1309,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
-QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr AggregatingStep::deserializeLegacy(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "AggregatingStep must have one input stream");
@@ -1292,7 +1487,7 @@ void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Nam
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Aggregating", AggregatingStep::deserialize);
+    registerManifest<AGGREGATING_MANIFEST>(registry, AggregatingStep::deserialize);
 }
 
 

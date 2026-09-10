@@ -1,6 +1,8 @@
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 
+#include <map>
+
 namespace DB
 {
 
@@ -10,17 +12,62 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+thread_local QueryPlanStepRegistry * registry_for_this_thread = nullptr;
+
+}
+
 QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
 {
+    if (registry_for_this_thread)
+        return *registry_for_this_thread;
     static QueryPlanStepRegistry registry;
     return registry;
 }
 
+QueryPlanStepRegistry::ScopedInstance::ScopedInstance(QueryPlanStepRegistry & registry_)
+    : previous(registry_for_this_thread)
+{
+    registry_for_this_thread = &registry_;
+}
+
+QueryPlanStepRegistry::ScopedInstance::~ScopedInstance()
+{
+    registry_for_this_thread = previous;
+}
+
 void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function)
+{
+    registerStep(name, std::move(create_function), StepSerializationInfo{});
+}
+
+void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function, StepSerializationInfo info)
+{
+    registerStep(name, std::move(create_function), std::move(info), String{});
+}
+
+String QueryPlanStepRegistry::dumpManifests() const
+{
+    std::map<std::string, const String *> by_name;
+    for (const auto & [name, entry] : steps)
+        if (!entry.manifest_description.empty())
+            by_name.emplace(name, &entry.manifest_description);
+
+    String result;
+    for (const auto & [name, description] : by_name)
+        result += *description;
+    return result;
+}
+
+void QueryPlanStepRegistry::registerStep(
+    const std::string & name, StepCreateFunction && create_function, StepSerializationInfo info, String manifest_description)
 {
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
-    steps[name] = std::move(create_function);
+
+    steps[name] = Entry{std::move(create_function), std::move(info), std::move(manifest_description)};
 }
 
 QueryPlanStepPtr QueryPlanStepRegistry::createStep(
@@ -32,9 +79,22 @@ QueryPlanStepPtr QueryPlanStepRegistry::createStep(
         auto it = steps.find(name);
         if (it == steps.end())
             throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown query plan step: {}", name);
-        create_function = it->second;
+        create_function = it->second.create_function;
     }
     return create_function(ctx);
+}
+
+bool QueryPlanStepRegistry::hasStep(const std::string & name) const
+{
+    return steps.contains(name);
+}
+
+const QueryPlanStepRegistry::StepSerializationInfo * QueryPlanStepRegistry::getStepSerializationInfo(const std::string & name) const
+{
+    auto it = steps.find(name);
+    if (it == steps.end())
+        return nullptr;
+    return &it->second.info;
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);

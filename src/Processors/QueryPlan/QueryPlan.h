@@ -12,7 +12,9 @@
 
 #include <functional>
 #include <list>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -37,6 +39,8 @@ class WriteBuffer;
 
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
+
+struct PlanOutline;
 
 class Pipe;
 
@@ -120,23 +124,31 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
-    void serialize(WriteBuffer & out, size_t max_supported_version) const;
+    /// `requested_version` is the version the query asked for, 0 to use the server default.
+    void serialize(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
     /// Serialization for a distributed-plan worker task: every subquery set ships as its built
     /// values (a `TupleValues` record bounded by `sets_transfer_limits`), and a set without
     /// complete values is an error, because a `SubqueryPlan` record would make every task re-run
     /// the subquery.
-    void serializeForDistributedTask(WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits) const;
+    void serializeForDistributedTask(
+        WriteBuffer & out, size_t max_supported_version, const SizeLimits & sets_transfer_limits, UInt64 requested_version = 0) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
-    /// Serializes the query plan and store the result
-    void ensureSerialized(size_t max_supported_version) const;
+    /// A serialized plan held as the pieces it was built from. Joining them into one buffer would
+    /// hold a second full copy of a plan that can carry large `IN` sets, so they stay apart and go
+    /// to the wire one after another.
+    using SerializedChunks = std::vector<String>;
 
-    /// Get cached serialized data
-    std::string_view getSerializedData() const;
+    /// Serializes the query plan once, at the version this server writes, and keeps the bytes so
+    /// every peer of the query is sent the same serialization. A framed peer reads it whatever its
+    /// own version; a peer too old to read the framed format is refused rather than served a
+    /// second, older serialization.
+    void ensureSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
 
-    /// Check if already serialized
-    bool isSerialized() const;
+    /// Writes the kept bytes to this peer, or refuses cleanly when the peer cannot read the version
+    /// they were written at.
+    void writeSerializedTo(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
 
     void resolveStorages(const ContextPtr & context);
 
@@ -225,7 +237,6 @@ public:
 
     static void cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes);
 
-private:
     struct SerializationFlags
     {
         /// Query-plan serialization version of the stream, set on deserialize from the leading version field.
@@ -234,13 +245,41 @@ private:
         /// See `serializeForDistributedTask`.
         bool sets_must_be_ready = false;
         SizeLimits sets_transfer_limits = {};
+        /// Put each step's debug description on the wire. Off by default: it is only useful for
+        /// rendering a plan whose steps a reader does not know, and costs bytes per node otherwise.
+        bool with_step_descriptions = false;
     };
 
+private:
+    /// Picks the framed or the older layout by `flags.version` and writes the whole stream.
+    void serializeWithFlags(WriteBuffer & out, const SerializationFlags & flags) const;
+    /// The older layout, without its leading version.
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
+    SerializedChunks serializeFramedToChunks(const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
+    static QueryPlanAndSets deserializeFramedBody(
+        ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags,
+        size_t max_type_complexity, UInt64 max_plan_bytes);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
     static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);
+
+    friend void serializeFramedSets(
+        SerializedSetsRegistry & registry,
+        const SerializationFlags & flags,
+        PlanOutline & outline,
+        std::vector<String> & payloads);
+    friend QueryPlanAndSets deserializeFramedSets(
+        QueryPlan plan,
+        DeserializedSetsRegistry & registry,
+        const PlanOutline & outline,
+        ReadBuffer & in,
+        const SerializationFlags & flags,
+        const ContextPtr & context,
+        size_t max_type_complexity,
+        UInt64 max_plan_bytes,
+        size_t body_start,
+        UInt64 & frames_consumed);
 
     QueryPlanResourceHolder resources;
     Nodes nodes;
@@ -253,9 +292,36 @@ private:
     size_t max_threads = 0;
     bool concurrency_control = false;
 
-    /// Cached serialized representation
+    /// The serialized plan, kept once at the version this server writes, so every peer of a query
+    /// is sent the same bytes.
     /// FIXME: temporary measure to avoid changing many methods to bypass serialized plan
-    mutable std::unique_ptr<WriteBufferFromOwnString> serialized_plan;
+    ///
+    /// One plan is shared by all the replicas of a query, and each replica sends it from its own
+    /// thread, so the cache is guarded. Without the mutex a sender could pick up bytes another
+    /// thread is still writing and put a truncated plan on the wire.
+    struct SerializedPlanCache
+    {
+        std::mutex mutex;
+        /// The version the kept bytes were written at; meaningful only when `chunks` is set.
+        UInt64 version = 0;
+        /// Shared so a sender can take the bytes under the lock and write them to the wire without
+        /// holding the lock across the network. Null until the plan has been serialized.
+        std::shared_ptr<const SerializedChunks> chunks;
+
+        SerializedPlanCache() = default;
+
+        /// A plan is moved while it is being built, never while it is being sent, so the cached
+        /// bytes move without locking. The mutex itself is not movable and stays behind.
+        SerializedPlanCache(SerializedPlanCache && other) noexcept : version(other.version), chunks(std::move(other.chunks)) { }
+        SerializedPlanCache & operator=(SerializedPlanCache && other) noexcept
+        {
+            version = other.version;
+            chunks = std::move(other.chunks);
+            return *this;
+        }
+    };
+
+    mutable SerializedPlanCache serialized_plans;
 };
 
 /// This is a structure which contains a query plan and a list of sets.
