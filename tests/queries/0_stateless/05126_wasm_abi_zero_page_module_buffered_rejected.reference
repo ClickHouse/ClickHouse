@@ -1,0 +1,5 @@
+A BUFFERED_V1 function of a module that cannot hold any memory is created
+and calling it reports the zero maximum linear memory of the module
+1
+A function without arguments is reported the same way, having no row to blame
+1
