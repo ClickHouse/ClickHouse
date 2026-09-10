@@ -27,3 +27,5 @@ S18 control, text index over LowCardinality key still prunes an absent key	0
 S28 control, text index over LowCardinality key used for a paddable key	8
 S24 bloom_filter, mixed keys, indexed count matches unindexed	4	4
 S25 text index, mixed keys, indexed count matches unindexed	4	4
+S29 bloom_filter prunes granules for a paddable key	1
+S30 text index prunes granules for a paddable key	1

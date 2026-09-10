@@ -168,6 +168,35 @@ SELECT 'S25 text index, mixed keys, indexed count matches unindexed',
        (SELECT count() FROM t_text_mixed WHERE m[materialize(unhex('6100'))] = 7 SETTINGS use_skip_indexes = 1),
        (SELECT count() FROM t_text_mixed WHERE m[materialize(unhex('6100'))] = 7 SETTINGS use_skip_indexes = 0);
 
+-- S29/S30: row counts cannot see granule pruning, because the row-level predicate filters the
+-- non-matching rows either way. These read the index step's own `Granules: selected/total` out of the
+-- plan and assert only that a step pruned strictly between nothing and everything, so no granule count
+-- is baked into the reference. A plan reports only what index analysis pruned, so the arms pin the
+-- index out of the data-read path.
+SELECT 'S29 bloom_filter prunes granules for a paddable key', max((sel > 0) AND (sel < tot))
+FROM (
+    SELECT toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) AS sel,
+           toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)')) AS tot
+    FROM (
+        EXPLAIN indexes = 1 SELECT count() FROM t_bloom_mixed
+        WHERE m[materialize(unhex('6100'))] = 7
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+    )
+    WHERE explain LIKE '%Granules:%'
+);
+
+SELECT 'S30 text index prunes granules for a paddable key', max((sel > 0) AND (sel < tot))
+FROM (
+    SELECT toUInt64OrZero(extract(explain, 'Granules: ([0-9]+)/')) AS sel,
+           toUInt64OrZero(extract(explain, 'Granules: [0-9]+/([0-9]+)')) AS tot
+    FROM (
+        EXPLAIN indexes = 1 SELECT count() FROM t_text_mixed
+        WHERE m[materialize(unhex('6100'))] = 7
+        SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+    )
+    WHERE explain LIKE '%Granules:%'
+);
+
 DROP TABLE t_fixed_key;
 DROP TABLE t_lc_fixed_key;
 DROP TABLE t_string_key;
