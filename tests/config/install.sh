@@ -137,8 +137,13 @@ function install_build_type_configs()
     # a bad vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
     is_sanitizer=$(build_option_flag "sanitizer build" '%-DSANITIZER%')
     # Coverage instrumentation slows in-flush symbolization as much as a sanitizer runtime does,
-    # and carries no -DSANITIZER, so the flavour is read from its own build_options row.
-    is_coverage=$(build_option_enabled "coverage build" 'WITH_COVERAGE')
+    # and carries no -DSANITIZER, so the flavour is read from its own build_options row. That row
+    # exists from 26.2 on; the upgrade check installs these configs for an older released server.
+    if check_clickhouse_version 26.2; then
+        is_coverage=$(build_option_enabled "coverage build" 'WITH_COVERAGE')
+    else
+        is_coverage=0
+    fi
 
     # A non-zero global_profiler_* period is rejected by an msan server while it parses its own
     # settings, so the config must be absent rather than merely unused there.
