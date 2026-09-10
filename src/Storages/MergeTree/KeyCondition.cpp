@@ -1206,6 +1206,15 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, boolean_context);
                 handled_inversion = true;
             }
+            else if (name == "indexHint" && need_inversion)
+            {
+                /// `indexHint` returns 1 for every row, so an inverted hint is 0 for every row. Index
+                /// analysis re-reads a hint's arguments from the `FunctionIndexHint` object, not from the
+                /// cloned children, so an inverted hint node would contribute its condition un-inverted.
+                auto uint8_type = std::make_shared<DataTypeUInt8>();
+                res = &inverted_dag.addColumn(uint8_type->createColumnConst(0, 0), uint8_type, "false");
+                handled_inversion = true;
+            }
             else if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
@@ -1217,7 +1226,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
+                            arg = &cloneDAGWithInversionPushDown(
+                                *arg, inverted_dag, inputs_mapping, context, /* need_inversion */ false, boolean_context);
                     }
                 }
 
