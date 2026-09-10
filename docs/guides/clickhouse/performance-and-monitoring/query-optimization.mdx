@@ -63,7 +63,7 @@ Below is the command to create the table and insert data from an S3 bucket. Note
 -- Create table with inferred schema
 CREATE TABLE trips_small_inferred
 ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet', NOSIGN);
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
 
 -- Insert data into table with inferred schema
 INSERT INTO trips_small_inferred
@@ -523,7 +523,7 @@ With a low cardinality, those four columns, `ratecode_id`, `pickup_location_id`,
 
 ### Optimize data type {#optimize-data-type}
 
-ClickHouse supports a large number of data types. Make sure to pick the smallest possible data type that fits your use case to optimize performance and reduce your data storage space on disk. 
+Clickhouse supports a large number of data types. Make sure to pick the smallest possible data type that fits your use case to optimize performance and reduce your data storage space on disk. 
 
 For numbers, you can check the min/max value in your dataset to check if the current precision value matches the reality of your dataset. 
 

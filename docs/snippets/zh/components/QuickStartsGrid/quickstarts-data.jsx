@@ -102,7 +102,7 @@ export const quickStartsData = [
   {
     "id": "obtain-your-cloud-connection-details",
     "title": "获取您的 Cloud 连接详情",
-    "description": "了解如何查找 ClickHouse Cloud 服务的主机名、端口和凭据，以便从外部客户端、命令行客户端 和应用程序进行连接。",
+    "description": "了解如何查找 ClickHouse Cloud 服务的主机名、端口和凭据，以便从外部客户端、CLI 和应用程序进行连接。",
     "href": "/zh/get-started/quickstarts/obtain-your-cloud-connection-details",
     "useCases": [
       "all"
@@ -114,7 +114,7 @@ export const quickStartsData = [
   {
     "id": "tutorial",
     "title": "高级教程",
-    "description": "了解如何使用纽约市出租车示例数据集在 ClickHouse 中摄取和查询数据。",
+    "description": "了解如何在 ClickHouse 中使用纽约市出租车示例数据集摄取和查询数据。",
     "href": "/zh/get-started/quickstarts/tutorial",
     "useCases": [
       "real-time-analytics",

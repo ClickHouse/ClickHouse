@@ -1,0 +1,66 @@
+---
+title: 'AWS 上的 BYOC FAQ'
+slug: /cloud/reference/byoc/faq/aws
+sidebarTitle: 'FAQ（AWS）'
+keywords: ['BYOC', '云', '自有云', 'AWS']
+description: '在您自有的云基础设施上部署 ClickHouse'
+doc_type: 'reference'
+---
+
+<div id="faq">
+  ## 常见问题
+</div>
+
+<div id="compute">
+  ### 计算资源
+</div>
+
+<AccordionGroup>
+  <Accordion title="我可以在这一个 EKS 集群中创建多个服务吗？">
+    可以。对于每个 AWS 账户和区域组合，基础设施只需配置一次。
+  </Accordion>
+
+  <Accordion title="BYOC 支持哪些区域？">
+    BYOC 支持与 ClickHouse Cloud 相同的[区域](/zh/products/cloud/reference/supported-regions#aws-regions)。
+  </Accordion>
+
+  <Accordion title="会有额外的资源开销吗？除 ClickHouse 实例外，运行其他服务还需要哪些资源？">
+    除了 ClickHouse 实例 (ClickHouse server 和 ClickHouse Keeper) 之外，我们还会运行 `clickhouse-operator`、`aws-cluster-autoscaler`、Istio 等服务，以及监控栈。
+
+    目前，我们在一个专用节点组中使用三个 m5.xlarge 节点 (每个 AZ 一个) 来运行这些工作负载。
+  </Accordion>
+</AccordionGroup>
+
+<div id="network-and-security">
+  ### 网络与安全
+</div>
+
+<AccordionGroup>
+  <Accordion title="安装期间设置的权限是否可以在设置完成后撤销？">
+    目前还不支持。
+  </Accordion>
+
+  <Accordion title="你们是否考虑过在未来增加一些安全控制，让 ClickHouse 工程师能够在故障排查时访问客户基础设施？">
+    是的。我们已将一种由客户控制的机制纳入路线图，客户可批准工程师对集群的访问。目前，工程师必须经过我们的内部处理流程，才能获得对集群的即时访问权限。此过程会由我们的安全团队记录并审计。
+  </Accordion>
+
+  <Accordion title="创建的 VPC IP 范围有多大？">
+    默认情况下，我们对 BYOC VPC 使用 `10.0.0.0/16`。我们建议至少预留 /22，以支持未来可能的扩缩容；
+    但如果你希望限制规模，也可以使用 /23，前提是预计最多
+    只会有 30 个服务器 Pod (容器组) 。
+  </Accordion>
+
+  <Accordion title="我可以决定维护频率吗？">
+    请联系支持团队安排维护窗口。请注意，更新频率最低为每周一次。
+  </Accordion>
+</AccordionGroup>
+
+<div id="uptime-slas">
+  ### 运行时间 SLA
+</div>
+
+<AccordionGroup>
+  <Accordion title="ClickHouse 是否为 BYOC 提供运行时间 SLA？">
+    不提供。由于数据平面托管在客户的云环境中，服务可用性取决于 ClickHouse 无法控制的资源。因此，ClickHouse 不为 BYOC 部署提供正式的运行时间 SLA。如果您还有其他问题，请联系 support@clickhouse.com。
+  </Accordion>
+</AccordionGroup>

@@ -565,8 +565,7 @@ SELECT
 
 Introduced in: v1.1.0
 
-Removes the first `name=value` occurrence of each requested parameter from a URL.
-Only parameters spelled as `name=` are matched, so a value-less flag parameter is left intact, e.g. `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` returns the URL unchanged.
+Removes the `name` parameter from a URL, if present.
 This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
     
 
@@ -583,7 +582,7 @@ cutURLParameter(url, name)
 
 **Returned value**
 
-URL with the first `name=value` occurrence of each requested parameter removed. [`String`](/reference/data-types/string)
+URL with `name` URL parameter removed. [`String`](/reference/data-types/string)
 
 **Examples**
 
@@ -1181,7 +1180,7 @@ Returns the fragment identifier without the initial hash symbol. [`String`](/ref
 **Usage example**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1251,7 +1250,7 @@ Returns the path of the URL without query string. [`String`](/reference/data-typ
 **Usage example**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
+SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
 ```
 
 ```response title=Response
@@ -1286,7 +1285,7 @@ Returns the path of the URL including query string and fragment. [`String`](/ref
 **Usage example**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
 ```
 
 ```response title=Response

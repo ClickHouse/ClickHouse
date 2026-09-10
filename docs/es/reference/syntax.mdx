@@ -32,7 +32,7 @@ y los datos `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` se analizan con el ana
 
 <Accordion title="Activar el analizador completo">
   También puede activar el analizador completo para los datos
-  mediante la configuración [`input_format_values_interpret_expressions`](/es/reference/settings/formats/input-format#input_format_values_interpret_expressions).
+  mediante la configuración [`input_format_values_interpret_expressions`](/es/reference/settings/formats#input_format_values_interpret_expressions).
 
   Cuando la configuración mencionada anteriormente se establece en `1`,
   ClickHouse primero intenta analizar los valores con el analizador rápido de flujo.
@@ -40,7 +40,7 @@ y los datos `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` se analizan con el ana
 </Accordion>
 
 Los datos pueden tener cualquier formato.
-Cuando se recibe una consulta, el servidor calcula no más de [max&#95;query&#95;size](/es/reference/settings/session-settings/max#max_query_size) bytes de la solicitud en RAM
+Cuando se recibe una consulta, el servidor calcula no más de [max&#95;query&#95;size](/es/reference/settings/session-settings#max_query_size) bytes de la solicitud en RAM
 (de forma predeterminada, 1 MB), y el resto se analiza como flujo.
 Esto permite evitar problemas con consultas `INSERT` grandes, que es la forma recomendada de insertar datos en ClickHouse.
 
@@ -536,7 +536,7 @@ ClickHouse sustituyó el literal `b` de la expresión `argMax(a, b)` por la expr
 Esta sustitución provocó la excepción.
 
 <Note>
-  Puede cambiar este comportamiento predeterminado estableciendo [prefer&#95;column&#95;name&#95;to&#95;alias](/es/reference/settings/session-settings/prefer#prefer_column_name_to_alias) en `1`.
+  Puede cambiar este comportamiento predeterminado estableciendo [prefer&#95;column&#95;name&#95;to&#95;alias](/es/reference/settings/session-settings#prefer_column_name_to_alias) en `1`.
 </Note>
 
 <div id="asterisk">

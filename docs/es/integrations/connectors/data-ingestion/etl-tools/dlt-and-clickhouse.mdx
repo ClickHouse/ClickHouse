@@ -7,7 +7,7 @@ slug: /integrations/data-ingestion/etl-tools/dlt-and-clickhouse
 doc_type: 'guide'
 ---
 
-import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -30,7 +30,9 @@ pip install "dlt[clickhouse]"
 </div>
 
 <Steps>
-  <Step title="Inicializa el proyecto dlt" id="1-initialize-the-dlt-project">
+  <Step>
+    ### Inicializa el proyecto `dlt`
+
     Empieza inicializando un nuevo proyecto `dlt` de la siguiente manera:
 
     ```bash
@@ -50,7 +52,9 @@ pip install "dlt[clickhouse]"
     o con `pip install dlt[clickhouse]`, que instala la biblioteca `dlt` y las dependencias necesarias para trabajar con ClickHouse como destino.
   </Step>
 
-  <Step title="Configura la base de datos de ClickHouse" id="2-setup-clickhouse-database">
+  <Step>
+    ### Configura la base de datos de ClickHouse
+
     Para cargar datos en ClickHouse, necesitas crear una base de datos en ClickHouse. Aquí tienes un resumen general de lo que debes hacer:
 
     1. Puedes usar una base de datos de ClickHouse existente o crear una nueva.
@@ -68,7 +72,9 @@ pip install "dlt[clickhouse]"
     ```
   </Step>
 
-  <Step title="Agrega las credenciales" id="3-add-credentials">
+  <Step>
+    ### Agrega las credenciales
+
     A continuación, configura las credenciales de ClickHouse en el archivo `.dlt/secrets.toml` como se muestra a continuación:
 
     ```bash

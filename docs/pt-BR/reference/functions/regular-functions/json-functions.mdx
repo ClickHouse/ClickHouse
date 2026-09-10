@@ -46,64 +46,11 @@ Quando várias chaves correspondem com grafias diferentes entre maiúsculas e mi
   Essas funções podem ter desempenho inferior ao das equivalentes com distinção entre maiúsculas e minúsculas, portanto, use as funções JSONExtract regulares, se possível.
 </Note>
 
-<div id="jsonpath-syntax">
-  ## Sintaxe do JSONPath
-</div>
-
-As funções `JSON_EXISTS`, `JSON_VALUE` e `JSON_QUERY` aceitam uma expressão
-JSONPath como segundo argumento. O ClickHouse implementa um pequeno subconjunto do
-JSONPath, baseado de forma flexível no padrão SQL/JSON (ISO/IEC TR 19075-6),
-e deliberadamente mais limitado que a [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
-e outras implementações populares. Os operadores compatíveis estão listados abaixo.
-
-A implementação de referência está em
-[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers).
-
-<div id="supported-operators">
-  ### Operadores compatíveis
-</div>
-
-| Sintaxe       | Descrição                                                                                                                                                  | Exemplo                           |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `$`           | Elemento raiz. Todo caminho deve começar com ele.                                                                                                          | `$`                               |
-| `.key`        | Acesso a membro por notação de ponto, sem aspas. A chave pode começar com números ou ser composta apenas por eles.                                         | `$.store.book`, `$.1key`, `$.123` |
-| `."key"`      | Acesso a membro por notação de ponto, entre aspas. Use-o para chaves que contenham espaços ou caracteres especiais. São aceitas aspas duplas ou backticks. | `$."foo bar"`                     |
-| `[key]`       | Acesso a membro por notação de colchetes, sem aspas.                                                                                                       | `$[hello]`                        |
-| `['key']`     | Acesso a membro por notação de colchetes, entre aspas. São aceitas aspas simples, aspas duplas ou backticks.                                               | `$['foo bar']`                    |
-| `[n]`         | Acesso a elemento de Array por índice (baseado em 0).                                                                                                      | `$.items[0]`                      |
-| `[n, m, ...]` | Acesso a vários elementos de Array.                                                                                                                        | `$.items[0, 2, 4]`                |
-| `[n to m]`    | Intervalo de elementos de Array. O índice final `m` é exclusivo.                                                                                           | `$.items[0 to 3]`                 |
-| `[*]`         | Wildcard que corresponde a todos os elementos de um Array.                                                                                                 | `$.items[*]`                      |
-
-Observações:
-
-* Índices e intervalos podem ser combinados dentro do mesmo par de colchetes (por exemplo, `[0 to 2, 4]`).
-* Intervalos de índices e o wildcard não podem ser combinados dentro do mesmo par de colchetes (por exemplo, `[* , 0]` é inválido).
-* Em um intervalo `[n to m]`, o início `n` deve ser estritamente menor que o final `m`; caso contrário, é gerada uma exceção.
-* Um índice isolado `[n]` é equivalente ao intervalo `[n to n+1]`.
-
-<div id="unsupported-operators">
-  ### Operadores sem suporte
-</div>
-
-Os seguintes operadores JSONPath, disponíveis na RFC 9535 ou em outras
-implementações, **não** têm suporte no ClickHouse:
-
-| Sintaxe                 | Descrição                                                                                |
-| ----------------------- | ---------------------------------------------------------------------------------------- |
-| `..`                    | Descida recursiva.                                                                       |
-| `?(@.expr)`             | Expressões de filtro.                                                                    |
-| `[start:end:step]`      | Notação de fatia. Use `[n to m]` em vez disso.                                           |
-| `@`                     | Referência ao nó atual.                                                                  |
-| `[-n]`                  | Índices negativos de array (a partir do fim).                                            |
-| Expressões de script    | Expressões aritméticas ou de função em um caminho.                                       |
-| `ON ERROR` / `ON EMPTY` | Cláusulas SQL/JSON padrão para controlar o comportamento em caso de erro ou valor vazio. |
-
 {/* 
-    O conteúdo interno das tags abaixo é substituído durante a compilação do framework de documentação por 
-    documentação gerada a partir de system.functions. Por favor, não modifique nem remova as tags.
-    Consulte: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
-    */}
+  O conteúdo interno das tags abaixo é substituído durante a compilação do framework de documentação por 
+  documentação gerada a partir de system.functions. Por favor, não modifique nem remova as tags.
+  Consulte: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
 
 {/*AUTOGENERATED_START*/}
 
@@ -797,13 +744,13 @@ Retorna um array de tuplas com os pares chave-valor extraídos. [`Array(Tuple(St
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
 ```
 
 ```response title=Response
-┌─res────────────────────────┐
+┌─res────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────────┘
+└────────────────────────┘
 ```
 
 <div id="JSONExtractKeysAndValuesCaseInsensitive">
@@ -875,7 +822,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
 
 ```response title=Response
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200]'),('b','"hello"')] │
+│ [('a','[-100,200.0]'),('b','"hello"')] │
 └──────────────────────────────────────┘
 ```
 
@@ -1379,7 +1326,7 @@ SELECT json, JSONSharedDataPaths(json) FROM test;
 
 Introduzido na versão: v24.8.0
 
-Retorna a lista de caminho armazenados na estrutura de dados compartilhada e seus tipos em cada linha da coluna JSON.
+Retorna a lista de caminho armazenados na estrutura de dados compartilhados e seus tipos em cada linha da coluna JSON.
 
 **Sintaxe**
 
@@ -1407,10 +1354,10 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ```response title=Response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                 │
-│ {"b":"Hello"}                        │ {'b':'String'}                     │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
-└──────────────────────────────────────┴────────────────────────────────────┘
+│ {"a":"42"}                           │ {}                                  │
+│ {"b":"Hello"}                        │ {'b':'String'}                      │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
+└──────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
 <div id="JSONType">
@@ -2218,14 +2165,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 Introduzido em: v21.7.0
 
 Serializa um valor em sua representação JSON. Há suporte para vários tipos de dados e estruturas aninhadas.
-[inteiros](/pt-BR/reference/data-types/int-uint) de 64 bits ou maiores (como `UInt64` ou `Int128`) são colocados entre aspas por padrão. [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) controla esse comportamento.
-Os valores especiais `NaN` e `inf` são substituídos por `null`. Habilite a configuração [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_denormals) para exibi-los.
+[inteiros](/pt-BR/reference/data-types/int-uint) de 64 bits ou maiores (como `UInt64` ou `Int128`) são colocados entre aspas por padrão. [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/pt-BR/reference/settings/formats#output_format_json_quote_64bit_integers) controla esse comportamento.
+Os valores especiais `NaN` e `inf` são substituídos por `null`. Habilite a configuração [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats#output_format_json_quote_denormals) para exibi-los.
 Ao serializar um valor [Enum](/pt-BR/reference/data-types/enum), a função retorna seu nome.
 
 Veja também:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/pt-BR/reference/settings/formats#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats#output_format_json_quote_denormals)
 
 **Sintaxe**
 

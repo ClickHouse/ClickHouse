@@ -1,8 +1,6 @@
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTJSONHelpers.h>
-#include <Parsers/ASTJSONReadHelpers.h>
-#include <Parsers/ASTFromJSON.h>
 
+#include <Core/SettingsSecrets.h>
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -15,18 +13,56 @@
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
-#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
-static constexpr std::string_view format_avro_schema_registry_url = "format_avro_schema_registry_url";
+#include <array>
 
 namespace DB
 {
 
-namespace ErrorCodes
+/// Each engine namespace declares its own identical `ValueMaskingFunc` alias, hence the spelled-out
+/// type. Unrelated to `CoreSettings::ValueMaskingFunc`, which rewrites a value string in place.
+using EngineSettingsToHide = std::unordered_map<String, std::function<std::string(const Field &)>>;
+
+/// The table and database engine settings whose value is a secret, and how each one is masked.
+///
+/// Every engine's map is consulted whatever the engine of the statement being formatted, because
+/// `FormatStateStacked::create_engine_name` is only set when a `SETTINGS` clause is formatted as part
+/// of `ENGINE = ...`. Gating on it printed the value of
+/// `ALTER TABLE t MODIFY SETTING kafka_sasl_password = '...'` in cleartext. The setting names are
+/// engine-prefixed, so there is nothing for a different engine to collide with.
+///
+/// `formatImpl` and `hasSecretParts` both read this list, so they cannot disagree on what is secret.
+static std::array<const EngineSettingsToHide *, 6> engineSettingsToHide()
 {
-    extern const int BAD_ARGUMENTS;
+    return {
+        &DataLake::SETTINGS_TO_HIDE,
+        &RabbitMQ::SETTINGS_TO_HIDE,
+        &NATS::SETTINGS_TO_HIDE,
+        &Kafka::SETTINGS_TO_HIDE,
+        &AzureQueue::SETTINGS_TO_HIDE,
+        &S3Queue::SETTINGS_TO_HIDE,
+    };
 }
+
+/// Renders a change whose value is a secret as the SQL text that hides it, and returns `nullopt` for
+/// a change that carries none. `formatImpl` and `hasSecretParts` both go through this, so they cannot
+/// disagree on what is secret.
+static std::optional<String> renderSecretChangeValue(const SettingChange & change)
+{
+    if (auto masked = CoreSettings::renderSecretSettingValue(change.name, change.value))
+        return masked;
+
+    for (const auto * settings_to_hide : engineSettingsToHide())
+    {
+        auto it = settings_to_hide->find(change.name);
+        if (it != settings_to_hide->end())
+            return it->second(change.value);
+    }
+
+    return {};
+}
+
 
 class FieldVisitorToSetting : public StaticVisitor<String>
 {
@@ -79,12 +115,11 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
     {
         hash_state.update(change.name.size());
         hash_state.update(change.name);
-        hash_state.update(change.shorthand);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
     }
 }
 
-void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const
+void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (is_standalone)
         ostr << "SET ";
@@ -100,91 +135,13 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
         formatSettingName(change.name, ostr);
 
-        /// The valueless form has to survive a format/parse round trip: written back as
-        /// `name = true` it would be accepted for a setting of any type, which is exactly what the
-        /// shorthand check exists to prevent. The value is Bool `true` and never secret.
-        ///
-        /// Only elide the value when it really is `true`. The AST JSON dialect can pair the
-        /// shorthand flag with any other value, and such a change is rejected by
-        /// `BaseSettings::checkShorthandChange` - but that happens after the query is logged, so the
-        /// formatter must not print a bare name for a change that carries something else.
-        if (change.shorthand && change.value == Field(true))
-            continue;
+        std::optional<String> masked;
+        if (!format.show_secrets)
+            masked = renderSecretChangeValue(change);
 
-        auto format_if_secret = [&]() -> bool
-        {
-            CustomType custom;
-            if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            {
-                ostr << " = " << custom.toString(/* show_secrets */false);
-                return true;
-            }
-
-            if (change.name == format_avro_schema_registry_url)
-            {
-                /// Matches `hasSecretParts`: a non-String value cannot embed a URI password, and the
-                /// AST JSON path can carry any `Field` type here.
-                String uri_string;
-                if (!change.value.tryGet<String>(uri_string) || !maskURIPassword(&uri_string))
-                    return false;
-
-                ostr << " = '" << uri_string << "'";
-                return true;
-            }
-
-            /// Intrinsically secret regardless of engine: DataLakeStorageSettings is shared by the
-            /// DataLakeCatalog database engine and the Iceberg*/Paimon*/DeltaLake* table engines.
-            /// Matches the ungated check in hasSecretParts().
-            if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-            {
-                ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                return true;
-            }
-            if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << RabbitMQ::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (NATS::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (Kafka::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << Kafka::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (AzureQueue::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << AzureQueue::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (S3Queue::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << S3Queue::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-
-            return false;
-        };
-
-        if (format.show_secrets || !format_if_secret())
+        if (masked)
+            ostr << " = " << *masked;
+        else
             ostr << " = " << applyVisitor(FieldVisitorToSetting(), change.value);
     }
 
@@ -221,170 +178,10 @@ void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
     writeText(hash.high64, ostr);
 }
 
-void ASTSetQuery::writeJSON(WriteBuffer & out) const
-{
-    JSONObjectWriter w(out, "SetQuery");
-
-    if (is_standalone)
-        w.writeBool("is_standalone", true);
-
-    if (!changes.empty())
-    {
-        w.writeKey("changes");
-        auto & o = w.getOut();
-        const auto & fs = w.getFormatSettings();
-        o << '[';
-        for (size_t i = 0; i < changes.size(); ++i)
-        {
-            if (i > 0) o << ',';
-            o << "{\"name\":";
-            writeJSONString(changes[i].name, o, fs);
-            /// The valueless form has to survive the JSON round trip for the same reason it has to
-            /// survive the SQL one (see `formatImpl`): reconstructed as an explicit `name = true` it
-            /// would be accepted for a setting of any type, which is what the shorthand check exists
-            /// to prevent. The value is Bool `true`, so it carries no information beyond the flag.
-            if (changes[i].shorthand)
-                o << ",\"shorthand\":true";
-            /// Write "value" key and the field as a JSON object via writeFieldValue.
-            /// We use a trick: writeFieldValue writes, "key":{field_json},
-            /// but since we just wrote {"name":"..." the comma is exactly what we need.
-            w.writeFieldValue("value", changes[i].value);
-            o << '}';
-        }
-        o << ']';
-    }
-
-    if (!default_settings.empty())
-    {
-        w.writeKey("default_settings");
-        auto & o = w.getOut();
-        const auto & fs = w.getFormatSettings();
-        o << '[';
-        for (size_t i = 0; i < default_settings.size(); ++i)
-        {
-            if (i > 0) o << ',';
-            writeJSONString(default_settings[i], o, fs);
-        }
-        o << ']';
-    }
-
-    if (!query_parameters.empty())
-    {
-        w.writeKey("query_parameters");
-        auto & o = w.getOut();
-        const auto & fs = w.getFormatSettings();
-        o << '[';
-        for (size_t i = 0; i < query_parameters.size(); ++i)
-        {
-            if (i > 0) o << ',';
-            o << "{\"name\":";
-            writeJSONString(query_parameters[i].first, o, fs);
-            o << ",\"value\":";
-            writeJSONString(query_parameters[i].second, o, fs);
-            o << '}';
-        }
-        o << ']';
-    }
-}
-
-void ASTSetQuery::readJSON(const Poco::JSON::Object & json)
-{
-    JSONObjectReader r(json);
-
-    is_standalone = r.getBool("is_standalone");
-
-    if (r.has("changes"))
-    {
-        auto arr = r.getArray("changes");
-        if (!arr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'changes' is not an array during AST JSON deserialization");
-        for (unsigned int i = 0; i < arr->size(); ++i)
-        {
-            auto change_obj = arr->getObject(i);
-            if (!change_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'changes' array during AST JSON deserialization", i);
-            SettingChange change;
-            /// Read the name through `JSONObjectReader` so a non-string value is rejected with
-            /// `BAD_ARGUMENTS` instead of being coerced (e.g. a number stringified into a setting name).
-            JSONObjectReader change_reader(*change_obj);
-            change.name = change_reader.getString("name");
-            /// Restore the valueless form so `checkShorthandChange` still rejects a non-`Bool`
-            /// setting written without a value; otherwise the JSON dialect is a way around it.
-            change.shorthand = change_reader.getBool("shorthand");
-            auto value_obj = change_obj->getObject("value");
-            if (!value_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'value' object at index {} in 'changes' array during AST JSON deserialization", i);
-            change.value = JSONObjectReader::readFieldFromObject(*value_obj);
-            /// A payload may pair the flag with a value the parser would never produce. That is not
-            /// rejected here: deserialization runs before `executeQueryImpl` has an AST to mask with,
-            /// so throwing would send the raw JSON text - the value included - down the unmasked
-            /// `wipeSensitiveDataAndCutToLength` logging path. The value is kept instead, so
-            /// `hasSecretParts` can still see it and `formatImpl` can still hide it, and
-            /// `checkShorthandChange` then rejects the setting itself once logging is safe.
-            changes.push_back(std::move(change));
-        }
-    }
-
-    if (r.has("default_settings"))
-    {
-        default_settings = r.readStringArray("default_settings");
-    }
-
-    if (r.has("query_parameters"))
-    {
-        auto arr = r.getArray("query_parameters");
-        if (!arr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'query_parameters' is not an array during AST JSON deserialization");
-        for (unsigned int i = 0; i < arr->size(); ++i)
-        {
-            /// `query_parameters` is a non-AST array; count each pair against `max_ast_elements` so a
-            /// tiny-AST payload cannot carry millions of parameters and allocate/format them unbounded.
-            countJSONDeserializationElement();
-            auto param_obj = arr->getObject(i);
-            if (!param_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'query_parameters' array during AST JSON deserialization", i);
-            /// Read both scalars strictly so a non-string name/value is rejected rather than coerced.
-            JSONObjectReader param_reader(*param_obj);
-            query_parameters.emplace_back(
-                param_reader.getString("name"),
-                param_reader.getString("value"));
-        }
-    }
-}
-
 bool ASTSetQuery::hasSecretParts() const
 {
-    for (const auto & change : changes)
-    {
-        CustomType custom;
-        if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
-            return true;
-        if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (NATS::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-
-        if (change.name == format_avro_schema_registry_url)
-        {
-            /// Secret only if there is actually a password embedded in it. The value need not be a
-            /// String: a valueless `SETTINGS format_avro_schema_registry_url` carries Bool `true`,
-            /// and the AST JSON path can carry any `Field` type. This runs before any settings
-            /// validation - `executeQueryImpl` masks the query for logging first - so demanding a
-            /// String here would report `BAD_GET` instead of the setting's own `TYPE_MISMATCH`.
-            String uri_string;
-            if (change.value.tryGet<String>(uri_string) && maskURIPassword(&uri_string))
-                return true;
-        }
-    }
-    return false;
+    return std::any_of(
+        changes.begin(), changes.end(), [](const auto & change) { return renderSecretChangeValue(change).has_value(); });
 }
 
 }

@@ -72,34 +72,11 @@ struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::De
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObjectSharedData>(*this);
-        new_state->map_state = map_state ? map_state->clone() : nullptr;
         for (size_t bucket = 0; bucket != bucket_map_states.size(); ++bucket)
             new_state->bucket_map_states[bucket] = bucket_map_states[bucket] ? bucket_map_states[bucket]->clone() : nullptr;
         for (size_t bucket = 0; bucket != bucket_structure_states.size(); ++bucket)
             new_state->bucket_structure_states[bucket] = bucket_structure_states[bucket] ? bucket_structure_states[bucket]->clone() : nullptr;
         return new_state;
-    }
-
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (map_column)
-            callback(map_column);
-    }
-
-    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
-    {
-        if (map_state)
-            callback(map_state);
-        for (const auto & bucket_map_state : bucket_map_states)
-        {
-            if (bucket_map_state)
-                callback(bucket_map_state);
-        }
-        for (const auto & bucket_structure_state : bucket_structure_states)
-        {
-            if (bucket_structure_state)
-                callback(bucket_structure_state);
-        }
     }
 };
 
@@ -145,11 +122,9 @@ void SerializationSubObjectSharedData::enumerateStreams(
 
             addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
             addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
-
-            /// A sub-object always reads whole paths matching the prefix and extracts sub-paths in memory
-            /// (subcolumns of such paths are removed from requested_paths_subcolumns in deserializeBinaryBulkStatePrefix),
-            /// so Substreams/SubstreamsMarks/PathsSubstreamsMetadata are never read here. Don't enumerate them,
-            /// otherwise prefetching opens files we never read.
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
+            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
 
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
                 addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructureSuffix);

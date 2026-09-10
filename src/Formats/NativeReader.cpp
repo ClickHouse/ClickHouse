@@ -177,6 +177,13 @@ Block NativeReader::read()
     if (columns == 0 && header.empty() && rows != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Zero columns but {} rows in Native format.", rows);
 
+    /// `rows` comes from the block header, and the limit it is checked against is deliberately
+    /// generous, so it must not be used to preallocate the columns: a header declaring a huge row
+    /// count would reserve that much per column before a single byte of column data is read.
+    /// Reserving is only an optimization here - deserialization appends to the column anyway - so
+    /// bound it by a plausible block size and let the column grow past that on its own.
+    const size_t rows_to_reserve = std::min<size_t>(rows, DEFAULT_INSERT_BLOCK_SIZE);
+
     for (size_t i = 0; i < columns; ++i)
     {
         if (use_index)
@@ -212,8 +219,7 @@ Block NativeReader::read()
         {
             /// NativeReader must enable all supported serializations (e.g. nullable sparse) here. Since it operates on
             /// in-memory state, it should be able to handle all possible serialization variants.
-            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations(
-                server_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+            auto info = column.type->createSerializationInfo(SerializationInfoSettings::enableAllSupportedSerializations());
 
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
@@ -222,14 +228,14 @@ Block NativeReader::read()
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);
-            new_column->reserve(rows);
+            new_column->reserve(rows_to_reserve);
             read_column = std::move(new_column);
         }
         else
         {
             serialization = column.type->getDefaultSerialization();
             auto new_column = column.type->createColumn(*serialization);
-            new_column->reserve(rows);
+            new_column->reserve(rows_to_reserve);
             read_column = std::move(new_column);
         }
 

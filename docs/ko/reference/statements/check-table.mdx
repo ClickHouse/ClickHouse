@@ -31,7 +31,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 * `part_name`: (선택 사항) 테이블의 특정 파트를 확인하려는 경우 문자열 리터럴을 추가해 파트 이름을 지정할 수 있습니다.
 * `FORMAT format`: (선택 사항) 결과의 출력 형식을 지정할 수 있습니다.
 * `SETTINGS`: (선택 사항) 추가 설정을 지정할 수 있습니다.
-  * (선택 사항): [check&#95;query&#95;single&#95;value&#95;result](/ko/reference/settings/session-settings/check#check_query_single_value_result): 이 설정은 출력이 상세 형태(`0`)인지 요약 형태(`1`)인지를 제어합니다.
+  * (선택 사항): [check&#95;query&#95;single&#95;value&#95;result](/ko/reference/settings/session-settings#check_query_single_value_result): 이 설정은 출력이 상세 형태(`0`)인지 요약 형태(`1`)인지를 제어합니다.
   * 다른 설정도 함께 적용할 수 있습니다. 결과의 순서가 결정적일 필요가 없다면 쿼리 속도를 높이기 위해 max&#95;threads를 1보다 큰 값으로 설정할 수 있습니다.
 
 쿼리 응답은 `check_query_single_value_result` 설정값에 따라 달라집니다.
@@ -162,8 +162,6 @@ SETTINGS check_query_single_value_result = 0
 │ default  │ t1       │ all_7_38_2  │         1 │         │
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
-
-개별 테이블의 무결성이 아니라 전체 데이터베이스의 상태를 확인하려면 [`CHECK DATABASE`](/ko/reference/statements/check-database) 쿼리를 사용합니다. 이 쿼리는 주로 [`DataLakeCatalog`](/ko/reference/engines/database-engines/datalake) 엔진을 사용하는 데이터베이스를 위한 것으로, 외부 카탈로그에 접근할 수 있는지 확인합니다.
 
 <div id="if-the-data-is-corrupted">
   ## 데이터가 손상된 경우

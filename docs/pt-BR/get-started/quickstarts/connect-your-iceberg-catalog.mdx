@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Conecte seu catálogo Iceberg'
 title: 'Como conectar seu catálogo Iceberg ao ClickHouse Cloud'
-useCases: ['Armazenamento de dados']
+useCases: ['Data warehousing']
 products: ['Cloud']
 skillLevel: 'Iniciante'
 description: 'Saiba como conectar o ClickHouse Cloud ao seu catálogo de dados e consultar tabelas Iceberg.'
@@ -51,12 +51,14 @@ Neste Quickstart, você vai:
 Ao final, você terá o ClickHouse Cloud conectado ao seu catálogo Iceberg e poderá executar consultas SQL nas tabelas Iceberg sem copiar os dados.
 
 <Steps titleSize="h3">
-  <Step title="Criar uma conexão catálogo do lago de dados" id="create-a-datalakecatalog-connection">
+  <Step>
+    ### Criar uma conexão catálogo do lago de dados
+
     Nesta etapa, você vai se conectar ao seu catálogo do lago de dados no ClickHouse Cloud.
 
     1. Abra seu serviço ClickHouse Cloud.
 
-    2. Navegue até **Data Sources → Connect to your catálogo do lago de dados**.
+    2. Navegue até **Data Sources → Connect to your Data Lake Catalog**.
 
     3. Selecione seu catálogo de dados no menu suspenso.
 
@@ -75,7 +77,9 @@ Ao final, você terá o ClickHouse Cloud conectado ao seu catálogo Iceberg e po
     5. Salve o catálogo. Agora, você deverá ver o catálogo de dados carregado na página Data Sources, com o número de tabelas disponíveis no banco de dados.
   </Step>
 
-  <Step title="Consultar uma tabela Iceberg" id="query-iceberg-table">
+  <Step>
+    ### Consultar uma tabela Iceberg
+
     Nesta etapa, você vai consultar uma tabela Iceberg do seu catálogo de dados.
 
     1. Ao clicar em `Show Tables` ou `SQL Console`, você será direcionado ao SQL Console
@@ -90,9 +94,7 @@ Ao final, você terá o ClickHouse Cloud conectado ao seu catálogo Iceberg e po
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## Próximos passos
-</div>
+## Próximos passos
 
 Agora que você se conectou ao seu lago de dados, pode testar a gravação de uma tabela Iceberg no ClickHouse.
 

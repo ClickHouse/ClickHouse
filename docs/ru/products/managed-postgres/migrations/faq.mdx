@@ -1,23 +1,23 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'FAQ'
-title: 'FAQ по миграциям в ClickHouse Managed Postgres'
+title: 'FAQ по миграциям в Managed Postgres'
 description: 'Часто задаваемые вопросы о миграции данных в ClickHouse Managed Postgres.'
-keywords: ['postgres', 'миграция', 'faq', 'managed postgres', 'логическая репликация', 'enum', 'ограничение уникальности']
+keywords: ['postgres', 'миграция', 'faq', 'managed postgres', 'логическая репликация', 'enum', 'уникальное ограничение']
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import PrivatePreviewBadge from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-Многие вопросы о работе репликации Postgres — включая столбцы `TOAST`, слоты репликации, публикации, изменения схемы и сопоставление типов данных — освещены в [FAQ по ClickPipes для Postgres](/ru/integrations/clickpipes/postgres/faq). Эта информация также применима к миграциям ClickHouse Managed Postgres.
+Многие вопросы о работе репликации Postgres — включая столбцы `TOAST`, слоты репликации, публикации, изменения схемы и сопоставление типов данных — освещены в [FAQ по ClickPipes для Postgres](/ru/integrations/clickpipes/postgres/faq). Эта информация также применима к миграциям Managed Postgres.
 
 <div id="invalid-enum-value">
   ### Во время репликации появляется ошибка &quot;invalid input value for enum&quot;
 </div>
 
-Эта ошибка возникает, когда в исходном Postgres есть значение enum, которого нет в целевом ClickHouse Managed Postgres. Логическая репликация не передаёт команды `ALTER TYPE ... ADD VALUE` автоматически, поэтому новые значения enum, добавленные в источнике после первоначальной настройки схемы, приведут к сбою вставки в целевой базе.
+Эта ошибка возникает, когда в исходном Postgres есть значение enum, которого нет в целевом Managed Postgres. Логическая репликация не передаёт команды `ALTER TYPE ... ADD VALUE` автоматически, поэтому новые значения enum, добавленные в источнике после первоначальной настройки схемы, приведут к сбою вставки в целевой базе.
 
 Чтобы исправить это, добавьте отсутствующее значение в тип enum в целевом Postgres:
 
@@ -27,36 +27,28 @@ ALTER TYPE your_enum_type ADD VALUE 'new_value';
 
 Замените `your_enum_type` на имя вашего enum-типа, а `'new_value'` — на отсутствующее значение из сообщения об ошибке.
 
-<div id="constraint-violation">
-  ### Во время репликации возникает ошибка нарушения ограничения уникальности или проверки
+<div id="unique-constraint-violation">
+  ### Во время репликации возникает ошибка нарушения ограничения уникальности
 </div>
 
-Нарушения ограничений могут возникать при логической репликации, когда порядок репликации приводит к конфликту с существующим ограничением на целевой стороне.
+Ошибки нарушения ограничения уникальности могут возникать при логической репликации, когда порядок репликации приводит к конфликту с существующим ограничением уникальности на целевой стороне. Это может происходить в рабочих нагрузках CDC, где операции воспроизводятся повторно и временно нарушают уникальность, пока последующее обновление не устранит это.
 
-* **Ограничения уникальности**: Мы применяем изменения пакетами в виде операций `MERGE`/`UPSERT`, записывая последнее значение для каждого первичного ключа, поэтому порядок операций для конкретного ключа может не соответствовать порядку, ожидаемому уникальным индексом. Это может временно нарушать ограничение `UNIQUE` в рамках транзакции, хотя после завершения `MERGE` ограничение соблюдается. Postgres не может отложить проверку уникального индекса так же, как проверку внешних ключей, поэтому перенести эту проверку на конец транзакции невозможно. Это не влияет на согласованность данных: идентичность строки определяется первичным ключом, и логика `MERGE` использует тот же первичный ключ.
-* **Ограничения проверки**: Ограничение проверки на целевой стороне может быть строже, чем на стороне источника, либо промежуточное состояние при пакетном `MERGE` может не удовлетворять ограничению, хотя конечное состояние ему соответствует. Как и в случае с ограничениями уникальности, это не влияет на согласованность данных, поскольку `MERGE` использует первичный ключ, определяющий идентичность строки.
-
-Чтобы возобновить репликацию, удалите проблемное ограничение в целевой базе данных Postgres:
+Чтобы возобновить репликацию, удалите ограничение уникальности в целевом Postgres:
 
 ```sql
--- Drop a unique constraint
 ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
-
--- Drop a check constraint
-ALTER TABLE your_table DROP CONSTRAINT your_check_constraint_name;
 ```
 
-Найти сведения об ограничении можно по имени из сообщения об ошибке:
+Название ограничения можно узнать, выполнив:
 
 ```sql
-SELECT conname, conrelid::regclass, contype
+SELECT conname, conrelid::regclass
 FROM pg_constraint
-WHERE conname = 'your_constraint_name';
+WHERE contype = 'u';
 ```
 
-Добавьте ограничения снова при переключении, после завершения репликации и отключения источника:
+Снова добавьте ограничение при переключении, после завершения репликации и когда исходная система больше не активна:
 
 ```sql
 ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
-ALTER TABLE your_table ADD CONSTRAINT your_check_constraint_name CHECK (column1 > 0);
 ```

@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'ClickStack の可視化とダッシュボード'
-sidebarTitle: '概要'
+sidebarTitle: 'ダッシュボード'
 description: 'ClickStack の可視化とダッシュボード'
 doc_type: 'guide'
 keywords: ['clickstack', 'ダッシュボード', '可視化', '監視', 'オブザーバビリティ']
@@ -34,37 +34,45 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
 以下の例では、[sql.clickhouse.com](https://sql.clickhouse.com) で利用できるリモートデータセットを使用します。これはガイド「[Remote Demo Dataset](/ja/clickstack/example-datasets/remote-demo-data)」で説明されています。**また、[play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) にアクセスして、これらの例を再現することもできます。**
 
 <Steps>
-  <Step title="Chart Explorer に移動する" id="navigate-chart-explorer">
+  <Step>
+    ### Chart Explorer に移動する
+
     左側のメニューから `Chart Explorer` を選択します。
 
     <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
   </Step>
 
-  <Step title="可視化を作成する" id="create-visualization">
+  <Step>
+    ### 可視化を作成する
+
     以下の例では、サービス名ごとの平均リクエスト時間を時系列でチャートとして表示します。これには、メトリクス、カラム (SQL 式を指定することも可能)、および集計フィールドを指定する必要があります。
 
     上部メニューから `Line/Bar` の可視化タイプを選択し、続いて `Traces` データセット ([play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) を使用している場合は `Demo Traces`) を選択します。次の値を入力してください。
 
-    * メトリクス: `Average`
-    * カラム: `Duration/1000`
+    * Metric: `Average`
+    * Column: `Duration/1000`
     * Where: `<empty>`
     * Group By: `ServiceName`
-    * 別名: `Average Time`
+    * Alias: `Average Time`
 
     <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="シンプルな可視化" size="lg" />
 
     イベントは SQL の `WHERE` 句または Lucene 構文のいずれかを使ってフィルタでき、イベントを可視化する時間範囲も設定できます。複数の系列にも対応しています。
 
-    たとえば、フィルタ `ServiceName:\"frontend\"` を追加して、サービス `frontend` でフィルタします。さらに、`Add Series` をクリックして、別名 `Count` を持つ時系列のイベント件数の 2 つ目の系列を追加します。
+    たとえば、フィルタ `ServiceName:\"frontend\"` を追加して、サービス `frontend` でフィルタします。さらに、`Add Series` をクリックして、エイリアス `Count` を持つ時系列のイベント件数の 2 つ目の系列を追加します。
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="シンプルな可視化 2" size="lg" />
 
-    既存の系列に似た系列を作成するには、最初から作成する代わりに複製できます。系列行のコピーアイコン (`Duplicate series`) をクリックすると、そのすぐ下にコピーが挿入されます。コピーには、メトリクス、カラム、フィルタなど、元の系列の設定が保持されます。その後、異なるフィールド (たとえば集計) だけを変更し、コピーに固有の別名を付けます。複製は、複数の系列がサポートされている場所であればどこでも利用できます。`Number`、`Pie`、`Heatmap` など、1 つの系列しか許可しない可視化タイプでは表示されません。
+    既存の系列に似た系列を作成するには、最初から作成する代わりに複製できます。系列行のコピーアイコン (`Duplicate series`) をクリックすると、そのすぐ下にコピーが挿入されます。コピーには、メトリクス、カラム、フィルタなど、元の系列の設定が保持されます。その後、異なるフィールド (たとえば集計) だけを変更し、コピーに固有のエイリアスを付けます。複製は、複数の系列がサポートされている場所であればどこでも利用できます。`Number`、`Pie`、`Heatmap` など、1 つの系列しか許可しない可視化タイプでは表示されません。
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="チャート系列の行にある Duplicate series コピーアイコンとそのツールチップ" size="lg" />
+
+    既存の系列に似た系列を作成するには、最初から作成する代わりに複製できます。系列行のコピーアイコン (`Duplicate series`) をクリックすると、そのすぐ下にコピーが挿入されます。コピーには、メトリクス、カラム、フィルタなど、元の系列の設定が保持されます。その後、異なるフィールド (たとえば集計) だけを変更し、コピーに固有のエイリアスを付けます。複製は、複数の系列がサポートされている場所であればどこでも利用できます。`Number`、`Pie`、`Heatmap` など、1 つの系列しか許可しない可視化タイプでは表示されません。
 
     <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="チャート系列の行にある Duplicate series コピーアイコンとそのツールチップ" size="lg" />
 
     <Note>
-      可視化は、メトリクス、トレース、ログなど、任意のデータソースから作成できます。ClickStack はこれらすべてをワイドイベントとして扱います。任意の **numeric カラム** を時系列でチャート化でき、**string**、**date**、または **numeric** のカラムをグループ化に使用できます。
+      可視化は、メトリクス、トレース、ログなど、任意のデータソースから作成できます。ClickStack はこれらすべてをワイドイベントとして扱います。任意の **numeric column** を時系列でチャート化でき、**string**、**date**、または **numeric** のカラムをグループ化に使用できます。
 
       この統一されたアプローチにより、一貫性があり柔軟なモデルを使って、テレメトリーの種類をまたいだダッシュボードを構築できます。
     </Note>
@@ -82,13 +90,17 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
 以下では、ログおよびトレースのデータソースを使用して、2 つの可視化を含むダッシュボードを作成します。これらの手順は、[play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) 上でも、ガイド[「Remote Demo Dataset」](/ja/clickstack/example-datasets/remote-demo-data)で説明されているように [sql.clickhouse.com](https://sql.clickhouse.com) でホストされているデータセットに接続してローカル環境でも再現できます。
 
 <Steps>
-  <Step title="Dashboards を開く" id="navigate-dashboards">
+  <Step>
+    ### Dashboards を開く
+
     左側のメニューから `Dashboards` を選択します。次に `New Dashboard` をクリックして、一時的なダッシュボードまたは保存済みのダッシュボードを作成します。
 
     <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="ダッシュボードを作成" size="lg" />
   </Step>
 
-  <Step title="可視化を作成する – サービスごとの平均リクエスト時間" id="create-a-tile">
+  <Step>
+    ### 可視化を作成する – サービスごとの平均リクエスト時間
+
     `Add New Tile`を選択して、可視化作成パネルを開きます。
 
     上部メニューから`Line/Bar`の可視化タイプを選択し、続いて`Traces` ([play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)を使用している場合は`Demo Traces`) データセットを選択します。次の値を入力して、サービス名ごとの平均リクエスト所要時間を時系列で表示するチャートを作成します。
@@ -109,7 +121,9 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
     <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="可視化を含むダッシュボード" size="lg" />
   </Step>
 
-  <Step title="可視化を作成する – サービス別のイベント数の推移" id="create-a-tile-2">
+  <Step>
+    ### 可視化を作成する – サービス別のイベント数の推移
+
     `Add New Tile`を選択して、可視化作成パネルを開きます。
 
     上部メニューから`Line/Bar`の可視化タイプを選択し、続いて`Logs` ([play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) を使用している場合は`Demo Logs`) データセットを選択します。次の値を設定して、サービス名ごとのイベント数の推移を示すチャートを作成します。
@@ -129,7 +143,9 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
     <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="可視化を含むダッシュボード 2" size="lg" />
   </Step>
 
-  <Step title="スパン継続時間のヒートマップタイルを追加する" id="create-a-tile-heatmap">
+  <Step>
+    ### スパン継続時間のヒートマップタイルを追加する
+
     ヒートマップタイルは、各 (time, value) バケットに入るイベント数を色付きのグリッドで表示します。平均値や単一のパーセンタイルだけでなく、時間に伴う分布の**形**を見たい場合に、ヒートマップは有効です。レイテンシのヒートマップを使うと、二峰性の継続時間パターン、低速側の裾に現れるクラスター、あるいは折れ線グラフでは平均化されて見えなくなる急激な広がりを把握できます。
 
     ヒートマップタイルを追加するには:
@@ -173,7 +189,9 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
     これを選択すると、タイルの data source、`Where` clause、時間範囲が引き継がれた状態で [イベントデルタ](/ja/clickstack/features/event-deltas) ビューが開きます。そこから、同じ分布を対話的に調べたり、attribute ごとに切り分けて低速の spans が高速のものと何が違うのかを確認したり、手作業でクエリを組み直すことなく、任意のセルの背後にある個々の spans を調査したりできます。
   </Step>
 
-  <Step title="ダッシュボードのフィルター" id="filter-dashboards">
+  <Step>
+    ### ダッシュボードのフィルター
+
     Lucene または SQL のフィルターは、時間範囲とあわせてダッシュボード レベルで適用でき、すべての可視化に自動的に反映されます。
 
     <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="フィルタリングを適用したダッシュボード" size="lg" />
@@ -193,28 +211,6 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
 可視化を削除、編集、または複製するには、その上にカーソルを合わせて、対応するアクションボタンを使用します。
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="ダッシュボードの編集" size="lg" />
-
-<div id="tile-display-settings">
-  ### タイルの表示設定
-</div>
-
-各タイルには、値の表示方法を制御するための **Display Settings** ドロワーがあります。タイルエディタで **Display Settings** をクリックすると開けます。利用できるオプションは、可視化の種類によって異なります。
-
-Number タイルでは **Background chart** を表示できます。これは値の背後に描かれるトレンドのスパークラインで、選択した time range における推移をひと目で確認できます。SLO や error-budget タイルでは、現在の値だけでなく、その値がどう推移しているかも重要になるため、特に便利です。
-
-Number タイルを選択した状態で **Display Settings** を開き、**Background chart** を **Line** または **Area** に設定します (無効にする場合は **None**) 。このスパークラインは、タイルのクエリを time-bucketed した結果から生成されるため、追加の設定は不要です。既定ではタイルの色を引き継ぎますが、特定のパレット色を使いたい場合は **Background color** を設定して上書きできます。
-
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Background chart が Area に設定された Number タイルの Display Settings ドロワー" size="lg" />
-
-Background chart は、query-builder の Number タイルに適用されます。Raw SQL の Number タイルは、bucket 化できる time dimension を持たない単一の値しか返さないため、このオプションは表示されますが無効になっています。
-
-Table タイルでは **Alternate Row Background** を使って行を交互に色分けできるため、列数の多いテーブルでも確認しやすくなります。これは既定ではオフです。
-
-Table タイルを選択した状態で **Display Settings** を開き、**Alternate Row Background** をオンにします。交互の色分けは見た目だけの設定なので、query-builder と raw SQL の両方のテーブルタイルで機能します。
-
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Alternate Row Background がオンになったテーブルタイルの Display Settings ドロワー" size="lg" />
-
-テーブルタイルでは、スクロールしてもヘッダー行とデータの間の区切り線が維持されるため、カラム見出しを見分けやすくなります。
 
 <div id="dashboard-listing-search">
   ## ダッシュボード - 一覧と検索
@@ -243,31 +239,39 @@ Table タイルを選択した状態で **Display Settings** を開き、**Alter
 以下の手順では、[&quot;ダッシュボードの作成&quot;](#creating-dashboards)セクションで作成したダッシュボードにカスタムフィルタを追加する方法を示します。
 
 <Steps>
-  <Step title="Edit Filters ダイアログを開く" id="open-edit-filters">
+  <Step>
+    ### Edit Filters ダイアログを開く
+
     保存済みダッシュボードを開き、ツールバーから **Edit Filters** を選択します。
 
     <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="ダッシュボードのツールバーにある Edit Filters ボタン" size="lg" />
   </Step>
 
-  <Step title="新しいフィルタを追加する" id="add-new-filter">
-    **Add new filter** をクリックします。**Name** を入力し、**データソース** を選択し、**Filter expression** (ドロップダウンに表示する値を生成する SQL のカラムまたは式) を入力してフィルタを設定します。**Save filter** をクリックします。
+  <Step>
+    ### 新しいフィルタを追加する
+
+    **Add new filter** をクリックします。**Name** を入力し、**Data source** を選択し、**Filter expression** (ドロップダウンに表示する値を生成する SQL のカラムまたは式) を入力してフィルタを設定します。**Save filter** をクリックします。
 
     たとえば、トレースデータ用のサービスフィルタを追加するには、`Traces` データソースで `ServiceName` をフィルタ式として使用します。&quot;Dropdown values filter&quot; は任意で、ドロップダウンに表示する値を絞り込めます。
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Name、データソース、Filter expression の各フィールドがある Add filter ダイアログ" size="md" />
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Name、Data source、Filter expression の各フィールドがある Add filter ダイアログ" size="md" />
 
     Filters モーダルには、そのダッシュボードに設定されているすべてのフィルタが表示されます。ここから既存のフィルタを編集または削除したり、追加したりできます。
 
     <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="設定済みの Services フィルタを表示する Filters モーダル" size="md" />
   </Step>
 
-  <Step title="フィルタを使用する" id="use-filter">
+  <Step>
+    ### フィルタを使用する
+
     Filters モーダルを閉じます。新しいドロップダウンフィルタが検索バーの下に表示されます。クリックして利用可能な値を確認し、1 つ選択すると、ダッシュボード上のすべての可視化にフィルタが適用されます。
 
     <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="frontend サービスで絞り込まれたダッシュボード" size="lg" />
   </Step>
 
-  <Step title="(任意) フィルタ値をデフォルトとして保存する" id="save-default-filters">
+  <Step>
+    ### &#x20;(任意) フィルタ値をデフォルトとして保存する
+
     フィルタの選択をダッシュボードのデフォルトとして保持するには、ダッシュボードメニューから **Save Query &amp; Filters as Default** を選択します。以後、ダッシュボードは選択したフィルタが適用された状態で常に開きます。リセットするには、同じメニューから **Remove Default Query &amp; Filters** を選択します。
 
     <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="Save Query and Filters as Default オプションを表示するダッシュボードメニュー" size="lg" />
@@ -310,7 +314,7 @@ HyperDX には、すぐに使えるダッシュボードがあらかじめ用意
 <Info>
   **必要なシステムテーブルへのアクセス権**
 
-  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/overview) をクエリします。次の権限が必要です。
+  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/index) をクエリします。次の権限が必要です。
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

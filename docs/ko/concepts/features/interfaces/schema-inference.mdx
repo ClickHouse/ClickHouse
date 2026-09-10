@@ -149,7 +149,7 @@ clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM
 스키마 추론에 시간이 걸릴 수 있으므로 삽입 성능을 높일 수 있습니다. 또한 테이블에 최적화된 스키마가 있으면
 타입 간 변환이 수행되지 않으므로 더욱 유용합니다.
 
-이 동작을 제어하는 특수한 SETTING [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/ko/reference/settings/session-settings/use#use_structure_from_insertion_table_in_table_functions)이 있습니다.
+이 동작을 제어하는 특수한 SETTING [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/ko/reference/settings/session-settings#use_structure_from_insertion_table_in_table_functions)이 있습니다.
 이 SETTING에는 3개의 가능한 값이 있습니다:
 
 * 0 - 테이블 함수가 데이터에서 구조를 추출합니다.
@@ -172,7 +172,7 @@ ENGINE = MergeTree
 ORDER BY id;
 ```
 
-이어서 파일 `hobbies.jsonl`에서 데이터를 삽입합니다:
+다음으로, `hobbies.jsonl` 파일에서 데이터를 삽입합니다:
 
 ```sql
 INSERT INTO hobbies1 SELECT * FROM file(hobbies.jsonl)
@@ -195,7 +195,7 @@ CREATE TABLE hobbies2
 ORDER BY id;
 ```
 
-다음으로, `hobbies.jsonl` 파일에서 데이터를 삽입합니다:
+이어서 파일 `hobbies.jsonl`에서 데이터를 삽입합니다:
 
 ```sql
 INSERT INTO hobbies2 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -219,7 +219,7 @@ CREATE TABLE hobbies3
 ORDER BY identifier;
 ```
 
-다음으로, `hobbies.jsonl` 파일에서 데이터를 삽입합니다:
+그런 다음 `hobbies.jsonl` 파일에서 데이터를 삽입합니다:
 
 ```sql
 INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
@@ -242,7 +242,7 @@ CREATE TABLE hobbies4
 ORDER BY id;
 ```
 
-다음으로, `hobbies.jsonl` 파일에서 데이터를 삽입합니다:
+파일 `hobbies.jsonl`에서 데이터를 삽입합니다:
 
 ```sql
 INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
@@ -1823,7 +1823,7 @@ DESC format(JSONEachRow, $$
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-참고: 스키마 추론 중 datetime 값을 파싱할 때는 [date&#95;time&#95;input&#95;format](/ko/reference/settings/formats/date-time#date_time_input_format) 설정을 따릅니다.
+참고: 스키마 추론 중 datetime 값을 파싱할 때는 [date&#95;time&#95;input&#95;format](/ko/reference/settings/formats#date_time_input_format) 설정을 따릅니다.
 
 <div id="input-format-try-infer-dates">
   #### input_format_try_infer_dates
@@ -2017,7 +2017,7 @@ Avro 포맷에서 ClickHouse는 데이터에서 스키마를 읽고, 다음과 �
 | `string (uuid)` *                  | [UUID](/ko/reference/data-types/uuid)                                    |
 | `binary (decimal)` *               | [Decimal(P, S)](/ko/reference/data-types/decimal)                        |
 
-* [Avro 논리 타입](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
+* [Avro 논리 타입](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 그 외 Avro 타입은 지원되지 않습니다.
 
@@ -2103,7 +2103,6 @@ ORC 포맷에서 ClickHouse는 데이터로부터 스키마를 읽고, 다음 �
 | `List`                               | [Array](/ko/reference/data-types/array)           |
 | `Struct`                             | [Tuple](/ko/reference/data-types/tuple)           |
 | `Map`                                | [Map](/ko/reference/data-types/map)               |
-| `Union`                              | [Variant](/ko/reference/data-types/variant)       |
 
 그 외 ORC 타입은 지원되지 않습니다.
 

@@ -1,13 +1,3 @@
-"""ClickHouse release pipeline job.
-
-INVARIANT: every run starts in a clean, empty GitHub Actions `_work` directory -
-the runner is ephemeral and the workspace is a fresh `actions/checkout` (a depth-1
-shallow clone). There is NO state carried over from a previous run. So do not add
-"in case a previous run left X on a reused runner" defenses here: there is no
-reuse. The repo is always shallow at the start (hence the unconditional
-`--unshallow`), and no leftover files/branches/credentials can exist.
-"""
-
 import argparse
 import json
 import os
@@ -38,6 +28,8 @@ _DOCKERHUB_SECRET = Secret.Config(
     name="dockerhub_robot_password",
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
+
+_GEESEFS_VERSION = "v0.43.5"
 
 # binfmt is run as a --privileged container in the release job, so pin it by
 # digest (not the mutable `latest` tag) to avoid executing a moved/tampered
@@ -87,14 +79,14 @@ def parse_args() -> argparse.Namespace:
         help="GitHub login to assign the changelog PR to",
     )
     parser.add_argument(
-        "--skip-repo",
+        "--only-repo",
         action="store_true",
-        help="Skip repo updates (package export/test)",
+        help="Run only repo updates (skip tag push, branch push, version bump)",
     )
     parser.add_argument(
-        "--skip-docker",
+        "--only-docker",
         action="store_true",
-        help="Skip docker image builds",
+        help="Run only docker builds (skip tag push, branch push, version bump)",
     )
     parser.add_argument(
         "--dry-run",
@@ -116,10 +108,10 @@ def parse_args() -> argparse.Namespace:
         args.release_type = _wi("type") or None
     if not args.dry_run:
         args.dry_run = _wi("dry-run").lower() == "true"
-    if not args.skip_repo:
-        args.skip_repo = _wi("skip-repo").lower() == "true"
-    if not args.skip_docker:
-        args.skip_docker = _wi("skip-docker").lower() == "true"
+    if not args.only_repo:
+        args.only_repo = _wi("only-repo").lower() == "true"
+    if not args.only_docker:
+        args.only_docker = _wi("only-docker").lower() == "true"
     if args.assignee is None:
         args.assignee = _wi("assignee")
 
@@ -184,28 +176,15 @@ def main():
             ok = False
 
     step(
-        name="Fetch Repository History (treeless)",
+        name="Fetch Full Repository",
         command=[
-            # This job only needs full commit history - for the version tweak
-            # (commit count since the previous tag), changelog.py, and the
-            # all-time contributors `git shortlog` - not the file contents of that
-            # history. A treeless partial clone (`--filter=tree:0`) fetches every
-            # commit but no trees/blobs, so the unshallow is far cheaper than a
-            # full one; any tree/blob a later step actually reads is fetched
-            # lazily from the promisor remote.
-            #
-            # No `|| true`: the runner is ephemeral, so the checkout is always the
-            # fresh depth-1 shallow clone and --unshallow always applies - a
-            # failure here is real and must fail the step, not be swallowed.
-            #
-            # `--quiet` on all three: without it fetch prints a "[new ref]" line
-            # per branch/tag, which floods the log for a repo with this many refs.
-            "git fetch --quiet --filter=tree:0 --unshallow --no-recurse-submodules origin",
+            "git fetch --unshallow --no-recurse-submodules origin ||:",
             # actions/checkout configures origin to fetch only the workflow ref,
-            # but prepare needs origin/<release_branch> (and origin/master); fetch
-            # all heads so those refs are present regardless of the release branch.
-            "git fetch --quiet --no-recurse-submodules origin '+refs/heads/*:refs/remotes/origin/*'",
-            "git fetch --quiet --tags --no-recurse-submodules origin",
+            # but prepare reads origin/<release_branch> and a commit_sha that an
+            # auto_releases run may pass from a different branch. Fetch all heads
+            # and tags so those refs are always present.
+            "git fetch --no-recurse-submodules origin '+refs/heads/*:refs/remotes/origin/*'",
+            "git fetch --tags --no-recurse-submodules origin",
         ],
         workdir=REPO_PATH,
     )
@@ -228,9 +207,9 @@ def main():
     # Authenticate to Docker Hub in the setup phase, before any release
     # mutation (tag push, GitHub release, repo export). Pushing docker images
     # is part of the release contract, so a missing/expired registry token must
-    # stop the run before partial publication. Gated on the docker phase running
-    # this attempt (patch, not dry-run, docker not skipped).
-    if args.release_type == "patch" and not args.dry_run and not args.skip_docker:
+    # stop the run before partial publication. Gated on patch && !dry_run so it
+    # also covers only-repo / only-docker recovery runs.
+    if args.release_type == "patch" and not args.dry_run:
 
         def docker_login():
             Shell.check(
@@ -247,21 +226,50 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.skip_repo:
-        # Skipped on dry-run (local convenience).
-        if not args.dry_run:
-            step(
-                # The tools are baked into the release-maker image; fail closed rather than fetch third-party code on a credentialed host.
-                name="Verify release tools",
-                command=[
-                    "geesefs --version"
-                    " && createrepo_c --version"
-                    " && reprepro --version 2>&1 | grep -qE 'reprepro version 5\\.([4-9]|[1-9][0-9])'"
-                    " || { echo 'ERROR: geesefs, createrepo_c and reprepro 5.4+ must be"
+    if args.release_type == "patch" and not args.only_docker:
+        arch = "amd64" if Shell.get_output("uname -m") == "x86_64" else "arm64"
+        geesefs_bin_dir = os.path.expanduser("~/.local/bin")
+        os.makedirs(geesefs_bin_dir, exist_ok=True)
+        if geesefs_bin_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = geesefs_bin_dir + os.pathsep + os.environ.get("PATH", "")
+        step(
+            name="Install geesefs",
+            command=[
+                f"command -v geesefs && geesefs --version 2>&1 | grep -qF {_GEESEFS_VERSION.lstrip('v')} ||"
+                f" (curl -fsSL https://github.com/yandex-cloud/geesefs/releases/download/{_GEESEFS_VERSION}/geesefs-linux-{arch}"
+                f" -o {geesefs_bin_dir}/geesefs && chmod +x {geesefs_bin_dir}/geesefs)",
+                "command -v createrepo_c || sudo apt-get install -y createrepo-c ||:",
+                # reprepro 5.4.4+ is required for the 'Limit' field in distributions config.
+                # Ubuntu Jammy only has 5.3.0, so build from source if needed.
+                "reprepro --version 2>&1 | grep -qE '5\\.[4-9]' || ("
+                "  sudo apt-get install -y dpkg-dev fakeroot libgpgme-dev libdb-dev libbz2-dev liblzma-dev libarchive-dev shunit2 db-util debhelper &&"
+                "  git clone https://salsa.debian.org/debian/reprepro.git /tmp/reprepro-src &&"
+                "  cd /tmp/reprepro-src &&"
+                "  dpkg-buildpackage -b --no-sign &&"
+                "  sudo dpkg -i ../reprepro_$(dpkg-parsechangelog --show-field Version)_$(dpkg-architecture -q DEB_HOST_ARCH).deb"
+                ") ||:",
+            ]
+            # The installs above are best-effort (`||:`) so a local dev machine
+            # without sudo/apt is not blocked. For a real release the repo tools
+            # must be present before any mutation (tags, GitHub release, repos),
+            # so verify them here and fail closed. Skipped on dry-run (local
+            # convenience).
+            + (
+                []
+                if args.dry_run
+                else [
+                    # Verify the *version*, not just presence: an older
+                    # distro reprepro (5.3.x) may be installed while the 5.4+
+                    # source build failed under the trailing `||:`. reprepro
+                    # 5.4+ is required (the 'Limit' distributions field).
+                    "command -v createrepo_c >/dev/null"
+                    " && reprepro --version 2>&1 | grep -qE '5\\.[4-9]'"
+                    " || { echo 'ERROR: createrepo_c and reprepro 5.4+ must be"
                     " installed for a release' >&2; exit 1; }"
-                ],
-                workdir=REPO_PATH,
-            )
+                ]
+            ),
+            workdir=REPO_PATH,
+        )
 
         def _write_secret_file(path: str, content: str) -> None:
             # These hold R2 package-publishing credentials; create them 0600 so
@@ -328,74 +336,30 @@ def main():
     # Prepare decides whether this run creates a new release (push tag, bump
     # version, changelog PR) or only re-publishes artifacts for an existing /
     # out-of-order ref. The creation steps below run only when it does; a
-    # recovery (skip-repo/skip-docker) or an out-of-order full run skips them
+    # recovery (only-repo/only-docker) or an out-of-order full run skips them
     # without erroring and just re-exports repos / rebuilds docker.
-    # If a prior step failed (ok is False) the prepared flags are unread; default both landmarks to "already done" so no creation step fires.
-    is_tag_pushed = True
-    is_bump_landed = True
+    create_new_release = False
     if ok:
         with open(RELEASE_INFO_FILE) as f:
-            _prepared = json.load(f)
-        is_tag_pushed = _prepared["is_tag_pushed"]
-        is_bump_landed = _prepared["is_bump_landed"]
+            create_new_release = json.load(f)["create_new_release"]
 
-    # skip-repo / skip-docker mark a partial run that only re-publishes artifacts
-    # for an already-created release (repo/Docker recovery). If the ref resolves
-    # to a new release, they would otherwise fall through to the creation steps
-    # below (push tag, bump version, PRs) and produce a partial new release, so
-    # reject that misuse and require the release tag instead.
-    if ok and not is_tag_pushed and (args.skip_repo or args.skip_docker):
+    # only-repo / only-docker only re-publish artifacts for an already-created
+    # release (repo/Docker recovery). If the ref resolves to a new release, they
+    # would otherwise fall through to the creation steps below (push tag, bump
+    # version, PRs) and produce a partial new release, so reject that misuse and
+    # require the release tag instead.
+    if ok and create_new_release and (args.only_repo or args.only_docker):
 
         def _require_recovery_ref():
             raise RuntimeError(
-                "skip-repo/skip-docker re-publish an existing release and must be "
+                "only-repo/only-docker re-publish an existing release and must be "
                 "run against its release tag (recovery); the given ref resolves to "
                 "a new release. Pass the release tag as the ref."
             )
 
         step(name="Validate Recovery Ref", command=_require_recovery_ref)
 
-    # The release opens exactly one PR against master - the changelog PR for a
-    # patch, the version-bump PR for a new release. Ensure it exists and is
-    # merged, idempotently: create it if absent, merge it if open, skip if it is
-    # already merged. This converges a fresh release and a recovery / rerun after
-    # a failed create-or-merge through the same path. These PR operations key off
-    # the PR's actual state, not the run mode, so they run regardless of
-    # skip-repo/skip-docker: a cheap recovery run can create a missing release PR
-    # or enqueue an open-but-unmerged one (e.g. when the original run's enqueue
-    # lost the race with a still-pending `CH Inc sync` required check).
-    if args.dry_run:
-        # No gh reads on dry-run (it may be a local run without gh auth): fall
-        # back to the fresh-release signal so the generation is still previewed.
-        release_pr_absent = not is_tag_pushed
-        release_pr_needs_merge = not is_tag_pushed
-    else:
-        release_pr_branch = None
-        release_pr_state = ""  # "MERGED" | "OPEN" | ""
-        if ok:
-            with open(RELEASE_INFO_FILE) as f:
-                _info = json.load(f)
-            release_pr_branch = (
-                f"auto/{_info['release_tag']}"
-                if args.release_type == "patch"
-                else f"bump_version_{_info['version']}"
-            )
-            release_pr_state = GH.get_pr_state_by_branch(
-                release_pr_branch, "ClickHouse/ClickHouse"
-            )
-            print(
-                f"Release PR branch [{release_pr_branch}] state: "
-                + (release_pr_state or "absent — will create")
-            )
-        release_pr_absent = release_pr_branch is not None and release_pr_state == ""
-        release_pr_needs_merge = (
-            release_pr_branch is not None and release_pr_state != "MERGED"
-        )
-
-    # Fail-fast: verify the release packages exist (this downloads them) before
-    # pushing the tag or opening the changelog PR, so a missing-artifacts run
-    # aborts without leaving a tag / PR behind.
-    if args.release_type == "patch" and not args.skip_repo:
+    if args.release_type == "patch" and not args.only_docker:
         step(
             name="Download All Release Artifacts",
             command=[
@@ -405,7 +369,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if not is_tag_pushed:
+    if create_new_release:
         step(
             name="Push Git Tag for the Release",
             command=[
@@ -415,7 +379,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "new" and not is_tag_pushed:
+    if args.release_type == "new" and create_new_release:
         step(
             name="Push New Release Branch",
             command=[
@@ -426,15 +390,15 @@ def main():
         )
 
     # For a "new" release the version bump also opens the master bump PR that
-    # the merge_prs step merges below, so it must run here, before that merge. For a
+    # --merge-prs merges below, so it must run here, before that merge. For a
     # "patch" release the bump is only a direct push of the branch version file
     # and nothing downstream depends on it; it is deferred to the very end of the
-    # run (after the merge_prs step) so that a rerun after any failure between the tag
+    # run (after --merge-prs) so that a rerun after any failure between the tag
     # push and the end always sees an un-bumped branch. prepare then reads the
     # branch tip as the just-released version, recovers the existing release, and
     # never refuses a rerun as "out-of-order" or mints a release below the tip —
     # all without scanning git tags. See the deferred step near the end of main.
-    if args.release_type == "new" and release_pr_absent:
+    if create_new_release and args.release_type == "new":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
@@ -444,7 +408,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and release_pr_absent:
+    if ok and args.release_type == "patch" and create_new_release:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
@@ -480,7 +444,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and not args.dry_run and release_pr_absent:
+    if ok and args.release_type == "patch" and not args.dry_run and create_new_release:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
 
@@ -499,62 +463,10 @@ def main():
                 strict=True,
             )
             Shell.check("git config user.name robot-clickhouse", strict=True)
-            # The PR must contain ONLY the generated release artifacts, on a clean
-            # master base - never the unrelated commits HEAD carries when the
-            # release runs from a feature branch, nor any file `git add -A` would
-            # sweep in. Capture whatever the generation steps above changed, but
-            # scope the scan to exactly their output paths so a stray file left
-            # elsewhere on a reused runner cannot leak in; then hard-reset onto
-            # origin/master (-f, so the switch can't abort on "local changes would
-            # be overwritten"), restore those paths, and stage only them. -B so a
-            # rerun re-creates the branch instead of failing on "already exists".
-            # Collect the paths as clean, one-per-line names (NOT via
-            # `git status --porcelain` slicing: Shell.get_output strips the
-            # output, which eats the leading space of a worktree-modified line and
-            # would drop a char off the first path). Tracked changes vs HEAD +
-            # any untracked new files, scoped to the artifact paths.
-            # The exact files the generation steps touch. update-docker-version.sh
-            # bumps `ARG VERSION` in these Dockerfiles (keeper's Dockerfile.alpine
-            # / Dockerfile.ubuntu are symlinks to keeper/Dockerfile, so the edit
-            # lands on keeper/Dockerfile itself). Listed explicitly rather than
-            # globbed so nothing unexpected is ever swept in.
-            pathspec = " ".join(
-                [
-                    "utils/list-versions/version_date.tsv",
-                    "docs/changelogs/" + shlex.quote(release_tag) + ".md",
-                    "SECURITY.md",
-                    "docker/keeper/Dockerfile",
-                    "docker/keeper/Dockerfile.distroless",
-                    "docker/server/Dockerfile.alpine",
-                    "docker/server/Dockerfile.distroless",
-                    "docker/server/Dockerfile.ubuntu",
-                ]
-            )
-            changed = Shell.get_output(
-                f"git diff --name-only HEAD -- {pathspec}", strict=True
-            )
-            untracked = Shell.get_output(
-                f"git ls-files --others --exclude-standard -- {pathspec}", strict=True
-            )
-            artifact_files = sorted(
-                {f for f in changed.splitlines() + untracked.splitlines() if f.strip()}
-            )
-            backup_dir = tempfile.mkdtemp(prefix="changelog-artifacts-")
-            for f in artifact_files:
-                dst = os.path.join(backup_dir, f)
-                os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
-                shutil.copy2(f, dst)
-            Shell.check(f"git checkout -f -B {pr_branch} origin/master", strict=True)
-            for f in artifact_files:
-                os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
-                shutil.copy2(os.path.join(backup_dir, f), f)
-            shutil.rmtree(backup_dir, ignore_errors=True)
-            if artifact_files:
-                Shell.check(
-                    "git add -- "
-                    + " ".join(shlex.quote(f) for f in artifact_files),
-                    strict=True,
-                )
+            # -B so a rerun after a partial failure re-creates the branch instead
+            # of failing on "branch already exists".
+            Shell.check(f"git checkout -B {pr_branch}", strict=True)
+            Shell.check("git add -A", strict=True)
             # If the changelog PR was already merged on a previous run, master
             # (and this branch, freshly checked out from it) already contain the
             # generated files, so there is nothing to commit — `git commit`
@@ -596,7 +508,7 @@ def main():
                 # this branch (the branch is force-pushed above); `gh pr create`
                 # would then fail with "already exists". Only treat an OPEN or
                 # MERGED PR as reusable — a PR closed without merge must be
-                # recreated, otherwise the downstream merge_prs step (which looks up
+                # recreated, otherwise the downstream --merge-prs (which looks up
                 # open/merged PRs) would find nothing and fail after publication.
                 existing_pr = GH.get_pr_url_by_branch(
                     branch=pr_branch, repo="ClickHouse/ClickHouse"
@@ -627,8 +539,8 @@ def main():
 
     if (
         args.release_type == "patch"
-        and not args.skip_repo
-        and not args.skip_docker
+        and not args.only_repo
+        and not args.only_docker
     ):
         # Restore the working tree after the changelog/version-bump steps, which
         # dirty it. A no-op on recovery / out-of-order runs (they skip the
@@ -652,7 +564,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if args.release_type == "patch" and not args.skip_repo:
+    if args.release_type == "patch" and not args.only_docker:
         for name, flag in (
             ("Export TGZ Packages", "--export-tgz"),
             ("Test TGZ Packages", "--test-tgz"),
@@ -670,17 +582,17 @@ def main():
                 workdir=REPO_PATH,
             )
 
-    if (
-        ok
-        and args.release_type == "patch"
-        and not args.dry_run
-        and not args.skip_docker
-    ):
+    if ok and args.release_type == "patch" and not args.dry_run:
         with open(RELEASE_INFO_FILE) as f:
             release_info = json.load(f)
         release_tag = release_info["release_tag"]
-        # Branch head (bump not landed) → move floating minor/major tags; is_latest also moves `latest`. A later recovery (bump landed) leaves them as they are.
-        is_bump_landed = release_info["is_bump_landed"]
+        # is_branch_release: this release is the latest on its branch → publish
+        # the floating minor/major tags. is_latest: its branch is the latest
+        # release branch → additionally publish `latest`. These decide the
+        # floating tags by whether the release is current, so recovery of the
+        # current release re-applies them while recovery of a superseded one
+        # only re-publishes its exact version tag.
+        is_branch_release = release_info["is_branch_release"]
         is_latest = release_info["latest"]
 
         def _make_docker_build(
@@ -708,8 +620,13 @@ def main():
                     label_version = f"{version_string}{version_suffix}"
                     # Always publish the exact version tag.
                     tags = [f"--tag={image}:{version_string}{version_suffix}"]
-                    # Move the floating minor/major tags only for the branch head (bump not landed), so a later recovery does not point them back at an older image.
-                    if not is_bump_landed:
+                    # Floating minor/major tags must point at the latest release
+                    # on the branch, so move them only when this release is that
+                    # latest one (is_branch_release) — true for a normal release
+                    # and for recovery of the current release, false for recovery
+                    # of a superseded tag (which would otherwise move them back to
+                    # an older image).
+                    if is_branch_release:
                         tags += [
                             f"--tag={image}:{version_minor}{version_suffix}",
                             f"--tag={image}:{version_major}{version_suffix}",
@@ -838,7 +755,7 @@ def main():
     # Always restore git state — equivalent to `if: ${{ !cancelled() }}`, so it
     # must run even after a failure (hence Result.from_commands_run, not step()
     # which skips when ok is already False). But a failed restore must still
-    # block the release mutation below (the merge_prs step), so fold its result into ok.
+    # block the release mutation below (--merge-prs), so fold its result into ok.
     results.append(
         Result.from_commands_run(
             name="Checkout Back",
@@ -849,50 +766,39 @@ def main():
     if results[-1].status != Result.Status.OK:
         ok = False
 
-    # Deferred patch version bump. Bumping the branch version file here (rather
-    # than right after the tag push) keeps the branch tip equal to the released
-    # commit for the whole publish phase, so any rerun in that window sees an
-    # un-bumped branch and prepare recovers the existing release instead of
-    # refusing it or minting a below-tip release. `step` skips it when a prior
-    # step already failed, so a failed publish leaves the branch un-bumped and
-    # recoverable. ("new" bumps earlier, above, because the merge step below
+    # Merging the created PRs is a release mutation that must only happen when
+    # every preceding step succeeded. Use step(), which skips when ok is already
+    # False — so if anything failed, the Slack post below reports the failing
+    # step instead of merging.
+    #
+    # Only a release that created the changelog/version-bump PRs has anything to
+    # merge; a recovery / out-of-order run did not create them, so skip
+    # --merge-prs there (it would fail looking up a non-existent changelog PR).
+    if create_new_release:
+        step(
+            name="Update Release Info and Merge Created PRs",
+            command=[
+                f"python3 ./ci/jobs/scripts/create_release.py --merge-prs"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
+        )
+
+    # Deferred patch version bump — the LAST release mutation. Bumping the branch
+    # version file here (rather than right after the tag push) keeps the branch
+    # tip equal to the released commit for the whole publish phase, so any rerun
+    # in that window sees an un-bumped branch and prepare recovers the existing
+    # release instead of refusing it or minting a below-tip release. `step` skips
+    # it when a prior step already failed, so a failed publish leaves the branch
+    # un-bumped and recoverable. ("new" bumps earlier, above, because --merge-prs
     # merges the master bump PR it opens.)
-    # `not is_bump_landed`: a recovery whose bump has not landed still completes it (skip-repo/skip-docker included); once landed, no rerun rewrites the version.
-    if not is_bump_landed and args.release_type == "patch":
+    if create_new_release and args.release_type == "patch":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
                 f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
                 f" {dry_run_flag}".strip()
             ],
-            workdir=REPO_PATH,
-        )
-
-    # Enqueue the release PR - the LAST release action, so its `CH Inc sync`
-    # required check gets the maximum time (the whole publish above) to complete
-    # before we enqueue. Only when every preceding step succeeded (step() skips
-    # when ok is already False). Merge the PR created earlier (or left open by a
-    # failed prior run); skipped only when it is already merged (the "merged ->
-    # continue" branch). merge_prs looks the PR up by branch and enqueues it
-    # (best-effort); a no-op if the lookup finds nothing.
-    def merge_created_prs():
-        # Imported lazily so the module-level boto3 dependency of create_release
-        # is only needed on the release machine, not at praktika config time.
-        from ci.jobs.scripts.create_release import (
-            ReleaseContextManager,
-            ReleaseProgress,
-        )
-
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.MERGE_CREATED_PRS
-        ) as release_info:
-            release_info.update_release_info(dry_run=args.dry_run)
-            release_info.merge_prs(dry_run=args.dry_run)
-
-    if release_pr_needs_merge:
-        step(
-            name="Update Release Info and Merge Created PRs",
-            command=merge_created_prs,
             workdir=REPO_PATH,
         )
 

@@ -69,7 +69,7 @@
     var ws = null;
     var dataHandler = null;
 
-    // State: 'connecting', 'waiting_credentials', 'prompt_user', 'prompt_password', 'active', 'closed'
+    // State: 'connecting', 'prompt_user', 'prompt_password', 'active', 'closed'
     var state = 'connecting';
     var inputBuffer = '';
 
@@ -82,6 +82,10 @@
     var currentPassword = '';
     var userFromURL = params.has('user');
     var inIframe = (window.parent !== window);
+    var waitingForCredentials = false;
+    // First connection attempt uses the URL-supplied user (or `default`) with empty password.
+    // On failure we fall back to the interactive prompt or postMessage-supplied credentials.
+    var initialAutoAuth = true;
 
     // Trusted parent origin learned from the first valid postMessage we receive.
     // We need this because postMessage's targetOrigin must equal the parent's actual origin,
@@ -176,15 +180,7 @@
 
         // Single onData handler that dispatches based on state
         term.onData(function(data) {
-            if (state === 'waiting_credentials') {
-                // The host page owns the credentials, but it may never send them (it does not
-                // implement the protocol, or its origin is not trusted). Enter takes the login
-                // over interactively; a later credentials message is then ignored.
-                if (data.indexOf('\r') >= 0 || data.indexOf('\n') >= 0) {
-                    clearScreen();
-                    promptCredentials();
-                }
-            } else if (state === 'prompt_user' || state === 'prompt_password') {
+            if (state === 'prompt_user' || state === 'prompt_password') {
                 handlePromptInput(data);
             } else if (state === 'active') {
                 if (ws && ws.readyState === WebSocket.OPEN) {
@@ -253,12 +249,6 @@
                 // For password, don't echo
             }
         }
-    }
-
-    // Erase the whole viewport. The notice printed while waiting for the host page's credentials
-    // may have wrapped onto several lines in a narrow terminal, so erasing one line is not enough.
-    function clearScreen() {
-        term.write('\x1b[H\x1b[2J');
     }
 
     function promptUser() {
@@ -337,6 +327,14 @@
                 // Handshake failed or server rejected authentication (close code 1008)
                 ws = null;
                 term.write('\r\x1b[2K');
+                if (initialAutoAuth) {
+                    initialAutoAuth = false;
+                    if (inIframe && !userFromURL) {
+                        // Embedded without URL credentials: defer to parent via postMessage.
+                        waitingForCredentials = true;
+                        return;
+                    }
+                }
                 promptCredentials();
             } else {
                 // Normal disconnect after session was active
@@ -373,11 +371,14 @@
 
         if (e.data.type === 'webterminal-hello') {
             return;
-        } else if (e.data.type === 'webterminal-credentials' && state === 'waiting_credentials') {
+        } else if (e.data.type === 'webterminal-credentials' && waitingForCredentials) {
+            waitingForCredentials = false;
+            // Parent-supplied credentials are explicit; subsequent failures should prompt
+            // interactively rather than wait for another (one-shot) parent message.
+            initialAutoAuth = false;
             currentUser = e.data.user || '';
             currentPassword = e.data.password || '';
             userFromURL = true;
-            clearScreen();
             attemptConnect();
         } else if (e.data.type === 'webterminal-refit' && fitAddon && term) {
             // Defer fit until the browser has finished layout after the panel becomes visible,
@@ -392,19 +393,16 @@
     // Start
     initTerminal();
     if (inIframe && !userFromURL) {
-        // Embedded without a URL-supplied user: the host page owns the credentials and sends
-        // `webterminal-credentials` once on iframe `load`. Wait for that message instead of
-        // connecting on our own - a connection attempt made here can only authenticate as a
-        // passwordless user, and it would be torn down and replaced by the credentialed one
-        // a moment later, printing `Connecting...` twice.
-        state = 'waiting_credentials';
-        term.write('\x1b[90mWaiting for credentials... (press Enter to log in manually)\x1b[0m');
-    } else {
-        // Try to connect automatically using the URL-supplied user (or the server default user)
-        // with empty password. If the server rejects this, `ws.onclose` falls back to the
-        // interactive prompt.
-        attemptConnect();
+        // The parent (e.g. `play.html`) sends `webterminal-credentials` once on iframe `load`.
+        // Pre-arm the receiver so that message isn't dropped if it arrives before or during
+        // the initial auto-auth attempt; the in-flight connection is replaced when the message
+        // is processed.
+        waitingForCredentials = true;
     }
+    // Try to connect automatically using the URL-supplied user (or `default`) with empty password.
+    // If the server rejects this, `ws.onclose` falls back to the interactive prompt or, when
+    // embedded in an iframe without a URL-supplied user, waits for credentials via postMessage.
+    attemptConnect();
     </script>
 </body>
 </html>

@@ -32,8 +32,10 @@ Esta opção inclui autenticação, permitindo a persistência de dashboards, al
 <br />
 
 <Steps>
-  <Step title="Implantação com Docker" id="deploy-with-docker">
-    O comando a seguir executa um collector do OpenTelemetry (nas portas 4317 e 4318) e a interface do HyperDX (na porta 8080).
+  <Step>
+    ### Implantação com Docker
+
+    O comando a seguir executa um OpenTelemetry collector (nas portas 4317 e 4318) e a interface do HyperDX (na porta 8080).
 
     ```shell
     docker run -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
@@ -46,7 +48,9 @@ Esta opção inclui autenticação, permitindo a persistência de dashboards, al
     </Info>
   </Step>
 
-  <Step title="Acesse a interface do HyperDX" id="navigate-to-hyperdx-ui">
+  <Step>
+    ### Acesse a interface do HyperDX
+
     Acesse [http://localhost:8080](http://localhost:8080) para abrir a interface do HyperDX.
 
     Crie um usuário, informando um nome de usuário e uma senha que atendam aos requisitos.
@@ -58,7 +62,9 @@ Esta opção inclui autenticação, permitindo a persistência de dashboards, al
     Para ver um exemplo de uso de outra instância do ClickHouse, consulte [&quot;Usando ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
 
-  <Step title="Ingestão de dados" id="ingest-data">
+  <Step>
+    ### Ingestão de dados
+
     Para ingerir dados, consulte [&quot;Ingerindo dados&quot;](/pt-BR/clickstack/ingesting-data/index).
   </Step>
 </Steps>

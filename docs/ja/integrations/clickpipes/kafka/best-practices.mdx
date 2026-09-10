@@ -28,24 +28,7 @@ Kafka におけるメッセージ圧縮について詳しくは、まずはこ�
   ## 配信セマンティクス
 </div>
 
-Kafka 向け ClickPipes は、デフォルトで at-least-once 配信を保証し、Kafka コンシューマグループのオフセットを使用してインジェストの進行状況を追跡します。また、ポッド の再起動、コンシューマのリバランス、挿入の失敗があっても、各 Kafka レコードが ClickHouse に正確に 1 回だけ挿入される exactly-once セマンティクスをオプションでサポートしています。
-
-exactly-once を実現するため、ClickPipes は 2 つの値を使用して各パーティションの進行状況を内部状態ストアに記録します。
-
-* **High-water mark** — パーティション内のすべてのレコードが ClickHouse に挿入されたことが確認されているオフセットです。再起動時、ClickPipes はこのマーク以下のレコードをすべて破棄するため、すでに到達済みのデータが再送されることはありません。
-* **Pending ranges** — ClickHouse に送信済みだが、まだ確認されていない insert block のオフセット範囲です。障害発生後、ClickPipes はこれらの範囲のみを再生します。
-
-各 insert block は連続したオフセット範囲を対象とし、`topic:partition:firstOffset-lastOffset` 形式の決定論的な[重複排除トークン](/ja/concepts/features/operations/insert/deduplicating-inserts-on-retries)を持ちます。再生時、ClickPipes は同じオフセット範囲、したがって同じトークンを再現するため、ClickHouse は重複を拒否します。トークンはオフセット範囲のみに依存するため、再構築した block がバイト単位で同一でなくても、再生時には重複排除されます。
-
-<Note>
-  **重複排除ウィンドウ**
-
-  トークンによる重複排除は、ターゲットテーブルの [`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) (デフォルトでは直近 10,000 個の insert block) および [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (デフォルトでは 1 時間) の範囲内でのみ行われます。高スループットのパイプでは block 数のウィンドウがすぐに消費される可能性があるため、最悪の場合の再生遅延をカバーできるよう、ターゲットテーブルでこれら両方の設定を確認し、必要に応じて増やすことを推奨します。トークンがウィンドウから外れた後に再生されたデータは再度挿入される可能性があるため、その場合は exactly-once を保証できません。
-</Note>
-
-主なトレードオフはパーツサイズです。より大きな insert block を使用すると、ClickHouse 内で生成される[パーツ](/ja/concepts/core-concepts/parts)の数が減り、各パーツは大きくなるため、マージのオーバーヘッドを低く抑えられます。ClickPipes は block を構築している間、パーティションの行をメモリ内に保持するため、到達可能なパーツサイズはパイプで利用できるメモリに依存します。メモリが不足すると小さな block を構築するため、テーブルにはより多くのパーツが蓄積されます。パイプにより多くのメモリを割り当てると、より大きな block を構築でき、生成されるパーツを減らせます。
-
-パーティション数が内部 insert「worker」の数に近い場合、各 worker はおおむね 1 つのパーティションを処理でき、大きな block を構築するための十分なメモリのヘッドルームを確保できるため、パイプは最も効率よく動作します。worker 数と利用可能なメモリはいずれもレプリカサイズとレプリカ数に応じてスケールします。これらは **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** で設定できます。
+Kafka 向け ClickPipes は、`at-least-once` の配信セマンティクス (最も一般的に使用される方式の 1 つ) を提供します。配信セマンティクスについてのご意見は、ぜひ [お問い合わせフォーム](https://clickhouse.com/company/contact?loc=clickpipes) からお寄せください。exactly-once セマンティクスが必要な場合は、公式の [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse) シンクの使用を推奨します。
 
 <div id="authentication">
   ## 認証

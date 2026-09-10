@@ -2,66 +2,21 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Disks/tests/gtest_disk.h>
-#include <atomic>
 #include <filesystem>
-#include <mutex>
-#include <stdexcept>
-#include <unordered_set>
-#include <unistd.h>
 
 namespace fs = std::filesystem;
 
-namespace
+
+DB::DiskPtr createDisk(const std::string & path)
 {
-
-std::mutex created_paths_mutex;
-std::unordered_set<std::string> created_paths;
-
-std::string normalizePath(std::string path)
-{
-    while (path.size() > 1 && path.back() == '/')
-        path.pop_back();
-    return fs::weakly_canonical(path).string();
-}
-
-}
-
-DB::DiskPtr createDisk(const std::string & name)
-{
-    static std::atomic<size_t> counter{0};
-
-    auto path = fs::temp_directory_path()
-        / ("clickhouse_gtest_disk_" + std::to_string(getpid()) + "_" + std::to_string(counter++) + "_" + name);
-
-    /// The name is unique, so an existing directory belongs to something else. Fail instead of adopting
-    /// it, because `destroyDisk` removes the directory recursively.
-    if (!fs::create_directory(path))
-        throw std::runtime_error("Directory for the test disk already exists: " + path.string());
-
-    auto disk_path = path.string() + "/";
-    {
-        std::lock_guard lock(created_paths_mutex);
-        created_paths.insert(normalizePath(disk_path));
-    }
-
-    return std::make_shared<DB::DiskLocal>("local_disk", disk_path);
+    fs::create_directory(path);
+    return std::make_shared<DB::DiskLocal>("local_disk", path);
 }
 
 void destroyDisk(DB::DiskPtr & disk)
 {
-    if (!disk)
-        return;
-
     const auto path = disk->getPath();
     disk.reset();
-
-    /// Remove only a directory this helper created.
-    {
-        std::lock_guard lock(created_paths_mutex);
-        if (!created_paths.erase(normalizePath(path)))
-            throw std::runtime_error("Refusing to remove a directory not created by createDisk: " + path);
-    }
-
     fs::remove_all(path);
 }
 

@@ -12,7 +12,7 @@ ClickHouse может автоматически определять струк
   ## Когда использовать определение типов
 </div>
 
-* **Согласованная структура** — Данные, по которым вы собираетесь определять типы, содержат все интересующие вас ключи. Определение типов основано на сэмплировании данных вплоть до [максимального количества строк](/ru/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) или [байтов](/ru/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference). Данные за пределами выборки, содержащие дополнительные столбцы, будут проигнорированы, и их нельзя будет запрашивать.
+* **Согласованная структура** — Данные, по которым вы собираетесь определять типы, содержат все интересующие вас ключи. Определение типов основано на сэмплировании данных вплоть до [максимального количества строк](/ru/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) или [байтов](/ru/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference). Данные за пределами выборки, содержащие дополнительные столбцы, будут проигнорированы, и их нельзя будет запрашивать.
 * **Согласованные типы** — Типы данных для конкретных ключей должны быть совместимыми, то есть должна быть возможность автоматически привести один тип к другому.
 
 Если у вас более динамический JSON, в который добавляются новые ключи и для одного и того же пути возможны несколько типов, см. [&quot;Working with semi-structured and dynamic data&quot;](/ru/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
@@ -100,7 +100,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **Избегайте NULL-значений**
 
-  Как видите, многие столбцы определены как Nullable. Мы [не рекомендуем использовать тип Nullable](/ru/reference/data-types/nullable#storage-features), если в этом нет крайней необходимости. С помощью [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ru/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) можно управлять тем, в каких случаях применяется Nullable.
+  Как видите, многие столбцы определены как Nullable. Мы [не рекомендуем использовать тип Nullable](/ru/reference/data-types/nullable#storage-features), если в этом нет крайней необходимости. С помощью [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ru/reference/settings/formats#schema_inference_make_columns_nullable) можно управлять тем, в каких случаях применяется Nullable.
 </Info>
 
 Как видите, большинство столбцов были автоматически определены как `String`, а столбец `update_date` корректно распознан как `Date`. Столбец `versions` был создан как `Array(Tuple(created String, version String))` для хранения списка объектов, а `authors_parsed` определён как `Array(Array(String))` для вложенных массивов.
@@ -108,7 +108,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **Управление определением типов**
 
-  Автоматическим определением дат и значений даты и времени можно управлять с помощью настроек [`input_format_try_infer_dates`](/ru/reference/settings/formats/input-format#input_format_try_infer_dates) и [`input_format_try_infer_datetimes`](/ru/reference/settings/formats/input-format#input_format_try_infer_datetimes) соответственно (обе включены по умолчанию). Определение объектов как именованных Tuple управляется настройкой [`input_format_json_try_infer_named_tuples_from_objects`](/ru/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Другие настройки, управляющие определением схемы для JSON, например автоматическое определение чисел, можно найти [здесь](/ru/concepts/features/interfaces/schema-inference#text-formats).
+  Автоматическим определением дат и значений даты и времени можно управлять с помощью настроек [`input_format_try_infer_dates`](/ru/reference/settings/formats#input_format_try_infer_dates) и [`input_format_try_infer_datetimes`](/ru/reference/settings/formats#input_format_try_infer_datetimes) соответственно (обе включены по умолчанию). Определение объектов как именованных Tuple управляется настройкой [`input_format_json_try_infer_named_tuples_from_objects`](/ru/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects). Другие настройки, управляющие определением схемы для JSON, например автоматическое определение чисел, можно найти [здесь](/ru/concepts/features/interfaces/schema-inference#text-formats).
 </Info>
 
 <div id="querying-json">
@@ -202,7 +202,7 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-Выше приведена правильная схема для этих данных. Определение схемы основано на сэмплировании данных и их построчном чтении. Значения столбцов извлекаются в соответствии с форматом, а для определения типа каждого значения используются рекурсивные парсеры и эвристики. Максимальное количество строк и байт, считываемых из данных при определении схемы, задаётся настройками [`input_format_max_rows_to_read_for_schema_inference`](/ru/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (по умолчанию 25000) и [`input_format_max_bytes_to_read_for_schema_inference`](/ru/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (по умолчанию 32 MB). Если определение выполнено некорректно, вы можете указать подсказки, как описано [здесь](/ru/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable).
+Выше приведена правильная схема для этих данных. Определение схемы основано на сэмплировании данных и их построчном чтении. Значения столбцов извлекаются в соответствии с форматом, а для определения типа каждого значения используются рекурсивные парсеры и эвристики. Максимальное количество строк и байт, считываемых из данных при определении схемы, задаётся настройками [`input_format_max_rows_to_read_for_schema_inference`](/ru/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (по умолчанию 25000) и [`input_format_max_bytes_to_read_for_schema_inference`](/ru/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (по умолчанию 32 MB). Если определение выполнено некорректно, вы можете указать подсказки, как описано [здесь](/ru/reference/settings/formats#schema_inference_make_columns_nullable).
 
 <div id="creating-tables-from-snippets">
   ### Создание таблиц из фрагментов
@@ -303,7 +303,7 @@ FORMAT PrettyJSONEachRow
   ## Обработка ошибок
 </div>
 
-Иногда данные могут быть некорректными. Например, у некоторых столбцов может быть неверный тип или объект JSON может быть неправильно отформатирован. В таких случаях можно использовать настройки [`input_format_allow_errors_num`](/ru/reference/settings/formats/input-format#input_format_allow_errors_num) и [`input_format_allow_errors_ratio`](/ru/reference/settings/formats/input-format#input_format_allow_errors_ratio), чтобы разрешить игнорирование определённого числа строк, если данные вызывают ошибки при вставке. Кроме того, для более точного определения схемы можно задать [подсказки](/ru/reference/settings/formats/schema-inference#schema_inference_hints).
+Иногда данные могут быть некорректными. Например, у некоторых столбцов может быть неверный тип или объект JSON может быть неправильно отформатирован. В таких случаях можно использовать настройки [`input_format_allow_errors_num`](/ru/reference/settings/formats#input_format_allow_errors_num) и [`input_format_allow_errors_ratio`](/ru/reference/settings/formats#input_format_allow_errors_ratio), чтобы разрешить игнорирование определённого числа строк, если данные вызывают ошибки при вставке. Кроме того, для более точного определения схемы можно задать [подсказки](/ru/reference/settings/formats#schema_inference_hints).
 
 <div id="working-with-semi-structured-data">
   ## Работа с полуструктурированными и динамическими данными
@@ -339,7 +339,7 @@ FORMAT PrettyJSONEachRow
 ```sql
 DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
 
--- result omitted for brevity
+-- результат опущен для краткости
 ```
 
 ```response
@@ -384,13 +384,13 @@ SETTINGS describe_compact_output = 1
 │ a    │ Nullable(String) │
 └──────┴──────────────────┘
 
-1 row in set. Elapsed: 0.081 sec.
+1 строка в наборе. Прошло: 0.081 сек.
 ```
 
 <Info>
   **Приведение типов**
 
-  Этим приведением типов можно управлять с помощью ряда настроек. Пример выше зависит от настройки [`input_format_json_read_numbers_as_strings`](/ru/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings).
+  Этим приведением типов можно управлять с помощью ряда настроек. Пример выше зависит от настройки [`input_format_json_read_numbers_as_strings`](/ru/reference/settings/formats#input_format_json_read_numbers_as_strings).
 </Info>
 
 Однако некоторые типы несовместимы. Рассмотрим следующий пример:

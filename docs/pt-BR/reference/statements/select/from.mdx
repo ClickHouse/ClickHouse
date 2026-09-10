@@ -33,21 +33,6 @@ FROM table
 SELECT *
 ```
 
-Em uma consulta que começa com `FROM`, a cláusula `SELECT` é opcional: quando omitida, a consulta funciona como se `SELECT *` tivesse sido escrito:
-
-```sql
-FROM table
-WHERE x > 1
-```
-
-Esse formato é usado principalmente em consultas com [operadores de pipe](/pt-BR/reference/statements/select/pipe-operators):
-
-```sql
-FROM table
-|> WHERE x > 1
-|> AGGREGATE count() AS c GROUP BY y
-```
-
 <div id="final-modifier">
   ## Modificador FINAL
 </div>
@@ -62,7 +47,7 @@ Ele se aplica à seleção de dados de tabelas que usam os seguintes motores de 
 * `CollapsingMergeTree`
 * `VersionedCollapsingMergeTree`
 
-Consultas `SELECT` com `FINAL` são executadas em paralelo. A configuração [max&#95;final&#95;threads](/pt-BR/reference/settings/session-settings/max#max_final_threads) limita o número de threads usados.
+Consultas `SELECT` com `FINAL` são executadas em paralelo. A configuração [max&#95;final&#95;threads](/pt-BR/reference/settings/session-settings#max_final_threads) limita o número de threads usados.
 
 <div id="drawbacks">
   ### Desvantagens
@@ -77,7 +62,7 @@ Consultas que usam `FINAL` são executadas um pouco mais lentamente do que consu
 
 Como alternativa ao uso de `FINAL`, às vezes é possível usar consultas diferentes que partem do pressuposto de que os processos em segundo plano do engine `MergeTree` ainda não ocorreram e lidar com isso aplicando uma agregação (por exemplo, para descartar duplicatas). Se você precisar usar `FINAL` em suas consultas para obter os resultados necessários, não há problema em fazer isso, mas esteja ciente do processamento adicional exigido.
 
-`FINAL` pode ser aplicado automaticamente a todas as tabelas de uma consulta usando a configuração [FINAL](/pt-BR/reference/settings/session-settings/other#final), por meio de uma sessão ou de um perfil de usuário.
+`FINAL` pode ser aplicado automaticamente a todas as tabelas de uma consulta usando a configuração [FINAL](/pt-BR/reference/settings/session-settings#final), por meio de uma sessão ou de um perfil de usuário.
 
 <div id="example-usage">
   ### Exemplo de uso

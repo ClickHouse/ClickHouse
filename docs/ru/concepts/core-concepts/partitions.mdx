@@ -44,7 +44,7 @@ PARTITION BY toStartOfMonth(date);
   ### Структура на диске
 </div>
 
-Каждый раз, когда в таблицу вставляется набор строк, ClickHouse вместо создания (как минимум [одной](/ru/reference/settings/session-settings/max-insert#max_insert_block_size)) одной-единственной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), создает по одной новой части данных для каждого уникального значения ключа партиционирования среди вставленных строк:
+Каждый раз, когда в таблицу вставляется набор строк, ClickHouse вместо создания одной-единственной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), создает как минимум одну новую часть данных для каждого уникального значения ключа партиционирования среди вставленных строк (не менее [одной](/ru/reference/settings/session-settings#max_insert_block_size)):
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="ОБРАБОТКА INSERT" />
 
@@ -162,7 +162,7 @@ ClickHouse обрабатывает этот запрос, применяя по
 
 <br />
 
-① **Отсечение партиций**: [индексы MinMax](/ru/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) используются, чтобы игнорировать целые партиции (наборы частей), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в ключе партиционирования таблицы.
+① **Отсечение партиций**: [MinMax indexes](/ru/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) используются, чтобы игнорировать целые партиции (наборы частей), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в ключе партиционирования таблицы.
 
 ② **Отсечение гранул**: Для оставшихся частей данных после шага ① используется их [первичный индекс](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes), чтобы игнорировать все [гранулы](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (блоки строк), которые заведомо не могут соответствовать фильтру запроса по столбцам, используемым в первичном ключе таблицы.
 
@@ -217,7 +217,7 @@ WHERE date >= '2020-12-01'
 Peak memory usage: 2.73 MiB.
 ```
 
-Это означает, что ClickHouse просканировал и обработал 1 гранулу (блок из [8192](/ru/reference/settings/merge-tree-settings/index-granularity#index_granularity) строк) за 6 миллисекунд, чтобы вычислить результат запроса.
+Это означает, что ClickHouse просканировал и обработал 1 гранулу (блок из [8192](/ru/reference/settings/merge-tree-settings#index_granularity) строк) за 6 миллисекунд, чтобы вычислить результат запроса.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### Партиционирование — это прежде всего средство управления данными

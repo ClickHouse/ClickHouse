@@ -10,9 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 
-/// Disabled on macOS: the malloc-zone hook observes system-library allocations (e.g. dyld mallocs
-/// on a thread's first `absl::Mutex` lock) that can occur inside deny scopes and cannot be prevented.
-#if !defined(NDEBUG) && !defined(OS_DARWIN)
+#if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
 #endif
 
@@ -136,10 +134,8 @@ private:
     };
 #pragma clang diagnostic pop
 
-    bool updatePeak(Int64 will_be, bool log_memory_usage) noexcept;
+    bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
-    Int64 decrementLocalUsage(Int64 size) noexcept;
-    void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 

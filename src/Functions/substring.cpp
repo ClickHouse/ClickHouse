@@ -231,7 +231,7 @@ Byte counting starts from 1 with the following logic:
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
-See also the [`digits`](/reference/functions/regular-functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
+See also the [`digits`](/sql-reference/functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
 )";
     FunctionDocumentation::Syntax syntax = "substring(s, offset[, length])";
     FunctionDocumentation::Arguments arguments = {

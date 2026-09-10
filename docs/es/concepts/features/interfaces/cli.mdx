@@ -802,25 +802,3 @@ clickhousectl update --check
 ```
 
 La CLI también busca actualizaciones en segundo plano (como máximo una vez cada 24 horas) y muestra un aviso cuando hay una versión más reciente disponible.
-
-<div id="telemetry">
-  ## Telemetría
-</div>
-
-`clickhousectl` recopila telemetría de uso anónima para ayudarnos a entender cómo se usa la CLI. Está habilitada de forma predeterminada, pero no se envía nada antes de que reciba una notificación: en la primera ejecución, la CLI muestra un aviso que explica qué se recopila y cómo desactivarla, y no envía nada. La recopilación solo comienza en ejecuciones posteriores, por lo que siempre puede excluirse antes de que se recopile nada.
-
-Cada evento contiene únicamente:
-
-* El comando ejecutado (por ejemplo, `local start`) y los nombres de los indicadores utilizados — nunca los valores de los indicadores, argumentos posicionales ni ninguna otra entrada proporcionada por el usuario; por tanto, nunca se recopilan consultas, nombres de tablas, credenciales ni rutas de archivos
-* El código de salida (por ejemplo, `0`, `1`, `2`, `4`) y el resultado (por ejemplo, `ok`, `error`, `cancelled`)
-* En el caso de comandos mal escritos, la sugerencia «quizás quiso decir» mostrada por la CLI — solo se registra cuando coincide exactamente con el nombre de un comando o indicador real, por lo que nunca puede contener lo que escribió
-* La versión de `clickhousectl`, el sistema operativo, la arquitectura y si la CLI fue invocada por un agente de IA (y cuál) o en CI
-
-La telemetría es completamente anónima: no se recopilan datos personales ni identificadores de dispositivos o instalaciones.
-
-Para desactivar la telemetría:
-
-* Ejecute `clickhousectl telemetry disable` (vuelva a habilitarla con `enable` y compruebe el estado con `status`)
-* Establezca la variable de entorno `DO_NOT_TRACK=1`
-
-Establezca `CHCTL_TELEMETRY_DEBUG=1` para imprimir la carga útil exacta en stderr sin enviar nada.

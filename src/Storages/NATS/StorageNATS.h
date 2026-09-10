@@ -139,7 +139,6 @@ private:
     void createConsumers();
 
     bool subscribeConsumers();
-    bool consumersNeedResubscribe();
     void unsubscribeConsumers();
 
     void stopEventLoop();

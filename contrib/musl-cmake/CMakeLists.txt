@@ -859,7 +859,6 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/regex/regexec.c"
     "${MUSL_SOURCE_DIR}/src/regex/tre-mem.c"
     "${MUSL_SOURCE_DIR}/src/sched/affinity.c"
-    "${MUSL_SOURCE_DIR}/src/sched/rseq.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_cpucount.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_get_priority_max.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_getcpu.c"
@@ -1500,10 +1499,6 @@ elseif (MUSL_ARCH STREQUAL "aarch64")
         "${MUSL_SOURCE_DIR}/src/signal/restore.c"
         "${MUSL_SOURCE_DIR}/src/signal/sigsetjmp.c"
         "${MUSL_SOURCE_DIR}/src/string/memcpy.c"
-        # memcpy.S handles overlaps and provides memmove as a second entry
-        # point (upstream musl has no aarch64 memmove asm; the generic C
-        # memmove sends only non-overlapping copies to the asm memcpy).
-        "${MUSL_SOURCE_DIR}/src/string/memmove.c"
         "${MUSL_SOURCE_DIR}/src/string/memset.c"
         "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
         "${MUSL_SOURCE_DIR}/src/thread/__unmapself.c"

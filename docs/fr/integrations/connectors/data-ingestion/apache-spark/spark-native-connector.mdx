@@ -3,11 +3,11 @@ sidebarTitle: 'Connecteur Spark natif'
 slug: /integrations/apache-spark/spark-native-connector
 description: 'Introduction à Apache Spark avec ClickHouse'
 keywords: ['clickhouse', 'Apache Spark', 'migration', 'données']
-title: 'Spark connector'
+title: 'Connecteur Spark'
 doc_type: 'guide'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -106,7 +106,17 @@ Les deux approches garantissent que le connecteur ClickHouse est disponible dans
     </dependency>
     ```
 
-    Pour utiliser une version SNAPSHOT, suivez les [instructions de Sonatype pour utiliser les releases SNAPSHOT](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) avec Maven.
+    Ajoutez le dépôt suivant si vous souhaitez utiliser une version SNAPSHOT.
+
+    ```maven
+    <repositories>
+      <repository>
+        <id>sonatype-oss-snapshots</id>
+        <name>Sonatype OSS Snapshots Repository</name>
+        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+      </repository>
+    </repositories>
+    ```
   </Tab>
 
   <Tab title="Gradle">
@@ -117,7 +127,13 @@ Les deux approches garantissent que le connecteur ClickHouse est disponible dans
     }
     ```
 
-    Pour utiliser une version SNAPSHOT, suivez les [instructions de Sonatype pour utiliser les releases SNAPSHOT](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) avec Gradle.
+    Ajoutez le dépôt suivant si vous souhaitez utiliser la version SNAPSHOT :
+
+    ```gradle
+    repositries {
+      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
+    }
+    ```
   </Tab>
 
   <Tab title="SBT">
@@ -158,8 +174,8 @@ Le schéma de nommage du JAR binaire est :
 clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${version}.jar
 ```
 
-Vous trouverez tous les fichiers JAR publiés dans le [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/).
-Les fichiers JAR SNAPSHOT générés quotidiennement sont disponibles via le dépôt Sonatype snapshots configuré ci-dessus.
+Vous trouverez tous les fichiers JAR publiés dans le [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)
+et tous les fichiers JAR SNAPSHOT générés quotidiennement dans le [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/).
 
 <Warning>
   Il est essentiel d&#39;inclure le [JAR clickhouse-jdbc](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)

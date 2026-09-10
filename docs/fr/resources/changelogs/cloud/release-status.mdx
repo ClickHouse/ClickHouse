@@ -43,8 +43,8 @@ Les fenêtres de mise à niveau planifiées sont disponibles pour tous les canau
   Les dates indiquées ci-dessous correspondent au moment où ClickHouse **commence le déploiement progressif** sur chaque canal de publication, et non à la date à laquelle votre service sera effectivement mis à niveau.
 
   * Les déploiements progressifs sont automatisés et s’étalent sur plusieurs semaines
-  * Les services pour lesquels des fenêtres de mise à niveau planifiées sont configurées sont mis à niveau pendant leur fenêtre planifiée au cours de la semaine suivant la fin du déploiement progressif du canal (à partir du lundi à 00:00 UTC)
-  * La fin du déploiement progressif peut être retardée en raison de pauses dans le déploiement progressif (par exemple, un gel pendant les fêtes) ou de la surveillance de l’état de santé
+  * Les services pour lesquels des fenêtres de mise à niveau planifiées sont configurées sont mis à niveau pendant leur fenêtre planifiée au cours de la semaine suivant la fin du déploiement du canal (à partir du lundi à 00:00 UTC)
+  * La fin du déploiement peut être retardée en raison de pauses dans le déploiement (par exemple, un gel pendant les fêtes) ou de la surveillance de l’état de santé
 
   Pour effectuer des tests en amont avant les mises à niveau en production, utilisez le canal Fast ou Regular pour les services hors production, et le canal Slow pour les services de production.
 </Warning>
@@ -55,8 +55,8 @@ Les fenêtres de mise à niveau planifiées sont disponibles pour tous les canau
    changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
    version: '26.4',
    fast_start_date: '2026-06-22',
-   fast_end_date: '2026-07-16',
-   regular_start_date: '2026-08-03',
+   fast_end_date: 'TBD',
+   regular_start_date: 'TBD',
    regular_end_date: 'TBD',
    slow_start_date: 'TBD',
    slow_end_date: 'TBD',
@@ -96,12 +96,12 @@ Les fenêtres de mise à niveau planifiées sont disponibles pour tous les canau
  {
    changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
    version: '25.10',
-   fast_start_date: 'Terminé',
-   fast_end_date: 'Terminé',
-   regular_start_date: 'Terminé',
-   regular_end_date: 'Terminé',
-   slow_start_date: 'Terminé',
-   slow_end_date: 'Terminé',
+   fast_start_date: '2025-12-11',
+   fast_end_date: '2025-12-15',
+   regular_start_date: '2026-01-23',
+   regular_end_date: '2026-03-10',
+   slow_start_date: '2026-03-23',
+   slow_end_date: '2026-03-23',
    fast_progress: 'green',
    regular_progress: 'green',
    slow_progress: 'green',
@@ -111,10 +111,10 @@ Les fenêtres de mise à niveau planifiées sont disponibles pour tous les canau
   version: '25.8',
   fast_start_date: 'Terminé',
   fast_end_date: 'Terminé',
-  regular_start_date: 'Terminé',
-  regular_end_date: 'Terminé',
-  slow_start_date: 'Terminé',
-  slow_end_date: 'Terminé',
+  regular_start_date: '2025-10-29',
+  regular_end_date: '2025-12-19',
+  slow_start_date: '2026-01-27',
+  slow_end_date: '2026-02-04',
   fast_progress: 'green',
   regular_progress: 'green',
   slow_progress: 'green',

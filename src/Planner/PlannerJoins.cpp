@@ -35,7 +35,6 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ConstantJoin.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
@@ -191,7 +190,7 @@ JoinClause JoinClause::concatClauses(const JoinClause & lhs, const JoinClause & 
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 
-TableExpressionSet extractTableExpressionsSet(const TableExpressionNodePtr & node)
+TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
 {
     TableExpressionSet res;
     for (const auto & expr : extractTableExpressions(node, true))
@@ -240,8 +239,8 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
                 "JOIN {} actions has column {} that do not exist in left {} or right {} table expression columns",
                 join_node.formatASTForErrorMessage(),
                 column_source->formatASTForErrorMessage(),
-                join_node.getLeftTableExpressionNode()->formatASTForErrorMessage(),
-                join_node.getRightTableExpressionNode()->formatASTForErrorMessage());
+                join_node.getLeftTableExpression()->formatASTForErrorMessage(),
+                join_node.getRightTableExpression()->formatASTForErrorMessage());
 
         auto input_table_side = is_column_from_left_expr ? JoinTableSide::Left : JoinTableSide::Right;
         table_sides.insert(input_table_side);
@@ -799,8 +798,8 @@ static JoinClausesAndActions buildJoinClausesAndActions(
         join_right_actions_names_set.insert(right_table_expression_column.name);
     }
 
-    auto join_left_table_expressions = extractTableExpressionsSet(join_node.getLeftTableExpressionNodeTyped());
-    auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpressionNodeTyped());
+    auto join_left_table_expressions = extractTableExpressionsSet(join_node.getLeftTableExpression());
+    auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
 
     JoinClausesAndActions result;
     bool has_residual_filters = false;
@@ -829,7 +828,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
     };
 
     bool is_join_with_special_storage = false;
-    if (const auto * right_table_node = join_node.getRightTableExpressionNode()->as<TableNode>())
+    if (const auto * right_table_node = join_node.getRightTableExpression()->as<TableNode>())
     {
         is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
     }
@@ -1262,14 +1261,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             /*use_two_level_maps_=*/false, stats_collecting_params);
     }
 
-    /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a
-    /// hash-sharded set of independent per-shard merge joins (see `optimizeJoinByShards`).
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(table_join))
-            return std::make_shared<FullSortingMergeJoin>(
-                table_join, right_table_expression_header, /*null_direction_=*/1,
-                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
@@ -1429,12 +1424,24 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
         return storage->getJoinLocked(table_join, params.initial_query_id, params.lock_acquire_timeout, required_column_names);
     }
 
-    /** We have only one way to execute a CROSS JOIN and joins with constant predicate - with `ConstantJoin`.
-      * Therefore, for a query with an explicit CROSS JOIN or constant predicate, it should not fail because
-      * of the `join_algorithm` setting.
+    /** JOIN with constant.
+      * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
       */
-    if (isCrossOrComma(table_join->kind()) || table_join->isJoinWithConstant())
-        return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
+    if (table_join->isJoinWithConstant())
+    {
+        if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
+
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
+    }
+
+    /** We have only one way to execute a CROSS JOIN - with a hash join.
+      * Therefore, for a query with an explicit CROSS JOIN, it should not fail because of the `join_algorithm` setting.
+      * If the user expects CROSS JOIN + WHERE to be rewritten to INNER join and to be executed with a specific algorithm,
+      * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
+      */
+    if (table_join->kind() == JoinKind::Cross)
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
@@ -1452,20 +1459,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return join;
     }
 
-    /// Print the names the way they are spelled in the `join_algorithm` setting, so that they can be
-    /// pasted straight back into it. `toString(JoinAlgorithm)` returns the uppercase enum spelling,
-    /// which the setting parser rejects.
-    std::vector<String> enabled_algorithm_names;
-    enabled_algorithm_names.reserve(table_join->getEnabledJoinAlgorithms().size());
-    for (auto algorithm : table_join->getEnabledJoinAlgorithms())
-        enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
-                    "with the given right table storage type",
-                    fmt::join(enabled_algorithm_names, ", "),
-                    toString(table_join->strictness()),
-                    toString(table_join->kind()));
+                    "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
 }
 
 }

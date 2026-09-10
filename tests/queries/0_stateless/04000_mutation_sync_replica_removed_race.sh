@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
-# no-fasttest: the fast test binary is built as RelWithDebInfo, where `chassert` is a no-op, so this test
-#              cannot detect the regression there. It keeps running in the debug and sanitizer builds.
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/97309
 #

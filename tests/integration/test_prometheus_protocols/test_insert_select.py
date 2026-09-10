@@ -49,7 +49,7 @@ def test_insert_basic():
     assert node.query(
         "SELECT t.metric_name, t.tags"
         " FROM timeSeriesTags(prometheus) AS t"
-    ) == TSV([["cpu_usage", "{'__name__':'cpu_usage','instance':'localhost:9090','job':'test'}"]])
+    ) == TSV([["cpu_usage", "{'instance':'localhost:9090','job':'test'}"]])
 
     # Check prometheusQuery() can use the inserted data.
     assert node.query(
