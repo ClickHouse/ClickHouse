@@ -7,7 +7,10 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
@@ -884,6 +887,19 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 #endif
 }
 
+/// Whether the values that become terms in this index are variable-length `String`s, in which case
+/// one logical value can be stored under several spellings that differ in trailing zero bytes.
+static bool indexedTermTypeIsVariableLengthString(const Block & header, const String & column_name)
+{
+    if (!header.has(column_name))
+        return true;
+
+    auto type = removeNullable(removeLowCardinality(header.getByName(column_name).type));
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        type = removeNullable(removeLowCardinality(type_array->getNestedType()));
+    return isString(type);
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -898,6 +914,23 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_index_column = hasIndexForColumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
+
+    /// The array-search functions compare under the zero-padding rule, so a `FixedString` constant
+    /// matches multiple `String` values ('ab', 'ab\0', 'ab\0\0'). A term-preserving tokenizer
+    /// keeps those as distinct terms, so no single lookup finds them all and we must fall back to a
+    /// scan instead of pruning matching granules. A `FixedString` index col is unambiguous and
+    /// unaffected, as are `equals`, the token functions and the `Like`/`match` variants, which
+    /// compare exactly. See `zeroPaddedStringConstant` and
+    /// https://github.com/ClickHouse/ClickHouse/issues/118669.
+    if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll"
+        || function_name == "mapContainsKey" || function_name == "mapContainsValue")
+    {
+        const auto searched_column = has_map_keys_column
+            ? fmt::format("mapKeys({})", index_column_name)
+            : (has_map_values_column ? fmt::format("mapValues({})", index_column_name) : index_column_name);
+        if (zeroPaddedStringConstant(value_type) && indexedTermTypeIsVariableLengthString(header, searched_column))
+            return false;
+    }
 
     bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))

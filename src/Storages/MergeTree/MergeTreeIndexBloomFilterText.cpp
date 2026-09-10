@@ -7,6 +7,7 @@
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
@@ -437,6 +438,15 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
     return false;
 }
 
+/// The type whose values become terms in the index: for an array-typed indexed column, its element.
+static DataTypePtr indexedElementType(const DataTypePtr & type)
+{
+    auto decayed = removeNullable(removeLowCardinality(type));
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(decayed.get()))
+        return type_array->getNestedType();
+    return decayed;
+}
+
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -473,6 +483,19 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     auto key_index = getKeyIndex(column_name);
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
+
+    /// The array-search functions compare under the zero-padding rule, so a `FixedString` constant
+    /// matches multiple String values (e.g. 'ab', 'ab\0', 'ab\0\0') so we must fall back to a scan
+    /// instead of pruning matching granules. A FixedString index col is unambiguous and unaffected.
+    /// `equals` and the `Like` variants compare exactly and are unaffected. See `zeroPaddedStringConstant`.
+    if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll"
+        || function_name == "mapContains" || function_name == "mapContainsKey" || function_name == "mapContainsValue")
+    {
+        const auto searched_index = key_index ? key_index : (map_key_index ? map_key_index : map_value_index);
+        if (searched_index && zeroPaddedStringConstant(value_type)
+            && isString(removeNullable(removeLowCardinality(indexedElementType(index_data_types[*searched_index])))))
+            return false;
+    }
 
     if (key_node.isFunction())
     {

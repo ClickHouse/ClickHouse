@@ -52,6 +52,19 @@ bool zeroPaddedStringComparison(const DataTypePtr & left, const DataTypePtr & ri
         && (isFixedString(left_decayed) || isFixedString(right_decayed));
 }
 
+bool zeroPaddedStringConstant(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    auto decayed = removeNullable(removeLowCardinality(type));
+
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(decayed.get()))
+        return zeroPaddedStringConstant(type_array->getNestedType());
+
+    return isFixedString(decayed);
+}
+
 ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePtr & type)
 {
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))

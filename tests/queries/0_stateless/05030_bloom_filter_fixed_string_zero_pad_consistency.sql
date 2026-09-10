@@ -71,3 +71,86 @@ select 'exact needle',
 
 drop table plain_fs;
 drop table idx_fs;
+
+-- Every skip index that answers an array-search function has to agree with it, not just
+-- `bloom_filter`. `ngrambf_v1` and a `text` index with a term-preserving tokenizer keep 'V0' and
+-- 'V0\0' as distinct terms, so a single lookup for a `FixedString` needle cannot find both and the
+-- index has to decline. Ids 0, 1 and 2 are one value under the zero-padding rule, so all three
+-- match; each cell compares the indexed answer against an unindexed table over the same data.
+drop table if exists plain_arr;
+drop table if exists ng_arr;
+drop table if exists tk_arr;
+drop table if exists tx_arr;
+drop table if exists ng_map;
+drop table if exists tx_map;
+
+create table plain_arr (id UInt64, v Array(String)) engine = Log;
+create table ng_arr (id UInt64, v Array(String), index idx v type ngrambf_v1(3, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+create table tk_arr (id UInt64, v Array(String), index idx v type tokenbf_v1(512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+create table tx_arr (id UInt64, v Array(String), index idx v type text(tokenizer = array) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+
+insert into plain_arr values (0, ['V0']), (1, ['V0\0']), (2, ['V0\0\0']), (3, ['X']);
+insert into ng_arr values (0, ['V0']), (1, ['V0\0']), (2, ['V0\0\0']), (3, ['X']);
+insert into tk_arr values (0, ['V0']), (1, ['V0\0']), (2, ['V0\0\0']), (3, ['X']);
+insert into tx_arr values (0, ['V0']), (1, ['V0\0']), (2, ['V0\0\0']), (3, ['X']);
+
+select 'other skip indexes must not change the result';
+select 'ngrambf has',
+    (select groupArray(id) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
+  = (select groupArray(id) from (select id from ng_arr where has(v, toFixedString('V0', 3)) order by id));
+select 'ngrambf hasAny',
+    (select groupArray(id) from (select id from plain_arr where hasAny(v, [toFixedString('V0', 3)]) order by id))
+  = (select groupArray(id) from (select id from ng_arr where hasAny(v, [toFixedString('V0', 3)]) order by id));
+select 'ngrambf hasAll',
+    (select groupArray(id) from (select id from plain_arr where hasAll(v, [toFixedString('V0', 3)]) order by id))
+  = (select groupArray(id) from (select id from ng_arr where hasAll(v, [toFixedString('V0', 3)]) order by id));
+select 'tokenbf has',
+    (select groupArray(id) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
+  = (select groupArray(id) from (select id from tk_arr where has(v, toFixedString('V0', 3)) order by id));
+select 'text has',
+    (select groupArray(id) from (select id from plain_arr where has(v, toFixedString('V0', 3)) order by id))
+  = (select groupArray(id) from (select id from tx_arr where has(v, toFixedString('V0', 3)) order by id));
+select 'text hasAny',
+    (select groupArray(id) from (select id from plain_arr where hasAny(v, [toFixedString('V0', 3)]) order by id))
+  = (select groupArray(id) from (select id from tx_arr where hasAny(v, [toFixedString('V0', 3)]) order by id));
+select 'text hasAll',
+    (select groupArray(id) from (select id from plain_arr where hasAll(v, [toFixedString('V0', 3)]) order by id))
+  = (select groupArray(id) from (select id from tx_arr where hasAll(v, [toFixedString('V0', 3)]) order by id));
+-- Pin the rows too: a keyed-vs-unkeyed comparison alone stays green if a change moves both sides.
+select 'matching rows are 0 1 2',
+    (select groupArray(id) from (select id from ng_arr where has(v, toFixedString('V0', 3)) order by id)) = [0, 1, 2];
+
+-- An index over a Map subcolumn reaches the same functions through `mapContains`.
+create table ng_map (id UInt64, m Map(String, UInt8), index idx mapKeys(m) type ngrambf_v1(3, 512, 2, 0) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+create table tx_map (id UInt64, m Map(String, UInt8), index idx mapKeys(m) type text(tokenizer = array) granularity 1)
+    engine = MergeTree order by id settings index_granularity = 1;
+insert into ng_map values (0, map('V0', 1)), (1, map('V0\0', 1)), (2, map('V0\0\0', 1)), (3, map('X', 1));
+insert into tx_map values (0, map('V0', 1)), (1, map('V0\0', 1)), (2, map('V0\0\0', 1)), (3, map('X', 1));
+
+select 'map subcolumn indexes';
+select 'ngrambf mapContains',
+    (select groupArray(id) from (select id from ng_map where mapContains(m, toFixedString('V0', 3)) order by id))
+  = [0, 1, 2];
+select 'text mapContains',
+    (select groupArray(id) from (select id from tx_map where mapContains(m, toFixedString('V0', 3)) order by id))
+  = [0, 1, 2];
+
+-- A plain `String` needle involves no padding, so these indexes must still prune normally.
+select 'string needle still uses the index';
+select 'ngrambf has Str',
+    (select groupArray(id) from (select id from plain_arr where has(v, 'V0') order by id))
+  = (select groupArray(id) from (select id from ng_arr where has(v, 'V0') order by id));
+select 'text has Str',
+    (select groupArray(id) from (select id from plain_arr where has(v, 'V0') order by id))
+  = (select groupArray(id) from (select id from tx_arr where has(v, 'V0') order by id));
+
+drop table plain_arr;
+drop table ng_arr;
+drop table tk_arr;
+drop table tx_arr;
+drop table ng_map;
+drop table tx_map;
