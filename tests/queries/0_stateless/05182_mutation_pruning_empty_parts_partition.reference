@@ -1,5 +1,5 @@
 the empty part is still active	1	0
-the mutation is scoped to the partition	['2']
+the mutation is scoped to the partition ['2']
 r1	0
 r2	0
 the other partition is untouched	50
