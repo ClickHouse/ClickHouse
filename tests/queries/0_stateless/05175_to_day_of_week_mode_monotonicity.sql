@@ -31,6 +31,21 @@ INSERT INTO t_dow_datetime SELECT toDateTime('2026-08-03 00:00:00', 'UTC') + num
 SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 3) >= 5;
 SELECT countIf(toDayOfWeek(dt, 3) >= 5) FROM t_dow_datetime;
 
+-- The 3-argument overload `toDayOfWeek(dt, mode, timezone)` never enters a monotonic function chain at all:
+-- both chain builders in `KeyCondition` reject functions of arity greater than two, so no pruning is claimed
+-- for it in either numbering. Guard that with the Sunday-first mode, where an unsound claim would drop rows.
+SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 2, 'UTC') >= 5;
+SELECT countIf(toDayOfWeek(dt, 2, 'UTC') >= 5) FROM t_dow_datetime;
+SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 1, 'UTC') >= 5;
+SELECT countIf(toDayOfWeek(dt, 1, 'UTC') >= 5) FROM t_dow_datetime;
+-- Neither numbering of the 3-argument form prunes: both read every mark, while the 2-argument Monday-first
+-- form does prune. This is what makes the guard above unnecessary for the 3-argument overload.
+SELECT
+    (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 2, 'UTC') >= 5)) AS three_arg_mode_2,
+    (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 1, 'UTC') >= 5)) AS three_arg_mode_1,
+    three_arg_mode_2 = three_arg_mode_1 AS three_arg_never_prunes,
+    three_arg_mode_1 > (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_datetime WHERE toDayOfWeek(dt, 1) >= 5)) AS two_arg_monday_prunes;
+
 -- The Monday-first modes keep pruning granules, the Sunday-first ones read the whole table.
 SELECT
     (SELECT marks FROM (EXPLAIN ESTIMATE SELECT count() FROM t_dow_date WHERE toDayOfWeek(d, 1) >= 5))

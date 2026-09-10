@@ -3331,7 +3331,7 @@ private:
     {
         const Field mode = (*const_arg.column)[0];
 
-        UInt64 mode_value;
+        UInt64 mode_value = 0;
         if (mode.getType() == Field::Types::UInt64)
             mode_value = mode.safeGet<UInt64>();
         else if (mode.getType() == Field::Types::Int64)
