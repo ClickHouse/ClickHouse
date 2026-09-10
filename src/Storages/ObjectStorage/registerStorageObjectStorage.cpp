@@ -19,6 +19,7 @@
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
+#include <string_view>
 
 namespace DB
 {
@@ -26,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -33,6 +35,7 @@ namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
     extern const SettingsBool allow_experimental_paimon_storage_engine;
+    extern const SettingsBool allow_experimental_lance;
 }
 
 namespace DataLakeStorageSetting
@@ -2479,6 +2482,116 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .description = "Provides a read-only integration with existing Delta Lake tables stored on the local filesystem.",
             .syntax = "ENGINE = DeltaLakeLocal(path)",
             .related = {"DeltaLake"}});
+}
+#endif
+
+#if USE_LANCE
+static ObjectStorageType getLanceDiskObjectStorageType(const DiskPtr & disk, std::string_view engine_name)
+{
+    try
+    {
+        return disk->getObjectStorage()->getType();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unsupported disk type for {}: {}",
+                engine_name,
+                disk->getDataSourceDescription().toString());
+
+        throw;
+    }
+}
+
+void registerStorageLance(StorageFactory & factory);
+void registerStorageLance(StorageFactory & factory)
+{
+    auto check_lance_enabled = [](const StorageFactory::Arguments & args)
+    {
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_lance])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "`Lance` table engines are experimental. Set `allow_experimental_lance` to enable them");
+        }
+    };
+
+#if USE_AWS_S3
+    factory.registerStorage(
+        LanceS3Definition::storage_engine_name,
+        [check_lance_enabled](const StorageFactory::Arguments & args)
+        {
+            check_lance_enabled(args);
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
+                ? (*storage_settings)[DataLakeStorageSetting::disk].value
+                : "";
+
+            StorageObjectStorageConfigurationPtr configuration;
+            if (!disk_name.empty())
+            {
+                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                const auto object_storage_type = getLanceDiskObjectStorageType(disk, LanceS3Definition::storage_engine_name);
+                switch (object_storage_type)
+                {
+                    case ObjectStorageType::S3:
+                        configuration = std::make_shared<StorageS3LanceConfiguration>(storage_settings);
+                        break;
+                    default:
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", LanceS3Definition::storage_engine_name, object_storage_type);
+                }
+            }
+            else
+                configuration = std::make_shared<StorageS3LanceConfiguration>(storage_settings);
+
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::S3,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
+#endif
+
+    factory.registerStorage(
+        LanceLocalDefinition::storage_engine_name,
+        [check_lance_enabled](const StorageFactory::Arguments & args)
+        {
+            check_lance_enabled(args);
+            const auto storage_settings = getDataLakeStorageSettings(*args.storage_def);
+            const auto disk_name = storage_settings && (*storage_settings)[DataLakeStorageSetting::disk].changed
+                ? (*storage_settings)[DataLakeStorageSetting::disk].value
+                : "";
+
+            StorageObjectStorageConfigurationPtr configuration;
+            if (!disk_name.empty())
+            {
+                auto disk = Context::getGlobalContextInstance()->getDisk(disk_name);
+                const auto object_storage_type = getLanceDiskObjectStorageType(disk, LanceLocalDefinition::storage_engine_name);
+                switch (object_storage_type)
+                {
+                    case ObjectStorageType::Local:
+                        configuration = std::make_shared<StorageLocalLanceConfiguration>(storage_settings);
+                        break;
+                    default:
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported disk type for {}: {}", LanceLocalDefinition::storage_engine_name, object_storage_type);
+                }
+            }
+            else
+                configuration = std::make_shared<StorageLocalLanceConfiguration>(storage_settings);
+
+            return createStorageObjectStorage(args, configuration);
+        },
+        {
+            .supports_settings = true,
+            .supports_schema_inference = true,
+            .source_access_type = AccessTypeObjects::Source::FILE,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+        });
 }
 #endif
 

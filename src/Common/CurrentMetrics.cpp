@@ -62,6 +62,10 @@
     M(ReaderExecutorActive, "Number of live ReaderExecutor instances.") \
     M(ReaderExecutorChainedBufferBytes, "Bytes currently held in live ReaderExecutor chain buffers (OwnedChainedBuffer) -- live in-flight read memory, not a cumulative total.") \
     M(ReaderExecutorLongConnections, "Number of long source connections currently held open by ReaderExecutor for sequential read optimization.") \
+    M(LanceQueuedBatches, "Number of Arrow batches currently reported in bounded Lance producer queues.") \
+    M(LanceQueuedBytes, "Estimated Arrow bytes currently reported in bounded Lance producer queues.") \
+    M(LanceInFlightBatches, "Number of Lance Arrow batches currently owned by ClickHouse consumers.") \
+    M(LanceInFlightBytes, "Estimated Arrow bytes currently owned by ClickHouse consumers.") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
     M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \

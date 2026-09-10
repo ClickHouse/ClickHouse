@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
@@ -82,6 +83,12 @@ template <StorageConfiguration BaseStorageConfiguration, typename DataLakeMetada
 class DataLakeConfiguration : public BaseStorageConfiguration, public std::enable_shared_from_this<StorageObjectStorageConfiguration>
 {
 public:
+#if USE_AVRO
+    static constexpr bool SUPPORTS_PREWHERE = std::is_same_v<DataLakeMetadata, IcebergMetadata>;
+#else
+    static constexpr bool SUPPORTS_PREWHERE = false;
+#endif
+
     explicit DataLakeConfiguration(DataLakeStorageSettingsPtr settings_) : settings(settings_) {}
 
     bool isDataLakeConfiguration() const override { return true; }
@@ -258,6 +265,59 @@ public:
         return getMetadata()->getSchemaTransformer(local_context, object_info);
     }
 
+    std::optional<Pipe> read(
+        ObjectInfoPtr object_info,
+        const ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context,
+        size_t max_block_size,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        FormatFilterInfoPtr format_filter_info,
+        bool need_only_count,
+        std::optional<size_t> limit) const override
+    {
+        return getMetadata()->read(
+            object_info,
+            read_from_format_info,
+            format_settings,
+            local_context,
+            max_block_size,
+            parser_shared_resources,
+            format_filter_info,
+            need_only_count,
+            limit);
+    }
+
+    std::optional<Pipe> readDataset(
+        const StorageSnapshotPtr & storage_snapshot,
+        const ReadFromFormatInfo & read_from_format_info,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context,
+        size_t max_block_size,
+        size_t num_streams,
+        FormatFilterInfoPtr format_filter_info,
+        bool need_only_count,
+        std::optional<size_t> limit,
+        bool distributed_processing) const override
+    {
+        return getMetadata()->readDataset(
+            storage_snapshot,
+            read_from_format_info,
+            format_settings,
+            local_context,
+            max_block_size,
+            num_streams,
+            std::move(format_filter_info),
+            need_only_count,
+            limit,
+            distributed_processing);
+    }
+
+    std::optional<size_t> getMaxCustomReadThreads(bool distributed_processing) const override
+    {
+        return getMetadata()->getMaxCustomReadThreads(distributed_processing);
+    }
+
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override
     {
         return getMetadata()->getTableStateSnapshot(context);
@@ -279,6 +339,11 @@ public:
     bool shouldReloadSchemaForConsistency(ContextPtr context) const override
     {
         return getMetadata()->shouldReloadSchemaForConsistency(context);
+    }
+
+    bool supportsDistributedReadWithExplicitSchema() const override
+    {
+        return getMetadata()->supportsDistributedReadWithExplicitSchema();
     }
 
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata() override
@@ -407,11 +472,7 @@ public:
 
     bool supportsPrewhere() const override
     {
-#if USE_AVRO
-        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
-#else
-        return false;
-#endif
+        return SUPPORTS_PREWHERE;
     }
 
     bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
@@ -522,6 +583,13 @@ using StorageAzureDeltaLakeConfiguration = DataLakeConfiguration<StorageAzureCon
 
 using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
 
+#endif
+
+#if USE_LANCE
+using StorageLocalLanceConfiguration = DataLakeConfiguration<StorageLocalConfiguration, LanceMetadata>;
+#if USE_AWS_S3
+using StorageS3LanceConfiguration = DataLakeConfiguration<StorageS3Configuration, LanceMetadata>;
+#endif
 #endif
 
 #if USE_AWS_S3
