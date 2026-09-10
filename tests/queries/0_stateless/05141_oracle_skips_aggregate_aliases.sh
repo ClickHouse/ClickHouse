@@ -2,7 +2,7 @@
 # Tags: no-fasttest, no-parallel
 # no-fasttest: SET ast_fuzzer_runs / ast_fuzzer_oracle are EXPERIMENTAL-tier settings and
 #              are not allowed when `allow_feature_tier=0` (the Fast test default).
-# no-parallel: the proof event `ASTFuzzerOracleChecks` is server-global, and the assertions
+# Tag no-parallel: the proof event `ASTFuzzerOracleChecks` is server-global, and the assertions
 #              below require it to stay put, so no other test may run oracle checks against
 #              the same server meanwhile.
 #
