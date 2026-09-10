@@ -341,14 +341,55 @@ std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context,
     const ColumnNodePtrWithHashSet & correlated_columns_set,
-    bool use_column_identifier_as_action_node_name)
+    bool use_column_identifier_as_action_node_name,
+    bool can_rewrite_in_to_join)
 {
     ActionsDAG action_dag(input_columns);
-    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set, use_column_identifier_as_action_node_name);
+
+    /// The rewrite of `IN` to a join may only use the columns this expression reads.
+    NameSet columns_for_in_to_join;
+    if (can_rewrite_in_to_join)
+        for (const auto & column : input_columns)
+            columns_for_in_to_join.insert(column.name);
+
+    PlannerActionsVisitor actions_visitor(
+        planner_context, correlated_columns_set, use_column_identifier_as_action_node_name, std::move(columns_for_in_to_join));
     auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(action_dag, expression_node);
     action_dag.getOutputs() = std::move(expression_dag_index_nodes);
 
     return std::make_pair(std::move(action_dag), std::move(correlated_subtrees));
+}
+
+void collectExpressionColumns(
+    const QueryTreeNodePtr & expression_node, const PlannerContext & planner_context, ColumnNodePtrWithHashSet & result)
+{
+    if (auto column_node = std::dynamic_pointer_cast<ColumnNode>(expression_node))
+    {
+        if (planner_context.getColumnNodeIdentifierOrNull(expression_node))
+            result.insert(std::move(column_node));
+        return;
+    }
+
+    auto node_type = expression_node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return;
+
+    for (const auto & child : expression_node->getChildren())
+        if (child)
+            collectExpressionColumns(child, planner_context, result);
+}
+
+bool containsSubquery(const QueryTreeNodePtr & expression_node)
+{
+    auto node_type = expression_node->getNodeType();
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return true;
+
+    for (const auto & child : expression_node->getChildren())
+        if (child && containsSubquery(child))
+            return true;
+
+    return false;
 }
 
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full)

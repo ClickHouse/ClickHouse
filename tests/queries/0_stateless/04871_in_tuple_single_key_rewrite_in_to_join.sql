@@ -60,5 +60,5 @@ SELECT count() FROM numbers(1) WHERE materialize(CAST(NULL, 'Nullable(UInt8)')) 
 SET allow_experimental_correlated_subqueries = 0;
 SELECT count() FROM numbers(1) WHERE concat('0', toString(number + 1)) IN (SELECT toUInt8(1));
 SELECT count() FROM numbers(1) WHERE (1, number) IN (SELECT CAST((1, 0), 'Tuple(UInt8, UInt64)'));
--- A shape that is actually rewritten still requires the setting.
-SELECT count() FROM numbers(1) WHERE number IN (SELECT number FROM numbers(3)); -- { serverError SUPPORT_IS_DISABLED }
+-- A shape that would otherwise be rewritten rejects the rewrite and uses the regular `IN` path.
+SELECT count() FROM numbers(1) WHERE number IN (SELECT number FROM numbers(3));

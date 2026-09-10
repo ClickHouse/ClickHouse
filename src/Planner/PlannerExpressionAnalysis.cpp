@@ -61,7 +61,13 @@ std::optional<FilterAnalysisResult> analyzeFilter(
 {
     FilterAnalysisResult result;
 
-    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(filter_expression_node, input_columns, planner_context, correlated_columns_set);
+    auto [filter_expression_dag, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+        filter_expression_node,
+        input_columns,
+        planner_context,
+        correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/true,
+        /*can_rewrite_in_to_join=*/true);
 
     result.filter_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     result.filter_actions->dag = std::move(filter_expression_dag);
@@ -460,7 +466,9 @@ ProjectionAnalysisResult analyzeProjection(
         query_node.getProjectionNode(),
         input_columns,
         planner_context,
-        correlated_columns_set);
+        correlated_columns_set,
+        /*use_column_identifier_as_action_node_name=*/true,
+        /*can_rewrite_in_to_join=*/true);
 
     auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     projection_actions->dag = std::move(projection_actions_dag);

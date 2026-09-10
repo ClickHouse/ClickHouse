@@ -9,6 +9,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
 #include <Analyzer/SortNode.h>
@@ -16,9 +17,13 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/hasNullable.h>
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
@@ -51,6 +56,8 @@ namespace Setting
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
     extern const SettingsBool format_display_secrets_in_show_and_select;
+    extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsBool allow_experimental_correlated_subqueries;
 }
 
 namespace ErrorCodes
@@ -705,7 +712,8 @@ public:
         ActionsDAG & actions_dag,
         const PlannerContextPtr & planner_context_,
         const ColumnNodePtrWithHashSet & correlated_columns_set_,
-        bool use_column_identifier_as_action_node_name_);
+        bool use_column_identifier_as_action_node_name_,
+        const NameSet & columns_for_in_to_join_);
 
     std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> visit(QueryTreeNodePtr expression_node);
 
@@ -762,6 +770,10 @@ private:
 
     NodeNameAndNodeMinLevel visitExistsFunction(const QueryTreeNodePtr & node);
 
+    bool canRewriteInFunctionToJoin(const QueryTreeNodePtr & node) const;
+
+    NodeNameAndNodeMinLevel visitInFunctionForJoinRewrite(const QueryTreeNodePtr & node);
+
     NodeNameAndNodeMinLevel visitFunction(const QueryTreeNodePtr & node);
 
     NodeNameAndNodeMinLevel visitQuery(const QueryTreeNodePtr & node);
@@ -773,18 +785,21 @@ private:
     const ColumnNodePtrWithHashSet & correlated_columns_set;
     ActionNodeNameHelper action_node_name_helper;
     bool use_column_identifier_as_action_node_name;
+    const NameSet & columns_for_in_to_join;
 };
 
 PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
     ActionsDAG & actions_dag,
     const PlannerContextPtr & planner_context_,
     const ColumnNodePtrWithHashSet & correlated_columns_set_,
-    bool use_column_identifier_as_action_node_name_
+    bool use_column_identifier_as_action_node_name_,
+    const NameSet & columns_for_in_to_join_
 )
     : planner_context(planner_context_)
     , correlated_columns_set(correlated_columns_set_)
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
+    , columns_for_in_to_join(columns_for_in_to_join_)
 {
     actions_stack.emplace_back(actions_dag, nullptr);
 }
@@ -1251,6 +1266,144 @@ void markFoldedSecretConstants(const FunctionNode & function_node, const Actions
         mark(index);
 }
 
+/// Whether the key may be joined on: every column it reads has to be one of this query's, readable
+/// from the step below, and not correlated with a query further out.
+bool canJoinOnKey(
+    const QueryTreeNodePtr & key,
+    const ColumnNodePtrWithHashSet & enclosing_correlated_columns,
+    const NameSet & columns_for_in_to_join,
+    const PlannerContext & planner_context)
+{
+    /// A subquery in the key is not supported.
+    if (containsSubquery(key))
+        return false;
+
+    ColumnNodePtrWithHashSet key_columns;
+    collectExpressionColumns(key, planner_context, key_columns);
+
+    for (const auto & key_column : key_columns)
+    {
+        if (enclosing_correlated_columns.contains(key_column.node))
+            return false;
+
+        /// The join is inserted below the step this expression belongs to, so the key has to be among
+        /// the columns that step reads. After GROUP BY that holds only for a grouping key.
+        if (!columns_for_in_to_join.contains(planner_context.getColumnNodeIdentifierOrThrow(key_column.node)))
+            return false;
+    }
+
+    return !key_columns.empty();
+}
+
+NamesAndTypes getInSubqueryColumns(const QueryTreeNodePtr & rhs)
+{
+    const auto * query_node = rhs->as<QueryNode>();
+    if (query_node)
+        return query_node->isCorrelated() ? NamesAndTypes{} : query_node->getProjectionColumns();
+
+    const auto * union_node = rhs->as<UnionNode>();
+    if (union_node)
+        return union_node->isCorrelated() ? NamesAndTypes{} : union_node->computeProjectionColumns();
+
+    return {};
+}
+
+/// Whether `equals` compares one set key the way regular `IN` does.
+bool isSetKeyComparableWithEquals(const DataTypePtr & lhs_type, const DataTypePtr & rhs_type)
+{
+    auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
+    auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
+
+    if (typeid_cast<const DataTypeTuple *>(lhs_base.get()) || lhs_base->hasDynamicStructure() || isVariant(lhs_base))
+        return false;
+
+    if (lhs_base->equals(*rhs_base))
+        return true;
+
+    return isNativeNumber(lhs_base) && isNativeNumber(rhs_base)
+        && tryGetLeastSupertype(DataTypes{lhs_base, rhs_base}) != nullptr;
+}
+
+bool PlannerActionsVisitorImpl::canRewriteInFunctionToJoin(const QueryTreeNodePtr & node) const
+{
+    const auto & function_node = node->as<FunctionNode &>();
+    if (function_node.getFunctionName() != "in" && function_node.getFunctionName() != "notIn")
+        return false;
+
+    /// Inside a lambda the left argument is a lambda-local, which the outer plan header does not have.
+    if (columns_for_in_to_join.empty() || actions_stack.size() != 1)
+        return false;
+
+    /// The join is produced by the decorrelation pass, skip the rewrite when decorrelation is disbaled.
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    if (!settings[Setting::rewrite_in_to_join] ||
+        !settings[Setting::allow_experimental_correlated_subqueries])
+        return false;
+
+    const auto & arguments = function_node.getArguments().getNodes();
+    if (arguments.size() != 2)
+        return false;
+
+    auto subquery_columns = getInSubqueryColumns(arguments[1]);
+    if (subquery_columns.empty())
+        return false;
+
+    const auto & left_key = arguments[0];
+    auto left_type = left_key->getResultType();
+
+    /// A `NULL` key makes regular `IN` and `NOT IN` both return `NULL`, so the row is filtered
+    /// out, while the equivalent join produces a `false` marker and `NOT IN` would keep the row.
+    if (hasTypeThatCanContainNulls(left_type))
+        return false;
+
+    DataTypes left_key_types;
+    if (subquery_columns.size() == 1)
+        left_key_types = {left_type};
+    else if (const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(removeLowCardinality(left_type).get()))
+        left_key_types = left_tuple_type->getElements();
+
+    if (left_key_types.size() != subquery_columns.size())
+        return false;
+
+    for (size_t i = 0; i < left_key_types.size(); ++i)
+        if (!isSetKeyComparableWithEquals(left_key_types[i], subquery_columns[i].type))
+            return false;
+
+    return canJoinOnKey(left_key, correlated_columns_set, columns_for_in_to_join, *planner_context);
+}
+
+PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitInFunctionForJoinRewrite(const QueryTreeNodePtr & node)
+{
+    const auto & function_node = node->as<FunctionNode &>();
+    const auto & arguments = function_node.getArguments().getNodes();
+
+    auto marker_name = action_node_name_helper.calculateActionNodeName(node);
+    for (auto & scope : actions_stack)
+        scope.addInputColumnIfNecessary(marker_name, function_node.getResultType());
+
+    for (const auto & existing : correlated_subtrees.subqueries)
+        if (existing.action_node_name == marker_name)
+            return {marker_name, Levels(0)};
+
+    /// The columns the key reads become the PLACEHOLDER nodes of the fragment the builder makes.
+    ColumnNodePtrWithHashSet left_key_columns;
+    collectExpressionColumns(arguments[0], *planner_context, left_key_columns);
+
+    ColumnIdentifiers correlated_column_identifiers;
+    correlated_column_identifiers.reserve(left_key_columns.size());
+    for (const auto & key_column : left_key_columns)
+        correlated_column_identifiers.push_back(planner_context->getColumnNodeIdentifierOrThrow(key_column.node));
+
+    correlated_subtrees.subqueries.emplace_back(
+        arguments[1],
+        marker_name,
+        std::move(correlated_column_identifiers),
+        arguments[0],
+        function_node.getFunctionName() == "notIn");
+
+    return {marker_name, Levels(0)};
+}
+
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
@@ -1259,6 +1412,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         return visitIndexHintFunction(node);
     if (function_node.getFunctionName() == "exists")
         return visitExistsFunction(node);
+    if (canRewriteInFunctionToJoin(node))
+        return visitInFunctionForJoinRewrite(node);
 
     auto function_node_name = action_node_name_helper.calculateActionNodeName(node);
 
@@ -1448,10 +1603,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitor::PlannerActionsVisitor(
     const PlannerContextPtr & planner_context_,
     const ColumnNodePtrWithHashSet & correlated_columns_set_,
-    bool use_column_identifier_as_action_node_name_)
+    bool use_column_identifier_as_action_node_name_,
+    NameSet columns_for_in_to_join_)
     : planner_context(planner_context_)
     , correlated_columns_set(correlated_columns_set_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
+    , columns_for_in_to_join(std::move(columns_for_in_to_join_))
 {}
 
 std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
@@ -1460,7 +1617,8 @@ std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisito
         actions_dag,
         planner_context,
         correlated_columns_set,
-        use_column_identifier_as_action_node_name);
+        use_column_identifier_as_action_node_name,
+        columns_for_in_to_join);
     return actions_visitor_impl.visit(expression_node);
 }
 
