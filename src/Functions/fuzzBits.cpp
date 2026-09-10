@@ -63,8 +63,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    /// No default implementation for constants: it would fuzz a single row and stamp the one result
-    /// onto every row, while the whole point of the function is an independent perturbation per row.
+    /// `useDefaultImplementationForConstants` is deliberately not enabled: it would execute the
+    /// function on a single row and stamp that one fuzzed value onto every row of the result.
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; } // indexing from 0
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -96,8 +96,7 @@ public:
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of function {} must be from `0.0` to `1.0`", getName());
         }
 
-        /// Materialize a constant input: the code below fuzzes a whole column of `input_rows_count`
-        /// values in one pass, so it needs that many source values to read.
+        /// Expanded, not unwrapped to its single row: each row is fuzzed independently.
         col_in_untyped = col_in_untyped->convertToFullColumnIfConst();
 
         if (const ColumnString * col_in = checkAndGetColumn<ColumnString>(col_in_untyped.get()))

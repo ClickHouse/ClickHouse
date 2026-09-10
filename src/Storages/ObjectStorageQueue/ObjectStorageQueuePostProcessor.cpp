@@ -466,7 +466,6 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             dst_client,
                             connection_params.getContainer(),
                             /* src_blob */ object_from.remote_path,
-                            /* src_offset */ 0,
                             blob_size,
                             move_container,
                             /* dest_blob */ object_to.remote_path,
