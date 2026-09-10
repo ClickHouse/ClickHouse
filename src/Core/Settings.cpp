@@ -137,6 +137,7 @@ Supported values:
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
+- `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `allow_experimental_trino_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -779,6 +780,19 @@ to avoid interpreting '?' as a wildcard.
 )", 0) \
     DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
 Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
+)", 0) \
+    DECLARE(String, s3_upload_checksum_algorithm, "", R"(
+The checksum algorithm used when ClickHouse uploads data to `S3`. `CRC32` and `SHA256` are sent as flexible `x-amz-checksum-*` headers, while `MD5` is sent as a `Content-MD5` header.
+
+By default the value is empty and ClickHouse lets the AWS SDK compute `Content-MD5`. In FIPS mode `MD5` is unavailable, so the SDK silently omits it and the upload carries no checksum at all: set `CRC32` or `SHA256` to attach a flexible checksum instead. Where this setting applies, an explicit `MD5` is then rejected.
+
+For non-`S3Express` buckets, `s3_disable_checksum` suppresses this setting. It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk.
+
+`S3Express` buckets require a flexible checksum and do not accept `Content-MD5`: an explicit `CRC32` or `SHA256` is honored, an empty value uses `CRC32`, and an explicit `MD5` is rejected.
+
+`GCS` endpoints (`storage.googleapis.com`) ignore this setting entirely and keep the SDK's `Content-MD5` behavior, because `GCS` rejects `SigV4`-signed requests carrying the AWS `x-amz-checksum-*` headers.
+
+Server-side copies ignore this setting.
 )", 0) \
     DECLARE(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
 Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP read or write call blocks for this long.
@@ -7554,6 +7568,8 @@ SETTINGS additional_table_filters = {'table_1': 'x != 2'}
 │ 4 │ dddd │
 └───┴──────┘
 ```
+
+Filters keyed on a table read through a view with `SQL SECURITY DEFINER` or `NONE` are not applied inside the view.
 )", 0) \
     DECLARE(String, additional_result_filter, "", R"(
 An additional filter expression to apply to the result of `SELECT` query.
@@ -8196,6 +8212,9 @@ Default partition strategy for file like engines. Applied only to `CREATE` queri
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
 )", 0) \
+    DECLARE(Bool, use_iceberg_manifest_list_partition_pruning, true, R"(
+Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
+)", 0) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
@@ -8270,6 +8289,8 @@ Simple expressions using primary keys are preferred.
 
 If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
 Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
+
+The expression is checked against the column-level `SELECT` grants of the user. For a view with `SQL SECURITY DEFINER` or `NONE` it is applied to the columns of the view; the body of the view is read without it.
 )", BETA) \
     DECLARE(UInt64, parallel_replicas_custom_key_range_lower, 0, R"(
 Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
@@ -9020,6 +9041,8 @@ Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `star
 required to use the text index LIKE evaluation by the dictionary scan.
 Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
 
+With the `array` tokenizer, where any pattern qualifies, the threshold is compared against the number of non-wildcard characters in the whole pattern.
+
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
@@ -9105,6 +9128,19 @@ SET dialect = 'clickhouse_json';
 )", EXPERIMENTAL) \
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_trino_dialect, false, R"(
+Enable the `trino` value of the `dialect` setting.
+
+When `dialect` is set to `trino`, queries are written in Trino SQL: Trino-specific
+syntax (`ARRAY[...]` literals, `TRY_CAST`, `UNNEST`, `ROW` types, `OFFSET` before `LIMIT`)
+is translated to ClickHouse SQL, and Trino function names are mapped to their
+ClickHouse equivalents. The `SET` query is still parsed as plain SQL so that the
+dialect can be switched back.
+
+The dialect also aligns the query semantics with Trino: `join_use_nulls` is turned
+on, `use_variant_as_common_type` is turned off, and the query analyzer is turned on.
+An explicit `SETTINGS` clause in the query still takes precedence.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
@@ -9217,34 +9253,34 @@ Takes effect only together with `enable_cascades_optimizer = 1` and `make_distri
 )", BETA) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
-)", BETA) \
+)", 0) \
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
 Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
 Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
 Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, R"(
 If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, R"(
 Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
 If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
 If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
     DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
 Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
