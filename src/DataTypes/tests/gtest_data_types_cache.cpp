@@ -5,6 +5,8 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/setThreadName.h>
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -212,6 +214,78 @@ TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
             }
         }
     }
+}
+
+TEST(DataTypesCache, JSONParsingReleasesContextOnDetach)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+    auto type = DataTypeFactory::instance().get("JSON(d DateTime)");
+    auto serialization = type->getDefaultSerialization();
+    FormatSettings settings;
+
+    for (const auto * session_timezone : {"UTC", "Asia/Tokyo"})
+    {
+        auto context = makeQueryContext("json_context_lifetime", session_timezone);
+        std::weak_ptr<const Context> weak_context = context;
+        {
+            auto scope = QueryScope::create(context);
+            auto column = type->createColumn();
+            ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
+            serialization->deserializeWholeText(*column, input, settings);
+            context.reset();
+            EXPECT_FALSE(weak_context.expired());
+        }
+        EXPECT_TRUE(weak_context.expired());
+    }
+}
+
+TEST(DataTypesCache, JSONParsingFollowsNestedThreadGroups)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+    auto outer_context = makeQueryContext("json_outer_context", "UTC");
+    auto scope = QueryScope::create(outer_context);
+    auto type = DataTypeFactory::instance().get("JSON(d DateTime)");
+    auto serialization = type->getDefaultSerialization();
+    FormatSettings settings;
+    auto parse_timestamp = [&]
+    {
+        auto column = type->createColumn();
+        ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
+        serialization->deserializeWholeText(*column, input, settings);
+        return type->getSubcolumn("d", column->getPtr())->getUInt(0);
+    };
+
+    EXPECT_EQ(parse_timestamp(), 1704110400);
+    {
+        auto inner_context = makeQueryContext("json_inner_context", "Asia/Tokyo");
+        auto group = ThreadGroup::createForFlushAsyncInsertQueue(inner_context, CurrentThread::getGroup());
+        ThreadGroupSwitcher switcher(group, ThreadName::UNKNOWN, true);
+        EXPECT_EQ(parse_timestamp(), 1704078000);
+    }
+    EXPECT_EQ(parse_timestamp(), 1704110400);
+}
+
+TEST(DataTypesCache, JSONParsingAfterQueryContextExpires)
+{
+    ResetCurrentThreadGuard reset_current_thread;
+    ThreadStatus thread_status;
+    auto type = DataTypeFactory::instance().get("JSON(d DateTime)");
+    auto serialization = type->getDefaultSerialization();
+    FormatSettings settings;
+    auto context = makeQueryContext("json_expired_context", "Asia/Tokyo");
+    auto scope = QueryScope::create(context);
+    std::weak_ptr<const Context> weak_context = context;
+    context.reset();
+    ASSERT_TRUE(weak_context.expired());
+    EXPECT_EQ(CurrentThread::retainQueryContext(), nullptr);
+
+    auto column = type->createColumn();
+    ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
+    serialization->deserializeWholeText(*column, input, settings);
+    EXPECT_EQ(type->getSubcolumn("d", column->getPtr())->getUInt(0),
+        DateLUT::serverTimezoneInstance().makeDateTime(2024, 1, 1, 12, 0, 0));
 }
 
 TEST(DataTypesCache, PooledJSONParsingIgnoresMetadataTimezone)

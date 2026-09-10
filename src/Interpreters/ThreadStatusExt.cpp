@@ -425,6 +425,8 @@ void ThreadStatus::detachFromGroup()
     if (!thread_group)
         return;
 
+    /// Release the retained context after cleanup and after restoring memory-tracker exception handling.
+    auto context_to_release = std::move(retained_query_context);
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     /// flush untracked memory before resetting memory_tracker parent

@@ -14,6 +14,7 @@
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
 
+#include <array>
 #include <future>
 #include <gtest/gtest.h>
 
@@ -170,6 +171,27 @@ TEST(SerializationJSON, ParsingSettingsOwnResources)
     EXPECT_FALSE(weak_serialization.expired());
     settings.reset();
     EXPECT_TRUE(weak_serialization.expired());
+}
+
+TEST(SerializationJSON, AlternatingParsingSettingsLifetimes)
+{
+    ASSERT_NE(getContext().context, nullptr);
+    auto type = DataTypeFactory::instance().get("JSON(x UInt64)");
+    auto serialization = type->getDefaultSerialization();
+    for (size_t iteration = 0; iteration < 10; ++iteration)
+    {
+        std::array<FormatSettings, 2> settings;
+        for (size_t row = 0; row < 3; ++row)
+        {
+            for (const auto & current_settings : settings)
+            {
+                auto column = type->createColumn();
+                ReadBufferFromString input(std::string_view(R"({"x":42})"));
+                serialization->deserializeWholeText(*column, input, current_settings);
+                EXPECT_EQ(type->getSubcolumn("x", column->getPtr())->getUInt(0), 42);
+            }
+        }
+    }
 }
 
 TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)

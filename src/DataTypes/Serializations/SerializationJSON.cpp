@@ -1,5 +1,6 @@
 #include <algorithm>
-#include <array>
+#include <unordered_map>
+#include <Poco/Mutex.h>
 #include <base/getThreadId.h>
 #include <Common/CacheLine.h>
 #include <Common/SipHash.h>
@@ -142,20 +143,43 @@ struct JSONParsingPools
             return std::string_view(lhs.session_timezone) < std::string_view(rhs.session_timezone);
         }
     };
+    /// Exact thread IDs give each OS thread a private shard. Parsing must not suspend between acquisition and lease return.
+    /// Restore real pool mutexes if parsing can yield or shards become shared between threads.
     struct alignas(CH_CACHE_LINE_SIZE) Shard
     {
 #if USE_SIMDJSON
-        ObjectPoolMap<JSONParserState<SimdJSONParser>, Key, Compare> simdjson;
+        ObjectPoolMap<JSONParserState<SimdJSONParser>, Key, Compare, Poco::NullMutex> simdjson;
 #endif
 #if USE_RAPIDJSON
-        ObjectPoolMap<JSONParserState<RapidJSONParser>, Key, Compare> rapidjson;
+        ObjectPoolMap<JSONParserState<RapidJSONParser>, Key, Compare, Poco::NullMutex> rapidjson;
 #else
-        ObjectPoolMap<JSONParserState<DummyJSONParser>, Key, Compare> dummy;
+        ObjectPoolMap<JSONParserState<DummyJSONParser>, Key, Compare, Poco::NullMutex> dummy;
 #endif
     };
 
-    /// Spread concurrent parses across pools instead of locking one container on every row.
-    std::array<Shard, 64> shards;
+    std::mutex mutex;
+    /// Shards are never erased while these pools are alive.
+    std::unordered_map<UInt64, std::unique_ptr<Shard>> shards;
+
+    static Shard & getShard(const std::shared_ptr<JSONParsingState> & holder)
+    {
+        /// The caller owns the holder; matching owners keep the cached pointer valid without extending its lifetime.
+        static thread_local std::weak_ptr<JSONParsingState> cached_holder;
+        static thread_local Shard * cached_shard = nullptr;
+        if (cached_holder.owner_before(holder) || holder.owner_before(cached_holder))
+        {
+            std::call_once(holder->initialization_flag, [&] { holder->pools = std::make_shared<JSONParsingPools>(); });
+            auto & pools = holder->pools;
+            std::lock_guard lock(pools->mutex);
+            auto & shard = pools->shards[getThreadId()];
+            if (!shard)
+                shard = std::make_unique<Shard>();
+            cached_shard = shard.get();
+            cached_holder = holder;
+        }
+        chassert(cached_shard);
+        return *cached_shard;
+    }
 };
 
 namespace Setting
@@ -399,20 +423,22 @@ void SerializationJSON::serializeTextImpl(const IColumn & column, size_t row_num
 void SerializationJSON::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
     /// Resolve the context once for both the parser backend and the effective timezone.
-    auto context = CurrentThread::tryGetQueryContext();
+    const auto * context = CurrentThread::retainQueryContext();
+    ContextPtr global_context;
     if (!context)
-        context = Context::getGlobalContextInstance();
+    {
+        global_context = Context::getGlobalContextInstance();
+        context = global_context.get();
+    }
     std::string_view session_timezone_name;
     if (context)
         session_timezone_name = context->getSettingsRef()[Setting::session_timezone].value;
     if (session_timezone_name.empty())
         session_timezone_name = DateLUT::serverTimezoneInstance().getTimeZone();
 
-    auto & holder = *settings.json_parsing_state;
-    std::call_once(holder.initialization_flag, [&] { holder.pools = std::make_shared<JSONParsingPools>(); });
-    auto & shard = holder.pools->shards[getThreadId() % holder.pools->shards.size()];
+    auto & shard = JSONParsingPools::getShard(settings.json_parsing_state);
     JSONParsingPools::Lookup key{this, session_timezone_name};
-    auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingPools::Key, JSONParsingPools::Compare> & pool)
+    auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingPools::Key, JSONParsingPools::Compare, Poco::NullMutex> & pool)
     {
         auto lease = pool.get(key, [&]
         {

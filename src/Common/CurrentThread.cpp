@@ -114,6 +114,13 @@ ContextPtr CurrentThread::tryGetQueryContext()
     return current_thread->tryGetQueryContext();
 }
 
+const Context * CurrentThread::retainQueryContext()
+{
+    if (unlikely(!current_thread))
+        return nullptr;
+    return current_thread->retainQueryContext();
+}
+
 void CurrentThread::checkIfNotCancelled()
 {
     if (unlikely(!current_thread))
