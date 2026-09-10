@@ -48,6 +48,7 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break  # stdin closed -> exit
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         path = stdin.read(path_length).decode("utf-8")
@@ -62,6 +63,7 @@ def main():
 
         # Well inside the region size the server still has: only comparing the file against that
         # size can catch this.
+        write_varint(stdout, request_id)
         write_varint(stdout, STATUS_OK)
         write_varint(stdout, 0)
         write_varint(stdout, 2)

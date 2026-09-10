@@ -189,6 +189,13 @@ def test_cpu_user_microseconds_survives_a_discarded_worker(started_cluster):
     cpu = _failed_query_profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
     assert cpu > 0, f"Expected UserTimeMicroseconds > 0 for a discarded worker, got {cpu}"
 
+    # Peak memory is the other half of the same invariant, and it is lost earlier than CPU: a zombie
+    # still has readable `stat`, so CPU only disappears at the reap, while `VmHWM` goes the moment
+    # the process exits. Asserting only CPU would leave a regression that reports zero peak memory
+    # on failing borrows perfectly green, since peak is otherwise only checked on successful ones.
+    peak = _failed_query_profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
+    assert peak > 0, f"Expected PeakMemoryByteSeconds > 0 for a discarded worker, got {peak}"
+
 
 def test_system_time_microseconds(started_cluster):
     _skip_msan()

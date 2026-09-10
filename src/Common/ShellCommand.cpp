@@ -379,6 +379,10 @@ struct ShellCommand::tryWaitResult
 {
     bool is_process_terminated = false;
     int retcode = -1;
+
+    /// The raw `waitpid` status, kept so a caller that asked not to have it decoded here can decode
+    /// it later - after it has read whatever the child left in its pipes.
+    int raw_status = 0;
 };
 
 int ShellCommand::tryWait()
@@ -386,7 +390,7 @@ int ShellCommand::tryWait()
     return tryWaitImpl(true).retcode;
 }
 
-ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_exit_status)
+ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_exit_status, bool close_streams)
 {
     LOG_TRACE(getLogger(), "Will wait for shell command pid {}", pid);
 
@@ -437,15 +441,12 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
     LOG_TRACE(getLogger(), "Wait for shell command pid {} completed with status {}", pid, status);
 
     result.is_process_terminated = true;
-    in.close();
-    out.close();
-    err.close();
+    result.raw_status = status;
 
-    for (auto & [_, fd] : write_fds)
-        fd.close();
-
-    for (auto & [_, fd] : read_fds)
-        fd.close();
+    /// Deliberately optional: see the declaration. A caller that still has to read what the child
+    /// left in its pipes closes them itself, afterwards.
+    if (close_streams)
+        closeStreams();
 
     /// When `check_exit_status` is false the caller only wants the reaped `rusage`;
     /// skip decoding/validating the status so a non-zero or signalled child is not
@@ -457,6 +458,24 @@ ShellCommand::tryWaitResult ShellCommand::tryWaitImpl(bool blocking, bool check_
     {
         result.retcode = WEXITSTATUS(status);
         return result;
+    }
+
+    if (WIFSIGNALED(status))
+        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was terminated by signal {}", toString(WTERMSIG(status)));
+
+    if (WIFSTOPPED(status))
+        throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was stopped by signal {}", toString(WSTOPSIG(status)));
+
+    throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was not exited normally by unknown reason");
+}
+
+
+void ShellCommand::handleProcessStatus(int status) const
+{
+    if (WIFEXITED(status))
+    {
+        handleProcessRetcode(WEXITSTATUS(status));
+        return;
     }
 
     if (WIFSIGNALED(status))
@@ -504,6 +523,20 @@ bool ShellCommand::waitIfProccesTerminated()
 }
 
 
+void ShellCommand::closeStreams()
+{
+    in.close();
+    out.close();
+    err.close();
+
+    for (auto & [_, fd] : write_fds)
+        fd.close();
+
+    for (auto & [_, fd] : read_fds)
+        fd.close();
+}
+
+
 bool ShellCommand::tryWaitWithoutStatusCheck()
 {
     /// A child that closed stdout but has only just called `_exit` is not yet a
@@ -530,52 +563,25 @@ bool ShellCommand::tryWaitWithoutStatusCheck()
 }
 
 
-bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check_exit_status)
+void ShellCommand::drainOutputPipes(int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms) const
 {
-    /// A child that writes past what the protocol asked of it fills the pipe and blocks in `write`.
-    /// Nothing reads that pipe any more by the time this is called, so the only way the child ever
-    /// reaches its own exit is if the bytes keep being taken off the pipe here and thrown away.
     static constexpr UInt64 poll_step_ms = 5;
     char discard_buffer[4096];
 
-    /// The descriptors still worth draining, in the order they are polled. One that has hung up or
-    /// reached EOF is dropped out of the set (-1, which `poll` ignores): `poll` reports a hung-up
-    /// descriptor immediately and forever, so a child that closed its own output and then lingered
-    /// would otherwise spin a core here for the whole termination budget.
-    int drain_fds[2] = {out.getFD(), err.getFD()};
+    const UInt64 deadline_ns = clock_gettime_ns() + budget_ms * 1000000ULL;
 
-    while (true)
+    while (drain_fds[0] >= 0 || drain_fds[1] >= 0)
     {
-        /// The reap comes first on every turn: once the child is gone there is nothing left to
-        /// drain for, and whatever it left in the pipes is not worth waiting for.
-        auto proc_status = tryWaitImpl(/*blocking=*/ false, check_exit_status);
-        if (proc_status.is_process_terminated)
-        {
-            if (check_exit_status)
-                handleProcessRetcode(proc_status.retcode);
-            return true;
-        }
+        const UInt64 now_ns = clock_gettime_ns();
+        if (now_ns >= deadline_ns)
+            return;
 
-        const UInt64 remaining_ms = remainingTerminationTimeoutMs();
-        if (remaining_ms == 0)
-            return false;
-
-        /// Capped so that a child which simply stops writing is still reaped promptly: a pipe that
-        /// goes quiet reports nothing until its write end is closed, so the loop must come back to
-        /// the `waitpid` above on its own.
-        const UInt64 step_ms = std::min(remaining_ms, poll_step_ms);
-
-        if (drain_fds[0] < 0 && drain_fds[1] < 0)
-        {
-            /// Nothing left to drain, only a child that has not exited yet. Wait out the rest of
-            /// the budget in the same steps rather than polling an empty set in a tight loop.
-            sleepForMilliseconds(step_ms);
-            continue;
-        }
+        const UInt64 step_ms = std::min<UInt64>(poll_step_ms, (deadline_ns - now_ns) / 1000000ULL + 1);
 
         pollfd pfds[2]{};
         for (size_t i = 0; i < 2; ++i)
         {
+            /// `poll` ignores a negative descriptor and leaves its `revents` zero.
             pfds[i].fd = drain_fds[i];
             pfds[i].events = POLLIN;
         }
@@ -586,11 +592,12 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
             if (errno == EINTR)
                 continue;
 
-            /// The pipes cannot be drained, so this child may never exit. Fail closed rather than
-            /// spin: the destructor closes the pipes and signals it.
             LOG_WARNING(getLogger(), "Cannot poll the pipes of shell command pid {}, error: '{}'", pid, errnoToString());
-            return false;
+            return;
         }
+
+        if (num_events == 0)
+            continue;
 
         for (size_t i = 0; i < 2; ++i)
         {
@@ -633,6 +640,82 @@ bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check
     }
 }
 
+
+void ShellCommand::drainPendingOutput(const StderrSink & stderr_sink, UInt64 budget_ms) const
+{
+    if (wait_called)
+        return;
+
+    int drain_fds[2] = {out.getFD(), err.getFD()};
+    drainOutputPipes(drain_fds, stderr_sink, budget_ms);
+}
+
+
+bool ShellCommand::waitDrainingOutput(const StderrSink & stderr_sink, bool check_exit_status)
+{
+    /// A child that writes past what the protocol asked of it fills the pipe and blocks in `write`.
+    /// Nothing reads that pipe any more by the time this is called, so the only way the child ever
+    /// reaches its own exit is if the bytes keep being taken off the pipe here and thrown away.
+    static constexpr UInt64 poll_step_ms = 5;
+
+    /// The descriptors still worth draining, in the order they are polled. One that has hung up or
+    /// reached EOF is dropped out of the set (-1, which `poll` ignores): `poll` reports a hung-up
+    /// descriptor immediately and forever, so a child that closed its own output and then lingered
+    /// would otherwise spin a core here for the whole termination budget.
+    int drain_fds[2] = {out.getFD(), err.getFD()};
+
+    while (true)
+    {
+        /// Reaped WITHOUT closing the pipes. Reaping is what makes the rest of what the child wrote
+        /// final - its write ends are gone, so the pipes now hold exactly its last words and
+        /// nothing more - but closing the descriptors here would throw those words away unread.
+        /// Under `stderr_reaction` `throw` they are the whole reason the caller asked for a sink:
+        /// a command that writes `boom` and exits in the same breath must not come out as a
+        /// successful query. So: reap, then read to the end, then close.
+        /// Reaped with the status check switched off no matter what the caller asked for: decoding
+        /// it here can throw - a child killed by a signal does - and that would leave by the same
+        /// door the unread bytes are still behind. The status is kept and decoded below, after the
+        /// pipes have been read and closed, so `printf boom >&2; kill -TERM $$` reports both the
+        /// signal and what the command said before it.
+        auto proc_status = tryWaitImpl(/*blocking=*/ false, /*check_exit_status=*/ false, /*close_streams=*/ false);
+        if (proc_status.is_process_terminated)
+        {
+            /// Given a budget of its own rather than what is left of `command_termination_timeout`.
+            /// That budget is about how long the command is allowed to take to *exit*, and it has
+            /// already exited - it is routinely zero by this point, and zero here would mean the
+            /// bytes are read only when the command happened to be slow. What bounds this read is
+            /// that the pipes hold at most their own capacity now that the writer is gone; the
+            /// timeout is only for the case where a grandchild inherited the write end and the end
+            /// never comes.
+            static constexpr UInt64 post_reap_drain_ms = 100;
+            drainOutputPipes(drain_fds, stderr_sink, post_reap_drain_ms);
+            closeStreams();
+
+            if (check_exit_status)
+                handleProcessStatus(proc_status.raw_status);
+            return true;
+        }
+
+        const UInt64 remaining_ms = remainingTerminationTimeoutMs();
+        if (remaining_ms == 0)
+            return false;
+
+        /// Capped so that a child which simply stops writing is still reaped promptly: a pipe that
+        /// goes quiet reports nothing until its write end is closed, so the loop must come back to
+        /// the `waitpid` above on its own.
+        const UInt64 step_ms = std::min(remaining_ms, poll_step_ms);
+
+        if (drain_fds[0] < 0 && drain_fds[1] < 0)
+        {
+            /// Nothing left to drain, only a child that has not exited yet. Wait out the rest of
+            /// the budget in the same steps rather than polling an empty set in a tight loop.
+            sleepForMilliseconds(step_ms);
+            continue;
+        }
+
+        drainOutputPipes(drain_fds, stderr_sink, step_ms);
+    }
+}
 
 void ShellCommand::wait()
 {

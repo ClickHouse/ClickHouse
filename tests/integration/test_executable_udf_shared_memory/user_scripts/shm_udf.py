@@ -93,6 +93,7 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break  # stdin closed -> exit
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         path = stdin.read(path_length).decode("utf-8")
@@ -116,13 +117,16 @@ def main():
             finally:
                 region.close()
 
+            write_varint(stdout, request_id)
             write_varint(stdout, STATUS_OK)
             write_varint(stdout, output_offset)
             write_varint(stdout, output_size)
         except NeedMoreSpace as need_more_space:
+            write_varint(stdout, request_id)
             write_varint(stdout, STATUS_NEED_MORE_SPACE)
             write_varint(stdout, need_more_space.required_size)
         except Exception as exception:  # noqa: BLE001
+            write_varint(stdout, request_id)
             write_varint(stdout, STATUS_ERROR)
             write_string_binary(stdout, str(exception))
 

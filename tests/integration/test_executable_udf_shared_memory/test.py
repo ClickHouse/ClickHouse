@@ -18,7 +18,7 @@ LATE_UNLINK_MARKER = "/tmp/clickhouse_shm_udf_late_unlink_once"
 node = cluster.add_instance(
     "node",
     stay_alive=True,
-    main_configs=[],
+    main_configs=["config/allow_shared_memory.xml"],
     tmpfs=[
         "/shm_udf_tiny:size=1M",
         "/shm_udf_accounting:size=1M",
@@ -624,6 +624,7 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
         # they mean nothing, and accepting them would let a function that was explicitly configured
         # for shared memory run over the pipes instead, with nothing said about it at load time.
         ("test_function_shm_bad_size_no_shm", "`shared_memory_size` requires `use_shared_memory`"),
+        ("test_function_shm_bad_max_size_no_shm", "`shared_memory_max_size` requires `use_shared_memory`"),
         ("test_function_shm_bad_path_no_shm", "`shared_memory_path` requires `use_shared_memory`"),
         ("test_function_shm_bad_max_lt_size", "`shared_memory_max_size` (524288) must not be smaller"),
         ("test_function_shm_bad_empty_path", "`shared_memory_path` must not be empty"),
@@ -642,6 +643,47 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
         assert node.contains_in_log(diagnostic)
 
     # A valid shared-memory UDF from the same config still works.
+    assert node.query("SELECT test_function_shm_python(1)") == "Key 1\n"
+
+
+def test_shared_memory_udf_requires_the_experimental_setting(started_cluster):
+    skip_test_msan(node)
+
+    # The transport is a new execution mechanism - a file the command may write to, a protocol of
+    # its own, `tmpfs` allocation - so it is off by default and a function that asks for it does not
+    # load. The whole suite runs with the setting on; this closes it and reopens it.
+    #
+    # `SYSTEM RELOAD CONFIG` rather than a restart, because that is the part worth testing. A check
+    # made only when a function is created cannot revoke anything: `ExternalLoader` re-creates an
+    # object only when that function's own XML changed, and keeps the previous object alive when a
+    # re-creation fails, so a function loaded while the setting was on would keep serving queries
+    # after it was turned off. The gate is therefore also consulted per invocation.
+    gate = "/etc/clickhouse-server/config.d/allow_shared_memory.xml"
+    enabled_content = node.exec_in_container(["bash", "-c", f"cat {gate}"])
+
+    def set_gate(value):
+        node.exec_in_container(
+            ["bash", "-c",
+             f"printf '%s' '<clickhouse><allow_experimental_executable_udf_shared_memory>{value}"
+             f"</allow_experimental_executable_udf_shared_memory></clickhouse>' > {gate}"]
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+
+    set_gate(0)
+    try:
+        # The function is still loaded - nothing about its own XML changed - and that is exactly the
+        # case the runtime check exists for.
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_shm_python(1) FORMAT Null")
+        assert "allow_experimental_executable_udf_shared_memory" in str(exc.value), str(exc.value)
+
+        # A pipe-mode function in the same server is unaffected: the gate is about one transport.
+        assert node.query("SELECT test_function_pipe_alongside_shm_python(1)") == "Key 1\n"
+    finally:
+        node.exec_in_container(["bash", "-c", f"cat > {gate} <<'XMLEOF'\n{enabled_content}\nXMLEOF"])
+        node.query("SYSTEM RELOAD CONFIG")
+
+    # The gate is a gate, not a one-way door.
     assert node.query("SELECT test_function_shm_python(1)") == "Key 1\n"
 
 
@@ -928,6 +970,145 @@ def test_shared_memory_udf_pool_command_leaves_stdout_dirty(started_cluster):
         profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before + 3
     )
     assert node.contains_in_log("left unread output on its stdout after answering")
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_none_reaction_worker_flooding_after_a_quiet_gap(started_cluster):
+    skip_test_msan(node)
+
+    # The harder shape of the test below: the command answers, stays quiet for longer than the
+    # server spends draining its stderr when it takes the worker back, and only then writes two
+    # pipefuls. Any check that only looks at the pipe at hand-back time sees nothing and cannot say
+    # anything about what the command does next, so if that check were what kept `stderr_reaction`
+    # `none` from blocking a chatty command, this shape would defeat it.
+    #
+    # What actually keeps the promise is that the read loop polls stderr alongside stdout: the query
+    # waiting for a response is the one that drains the command writing it. The half-second between
+    # queries makes sure the flood is under way - and the worker blocked in `write` - before the
+    # next borrow starts.
+    first = node.query("SELECT test_function_shm_stderr_flood_after_gap_pool_python(0)").strip()
+
+    pids = {first}
+    for i in range(1, 3):
+        time.sleep(0.5)
+        started = time.monotonic()
+        pids.add(node.query(f"SELECT test_function_shm_stderr_flood_after_gap_pool_python({i})").strip())
+        elapsed = time.monotonic() - started
+        assert elapsed < 5, f"query {i} took {elapsed:.1f}s - the worker was left blocked on stderr"
+
+    assert len(pids) == 1, f"the worker was not reused: {pids}"
+
+
+def test_shared_memory_udf_none_reaction_worker_is_not_left_blocked_on_stderr(started_cluster):
+    skip_test_msan(node)
+
+    # The command answers and then writes twice a pipeful to stderr before going back to read the
+    # next request. `stderr_reaction` `none` documents that a chatty command never blocks on a full
+    # stderr pipe - easy to honour while a query is running, and easy to lose at the moment the
+    # worker goes back into the pool, where nothing is reading that pipe any more and `none` says
+    # the bytes are nobody's. A worker handed back with a full pipe is blocked in `write` and will
+    # never read the next request; the borrow after it waits out `command_read_timeout` instead.
+    #
+    # A pool of one, so every query gets that same worker back.
+    pids = set()
+    for i in range(3):
+        started = time.monotonic()
+        pids.add(node.query(f"SELECT test_function_shm_stderr_flood_none_pool_python({i})").strip())
+        elapsed = time.monotonic() - started
+        assert elapsed < 5, f"query {i} took {elapsed:.1f}s - the worker was left blocked on stderr"
+
+    # And it really is one worker being reused: `none` costs the command nothing here.
+    assert len(pids) == 1, f"the worker was not reused: {pids}"
+
+
+def test_shared_memory_udf_round_trips_a_binary_format(started_cluster):
+    skip_test_msan(node)
+
+    # Every other function in this suite speaks a line-oriented text format, which is exactly the
+    # kind that would absorb a framing bug: a byte lost or gained lands on a newline and nobody
+    # notices. `RowBinary` has no such give. This one carries two columns, a `Nullable` with its own
+    # null map, and strings with embedded NUL bytes and newlines - so a mistake anywhere in the
+    # exchange shows up as a parse failure or a wrong value rather than as nothing.
+    result = node.query(
+        """
+        SELECT test_function_shm_binary_pool_python(id, label)
+        FROM values(
+            'id UInt64, label Nullable(String)',
+            (1, 'plain'),
+            (2, NULL),
+            (3, 'with\\0embedded\\0nuls'),
+            (4, 'with\\nnewline'),
+            (5, ''))
+        ORDER BY id
+        FORMAT TSVRaw
+        """
+    )
+
+    assert result == (
+        "#1=plain\n"
+        "#2=<null>\n"
+        "#3=with\0embedded\0nuls\n"
+        "#4=with\nnewline\n"
+        "#5=\n"
+    ), repr(result)
+
+    # And it survives the pool: the same worker answers again, with the region reused.
+    assert (
+        node.query(
+            "SELECT test_function_shm_binary_pool_python(7, 'again') FORMAT TSVRaw"
+        )
+        == "#7=again\n"
+    )
+
+
+def test_shared_memory_udf_stderr_written_just_before_exit_still_throws(started_cluster):
+    skip_test_msan(node)
+
+    # The command answers, complains on stderr and exits in the same breath - no pause anywhere,
+    # which is the timing the other late-stderr test deliberately avoids. Reaping a child closes its
+    # pipes, so a server that reaps before it reads throws away everything the child had written and
+    # nobody had read: under `stderr_reaction` `throw` the query would succeed while the command was
+    # shouting.
+    #
+    # The row count is what makes it deterministic rather than a race. The server parses half a
+    # million rows out of the region before it gets anywhere near reaping, so the command is
+    # provably gone by then - with a single row the two finish at the same moment and the server
+    # usually happens to read the pipe first, which proves nothing.
+    with pytest.raises(Exception) as exc:
+        node.query(
+            "SELECT DISTINCT test_function_shm_stderr_then_exit_python(number) "
+            "FROM numbers(500000) SETTINGS max_threads = 1, max_block_size = 500000 FORMAT Null"
+        )
+
+    assert "Executable generates stderr" in str(exc.value), str(exc.value)
+    assert "eeee" in str(exc.value), str(exc.value)
+
+    assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_stray_byte_after_the_probe_cannot_poison_the_next_borrow(started_cluster):
+    skip_test_msan(node)
+
+    # The worker answers, is taken back into the pool while its pipes are provably empty, and only
+    # then writes one stray byte. The probe cannot catch that - it is one instant - so the byte is
+    # sitting on the worker's stdout when the next query borrows it.
+    #
+    # What matters is what the next query does with it. Read as a bare status varint it is a
+    # perfectly plausible frame - `0` is success, and the rest of the real frame shifts into the
+    # offset and size fields - so the query could come back with the right number of rows and the
+    # wrong values in them. A silently wrong answer is the one outcome none of the other checks
+    # would catch. The request id makes the frame self-identifying: the byte lands where this
+    # query's own id should be, and the mismatch fails the query instead of answering it.
+    assert node.query("SELECT test_function_shm_stray_byte_after_probe_pool_python(1)") == "Key 1\n"
+
+    # Give the worker time to litter its stdout while it sits idle in the pool.
+    time.sleep(3)
+
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_shm_stray_byte_after_probe_pool_python(2)")
+
+    assert "answered request" in str(exc.value), str(exc.value)
 
     assert node.query("SELECT 1") == "1\n"
 

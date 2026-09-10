@@ -26,6 +26,7 @@ def main():
     version = read_varint(stdin)
     if version is None:
         return
+    read_varint(stdin)  # request id; this command never answers
 
     path_length = read_varint(stdin)
     stdin.read(path_length)  # path

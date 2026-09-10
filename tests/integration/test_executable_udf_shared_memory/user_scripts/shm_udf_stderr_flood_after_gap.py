@@ -1,22 +1,15 @@
 #!/usr/bin/python3
 
-# Misbehaving pooled UDF: it answers every request correctly and then, a moment later, writes a line
-# to its `stderr`. Nothing in this invocation notices - stderr is read together with the response,
-# and by the time this line is written that read is over. The next request on the same process is
-# the one that drains it and reports it as *its* output; under `stderr_reaction` `throw` that next
-# query fails, for something a previous query's arguments caused. The server must therefore refuse
-# to return this worker to the pool.
+# A pooled worker that answers correctly, stays quiet for longer than the server spends draining its
+# `stderr` at hand-back, and only then writes far more than a pipe can hold - before going back to
+# read the next request.
 #
-# The pause before the write is what makes the misbehaviour reproducible rather than accidental. A
-# line written immediately after the response does not leak at all: the server is asleep in `poll`
-# waiting for that response, and a woken `poll` re-scans the descriptors it was given, so a line
-# written within the thread's wake-up latency - microseconds - is reported ready along with the
-# response and drained into the query that earned it. Only a command that writes later, once that
-# read is over, leaves anything behind. This one waits long enough to be sure it is that command,
-# and briefly enough to still be inside the borrow (the server is parsing the answer, which the test
-# makes take far longer than this).
-#
-# It answers with its own pid, so a test can tell a fresh worker from a reused one.
+# The gap is the point. A drain at the moment the worker is handed back sees an empty pipe and can
+# say nothing about what the command is going to write next; if that were the only thing standing
+# between a chatty command and a blocked worker, this shape would defeat it. What actually keeps the
+# promise of `stderr_reaction` `none` is that the read loop of the *next* borrow polls `stderr`
+# alongside `stdout` and keeps taking bytes off it while it waits for the response, so a command
+# blocked in `write` is unblocked by the very query that is waiting for it.
 
 import mmap
 import os
@@ -25,6 +18,12 @@ import time
 
 PROTOCOL_VERSION = 1
 STATUS_OK = 0
+
+# Twice the 64 KiB a Linux pipe holds by default, so the command is provably blocked partway.
+CHATTER = b"e" * (128 * 1024)
+
+# Comfortably longer than the drain the server performs when it takes the worker back.
+QUIET_GAP_SECONDS = 0.3
 
 
 def read_varint(stream):
@@ -63,9 +62,9 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break  # stdin closed -> exit
-        request_id = read_varint(stdin)
         if version != PROTOCOL_VERSION:
             raise RuntimeError(f"unsupported protocol version {version}")
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         path = stdin.read(path_length).decode("utf-8")
@@ -96,10 +95,9 @@ def main():
         write_varint(stdout, len(output))
         stdout.flush()
 
-        # Too late: the response above is what the server was waiting for, and it has long stopped
-        # reading by now, so this belongs to nobody until the next borrow picks it up.
-        time.sleep(0.002)
-        stderr.write(b"done\n")
+        # Quiet long enough for the hand-back drain to find nothing, then far too much to fit.
+        time.sleep(QUIET_GAP_SECONDS)
+        stderr.write(CHATTER)
         stderr.flush()
 
 

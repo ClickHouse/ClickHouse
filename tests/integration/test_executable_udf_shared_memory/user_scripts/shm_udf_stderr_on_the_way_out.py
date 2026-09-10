@@ -52,6 +52,7 @@ def main():
     stderr = sys.stderr.buffer
 
     version = read_varint(stdin)
+    request_id = read_varint(stdin)
     if version != PROTOCOL_VERSION:
         raise RuntimeError(f"unsupported protocol version {version}")
 
@@ -78,6 +79,7 @@ def main():
     finally:
         region.close()
 
+    write_varint(stdout, request_id)
     write_varint(stdout, STATUS_OK)
     write_varint(stdout, output_offset)
     write_varint(stdout, len(output))

@@ -1,30 +1,24 @@
 #!/usr/bin/python3
 
-# Misbehaving pooled UDF: it answers every request correctly and then, a moment later, writes a line
-# to its `stderr`. Nothing in this invocation notices - stderr is read together with the response,
-# and by the time this line is written that read is over. The next request on the same process is
-# the one that drains it and reports it as *its* output; under `stderr_reaction` `throw` that next
-# query fails, for something a previous query's arguments caused. The server must therefore refuse
-# to return this worker to the pool.
+# A pooled worker that answers correctly and then writes far more to `stderr` than a pipe can hold,
+# before going back to read the next request.
 #
-# The pause before the write is what makes the misbehaviour reproducible rather than accidental. A
-# line written immediately after the response does not leak at all: the server is asleep in `poll`
-# waiting for that response, and a woken `poll` re-scans the descriptors it was given, so a line
-# written within the thread's wake-up latency - microseconds - is reported ready along with the
-# response and drained into the query that earned it. Only a command that writes later, once that
-# read is over, leaves anything behind. This one waits long enough to be sure it is that command,
-# and briefly enough to still be inside the borrow (the server is parsing the answer, which the test
-# makes take far longer than this).
-#
-# It answers with its own pid, so a test can tell a fresh worker from a reused one.
+# Configured with `stderr_reaction` `none`, which documents that a chatty command never blocks on a
+# full `stderr` pipe. That promise is easy to keep while a query is running - the read loop drains
+# both pipes - and easy to lose at the moment the worker is handed back to the pool: nothing is
+# reading it any more, `none` means the bytes are nobody's, and a worker returned with a full pipe
+# is a worker blocked in `write` that will never read the next request. The borrow after it then
+# waits out `command_read_timeout` for a process that is stuck.
 
 import mmap
 import os
 import sys
-import time
 
 PROTOCOL_VERSION = 1
 STATUS_OK = 0
+
+# Twice the 64 KiB a Linux pipe holds by default, so the command is provably blocked partway.
+CHATTER = b"e" * (128 * 1024)
 
 
 def read_varint(stream):
@@ -63,9 +57,9 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break  # stdin closed -> exit
-        request_id = read_varint(stdin)
         if version != PROTOCOL_VERSION:
             raise RuntimeError(f"unsupported protocol version {version}")
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         path = stdin.read(path_length).decode("utf-8")
@@ -96,10 +90,8 @@ def main():
         write_varint(stdout, len(output))
         stdout.flush()
 
-        # Too late: the response above is what the server was waiting for, and it has long stopped
-        # reading by now, so this belongs to nobody until the next borrow picks it up.
-        time.sleep(0.002)
-        stderr.write(b"done\n")
+        # Answer first, then talk. Blocks partway unless somebody keeps reading.
+        stderr.write(CHATTER)
         stderr.flush()
 
 

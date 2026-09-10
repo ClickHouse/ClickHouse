@@ -1,15 +1,17 @@
 #!/usr/bin/python3
 
-# A UDF that answers correctly, closes its `stdout`, and only then writes far more to `stderr` than
-# a pipe can hold - the shape a command has when it dumps a summary on its way out.
+# Answers correctly, writes a long diagnostic to `stderr` and exits in the same breath - no pause
+# anywhere.
 #
-# Configured with `stderr_reaction` `none`. "None" says what to do with those bytes - nothing - not
-# that the pipe may be left unread: nobody is reading it any more once `stdout` has ended, so the
-# command blocks in `write` and never reaches its own exit. A server that then reaps it with a
-# blocking `waitpid` waits for a process that is waiting for the server, and the query hangs with
-# its result already computed. Both halves have to hold: the rest of `stderr` is taken off the pipe
-# when `stdout` ends, whatever the reaction, and the wait that reaps the command is bounded and
-# keeps draining while it waits.
+# This is the timing the other late-stderr scripts deliberately avoid, and the one that catches a
+# server which reaps before it reads: reaping closes the child's pipes, and everything the child had
+# written and nobody had read yet goes with them. Under `stderr_reaction` `throw` the query would
+# then succeed while the command was shouting.
+#
+# The size is chosen deliberately: comfortably more than one 4 KiB read, so picking it up takes
+# several, and comfortably less than a pipeful, so the command is never blocked in `write` and can
+# really exit in the same breath. A message larger than the pipe would block the writer, keep the
+# process alive, and quietly turn this into a test of something else.
 
 import mmap
 import os
@@ -18,8 +20,7 @@ import sys
 PROTOCOL_VERSION = 1
 STATUS_OK = 0
 
-# Comfortably past the 64 KiB a Linux pipe holds by default.
-CHATTER_SIZE = 4 * 1024 * 1024
+COMPLAINT = b"e" * 8192
 
 
 def read_varint(stream):
@@ -55,9 +56,9 @@ def main():
     stderr = sys.stderr.buffer
 
     version = read_varint(stdin)
-    request_id = read_varint(stdin)
     if version != PROTOCOL_VERSION:
         raise RuntimeError(f"unsupported protocol version {version}")
+    request_id = read_varint(stdin)
 
     path_length = read_varint(stdin)
     path = stdin.read(path_length).decode("utf-8")
@@ -88,13 +89,10 @@ def main():
     write_varint(stdout, len(output))
     stdout.flush()
 
-    # The answer is complete; end the conversation and only then start talking.
-    os.close(1)
-
-    stderr.write(b"e" * CHATTER_SIZE)
+    # No pause: complain and go. A pipeful of this is still in flight when the process is gone.
+    stderr.write(COMPLAINT)
     stderr.flush()
-
-    sys.exit(0)
+    os._exit(0)
 
 
 if __name__ == "__main__":

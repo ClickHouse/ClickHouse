@@ -42,13 +42,13 @@ public:
         {
             if (!objects.empty())
             {
-                dest = borrowFromObjects(lock);
+                borrowFromObjects(lock, dest);
                 return;
             }
 
             if (canAllocate())
             {
-                dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
+                allocateObjectForBorrowing(lock, dest, std::forward<FactoryFunc>(func));
                 return;
             }
 
@@ -74,13 +74,13 @@ public:
         {
             if (!objects.empty())
             {
-                dest = borrowFromObjects(lock);
+                borrowFromObjects(lock, dest);
                 return true;
             }
 
             if (canAllocate())
             {
-                dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
+                allocateObjectForBorrowing(lock, dest, std::forward<FactoryFunc>(func));
                 return true;
             }
 
@@ -184,14 +184,18 @@ private:
     }
 
     template <typename FactoryFunc>
-    T allocateObjectForBorrowing(const std::unique_lock<std::mutex> &, FactoryFunc && func)
+    void allocateObjectForBorrowing(const std::unique_lock<std::mutex> &, T & dest, FactoryFunc && func)
     {
         ++allocated_objects_size;
         ++borrowed_objects_size;
 
         try
         {
-            return std::forward<FactoryFunc>(func)();
+            /// The hand-over to `dest` is inside the guard, not just the factory call: it is an
+            /// assignment of a user-supplied type and may throw in its own right, and a slot that
+            /// is accounted for but was never handed to anybody is a slot the pool loses for the
+            /// rest of the process - with `max_size` of them, every later borrow times out.
+            dest = std::forward<FactoryFunc>(func)();
         }
         catch (...)
         {
@@ -210,15 +214,25 @@ private:
         }
     }
 
-    T borrowFromObjects(const std::unique_lock<std::mutex> &)
+    void borrowFromObjects(const std::unique_lock<std::mutex> &, T & dest)
     {
-        T dst;
-        detail::moveOrCopyIfThrow(std::move(objects.back()), dst);
-        objects.pop_back();
-
         ++borrowed_objects_size;
 
-        return dst;
+        try
+        {
+            detail::moveOrCopyIfThrow(std::move(objects.back()), dest);
+        }
+        catch (...)
+        {
+            /// Nothing has left the pool: `moveOrCopyIfThrow` copies exactly when a move could
+            /// throw, so a failure here leaves `objects.back()` intact and only the count to undo.
+            /// Skipping this would keep an object that is still in the pool counted as borrowed,
+            /// and after `max_size` such failures the pool would refuse to lend anything at all.
+            --borrowed_objects_size;
+            throw;
+        }
+
+        objects.pop_back();
     }
 
     size_t max_size;

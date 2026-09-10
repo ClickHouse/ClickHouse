@@ -54,6 +54,7 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break  # stdin closed -> exit
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         path = stdin.read(path_length).decode("utf-8")
@@ -61,6 +62,7 @@ def main():
         read_varint(stdin)  # input size
 
         # The status alone. The server checks the region as soon as it has this, and finds it whole.
+        write_varint(stdout, request_id)
         write_varint(stdout, STATUS_OK)
         stdout.flush()
         time.sleep(1)

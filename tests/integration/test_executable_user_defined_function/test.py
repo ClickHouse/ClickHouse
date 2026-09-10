@@ -362,6 +362,106 @@ def test_executable_function_always_error_python(started_cluster):
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
 
 
+def test_executable_function_none_reaction_worker_flooding_after_a_quiet_gap(started_cluster):
+    """`stderr_reaction = none` must keep a chatty pooled command from blocking, gap or no gap."""
+    skip_test_msan(node)
+
+    # The command answers, stays quiet for longer than the server spends draining its stderr when it
+    # takes the worker back, and only then writes two pipefuls. A check that only looks at the pipe
+    # at hand-back time sees nothing and can say nothing about what comes next; what keeps the
+    # promise is that the read loop polls stderr alongside stdout, so the query waiting for a
+    # response drains the command writing it.
+    first = node.query("SELECT test_function_pool_stderr_flood_after_gap_python(0)").strip()
+
+    pids = {first}
+    for i in range(1, 3):
+        time.sleep(0.5)
+        started = time.monotonic()
+        pids.add(node.query(f"SELECT test_function_pool_stderr_flood_after_gap_python({i})").strip())
+        elapsed = time.monotonic() - started
+        assert elapsed < 5, f"query {i} took {elapsed:.1f}s - the worker was left blocked on stderr"
+
+    assert len(pids) == 1, f"the worker was not reused: {pids}"
+
+
+def test_executable_function_pooled_late_stderr_fails_the_query_that_caused_it(started_cluster):
+    """`stderr_reaction = throw` must fail the pooled query whose command wrote the diagnostic."""
+    skip_test_msan(node)
+
+    # A pooled worker that satisfied its row count goes straight back to the pool without being
+    # waited for, so this is the one path on which nothing looks at its stderr again: the probe that
+    # refuses to pool a dirty worker runs after the query has already succeeded. Under `throw` that
+    # would mean the setting silently costs a worker instead of failing the query that caused the
+    # output - which is the only thing it promises to do.
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_pool_stderr_after_rows_python(1)")
+
+    assert "Executable generates stderr" in str(exc.value), str(exc.value)
+    assert "complaining right after the rows" in str(exc.value), str(exc.value)
+
+
+def test_executable_function_pooled_worker_that_exited_while_idle_is_replaced(started_cluster):
+    """A worker that died in the pool is replaced before the next borrow is built on it."""
+    skip_test_msan(node)
+
+    # The command answers, goes quiet long enough to be handed back, and exits non-zero while it
+    # sits in the pool. Nobody is waiting for it there, so the next query is the first to find out -
+    # and it must not find out by failing its own first write to a closed stdin. The pool holds one
+    # process, so a replacement is visible as a different pid.
+    first = node.query("SELECT test_function_pool_late_exit_python(0)").strip()
+    time.sleep(0.5)
+    second = node.query("SELECT test_function_pool_late_exit_python(1)").strip()
+
+    assert first != second, f"the dead worker was reused: {first}"
+    assert node.contains_in_log("exited while it was idle in the pool")
+
+
+def test_executable_function_late_stdout_cannot_be_parsed_as_the_next_query_result(started_cluster):
+    """A borrow must not start on a worker that already has bytes waiting on its stdout."""
+    skip_test_msan(node)
+
+    # The command answers, goes quiet long enough to be handed back to the pool, and only then
+    # writes an extra row. The hand-back probe finds an empty pipe and cannot say anything about
+    # what comes next, so that row is waiting when the next query borrows the same process.
+    #
+    # The pipe transport has no framing that would let the next query tell a stale row from its own,
+    # so it must refuse to start rather than answer with somebody else's data. The first query is
+    # correct; the second must fail loudly, and must not return `999999`.
+    first = node.query("SELECT test_function_pool_late_stdout_python(0)").strip()
+    assert first != "999999", first
+
+    time.sleep(0.5)
+
+    with pytest.raises(Exception) as exc:
+        node.query("SELECT test_function_pool_late_stdout_python(1)")
+
+    assert "unread output on its stdout when it was borrowed" in str(exc.value), str(exc.value)
+
+    # And the poisoned worker is gone: a fresh process answers the query after it.
+    assert node.query("SELECT test_function_pool_late_stdout_python(2)").strip() != "999999"
+
+
+def test_executable_function_pooled_worker_is_reused_and_absorbs_an_immediate_extra_byte(started_cluster):
+    """A byte written straight after the rows is this query's problem, not the next one's."""
+    skip_test_msan(node)
+
+    # The command answers and immediately writes one byte too many. That byte is read into *this*
+    # query's own buffer along with the rows - the reader reads ahead in blocks - and dies with it.
+    # It never reaches the pipe the next borrower reads, so the worker is still at a usable
+    # boundary and reusing it is correct.
+    #
+    # This is also the guard against the opposite mistake. Treating bytes a format reader is merely
+    # holding as evidence of a dirty worker condemns every well-behaved pooled command too, and
+    # quietly turns `executable_pool` into a process per call - which no test that only checks
+    # results would notice. Hence the assertion on the pid: one worker, four calls.
+    pids = set()
+    for i in range(4):
+        assert node.query(f"SELECT test_function_pool_chatty_python({i})").strip() != ""
+        pids.add(node.query(f"SELECT test_function_pool_chatty_python({i})").strip())
+
+    assert len(pids) == 1, f"a healthy pooled worker was not reused: {pids}"
+
+
 def test_executable_function_stderr_written_on_the_way_out_still_throws(started_cluster):
     """`stderr_reaction` applies to output produced on the way out, with or without the exit check."""
     skip_test_msan(node)

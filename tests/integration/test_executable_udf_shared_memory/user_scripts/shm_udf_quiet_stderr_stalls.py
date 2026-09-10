@@ -39,6 +39,7 @@ def main():
 
     # Read the request in full and then simply stop, without writing a single byte to stdout.
     read_varint(stdin)
+    read_varint(stdin)  # request id; this command never answers
     path_length = read_varint(stdin)
     if path_length is not None:
         stdin.read(path_length)

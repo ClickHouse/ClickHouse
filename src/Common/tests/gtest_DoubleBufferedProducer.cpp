@@ -215,8 +215,16 @@ TEST(DoubleBufferedProducer, StopWakesBlockedConsumer)
     /// scheduling: it is read under the coordinator's mutex, which `next` only releases from inside
     /// the wait. Paired with `both_buffers_taken` it can only be the third call: the first two have
     /// returned by then, and nothing else waits on that condition variable.
-    ASSERT_TRUE(waitFor([&] { return fixture->both_buffers_taken.load() && fixture->producer.waitingConsumers() > 0; }))
-        << "the consumer never reached the blocking next()";
+    /// Not `ASSERT_TRUE`: a fatal assertion returns from here, and `consumer` would be destroyed
+    /// still joinable - which is `std::terminate`, taking the whole test binary with it and hiding
+    /// whatever the failure was. The thread is stopped and let go explicitly instead.
+    if (!waitFor([&] { return fixture->both_buffers_taken.load() && fixture->producer.waitingConsumers() > 0; }))
+    {
+        ADD_FAILURE() << "the consumer never reached the blocking next()";
+        fixture->producer.stop();
+        consumer.detach();
+        return;
+    }
 
     fixture->producer.stop(); /// must wake the blocked consumer
 

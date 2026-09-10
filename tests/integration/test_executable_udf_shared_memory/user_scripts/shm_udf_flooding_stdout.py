@@ -59,6 +59,7 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break  # stdin closed -> exit
+        request_id = read_varint(stdin)
         if version != PROTOCOL_VERSION:
             raise RuntimeError(f"unsupported protocol version {version}")
 
@@ -92,7 +93,8 @@ def main():
         # poisoned worker to the next query - the very thing being tested, decided by a race.
         # The first pipeful goes through; the rest blocks here until someone drains it.
         stdout.write(
-            encode_varint(STATUS_OK)
+            encode_varint(request_id)
+            + encode_varint(STATUS_OK)
             + encode_varint(output_offset)
             + encode_varint(len(output))
             + b"x" * GARBAGE_SIZE

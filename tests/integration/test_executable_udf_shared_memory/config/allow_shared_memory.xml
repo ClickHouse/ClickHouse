@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- The transport is experimental and off by default; every function in this suite asks for it. -->
+    <allow_experimental_executable_udf_shared_memory>1</allow_experimental_executable_udf_shared_memory>
+</clickhouse>

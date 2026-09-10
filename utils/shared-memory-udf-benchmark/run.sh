@@ -9,6 +9,7 @@
 #
 # Usage:
 #   ./run.sh [--clickhouse PATH] [--rows N] [--row-bytes B] [--iters K] [--threads T]
+#            [--block-size S]
 #
 # Environment: CLICKHOUSE may point at the binary instead of --clickhouse.
 set -euo pipefail
@@ -21,6 +22,10 @@ ROWS=1000000
 ROW_BYTES=100
 ITERS=7
 THREADS=1
+# Pinned rather than left to the server default: the block-size sweep in README.md moves the
+# pipe-vs-shared-memory ratio from 1.37x faster to 0.88x slower, so an unstated block size can flip
+# the sign of the headline result without anything about the transport changing.
+BLOCK_SIZE=65536
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,6 +34,7 @@ while [[ $# -gt 0 ]]; do
         --row-bytes)  ROW_BYTES="$2"; shift 2 ;;
         --iters)      ITERS="$2"; shift 2 ;;
         --threads)    THREADS="$2"; shift 2 ;;
+        --block-size) BLOCK_SIZE="$2"; shift 2 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -51,6 +57,9 @@ cat > "$WORK/config.xml" <<EOF
     <path>$WORK/state</path>
     <user_scripts_path>$WORK/user_scripts/</user_scripts_path>
     <user_defined_executable_functions_config>$WORK/functions.xml</user_defined_executable_functions_config>
+    <!-- The shared-memory transport is experimental and off by default; the shm variants below ask
+         for it, and without this they would simply fail to load. -->
+    <allow_experimental_executable_udf_shared_memory>1</allow_experimental_executable_udf_shared_memory>
 </clickhouse>
 EOF
 
@@ -59,7 +68,7 @@ query_for() {
     # `numbers_mt`, not `numbers`: the latter is a single stream no matter what `max_threads` says,
     # so with `--threads N` the query would still make one UDF call at a time and the thread setting
     # would measure nothing. With `max_threads = 1` the two are equivalent.
-    echo "SELECT sum(length($fn(val))) FROM (SELECT leftPad(toString(number), $ROW_BYTES, '0') AS val FROM numbers_mt($ROWS)) SETTINGS max_threads = $THREADS"
+    echo "SELECT sum(length($fn(val))) FROM (SELECT leftPad(toString(number), $ROW_BYTES, '0') AS val FROM numbers_mt($ROWS)) SETTINGS max_threads = $THREADS, max_block_size = $BLOCK_SIZE"
 }
 
 run_once() { # prints elapsed seconds (from --time, last stderr line)
@@ -126,7 +135,7 @@ check_shared_memory_capacity() {
 check_shared_memory_capacity "$THREADS"
 
 echo "clickhouse : $CLICKHOUSE"
-echo "workload   : $ROWS rows x $ROW_BYTES bytes, max_threads=$THREADS, iters=$ITERS (median), warmup dropped"
+echo "workload   : $ROWS rows x $ROW_BYTES bytes, max_threads=$THREADS, max_block_size=$BLOCK_SIZE, iters=$ITERS (median), warmup dropped"
 echo
 printf "%-26s %12s %14s %14s\n" "transport" "median, s" "read via sc" "write via sc"
 printf "%-26s %12s %14s %14s\n" "--------------------------" "---------" "-----------" "------------"

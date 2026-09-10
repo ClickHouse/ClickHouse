@@ -223,3 +223,100 @@ TEST(BorrowedObjectPool, FailedFactoryWakesWaitingBorrower)
     EXPECT_EQ(pool.allocatedObjectsSize(), 1);
     EXPECT_EQ(pool.borrowedObjectsSize(), 0);
 }
+
+
+namespace
+{
+
+/// A payload whose hand-over to the borrower can be made to fail. The pool's rollback has to cover
+/// that hand-over and not just the factory that produced the object: an assignment of a
+/// user-supplied type can throw in its own right, and a slot that was counted as borrowed but
+/// never reached anybody is a slot the pool loses for good.
+///
+/// The copy assignment is the one that throws, because that is the one the pool uses: the move
+/// assignment below is not `noexcept`, and `moveOrCopyIfThrow` copies exactly when a move could
+/// throw.
+struct FailsToBeHandedOver
+{
+    int value = 0;
+    static inline bool fail_next_handover = false;
+
+    FailsToBeHandedOver() = default;
+    explicit FailsToBeHandedOver(int value_) : value(value_) {}
+    FailsToBeHandedOver(const FailsToBeHandedOver &) = default;
+    FailsToBeHandedOver(FailsToBeHandedOver &&) = default;
+
+    FailsToBeHandedOver & operator=(const FailsToBeHandedOver & other)
+    {
+        if (this == &other)
+            return *this;
+
+        throwIfAsked();
+        value = other.value;
+        return *this;
+    }
+
+    /// Deliberately not `noexcept`, which is the whole point of the type: `moveOrCopyIfThrow` moves
+    /// when the move assignment cannot throw and copies otherwise, so a `noexcept` move here would
+    /// route the pool around the copy assignment above - the one that fails - and the test would
+    /// prove nothing.
+    FailsToBeHandedOver & operator=(FailsToBeHandedOver && other) // NOLINT(performance-noexcept-move-constructor,hicpp-noexcept-move)
+    {
+        if (this == &other)
+            return *this;
+
+        throwIfAsked();
+        value = other.value;
+        return *this;
+    }
+
+private:
+    static void throwIfAsked()
+    {
+        if (!fail_next_handover)
+            return;
+
+        fail_next_handover = false;
+        throw std::runtime_error("cannot hand this object over");
+    }
+};
+
+}
+
+/// A pool of one whose only slot was consumed by a failed hand-over would time out every borrow
+/// after it, for the life of the process.
+TEST(BorrowedObjectPool, FailedHandoverOfAFreshObjectDoesNotConsumeCapacity)
+{
+    BorrowedObjectPool<FailsToBeHandedOver> pool(1);
+
+    FailsToBeHandedOver::fail_next_handover = true;
+
+    FailsToBeHandedOver borrowed;
+    EXPECT_THROW(pool.tryBorrowObject(borrowed, [] { return FailsToBeHandedOver(1); }, 1000), std::runtime_error);
+    EXPECT_EQ(pool.allocatedObjectsSize(), 0u);
+    EXPECT_EQ(pool.borrowedObjectsSize(), 0u);
+
+    /// And the pool still lends.
+    ASSERT_TRUE(pool.tryBorrowObject(borrowed, [] { return FailsToBeHandedOver(2); }, 1000));
+    EXPECT_EQ(borrowed.value, 2);
+}
+
+/// The same for an object that was already in the pool: it is still there, so only the count of
+/// borrowed objects has to be put back.
+TEST(BorrowedObjectPool, FailedHandoverOfAPooledObjectLeavesItBorrowable)
+{
+    BorrowedObjectPool<FailsToBeHandedOver> pool(1);
+
+    FailsToBeHandedOver borrowed;
+    ASSERT_TRUE(pool.tryBorrowObject(borrowed, [] { return FailsToBeHandedOver(7); }, 1000));
+    pool.returnObject(std::move(borrowed));
+
+    FailsToBeHandedOver::fail_next_handover = true;
+
+    FailsToBeHandedOver again;
+    EXPECT_THROW(pool.tryBorrowObject(again, [] { return FailsToBeHandedOver(0); }, 1000), std::runtime_error);
+    EXPECT_EQ(pool.borrowedObjectsSize(), 0u);
+
+    ASSERT_TRUE(pool.tryBorrowObject(again, [] { return FailsToBeHandedOver(0); }, 1000));
+    EXPECT_EQ(again.value, 7) << "the object that failed to be handed over was lost";
+}

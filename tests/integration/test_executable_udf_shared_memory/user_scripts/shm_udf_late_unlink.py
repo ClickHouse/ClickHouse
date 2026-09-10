@@ -48,6 +48,7 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break
+        request_id = read_varint(stdin)
         if version != PROTOCOL_VERSION:
             raise RuntimeError(f"unsupported protocol version {version}")
 
@@ -62,6 +63,7 @@ def main():
         os.close(fd)
 
         first_request = not os.path.exists(MARKER)
+        write_varint(stdout, request_id)
         write_varint(stdout, STATUS_OK)
         if first_request:
             stdout.flush()

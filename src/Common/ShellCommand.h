@@ -162,8 +162,27 @@ public:
     /// `check_exit_status` is how a caller with `check_exit_code` switched off waits without
     /// turning the command's own exit code into a query failure: the child is still reaped, and
     /// its output still reaches `stderr_sink`, but a non-zero or signalled exit is not raised.
+    /// How long the command is given to exit on its own before it is signalled
+    /// (`command_termination_timeout`). Zero means it is given no time at all, which a caller that
+    /// wants the exit status has to know about: there is then no difference between a command that
+    /// is slow to exit and one that never will, and reporting the second is not warranted.
+    UInt64 terminationTimeoutSeconds() const
+    {
+        return config.terminate_in_destructor_strategy.wait_for_normal_exit_before_termination_seconds;
+    }
+
     using StderrSink = std::function<void(std::string_view)>;
     bool waitDrainingOutput(const StderrSink & stderr_sink = {}, bool check_exit_status = true);
+
+    /** Takes whatever is pending on the child's output pipes off them, without reaping it and
+      * without waiting for it to exit, handing what comes off stderr to `stderr_sink`.
+      *
+      * For a caller that has no interest in the exit status (`check_exit_code = 0`) but still owes
+      * the command's stderr to `stderr_reaction`. Waiting out `command_termination_timeout` for a
+      * command that was configured as one that does not exit promptly would stall every
+      * invocation, so this stops as soon as the pipes go quiet.
+      */
+    void drainPendingOutput(const StderrSink & stderr_sink, UInt64 budget_ms) const;
 
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
@@ -207,9 +226,25 @@ private:
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
     struct tryWaitResult;
 
-    tryWaitResult tryWaitImpl(bool blocking, bool check_exit_status = true);
+    /// `close_streams = false` leaves the child's pipes open after it has been reaped. Only
+    /// `waitDrainingOutput` wants that, and it wants it badly: reaping closes the descriptors, and
+    /// whatever the child had already written and not yet been read is gone with them - including,
+    /// under `stderr_reaction` `throw`, the diagnostic the query was supposed to fail on. The
+    /// caller closes them itself once it has read them to the end.
+    tryWaitResult tryWaitImpl(bool blocking, bool check_exit_status = true, bool close_streams = true);
+
+    /// Closes everything `tryWaitImpl` would have closed on a reap.
+    void closeStreams();
+
+    /// Reads both output pipes until they end or `budget_ms` runs out, handing what comes off
+    /// stderr to `stderr_sink`. Does not reap and does not touch the termination deadline.
+    void drainOutputPipes(int (&drain_fds)[2], const StderrSink & stderr_sink, UInt64 budget_ms) const;
 
     void handleProcessRetcode(int retcode) const;
+
+    /// Decodes a raw `waitpid` status and throws for anything but a clean zero exit. Separate from
+    /// the reap so a caller can read the child's last words off its pipes before this can throw.
+    void handleProcessStatus(int status) const;
 
     static LoggerPtr getLogger();
 

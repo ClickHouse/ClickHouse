@@ -406,6 +406,69 @@
     </function>
 
     <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_stderr_flood_after_gap_python</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <stderr_reaction>none</stderr_reaction>
+        <command_read_timeout>5000</command_read_timeout>
+        <command>input_pool_stderr_flood_after_gap.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_stderr_after_rows_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <stderr_reaction>throw</stderr_reaction>
+        <command>input_pool_stderr_after_rows.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_late_exit_python</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <command>input_pool_late_exit.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_late_stdout_python</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <command>input_pool_late_stdout.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_chatty_python</name>
+        <return_type>UInt64</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <command>input_pool_chatty.py</command>
+    </function>
+
+    <function>
         <type>executable</type>
         <name>test_function_stderr_on_the_way_out_python</name>
         <return_type>String</return_type>

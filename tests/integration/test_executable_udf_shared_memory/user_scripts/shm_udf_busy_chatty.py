@@ -65,6 +65,7 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break  # stdin closed -> exit
+        request_id = read_varint(stdin)
         if version != PROTOCOL_VERSION:
             raise RuntimeError(f"unsupported protocol version {version}")
 
@@ -95,7 +96,8 @@ def main():
 
         # Response frame plus one byte that is part of nothing, in a single write.
         stdout.write(
-            encode_varint(STATUS_OK)
+            encode_varint(request_id)
+            + encode_varint(STATUS_OK)
             + encode_varint(output_offset)
             + encode_varint(len(output))
             + b"\n"

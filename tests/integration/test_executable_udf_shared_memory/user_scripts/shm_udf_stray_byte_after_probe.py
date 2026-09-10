@@ -1,26 +1,24 @@
 #!/usr/bin/python3
 
-# Misbehaving pooled UDF: it answers every request correctly and then, a moment later, writes a line
-# to its `stderr`. Nothing in this invocation notices - stderr is read together with the response,
-# and by the time this line is written that read is over. The next request on the same process is
-# the one that drains it and reports it as *its* output; under `stderr_reaction` `throw` that next
-# query fails, for something a previous query's arguments caused. The server must therefore refuse
-# to return this worker to the pool.
+# A pooled worker that answers correctly and then, well after the server has stopped looking, writes
+# one stray byte to its `stdout`.
 #
-# The pause before the write is what makes the misbehaviour reproducible rather than accidental. A
-# line written immediately after the response does not leak at all: the server is asleep in `poll`
-# waiting for that response, and a woken `poll` re-scans the descriptors it was given, so a line
-# written within the thread's wake-up latency - microseconds - is reported ready along with the
-# response and drained into the query that earned it. Only a command that writes later, once that
-# read is over, leaves anything behind. This one waits long enough to be sure it is that command,
-# and briefly enough to still be inside the borrow (the server is parsing the answer, which the test
-# makes take far longer than this).
+# The pause is what makes it interesting. The server probes the worker's pipes when it takes it back
+# and refuses to pool one that left anything behind - but a probe is one instant, and this byte
+# arrives after it. The worker goes back into the pool looking clean, and the byte is waiting there
+# for whoever borrows it next.
 #
-# It answers with its own pid, so a test can tell a fresh worker from a reused one.
+# What that byte costs depends entirely on whether the protocol can tell one answer from another. As
+# a bare status varint it is a plausible frame: `0` reads as success, the real status becomes the
+# offset, the real offset becomes the size - and with a compatible format the next query gets the
+# region's own *input* back as its result, in the right number of rows, with no error anywhere. The
+# request id is what makes that impossible: the next borrow reads this byte where its own id should
+# be, sees a mismatch, and fails loudly instead of answering wrongly.
 
 import mmap
 import os
 import sys
+import threading
 import time
 
 PROTOCOL_VERSION = 1
@@ -57,15 +55,14 @@ def write_varint(stream, value):
 def main():
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
-    stderr = sys.stderr.buffer
 
     while True:
         version = read_varint(stdin)
         if version is None:
             break  # stdin closed -> exit
-        request_id = read_varint(stdin)
         if version != PROTOCOL_VERSION:
             raise RuntimeError(f"unsupported protocol version {version}")
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         path = stdin.read(path_length).decode("utf-8")
@@ -82,7 +79,7 @@ def main():
             output = bytearray()
             for line in region[input_offset : input_offset + input_size].split(b"\n"):
                 if line != b"":
-                    output += str(os.getpid()).encode("ascii") + b"\n"
+                    output += b"Key " + line + b"\n"
 
             output_offset = input_size
             region[output_offset : output_offset + len(output)] = bytes(output)
@@ -96,11 +93,13 @@ def main():
         write_varint(stdout, len(output))
         stdout.flush()
 
-        # Too late: the response above is what the server was waiting for, and it has long stopped
-        # reading by now, so this belongs to nobody until the next borrow picks it up.
-        time.sleep(0.002)
-        stderr.write(b"done\n")
-        stderr.flush()
+        # Long after the server has taken this worker back and pronounced it clean.
+        def litter():
+            time.sleep(1)
+            stdout.write(b"\x00")
+            stdout.flush()
+
+        threading.Thread(target=litter, daemon=True).start()
 
 
 if __name__ == "__main__":

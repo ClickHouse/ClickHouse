@@ -55,6 +55,7 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         path = stdin.read(path_length).decode("utf-8")
@@ -84,10 +85,12 @@ def main():
             finally:
                 region.close()
 
+            write_varint(stdout, request_id)
             write_varint(stdout, STATUS_OK)
             write_varint(stdout, 0)
             write_varint(stdout, len(output))
         except Exception as exception:  # noqa: BLE001
+            write_varint(stdout, request_id)
             write_varint(stdout, STATUS_ERROR)
             write_string_binary(stdout, str(exception))
 

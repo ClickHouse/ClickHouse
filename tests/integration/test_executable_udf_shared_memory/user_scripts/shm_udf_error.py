@@ -50,12 +50,14 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         stdin.read(path_length)
         read_varint(stdin)  # input offset
         read_varint(stdin)  # input size
 
+        write_varint(stdout, request_id)
         write_varint(stdout, STATUS_ERROR)
         write_string_binary(stdout, "the command cannot process this request")
         stdout.flush()

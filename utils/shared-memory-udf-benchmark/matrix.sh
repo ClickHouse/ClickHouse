@@ -19,6 +19,9 @@ cat > "$WORK/config.xml" <<EOF
     <path>$WORK/state</path>
     <user_scripts_path>$WORK/user_scripts/</user_scripts_path>
     <user_defined_executable_functions_config>$WORK/functions.xml</user_defined_executable_functions_config>
+    <!-- The shared-memory transport is experimental and off by default; the shm variants below ask
+         for it, and without this they would simply fail to load. -->
+    <allow_experimental_executable_udf_shared_memory>1</allow_experimental_executable_udf_shared_memory>
 </clickhouse>
 EOF
 

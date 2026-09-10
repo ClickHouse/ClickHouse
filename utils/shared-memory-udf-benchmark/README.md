@@ -24,7 +24,10 @@ Each shared-memory worker reserves its whole region (`shared_memory_size` in [`f
 
 The runner uses `clickhouse-local` with a generated config that points at `functions.xml` and `user_scripts/`, runs `SELECT sum(length(fn(val))) FROM (… numbers_mt(N))` for each variant, and reports:
 
-* **median query time** (from `--time`);
+* **median query time** (from `--time`), at a pinned `max_block_size` (`--block-size`, default
+  `65536`) — the block-size sweep below moves the ratio from `1.37x` faster to `0.88x` slower, so
+  leaving it to the server default would make the headline number depend on something the run does
+  not state;
 * **bytes that crossed the kernel via `read()`/`write()` syscalls** (`OSReadChars` / `OSWriteChars` profile events) — a build-independent structural measure of transport cost. For the pipe transports this equals the payload volume; for the shared-memory transports it is the payload once per direction plus the tiny control messages, because the server's side of the region goes through `pread`/`pwrite` (see below), which `taskstats` counts like any other read or write.
 
 ## Sweeps
@@ -71,7 +74,7 @@ a chunk with one bulk read and one bulk write, so what is compared is the transp
 
 ```bash
 ./run.sh --clickhouse ../../build_release/programs/clickhouse \
-         --rows 1000000 --row-bytes 100 --iters 9 --threads 1
+         --rows 1000000 --row-bytes 100 --iters 9 --threads 1 --block-size 65536
 CLICKHOUSE=../../build_release/programs/clickhouse ./matrix.sh   # ITERS=7
 ```
 

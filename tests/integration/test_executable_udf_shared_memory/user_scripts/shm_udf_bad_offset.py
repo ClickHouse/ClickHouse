@@ -42,6 +42,7 @@ def main():
         version = read_varint(stdin)
         if version is None:
             break
+        request_id = read_varint(stdin)
 
         path_length = read_varint(stdin)
         path = stdin.read(path_length).decode("utf-8")
@@ -51,6 +52,7 @@ def main():
         region_size = os.path.getsize(path)
 
         # Success status, but the output claims to live past the end of the region.
+        write_varint(stdout, request_id)
         write_varint(stdout, 0)
         write_varint(stdout, region_size + 1024)  # bogus offset
         write_varint(stdout, 16)  # bogus size
