@@ -1009,7 +1009,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     {
         bool key_differs = false;
 
-        SortCursor current = queue.current();
+        SortCursor current = *queue.current().first;
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -1050,7 +1050,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next();
+            queue.next(1);
         }
         else
         {
