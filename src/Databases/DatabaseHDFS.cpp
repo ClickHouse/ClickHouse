@@ -60,8 +60,6 @@ DatabaseHDFS::DatabaseHDFS(const String & name_, const String & source_url, Cont
         if (!re2::RE2::FullMatch(source, std::string(HDFS_HOST_REGEXP)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad HDFS host: {}. "
                             "It should have structure 'hdfs://<host_name>:<port>'", source);
-
-        context_->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source));
     }
 }
 
@@ -257,6 +255,18 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
             const auto & arguments = engine->arguments->children;
             source_url = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
+
+        /** The allowlist is checked here rather than in the constructor, and not for the server's own
+          * metadata replay. Startup rebuilds every database by replaying its stored `ATTACH DATABASE`
+          * statement and `loadMetadata` aborts on the first exception, so a check that throws there
+          * takes the whole server down with it - and tightening `remote_url_allow_hosts` is exactly
+          * what turns a stored host into a disallowed one. Every statement a user writes, `CREATE` and
+          * `ATTACH` alike, is still checked up front, and the allowlist holds for every use of the
+          * database regardless: `DatabaseHDFS::checkUrl` runs it for each table, which is where
+          * `DatabaseS3` enforces it too.
+          */
+        if (!args.internal && !source_url.empty())
+            args.context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source_url));
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);
     };
