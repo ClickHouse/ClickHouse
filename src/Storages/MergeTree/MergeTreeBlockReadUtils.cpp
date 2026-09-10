@@ -113,6 +113,12 @@ bool injectRequiredColumnsRecursively(
                 add_column(column_name);
                 return true;
             }
+
+            /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
+            /// subcolumn extracted from it, instead of being filled from the storage-type default.
+            add_column(column_in_storage->getNameInStorage());
+            return true;
         }
         else if (isTextIndexVirtualColumn(column_name_in_part) && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part))
         {
@@ -173,9 +179,18 @@ NameSet injectRequiredColumns(
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
+        /// Copy columns[i] to avoid a dangling reference: injectRequiredColumnsRecursively may call
+        /// columns.emplace_back, which can reallocate the vector and invalidate any reference into it.
+        String column_name = columns[i];
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            columns[i], storage_snapshot, alter_conversions,
-            data_part_info_for_reader, options, columns, required_columns, injected_columns);
+            column_name,
+            storage_snapshot,
+            alter_conversions,
+            data_part_info_for_reader,
+            options,
+            columns,
+            required_columns,
+            injected_columns);
     }
 
     /** Add a column of the minimum size.

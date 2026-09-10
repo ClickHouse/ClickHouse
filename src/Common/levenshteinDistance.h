@@ -92,18 +92,19 @@ Weight levenshteinDistanceWeighted(std::span<const Element> lhs, std::span<const
         row[0] += rhs_weights[j - 1];
         for (size_t i = 1; i <= m; ++i)
         {
+            Weight old = row[i];
             if (lhs[i - 1] == rhs[j - 1])
             {
                 row[i] = prev;
+                prev = old;
                 continue;
             }
 
-            prev = row[i];
-
             row[i] = static_cast<Weight>(std::min(
-                {row[i] + rhs_weights[j - 1], // deletion
+                {old + rhs_weights[j - 1], // deletion
                  row[i - 1] + lhs_weights[i - 1], // insertion
-                 row[i - 1] + lhs_weights[i - 1] + rhs_weights[j - 1]})); // substitution
+                 prev + lhs_weights[i - 1] + rhs_weights[j - 1]})); // substitution
+            prev = old;
         }
     }
 

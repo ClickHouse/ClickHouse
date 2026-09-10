@@ -25,8 +25,10 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <type_traits>
+#include <utility>
 
 #include <Common/ErrorCodes.h>
 #include <Common/filesystemHelpers.h>
@@ -97,21 +99,37 @@ public:
     {
         BaseStorageConfiguration::update(object_storage, local_context);
         assertLocalPathCorrect(object_storage, local_context);
-        if (current_metadata && current_metadata->supportsUpdate())
+        if (auto metadata = tryGetMetadata(); metadata && metadata->supportsUpdate())
         {
-            current_metadata->update(local_context);
+            metadata->update(local_context);
             return;
         }
-        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        auto fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        /// Destroyed after the lock is released: ~IcebergMetadata waits for its background
+        /// prefetch task, so it must never run while metadata_mutex is held.
+        std::shared_ptr<IDataLakeMetadata> displaced;
+        {
+            std::lock_guard lock(metadata_mutex);
+            displaced = std::exchange(current_metadata, std::move(fresh));
+        }
     }
 
     void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
-        if (current_metadata != nullptr)
+        if (tryGetMetadata())
             return;
         BaseStorageConfiguration::update(object_storage, local_context);
         assertLocalPathCorrect(object_storage, local_context);
-        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        auto fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        std::shared_ptr<IDataLakeMetadata> displaced;
+        {
+            std::lock_guard lock(metadata_mutex);
+            /// Compare-and-set: another thread may have published fresher metadata meanwhile.
+            if (!current_metadata)
+                current_metadata = std::move(fresh);
+            else
+                displaced = std::move(fresh);
+        }
     }
 
     void create(
@@ -133,14 +151,12 @@ public:
 
     bool supportsDelete() const override
     {
-        assertInitialized();
-        return current_metadata->supportsDelete();
+        return getMetadata()->supportsDelete();
     }
 
     bool supportsParallelInsert() const override
     {
-        assertInitialized();
-        return current_metadata->supportsParallelInsert();
+        return getMetadata()->supportsParallelInsert();
     }
 
     void mutate(const MutationCommands & commands,
@@ -150,27 +166,25 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const std::optional<FormatSettings> & format_settings) override
     {
-        assertInitialized();
-        current_metadata->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
+        getMetadata()->mutate(commands, shared_from_this(), context, storage_id, metadata_snapshot, catalog, format_settings);
     }
 
     void checkMutationIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const MutationCommands & commands) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        current_metadata->checkMutationIsPossible(commands);
+        getMetadata()->checkMutationIsPossible(commands);
     }
 
     void checkAlterIsPossible(ObjectStoragePtr object_storage, ContextPtr context, const AlterCommands & commands) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        current_metadata->checkAlterIsPossible(commands);
+        getMetadata()->checkAlterIsPossible(commands);
     }
 
     void alter(ObjectStoragePtr object_storage, const AlterCommands & params, ContextPtr context) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        current_metadata->alter(params, context);
-
+        getMetadata()->alter(params, context);
     }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly, StorageObjectStorageConfiguration::CredentialsConfigurationCallback refresh_credentials_callback) override
@@ -182,8 +196,7 @@ public:
 
     std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
     {
-        assertInitialized();
-        if (auto schema = current_metadata->getTableSchema(local_context); !schema.empty())
+        if (auto schema = getMetadata()->getTableSchema(local_context); !schema.empty())
             return ColumnsDescription(std::move(schema));
         return std::nullopt;
     }
@@ -195,8 +208,7 @@ public:
 
     std::optional<size_t> totalRows(ContextPtr local_context) override
     {
-        assertInitialized();
-        return current_metadata->totalRows(local_context);
+        return getMetadata()->totalRows(local_context);
     }
 
     bool supportsTotalBytes(ContextPtr context, ObjectStorageType storage_type) const override
@@ -206,39 +218,33 @@ public:
 
     std::optional<size_t> totalBytes(ContextPtr local_context) override
     {
-        assertInitialized();
-        return current_metadata->totalBytes(local_context);
+        return getMetadata()->totalBytes(local_context);
     }
 
     bool isDataSortedBySortingKey(StorageMetadataPtr metadata_snapshot, ContextPtr local_context) const override
     {
-        assertInitialized();
-        return current_metadata->isDataSortedBySortingKey(metadata_snapshot, local_context);
+        return getMetadata()->isDataSortedBySortingKey(metadata_snapshot, local_context);
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
-        assertInitialized();
-        return current_metadata->getInitialSchemaByPath(local_context, object_info);
+        return getMetadata()->getInitialSchemaByPath(local_context, object_info);
     }
 
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override
     {
-        assertInitialized();
-        return current_metadata->getSchemaTransformer(local_context, object_info);
+        return getMetadata()->getSchemaTransformer(local_context, object_info);
     }
 
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr context) const override
     {
-        assertInitialized();
-        return current_metadata->getTableStateSnapshot(context);
+        return getMetadata()->getTableStateSnapshot(context);
     }
 
     std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(
         const DataLakeTableStateSnapshot & state, ContextPtr context) const override
     {
-        assertInitialized();
-        auto metadata = current_metadata->buildStorageMetadataFromState(state, context);
+        auto metadata = getMetadata()->buildStorageMetadataFromState(state, context);
         if (metadata)
             LOG_TEST(log, "Built storage metadata from state with columns: {}",
                 metadata->getColumns().toString(/* include_comments */false));
@@ -247,22 +253,19 @@ public:
 
     bool shouldReloadSchemaForConsistency(ContextPtr context) const override
     {
-        assertInitialized();
-        return current_metadata->shouldReloadSchemaForConsistency(context);
+        return getMetadata()->shouldReloadSchemaForConsistency(context);
     }
 
-    IDataLakeMetadata * getExternalMetadata() override
+    std::shared_ptr<IDataLakeMetadata> getExternalMetadata() override
     {
-        assertInitialized();
-        return current_metadata.get();
+        return getMetadata();
     }
 
     bool supportsFileIterator() const override { return true; }
 
     bool supportsWrites() const override
     {
-        assertInitialized();
-        return current_metadata->supportsWrites();
+        return getMetadata()->supportsWrites();
     }
 
     ObjectIterator iterate(
@@ -272,8 +275,7 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
-        assertInitialized();
-        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
+        return getMetadata()->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
     }
 
 #if USE_PARQUET
@@ -284,8 +286,7 @@ public:
     /// because the code will be removed ASAP anyway)
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
-        assertInitialized();
-        const auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata *>(current_metadata.get());
+        const auto delta_lake_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadata>(getMetadata());
         if (delta_lake_metadata)
             return delta_lake_metadata->getPartitionColumns();
         return {};
@@ -294,25 +295,22 @@ public:
 
     void modifyFormatSettings(FormatSettings & settings_, const Context & local_context) const override
     {
-        assertInitialized();
-        current_metadata->modifyFormatSettings(settings_, local_context);
+        getMetadata()->modifyFormatSettings(settings_, local_context);
     }
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
     {
-        assertInitialized();
-        return current_metadata->getColumnMapperForObject(object_info);
+        return getMetadata()->getColumnMapperForObject(object_info);
     }
     ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
     {
-        assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
+        return getMetadata()->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
     }
 
     void drop(ContextPtr local_context) override
     {
-        if (current_metadata)
-            current_metadata->drop(local_context);
+        if (auto metadata = tryGetMetadata())
+            metadata->drop(local_context);
     }
 
     SinkToStoragePtr write(
@@ -324,7 +322,7 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        return current_metadata->write(
+        return getMetadata()->write(
             sample_block,
             table_id,
             object_storage,
@@ -377,12 +375,12 @@ public:
     bool optimize(ObjectStoragePtr object_storage, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override
     {
         lazyInitializeIfNeeded(object_storage, context);
-        return current_metadata->optimize(metadata_snapshot, context, format_settings);
+        return getMetadata()->optimize(metadata_snapshot, context, format_settings);
     }
 
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
     {
-        current_metadata->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
+        getMetadata()->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
     }
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
@@ -407,7 +405,10 @@ public:
 private:
     const DataLakeStorageSettingsPtr settings;
     ObjectStoragePtr ready_object_storage;
-    DataLakeMetadataPtr current_metadata;
+    mutable std::mutex metadata_mutex;
+    /// Readers take a copy of this pointer under the lock and use that copy, so a concurrent
+    /// republish in update() cannot destroy the object they are still calling into.
+    std::shared_ptr<IDataLakeMetadata> current_metadata TSA_GUARDED_BY(metadata_mutex);
     LoggerPtr log = getLogger("DataLakeConfiguration");
 
     void assertLocalPathCorrect(ObjectStoragePtr object_storage, ContextPtr local_context)
@@ -421,10 +422,18 @@ private:
         }
     }
 
-    void assertInitialized() const
+    std::shared_ptr<IDataLakeMetadata> tryGetMetadata() const
     {
-        if (!current_metadata)
+        std::lock_guard lock(metadata_mutex);
+        return current_metadata;
+    }
+
+    std::shared_ptr<IDataLakeMetadata> getMetadata() const
+    {
+        auto metadata = tryGetMetadata();
+        if (!metadata)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata is not initialized");
+        return metadata;
     }
 
     ReadFromFormatInfo prepareReadingFromFormat(
@@ -437,14 +446,21 @@ private:
         const PrepareReadingFromFormatHiveParams &) override
     {
         assertLocalPathCorrect(object_storage, local_context);
-        if (!current_metadata)
+        auto metadata = tryGetMetadata();
+        if (!metadata)
         {
-            current_metadata = DataLakeMetadata::create(
-                object_storage,
-                weak_from_this(),
-                local_context);
+            auto fresh = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+            std::shared_ptr<IDataLakeMetadata> displaced;
+            {
+                std::lock_guard lock(metadata_mutex);
+                if (!current_metadata)
+                    current_metadata = std::move(fresh);
+                else
+                    displaced = std::move(fresh);
+                metadata = current_metadata;
+            }
         }
-        return current_metadata->prepareReadingFromFormat(
+        return metadata->prepareReadingFromFormat(
             requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
     }
 };

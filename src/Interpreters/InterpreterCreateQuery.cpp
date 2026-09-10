@@ -17,6 +17,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
@@ -325,7 +326,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext());
+    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -1618,7 +1619,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             fs::path data_path = fs::path(create.attach_from_path).lexically_normal();
             if (data_path.is_relative())
                 data_path = (user_files / data_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
 
@@ -1628,7 +1629,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         else
         {
             fs::path data_path = (root_path / create.attach_from_path).lexically_normal();
-            if (!startsWith(data_path, user_files))
+            if (!fileOrSymlinkPathStartsWith(data_path.string(), user_files.string()))
                 throw Exception(ErrorCodes::PATH_ACCESS_DENIED,
                                 "Data directory {} must be inside {} to attach it", String(data_path), String(user_files));
         }
@@ -1652,7 +1653,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -2251,12 +2252,35 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
+        /// The replaced table is dropped after the swap, under an internal temporary name that grants
+        /// cannot cover, so check the drop privilege for its kind here, on its real name. Master runs
+        /// this inside the rename's `DDLGuard`s via `setPreSwapCheck`, which this branch does not have.
+        const StorageID table_to_replace_id{create.getDatabase(), table_to_replace_name};
+        if (auto to_drop = DatabaseCatalog::instance().tryGetTable(table_to_replace_id, current_context))
+        {
+            AccessType drop_access = AccessType::DROP_TABLE;
+            if (to_drop->isView())
+                drop_access = AccessType::DROP_VIEW;
+            else if (to_drop->isDictionary())
+                drop_access = AccessType::DROP_DICTIONARY;
+            current_context->checkAccess(drop_access, table_to_replace_id);
+        }
+
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
         interpreter_rename.execute();
         renamed = true;
 
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
+            /// After the exchange the temporary name holds the replaced table, which may be of a different
+            /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
+            if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
+                ast_drop->is_dictionary = replaced->isDictionary();
+
+            /// The check before the rename already authorized this drop against the replaced table's
+            /// real name. The temporary name cannot be covered by grants, so skip the check on it.
+            ast_drop->no_access_check = true;
+
             /// Target table was replaced with new one, drop old table
             auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
