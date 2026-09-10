@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
@@ -312,6 +313,17 @@ bool containsUnsafeFunction(const QueryTreeNodePtr & node)
         /// rejected anyway because it is not a function of the keys.
         const auto function_base = function->getFunction();
         if (!function_base || !isSafeCustomKeyFunction(*function_base))
+            return true;
+    }
+
+    if (const auto * constant = node->as<ConstantNode>())
+    {
+        /// The custom key is shipped to the replicas as an expression, so a value the initiator folded
+        /// (`randConstant()`) is drawn again on every replica. A folded source expression is not a child
+        /// node, so it is only reachable here.
+        if (!constant->isDeterministic())
+            return true;
+        if (constant->hasSourceExpression() && containsUnsafeFunction(constant->getSourceExpression()))
             return true;
     }
 

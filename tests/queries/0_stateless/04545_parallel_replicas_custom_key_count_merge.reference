@@ -59,6 +59,8 @@ no_merge on secondary queries per custom key
 0	33334
 1	33333
 2	33333
+04545_folded_nondeterministic_an0	3	
+04545_folded_nondeterministic_an1	3	
 04545_plain_count_an0	3	
 04545_plain_count_an1	3	
 04545_plain_count_range_an0	3	

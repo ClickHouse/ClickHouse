@@ -139,6 +139,22 @@ SETTINGS parallel_replicas_custom_key = 'timeSeriesTagsToGroup([], ''k'', toStri
     log_comment = '04545_stateful_tags_to_group_an0'
 FORMAT Null;
 
+-- `randConstant()` is drawn once per query, and the analyzer folds it into a constant whose source
+-- expression is not a child node, so the recursion above reaches it only through the constant itself. The
+-- custom key is shipped to the replicas as an expression, so the draw is repeated there and one group can
+-- land on several replicas. Decision-only, for the same reason as the two probes above.
+SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY y ORDER BY y
+SETTINGS parallel_replicas_custom_key = 'sipHash64(y, randConstant())', enable_analyzer = 1,
+    log_comment = '04545_folded_nondeterministic_an1'
+FORMAT Null;
+
+SELECT y, count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), t_04545)
+GROUP BY y ORDER BY y
+SETTINGS parallel_replicas_custom_key = 'sipHash64(y, randConstant())', enable_analyzer = 0,
+    log_comment = '04545_folded_nondeterministic_an0'
+FORMAT Null;
+
 -- Grouping by the unsafe expression itself must not make it safe to partition on: the replica filter and
 -- the grouping are evaluated separately on each replica, so one group still ends up spread over several
 -- replicas. This reaches the check through the GROUP BY key equality shortcut rather than the recursion.
@@ -189,7 +205,8 @@ SYSTEM FLUSH LOGS query_log;
 -- `enable_parallel_replicas = 0` is required: `system.query_log` is MergeTree-backed, so with the
 -- session's `parallel_replicas_for_non_replicated_merge_tree = 1` this query would itself be routed
 -- through custom-key parallel replicas and fail, as the session sets no custom key of its own.
-WITH ['04545_plain_count_an0', '04545_plain_count_an1', '04545_plain_count_range_an0',
+WITH ['04545_folded_nondeterministic_an0', '04545_folded_nondeterministic_an1',
+      '04545_plain_count_an0', '04545_plain_count_an1', '04545_plain_count_range_an0',
       '04545_plain_count_range_an1', '04545_safe_bare_key_an0', '04545_safe_bare_key_an1',
       '04545_safe_expression_key_an0', '04545_safe_hash_key_an1', '04545_server_constant_an0',
       '04545_server_constant_an1', '04545_server_constant_hostname_an1',
