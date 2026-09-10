@@ -68,6 +68,8 @@ extern const Event IcebergMetadataReadWaitTimeMicroseconds;
 extern const Event IcebergMetadataReturnedObjectInfos;
 extern const Event IcebergMinMaxNonPrunedDeleteFiles;
 extern const Event IcebergMinMaxPrunedDeleteFiles;
+extern const Event IcebergPartitionPrunedFiles;
+extern const Event IcebergPartitionPrunedManifestFiles;
 };
 
 
@@ -81,6 +83,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
+extern const SettingsBool use_iceberg_manifest_list_partition_pruning;
 extern const SettingsNonZeroUInt64 iceberg_file_entries_queue_size;
 extern const SettingsNonZeroUInt64 iceberg_manifest_decode_concurrency;
 };
@@ -189,12 +192,14 @@ DataFileEntriesStream::DataFileEntriesStream(
     size_t decode_concurrency_,
     IcebergDataSnapshotPtr data_snapshot_,
     std::function<void()> prepare_,
-    CreateManifestIterator create_manifest_iterator_)
+    CreateManifestIterator create_manifest_iterator_,
+    SkipManifest skip_manifest_)
     : chunk_size(queue_size_)
     , decode_concurrency(decode_concurrency_)
     , data_snapshot(std::move(data_snapshot_))
     , prepare(std::move(prepare_))
     , create_manifest_iterator(std::move(create_manifest_iterator_))
+    , skip_manifest(std::move(skip_manifest_))
     , queue(queue_size_)
 {
     producer = std::make_unique<ThreadFromGlobalPool>(
@@ -277,6 +282,8 @@ void DataFileEntriesStream::run()
             const size_t index = next_index++;
             if (manifest_list_entries[index].content_type != ManifestFileContentType::DATA)
                 continue;
+            if (skip_manifest && skip_manifest(manifest_list_entries[index]))
+                continue;
             auto manifest = std::make_unique<InFlightManifest>(manifest_list_entries[index]);
             auto * scheduled = manifest.get();
             manifest->future = stream_runner([this, scheduled] { decodeChunk(*scheduled); }, Priority{});
@@ -347,17 +354,47 @@ IcebergIterator::IcebergIterator(
 {
     chassert(local_context);
 
+    /// Every manifest entry is logged when the trace is requested, so the manifests cannot be skipped then.
+    const bool per_entry_trace_requested
+        = getIcebergMetadataLogLevel(local_context) >= DB::IcebergMetadataLogLevel::ManifestFileEntry;
+    const bool manifest_list_pruning_enabled = manifest_filter_dag && data_snapshot && table_state_snapshot
+        && data_snapshot->partition_specs && !per_entry_trace_requested
+        && local_context->getSettingsRef()[Setting::use_iceberg_partition_pruning]
+        && local_context->getSettingsRef()[Setting::use_iceberg_manifest_list_partition_pruning];
+
     data_files_stream = std::make_unique<Iceberg::DataFileEntriesStream>(
         local_context->getSettingsRef()[Setting::iceberg_file_entries_queue_size],
         local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
         data_snapshot,
-        [this]
+        [this, manifest_list_pruning_enabled]
         {
             if (manifest_filter_dag)
                 VirtualColumnUtils::buildOrderedSetsForDAG(*manifest_filter_dag, local_context);
+            /// The key conditions of the pruner are built over the filter DAG, so they need its
+            /// ordered sets to be ready.
+            if (manifest_list_pruning_enabled)
+                manifest_list_pruner = std::make_unique<Iceberg::ManifestListPruner>(
+                    *persistent_components.schema_processor,
+                    table_state_snapshot->schema_id,
+                    data_snapshot->schema_id_on_snapshot_commit,
+                    data_snapshot->partition_specs,
+                    manifest_filter_dag.get(),
+                    local_context);
         },
         [this](const ManifestFileCacheKey & manifest_list_entry, const std::atomic<bool> * stop_flag)
-        { return createManifestIterator(manifest_list_entry, stop_flag); });
+        { return createManifestIterator(manifest_list_entry, stop_flag); },
+        [this](const ManifestFileCacheKey & manifest_list_entry)
+        {
+            if (!manifest_list_pruner
+                || !manifest_list_pruner->canBePruned(manifest_list_entry.partition_spec_id, manifest_list_entry.partition_summaries))
+                return false;
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedManifestFiles);
+            /// The data files of a skipped manifest are skipped by partition pruning just as the ones
+            /// rejected entry by entry, so they are counted the same way; without this the counter
+            /// silently drops to zero exactly when pruning got better.
+            ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles, manifest_list_entry.live_files_count);
+            return true;
+        });
 }
 
 void IcebergIterator::ensureDeletesReady()

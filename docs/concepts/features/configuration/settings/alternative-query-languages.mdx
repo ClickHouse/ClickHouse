@@ -15,6 +15,7 @@ The currently supported dialects are:
 - `clickhouse`: The default [SQL dialect](/chdb/reference/sql-reference) of ClickHouse
 - `prql`: [Pipelined Relational Query Language (PRQL)](https://prql-lang.org/)
 - `kusto`: [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+- `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 Which query language is used is controlled by setting `dialect`.
 
@@ -80,3 +81,50 @@ numbers(10) | project number
 ```
 
 Note that KQL queries may not be able to access all functions defined in ClickHouse.
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge/>
+
+To enable the Trino dialect:
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+Trino-specific syntax is translated to ClickHouse SQL, and Trino function names are mapped to their ClickHouse equivalents:
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+The translation covers, among other things, `ARRAY[...]` literals, `TRY_CAST`, `UNNEST` (translated to `ARRAY JOIN`),
+`ROW` constructors and types, `VALUES` tables, `OFFSET` before `LIMIT`, `BETWEEN SYMMETRIC`, and several hundred
+functions, including the ones whose names exist in both systems with different semantics (for example, Trino `length`
+counts Unicode code points and is translated to `lengthUTF8`). ClickHouse functions that do not collide with Trino
+names remain accessible, so both function families can be mixed in one query.
+
+Trino `JSON` values are mapped to the ClickHouse [`JSON`](/reference/data-types/newjson) type:
+`JSON '...'` literals and `json_parse` become casts to `JSON`, `json_format` becomes `toJSONString`, and the path
+functions (`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`) are
+translated to their ClickHouse counterparts. Since the ClickHouse `JSON` type stores objects, non-object documents
+(top-level arrays and scalars) are rejected when they are materialized as `JSON` values; the path functions accept
+any JSON text.
+
+Some Trino semantics are not expressible in the translated query text; they are applied to the query context
+instead: outer joins produce `NULL` (`join_use_nulls`), set operations use the numeric supertype rather than
+`Variant` (`use_variant_as_common_type`), and the query analyzer is required (`enable_analyzer`). An explicit
+`SETTINGS` clause in the query still takes precedence over these.
+
+Semantics that cannot be fixed by a translation at the query level remain the ClickHouse ones. Most notably,
+the division operator `/` performs integer division in Trino but floating-point division in ClickHouse, and
+`round` uses banker's rounding in ClickHouse for `Float` arguments.
+
+Use `EXPLAIN SYNTAX` to see how a query is translated.

@@ -250,10 +250,10 @@ REGISTER_FUNCTION(ArrayReverse)
     FunctionDocumentation::Description description = R"(
 Reverses the order of elements of a given array.
 
-:::note
+<Note>
 Function `reverse(arr)` performs the same functionality but works on other data-types
 in addition to Arrays.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "arrayReverse(arr)";
     FunctionDocumentation::Arguments arguments = {

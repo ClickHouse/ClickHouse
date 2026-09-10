@@ -1332,7 +1332,7 @@ private:
                         {
                             String type(tag->name);
                             std::transform(type.begin(), type.end(), type.begin(), [](char c) { return std::tolower(static_cast<unsigned char>(c)); });
-                            renderAdmonition(type, {}, body_lines);
+                            renderAdmonition(type, mdxAttribute(tag->attributes, "title"), body_lines);
                             i = close_pos + 1;
                             continue;
                         }

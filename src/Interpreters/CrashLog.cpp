@@ -31,6 +31,8 @@ ColumnsDescription CrashLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The hostname where the crash occurred."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "The date of the crash."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "The time of the crash."},
         {"timestamp_ns", std::make_shared<DataTypeUInt64>(), "Timestamp of the event with nanoseconds."},
@@ -39,7 +41,7 @@ ColumnsDescription CrashLogElement::getColumnsDescription()
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread ID."},
         {"query_id", std::make_shared<DataTypeString>(), "Query ID."},
         {"query", std::make_shared<DataTypeString>(), "Query text that was being executed when the crash occurred."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of crash. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of crash. Each element is a virtual memory address inside ClickHouse server process."},
         {"trace_full", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Stack trace at the moment of crash. Each element contains a called method inside ClickHouse server process."},
         {"fault_address", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Memory address that caused the fault."},
         {"fault_access_type", std::make_shared<DataTypeString>(), "Type of memory access that caused the fault (e.g., 'read', 'write')."},
@@ -58,6 +60,8 @@ void CrashLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(timestamp_ns);
@@ -121,7 +125,7 @@ void collectCrashLog(
         trace_full.reserve(num_frames);
 
         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-            trace.push_back(StackTrace::resolveAddressForStorage(stack_trace.getFramePointers()[i]));
+            trace.push_back(reinterpret_cast<uintptr_t>(stack_trace.getFramePointers()[i]));
 
         stack_trace.toStringEveryLine([&trace_full](std::string_view line) { trace_full.push_back(line); });
 

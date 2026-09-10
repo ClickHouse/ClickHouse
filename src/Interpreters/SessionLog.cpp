@@ -1,6 +1,7 @@
 #include <Interpreters/SessionLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
@@ -136,6 +137,8 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", lc_string_datatype, "Hostname of the server executing the query."},
+        {"clickhouse_version", lc_string_datatype, "Version of the ClickHouse server that produced the row."},
+        {"system_processor", lc_string_datatype, "CPU architecture of the ClickHouse server that produced the row."},
         {"type", std::move(event_type), "Login/logout result. Possible values: "
             "LoginFailure — Login error. "
             "LoginSuccess — Successful login. "
@@ -189,6 +192,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(type);
     columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);

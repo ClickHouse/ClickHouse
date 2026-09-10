@@ -20,6 +20,11 @@ enum class MetricGroupKey : UInt8
     Spill,
     Build,
     Probe,
+    Cost,
+    Selectivity,
+    Output,
+    InputLeft,
+    InputRight,
 };
 
 enum class MetricKey : UInt8
@@ -32,9 +37,16 @@ enum class MetricKey : UInt8
     OutputBytes,
 
     Rows,
+    RowsEstimated,
     Matched,
     MatchRate,
     Fanout,
+
+    Estimated,
+    Actual,
+    EstimatedNDV,
+    ActualCartesian,
+    QError,
 
     UniqueKeys,
     Memory,
@@ -67,10 +79,14 @@ enum class MetricFormat : UInt8
     Time,
     Percent,
     Ratio,
+    /// Selectivities are too small for the fixed-precision Ratio format.
+    Selectivity,
 };
 
 std::string_view toString(MetricGroupKey key);
 std::string_view toString(MetricKey key);
+
+std::string_view missingValueText(MetricKey key);
 
 MetricFormat formatOf(MetricKey key);
 

@@ -7,12 +7,14 @@
 #include <Interpreters/sortBlock.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
 
@@ -54,6 +56,13 @@ namespace ErrorCodes
 const char * const SSTIndexWriter::FILE_NAME = "unique_key_index.sst";
 
 #if USE_ROCKSDB
+
+/// Declares a `rocksdb::FileSystem` method override that unconditionally
+/// returns `NotSupported`. `WriteBufferFileSystem` implements only the one
+/// operation `SstFileWriter` needs; everything else is fail-closed. Scoped to
+/// this file: `#undef`-ed right after the class.
+#define ROCKSDB_IO_NOT_SUPPORTED(name, ...) \
+    rocksdb::IOStatus name(__VA_ARGS__) override { return rocksdb::IOStatus::NotSupported(); }
 
 namespace
 {
@@ -185,84 +194,44 @@ public:
     }
 
     /// Unsupported methods — SstFileWriter never calls them.
-    rocksdb::IOStatus NewSequentialFile(
-        const std::string &,
-        const rocksdb::FileOptions &,
-        std::unique_ptr<rocksdb::FSSequentialFile> *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus NewRandomAccessFile(
-        const std::string &,
-        const rocksdb::FileOptions &,
-        std::unique_ptr<rocksdb::FSRandomAccessFile> *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus FileExists(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus GetFileSize(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        uint64_t *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus NewDirectory(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        std::unique_ptr<rocksdb::FSDirectory> *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus GetChildren(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        std::vector<std::string> *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus DeleteFile(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus CreateDir(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus CreateDirIfMissing(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus DeleteDir(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus GetFileModificationTime(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        uint64_t *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus GetAbsolutePath(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        std::string *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus RenameFile(
-        const std::string &,
-        const std::string &,
-        const rocksdb::IOOptions &,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus LockFile(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        rocksdb::FileLock **,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus UnlockFile(
-        rocksdb::FileLock *,
-        const rocksdb::IOOptions &,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus GetTestDirectory(
-        const rocksdb::IOOptions &,
-        std::string *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
-    rocksdb::IOStatus IsDirectory(
-        const std::string &,
-        const rocksdb::IOOptions &,
-        bool *,
-        rocksdb::IODebugContext *) override { return rocksdb::IOStatus::NotSupported(); }
+    ROCKSDB_IO_NOT_SUPPORTED(NewSequentialFile,
+        const std::string &, const rocksdb::FileOptions &,
+        std::unique_ptr<rocksdb::FSSequentialFile> *, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(NewRandomAccessFile,
+        const std::string &, const rocksdb::FileOptions &,
+        std::unique_ptr<rocksdb::FSRandomAccessFile> *, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(FileExists,
+        const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(GetFileSize,
+        const std::string &, const rocksdb::IOOptions &, uint64_t *, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(NewDirectory,
+        const std::string &, const rocksdb::IOOptions &,
+        std::unique_ptr<rocksdb::FSDirectory> *, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(GetChildren,
+        const std::string &, const rocksdb::IOOptions &,
+        std::vector<std::string> *, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(DeleteFile,
+        const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(CreateDir,
+        const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(CreateDirIfMissing,
+        const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(DeleteDir,
+        const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(GetFileModificationTime,
+        const std::string &, const rocksdb::IOOptions &, uint64_t *, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(GetAbsolutePath,
+        const std::string &, const rocksdb::IOOptions &, std::string *, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(RenameFile,
+        const std::string &, const std::string &, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(LockFile,
+        const std::string &, const rocksdb::IOOptions &, rocksdb::FileLock **, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(UnlockFile,
+        rocksdb::FileLock *, const rocksdb::IOOptions &, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(GetTestDirectory,
+        const rocksdb::IOOptions &, std::string *, rocksdb::IODebugContext *)
+    ROCKSDB_IO_NOT_SUPPORTED(IsDirectory,
+        const std::string &, const rocksdb::IOOptions &, bool *, rocksdb::IODebugContext *)
 
 private:
     WriteBuffer * write_buffer = nullptr;
@@ -270,13 +239,17 @@ private:
 
 }
 
+#undef ROCKSDB_IO_NOT_SUPPORTED
+
 struct SSTIndexWriter::Impl
 {
     WriteSettings write_settings;
     /// Target file in the part storage. Opened lazily on the first
     /// `addEncoded` so an empty input produces no `.sst` file.
     std::unique_ptr<WriteBufferFromFileBase> out_file;
-    /// Custom RocksDB env that redirects SST writes into `out_file`.
+    /// Hashing wrapper over `out_file` so checksum is computed during write.
+    std::unique_ptr<HashingWriteBuffer> hashing_out;
+    /// Custom RocksDB env that redirects SST writes into `hashing_out`.
     std::unique_ptr<rocksdb::Env> sst_env;
     std::unique_ptr<rocksdb::SstFileWriter> writer;
     bool opened = false;
@@ -317,8 +290,9 @@ void SSTIndexWriter::openOutputStreamOnFirstEntry()
 
     part_storage.createDirectories();
     impl->out_file = part_storage.writeFile(FILE_NAME, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, impl->write_settings);
+    impl->hashing_out = std::make_unique<HashingWriteBuffer>(*impl->out_file);
 
-    impl->sst_env = rocksdb::NewCompositeEnv(std::make_shared<WriteBufferFileSystem>(impl->out_file.get()));
+    impl->sst_env = rocksdb::NewCompositeEnv(std::make_shared<WriteBufferFileSystem>(impl->hashing_out.get()));
     impl->writer = std::make_unique<rocksdb::SstFileWriter>(rocksdb::EnvOptions{}, makeSSTOptions(impl->sst_env.get()));
 
     /// Empty path: the custom filesystem ignores the name and always hands
@@ -334,17 +308,52 @@ void SSTIndexWriter::openOutputStreamOnFirstEntry()
 }
 #endif
 
-void SSTIndexWriter::finish()
+UInt64 SSTIndexWriter::finish(MergeTreeDataPartChecksums & out_checksums, bool fsync)
 {
 #if USE_ROCKSDB
-    if (!impl || !impl->opened)
-        return;
+    if (finalized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "SSTIndexWriter::finish called twice");
+
+    /// Emitted once per writer, on every exit path (success or throw).
+    SCOPE_EXIT({
+        ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
+            impl->lifetime_watch.elapsedMicroseconds());
+    });
+
+    /// Empty input: the output stream was never opened, so no `.sst` is produced.
+    if (!impl->out_file)
+    {
+        finalized = true;
+        LOG_DEBUG(getWriterLogger(), "Finished empty SST (no .sst produced)");
+        return 0;
+    }
+
+    /// Close the RocksDB writer (flushes the SST footer through our
+    /// `WriteBuffer`-backed file), finalize the hashing wrapper to fix its byte
+    /// count and hash, and record them.
     auto status = impl->writer->Finish();
     impl->opened = false;
     if (!status.ok())
         throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR,
             "SSTIndexWriter::finish: SstFileWriter::Finish failed for {}: {}",
             FILE_NAME, status.ToString());
+    impl->hashing_out->finalize();
+    out_checksums.addFile(FILE_NAME, impl->hashing_out->count(), impl->hashing_out->getHash());
+
+    /// Finalize (and optionally fsync) the part-storage file inline.
+    impl->out_file->finalize();
+    if (fsync)
+        impl->out_file->sync();
+
+    /// `finalized` guards the destructor: the file is committed now.
+    finalized = true;
+    LOG_DEBUG(getWriterLogger(), "Wrote SST {}: {} entries, {} bytes{}",
+        FILE_NAME, entries_added, impl->hashing_out->count(), fsync ? ", fsynced" : "");
+    return entries_added;
+#else
+    (void)out_checksums; (void)fsync;
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "SSTIndexWriter requires RocksDB support (USE_ROCKSDB=1)");
 #endif
 }
 
@@ -352,11 +361,16 @@ SSTIndexWriter::~SSTIndexWriter()
 {
 #if USE_ROCKSDB
     /// Not finalized → abandoned on some error path; cancel the live
-    /// `WriteBuffer` so an object-storage writer aborts its multipart
-    /// upload instead of leaking it. On local disk `cancel()` is a no-op
-    /// and the file created by `writeFile` remains, so remove it too.
+    /// `WriteBuffer`s so an object-storage writer aborts its multipart
+    /// upload instead of leaking it, and so `WriteBuffer`'s destructor does
+    /// not assert on a buffer that is neither finalized nor canceled.
+    /// Cancel the hashing wrapper first: it sits on top of `out_file`.
+    /// On local disk `cancel()` is a no-op and the file created by
+    /// `writeFile` remains, so remove it too.
     if (impl && impl->out_file && !finalized)
     {
+        if (impl->hashing_out)
+            impl->hashing_out->cancel();
         impl->out_file->cancel();
         try
         {
@@ -410,42 +424,6 @@ void SSTIndexWriter::addEncoded(const std::string_view & encoded_key, UInt32 row
 #endif
 }
 
-UInt64 SSTIndexWriter::finalizeToStorage()
-{
-#if USE_ROCKSDB
-    if (finalized)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "SSTIndexWriter::finalizeToStorage called twice");
-
-    /// Emitted once per writer, on every exit path (success or throw).
-    SCOPE_EXIT({
-        ProfileEvents::increment(ProfileEvents::UniqueKeySSTWriteMicroseconds,
-            impl->lifetime_watch.elapsedMicroseconds());
-    });
-
-    /// Empty input: the output stream was never opened, so no `.sst` is produced.
-    if (!impl->out_file)
-    {
-        finalized = true;
-        LOG_DEBUG(getWriterLogger(), "Finalized empty SST (no .sst produced)");
-        return 0;
-    }
-
-    /// Close the RocksDB writer first — this flushes the SST footer through
-    /// our `WriteBuffer`-backed file. Then finalize the outer `WriteBuffer`
-    /// so the part storage commits the bytes.
-    finish();
-    impl->out_file->finalize();
-
-    finalized = true;
-    LOG_DEBUG(getWriterLogger(), "Finalized SST {}: {} entries", FILE_NAME, entries_added);
-    return entries_added;
-#else
-    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-        "SSTIndexWriter requires RocksDB support (USE_ROCKSDB=1)");
-#endif
-}
-
-
 UInt64 SSTIndexWriter::write(
     IDataPartStorage & part_storage,
     const Block & block,
@@ -454,6 +432,8 @@ UInt64 SSTIndexWriter::write(
     const std::vector<bool> & sort_reverse_flags,
     const IColumn::Permutation * permutation,
     UInt64 max_encoded_size,
+    MergeTreeDataPartChecksums & out_checksums,
+    bool fsync,
     ContextPtr context)
 {
     if (uk_names.empty())
@@ -461,12 +441,50 @@ UInt64 SSTIndexWriter::write(
 
 #if USE_ROCKSDB
     if (isBlockSortedByUniqueKey(uk_names, sort_names, sort_reverse_flags, block))
-        return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context);
-    return writeFromBlockUnsorted(part_storage, block, uk_names, permutation, max_encoded_size, context);
+        return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, out_checksums, fsync, context);
+    return writeFromBlockUnsorted(part_storage, block, uk_names, permutation, max_encoded_size, out_checksums, fsync, context);
 #else
     (void)sort_names; (void)sort_reverse_flags;
-    return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, context);
+    return writeFromBlock(part_storage, block, uk_names, permutation, max_encoded_size, out_checksums, fsync, context);
 #endif
+}
+
+
+UInt64 SSTIndexWriter::writeDenseIndexOnInsert(
+    IDataPartStorage & storage,
+    const StorageMetadataPtr & metadata_snapshot,
+    const Block & block,
+    const IColumn::Permutation * permutation,
+    UInt64 max_encoded_size,
+    MergeTreeDataPartChecksums & out_checksums,
+    bool fsync,
+    ContextPtr context)
+{
+    /// Caller (`MergeTreeDataWriter`) ensures the table has a UNIQUE KEY.
+    /// `SSTIndexWriter` accounts for `UniqueKeySSTWriteMicroseconds` itself, and
+    /// throws SUPPORT_IS_DISABLED without RocksDB: a UNIQUE KEY INSERT that cannot
+    /// build the dense index fails closed rather than publishing a part with no
+    /// `unique_key_index.sst`.
+    ///
+    /// The SST needs Full part storage: load-time rebuild calls `removeFileIfExists`
+    /// + `writeFile`, but packed storage only supports these through the writer,
+    /// which is not initialized at load/ATTACH time.
+    /// (`MergeTreeDataWriter` forces Full storage for UNIQUE KEY parts.)
+    if (storage.getType() != MergeTreeDataPartStorageType::Full)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE KEY dense index requires full part storage, got part storage type {}",
+            storage.getType().toString());
+    return write(
+        storage,
+        block,
+        metadata_snapshot->getUniqueKeyColumns(),
+        metadata_snapshot->getSortingKeyColumns(),
+        metadata_snapshot->getSortingKeyReverseFlags(),
+        permutation,
+        max_encoded_size,
+        out_checksums,
+        fsync,
+        context);
 }
 
 
@@ -476,6 +494,8 @@ UInt64 SSTIndexWriter::writeFromBlock(
     const Names & unique_key_column_names,
     const IColumn::Permutation * permutation,
     size_t max_encoded_size,
+    MergeTreeDataPartChecksums & out_checksums,
+    bool fsync,
     ContextPtr context)
 {
 #if USE_ROCKSDB
@@ -506,13 +526,13 @@ UInt64 SSTIndexWriter::writeFromBlock(
     VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(uk_columns, permutation, max_encoded_size, encoded);
 
-    SSTIndexWriter writer(part_storage, context);
+    auto writer = std::make_unique<SSTIndexWriter>(part_storage, context);
     for (size_t i = 0; i < num_rows; ++i)
-        writer.addEncoded(encoded[i], static_cast<UInt32>(i));
-    return writer.finalizeToStorage();
+        writer->addEncoded(encoded[i], static_cast<UInt32>(i));
+    return writer->finish(out_checksums, fsync);
 #else
     (void)part_storage; (void)block; (void)unique_key_column_names;
-    (void)permutation; (void)max_encoded_size; (void)context;
+    (void)permutation; (void)max_encoded_size; (void)out_checksums; (void)fsync; (void)context;
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter::writeFromBlock requires RocksDB support (USE_ROCKSDB=1)");
 #endif
@@ -525,6 +545,8 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
     const Names & unique_key_column_names,
     const IColumn::Permutation * permutation,
     size_t max_encoded_size,
+    MergeTreeDataPartChecksums & out_checksums,
+    bool fsync,
     ContextPtr context)
 {
 #if USE_ROCKSDB
@@ -584,13 +606,13 @@ UInt64 SSTIndexWriter::writeFromBlockUnsorted(
         for (size_t i = 0; i < num_rows; ++i)
             source_to_part_offset[i] = static_cast<UInt32>(i);
 
-    SSTIndexWriter writer(part_storage, context);
+    auto writer = std::make_unique<SSTIndexWriter>(part_storage, context);
     for (size_t i = 0; i < num_rows; ++i)
-        writer.addEncoded(encoded[i], source_to_part_offset[uk_perm[i]]);
-    return writer.finalizeToStorage();
+        writer->addEncoded(encoded[i], source_to_part_offset[uk_perm[i]]);
+    return writer->finish(out_checksums, fsync);
 #else
     (void)part_storage; (void)block; (void)unique_key_column_names;
-    (void)permutation; (void)max_encoded_size; (void)context;
+    (void)permutation; (void)max_encoded_size; (void)out_checksums; (void)fsync; (void)context;
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "SSTIndexWriter::writeFromBlockUnsorted requires RocksDB support (USE_ROCKSDB=1)");
 #endif

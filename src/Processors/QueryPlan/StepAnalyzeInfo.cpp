@@ -15,6 +15,11 @@ std::string_view toString(MetricGroupKey key)
         case MetricGroupKey::Spill: return "Spill";
         case MetricGroupKey::Build: return "Build";
         case MetricGroupKey::Probe: return "Probe";
+        case MetricGroupKey::Cost: return "Cost";
+        case MetricGroupKey::Selectivity: return "Selectivity";
+        case MetricGroupKey::Output: return "Output rows";
+        case MetricGroupKey::InputLeft: return "Input (left)";
+        case MetricGroupKey::InputRight: return "Input (right)";
     }
 }
 
@@ -30,9 +35,16 @@ std::string_view toString(MetricKey key)
         case MetricKey::OutputBytes: return "output bytes";
 
         case MetricKey::Rows: return "rows";
+        case MetricKey::RowsEstimated: return "rows estimated";
         case MetricKey::Matched: return "matched";
         case MetricKey::MatchRate: return "match rate";
         case MetricKey::Fanout: return "fanout";
+
+        case MetricKey::Estimated: return "estimated";
+        case MetricKey::Actual: return "actual";
+        case MetricKey::EstimatedNDV: return "estimated (NDV)";
+        case MetricKey::ActualCartesian: return "actual (cartesian)";
+        case MetricKey::QError: return "q-error";
 
         case MetricKey::UniqueKeys: return "unique keys";
         case MetricKey::Memory: return "memory";
@@ -58,6 +70,19 @@ std::string_view toString(MetricKey key)
     }
 }
 
+std::string_view missingValueText(MetricKey key)
+{
+    switch (key)
+    {
+        case MetricKey::RowsEstimated:
+        case MetricKey::Estimated:
+        case MetricKey::EstimatedNDV:
+            return "no stats";
+        default:
+            return "not collected";
+    }
+}
+
 MetricFormat formatOf(MetricKey key)
 {
     switch (key)
@@ -67,14 +92,21 @@ MetricFormat formatOf(MetricKey key)
         case MetricKey::Storage:
             return MetricFormat::Raw;
 
+        case MetricKey::EstimatedNDV:
+        case MetricKey::ActualCartesian:
+            return MetricFormat::Selectivity;
+
         case MetricKey::InputRows:
         case MetricKey::OutputRows:
         case MetricKey::Rows:
+        case MetricKey::RowsEstimated:
         case MetricKey::Matched:
         case MetricKey::UniqueKeys:
         case MetricKey::Buckets:
         case MetricKey::Rehashes:
         case MetricKey::Blocks:
+        case MetricKey::Estimated:
+        case MetricKey::Actual:
             return MetricFormat::Quantity;
 
         case MetricKey::InputBytes:
@@ -98,6 +130,7 @@ MetricFormat formatOf(MetricKey key)
             return MetricFormat::Percent;
 
         case MetricKey::Fanout:
+        case MetricKey::QError:
             return MetricFormat::Ratio;
     }
 }

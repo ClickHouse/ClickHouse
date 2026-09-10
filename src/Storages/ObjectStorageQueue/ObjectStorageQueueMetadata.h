@@ -1,8 +1,9 @@
 #pragma once
 
 #include <base/pathToString.h>
-#include <mutex>
 #include <optional>
+#include <mutex>
+#include <unordered_set>
 #include <unordered_map>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
@@ -132,6 +133,9 @@ public:
     FileMetadataPtr getFileMetadata(
         const std::string & path,
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+
+    bool tryAcquireExclusiveProcessing(const std::string & path);
+    void releaseExclusiveProcessing(const std::string & path);
 
     /// Register table in keeper metadata.
     /// active = false:
@@ -265,6 +269,8 @@ private:
     BackgroundSchedulePoolTaskHolder cleanup_task;
 
     FileStatusesCache local_file_statuses;
+    std::mutex exclusive_processing_paths_mutex;
+    std::unordered_set<UInt128, UInt128TrivialHash> exclusive_processing_paths TSA_GUARDED_BY(exclusive_processing_paths_mutex);
 
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().

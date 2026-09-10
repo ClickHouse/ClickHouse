@@ -758,11 +758,16 @@
             out = out.replace(new RegExp('<' + name + '(?:\\s[^>]*)?/?>', 'g'), '\n\n' + content + '\n\n');
 
         /// Mintlify admonition components (`<Note>` ... `</Note>`), used by embedded pages converted
-        /// from the website's Mintlify sources: mapped onto the `:::type` admonition syntax so they
-        /// render as admonitions instead of being dropped as unknown elements. The tags stand on
-        /// their own lines in those sources; any leftover inline tag is stripped by the loop below.
+        /// from the website's Mintlify sources: mapped onto the `:::type [title]` admonition syntax so
+        /// they render as admonitions instead of being dropped as unknown elements. Preserve a custom
+        /// `title` attribute when present. The tags stand on their own lines in those sources; any
+        /// leftover inline tag is stripped by the loop below.
         out = out
-            .replace(/^[ \t]*<(Note|Warning|Tip|Info|Check|Danger|Caution)>[ \t]*$/gm, (m, name) => ':::' + name.toLowerCase())
+            .replace(/^[ \t]*<(Note|Warning|Tip|Info|Check|Danger|Caution)(?:[ \t]+([^>]*))?>[ \t]*$/gm,
+                (m, name, attributes) => {
+                    const title = /(?:^|\s)title="([^"]*)"/.exec(attributes || '');
+                    return ':::' + name.toLowerCase() + (title ? ' ' + title[1] : '');
+                })
             .replace(/^[ \t]*<\/(?:Note|Warning|Tip|Info|Check|Danger|Caution)>[ \t]*$/gm, ':::');
 
         /// A `<Tab title="...">` / `<TabItem label="...">` / `<Card title="...">` introduces an

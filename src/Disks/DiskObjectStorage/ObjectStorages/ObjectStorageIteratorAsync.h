@@ -5,6 +5,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <mutex>
 #include <Common/CurrentMetrics.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -37,6 +38,9 @@ public:
 protected:
     /// This method fetches the next batch, and returns true if there are more batches after it.
     virtual bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) = 0;
+
+    /// What is being listed, for diagnostics only. Overridden to name the container and prefix.
+    virtual std::string describeListing() const { return "<unknown>"; }
 
     struct BatchAndHasNext
     {

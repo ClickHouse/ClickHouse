@@ -348,7 +348,13 @@ const char * analyzeImpl(
             {
                 ++pos;
                 if (pos == end)
+                {
+                    /// A pattern ending in a lone backslash is invalid in re2 (`trailing \`). Leave it to
+                    /// re2, which rejects it, instead of answering it as a literal search that silently
+                    /// drops the backslash (`match(s, 'abc\')` would match every `abc`).
+                    finish_non_trivial_char();
                     break;
+                }
 
                 if (isEscapedLiteral(*pos))
                     goto ordinary;
