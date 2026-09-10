@@ -115,6 +115,7 @@ namespace DB
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, "If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
     DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
+    DECLARE(Bool, legacy_join_size_limits_trigger_spilling, false, "Treat max_rows_in_join / max_bytes_in_join as a spill trigger instead of a hard cap", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \

@@ -1192,6 +1192,10 @@ def main():
                         CH.set_memory_ratio(0.7)
                     else:
                         CH.reset_memory_ratio()
+                    # The configs `install.sh` selects by build flavour must follow
+                    # the binary for the same reason: decided for `build_types[0]`,
+                    # one of them makes the swapped-in server reject its own settings.
+                    CH.install_build_type_configs()
                     # Fail closed if the server cannot come back up after the
                     # binary swap: running tests against a dead server would
                     # produce `Server died` FAILs that the bugfix inverter
