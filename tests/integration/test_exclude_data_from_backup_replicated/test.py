@@ -286,3 +286,102 @@ def test_except_data_on_a_nested_table_is_rejected_on_a_lagging_replica():
     for node in (node1, node2):
         node.query("DROP DATABASE IF EXISTS rdb_except SYNC")
     pg_manager.execute(f"DROP TABLE IF EXISTS {pg_table}")
+
+
+def test_partition_on_unsupported_engine_is_rejected_on_a_lagging_replica():
+    """Naming a partition must be answered the same way whichever replica the query lands on.
+
+    `DatabaseReplicated::getTablesForBackup` tolerates `storage == nullptr` for a table which exists
+    in Keeper but has not been created on this replica yet, and the partition-support check read that
+    null pointer as "nothing to check". So the same query threw `CANNOT_BACKUP_TABLE` on a caught-up
+    replica and was accepted on a lagging one - and on an engine which cannot back up a partition, the
+    acceptance was the worse outcome of the two: `makeBackupEntriesForTableData` puts no data in the
+    backup for a table with no local storage, so the query "succeeded" by writing the table definition
+    and dropping the `PARTITION` clause on the floor.
+
+    The check now falls back to the engine name from the Keeper snapshot, which is all it needs to
+    recognise the MergeTree family - the only family that backs up a partition, and the one every
+    replicated table belongs to.
+
+    The third case is the point of the test as much as the first two. Refusing *every* table whose
+    local storage is null would also make this consistent, and would be wrong: a replicated table on a
+    lagging replica is a legitimate success, because its data is contributed through
+    `addReplicatedDataPath` by a replica which has it. That case is asserted here so a later
+    simplification back to a plain null check cannot pass unnoticed.
+    """
+    for node in (node1, node2):
+        node.query("DROP DATABASE IF EXISTS rdb_part SYNC")
+    for node in (node1, node2):
+        node.query(
+            "CREATE DATABASE rdb_part ENGINE = Replicated('/test/exclude_data_rdb_part', '{shard}', '{replica}')"
+        )
+
+    # Freeze node2's DDL worker before either table is created, so it ends up holding the Keeper
+    # metadata for both of them with no local storage for either.
+    node2.query("SYSTEM ENABLE FAILPOINT database_replicated_stop_entry_execution")
+    try:
+        # `distributed_ddl_task_timeout = 0` so the initiator does not wait for the frozen replica.
+        no_wait = {"distributed_ddl_task_timeout": 0}
+        node1.query(
+            "CREATE TABLE rdb_part.log_t (id UInt64) ENGINE = Log", settings=no_wait
+        )
+        node1.query(
+            "CREATE TABLE rdb_part.rmt (part UInt8, id UInt64) "
+            "ENGINE = ReplicatedMergeTree PARTITION BY part ORDER BY id",
+            settings=no_wait,
+        )
+        node1.query("INSERT INTO rdb_part.rmt VALUES (1, 1), (2, 2)")
+
+        # The lagging state under test: node2 has neither table locally.
+        for table in ("log_t", "rmt"):
+            assert "0" == node2.query(f"EXISTS TABLE rdb_part.{table}").strip(), (
+                f"node2 must NOT have created {table} yet - the failpoint is supposed to keep its DDL "
+                "worker frozen, otherwise this test is not exercising the lagging replica at all"
+            )
+
+        partition_query = (
+            "BACKUP TABLE rdb_part.log_t PARTITION '1' "
+            "EXCEPT DATA FROM TABLE rdb_part.log_t TO Disk('backups', '{}/')"
+        )
+
+        # 1. The lagging replica, which has no storage to ask. It used to accept this.
+        with pytest.raises(Exception) as exc_info:
+            node2.query(partition_query.format("lag_partition_node2"))
+        lagging_error = str(exc_info.value)
+        assert "CANNOT_BACKUP_TABLE" in lagging_error, lagging_error
+        assert "Table engine Log doesn't support partitions" in lagging_error, lagging_error
+        # The lagging replica says why it cannot be sure, rather than claiming it checked.
+        assert "has not created the table yet" in lagging_error, lagging_error
+
+        # 2. The caught-up replica, which has always rejected it. The two must now agree.
+        with pytest.raises(Exception) as exc_info:
+            node1.query(partition_query.format("lag_partition_node1"))
+        caught_up_error = str(exc_info.value)
+        assert "CANNOT_BACKUP_TABLE" in caught_up_error, caught_up_error
+        assert (
+            "Table engine Log doesn't support partitions" in caught_up_error
+        ), caught_up_error
+
+        # 3. The regression guard: a replicated table on the same lagging replica names a partition and
+        #    must not be refused by this check. Whatever else a single-host backup of a table this
+        #    replica does not hold may run into, it must not be the partition check - so the assertion
+        #    is on that error specifically rather than on the command succeeding outright.
+        try:
+            node2.query(
+                "BACKUP TABLE rdb_part.rmt PARTITION '1' TO Disk('backups', 'lag_partition_rmt/')"
+            )
+        except Exception as e:  # noqa: BLE001 - inspected rather than swallowed
+            replicated_error = str(e)
+            assert (
+                "doesn't support partitions" not in replicated_error
+            ), f"the partition check refused a replicated table on a lagging replica: {replicated_error}"
+            assert (
+                "has not created the table yet" not in replicated_error
+            ), f"the partition check refused a replicated table on a lagging replica: {replicated_error}"
+    finally:
+        node2.query(
+            "SYSTEM DISABLE FAILPOINT database_replicated_stop_entry_execution"
+        )
+
+    for node in (node1, node2):
+        node.query("DROP DATABASE IF EXISTS rdb_part SYNC")

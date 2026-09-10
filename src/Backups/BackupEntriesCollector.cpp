@@ -660,14 +660,47 @@ void BackupEntriesCollector::gatherTablesMetadata()
         /// Naming a partition of an engine that has none is a user error in each of those cases, and
         /// answering it by silently ignoring the clause is worse than refusing the query.
         auto it = database_info.tables.find(qualified_name.table);
-        if (it != database_info.tables.end() && it->second.anyElementNamedPartitions() && res_table_info.storage
-            && !res_table_info.storage->supportsBackupPartition())
+        if (it != database_info.tables.end() && it->second.anyElementNamedPartitions())
         {
-            throw Exception(
-                ErrorCodes::CANNOT_BACKUP_TABLE,
-                "Table engine {} doesn't support partitions, cannot backup {}",
-                res_table_info.storage->getName(),
-                tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+            if (res_table_info.storage)
+            {
+                if (!res_table_info.storage->supportsBackupPartition())
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_BACKUP_TABLE,
+                        "Table engine {} doesn't support partitions, cannot backup {}",
+                        res_table_info.storage->getName(),
+                        tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+                }
+            }
+            else
+            {
+                /// `DatabaseReplicated::getTablesForBackup` hands us the Keeper snapshot of a table this
+                /// replica has not created yet, so there is no instance to ask. Treating that as "no check
+                /// needed" made the same query succeed here and fail on a caught-up replica, and on the
+                /// engines that cannot back up a partition it succeeded by writing the table definition and
+                /// dropping the clause - `makeBackupEntriesForTableData` puts no data in the backup for a
+                /// table with no local storage, so the result was a silent partial backup.
+                ///
+                /// The engine name is in the snapshot, so the MergeTree family - the only family that backs
+                /// up a partition, and the one every replicated table belongs to - is still recognisable
+                /// without an instance. Anything else is refused rather than accepted on a guess:
+                /// `supportsBackupPartition` is not a property of the engine name for `MaterializedView`
+                /// and `MaterializedPostgreSQL`, which answer it through a target table that this replica
+                /// may not have either.
+                const auto & create = res_table_info.create_table_query->as<const ASTCreateQuery &>();
+                const String engine_name = (create.storage && create.storage->engine) ? create.storage->engine->name : "";
+
+                if (!engine_name.ends_with("MergeTree"))
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_BACKUP_TABLE,
+                        "Table engine {} doesn't support partitions, or this replica has not created the table yet "
+                        "and cannot verify that it does, cannot backup {}",
+                        engine_name.empty() ? "(unknown)" : engine_name,
+                        tableNameWithTypeToString(qualified_name.database, qualified_name.table, false));
+                }
+            }
         }
 
         /// An excluded table contributes no partitions, so the scope below is left unset for it.
