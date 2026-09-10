@@ -1214,6 +1214,8 @@
          The option applies to all system log tables at once.
          The tables have no state of their own, so it is safe to drop them at any time:
          they will be recreated at the next flush of the corresponding log.
+         A pre-existing table under one of these names that was not created by this option
+         is never replaced: it is left intact and a warning is written to the log.
     -->
     <create_union_system_log_tables>
         <!-- Select from the log table and its rotated versions with the `merge` table function. -->
