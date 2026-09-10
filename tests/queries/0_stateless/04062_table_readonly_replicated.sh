@@ -22,12 +22,19 @@ $CLICKHOUSE_CLIENT --query="
 CREATE TABLE t_readonly_repl (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_readonly_repl', 'r1') ORDER BY x SETTINGS table_readonly = 1;
 " 2>&1 | grep -F -q "NOT_IMPLEMENTED" && echo 1 || echo 0
 
-# `ATTACH TABLE` should fail too.
+# `ATTACH TABLE` must work, on the contrary: a table whose metadata carries the setting - one
+# converted to replicated by the `convert_to_replicated` flag, or detached before this check existed -
+# has to be able to come back, and turning the setting off is the way out of that state. Refusing the
+# attach left such a table unreachable through SQL.
 # The UUID-form is required because `Atomic` rejects `ATTACH TABLE name (cols) ENGINE = ...` syntax
 # before reaching the storage check.
 $CLICKHOUSE_CLIENT --query="
 ATTACH TABLE t_readonly_repl UUID '$uuid' (x UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_readonly_repl', 'r1') ORDER BY x SETTINGS table_readonly = 1;
 " 2>&1 | grep -F -q "NOT_IMPLEMENTED" && echo 1 || echo 0
+
+# And it can be taken out of that state.
+$CLICKHOUSE_CLIENT --query="ALTER TABLE t_readonly_repl MODIFY SETTING table_readonly = 0" 2>&1 | grep -F -q "NOT_IMPLEMENTED" && echo 1 || echo 0
+$CLICKHOUSE_CLIENT --query="DROP TABLE t_readonly_repl SYNC"
 
 # `ALTER MODIFY SETTING` should fail.
 $CLICKHOUSE_CLIENT --query="

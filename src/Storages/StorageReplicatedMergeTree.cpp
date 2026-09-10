@@ -31,6 +31,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
+#include <Core/SettingsFields.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 
@@ -463,10 +464,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
-    /// Reject user-initiated `CREATE`/`ATTACH` queries with `table_readonly = 1` for
-    /// `ReplicatedMergeTree`, while still allowing `FORCE_ATTACH`/`FORCE_RESTORE` (server startup,
-    /// restore from backup) to load tables whose metadata may carry the setting from before this check.
-    if (mode <= LoadingStrictnessLevel::ATTACH && (*getSettings())[MergeTreeSetting::table_readonly])
+    /** Reject a `CREATE` that asks for `table_readonly = 1`, which is not supported for
+      * `ReplicatedMergeTree`. Everything that loads a table which already exists has to keep
+      * working, however its metadata came to carry the setting: `ATTACH` (otherwise a detached
+      * table can never come back), `SECONDARY_CREATE` (a `RESTORE` from a backup, and the internal
+      * queries of a `Replicated` database) and the startup levels. Turning the setting off is
+      * allowed by the `ALTER` path, which is the way out of such a state.
+      */
+    if (mode == LoadingStrictnessLevel::CREATE && (*getSettings())[MergeTreeSetting::table_readonly])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
 
     auto table_disks = getDisks();
@@ -6981,12 +6986,19 @@ void StorageReplicatedMergeTree::alter(
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
-    /// Reject `table_readonly` in any incoming `ALTER`, not only pure settings alters: a mixed
-    /// `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
-    /// bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+    /** Reject turning `table_readonly` on in any incoming `ALTER`, not only in a pure settings alter:
+      * a mixed `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
+      * bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+      * Turning it off is what the setting's documentation promises can always be done, and it is the
+      * way out for a table whose metadata carries it - refusing that left such a table stuck.
+      */
     for (const auto & command : commands)
     {
-        if (command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("table_readonly"))
+        if (command.type != AlterCommand::MODIFY_SETTING)
+            continue;
+
+        const Field * readonly_setting = command.settings_changes.tryGet("table_readonly");
+        if (readonly_setting && SettingFieldBool{*readonly_setting}.value)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
     }
 
