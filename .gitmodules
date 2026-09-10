@@ -232,7 +232,7 @@
 	url = https://github.com/google/benchmark
 [submodule "contrib/libdivide"]
 	path = contrib/libdivide
-	url = https://github.com/ridiculousfish/libdivide
+	url = https://github.com/ClickHouse/libdivide
 [submodule "contrib/libbcrypt"]
 	path = contrib/libbcrypt
 	url = https://github.com/rg3/libbcrypt.git
