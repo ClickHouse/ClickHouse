@@ -30,10 +30,9 @@ SET allow_experimental_nullable_tuple_type = 0;
 SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String)')), getSubcolumn(v, 'Tuple(UInt64, String)') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String)');
 Nullable(Tuple(UInt64, String))	(1,'x')
 Nullable(Tuple(UInt64, String))	\N
-SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null'); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null');
 UInt8	0
 UInt8	1
-The query succeeded but the server error '44' was expected (query: SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null'); -- { serverError ILLEGAL_COLUMN }).
 SELECT toTypeName(getSubcolumn(v, 'UInt64')), getSubcolumn(v, 'UInt64') FROM test_variant ORDER BY isNull(getSubcolumn(v, 'UInt64')), getSubcolumn(v, 'UInt64');
 Nullable(UInt64)	5
 Nullable(UInt64)	\N
@@ -41,10 +40,9 @@ SET allow_experimental_nullable_tuple_type = 1;
 SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String)')), getSubcolumn(v, 'Tuple(UInt64, String)') FROM test_variant ORDER BY isNull(getSubcolumn(v, 'Tuple(UInt64, String)')), getSubcolumn(v, 'Tuple(UInt64, String)');
 Nullable(Tuple(UInt64, String))	(1,'x')
 Nullable(Tuple(UInt64, String))	\N
-SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null'); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null');
 UInt8	0
 UInt8	1
-The query succeeded but the server error '44' was expected (query: SELECT toTypeName(getSubcolumn(v, 'Tuple(UInt64, String).null')), getSubcolumn(v, 'Tuple(UInt64, String).null') FROM test_variant ORDER BY getSubcolumn(v, 'Tuple(UInt64, String).null'); -- { serverError ILLEGAL_COLUMN }).
 SELECT toTypeName(getSubcolumn(v, 'UInt64')), getSubcolumn(v, 'UInt64') FROM test_variant ORDER BY isNull(getSubcolumn(v, 'UInt64')), getSubcolumn(v, 'UInt64');
 Nullable(UInt64)	5
 Nullable(UInt64)	\N
@@ -57,10 +55,9 @@ SET allow_experimental_nullable_tuple_type = 0;
 SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))');
 Nullable(Tuple(Nullable(UInt64), Nullable(String)))	(1,'x')
 Nullable(Tuple(Nullable(UInt64), Nullable(String)))	\N
-SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null'); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null');
 UInt8	0
 UInt8	1
-The query succeeded but the server error '44' was expected (query: SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null'); -- { serverError ILLEGAL_COLUMN }).
 SELECT toTypeName(getSubcolumn(d, 'UInt64')), getSubcolumn(d, 'UInt64') FROM test_dynamic ORDER BY isNull(getSubcolumn(d, 'UInt64')), getSubcolumn(d, 'UInt64');
 Nullable(UInt64)	10
 Nullable(UInt64)	\N
@@ -68,10 +65,9 @@ SET allow_experimental_nullable_tuple_type = 1;
 SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))') FROM test_dynamic ORDER BY isNull(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String))');
 Nullable(Tuple(Nullable(UInt64), Nullable(String)))	(1,'x')
 Nullable(Tuple(Nullable(UInt64), Nullable(String)))	\N
-SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null'); -- { serverError ILLEGAL_COLUMN }
+SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null');
 UInt8	0
 UInt8	1
-The query succeeded but the server error '44' was expected (query: SELECT toTypeName(getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null')), getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null') FROM test_dynamic ORDER BY getSubcolumn(d, 'Tuple(Nullable(UInt64), Nullable(String)).null'); -- { serverError ILLEGAL_COLUMN }).
 SELECT toTypeName(getSubcolumn(d, 'UInt64')), getSubcolumn(d, 'UInt64') FROM test_dynamic ORDER BY isNull(getSubcolumn(d, 'UInt64')), getSubcolumn(d, 'UInt64');
 Nullable(UInt64)	10
 Nullable(UInt64)	\N
