@@ -191,11 +191,13 @@ void DistributedAsyncInsertBatch::serialize()
 
 bool DistributedAsyncInsertBatch::recoverBatch()
 {
-    /// Fill the files
+    /// Fill the files. Batch limits are rows and bytes, not file count, so this manifest can list a
+    /// million single-row files, each stat'ed and header-read below: a kill must not wait for it all.
     {
         ReadBufferFromFile in{parent.current_batch_file_path};
         while (!in.eof())
         {
+            CurrentThread::checkIfNotCancelled();
             UInt64 idx = 0;
             in >> idx >> "\n";
             files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
@@ -211,8 +213,6 @@ bool DistributedAsyncInsertBatch::recoverBatch()
     /// hold an unsent file in front of a quarantined one. Never finalize a file that
     /// still exists here. Resending it may duplicate rows, deleting it loses them.
     auto first_existing_file = files.begin();
-    /// A recovered batch lists as many files as the batch limits allowed, and each one is stat'ed
-    /// and has its header read, so a killed flush must not scan the whole list before it stops.
     while (first_existing_file != files.end() && !fs::exists(*first_existing_file))
     {
         CurrentThread::checkIfNotCancelled();
