@@ -184,6 +184,9 @@ JSONBuilder::ItemPtr queryPlanToJSON(
     result->add("Version", QUERY_PLAN_JSON_VERSION);
     result->add("Root", plan.getRootNode()->step->getUniqID());
 
+    if (steps_to_stats)
+        result->add("ExecutionTimeNs", steps_to_stats->getExecutionTimeNs());
+
     /// The columns the query produces. The text renderer prints these once above the tree rather
     /// than against a step, so they belong to the plan, not to any node.
     if (options.pretty)

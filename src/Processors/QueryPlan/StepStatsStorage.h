@@ -40,6 +40,9 @@ public:
     /// getAnalysisReport belong to it. What it returns is a plain value that outlives both.
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
 
+    /// How long the query executed.
+    UInt64 getExecutionTimeNs() const { return execution_query_time_ns; }
+
 private:
     void collectIOStats(const Processors & processors);
     ElapsedTimesPerStepGroup collectTimingStats(const QueryPipeline & pipeline, const Processors & processors);

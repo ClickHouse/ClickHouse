@@ -11,8 +11,8 @@
 -- keys inherited from EXPLAIN json=1 (`Node Type`, `Node Id`) contain spaces, which a JSON path
 -- would have to quote.
 --
--- The plan is stored as a flat array: `{"Root": <id>, "Output": [...], "Nodes": [...]}`, with each
--- node naming its children by id.
+-- The plan is stored as a flat array: `{"Root": <id>, "ExecutionTimeNs": <ns>, "Output": [...],
+-- "Nodes": [...]}`, with each node naming its children by id.
 
 SET log_query_plans = 0;
 SELECT count() FROM numbers(1000) WHERE number > 900 AND '05045_off' != '' FORMAT Null;

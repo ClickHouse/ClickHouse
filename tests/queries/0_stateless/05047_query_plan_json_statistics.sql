@@ -50,12 +50,17 @@ SELECT
     anyLast(JSONExtractFloat(stage, 'Parallelism')) > 0,
     anyLast(JSONExtractUInt(stage, 'Processors')) > 0,
     anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Min')) <= anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Max')),
-    anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Sum')) > 0
+    anyLast(JSONExtractUInt(stage, 'ProcessorTimeNs', 'Sum')) > 0,
+    -- The denominator the shares are taken against, stored at the root so a reader has it too.
+    -- A step cannot have been busy for longer than the query executed.
+    anyLast(JSONExtractUInt(plan, 'ExecutionTimeNs')) > 0,
+    anyLast(JSONExtractUInt(stage, 'WallClockTimeNs')) <= anyLast(JSONExtractUInt(plan, 'ExecutionTimeNs'))
 FROM
 (
     SELECT
+        toJSONString(query_plan) AS plan,
         arrayFilter(n -> JSONExtractString(n, 'Node Type') = 'ReadFromSystemNumbers',
-                    JSONExtractArrayRaw(toJSONString(query_plan), 'Nodes'))[1] AS source,
+                    JSONExtractArrayRaw(plan, 'Nodes'))[1] AS source,
         JSONExtractArrayRaw(source, 'Statistics', 'Stages')[1] AS stage
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '05047_stats'
