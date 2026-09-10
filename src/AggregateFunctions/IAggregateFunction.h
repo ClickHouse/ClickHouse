@@ -468,7 +468,18 @@ public:
 
     /// Whether the parameters belong to the state's identity: they are then printed both in the state
     /// type and in the name that travels with a serialized state. Default true.
-    virtual bool areParametersPartOfState() const { return true; }
+    virtual bool areParametersPartOfState() const
+    {
+        /** A combinator and the adapter for `Nullable` arguments are constructed with the caller's
+          * parameters and answer for the function they wrap, as for `shouldPrintParametersWithTypes`:
+          * `argMinIfState(map(1, 2))(a, b, cond)` must no more carry the ignored parameter into the
+          * persisted type than `argMinState(map(1, 2))(a, b)` does. A combinator that takes
+          * parameters of its own answers for those itself.
+          */
+        if (auto nested = getNestedFunction())
+            return nested->areParametersPartOfState();
+        return true;
+    }
 
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.

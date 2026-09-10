@@ -1,0 +1,11 @@
+AggregateFunction(argMinIf, UInt64, UInt64, UInt8)
+AggregateFunction(argMin, Nullable(UInt64), UInt64)
+AggregateFunction(argMinIfOrNull, UInt64, UInt64, UInt8)
+AggregateFunction(argMinDistinct, UInt64, UInt64)
+AggregateFunction(intervalLengthSumIf, Float64, Float64, UInt8)
+a combinator that reads parameters keeps them
+AggregateFunction(quantilesIf(0.5), UInt64, UInt8)
+AggregateFunction(argMinResample(0, 2, 1), UInt64, UInt64, UInt64)
+the table round-trips
+1
+0
