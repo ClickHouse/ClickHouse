@@ -206,7 +206,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of plain_pool_unlim) = 300"
 # here is compared against a literal: on a build that does not bound the read step the two submit the
 # same number. The bound is well under the default one because releasing a prefix stream returns its
 # capacity to the budget, so the bounded count grows with the query's churn rather than staying at the
-# limit: at 200 it was measured within 6% of the unbounded count, at 50 it stays around a fifth of it.
+# limit: at 200 it was measured within 6% of the unbounded count, at 50 about a fifth below it.
 echo "-- a bounded JSON read step prefetches fewer substreams than an unbounded one"
 ${CLICKHOUSE_CLIENT} --query "SELECT $(count_of json_step_limit) < $(count_of json_step_unlim)"
 
