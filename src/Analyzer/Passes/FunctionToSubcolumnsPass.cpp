@@ -569,6 +569,25 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
+        {TypeIndex::Map, "mapContainsValue"},
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            /// Replace `mapContainsValue(map_argument, argument)` with `has(map_argument.values, argument)`
+            const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+            NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationMap::isValuesSubcolumn, column.type))
+                return;
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
+            function_arguments_nodes[0] = std::move(has_function_argument);
+
+            resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
+        },
+    },
+    {
         {TypeIndex::Nullable, "count"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {

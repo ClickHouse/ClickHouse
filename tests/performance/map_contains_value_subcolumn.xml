@@ -1,0 +1,70 @@
+<test>
+    <!--
+         mapContainsValue() needs only the values subcolumn, but before the
+         analyzer rewrite the whole Map is read. Use wide parts, many relatively
+         wide keys and compact numeric values so the skipped key stream is large.
+         The searched value is last in each array, forcing the values scan too.
+    -->
+
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE map_contains_value_subcolumn_perf
+        (
+            id UInt64,
+            m Map(String, UInt64)
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            map_serialization_version = 'basic',
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_contains_value_subcolumn_perf
+        SELECT
+            number AS id,
+            mapFromArrays(
+                arrayMap(i -&gt; concat('attribute_', hex(cityHash64(number, i)), '_', hex(cityHash64(number, i + 1)), '_', hex(cityHash64(number, i + 2))), range(16)),
+                arrayMap(i -&gt; toUInt64(i), range(16))) AS m
+        FROM numbers_mt(5000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_contains_value_subcolumn_perf FINAL SETTINGS mutations_sync = 1</fill_query>
+
+    <!-- Target: after the rewrite this reads only m.values. -->
+    <query tag='mapContainsValue'>
+        SELECT count()
+        FROM map_contains_value_subcolumn_perf
+        WHERE mapContainsValue(m, toUInt64(15))
+        FORMAT Null
+        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 1,
+                 optimize_move_to_prewhere = 0, use_query_condition_cache = 0
+    </query>
+
+    <!-- Oracle: this already uses the values subcolumn through mapValues(). -->
+    <query tag='has(mapValues) oracle'>
+        SELECT count()
+        FROM map_contains_value_subcolumn_perf
+        WHERE has(mapValues(m), toUInt64(15))
+        FORMAT Null
+        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 1,
+                 optimize_move_to_prewhere = 0, use_query_condition_cache = 0
+    </query>
+
+    <!-- Control: confirms the target query is measuring the rewrite, not a function change. -->
+    <query tag='optimizer disabled'>
+        SELECT count()
+        FROM map_contains_value_subcolumn_perf
+        WHERE mapContainsValue(m, toUInt64(15))
+        FORMAT Null
+        SETTINGS max_threads = 1, optimize_functions_to_subcolumns = 0,
+                 optimize_move_to_prewhere = 0, use_query_condition_cache = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS map_contains_value_subcolumn_perf</drop_query>
+</test>
