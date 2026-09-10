@@ -26,11 +26,15 @@ struct MergedPlanDAG
         QueryPlan::Node * plan_node = nullptr;
         /// One input node per column of that header, in header order.
         ActionsDAG::NodeRawConstPtrs inputs;
-        /// Whether a join above this source can produce rows its columns took no part in, where they
-        /// stand at their default or NULL. Only then does it matter that a value was computed below that
-        /// join: recomputing it above would run it on those rows, and for `x + 1` over a stuffed `x = 0`
-        /// that gives 1 where the plan gives the default 0.
-        bool may_be_stuffed = false;
+    };
+
+    /// One per side of a join that the join can leave unmatched, where it stands the side's columns at
+    /// their defaults or NULLs for the rows that matched nothing on that side.
+    struct Stuffing
+    {
+        QueryPlan::Node * join_node = nullptr;
+        /// 0 for the left side of that join, 1 for the right one.
+        size_t side = 0;
     };
 
     /// The DAG, plus the sources every node reads. See `getSources`.
@@ -45,11 +49,14 @@ struct MergedPlanDAG
 
     /// A position in this vector is the source index reported by `getSources`.
     std::vector<Source> sources;
+    /// A position in this vector is the stuffing index reported by `getNearestStuffing`.
+    std::vector<Stuffing> stuffings;
 
-    /// Nodes computed where only one source's rows existed, that is below every join on their path.
-    /// Kept because it cannot be recovered from the DAG afterwards: a node computed above a join that
-    /// happens to read one source looks exactly the same.
-    NodeSet nodes_below_joins;
+    /// The nearest stuffing above a node's own computation point, for the nodes that have one. Kept
+    /// because it cannot be recovered from the DAG afterwards, and it is the only one such a node needs:
+    /// a mask column emitted at a join's unmatched side is carried through the joins above it and
+    /// stuffed by them in turn, so it already answers "did every join above this point match".
+    std::unordered_map<const ActionsDAG::Node *, size_t> nearest_stuffing;
 
     const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 
@@ -59,18 +66,17 @@ struct MergedPlanDAG
     /// Which sources the node reads. Empty for a constant.
     const BitSet & getSources(const ActionsDAG::Node * node) const;
 
-    /// The source whose rows alone are enough to recompute this node, if there is one. Unset for a node
-    /// reading more than one source, and for a node computed above a join: there it also ran on the rows
-    /// the join stuffed with defaults or NULLs, and recomputing it on the matched rows only would not
-    /// reproduce that.
-    std::optional<size_t> getDenseSource(const ActionsDAG::Node * node) const;
-
-    /// The source whose match decides whether this node has a value of its own at all. Set for a node the
-    /// plan computed below a join that can leave that source unmatched: there the join replaced this
-    /// node's value by a default or a NULL, so recomputing it is only right where the source matched.
-    /// Unset where nothing can be stuffed, and for a node computed above the join, which ran on the
-    /// stuffed rows as well and is reproduced by recomputing it on all of them.
-    std::optional<size_t> getMaskingSource(const ActionsDAG::Node * node) const;
+    /// The stuffing that decides whether this node has a value of its own at all. Where it is set, a
+    /// join above this node replaced the node's value by a default or a NULL for the rows that matched
+    /// nothing, so the value only means anything where that side matched.
+    ///
+    /// This cannot be read off the sources a node reads. A node computed *above* a join is not gated by
+    /// that join - it ran on the stuffed rows as well, and reproducing it means running it on them again
+    /// - while the sources it reads are gated by it. In
+    /// `(select k, c + 1 as y from C left join D) r`, joined again from the left, `y` is gated by the
+    /// outer join only: at a row where the outer join matched but the inner one did not, `y` is a proper
+    /// value computed from a stuffed `d`, and gating it on D's mask as well would throw it away.
+    std::optional<size_t> getNearestStuffing(const ActionsDAG::Node * node) const;
 };
 
 /// Returns nullopt when the subtree cannot be represented: it computes an `arrayJoin`, which changes the

@@ -13,23 +13,10 @@ const BitSet & MergedPlanDAG::getSources(const ActionsDAG::Node * node) const
     return JoinActionRef(node, expression_actions).getSourceRelations();
 }
 
-std::optional<size_t> MergedPlanDAG::getDenseSource(const ActionsDAG::Node * node) const
+std::optional<size_t> MergedPlanDAG::getNearestStuffing(const ActionsDAG::Node * node) const
 {
-    if (!nodes_below_joins.contains(node))
-        return {};
-
-    const auto & node_sources = getSources(node);
-    if (node_sources.count() != 1)
-        return {};
-
-    return *node_sources.begin();
-}
-
-std::optional<size_t> MergedPlanDAG::getMaskingSource(const ActionsDAG::Node * node) const
-{
-    const auto dense_source = getDenseSource(node);
-    if (dense_source && sources[*dense_source].may_be_stuffed)
-        return dense_source;
+    if (const auto it = nearest_stuffing.find(node); it != nearest_stuffing.end())
+        return it->second;
 
     return {};
 }
@@ -62,23 +49,6 @@ std::pair<bool, bool> findStuffedSides(JoinKind kind)
     return {true, true};
 }
 
-/// `unite` and `mergeInplace` splice their nodes onto the end of the list, so what a merge added is the
-/// tail behind whatever was last before it.
-using NodeIterator = ActionsDAG::Nodes::const_iterator;
-
-std::optional<NodeIterator> lastNodeBefore(const ActionsDAG & dag)
-{
-    const auto & nodes = dag.getNodes();
-    if (nodes.empty())
-        return {};
-    return std::prev(nodes.end());
-}
-
-NodeIterator firstNodeAdded(const ActionsDAG & dag, const std::optional<NodeIterator> & last_before)
-{
-    return last_before ? std::next(*last_before) : dag.getNodes().begin();
-}
-
 bool outputsMatchHeader(const ActionsDAG::NodeRawConstPtrs & outputs, const Block & header)
 {
     if (outputs.size() != header.columns())
@@ -109,7 +79,6 @@ MergedPlanDAG makeOpaqueSource(QueryPlan::Node & node)
         const auto * input = merged.expression_actions.addInput(column.name, column.type, /*source_relation=*/0).getNode();
         source.inputs.push_back(input);
         dag_outputs.push_back(input);
-        merged.nodes_below_joins.insert(input);
     }
 
     merged.sources.push_back(std::move(source));
@@ -123,7 +92,6 @@ bool mergeStepExpressions(MergedPlanDAG & merged, const ActionsDAG & step_dag, A
 {
     auto & dag = *merged.expression_actions.getActionsDAG();
 
-    const auto last_before = lastNodeBefore(dag);
     const size_t inputs_before = dag.getInputs().size();
 
     ActionsDAG::NodeMapping inputs_mapping;
@@ -133,12 +101,6 @@ bool mergeStepExpressions(MergedPlanDAG & merged, const ActionsDAG & step_dag, A
     /// the columns do not line up the way this builder assumes.
     if (dag.getInputs().size() != inputs_before)
         return false;
-
-    /// A node the step computes reads only what the subtree below it produced, so as long as that
-    /// subtree is one source's worth of rows, the node can still be computed on those rows alone.
-    if (merged.sources.size() == 1)
-        for (auto it = firstNodeAdded(dag, last_before); it != dag.getNodes().end(); ++it)
-            merged.nodes_below_joins.insert(&*it);
 
     /// The step's own nodes are spliced in rather than copied again, so a node of the clone is a node of
     /// the merged DAG now - except for the inputs, which the merge resolved to nodes below.
@@ -232,6 +194,17 @@ std::optional<MergedPlanDAG> buildImpl(QueryPlan::Node & node)
         if (!right)
             return {};
 
+        /// A join gates every value computed below it on the side it can leave unmatched, so the nodes
+        /// of each side are collected before they are all spliced into one list.
+        const auto collectNodes = [](const MergedPlanDAG & subtree)
+        {
+            ActionsDAG::NodeRawConstPtrs collected;
+            for (const auto & subtree_node : subtree.getDAG().getNodes())
+                collected.push_back(&subtree_node);
+            return collected;
+        };
+        const std::array<ActionsDAG::NodeRawConstPtrs, 2> side_nodes{collectNodes(*merged), collectNodes(*right)};
+
         /// The join reads the left header first, so uniting in that order lines the columns up with its
         /// inputs, including the columns both sides happen to name alike.
         const size_t source_shift = merged->sources.size();
@@ -245,7 +218,11 @@ std::optional<MergedPlanDAG> buildImpl(QueryPlan::Node & node)
         merged->sources.append_range(std::move(right->sources));
         merged->filter_nodes.append_range(right->filter_nodes);
         merged->join_condition_nodes.append_range(right->join_condition_nodes);
-        merged->nodes_below_joins.insert(right->nodes_below_joins.begin(), right->nodes_below_joins.end());
+
+        const size_t stuffing_shift = merged->stuffings.size();
+        merged->stuffings.append_range(std::move(right->stuffings));
+        for (const auto & [right_node, stuffing] : right->nearest_stuffing)
+            merged->nearest_stuffing.emplace(right_node, stuffing + stuffing_shift);
 
         ActionsDAG::NodeMapping clone_mapping;
         if (!mergeStepExpressions(*merged, step_dag, clone_mapping))
@@ -260,12 +237,19 @@ std::optional<MergedPlanDAG> buildImpl(QueryPlan::Node & node)
 
         const auto & join_operator = join_step->getJoinOperator();
 
-        /// A source stays stuffable once any join above it can leave its columns unmatched.
-        const auto [left_is_stuffed, right_is_stuffed] = findStuffedSides(join_operator.kind);
-        for (size_t source = 0; source < merged->sources.size(); ++source)
+        /// Every value computed below this join on a side it can leave unmatched is gated by it, unless
+        /// a join further down already gates it: that one is the nearer of the two, and its mask column
+        /// is stuffed by this join in turn, so it answers for both.
+        const auto stuffed_sides = findStuffedSides(join_operator.kind);
+        for (size_t side = 0; side < 2; ++side)
         {
-            const bool side_is_stuffed = source < source_shift ? left_is_stuffed : right_is_stuffed;
-            merged->sources[source].may_be_stuffed |= side_is_stuffed;
+            if (!(side == 0 ? stuffed_sides.first : stuffed_sides.second))
+                continue;
+
+            const size_t stuffing = merged->stuffings.size();
+            merged->stuffings.push_back({&node, side});
+            for (const auto * side_node : side_nodes[side])
+                merged->nearest_stuffing.try_emplace(side_node, stuffing);
         }
 
         for (const auto * conditions : {&join_operator.residual_filter, &join_operator.expression})
