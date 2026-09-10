@@ -16,6 +16,8 @@
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
+#include <Common/formatReadable.h>
+#include <base/getMemoryAmount.h>
 
 #include <boost/algorithm/string.hpp>
 
