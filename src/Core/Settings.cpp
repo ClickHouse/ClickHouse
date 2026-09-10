@@ -137,6 +137,7 @@ Supported values:
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
+- `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `allow_experimental_trino_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -8195,6 +8196,9 @@ Default partition strategy for file like engines. Applied only to `CREATE` queri
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
 )", 0) \
+    DECLARE(Bool, use_iceberg_manifest_list_partition_pruning, true, R"(
+Skip whole Iceberg manifest files whose partition summaries in the manifest list cannot match the query filter, without reading them. Requires [use_iceberg_partition_pruning](#use_iceberg_partition_pruning) to be enabled and only helps when a manifest file holds few distinct partition values, which is what `rewriteManifests` clustered by the partition columns produces.
+)", 0) \
     DECLARE(Bool, optimize_distinct_in_order, true, R"(
 Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
 )", 0) \
@@ -9021,6 +9025,8 @@ Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern, or of a `star
 required to use the text index LIKE evaluation by the dictionary scan.
 Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
 
+With the `array` tokenizer, where any pattern qualifies, the threshold is compared against the number of non-wildcard characters in the whole pattern.
+
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
     DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
@@ -9128,6 +9134,19 @@ SET dialect = 'clickhouse_json';
 )", EXPERIMENTAL) \
     DECLARE(String, polyglot_dialect, "", R"(
 Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_trino_dialect, false, R"(
+Enable the `trino` value of the `dialect` setting.
+
+When `dialect` is set to `trino`, queries are written in Trino SQL: Trino-specific
+syntax (`ARRAY[...]` literals, `TRY_CAST`, `UNNEST`, `ROW` types, `OFFSET` before `LIMIT`)
+is translated to ClickHouse SQL, and Trino function names are mapped to their
+ClickHouse equivalents. The `SET` query is still parsed as plain SQL so that the
+dialect can be switched back.
+
+The dialect also aligns the query semantics with Trino: `join_use_nulls` is turned
+on, `use_variant_as_common_type` is turned off, and the query analyzer is turned on.
+An explicit `SETTINGS` clause in the query still takes precedence.
 )", EXPERIMENTAL) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
