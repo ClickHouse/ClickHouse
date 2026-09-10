@@ -11,17 +11,16 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Outre le SQL standard, ClickHouse prend en charge plusieurs langages de requête alternatifs pour interroger les données.
 
-Les dialectes actuellement pris en charge sont :
+Les dialectes actuellement pris en charge sont :
 
-* `clickhouse` : le [dialecte SQL](/fr/chdb/reference/sql-reference) par défaut de ClickHouse
-* `prql` : [langage de requêtes relationnelles en pipeline (PRQL)](https://prql-lang.org/)
-* `kusto` : [langage de requête Kusto (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `clickhouse` : le [dialecte SQL](/fr/chdb/reference/sql-reference) par défaut de ClickHouse
+* `prql` : [langage de requêtes relationnelles en pipeline (PRQL)](https://prql-lang.org/)
+* `kusto` : [langage de requête Kusto (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `trino` : [Trino SQL](https://trino.io/docs/current/language.html)
 
 Le langage de requête utilisé est déterminé par le paramètre `dialect`.
 
-<div id="standard-sql">
-  ## SQL standard
-</div>
+## SQL standard {#standard-sql}
 
 Le SQL standard est le langage de requêtes par défaut de ClickHouse.
 
@@ -29,9 +28,7 @@ Le SQL standard est le langage de requêtes par défaut de ClickHouse.
 SET dialect = 'clickhouse'
 ```
 
-<div id="pipelined-relational-query-language-prql">
-  ## Langage de requêtes relationnelles en pipeline (PRQL)
-</div>
+## Langage de requêtes relationnelles en pipeline (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -54,9 +51,7 @@ aggregate {
 
 En coulisses, ClickHouse s’appuie sur une transpilation de PRQL en SQL pour exécuter les requêtes PRQL.
 
-<div id="kusto-query-language-kql">
-  ## Langage de requête Kusto (KQL)
-</div>
+## Langage de requête Kusto (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -87,3 +82,50 @@ numbers(10) | project number
 ```
 
 Notez que les requêtes KQL peuvent ne pas avoir accès à toutes les fonctions définies dans ClickHouse.
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge />
+
+Pour activer le dialecte Trino :
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+La syntaxe propre à Trino est traduite en ClickHouse SQL, et les noms de fonctions Trino sont associés à leurs équivalents ClickHouse :
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+La traduction couvre, entre autres, les littéraux `ARRAY[...]`, `TRY_CAST`, `UNNEST` (traduit en `ARRAY JOIN`),
+les constructeurs et types `ROW`, les tables `VALUES`, `OFFSET` avant `LIMIT`, `BETWEEN SYMMETRIC`, ainsi que plusieurs centaines de
+fonctions, y compris celles dont les noms existent dans les deux systèmes avec une sémantique différente (par exemple, la fonction Trino `length`
+compte les code points Unicode et est traduite en `lengthUTF8`). Les fonctions ClickHouse dont les noms n&#39;entrent pas en conflit avec ceux de
+Trino restent accessibles : les deux familles de fonctions peuvent donc être mélangées au sein d&#39;une même requête.
+
+Les valeurs `JSON` de Trino sont mises en correspondance avec le type ClickHouse [`JSON`](/fr/reference/data-types/newjson) :
+les littéraux `JSON '...'` et `json_parse` deviennent des conversions vers `JSON`, `json_format` devient `toJSONString`, et les
+fonctions de chemin (`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`) sont
+traduites en leurs équivalents ClickHouse. Comme le type `JSON` de ClickHouse stocke des objets, les documents qui ne sont pas des objets
+(tableaux et scalaires de premier niveau) sont rejetés lorsqu&#39;ils sont matérialisés en tant que valeurs `JSON` ; les fonctions de chemin acceptent
+n&#39;importe quel texte JSON.
+
+Certains aspects de la sémantique de Trino ne peuvent pas être exprimés dans le texte de la requête traduite ; ils sont alors appliqués
+au contexte de la requête : les jointures externes produisent `NULL` (`join_use_nulls`), les opérations ensemblistes utilisent le supertype numérique plutôt que
+`Variant` (`use_variant_as_common_type`), et l&#39;analyseur de requêtes est requis (`enable_analyzer`). Une clause
+`SETTINGS` explicite dans la requête garde toutefois la préséance sur ces réglages.
+
+La sémantique qui ne peut pas être corrigée par une traduction au niveau de la requête reste celle de ClickHouse. En particulier,
+l&#39;opérateur de division `/` effectue une division entière dans Trino, mais une division en virgule flottante dans ClickHouse, et
+`round` utilise l&#39;arrondi du banquier dans ClickHouse pour les arguments `Float`.
+
+Utilisez `EXPLAIN SYNTAX` pour voir comment une requête est traduite.

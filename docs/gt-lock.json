@@ -7,36 +7,36 @@
       "versionId": "a372f4e7d54d9b799344f85fa77a6c684c792c8951b74039b53becd67db973b4",
       "translations": {
         "ja": {
-          "updatedAt": "2026-09-09T22:27:37.070Z",
+          "updatedAt": "2026-09-10T03:17:26.442Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-09T22:27:37.648Z",
+          "updatedAt": "2026-09-10T03:17:27.178Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-09T22:27:37.781Z",
+          "updatedAt": "2026-09-10T03:17:27.360Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-09T22:27:36.927Z",
+          "updatedAt": "2026-09-10T03:17:26.260Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-09T22:27:37.915Z",
+          "updatedAt": "2026-09-10T03:17:27.538Z",
           "fileName": "docs.json",
           "postProcessHash": "f07d8f7452f70e9a869365bb490fda10d57c3654a431fa77949df04dff8ede02"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-09T22:27:37.378Z",
+          "updatedAt": "2026-09-10T03:17:26.799Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-09T22:27:37.208Z",
+          "updatedAt": "2026-09-10T03:17:26.620Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-09T22:27:37.512Z",
+          "updatedAt": "2026-09-10T03:17:26.980Z",
           "fileName": "docs.json"
         }
       },
@@ -72130,51 +72130,50 @@
     },
     {
       "fileId": "e7479f386bb46108d1f1b396c95250670a45e33912a88dcdc9957b559f704186",
-      "versionId": "f542a67c20d2d4dceaf308c3ff925c4631417784e8f86d8eed7fc9b50aaa8484",
+      "versionId": "dd248c157cb5e94c6bd8026086fe8b8dd5c584409f7ee11650916677ee2f47c7",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:07.837Z",
-          "fileName": "es/concepts/features/configuration/settings/alternative-query-languages.mdx",
-          "postProcessHash": "90d968b3dae8d8523c3987010e94be77f292f6cecd1264d9eac3d3af37e449e1"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:07.837Z",
-          "fileName": "ja/concepts/features/configuration/settings/alternative-query-languages.mdx",
-          "postProcessHash": "df7f922ae44a4c031578166ce69d0507c756a314b024450289897643dfef77da"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:07.837Z",
-          "fileName": "ko/concepts/features/configuration/settings/alternative-query-languages.mdx",
-          "postProcessHash": "bde070f77a8523004ba4be04b2b06408f36ec8264e5f427e019a772cc2911920"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:07.837Z",
-          "fileName": "pt-BR/concepts/features/configuration/settings/alternative-query-languages.mdx",
-          "postProcessHash": "737fd27da47889470f28f1dee97012497d3a518638da306f018d8c13a83a0798"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:07.837Z",
-          "fileName": "ru/concepts/features/configuration/settings/alternative-query-languages.mdx",
-          "postProcessHash": "d06aa9e3299e3b693f36117d7d2957b3b2de0601993421dfdce20fb37dada8b0"
+        "fr": {
+          "updatedAt": "2026-09-10T03:17:32.492Z",
+          "fileName": "fr/concepts/features/configuration/settings/alternative-query-languages.mdx",
+          "postProcessHash": "9def91252316bcf8c02a32768699228ab1f975658edce638ceceb80d02961e41"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:07.837Z",
+          "updatedAt": "2026-09-10T03:17:32.493Z",
           "fileName": "zh/concepts/features/configuration/settings/alternative-query-languages.mdx",
-          "postProcessHash": "884db59f1451b575159acd242adf9e34e014f4dd11cf9cd83e931ffb63c917a5"
+          "postProcessHash": "c6a25456e92ad809d10383a0533a3c9376a5c5e702e6c6e78ad9023c5ca9a646"
+        },
+        "ru": {
+          "updatedAt": "2026-09-10T03:17:32.493Z",
+          "fileName": "ru/concepts/features/configuration/settings/alternative-query-languages.mdx",
+          "postProcessHash": "e6a996e000ae35bd6cd736392783050a87f9c6d77e5715d59882191dd1bddae4"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-10T03:17:32.494Z",
+          "fileName": "pt-BR/concepts/features/configuration/settings/alternative-query-languages.mdx",
+          "postProcessHash": "98e28d55b54dcd67cf31acd55b27d6afe7c981a860e7e21966e0a7365e401e0f"
+        },
+        "es": {
+          "updatedAt": "2026-09-10T03:17:32.494Z",
+          "fileName": "es/concepts/features/configuration/settings/alternative-query-languages.mdx",
+          "postProcessHash": "1870da94be7f2c8a2769a8ffcd03a24accb90bbcde39249d9d8a7ed0bc1fa4e4"
+        },
+        "ko": {
+          "updatedAt": "2026-09-10T03:17:32.495Z",
+          "fileName": "ko/concepts/features/configuration/settings/alternative-query-languages.mdx",
+          "postProcessHash": "02592bee4c44be48cf85f5f0165b06d62c8be5fedf135bb93198c4f38d1062c2"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:07.838Z",
+          "updatedAt": "2026-09-10T03:17:32.496Z",
           "fileName": "ar/concepts/features/configuration/settings/alternative-query-languages.mdx",
-          "postProcessHash": "d0c00ae718d06714c8ffc70e0e1f4dfd4a5e99085dbb56d4e3b107ffc755a42c"
+          "postProcessHash": "eebda993ccdddd78cdfe160113d5aa55ab090e01107c6a7064f878888164c852"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:07.838Z",
-          "fileName": "fr/concepts/features/configuration/settings/alternative-query-languages.mdx",
-          "postProcessHash": "4550e032c451e8b09074298dbb70e153a7c14f1b479b458e85923a9f0064eb4c"
+        "ja": {
+          "updatedAt": "2026-09-10T03:17:32.496Z",
+          "fileName": "ja/concepts/features/configuration/settings/alternative-query-languages.mdx",
+          "postProcessHash": "655af629b169b08eed290895b8e67a086350ca57645104fc73a85a7322fb7d7f"
         }
       },
-      "fileName": "concepts/features/configuration/settings/alternative-query-languages.mdx",
-      "staged": false
+      "fileName": "concepts/features/configuration/settings/alternative-query-languages.mdx"
     },
     {
       "fileId": "1f6209fb38046d2271f14512bf0a5445063c07c75935cd462faa5a8a6185a411",

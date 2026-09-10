@@ -4,7 +4,7 @@ sidebarTitle: '대체 쿼리 언어'
 title: '대체 쿼리 언어'
 description: 'ClickHouse에서 대체 쿼리 언어 사용하기'
 keywords: ['대체 쿼리 언어', '쿼리 방언', 'MySQL 방언', 'PostgreSQL 방언', '개발자 가이드']
-doc_type: '참고'
+doc_type: 'reference'
 ---
 
 import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
@@ -16,12 +16,11 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 * `clickhouse`: ClickHouse의 기본 [SQL 방언](/ko/chdb/reference/sql-reference)
 * `prql`: [파이프라인 기반 관계형 쿼리 언어 (PRQL)](https://prql-lang.org/)
 * `kusto`: [Kusto 쿼리 언어 (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 사용할 쿼리 언어는 `dialect` 설정으로 제어됩니다.
 
-<div id="standard-sql">
-  ## 표준 SQL
-</div>
+## 표준 SQL {#standard-sql}
 
 표준 SQL은 ClickHouse에서 기본으로 사용하는 쿼리 언어입니다.
 
@@ -29,9 +28,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 SET dialect = 'clickhouse'
 ```
 
-<div id="pipelined-relational-query-language-prql">
-  ## 파이프라인 기반 관계형 쿼리 언어(PRQL)
-</div>
+## 파이프라인 기반 관계형 쿼리 언어(PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -54,9 +51,7 @@ aggregate {
 
 내부적으로는 ClickHouse가 PRQL을 SQL로 트랜스파일해 PRQL 쿼리를 실행합니다.
 
-<div id="kusto-query-language-kql">
-  ## Kusto 쿼리 언어(KQL)
-</div>
+## Kusto 쿼리 언어(KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -87,3 +82,36 @@ numbers(10) | project number
 ```
 
 KQL 쿼리에서는 ClickHouse에 정의된 모든 함수를 사용할 수 없을 수 있다는 점에 유의하십시오.
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge />
+
+Trino 방언을 활성화하려면 다음과 같이 하십시오:
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+Trino 고유 구문은 ClickHouse SQL로 변환되고, Trino 함수 이름은 이에 상응하는 ClickHouse 함수로 매핑됩니다:
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+번역 대상에는 무엇보다도 `ARRAY[...]` 리터럴, `TRY_CAST`, `UNNEST`(`ARRAY JOIN`으로 변환), `ROW` 생성자 및 타입, `VALUES` 테이블, `LIMIT` 앞에 오는 `OFFSET`, `BETWEEN SYMMETRIC`, 그리고 수백 개의 함수가 포함됩니다. 여기에는 두 시스템에 이름은 같지만 의미가 다른 함수도 포함됩니다(예를 들어 Trino의 `length`는 유니코드 코드 포인트를 세므로 `lengthUTF8`로 변환됩니다). Trino 함수 이름과 충돌하지 않는 ClickHouse 함수는 그대로 사용할 수 있으므로, 하나의 쿼리에서 두 함수 계열을 섞어 쓸 수 있습니다.
+
+Trino의 `JSON` 값은 ClickHouse [`JSON`](/ko/reference/data-types/newjson) 타입으로 매핑됩니다. `JSON '...'` 리터럴과 `json_parse`는 `JSON`으로의 형변환으로, `json_format`은 `toJSONString`으로 변환되며, 경로 함수(`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`)는 이에 대응하는 ClickHouse 함수로 변환됩니다. ClickHouse `JSON` 타입은 객체를 저장하므로, 객체가 아닌 문서(최상위 배열 및 스칼라)는 `JSON` 값으로 구체화될 때 거부됩니다. 단, 경로 함수는 모든 JSON 텍스트를 허용합니다.
+
+일부 Trino 의미는 변환된 쿼리 텍스트로 표현할 수 없어 대신 쿼리 Context에 적용됩니다. 즉, OUTER JOIN은 `NULL`을 생성하고(`join_use_nulls`), set operation은 `Variant` 대신 숫자 supertype을 사용하며(`use_variant_as_common_type`), 쿼리 분석기가 필요합니다(`enable_analyzer`). 쿼리에 명시적인 `SETTINGS` 절이 있으면 이 설정들보다 우선합니다.
+
+쿼리 수준의 변환으로 해결할 수 없는 의미는 ClickHouse의 방식을 그대로 따릅니다. 대표적으로 나눗셈 연산자 `/`는 Trino에서는 정수 나눗셈을 수행하지만 ClickHouse에서는 부동소수점 나눗셈을 수행하며, `round`는 ClickHouse에서 `Float` 인수에 대해 은행가 rounding을 사용합니다.
+
+쿼리가 어떻게 변환되는지 확인하려면 `EXPLAIN SYNTAX`를 사용하십시오.

@@ -16,12 +16,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * `clickhouse`: [لهجة SQL](/ar/chdb/reference/sql-reference) الافتراضية في ClickHouse
 * `prql`: [Pipelined Relational Query Language (PRQL)](https://prql-lang.org/)
 * `kusto`: [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
-تُحدَّد لغة الاستعلام المستخدمة عبر الإعداد `dialect`.
+تُحدَّد لغة الاستعلام المستخدمة عبر الإعداد `dialect`.
 
-<div id="standard-sql">
-  ## SQL القياسية
-</div>
+## SQL القياسية {#standard-sql}
 
 تُعد SQL القياسية لغة الاستعلام الافتراضية في ClickHouse.
 
@@ -29,9 +28,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 SET dialect = 'clickhouse'
 ```
 
-<div id="pipelined-relational-query-language-prql">
-  ## Pipelined Relational Query Language (PRQL)
-</div>
+## Pipelined Relational Query Language (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -54,9 +51,7 @@ aggregate {
 
 في الخلفية، يستخدم ClickHouse الترجمة التحويلية من PRQL إلى SQL لتشغيل استعلامات PRQL.
 
-<div id="kusto-query-language-kql">
-  ## Kusto Query Language (KQL)
-</div>
+## Kusto Query Language (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -87,3 +82,50 @@ numbers(10) | project number
 ```
 
 لاحظ أن استعلامات KQL قد لا تتمكن من الوصول إلى جميع الدوال المعرَّفة في ClickHouse.
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge />
+
+لتفعيل لهجة Trino:
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+تُترجَم الصيغة الخاصة بـ Trino إلى ClickHouse SQL، وتُربَط أسماء دوال Trino بما يكافئها في ClickHouse:
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+تشمل الترجمة، من بين أمور أخرى، القيم الحرفية `ARRAY[...]`، و`TRY_CAST`، و`UNNEST` (تُترجم إلى `ARRAY JOIN`)،
+ومُنشئات وأنواع `ROW`، وجداول `VALUES`، و`OFFSET` قبل `LIMIT`، و`BETWEEN SYMMETRIC`، وعدة مئات من
+الدوال، بما فيها تلك التي ترد أسماؤها في كلا النظامين بدلالات مختلفة (على سبيل المثال، الدالة `length` في Trino
+تَعُدّ نقاط ترميز Unicode وتُترجم إلى `lengthUTF8`). أما دوال ClickHouse التي لا تتعارض أسماؤها مع أسماء Trino فتبقى
+متاحة، ما يتيح مزج عائلتي الدوال معًا في استعلام واحد.
+
+تُربط قيم `JSON` في Trino بنوع [`JSON`](/ar/reference/data-types/newjson) في ClickHouse:
+فتتحول القيم الحرفية `JSON '...'` و`json_parse` إلى تحويلات (casts) إلى `JSON`، وتتحول `json_format` إلى `toJSONString`، وتُترجم دوال
+المسار (`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`)
+إلى نظائرها في ClickHouse. وبما أن نوع `JSON` في ClickHouse يخزّن كائنات، فإن المستندات غير الكائنية
+(المصفوفات والقيم القياسية على المستوى الأعلى) تُرفض عند تجسيدها كقيم `JSON`؛ أما دوال المسار فتقبل
+أي نص JSON.
+
+بعض دلالات Trino لا يمكن التعبير عنها في نص الاستعلام المترجَم، لذا تُطبَّق على سياق الاستعلام
+بدلاً من ذلك: فعمليات الربط الخارجية تُنتج `NULL` (`join_use_nulls`)، وعمليات المجموعات تستخدم النوع الأعلى العددي بدلاً من
+`Variant` (`use_variant_as_common_type`)، ويُشترط تفعيل مُحلِّل الاستعلامات (`enable_analyzer`). ومع ذلك، تظل الأسبقية
+لعبارة `SETTINGS` الصريحة في الاستعلام على هذه الإعدادات.
+
+أما الدلالات التي لا يمكن معالجتها بالترجمة على مستوى الاستعلام فتبقى كما هي في ClickHouse. وأبرزها أن
+معامل القسمة `/` يُجري قسمة صحيحة في Trino بينما يُجري قسمة عشرية في ClickHouse، وأن
+`round` يستخدم تقريب المصرفيين في ClickHouse مع وسائط `Float`.
+
+استخدم `EXPLAIN SYNTAX` لمعرفة كيفية ترجمة استعلام ما.

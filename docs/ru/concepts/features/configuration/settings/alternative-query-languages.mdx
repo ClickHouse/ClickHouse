@@ -16,12 +16,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * `clickhouse`: Диалект [SQL](/ru/chdb/reference/sql-reference), используемый в ClickHouse по умолчанию
 * `prql`: [конвейерный реляционный язык запросов (PRQL)](https://prql-lang.org/)
 * `kusto`: [язык запросов Kusto (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 Используемый язык запросов задаётся параметром `dialect`.
 
-<div id="standard-sql">
-  ## Стандартный SQL
-</div>
+## Стандартный SQL {#standard-sql}
 
 Стандартный SQL — язык запросов ClickHouse по умолчанию.
 
@@ -29,9 +28,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 SET dialect = 'clickhouse'
 ```
 
-<div id="pipelined-relational-query-language-prql">
-  ## Конвейерный реляционный язык запросов (PRQL)
-</div>
+## Конвейерный реляционный язык запросов (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -54,9 +51,7 @@ aggregate {
 
 ClickHouse использует транспиляцию из PRQL в SQL для выполнения запросов PRQL.
 
-<div id="kusto-query-language-kql">
-  ## Язык запросов Kusto (KQL)
-</div>
+## Язык запросов Kusto (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -87,3 +82,50 @@ numbers(10) | project number
 ```
 
 Обратите внимание, что KQL-запросы могут не поддерживать все функции, определённые в ClickHouse.
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge />
+
+Чтобы включить диалект Trino:
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+Специфичный для Trino синтаксис преобразуется в ClickHouse SQL, а имена функций Trino сопоставляются с их эквивалентами в ClickHouse:
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+Трансляция охватывает, в частности, литералы `ARRAY[...]`, `TRY_CAST`, `UNNEST` (транслируется в `ARRAY JOIN`),
+конструкторы и типы `ROW`, таблицы `VALUES`, `OFFSET` перед `LIMIT`, `BETWEEN SYMMETRIC`, а также несколько сотен
+функций, включая те, имена которых есть в обеих системах, но с разной семантикой (например, в Trino `length`
+считает кодовые точки Unicode и транслируется в `lengthUTF8`). Функции ClickHouse, имена которых не конфликтуют с
+именами Trino, остаются доступными, поэтому оба семейства функций можно смешивать в одном запросе.
+
+Значения `JSON` из Trino отображаются на тип ClickHouse [`JSON`](/ru/reference/data-types/newjson):
+литералы `JSON '...'` и `json_parse` превращаются в приведение к `JSON`, `json_format` — в `toJSONString`, а функции
+работы с путями (`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`)
+транслируются в свои аналоги в ClickHouse. Поскольку тип `JSON` в ClickHouse хранит объекты, документы, не являющиеся
+объектами (массивы и скалярные значения верхнего уровня), отклоняются при материализации в виде значений `JSON`;
+функции работы с путями принимают любой JSON-текст.
+
+Некоторые особенности семантики Trino невозможно выразить в тексте транслированного запроса — вместо этого они
+применяются к контексту запроса: внешние соединения дают `NULL` (`join_use_nulls`), операции над множествами используют
+числовой супертип, а не `Variant` (`use_variant_as_common_type`), и требуется query analyzer (`enable_analyzer`). Явно
+указанная в запросе секция `SETTINGS` по-прежнему имеет приоритет над этими значениями.
+
+Семантика, которую нельзя исправить трансляцией на уровне запроса, остаётся семантикой ClickHouse. В первую очередь
+это касается оператора деления `/`: в Trino он выполняет целочисленное деление, а в ClickHouse — деление с плавающей
+точкой; кроме того, `round` в ClickHouse для аргументов типа `Float` использует банковское округление.
+
+Используйте `EXPLAIN SYNTAX`, чтобы увидеть, как транслируется запрос.

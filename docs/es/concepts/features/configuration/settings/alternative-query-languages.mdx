@@ -16,12 +16,11 @@ Los dialectos admitidos actualmente son:
 * `clickhouse`: El [dialecto SQL](/es/chdb/reference/sql-reference) predeterminado de ClickHouse
 * `prql`: [Lenguaje de consulta relacional en canalización (PRQL)](https://prql-lang.org/)
 * `kusto`: [Lenguaje de consulta Kusto (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 El lenguaje de consulta utilizado se controla mediante la configuración `dialect`.
 
-<div id="standard-sql">
-  ## SQL estándar
-</div>
+## SQL estándar {#standard-sql}
 
 SQL estándar es el lenguaje de consulta predeterminado de ClickHouse.
 
@@ -29,9 +28,7 @@ SQL estándar es el lenguaje de consulta predeterminado de ClickHouse.
 SET dialect = 'clickhouse'
 ```
 
-<div id="pipelined-relational-query-language-prql">
-  ## Lenguaje de consulta relacional en canalización (PRQL)
-</div>
+## Lenguaje de consulta relacional en canalización (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -54,9 +51,7 @@ aggregate {
 
 Entre bastidores, ClickHouse utiliza la transpilación de PRQL a SQL para ejecutar consultas PRQL.
 
-<div id="kusto-query-language-kql">
-  ## Lenguaje de consulta Kusto (KQL)
-</div>
+## Lenguaje de consulta Kusto (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -87,3 +82,50 @@ numbers(10) | project number
 ```
 
 Ten en cuenta que es posible que las consultas KQL no tengan acceso a todas las funciones definidas en ClickHouse.
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge />
+
+Para habilitar el dialecto de Trino:
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+La sintaxis específica de Trino se traduce a ClickHouse SQL, y los nombres de las funciones de Trino se asignan a sus equivalentes en ClickHouse:
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+La traducción cubre, entre otras cosas, los literales `ARRAY[...]`, `TRY_CAST`, `UNNEST` (traducido a `ARRAY JOIN`),
+los constructores y tipos `ROW`, las tablas `VALUES`, `OFFSET` antes de `LIMIT`, `BETWEEN SYMMETRIC` y varios cientos de
+funciones, incluidas aquellas cuyos nombres existen en ambos sistemas con semánticas distintas (por ejemplo, `length` de Trino
+cuenta puntos de código Unicode y se traduce a `lengthUTF8`). Las funciones de ClickHouse que no entran en conflicto con los nombres
+de Trino siguen estando disponibles, de modo que ambas familias de funciones pueden combinarse en una misma consulta.
+
+Los valores `JSON` de Trino se asignan al tipo [`JSON`](/es/reference/data-types/newjson) de ClickHouse:
+los literales `JSON '...'` y `json_parse` se convierten en conversiones a `JSON`, `json_format` pasa a ser `toJSONString` y las
+funciones de ruta (`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`) se
+traducen a sus equivalentes de ClickHouse. Dado que el tipo `JSON` de ClickHouse almacena objetos, los documentos que no son objetos
+(arrays y escalares de nivel superior) se rechazan al materializarse como valores `JSON`; las funciones de ruta aceptan
+cualquier texto JSON.
+
+Algunas semánticas de Trino no se pueden expresar en el texto de la consulta traducida, por lo que se aplican al contexto
+de la consulta: los outer joins producen `NULL` (`join_use_nulls`), las operaciones de conjuntos usan el supertipo numérico en lugar de
+`Variant` (`use_variant_as_common_type`) y se requiere el analizador de consultas (`enable_analyzer`). Una cláusula
+`SETTINGS` explícita en la consulta sigue teniendo precedencia sobre estas.
+
+Las semánticas que no pueden corregirse mediante una traducción a nivel de consulta siguen siendo las de ClickHouse. En particular,
+el operador de división `/` realiza una división entera en Trino, pero una división de coma flotante en ClickHouse, y
+`round` aplica el redondeo bancario en ClickHouse para argumentos `Float`.
+
+Utilice `EXPLAIN SYNTAX` para ver cómo se traduce una consulta.

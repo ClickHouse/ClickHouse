@@ -11,17 +11,16 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 除标准 SQL 外，ClickHouse 还支持多种可用于数据查询的其他查询语言。
 
-当前支持的 dialect 如下：
+当前支持的 方言 如下：
 
 * `clickhouse`：ClickHouse 默认的 [SQL 方言](/zh/chdb/reference/sql-reference)
 * `prql`：[管道式关系查询语言 (PRQL)](https://prql-lang.org/)
 * `kusto`：[Kusto 查询语言 (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `trino`：[Trino SQL](https://trino.io/docs/current/language.html)
 
 使用哪种查询语言由 `dialect` 设置控制。
 
-<div id="standard-sql">
-  ## 标准 SQL
-</div>
+## 标准 SQL {#standard-sql}
 
 标准 SQL 是 ClickHouse 的默认查询语言。
 
@@ -29,9 +28,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 SET dialect = 'clickhouse'
 ```
 
-<div id="pipelined-relational-query-language-prql">
-  ## 管道式关系查询语言 (PRQL)
-</div>
+## 管道式关系查询语言 (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -54,9 +51,7 @@ aggregate {
 
 ClickHouse 在底层通过将 PRQL 转译为 SQL 来运行 PRQL 查询。
 
-<div id="kusto-query-language-kql">
-  ## Kusto 查询语言 (KQL)
-</div>
+## Kusto 查询语言 (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -87,3 +82,50 @@ numbers(10) | project number
 ```
 
 请注意，KQL 查询可能无法调用 ClickHouse 中定义的所有函数。
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge />
+
+要启用 Trino 方言：
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+Trino 特有的语法会被转换为 ClickHouse SQL，Trino 函数名则映射为对应的 ClickHouse 函数：
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+该转换涵盖 `ARRAY[...]` 字面量、`TRY_CAST`、`UNNEST` (转换为 `ARRAY JOIN`) 、
+`ROW` 构造器与类型、`VALUES` 表、位于 `LIMIT` 之前的 `OFFSET`、`BETWEEN SYMMETRIC`，以及数百个
+函数，其中包括那些在两个系统中同名但语义不同的函数 (例如，Trino 的 `length`
+统计 Unicode 码点，因此被转换为 `lengthUTF8`) 。与 Trino 函数名不冲突的 ClickHouse 函数
+依然可用，因此两类函数可以在同一个查询中混用。
+
+Trino 的 `JSON` 值会映射为 ClickHouse 的 [`JSON`](/zh/reference/data-types/newjson) 类型：
+`JSON '...'` 字面量和 `json_parse` 转换为对 `JSON` 的 cast，`json_format` 转换为 `toJSONString`，路径
+函数 (`json_extract`、`json_extract_scalar`、`json_value`、`json_query`、`json_exists`、`json_size`) 则
+转换为对应的 ClickHouse 函数。由于 ClickHouse 的 `JSON` 类型存储的是对象，非对象文档
+(顶层数组和标量) 在被 materialize 为 `JSON` 值时会被拒绝；而路径函数可以接受
+任意 JSON 文本。
+
+部分 Trino 语义无法在转换后的查询文本中表达，转而应用于查询上下文：
+OUTER JOIN 产生 `NULL` (`join_use_nulls`) 、set operations 使用数值 supertype 而非
+`Variant` (`use_variant_as_common_type`) 、并且必须启用查询分析器 (`enable_analyzer`) 。查询中显式书写的
+`SETTINGS` 子句仍会覆盖这些设置。
+
+无法通过查询级转换修正的语义仍沿用 ClickHouse 的行为。其中最需要注意的是：
+除法运算符 `/` 在 Trino 中执行整数除法，在 ClickHouse 中则执行浮点除法；并且
+对于 `Float` 参数，ClickHouse 的 `round` 采用银行家舍入。
+
+使用 `EXPLAIN SYNTAX` 可以查看查询的转换结果。

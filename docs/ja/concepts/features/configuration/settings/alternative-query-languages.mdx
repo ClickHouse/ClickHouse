@@ -16,12 +16,11 @@ Standard SQL に加えて、ClickHouse はデータのクエリに使用でき�
 * `clickhouse`: ClickHouse のデフォルトの [SQL ダイアレクト](/ja/chdb/reference/sql-reference)
 * `prql`: [パイプライン指向リレーショナルクエリ言語 (PRQL)](https://prql-lang.org/)
 * `kusto`: [Kusto クエリ言語 (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 使用するクエリ言語は、`dialect` 設定で制御します。
 
-<div id="standard-sql">
-  ## Standard SQL
-</div>
+## Standard SQL {#standard-sql}
 
 Standard SQL は、ClickHouse のデフォルトのクエリ言語です。
 
@@ -29,9 +28,7 @@ Standard SQL は、ClickHouse のデフォルトのクエリ言語です。
 SET dialect = 'clickhouse'
 ```
 
-<div id="pipelined-relational-query-language-prql">
-  ## パイプライン指向リレーショナルクエリ言語 (PRQL)
-</div>
+## パイプライン指向リレーショナルクエリ言語 (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -54,9 +51,7 @@ aggregate {
 
 内部的には、ClickHouse は PRQL を SQL にトランスパイルして、PRQL クエリを実行します。
 
-<div id="kusto-query-language-kql">
-  ## Kusto クエリ言語 (KQL)
-</div>
+## Kusto クエリ言語 (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -87,3 +82,50 @@ numbers(10) | project number
 ```
 
 KQL クエリでは、ClickHouse で定義されているすべての関数を利用できるとは限りません。
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge />
+
+Trino ダイアレクトを有効にするには:
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+Trino 固有の構文は ClickHouse SQL に変換され、Trino の関数名は ClickHouse の同等の関数にマッピングされます。
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+この変換は、とりわけ `ARRAY[...]` リテラル、`TRY_CAST`、`UNNEST` (`ARRAY JOIN` に変換されます) 、
+`ROW` コンストラクタおよび型、`VALUES` テーブル、`LIMIT` より前の `OFFSET`、`BETWEEN SYMMETRIC`、および数百に及ぶ
+関数を対象とします。これには、両システムに同名で存在しながら意味が異なる関数も含まれます (例えば、Trino の `length`
+は Unicode コードポイントを数えるため、`lengthUTF8` に変換されます) 。Trino の関数名と衝突しない ClickHouse 関数は
+引き続き利用できるため、1 つのクエリ内で両方の関数群を混在させられます。
+
+Trino の `JSON` 値は ClickHouse の [`JSON`](/ja/reference/data-types/newjson) 型にマッピングされます。
+`JSON '...'` リテラルと `json_parse` は `JSON` へのキャストになり、`json_format` は `toJSONString` になります。また、パス
+関数 (`json_extract`、`json_extract_scalar`、`json_value`、`json_query`、`json_exists`、`json_size`) は
+対応する ClickHouse の関数に変換されます。ClickHouse の `JSON` 型はオブジェクトを格納するため、オブジェクト以外のドキュメント
+(トップレベルの配列やスカラー) は `JSON` 値として実体化される際に拒否されます。一方、パス関数は
+任意の JSON テキストを受け付けます。
+
+Trino の意味の一部は変換後のクエリテキストでは表現できないため、代わりにクエリのコンテキストに
+適用されます。すなわち、外部結合は `NULL` を生成し (`join_use_nulls`) 、集合演算は `Variant` ではなく数値のスーパータイプを
+使用し (`use_variant_as_common_type`) 、クエリアナライザが必須となります (`enable_analyzer`) 。ただし、クエリ内で明示的に指定された
+`SETTINGS` 句は、これらよりも優先されます。
+
+クエリレベルの変換では解消できない意味は、ClickHouse のものがそのまま適用されます。特に顕著なのは、
+除算演算子 `/` が Trino では整数除算を行うのに対し ClickHouse では浮動小数点除算を行う点、および
+`round` が `Float` 引数に対して ClickHouse では銀行家丸めを使用する点です。
+
+クエリがどのように変換されるかを確認するには `EXPLAIN SYNTAX` を使用してください。
