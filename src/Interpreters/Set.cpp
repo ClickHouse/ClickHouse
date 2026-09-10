@@ -395,11 +395,8 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         ColumnWithTypeAndName column_to_cast
             = {column_before_cast.column->convertToFullColumnIfConst(), column_before_cast.type, column_before_cast.name};
 
-        /// Tuple keys require `castColumnAccurate`: `castColumnAccurateOrNull` rejects tuple elements
-        /// that cannot be inside `Nullable`, such as arrays.
         const auto target_type_without_nullable = removeNullable(data_types[i]);
-        const bool use_cast_accurate_or_null
-            = !transform_null_in && data_types[i]->canBeInsideNullable() && !isTuple(target_type_without_nullable);
+        const bool use_cast_accurate_or_null = !transform_null_in && canBeAccurateCastOrNullTarget(data_types[i]);
 
         if (use_cast_accurate_or_null)
         {

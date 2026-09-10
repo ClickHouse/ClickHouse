@@ -70,13 +70,15 @@ FROM
 )
 SETTINGS max_block_size = 7;
 
--- A non-null tuple reports an invalid element conversion.
+{% if mode == 1 %}
+-- Strict set-key casts report invalid conversions in non-null tuples.
 SELECT (k, 1) IN (SELECT toNullable(tuple(toUInt8(1))), 1)
 FROM (SELECT materialize(CAST(tuple('bad'), 'Nullable(Tuple(String))')) AS k); -- { serverError CANNOT_PARSE_TEXT }
 
 -- A NULL field inside a non-null tuple is not an outer NULL that can be skipped during conversion.
 SELECT (k, 1) IN (SELECT tuple(toUInt8(1)), 1)
 FROM (SELECT materialize(CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))')) AS k); -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+{% endif %}
 
 {% endfor %}
 

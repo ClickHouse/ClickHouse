@@ -74,6 +74,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IPv6ToBinary.h>
+#include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
@@ -1416,7 +1417,14 @@ struct ConvertThroughParsing
             size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
             size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset : fixed_string_size;
 
-            ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
+            std::string_view text(reinterpret_cast<const char *>(chars->data() + current_offset), string_size);
+            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && IsDataTypeDecimal<ToDataType>
+                && exception_mode != ConvertFromStringExceptionMode::Throw)
+            {
+                /// Non-throwing decimal parsers validate every byte, so exclude `FixedString` zero padding.
+                trimRight(text, '\0');
+            }
+            ReadBufferFromMemory read_buffer(text);
 
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
@@ -5048,8 +5056,7 @@ private:
     template <typename ToDataType>
     WrapperType createWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
 
-    template <typename ToDataType>
-    WrapperType createBoolWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const;
+    WrapperType createStringParsingWrapper(bool requested_result_is_nullable = false) const;
 
     WrapperType createUInt8ToBoolWrapper(DataTypePtr from_type, DataTypePtr to_type) const;
 
@@ -5180,8 +5187,9 @@ private:
 
     WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type, bool skip_not_null_check) const;
 
-    /// 'from_type' and 'to_type' are nested types in case of Nullable.
-    /// 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
+    /// `from_type` and `to_type` have their outer `Nullable` wrappers removed.
+    /// `requested_result_is_nullable` includes declared nullable targets and intermediate
+    /// `accurateCastOrNull` results that use NULL to report conversion failures.
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const;
 };
 

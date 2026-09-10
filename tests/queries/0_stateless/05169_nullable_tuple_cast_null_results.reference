@@ -1,0 +1,102 @@
+UInt8		0	1
+UInt8	materialize	0	1
+Float64		0	1
+Float64	materialize	0	1
+Decimal64(2)		0	1
+Decimal64(2)	materialize	0	1
+Date		0	1
+Date	materialize	0	1
+Date32		0	1
+Date32	materialize	0	1
+DateTime(\'UTC\')		0	1
+DateTime(\'UTC\')	materialize	0	1
+DateTime64(3, \'UTC\')		0	1
+DateTime64(3, \'UTC\')	materialize	0	1
+Bool		0	1
+Bool	materialize	0	1
+Enum8(\'a\' = 1)		0	1
+Enum8(\'a\' = 1)	materialize	0	1
+Enum16(\'a\' = 1)		0	1
+Enum16(\'a\' = 1)	materialize	0	1
+IPv4		0	1
+IPv4	materialize	0	1
+IPv6		0	1
+IPv6	materialize	0	1
+UUID		0	1
+UUID	materialize	0	1
+FixedString(2)		0	1
+FixedString(2)	materialize	0	1
+Tuple(UInt8)		0	1
+Tuple(UInt8)	materialize	0	1
+0	1
+0	1
+1	1	1	1
+0	1
+0	1	1
+0	1	1
+0	1	1
+0	1	1
+(1,NULL)
+(2,1)
+(1,2)
+1	1	0	1	1	1
+2	0	1	0	0	0
+3	0	1	0	0	0
+4	0	1	0	0	0
+0	1	0	1
+0	1	0	1
+0	1	0
+1	1	1
+1	1	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1
+0	1	0	1
+0	1	0	1
+0	1	0	1
+0	1	0	1
+0	1	0	1
+0	1	0	1
+0	1	0	1
+0	1	0	1
+1	1
+1	1
+0	1	1	1	1	1
+0	1	1	1	1	1
+0	1	1	1	1	1
+0	1	1	1	1	1
+0	1	1	1	1	1
+0	1	1	1	1	1
+0	1	1	1	1	1
+0	1	1	1	1	1
+0	1
+0	1
+0	1
+0	1
