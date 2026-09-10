@@ -28,6 +28,14 @@ add_compile_definitions (LIBURING_INTERNAL)
 set (LIBURING_COMPAT_INCLUDE_DIR "${ClickHouse_BINARY_DIR}/contrib/liburing/src/include-compat")
 set (LIBURING_COMPAT_HEADER "${LIBURING_COMPAT_INCLUDE_DIR}/liburing/compat.h")
 
+# Since 2.15, `liburing.h` includes `<linux/filter.h>` for the io_uring BPF filter API.
+# The loongarch64 sysroot ships only a subset of the Linux UAPI headers and lacks
+# `linux/filter.h` and `linux/bpf_common.h` (included by the former), so provide
+# verbatim copies of them for that target.
+if (ARCH_LOONGARCH64)
+    list (APPEND LIBURING_COMPAT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include-compat-loongarch64")
+endif ()
+
 set (LIBURING_CONFIG_HAS_KERNEL_RWF_T    FALSE)
 set (LIBURING_CONFIG_HAS_KERNEL_TIMESPEC FALSE)
 set (LIBURING_CONFIG_HAS_OPEN_HOW        FALSE)
