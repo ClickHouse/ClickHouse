@@ -3,6 +3,10 @@
 SET allow_statistics = 1;
 SELECT count() FROM (EXPLAIN AST SELECT trim(BOTH '' FROM 'x')) WHERE explain ILIKE '%Function trimBoth%';
 1
+SELECT count() FROM (EXPLAIN AST SELECT trim(LEADING '' FROM 'x')) WHERE explain ILIKE '%Function trimLeft%';
+1
+SELECT count() FROM (EXPLAIN AST SELECT trim(TRAILING '' FROM 'x')) WHERE explain ILIKE '%Function trimRight%';
+1
 SELECT formatQuery($$SELECT trim(BOTH '' FROM 'x')$$);
 SELECT trimBoth(\'x\', \'\')
 SELECT formatQuery(formatQuery($$SELECT trim(BOTH '' FROM 'x')$$)) = formatQuery($$SELECT trim(BOTH '' FROM 'x')$$);

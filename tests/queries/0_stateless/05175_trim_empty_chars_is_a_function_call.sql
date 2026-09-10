@@ -2,6 +2,8 @@
 -- trim(BOTH|LEADING|TRAILING '' FROM x) parses to a function call, like every other trim spelling.
 SET allow_statistics = 1;
 SELECT count() FROM (EXPLAIN AST SELECT trim(BOTH '' FROM 'x')) WHERE explain ILIKE '%Function trimBoth%';
+SELECT count() FROM (EXPLAIN AST SELECT trim(LEADING '' FROM 'x')) WHERE explain ILIKE '%Function trimLeft%';
+SELECT count() FROM (EXPLAIN AST SELECT trim(TRAILING '' FROM 'x')) WHERE explain ILIKE '%Function trimRight%';
 SELECT formatQuery($$SELECT trim(BOTH '' FROM 'x')$$);
 SELECT formatQuery(formatQuery($$SELECT trim(BOTH '' FROM 'x')$$)) = formatQuery($$SELECT trim(BOTH '' FROM 'x')$$);
 -- Slots that require a function report their own error instead of crashing.
