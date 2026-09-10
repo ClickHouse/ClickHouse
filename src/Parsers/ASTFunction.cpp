@@ -39,6 +39,34 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+/// A compound name (`database.view`, only for a parameterized-view table function) needs its parts
+/// quoted separately: one quoted token would re-parse as a single identifier.
+void writeFunctionName(WriteBuffer & ostr, const String & name, bool is_compound_name)
+{
+    if (!is_compound_name)
+    {
+        ostr << backQuoteIfNeed(name);
+        return;
+    }
+
+    std::string_view rest = name;
+    while (true)
+    {
+        const size_t dot = rest.find('.');
+        ostr << backQuoteIfNeed(rest.substr(0, dot));
+        if (dot == std::string_view::npos)
+            break;
+        ostr << '.';
+        rest.remove_prefix(dot + 1);
+    }
+}
+
+}
+
+
 boost::intrusive_ptr<ASTFunction> makeASTLambda(std::initializer_list<String> param_names, ASTPtr && body)
 {
     auto tuple = makeASTFunction("tuple");
@@ -515,7 +543,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         std::string nl_or_nothing = settings.one_line ? "" : "\n";
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
         if (!name.empty())
-            ostr << backQuoteIfNeed(name);
+            writeFunctionName(ostr, name, isCompoundName());
         ostr << "(";
         ostr << nl_or_nothing;
         FormatStateStacked frame_nested = frame;
@@ -994,7 +1022,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
     /// Empty names are used rarely, to format queries with an extra pair of parentheses for external databases.
     if (!name.empty())
-        ostr << backQuoteIfNeed(name);
+        writeFunctionName(ostr, name, isCompoundName());
 
     if (parameters)
     {
