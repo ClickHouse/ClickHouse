@@ -209,7 +209,7 @@ bool DataTypeAggregateFunction::nameMatchesState(const String & state_type_name,
 
     /// A name that spells parameters this function never reads denotes the same state. Such a name can be
     /// unparseable, which is what stops the comparison above, so that spelling is compared verbatim.
-    return !function->areParametersPartOfState()
+    return function->getStateParameters() != function->getParameters()
         && state_type_name
             == DataTypeAggregateFunction(function, function->getArgumentTypes(), function->getParameters(), version).getName();
 }

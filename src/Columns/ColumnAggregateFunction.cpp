@@ -54,11 +54,11 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 
     stream << func->getName();
 
-    const auto & parameters = func->getParameters();
+    const auto parameters = func->getStateParameters();
     const auto & argument_types = func->getArgumentTypes();
     /// This name travels with every state serialized into a `Field`, so it must spell the state the
     /// same way its state type does, or such a `Field` no longer matches the type it came from.
-    if (!parameters.empty() && func->areParametersPartOfState())
+    if (!parameters.empty())
     {
         stream << '(';
         for (size_t i = 0; i < parameters.size(); ++i)

@@ -164,7 +164,7 @@ public:
 
     /// `argMin` and `argMax` accept parameters but never read them, so parameterized and parameterless
     /// states share one representation and stay Merge-/CAST-compatible.
-    bool areParametersPartOfState() const override { return false; }
+    Array getStateParameters() const override { return {}; }
 
     void create(AggregateDataPtr __restrict place) const override /// NOLINT
     {

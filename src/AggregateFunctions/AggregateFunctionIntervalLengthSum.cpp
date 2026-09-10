@@ -194,7 +194,7 @@ public:
 
     /// `intervalLengthSum` accepts parameters but never reads them, so parameterized and parameterless
     /// states share one representation and stay Merge-/CAST-compatible.
-    bool areParametersPartOfState() const override { return false; }
+    Array getStateParameters() const override { return {}; }
 
     bool allocatesMemoryInArena() const override { return false; }
 

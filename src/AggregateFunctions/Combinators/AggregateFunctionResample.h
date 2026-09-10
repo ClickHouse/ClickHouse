@@ -259,8 +259,14 @@ public:
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
     /// The last three parameters are this combinator's own (begin, end, step) and decide the shape of
-    /// the state, so they stay in the state type whatever the wrapped function says about its.
-    bool areParametersPartOfState() const override { return true; }
+    /// the state, so they always belong to it. The ones before them were passed to the wrapped
+    /// function, which answers for them.
+    Array getStateParameters() const override
+    {
+        Array result = nested_function->getStateParameters();
+        result.insert(result.end(), this->parameters.end() - 3, this->parameters.end());
+        return result;
+    }
 };
 
 }

@@ -3,9 +3,17 @@ AggregateFunction(argMin, Nullable(UInt64), UInt64)
 AggregateFunction(argMinIfOrNull, UInt64, UInt64, UInt8)
 AggregateFunction(argMinDistinct, UInt64, UInt64)
 AggregateFunction(intervalLengthSumIf, Float64, Float64, UInt8)
+AggregateFunction(argMinTuple, Tuple(UInt64, UInt64), Tuple(UInt64, UInt64))
+AggregateFunction(argMinTuple, Tuple(Nullable(Nothing), UInt64), Tuple(Nullable(Nothing), UInt64))
 a combinator that reads parameters keeps them
 AggregateFunction(quantilesIf(0.5), UInt64, UInt8)
 AggregateFunction(argMinResample(0, 2, 1), UInt64, UInt64, UInt64)
+AggregateFunction(quantilesResample(0.5, 0, 2, 1), UInt64, UInt64)
+AggregateFunction(quantilesTuple(0.5), Tuple(UInt64, UInt64))
+a combinator with parameters of its own keeps only those
+AggregateFunction(argMinResample(0, 2, 1), UInt64, UInt64, UInt64)
+AggregateFunction(argMinResampleIf(0, 2, 1), UInt64, UInt64, UInt64, UInt8)
 the table round-trips
 1
 0
+[0,1]
