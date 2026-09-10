@@ -41,6 +41,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
@@ -679,16 +680,14 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministic())
+    /// A query-time constant, such as a folded `now()`, is not deterministic across queries.
+    if (node->type == ActionsDAG::ActionType::COLUMN && !node->isDeterministic())
         return false;
 
-    return true;
+    /// `allNodeFunctions` also looks inside a `COLUMN` node holding a constant-folded lambda,
+    /// which is what a lambda without non-constant captured columns becomes, and inside the
+    /// lambdas nested in it as its captured columns.
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
 }
 
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
@@ -699,13 +698,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministicInScopeOfQuery())
-        return false;
-
-    return true;
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
 }
 
 /// `splitFilterNodeForAllowedInputs` owns no DAG: it collects new nodes in `additional_nodes`.

@@ -15,6 +15,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -148,7 +149,11 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
 
 bool isNodeDeterministic(const ActionsDAG::Node * node)
 {
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && !node->function_base->isDeterministic())
+    /// `allNodeFunctions` also looks inside a `COLUMN` node holding a constant-folded lambda, which
+    /// is what a lambda without non-constant captured columns becomes, and inside the lambdas nested
+    /// in it as its captured columns. Without that, a row policy hiding a non-deterministic call in
+    /// a lambda body over sorting-key columns is judged deterministic and applied before `FINAL`.
+    if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
