@@ -604,7 +604,7 @@ StepAnalysisReport GraceHashJoin::getAnalysisReport() const
 
 bool GraceHashJoin::alwaysReturnsEmptySet() const
 {
-    if (!isInnerOrRight(table_join->kind()) && !(isLeft(table_join->kind()) && table_join->strictness() == JoinStrictness::Semi))
+    if (!isInnerOrRight(table_join->kind()))
         return false;
 
     bool file_buckets_are_empty = [this]()

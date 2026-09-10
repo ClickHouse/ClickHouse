@@ -640,9 +640,7 @@ JoinMapsKind HashJoin::getMapsKind() const
 
 bool HashJoin::alwaysReturnsEmptySet() const
 {
-    /// A left semi join keeps only the left rows with a match, so it is empty for an empty right side too.
-    const bool empty_for_empty_right = isInnerOrRight(getKind()) || (isLeft(getKind()) && getStrictness() == JoinStrictness::Semi);
-    return empty_for_empty_right && data->rows_to_join == 0;
+    return isInnerOrRight(getKind()) && data->rows_to_join == 0;
 }
 
 size_t HashJoin::getTotalRowCount() const

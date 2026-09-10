@@ -1,17 +1,14 @@
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <QueryPipeline/scatterByPartition.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Core/SortDescription.h>
-
 
 namespace DB
 {
@@ -83,34 +80,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     /// However, when the input streams carry disjoint sets of the DISTINCT key values, each stream
     /// can be deduplicated independently, so we keep the streams and skip merging them into one.
     if (!pre_distinct && !skip_stream_merging)
-    {
-        /// Instead of the merge, the streams can be hash-partitioned by the DISTINCT columns: equal rows land
-        /// in the same stream, so every stream is still deduplicated completely and all threads stay busy.
-        /// A sorted input relies on its stream order (`DistinctSortedStreamTransform`), and the size limits
-        /// are global, so both keep the merge.
-        const size_t num_streams = pipeline.getNumStreams();
-        const size_t num_partitions = clampScatterPartitions(pipeline.getNumThreads(), num_streams);
-        if (settings.allow_parallel_final_distinct && num_streams > 1 && num_partitions > 1
-            && distinct_sort_desc.empty() && !set_size_limits.hasLimits())
-        {
-            const auto & header = pipeline.getHeader();
-            const size_t num_keys = columns.empty() ? header.columns() : columns.size();
-            ColumnNumbers key_columns(num_keys);
-            for (size_t i = 0; i < num_keys; ++i)
-                key_columns[i] = columns.empty() ? i : header.getPositionByName(columns[i]);
-
-            /// The scatter splits every chunk into one per partition, and the preliminary DISTINCT before it emits
-            /// small chunks whenever it collapses its input (low cardinality, or ranges of a sorted input). Without
-            /// squashing, the per-chunk overhead of the partitions then dominates and makes the step several times
-            /// slower than the single-stream merge.
-            static constexpr size_t min_block_size_bytes = 1024 * 1024;
-            pipeline.addSimpleTransform([&](const SharedHeader & squash_header)
-                { return std::make_shared<SimpleSquashingChunksTransform>(squash_header, settings.max_block_size, min_block_size_bytes); });
-            scatterByPartition(pipeline, num_partitions, key_columns);
-        }
-        else
-            pipeline.resize(1);
-    }
+        pipeline.resize(1);
 
     /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
     /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
