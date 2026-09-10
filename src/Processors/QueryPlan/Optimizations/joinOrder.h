@@ -83,7 +83,7 @@ struct RelationStats
 /// One binary join operator captured verbatim from the original (pre-flattening) join tree.
 /// Used only by the optional conflict detector for DPsub (CD-A or CD-C; see conflictDetector.h).
 ///   - `left` / `right`: the relation sets of the operator's two input subtrees;
-///   - `nel`: the relations referenced by the operator's ON clause (its SES);
+///   - `nel`: the relations referenced by the operator's ON clause;
 ///   - `kind`: the operator's join kind.
 /// Relation ids are in the final (global) QueryGraph numbering.
 struct ConflictJoinOp
@@ -91,9 +91,8 @@ struct ConflictJoinOp
     BitSet left;
     BitSet right;
     BitSet nel;
-    /// Relations on whose attributes the ON predicate rejects nulls (Definition 1 of the paper);
-    /// a subset of `nel`. Enables the null-rejection-dependent reorderability entries.
-    /// See `ConflictOpMask::nr_rels`.
+    /// Relations on whose attributes the ON predicate rejects nulls; a subset of `nel`. Enables the
+    /// null-rejection-dependent reorderability entries. See `ConflictOpMask::nr_rels`.
     BitSet nr_rels;
     JoinKind kind = JoinKind::Inner;
     /// Strictness distinguishes plain joins (All) from semi/anti joins, which the detectors model as

@@ -898,8 +898,8 @@ static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpress
 }
 
 /// Relations R such that the boolean `node` is false or unknown when all of R's columns are NULL
-/// (null-rejecting, Definition 1 of the paper). Conservative: when unsure it returns a subset of
-/// the true answer, which only widens a TES downstream and so keeps CD-A correct.
+/// (null-rejecting). Conservative: when unsure it returns a subset of the true answer, which only
+/// tightens the reordering constraints downstream and so stays correct.
 static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
 {
     if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
