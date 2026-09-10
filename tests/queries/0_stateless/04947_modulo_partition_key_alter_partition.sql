@@ -35,6 +35,17 @@ SELECT 'projection render', partition FROM system.projection_parts WHERE databas
 SELECT 'projection columns render', partition FROM system.projection_parts_columns WHERE database = currentDatabase() AND table = 'mod_proj' AND active AND column = 'c1';
 DROP TABLE mod_proj;
 
+-- Scheduling a merge renders the partition value before any data is read, and so does the row written
+-- to `system.part_log`, so both need the adjusted key.
+CREATE TABLE mod_merge (c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(37528, 'UInt64') % c0);
+INSERT INTO mod_merge VALUES (167682982);
+INSERT INTO mod_merge VALUES (167682982);
+OPTIMIZE TABLE mod_merge FINAL;
+SELECT 'merge', count() FROM system.parts WHERE database = currentDatabase() AND table = 'mod_merge' AND active;
+SYSTEM FLUSH LOGS part_log;
+SELECT 'part log', count() > 0 FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 'mod_merge';
+DROP TABLE mod_merge;
+
 -- A value outside the range of the partition key type addresses no partition and is rejected.
 CREATE TABLE mod_range (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c0 % 37528);
 INSERT INTO mod_range VALUES (5);

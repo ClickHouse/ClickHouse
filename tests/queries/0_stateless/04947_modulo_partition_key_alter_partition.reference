@@ -6,6 +6,8 @@ wide render columns	37528
 wide key	0
 projection render	37528
 projection columns render	tuple()
+merge	1
+part log	1
 out of range	1
 partition id	20200523-37528
 unsigned render	37528
