@@ -87,6 +87,13 @@ void IObjectStorageIteratorAsync::nextBatch()
                 is_finished = true;
                 break;
             }
+
+            /// Correct to follow, but indistinguishable from a listing that under-reports, which
+            /// is how #109751 was reached twice. Leave a trace.
+            LOG_INFO(
+                LogFrequencyLimiter(getLogger("ObjectStorageIteratorAsync"), 30),
+                "Listing returned an empty page while reporting more to come, following the token. {}",
+                describeListing());
         }
     }
     catch (...)
