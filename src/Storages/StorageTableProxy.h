@@ -61,6 +61,29 @@ public:
         return nested;
     }
 
+    /// The same, but never waits: `nested_mutex` is held for the whole first-access materialization,
+    /// which is unbounded (it reads the data parts and starts the table up). A caller that holds a
+    /// wider lock - the database mutex in `DatabaseWithOwnTablesBase::getTablesIterator` - must not
+    /// block on it, or a single table being loaded stalls every query on the database. A table that
+    /// is being materialized right now is reported as not materialized yet, exactly as an untouched
+    /// one is.
+    StoragePtr tryGetNestedWithoutWaiting() const
+    {
+        std::unique_lock lock{nested_mutex, std::try_to_lock};
+        if (!lock.owns_lock())
+            return nullptr;
+        return nested;
+    }
+
+    /// Only meaningful for a materialized table: for an untouched one there is nothing to notify, and
+    /// waking the background tasks of a table that nobody has asked for would load every lazy table.
+    void onActionLockRemove(StorageActionBlockType action_type) override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->onActionLockRemove(action_type);
+    }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
@@ -214,5 +237,34 @@ private:
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     LoggerPtr log;
 };
+
+/// The storage that actually implements the table engine, for a caller that recognizes an engine by
+/// downcasting the object it got from the catalog or from a database iterator. A table of a database
+/// with `lazy_load_tables` is kept there as a stand-in, and the catalog keeps the stand-in even after
+/// the real storage has been materialized. A table that has not been materialized yet is returned as
+/// is: materializing it here would load every lazy table of the server, which is what the setting
+/// exists to avoid. With `wait_for_materialization` the call waits for a materialization that is in
+/// flight in another thread; pass `false` where a wider lock is held, see `tryGetNestedWithoutWaiting`.
+inline StoragePtr unwrapMaterializedLazyTable(const StoragePtr & storage, bool wait_for_materialization = true)
+{
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(storage.get()))
+    {
+        if (auto nested = wait_for_materialization ? proxy->tryGetNested() : proxy->tryGetNestedWithoutWaiting())
+            return nested;
+    }
+
+    return storage;
+}
+
+/// The same, for a caller that is going to touch the data anyway and so can afford to materialize the
+/// table: besides defeating a downcast, an untouched stand-in also answers metadata queries from the
+/// columns cached out of the `CREATE TABLE` query alone, without the projections and the indices.
+inline StoragePtr materializeLazyTable(const StoragePtr & storage)
+{
+    if (const auto * proxy = dynamic_cast<const StorageTableProxy *>(storage.get()))
+        return proxy->getNested();
+
+    return storage;
+}
 
 }

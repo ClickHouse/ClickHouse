@@ -166,7 +166,12 @@ public:
     }
 
     /// Not forwarding these makes `BACKUP` write the table definition with no data at all, and the
-    /// restore of such a backup silently succeeds with an empty table.
+    /// restore of such a backup silently succeeds with an empty table. `supportsBackupPartition` is
+    /// answered by `BackupEntriesCollector` and `RestorerFromBackup` before they reach the two data
+    /// methods below, so it has to be forwarded as well - otherwise `BACKUP TABLE ... PARTITION ...`
+    /// is rejected with `Table engine TableProxy doesn't support partitions`.
+    bool supportsBackupPartition() const override { return getNested()->supportsBackupPartition(); }
+
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
     {
         getNested()->backupData(backup_entries_collector, data_path_in_backup, partitions);
