@@ -735,11 +735,8 @@ Query:
 
 **Simple case**
 ```sql
-arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
-
-Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv;
 
 ┌─kv──────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
@@ -748,11 +745,7 @@ Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 
 **Single quote as quoting character**
 ```sql
-arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
-
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
-
-Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv;
 
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
@@ -862,11 +855,7 @@ Leading escape sequences will be skipped in keys and will be considered invalid 
 
 **Escape sequences with escape sequence support turned on**
 ```sql
-arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
-
 SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
-
-Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
 ┌─kv────────────────┐
 │ {'age':'a\n\n\0'} │
