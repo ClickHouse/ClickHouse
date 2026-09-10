@@ -23,17 +23,19 @@ SELECT count(), uniqExact(a), groupArray(a) = arrayReverseSort(groupArray(a)) FR
 -- the sorted order.
 SELECT count(), min(a), max(a) FROM (SELECT DISTINCT number % 300000 AS a FROM numbers(600000) ORDER BY a + 1 DESC LIMIT 100000) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0;
 
--- The spill did happen for the first query, and the second query did run on the remote server.
+-- Both queries spill, with the serialized plan performing external `DISTINCT` on the remote server.
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['ExternalDistinctWritePart'] > 0, ProfileEvents['ExternalDistinctMerge']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase() AND log_comment = '05059_external_distinct_order_by/spill';
-SELECT countIf(NOT is_initial_query)
+SELECT count(),
+       countIf(ProfileEvents['ExternalDistinctWritePart'] > 0 AND ProfileEvents['ExternalDistinctMerge'] > 0)
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
-    AND log_comment = '05059_external_distinct_order_by/remote'
+    AND NOT is_initial_query AND log_comment = '05059_external_distinct_order_by/remote'
     AND initial_query_id IN (
         SELECT query_id FROM system.query_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
-            AND current_database = currentDatabase() AND log_comment = '05059_external_distinct_order_by/remote');
+            AND is_initial_query AND current_database = currentDatabase()
+            AND log_comment = '05059_external_distinct_order_by/remote');
