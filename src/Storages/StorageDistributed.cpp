@@ -1409,11 +1409,11 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
-    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, const ASTPtr & select_for_filter, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
-    auto filter = getFilterFromQuery(query.select, local_context);
+    auto filter = getFilterFromQuery(select_for_filter, local_context);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter)
         predicate = filter->getOutputs().at(0);
@@ -1516,26 +1516,26 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
 
-    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
-
+    /// Detect the source storage on a copy: the query itself must keep its `WITH` references, or a materialized CTE
+    /// would be inlined on a local shard and on the parallel-replicas route. The copy also feeds the filter
+    /// extraction, which keeps seeing the expanded form it has always seen.
+    ASTPtr select_for_detection = query.select->clone();
+    auto & detection_union = select_for_detection->as<ASTSelectWithUnionQuery &>();
     StoragePtr src_storage;
 
     /// Distributed write only works in the most trivial case INSERT ... SELECT
     /// without any unions or joins on the right side
-    if (select.list_of_selects->children.size() == 1)
+    if (detection_union.list_of_selects->children.size() == 1)
     {
-        if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        if (auto * select_query = detection_union.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
+                ApplyWithAliasVisitor::visit(detection_union.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(detection_union.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
-
             if (joined_tables.tablesCount() == 1)
-            {
                 src_storage = joined_tables.getLeftTableStorage();
-            }
         }
     }
 
@@ -1548,7 +1548,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     }
     if (auto src_storage_cluster = std::dynamic_pointer_cast<IStorageCluster>(src_storage))
     {
-        return distributedWriteFromClusterStorage(*src_storage_cluster, query, local_context);
+        return distributedWriteFromClusterStorage(*src_storage_cluster, query, select_for_detection, local_context);
     }
 
     return {};

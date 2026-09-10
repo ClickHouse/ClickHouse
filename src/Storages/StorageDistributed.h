@@ -229,8 +229,9 @@ private:
 
     void delayInsertOrThrowIfNeeded() const;
 
-    std::optional<QueryPipeline>
-    distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    /// `select_for_filter` is the `SELECT` with `WITH` clauses expanded; the filter is extracted from it while `query` is forwarded as is.
+    std::optional<QueryPipeline> distributedWriteFromClusterStorage(
+        const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, const ASTPtr & select_for_filter, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     static VirtualColumnsDescription createVirtuals();
