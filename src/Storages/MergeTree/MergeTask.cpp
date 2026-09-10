@@ -686,6 +686,79 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+    const auto & merge_tree_settings = global_ctx->data_settings;
+
+    /// Alter conversions must include patch parts before they are cached below. Patch application
+    /// uses these per-part conversions later in both horizontal and vertical merge readers.
+    if (!patch_parts.empty())
+    {
+        LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
+
+        for (const auto & patch : patch_parts)
+            LOG_TRACE(ctx->log, "Applying patch part {} with max data version {}", patch->name, patch->getPatchPartIndex().getMaxDataVersion());
+
+        auto & mutable_snapshot = const_cast<MergeTreeData::IMutationsSnapshot &>(*mutations_snapshot);
+        mutable_snapshot.addPatches(patch_parts);
+    }
+
+    struct MissingColumnMergeState
+    {
+        SerializationInfoByName::MissingColumnInfo marker;
+        size_t parts_with_marker = 0;
+        bool has_different_types = false;
+    };
+
+    std::map<String, MissingColumnMergeState> missing_column_states;
+    NameSet missing_columns_to_materialize;
+    size_t non_empty_parts = 0;
+    global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
+
+    for (const auto & part : global_ctx->future_part->parts)
+    {
+        auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+            , nullptr
+#endif
+            );
+
+        global_ctx->alter_conversions.push_back(conversions);
+        if (part->rows_count == 0)
+            continue;
+
+        ++non_empty_parts;
+        for (const auto & marker : part->getSerializationInfos().getMissingColumns())
+        {
+            String current_name = marker.name;
+            if (conversions->columnHasNewName(marker.name))
+                current_name = conversions->getColumnNewName(marker.name);
+
+            bool share_nested = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
+            if (conversions->isColumnDropped(marker.name, share_nested)
+                || conversions->isColumnDropped(current_name, share_nested))
+                continue;
+
+            auto [it, inserted] = missing_column_states.try_emplace(current_name);
+            auto & state = it->second;
+            if (inserted)
+            {
+                state.marker = marker;
+                state.marker.name = current_name;
+            }
+            else if (state.marker.type_name != marker.type_name)
+                state.has_different_types = true;
+            ++state.parts_with_marker;
+        }
+    }
+
+    /// A merged part has only one marker per column, so it can preserve omission only when every
+    /// source part that contributes rows represents the column with the same frozen type. If a
+    /// source part has a physical column, no marker, a dropped marker, or a marker of another type,
+    /// the merge must read each part with its own missing-column semantics and write the column.
+    for (const auto & [name, state] : missing_column_states)
+    {
+        if (state.has_different_types || state.parts_with_marker != non_empty_parts)
+            missing_columns_to_materialize.insert(name);
+    }
 
     /// Determine columns that are absent in all source parts—either fully expired or never written—and mark them as
     /// expired to avoid unnecessary reads or writes during merges.
@@ -759,6 +832,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (!columns_present_in_parts.contains(storage_column.name)
                 && !columns_present_in_patch_parts.contains(storage_column.name)
                 && !renamed_column_targets.contains(storage_column.name)
+                && !missing_columns_to_materialize.contains(storage_column.name)
                 && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
@@ -778,8 +852,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
     prepareProjectionsToMergeAndRebuild();
-
-    const auto & merge_tree_settings = global_ctx->data_settings;
 
     /// Get list of skip indexes to exclude from merge
     std::unordered_set<String> exclude_index_names;
@@ -844,17 +916,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             addMergingColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
         else
             addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
-    }
-
-    if (!patch_parts.empty())
-    {
-        LOG_DEBUG(ctx->log, "Will apply {} patches up to version {}", patch_parts.size(), global_ctx->future_part->part_info.getMutationVersion());
-
-        for (const auto & patch : patch_parts)
-            LOG_TRACE(ctx->log, "Applying patch part {} with max data version {}", patch->name, patch->getPatchPartIndex().getMaxDataVersion());
-
-        auto & mutable_snapshot = const_cast<MergeTreeData::IMutationsSnapshot &>(*mutations_snapshot);
-        mutable_snapshot.addPatches(global_ctx->future_part->patch_parts);
     }
 
     if ((*merge_tree_settings)[MergeTreeSetting::materialize_statistics_on_merge])
@@ -937,13 +998,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
-    global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
-
-    /// A source marker prevents the column from expiring during a normal merge,
-    /// so carrying its union reproduces the same lazy type-default materialization.
-    NameSet source_missing_column_names;
-    /// Resolve marker names to the merged schema.
-    std::map<String, SerializationInfoByName::MissingColumnInfo> source_missing_map;
     for (const auto & part : global_ctx->future_part->parts)
     {
         if (!info_settings.isAlwaysDefault())
@@ -959,52 +1013,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
             infos.add(part_infos);
         }
-
-        auto part_alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
-#if CLICKHOUSE_CLOUD
-            , nullptr
-#endif
-            );
-
-        for (const auto & mc : part->getSerializationInfos().getMissingColumns())
-        {
-            String current_name = mc.name;
-            if (part_alter_conversions->columnHasNewName(mc.name))
-                current_name = part_alter_conversions->getColumnNewName(mc.name);
-
-            /// Pending DROP/CLEAR invalidates either spelling of the marker.
-            bool share_nested = (*merge_tree_settings)[MergeTreeSetting::share_nested_offsets];
-            if (part_alter_conversions->isColumnDropped(mc.name, share_nested)
-                || part_alter_conversions->isColumnDropped(current_name, share_nested))
-                continue;
-
-            source_missing_column_names.insert(current_name);
-            if (!source_missing_map.contains(current_name))
-            {
-                auto entry = mc;
-                entry.name = current_name;
-                source_missing_map.emplace(current_name, std::move(entry));
-            }
-        }
-
-        global_ctx->alter_conversions.push_back(std::move(part_alter_conversions));
     }
 
-    if (!source_missing_column_names.empty())
+    if (!missing_column_states.empty())
     {
         NameSet final_columns;
         for (const auto & column : global_ctx->storage_columns)
             final_columns.insert(column.name);
 
         SerializationInfoByName::MissingColumns merged_missing;
-        for (const auto & name : source_missing_column_names)
+        for (const auto & [name, state] : missing_column_states)
         {
-            if (!final_columns.contains(name))
-            {
-                auto it = source_missing_map.find(name);
-                if (it != source_missing_map.end())
-                    merged_missing.push_back(it->second);
-            }
+            if (!missing_columns_to_materialize.contains(name) && !final_columns.contains(name))
+                merged_missing.push_back(state.marker);
         }
 
         if (!merged_missing.empty())
