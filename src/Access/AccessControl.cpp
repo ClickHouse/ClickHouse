@@ -21,6 +21,7 @@
 #include <Access/resolveEffectiveSettings.h>
 #include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
+#include <Backups/IRestoreCoordination.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -250,6 +251,48 @@ private:
 
     Rules rules TSA_GUARDED_BY(mutex);
     mutable std::mutex mutex;
+};
+
+
+class AccessControl::RestoreAccessStorage : public IAccessStorage
+{
+public:
+    RestoreAccessStorage(AccessControl & access_control_, IAccessStorage & destination_)
+        : IAccessStorage(destination_.getStorageName())
+        , access_control(access_control_)
+        , destination(destination_)
+    {
+    }
+
+    const char * getStorageType() const override { return destination.getStorageType(); }
+    bool isReadOnly() const override { return destination.isReadOnly(); }
+    bool isReadOnly(const UUID & id) const override { return access_control.isReadOnly(id); }
+    bool exists(const UUID & id) const override { return access_control.exists(id); }
+
+protected:
+    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override { return access_control.find(type, name); }
+
+    std::vector<UUID> findAllImpl(AccessEntityType type) const override { return access_control.findAll(type); }
+
+    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override
+    {
+        return access_control.read(id, throw_if_not_exists);
+    }
+
+    bool insertImpl(
+        const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override
+    {
+        return access_control.insertImpl(&destination, id, entity, replace_if_exists, throw_if_exists, conflicting_id);
+    }
+
+    bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override
+    {
+        return access_control.update(id, update_func, throw_if_not_exists);
+    }
+
+private:
+    AccessControl & access_control;
+    IAccessStorage & destination;
 };
 
 
@@ -585,20 +628,43 @@ bool AccessControl::insertImpl(
     bool throw_if_exists,
     UUID * conflicting_id)
 {
-    std::unique_lock lock{access_entities_mutex};
-    if (storage)
+    bool inserted;
     {
-        for (const auto & other_storage : getStorages())
-        {
-            if (other_storage.get() == storage)
-                continue;
-            if (other_storage->find(entity->getType(), entity->getName()))
-                throwNameCollisionCannotInsert(entity->getType(), entity->getName(), other_storage->getStorageName());
-        }
+        std::lock_guard lock{access_entities_mutex};
+        inserted = insertImplUnlocked(storage, id, entity, replace_if_exists, throw_if_exists, conflicting_id);
     }
+    if (inserted)
+        changes_notifier->sendNotifications();
+    return inserted;
+}
 
-    auto & target = storage ? *storage : static_cast<IAccessStorage &>(*this);
-    auto existing_id = target.find(entity->getType(), entity->getName());
+void AccessControl::checkNameCollisionInOtherStorage(IAccessStorage & storage, const AccessEntityPtr & entity) const
+{
+    for (const auto & other_storage : getStorages())
+    {
+        if (other_storage.get() == &storage)
+            continue;
+        if (other_storage->find(entity->getType(), entity->getName()))
+            throwNameCollisionCannotInsert(entity->getType(), entity->getName(), other_storage->getStorageName());
+    }
+}
+
+bool AccessControl::insertImplUnlocked(
+    IAccessStorage * storage,
+    const UUID & id,
+    const AccessEntityPtr & entity,
+    bool replace_if_exists,
+    bool throw_if_exists,
+    UUID * conflicting_id)
+{
+    if (storage)
+        checkNameCollisionInOtherStorage(*storage, entity);
+
+    StoragePtr selected_storage;
+    if (!storage)
+        selected_storage = getStorageForInsertion(entity);
+    auto & storage_for_insertion = storage ? *storage : *selected_storage;
+    auto existing_id = storage_for_insertion.find(entity->getType(), entity->getName());
 
     /// Preserve the storage's collision behavior and, in particular, do not validate a no-op
     /// `CREATE ... IF NOT EXISTS` as if it inserted a new entity.
@@ -620,53 +686,72 @@ bool AccessControl::insertImpl(
         FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
     }
 
-    bool inserted = storage ? storage->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id)
-                            : MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
-    lock.unlock();
-    if (inserted)
-    {
-        changes_notifier->sendNotifications();
-        return true;
-    }
-    return false;
+    return storage ? storage->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id)
+                   : MultipleAccessStorage::insertImpl(id, entity, replace_if_exists, throw_if_exists, conflicting_id);
 }
 
 bool AccessControl::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
-    std::unique_lock lock{access_entities_mutex};
-    if (!exists(id))
-        return MultipleAccessStorage::removeImpl(id, throw_if_not_exists);
-
-    if (isAnyFeatureTierRestricted(*this))
     {
-        checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, nullptr}});
-        FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
+        std::lock_guard lock{access_entities_mutex};
+        if (isAnyFeatureTierRestricted(*this) && exists(id))
+        {
+            checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, nullptr}});
+            FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
+        }
+
+        if (!MultipleAccessStorage::removeImpl(id, throw_if_not_exists))
+            return false;
     }
 
-    bool removed = MultipleAccessStorage::removeImpl(id, throw_if_not_exists);
-    lock.unlock();
-    if (removed)
-        changes_notifier->sendNotifications();
-    return removed;
+    changes_notifier->sendNotifications();
+    return true;
 }
 
 bool AccessControl::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
-    std::unique_lock lock{access_entities_mutex};
-    auto old_entity = tryRead(id);
-    if (!old_entity)
-        return MultipleAccessStorage::updateImpl(id, update_func, throw_if_not_exists);
-
-    auto new_entity = update_func(old_entity, id);
-    if (isAnyFeatureTierRestricted(*this))
+    bool updated;
     {
-        checkFeatureTierForPendingAccessEntities(*this, PendingAccessEntities{{id, new_entity}});
-        FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
-    }
+        std::lock_guard lock{access_entities_mutex};
+        const bool check_feature_tier = isAnyFeatureTierRestricted(*this);
+        auto storage = findStorage(id);
+        const bool pause_in_update_func = check_feature_tier && storage && storage->isReplicated();
+        FeatureTierAccessEntityChecker feature_tier_checker;
+        if (check_feature_tier)
+        {
+            auto old_entity = tryRead(id);
+            if (old_entity)
+            {
+                auto new_entity = update_func(old_entity, id);
+                feature_tier_checker = prepareFeatureTierAccessEntityChecker(
+                    *this, PendingAccessEntities{{id, new_entity}}, PendingAccessEntities{{id, old_entity}});
+            }
+            else
+            {
+                /// A replicated storage can know about an entity before its local cache catches up.
+                feature_tier_checker
+                    = prepareFeatureTierAccessEntityChecker(*this, /* pending= */ {}, /* current= */ {}, /* force= */ true);
+            }
+        }
 
-    bool updated = MultipleAccessStorage::updateImpl(
-        id, [&new_entity](const AccessEntityPtr &, const UUID &) { return new_entity; }, throw_if_not_exists);
-    lock.unlock();
+        /// A regular storage calls the update function while holding its own mutex. Pause before entering it
+        /// so that authentication can still read the storage and notify this test-only failpoint. A replicated
+        /// storage needs the pause inside the callback to exercise its compare-and-set retry.
+        if (check_feature_tier && !pause_in_update_func)
+            FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
+
+        auto validating_update_func = [&](const AccessEntityPtr & old_entity, const UUID & current_id)
+        {
+            auto new_entity = update_func(old_entity, current_id);
+            if (feature_tier_checker)
+                feature_tier_checker(PendingAccessEntities{{current_id, new_entity}}, PendingAccessEntities{{current_id, old_entity}});
+            if (pause_in_update_func)
+                FailPointInjection::pauseFailPoint(FailPoints::access_control_pause_after_feature_tier_check);
+            return new_entity;
+        };
+
+        updated = MultipleAccessStorage::updateImpl(id, validating_update_func, throw_if_not_exists);
+    }
     if (updated)
         changes_notifier->sendNotifications();
     return updated;
@@ -678,21 +763,48 @@ std::vector<UUID> AccessControl::insertInto(
     auto storage = getStorageByName(storage_name);
     std::vector<UUID> inserted_ids;
     inserted_ids.reserve(entities.size());
-    for (const auto & entity : entities)
+
+    try
     {
-        auto id = generateRandomID();
-        if (insertImpl(storage.get(), id, entity, replace_if_exists, throw_if_exists, nullptr))
-            inserted_ids.push_back(id);
+        std::lock_guard lock{access_entities_mutex};
+
+        /// Check all cross-storage collisions before inserting anything. An exception must not leave
+        /// a prefix of a multi-entity `CREATE` statement in the destination storage.
+        for (const auto & entity : entities)
+            checkNameCollisionInOtherStorage(*storage, entity);
+
+        for (const auto & entity : entities)
+        {
+            auto id = generateRandomID();
+            if (insertImplUnlocked(storage.get(), id, entity, replace_if_exists, throw_if_exists, nullptr))
+                inserted_ids.push_back(id);
+        }
     }
+    catch (...)
+    {
+        if (!inserted_ids.empty())
+            changes_notifier->sendNotifications();
+        throw;
+    }
+
+    if (!inserted_ids.empty())
+        changes_notifier->sendNotifications();
     return inserted_ids;
 }
 
 void AccessControl::moveAccessEntities(
     const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name)
 {
-    std::unique_lock lock{access_entities_mutex};
-    MultipleAccessStorage::moveAccessEntities(ids, source_storage_name, destination_storage_name);
-    lock.unlock();
+    try
+    {
+        std::lock_guard lock{access_entities_mutex};
+        MultipleAccessStorage::moveAccessEntities(ids, source_storage_name, destination_storage_name);
+    }
+    catch (...)
+    {
+        changes_notifier->sendNotifications();
+        throw;
+    }
     changes_notifier->sendNotifications();
 }
 
@@ -774,8 +886,34 @@ See also /etc/clickhouse-server/users.xml on the server where ClickHouse is inst
 
 void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
-    MultipleAccessStorage::restoreFromBackup(restorer, data_path_in_backup);
-    changes_notifier->sendNotifications();
+    StoragePtr destination;
+    for (const auto & storage : getStorages())
+    {
+        if (storage->isRestoreAllowed())
+        {
+            destination = storage;
+            break;
+        }
+    }
+
+    if (!destination)
+        throwRestoreNotAllowed();
+
+    if (destination->isReplicated())
+    {
+        auto restore_coordination = restorer.getRestoreCoordination();
+        if (!restore_coordination->acquireReplicatedAccessStorage(destination->getReplicationID()))
+            return;
+    }
+
+    restorer.addDataRestoreTask(
+        [this, destination, &restorer, data_path_in_backup]
+        {
+            auto entities_to_restore = restorer.getAccessEntitiesToRestore(data_path_in_backup);
+            const auto & restore_settings = restorer.getRestoreSettings();
+            RestoreAccessStorage restore_storage(*this, *destination);
+            restoreAccessEntitiesFromBackup(restore_storage, entities_to_restore, restore_settings);
+        });
 }
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)

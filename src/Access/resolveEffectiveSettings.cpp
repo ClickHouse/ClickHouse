@@ -7,10 +7,9 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
-#include <boost/container/flat_set.hpp>
-
 #include <map>
 #include <set>
+#include <unordered_set>
 
 
 namespace DB
@@ -29,7 +28,7 @@ void substituteProfiles(
 {
     profiles = elements.toProfileIDs();
 
-    boost::container::flat_set<UUID> substituted_profiles_set;
+    std::unordered_set<UUID> substituted_profiles_set;
     size_t i = elements.size();
     while (i != 0)
     {
@@ -99,9 +98,9 @@ namespace
     /// is the key this is stored under.
     using ResolvedSettings = std::map<String, SettingsProfileElement>;
 
-    /// Folds a list of profile elements into one element per setting: within a list the last occurrence
-    /// of a field wins, and the two names of a `MergeTree` setting are one setting.
-    ResolvedSettings foldElements(const SettingsProfileElements & elements)
+    /// Folds a list of profile elements into one element per setting, using the same constraint merge
+    /// rules as `SettingsConstraints`, and treats the two names of a `MergeTree` setting as one setting.
+    ResolvedSettings foldElements(const AccessControl & access_control, const SettingsProfileElements & elements)
     {
         ResolvedSettings result;
         for (const auto & element : elements)
@@ -112,15 +111,28 @@ namespace
             auto & folded = result[resolveSettingName(element.setting_name)];
             if (element.value)
                 folded.value = element.value;
-            if (element.min_value)
+
+            if (!element.isConstraint())
+                continue;
+
+            if (access_control.doesSettingsConstraintsReplacePrevious())
+            {
                 folded.min_value = element.min_value;
-            if (element.max_value)
                 folded.max_value = element.max_value;
-            if (!element.disallowed_values.empty())
-                folded.disallowed_values.insert(
-                    folded.disallowed_values.end(), element.disallowed_values.begin(), element.disallowed_values.end());
-            if (element.isConstraint())
+                folded.disallowed_values = element.disallowed_values;
                 folded.writability = element.writability.value_or(SettingConstraintWritability::WRITABLE);
+            }
+            else
+            {
+                if (element.min_value)
+                    folded.min_value = element.min_value;
+                if (element.max_value)
+                    folded.max_value = element.max_value;
+                if (!element.disallowed_values.empty())
+                    folded.disallowed_values = element.disallowed_values;
+                if (element.writability == SettingConstraintWritability::CONST)
+                    folded.writability = SettingConstraintWritability::CONST;
+            }
         }
 
         for (auto & item : result)
@@ -150,14 +162,38 @@ namespace
     class AccessGraph
     {
     public:
-        explicit AccessGraph(const AccessControl & access_control)
-            : default_profile_id(access_control.getDefaultProfileId())
+        explicit AccessGraph(
+            const AccessControl & access_control_,
+            bool read_all_users,
+            const PendingAccessEntities & pending,
+            const PendingAccessEntities & current)
+            : access_control(access_control_)
+            , default_profile_id(access_control_.getDefaultProfileId())
         {
-            for (auto && [id, user] : access_control.readAllWithIDs<User>())
-                users.emplace(id, std::move(user));
-            for (auto && [id, role] : access_control.readAllWithIDs<Role>())
+            if (read_all_users)
+            {
+                for (auto && [id, user] : access_control_.readAllWithIDs<User>())
+                    users.emplace(id, std::move(user));
+            }
+            else
+            {
+                std::unordered_set<UUID> ids;
+                for (const auto & item : pending)
+                    ids.emplace(item.first);
+                for (const auto & item : current)
+                    ids.emplace(item.first);
+
+                for (const auto & id : ids)
+                {
+                    auto current_it = current.find(id);
+                    auto entity = current_it == current.end() ? access_control_.tryRead(id) : current_it->second;
+                    if (typeid_cast<const User *>(entity.get()))
+                        users.emplace(id, std::static_pointer_cast<const User>(std::move(entity)));
+                }
+            }
+            for (auto && [id, role] : access_control_.readAllWithIDs<Role>())
                 roles.emplace(id, std::move(role));
-            for (auto && [id, profile] : access_control.readAllWithIDs<SettingsProfile>())
+            for (auto && [id, profile] : access_control_.readAllWithIDs<SettingsProfile>())
                 profiles.emplace(id, std::move(profile));
         }
 
@@ -200,7 +236,7 @@ namespace
         ResolvedSettings resolveForUser(const UUID & user_id, const User & user) const
         {
             EnabledRolesInfo roles_info;
-            boost::container::flat_set<UUID> skip_ids;
+            std::unordered_set<UUID> skip_ids;
             auto get_role = [this](const UUID & id) -> RolePtr
             {
                 auto it = roles.find(id);
@@ -216,6 +252,7 @@ namespace
                 /* settings_only= */ true);
 
             return foldElements(
+                access_control,
                 resolveSettingsProfileElements(
                     default_profile_id, profiles, user_id, roles_info.enabled_roles, roles_info.settings_from_enabled_roles, user.settings)
                     .elements);
@@ -232,7 +269,50 @@ namespace
             return resolveForUser(user_id, blank);
         }
 
+        ResolvedSettings resolveForRole(const UUID & role_id) const
+        {
+            EnabledRolesInfo roles_info;
+            std::unordered_set<UUID> skip_ids;
+            auto get_role = [this](const UUID & id) -> RolePtr
+            {
+                auto it = roles.find(id);
+                return it == roles.end() ? nullptr : it->second;
+            };
+
+            collectRoles(roles_info, skip_ids, get_role, role_id, true, false, /* settings_only= */ true);
+            return foldElements(
+                access_control,
+                resolveSettingsProfileElements(
+                    /* default_profile_id= */ {},
+                    profiles,
+                    UUIDHelpers::Nil,
+                    roles_info.enabled_roles,
+                    roles_info.settings_from_enabled_roles,
+                    /* settings_from_user= */ {})
+                    .elements);
+        }
+
+        ResolvedSettings resolveForProfile(const UUID & profile_id) const
+        {
+            SettingsProfileElements elements;
+            elements.emplace_back().parent_profile = profile_id;
+            std::vector<UUID> profile_ids;
+            std::vector<UUID> substituted_profile_ids;
+            std::unordered_map<UUID, String> profile_names;
+            auto get_profile = [this](const UUID & id) -> SettingsProfilePtr
+            {
+                auto it = profiles.find(id);
+                return it == profiles.end() ? nullptr : it->second;
+            };
+            substituteProfiles(elements, get_profile, profile_ids, substituted_profile_ids, profile_names);
+            return foldElements(access_control, elements);
+        }
+
+        const std::unordered_map<UUID, RolePtr> & allRoles() const { return roles; }
+        const SettingsProfilesByID & allProfiles() const { return profiles; }
+
     private:
+        const AccessControl & access_control;
         std::unordered_map<UUID, UserPtr> users;
         std::unordered_map<UUID, RolePtr> roles;
         SettingsProfilesByID profiles;
@@ -329,102 +409,156 @@ namespace
         };
         return is_relevant_type(old_entity) || is_relevant_type(new_entity);
     }
-}
 
-
-void checkFeatureTierForPendingAccessEntities(const AccessControl & access_control, const PendingAccessEntities & pending)
-{
-    if (!isAnyFeatureTierRestricted(access_control))
-        return;
-
-    bool relevant = false;
-    for (const auto & [id, entity] : pending)
+    bool
+    changesOnlyUsers(const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current)
     {
-        if (mayChangeSettingsInEffect(access_control.tryRead(id), entity))
+        for (const auto & [id, new_entity] : pending)
         {
-            relevant = true;
-            break;
+            auto current_it = current.find(id);
+            auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
+            if ((old_entity && old_entity->getType() != AccessEntityType::USER)
+                || (new_entity && new_entity->getType() != AccessEntityType::USER))
+                return false;
         }
+        return true;
     }
-    if (!relevant)
-        return;
 
-    auto refuse_if_restricted = [&](const String & setting_name)
+    void checkFeatureTierForPendingAccessEntitiesWithGraph(
+        const AccessGraph & initial,
+        const AccessControl & access_control,
+        const PendingAccessEntities & pending,
+        const PendingAccessEntities & current)
     {
-        if (auto reason = getFeatureTierRestriction(access_control, setting_name, settingGetTier(setting_name)))
-            throw Exception(*reason, ErrorCodes::READONLY);
-    };
-
-    AccessGraph before(access_control);
-    auto replacements = findReplacements(before, pending);
-
-    /// Writing a setting of a disabled tier into an entity is refused even when no user resolves to that
-    /// entity yet, because the entity is what a later `GRANT` or `TO` clause would put in effect. Rewriting
-    /// the value the entity already holds changes nothing and is allowed.
-    for (const auto & [id, new_entity] : pending)
-    {
-        const auto * new_elements = ownSettings(new_entity);
-        if (!new_elements)
-            continue;
-
-        auto old_entity = before.get(id);
-        if (!old_entity)
+        auto refuse_if_restricted = [&](const String & setting_name)
         {
-            if (auto it = replacements.find(id); it != replacements.end())
-                old_entity = before.get(it->second);
-        }
-        const auto * old_elements = ownSettings(old_entity);
-        auto old_folded = old_elements ? foldElements(*old_elements) : ResolvedSettings{};
-        for (const auto & [setting_name, element] : foldElements(*new_elements))
+            if (auto reason = getFeatureTierRestriction(access_control, setting_name, settingGetTier(setting_name)))
+                throw Exception(*reason, ErrorCodes::READONLY);
+        };
+
+        AccessGraph before = initial;
+        before.apply(current);
+        auto replacements = findReplacements(before, pending);
+
+        /// Writing a setting of a disabled tier into an entity is refused even when no user resolves to that
+        /// entity yet, because the entity is what a later `GRANT` or `TO` clause would put in effect. Rewriting
+        /// the value the entity already holds changes nothing and is allowed.
+        for (const auto & [id, new_entity] : pending)
         {
-            auto it = old_folded.find(setting_name);
-            if (it != old_folded.end() && it->second == element)
+            const auto * new_elements = ownSettings(new_entity);
+            if (!new_elements)
                 continue;
-            refuse_if_restricted(setting_name);
+
+            auto old_entity = before.get(id);
+            if (!old_entity)
+            {
+                if (auto it = replacements.find(id); it != replacements.end())
+                    old_entity = before.get(it->second);
+            }
+            const auto * old_elements = ownSettings(old_entity);
+            auto old_folded = old_elements ? foldElements(access_control, *old_elements) : ResolvedSettings{};
+            for (const auto & [setting_name, element] : foldElements(access_control, *new_elements))
+            {
+                auto it = old_folded.find(setting_name);
+                if (it != old_folded.end() && it->second == element)
+                    continue;
+                refuse_if_restricted(setting_name);
+            }
         }
-    }
 
-    AccessGraph after = before;
-    after.apply(pending);
+        AccessGraph after = before;
+        after.apply(pending);
 
-    auto check_user = [&](const UUID & user_id, const UserPtr & user)
-    {
-        auto after_settings = after.resolveForUser(user_id, *user);
-
-        auto old_id = user_id;
-        if (auto it = replacements.find(user_id); it != replacements.end())
-            old_id = it->second;
-        auto old_user = before.getUser(old_id);
-        auto before_settings = old_user ? before.resolveForUser(old_id, *old_user) : before.resolveForNewUser(user_id, user->getName());
-
-        checkResolvedSettings(access_control, before_settings, after_settings);
-    };
-
-    bool changes_only_users = true;
-    for (const auto & [id, new_entity] : pending)
-    {
-        auto old_entity = before.get(id);
-        if ((old_entity && old_entity->getType() != AccessEntityType::USER)
-            || (new_entity && new_entity->getType() != AccessEntityType::USER))
+        auto check_user = [&](const UUID & user_id, const UserPtr & user)
         {
-            changes_only_users = false;
-            break;
+            auto after_settings = after.resolveForUser(user_id, *user);
+
+            auto old_id = user_id;
+            if (auto it = replacements.find(user_id); it != replacements.end())
+                old_id = it->second;
+            auto old_user = before.getUser(old_id);
+            auto before_settings = old_user ? before.resolveForUser(old_id, *old_user) : before.resolveForNewUser(user_id, user->getName());
+
+            checkResolvedSettings(access_control, before_settings, after_settings);
+        };
+
+        auto check_role = [&](const UUID & role_id)
+        {
+            auto after_settings = after.resolveForRole(role_id);
+            auto old_id = role_id;
+            if (auto it = replacements.find(role_id); it != replacements.end())
+                old_id = it->second;
+            auto before_settings = before.allRoles().contains(old_id) ? before.resolveForRole(old_id) : ResolvedSettings{};
+            checkResolvedSettings(access_control, before_settings, after_settings);
+        };
+
+        auto check_profile = [&](const UUID & profile_id)
+        {
+            auto after_settings = after.resolveForProfile(profile_id);
+            auto old_id = profile_id;
+            if (auto it = replacements.find(profile_id); it != replacements.end())
+                old_id = it->second;
+            auto before_settings = before.allProfiles().contains(old_id) ? before.resolveForProfile(old_id) : ResolvedSettings{};
+            checkResolvedSettings(access_control, before_settings, after_settings);
+        };
+
+        bool changes_only_users = changesOnlyUsers(access_control, pending, current);
+        if (changes_only_users)
+        {
+            for (const auto & [id, entity] : pending)
+            {
+                if (auto user = after.getUser(id))
+                    check_user(id, user);
+            }
         }
-    }
-
-    if (changes_only_users)
-    {
-        for (const auto & [id, entity] : pending)
+        else
         {
-            if (auto user = after.getUser(id))
+            for (const auto & [id, user] : after.allUsers())
                 check_user(id, user);
+            for (const auto & item : after.allRoles())
+                check_role(item.first);
+            for (const auto & item : after.allProfiles())
+                check_profile(item.first);
         }
     }
-    else
-    {
-        for (const auto & [id, user] : after.allUsers())
-            check_user(id, user);
     }
-}
 
+
+    FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
+        const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current, bool force)
+    {
+        if (!isAnyFeatureTierRestricted(access_control))
+            return {};
+
+        if (!force)
+        {
+            bool relevant = false;
+            for (const auto & [id, entity] : pending)
+            {
+                auto current_it = current.find(id);
+                auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
+                if (mayChangeSettingsInEffect(old_entity, entity))
+                {
+                    relevant = true;
+                    break;
+                }
+            }
+            if (!relevant)
+                return {};
+        }
+
+        bool changes_only_users = changesOnlyUsers(access_control, pending, current);
+        auto graph = std::make_shared<AccessGraph>(access_control, !changes_only_users, pending, current);
+        return [&access_control, graph](const PendingAccessEntities & pending_, const PendingAccessEntities & current_)
+        { checkFeatureTierForPendingAccessEntitiesWithGraph(*graph, access_control, pending_, current_); };
+    }
+
+
+    void checkFeatureTierForPendingAccessEntities(
+        const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current)
+    {
+        auto checker = prepareFeatureTierAccessEntityChecker(access_control, pending, current);
+        if (checker)
+            checker(pending, current);
+    }
 }

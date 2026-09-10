@@ -1,0 +1,7 @@
+<clickhouse>
+    <user_directories replace="replace">
+        <replicated>
+            <zookeeper_path>/clickhouse/access_feature_tier</zookeeper_path>
+        </replicated>
+    </user_directories>
+</clickhouse>

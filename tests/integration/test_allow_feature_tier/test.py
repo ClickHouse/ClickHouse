@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 import threading
+import uuid
 
 import pytest
 
@@ -9,7 +10,9 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
     main_configs=[
+        "configs/access_control_path.xml",
         "configs/allow_feature_tier.xml",
+        "configs/backups_disk.xml",
         "configs/custom_settings_prefix.xml",
         "configs/memory_access_storage.xml",
     ],
@@ -33,18 +36,34 @@ instance_with_merge_tree_constraint = cluster.add_instance(
     stay_alive=True,
 )
 
-# Two replicas of one `Replicated` database that disagree on which settings are allowed: the first one
-# allows every tier, the second one refuses EXPERIMENTAL settings.
+# Two servers sharing a replicated access storage, which are also used as replicas of a `Replicated`
+# database. They disagree on which settings are allowed: the first allows every tier, while the second
+# refuses EXPERIMENTAL settings.
 permissive_replica = cluster.add_instance(
     "permissive_replica",
-    main_configs=["configs/allow_feature_tier.xml"],
+    main_configs=[
+        "configs/allow_feature_tier.xml",
+        "configs/replicated_access_storage.xml",
+    ],
     with_zookeeper=True,
     stay_alive=True,
 )
 strict_replica = cluster.add_instance(
     "strict_replica",
-    main_configs=["configs/allow_feature_tier_1.xml"],
+    main_configs=[
+        "configs/allow_feature_tier_1.xml",
+        "configs/replicated_access_storage.xml",
+    ],
     with_zookeeper=True,
+    stay_alive=True,
+)
+
+instance_with_legacy_constraints = cluster.add_instance(
+    "instance_with_legacy_constraints",
+    main_configs=[
+        "configs/allow_feature_tier.xml",
+        "configs/settings_constraints_keep_previous.xml",
+    ],
     stay_alive=True,
 )
 
@@ -1590,3 +1609,223 @@ def test_moving_a_role_preserves_the_effective_setting(start_cluster):
     finally:
         drop_entities(instance, users=[user], roles=[role], storage="memory")
         drop_entities(instance, roles=[role], storage="local_directory")
+
+
+def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster):
+    user = "tier_config_user"
+    drop_entities(instance, users=[user], storage="local_directory")
+    assert read_experimental_setting(instance, user) == "0"
+
+    try:
+        instance.query(
+            f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
+            f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        storages = instance.query(
+            f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
+        ).splitlines()
+        assert storages == ["local_directory", "users_xml"]
+        assert read_experimental_setting(instance, user) == "1"
+    finally:
+        drop_entities(instance, users=[user], storage="local_directory")
+
+
+def test_named_storage_collision_is_checked_before_batch_insert(start_cluster):
+    new_user = "tier_batch_new_user"
+    drop_entities(instance, users=[new_user], storage="memory")
+
+    output, error = instance.query_and_get_answer_with_error(
+        f"CREATE USER {new_user}, tier_config_user IN memory IDENTIFIED WITH no_password"
+    )
+    assert output == ""
+    assert "already exists" in error, error
+    assert (
+        instance.query(
+            f"SELECT count() FROM system.users WHERE name = '{new_user}'"
+        ).strip()
+        == "0"
+    )
+
+
+def test_const_constraint_is_sticky_when_previous_constraints_are_kept(start_cluster):
+    node = instance_with_legacy_constraints
+    user = "tier_legacy_constraint_user"
+    base_profile = "tier_legacy_constraint_base"
+    profile = "tier_legacy_constraint_profile"
+    profiles = [base_profile, profile]
+    drop_entities(node, users=[user], profiles=profiles)
+
+    node.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+    node.query(
+        f"CREATE SETTINGS PROFILE {base_profile} "
+        f"SETTINGS {EXPERIMENTAL_SETTING} = 0 CONST"
+    )
+    node.query(
+        f"CREATE SETTINGS PROFILE {profile} SETTINGS INHERIT {base_profile}, "
+        f"{EXPERIMENTAL_SETTING} = 0 WRITABLE TO {user}"
+    )
+
+    try:
+        with feature_tier(node, "1"):
+            assert_experimental_change_is_blocked(
+                node,
+                f"ALTER SETTINGS PROFILE {profile} DROP PROFILES {base_profile}",
+            )
+    finally:
+        drop_entities(node, users=[user], profiles=profiles)
+
+
+def test_restore_access_entities_checks_feature_tier(start_cluster):
+    user = "tier_restored_user"
+    backup_name = f"tier_restore_{uuid.uuid4().hex}"
+    backup = f"Disk('backups', '{backup_name}')"
+    drop_entities(instance, users=[user])
+
+    instance.query(
+        f"CREATE USER {user} IDENTIFIED WITH no_password "
+        f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
+    )
+    instance.query(f"BACKUP TABLE system.users TO {backup}")
+    drop_entities(instance, users=[user])
+
+    try:
+        with feature_tier(instance, "1"):
+            assert_experimental_change_is_blocked(
+                instance, f"RESTORE TABLE system.users FROM {backup}"
+            )
+            assert (
+                instance.query(
+                    f"SELECT count() FROM system.users WHERE name = '{user}'"
+                ).strip()
+                == "0"
+            )
+    finally:
+        drop_entities(instance, users=[user])
+
+
+def test_replicated_update_reapplies_after_version_conflict(start_cluster):
+    user = "tier_replicated_cas_user"
+    grant_thread = None
+    results = {}
+    drop_entities(permissive_replica, users=[user])
+    permissive_replica.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+    strict_replica.query_with_retry(
+        f"SELECT count() FROM system.users WHERE name = '{user}'",
+        check_callback=lambda value: value.strip() == "1",
+    )
+
+    try:
+        strict_replica.query(
+            f"SYSTEM ENABLE FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}"
+        )
+        grant_thread = threading.Thread(
+            target=lambda: results.update(
+                grant=strict_replica.query_and_get_answer_with_error(
+                    f"GRANT SELECT ON tier_cas_select.* TO {user}"
+                )
+            )
+        )
+        grant_thread.start()
+        strict_replica.query(
+            f"SYSTEM WAIT FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT} PAUSE",
+            timeout=60,
+        )
+
+        permissive_replica.query(f"GRANT INSERT ON tier_cas_insert.* TO {user}")
+        strict_replica.query(
+            f"SYSTEM NOTIFY FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}"
+        )
+        grant_thread.join(timeout=60)
+        assert not grant_thread.is_alive()
+        assert results["grant"] == ("", "")
+
+        for node in [permissive_replica, strict_replica]:
+            grants = node.query_with_retry(
+                f"SHOW GRANTS FOR {user}",
+                check_callback=lambda value: "GRANT SELECT ON tier_cas_select.*"
+                in value
+                and "GRANT INSERT ON tier_cas_insert.*" in value,
+            )
+            assert "GRANT SELECT ON tier_cas_select.*" in grants
+            assert "GRANT INSERT ON tier_cas_insert.*" in grants
+    finally:
+        strict_replica.query(
+            f"SYSTEM NOTIFY FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}",
+            ignore_error=True,
+        )
+        strict_replica.query(
+            f"SYSTEM DISABLE FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}",
+            ignore_error=True,
+        )
+        if grant_thread is not None:
+            grant_thread.join(timeout=60)
+        drop_entities(permissive_replica, users=[user])
+
+
+def test_replicas_cannot_commit_two_halves_of_restricted_change(start_cluster):
+    user = "tier_replicated_graph_user"
+    role = "tier_replicated_graph_role"
+    profile = "tier_replicated_graph_profile"
+    grant_thread = None
+    results = {}
+    drop_entities(
+        permissive_replica, users=[user], roles=[role], profiles=[profile]
+    )
+
+    permissive_replica.query(f"CREATE USER {user} IDENTIFIED WITH no_password")
+    permissive_replica.query(f"CREATE ROLE {role}")
+    permissive_replica.query(
+        f"CREATE SETTINGS PROFILE {profile} SETTINGS {EXPERIMENTAL_SETTING} = 1"
+    )
+    strict_replica.query_with_retry(
+        f"SELECT count() FROM system.settings_profiles WHERE name = '{profile}'",
+        check_callback=lambda value: value.strip() == "1",
+    )
+
+    try:
+        with feature_tier(permissive_replica, "1"):
+            strict_replica.query(
+                f"SYSTEM ENABLE FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}"
+            )
+            grant_thread = threading.Thread(
+                target=lambda: results.update(
+                    grant=strict_replica.query_and_get_answer_with_error(
+                        f"GRANT {role} TO {user}"
+                    )
+                )
+            )
+            grant_thread.start()
+            strict_replica.query(
+                f"SYSTEM WAIT FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT} PAUSE",
+                timeout=60,
+            )
+
+            assert_experimental_change_is_blocked(
+                permissive_replica,
+                f"ALTER SETTINGS PROFILE {profile} TO {role}",
+            )
+            strict_replica.query(
+                f"SYSTEM NOTIFY FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}"
+            )
+            grant_thread.join(timeout=60)
+            assert not grant_thread.is_alive()
+            assert results["grant"] == ("", "")
+            strict_replica.query_with_retry(
+                f"SELECT value FROM system.settings WHERE name = '{EXPERIMENTAL_SETTING}'",
+                user=user,
+                check_callback=lambda value: value.strip() == "0",
+            )
+    finally:
+        strict_replica.query(
+            f"SYSTEM NOTIFY FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}",
+            ignore_error=True,
+        )
+        strict_replica.query(
+            f"SYSTEM DISABLE FAILPOINT {ACCESS_CONTROL_FEATURE_TIER_FAILPOINT}",
+            ignore_error=True,
+        )
+        if grant_thread is not None:
+            grant_thread.join(timeout=60)
+        drop_entities(
+            permissive_replica, users=[user], roles=[role], profiles=[profile]
+        )

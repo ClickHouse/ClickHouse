@@ -11,6 +11,7 @@
 #include <functional>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 
 
 namespace DB
@@ -22,7 +23,7 @@ class AccessControl;
 /// so that each of them is looked up once.
 void collectRoles(
     EnabledRolesInfo & roles_info,
-    boost::container::flat_set<UUID> & skip_ids,
+    std::unordered_set<UUID> & skip_ids,
     Fn<RolePtr(const UUID &)> auto && get_role_function,
     const UUID & role_id,
     bool is_current_role,
@@ -72,7 +73,7 @@ void collectRoles(
 /// Collects two sets of current roles and their transitive grants.
 void collectRoles(
     EnabledRolesInfo & roles_info,
-    boost::container::flat_set<UUID> & skip_ids,
+    std::unordered_set<UUID> & skip_ids,
     Fn<RolePtr(const UUID &)> auto && get_role_function,
     const auto & current_roles,
     const auto & current_roles_with_admin_option,
@@ -116,14 +117,23 @@ ResolvedSettingsProfileElements resolveSettingsProfileElements(
 
 /// The access entities a statement is about to write, by id. A null entity means a removal.
 using PendingAccessEntities = std::unordered_map<UUID, AccessEntityPtr>;
+using FeatureTierAccessEntityChecker = std::function<void(const PendingAccessEntities & pending, const PendingAccessEntities & current)>;
 
-/// Refuses the pending write if it moves, for any user, the value in effect of a setting whose tier
-/// `allow_feature_tier` disables.
+/// Prepares an immutable graph snapshot for checks which must run from inside an access storage's
+/// update callback. An empty result means the pending change cannot affect settings in effect.
+FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
+    const AccessControl & access_control,
+    const PendingAccessEntities & pending,
+    const PendingAccessEntities & current = {},
+    bool force = false);
+
+/// Refuses the pending write if it changes a setting whose tier `allow_feature_tier` disables for a
+/// user, or for a role or settings profile which could later carry that setting to a user.
 ///
 /// The decision is the difference between the settings every user resolves to before the write and
 /// after it, not the statement. That is what makes `GRANT`, `DROP ROLE`, a settings profile's `TO`
 /// clause and an override dropped by omission one case instead of many: none of them names a setting,
 /// and all of them change which settings are in effect.
-void checkFeatureTierForPendingAccessEntities(const AccessControl & access_control, const PendingAccessEntities & pending);
-
+void checkFeatureTierForPendingAccessEntities(
+    const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current = {});
 }

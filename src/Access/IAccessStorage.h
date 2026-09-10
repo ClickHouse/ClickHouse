@@ -279,7 +279,6 @@ protected:
 
 private:
     friend class MultipleAccessStorage;
-    std::vector<UUID> removeWithoutDependencies(const std::vector<UUID> & ids);
 
     const String storage_name;
 

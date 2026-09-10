@@ -293,6 +293,7 @@ private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
+    class RestoreAccessStorage;
 
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
     bool insertImpl(
@@ -302,6 +303,15 @@ private:
         bool replace_if_exists,
         bool throw_if_exists,
         UUID * conflicting_id);
+    bool insertImplUnlocked(
+        IAccessStorage * storage,
+        const UUID & id,
+        const AccessEntityPtr & entity,
+        bool replace_if_exists,
+        bool throw_if_exists,
+        UUID * conflicting_id) TSA_REQUIRES(access_entities_mutex);
+    void checkNameCollisionInOtherStorage(IAccessStorage & storage, const AccessEntityPtr & entity) const
+        TSA_REQUIRES(access_entities_mutex);
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 

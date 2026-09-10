@@ -143,7 +143,7 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled_roles, scope_guard * 
 
     /// Collect enabled roles. That includes the current roles, the roles granted to the current roles, and so on.
     auto new_info = std::make_shared<EnabledRolesInfo>();
-    boost::container::flat_set<UUID> skip_ids;
+    std::unordered_set<UUID> skip_ids;
 
     auto get_role_function = [this](const UUID & id) TSA_NO_THREAD_SAFETY_ANALYSIS { return getRole(id); };
 

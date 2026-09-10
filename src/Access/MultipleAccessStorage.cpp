@@ -257,13 +257,37 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
     auto destination_storage = getStorageByName(destination_storage_name);
 
     auto to_move = source_storage->read(ids);
-    bool need_rollback = false;
+    std::vector<size_t> removal_order;
+    removal_order.reserve(ids.size());
+    for (size_t i = 0; i != ids.size(); ++i)
+    {
+        if (!source_storage->isReadOnly(ids[i]))
+            removal_order.push_back(i);
+    }
+    for (size_t i = 0; i != ids.size(); ++i)
+    {
+        if (source_storage->isReadOnly(ids[i]))
+            removal_order.push_back(i);
+    }
+
+    std::vector<size_t> removed;
+    std::vector<size_t> inserted;
+    removed.reserve(ids.size());
+    inserted.reserve(ids.size());
 
     try
     {
-        source_storage->removeWithoutDependencies(ids); // NOLINT
-        need_rollback = true;
-        destination_storage->insert(to_move, ids);
+        for (size_t i : removal_order)
+        {
+            if (source_storage->removeImpl(ids[i], /* throw_if_not_exists= */ true))
+                removed.push_back(i);
+        }
+
+        for (size_t i = 0; i != ids.size(); ++i)
+        {
+            if (destination_storage->insert(ids[i], to_move[i], /* replace_if_exists= */ false, /* throw_if_exists= */ true))
+                inserted.push_back(i);
+        }
     }
     catch (Exception & e)
     {
@@ -280,8 +304,52 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
         e.addMessage("while moving {} from {} to {}", message, source_storage_name, destination_storage_name);
 
-        if (need_rollback)
-            source_storage->insert(to_move, ids);
+        if (!removed.empty())
+        {
+            String removed_names;
+            for (size_t i : removed)
+            {
+                if (!removed_names.empty())
+                    removed_names += ", ";
+                removed_names += backQuote(to_move[i]->getName());
+            }
+            e.addMessage("After successfully removing {}/{}: {}", removed.size(), ids.size(), removed_names);
+        }
+
+        String rollback_errors;
+        auto add_rollback_error = [&]
+        {
+            if (!rollback_errors.empty())
+                rollback_errors += "; ";
+            rollback_errors += getCurrentExceptionMessage(false);
+        };
+
+        for (size_t i : inserted | boost::adaptors::reversed)
+        {
+            try
+            {
+                destination_storage->removeImpl(ids[i], /* throw_if_not_exists= */ false); // NOLINT
+            }
+            catch (...) // Ok: Save a rollback exception and append it to the original exception.
+            {
+                add_rollback_error();
+            }
+        }
+
+        for (size_t i : removed)
+        {
+            try
+            {
+                source_storage->insert(ids[i], to_move[i], /* replace_if_exists= */ false, /* throw_if_exists= */ true);
+            }
+            catch (...) // Ok: Save a rollback exception and append it to the original exception.
+            {
+                add_rollback_error();
+            }
+        }
+
+        if (!rollback_errors.empty())
+            e.addMessage("Rollback failed: {}", rollback_errors);
 
         throw;
     }
@@ -377,26 +445,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 
 bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
-    std::shared_ptr<IAccessStorage> storage_for_insertion;
-
-    auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
-    {
-        if (!storage->isReadOnly() || storage->find(entity->getType(), entity->getName()))
-        {
-            storage_for_insertion = storage;
-            break;
-        }
-    }
-
-    if (!storage_for_insertion)
-    {
-        throw Exception(
-            ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND,
-            "Could not insert {} because there is no writeable access storage in {}",
-            entity->formatTypeWithName(),
-            getStorageName());
-    }
+    auto storage_for_insertion = getStorageForInsertion(entity);
 
     if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
     {
@@ -406,6 +455,23 @@ bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & 
     }
 
     return false;
+}
+
+
+StoragePtr MultipleAccessStorage::getStorageForInsertion(const AccessEntityPtr & entity) const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (!storage->isReadOnly() || storage->find(entity->getType(), entity->getName()))
+            return storage;
+    }
+
+    throw Exception(
+        ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND,
+        "Could not insert {} because there is no writeable access storage in {}",
+        entity->formatTypeWithName(),
+        getStorageName());
 }
 
 
