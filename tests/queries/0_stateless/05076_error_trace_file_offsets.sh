@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Reads a mutable `system.errors` row shared by every query using this error code.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# One mutable row per error code serves the whole server and this code is thrown all over the suite, so
-# the read below is constrained to a row refreshed after this point: an older event must not answer it.
+# Sequential execution prevents another test from replacing this query's error before the read.
+# The timestamp guard also excludes entries left by earlier queries.
 start_time=$($CLICKHOUSE_CLIENT -q "SELECT now()")
 
 $CLICKHOUSE_CLIENT -m -q "SELECT throwIf(true, 'file offsets'); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }"
