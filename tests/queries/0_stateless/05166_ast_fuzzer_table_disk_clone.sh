@@ -71,14 +71,21 @@ WHERE current_database = currentDatabase() AND query_kind = 'Create'
   AND position(query, 'reader__fuzz_') > 0;
 
 SELECT 'table_clones_with_table_disk', count() FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND position(query, 'reader__fuzz_') > 0 AND position(query, 'table_disk') > 0;
+WHERE current_database = currentDatabase() AND query_kind = 'Create'
+  AND position(query, 'reader__fuzz_') > 0
+  AND match(query, '(^|[^0-9A-Za-z_])table_disk($|[^0-9A-Za-z_])');
 
 SELECT 'view_clones_attempted', count() > 0 FROM system.query_log
 WHERE current_database = currentDatabase() AND query_kind = 'Create'
   AND position(query, 'viewer__fuzz_') > 0;
 
 SELECT 'view_clones_with_table_disk', count() FROM system.query_log
-WHERE current_database = currentDatabase()
-  AND position(query, 'viewer__fuzz_') > 0 AND position(query, 'table_disk') > 0;
+WHERE current_database = currentDatabase() AND query_kind = 'Create'
+  AND position(query, 'viewer__fuzz_') > 0
+  AND match(query, '(^|[^0-9A-Za-z_])table_disk($|[^0-9A-Za-z_])');
+
+SELECT 'seed_predicate_live', count() > 0 FROM system.query_log
+WHERE current_database = currentDatabase() AND query_kind = 'Create'
+  AND position(query, 'CREATE TABLE reader ') > 0
+  AND match(query, '(^|[^0-9A-Za-z_])table_disk($|[^0-9A-Za-z_])');
 "

@@ -2,3 +2,4 @@ table_clones_attempted	1
 table_clones_with_table_disk	0
 view_clones_attempted	1
 view_clones_with_table_disk	0
+seed_predicate_live	1
