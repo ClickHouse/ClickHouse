@@ -43,6 +43,14 @@ SELECT CAST(1, toLowCardinality('String'));
 SELECT toTypeName(CAST(1, toLowCardinality('String')));
 SELECT formatRow(toLowCardinality('CSV'), materialize(1), materialize('a'));
 SELECT accurateCastOrNull(1, toLowCardinality('String'));
+SELECT getServerPort(toLowCardinality('tcp_port')) = getServerPort('tcp_port');
+SELECT getServerPort(toLowCardinality(toFixedString('tcp_port', 8))) = getServerPort('tcp_port');
+
+SELECT 'a FixedString time zone name';
+SELECT now(toFixedString('UTC', 3)) > toDateTime('2020-01-01', 'UTC');
+SELECT now(toLowCardinality(toFixedString('UTC', 3))) > toDateTime('2020-01-01', 'UTC');
+SELECT toTimeZone(toDateTime('2020-01-01 00:00:00', 'UTC'), toFixedString('UTC', 3));
+SELECT toTimeZone(toDateTime('2020-01-01 00:00:00', 'UTC'), toLowCardinality(toFixedString('UTC', 3)));
 
 SELECT 'the plain and LowCardinality forms agree';
 SELECT fromModifiedJulianDay(toLowCardinality(materialize(toInt32(58849)))) = fromModifiedJulianDay(materialize(toInt32(58849)));
