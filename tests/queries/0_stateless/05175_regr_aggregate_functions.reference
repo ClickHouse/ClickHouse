@@ -1,0 +1,29 @@
+a line through the origin
+4	2.5	5	5	20	10	2	0	1
+a line that does not pass through the origin
+2	3	1
+the slope agrees with simpleLinearRegression
+1	1
+no rows
+0	nan	nan	nan
+a single row leaves the line undetermined
+1	0	0	nan	nan	nan
+a constant x is a vertical line
+0	nan	nan	nan
+a constant y is explained completely
+0	0	4	1
+rows where either variable is NULL do not take part
+3	2	4	2
+integer arguments
+3	2	0
+the names are case insensitive
+2	0
+the arguments are ordered as regr_f(y, x)
+2	0.5
+they work as window functions
+1	nan
+2	2
+3	2
+partial states merge into the whole fit
+2	0
+wrong argument types are rejected
