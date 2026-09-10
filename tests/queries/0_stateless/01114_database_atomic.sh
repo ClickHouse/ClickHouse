@@ -54,8 +54,7 @@ $CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables 
 # Keep each query in flight until the DDL finishes without depending on read parallelism
 # or a fixed sleep duration. Opening the FIFO for writing waits for the server reader;
 # its pipeline then holds the table while waiting for the row and EOF.
-# The gated queries run locally because `file` with a FIFO cannot be distributed to workers;
-# these queries check table lifetime across DDL, independently of distributed execution.
+# Each FIFO has one reader, so the gated queries use a single replica.
 gate_dir="${CLICKHOUSE_USER_FILES_UNIQUE}/atomic_gates"
 mkdir -p "$gate_dir"
 gate_pids=()
@@ -93,12 +92,12 @@ wait_for_gate()
 }
 
 start_gate select
-$CLICKHOUSE_CLIENT --make_distributed_plan=0 --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "SELECT count(col), sum(col) FROM (SELECT n + gate AS col FROM ${DATABASE_1}.mt CROSS JOIN file('$gate_dir/select.tsv', TSV, 'gate UInt64') AS gate_input)" > "$gate_dir/select.out" &
+$CLICKHOUSE_CLIENT --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "SELECT count(col), sum(col) FROM (SELECT n + gate AS col FROM ${DATABASE_1}.mt CROSS JOIN file('$gate_dir/select.tsv', TSV, 'gate UInt64') AS gate_input)" > "$gate_dir/select.out" &
 select_pid=$!
 wait_for_gate select "$select_pid"
 
 start_gate insert
-$CLICKHOUSE_CLIENT --make_distributed_plan=0 --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "INSERT INTO ${DATABASE_2}.mt SELECT number + gate FROM numbers(30) AS source CROSS JOIN file('$gate_dir/insert.tsv', TSV, 'gate UInt64') AS gate_input" &
+$CLICKHOUSE_CLIENT --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "INSERT INTO ${DATABASE_2}.mt SELECT number + gate FROM numbers(30) AS source CROSS JOIN file('$gate_dir/insert.tsv', TSV, 'gate UInt64') AS gate_input" &
 insert_pid=$!
 wait_for_gate insert "$insert_pid"
 
@@ -124,7 +123,7 @@ SELECT count() FROM ${DATABASE_1}.mt
 " # result: 5
 
 start_gate tuple
-$CLICKHOUSE_CLIENT --make_distributed_plan=0 --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "SELECT tuple(s, gate) FROM ${DATABASE_1}.mt CROSS JOIN file('$gate_dir/tuple.tsv', TSV, 'gate UInt64') AS gate_input" > /dev/null &
+$CLICKHOUSE_CLIENT --max_parallel_replicas=1 --input_format_parallel_parsing=0 -q "SELECT tuple(s, gate) FROM ${DATABASE_1}.mt CROSS JOIN file('$gate_dir/tuple.tsv', TSV, 'gate UInt64') AS gate_input" > /dev/null &
 tuple_pid=$!
 wait_for_gate tuple "$tuple_pid"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${DATABASE_1}" --database_atomic_wait_for_drop_and_detach_synchronously=0 && echo "dropped"
