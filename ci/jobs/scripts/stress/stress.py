@@ -444,11 +444,11 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             client_options.append("distinct_overflow_mode='throw'")
 
     if i % 5 == 1:
-        client_options.append("memory_tracker_fault_probability=0.001")
+        client_options.append("memory_tracker_fault_probability=0.05")
         # Write sampled allocations to system.trace_log as MemorySample. users.d/memory_profiler.xml
         # sets memory_profiler_step and max_untracked_memory but leaves this at 0, so allocation
         # sampling is off in every stress run today.
-        client_options.append("memory_profiler_sample_probability=0.01")
+        client_options.append("memory_profiler_sample_probability=0.05")
 
     if i % 5 == 1:
         client_options.append(
@@ -468,7 +468,7 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         # znodes. This one throws instead of retrying, and a CREATE is far rarer than an INSERT
         # commit, so it gets a higher probability than the two above but stays low.
         client_options.append(
-            "create_replicated_merge_tree_fault_injection_probability=0.01"
+            "create_replicated_merge_tree_fault_injection_probability=0.1"
         )
 
     if i % 2 == 1 and not upgrade_check:
