@@ -717,6 +717,29 @@ namespace
                 reject_field("except_data", "DATABASE");
                 reject_field("except_data_database", "DATABASE");
                 reject_field("except_databases", "DATABASE");
+                /// A DATABASE element selects the tables of exactly one database, so its EXCEPT
+                /// TABLE/TABLES clause can only name tables of that database - which is what
+                /// `parseExceptTables` enforces for the SQL form, filling in an omitted database name from
+                /// the element and rejecting any other. `clickhouse_json` has to enforce the same
+                /// invariant, and for two reasons at once: `BackupEntriesCollector::gatherDatabaseMetadata`
+                /// keeps only the entries whose database is the one it is gathering, so an entry naming
+                /// another database - or naming none, which matches no database at all - excludes nothing;
+                /// and `formatElement` prints this clause with `only_table_names`, which strips the foreign
+                /// database and turns the entry into an exclusion against this element's own database. So
+                /// the query would execute as one thing and round-trip as another. Reject either shape.
+                for (const auto & [except_db, except_tbl] : e.except_tables)
+                {
+                    if (except_db != e.database_name)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Entry with database '{}' and table '{}' in 'except_tables' does not belong to database "
+                            "'{}' of the DATABASE BACKUP/RESTORE element at index {} during AST JSON deserialization: "
+                            "every entry must name that element's own database explicitly",
+                            except_db, except_tbl, e.database_name, element_index);
+                    if (except_tbl.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Empty table name in 'except_tables' of the BACKUP/RESTORE element at index {} during "
+                            "AST JSON deserialization", element_index);
+                }
                 /// A DATABASE element selects the tables of exactly one database, so its EXCEPT DATA FROM
                 /// TABLE/TABLES clause can only name tables of that database - which is what
                 /// `parseExceptDataTables` enforces for the SQL form, filling in an omitted database name
@@ -751,6 +774,13 @@ namespace
                 /// An ALL element may name a table of any database, and may leave the database name out for
                 /// `setCurrentDatabase` to fill in from the current database, so neither is checked here. An
                 /// empty table name matches no table at all, though, and is the same silent no-op as above.
+                for (const auto & except_table : e.except_tables)
+                {
+                    if (except_table.second.empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Empty table name in 'except_tables' of the BACKUP/RESTORE element at index {} during "
+                            "AST JSON deserialization", element_index);
+                }
                 for (const auto & except_data_table : e.except_data_tables)
                 {
                     if (except_data_table.second.empty())

@@ -708,6 +708,81 @@ def test_except_data_tables_json_database_element_rejects_foreign_database():
     assert "Empty table name" in str(exc_info.value), str(exc_info.value)
 
 
+def test_except_tables_json_database_element_rejects_foreign_database():
+    """The older `except_tables` field needs the DATABASE element's invariant too.
+
+    `parseExceptTables` makes every entry of a DATABASE element's clause name that element's
+    database, filling in an omitted one. `readJSON` validated `except_data_tables` but not
+    `except_tables` beside it, and the two consumers then disagreed about what an entry naming
+    another database means: `BackupEntriesCollector::gatherDatabaseMetadata` keeps only entries
+    whose database is the one being gathered, so the exclusion silently did nothing, while
+    `formatElement` prints the clause with `only_table_names` and drops the foreign database, so
+    the round trip produced an exclusion against this element's own database instead. The query
+    executed as one thing and reformatted as another.
+
+    `"database":"db1"` only ever appears inside the `except_tables` entry: the element itself uses
+    `"database_name"`, and this query has no other clause carrying a table list.
+    """
+    valid_json_sql = (
+        "parseQueryToJSON($$BACKUP DATABASE db1 EXCEPT TABLE db1.t "
+        "TO Disk('backups', 'json/')$$)"
+    )
+
+    # Sanity check: unedited, the round trip works and keeps the clause.
+    formatted = instance.query(f"SELECT formatQueryFromJSON({valid_json_sql})")
+    assert "EXCEPT TABLE t" in formatted, formatted
+
+    # An entry naming another database excludes nothing, and reformats to a different exclusion.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"database\":\"db1\"', '\"database\":\"db2\"'))"
+        )
+    assert "does not belong to database" in str(exc_info.value), str(exc_info.value)
+
+    # An entry naming no database matches no database at all - the same no-op.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"database\":\"db1\"', '\"database\":\"\"'))"
+        )
+    assert "does not belong to database" in str(exc_info.value), str(exc_info.value)
+
+    # An entry naming no table matches no table at all.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"table\":\"t\"', '\"table\":\"\"'))"
+        )
+    assert "Empty table name" in str(exc_info.value), str(exc_info.value)
+
+
+def test_except_tables_json_all_element_rejects_empty_table_name():
+    """An ALL element may name any database, but still not an empty table.
+
+    Unlike a DATABASE element, an ALL element legitimately spans databases and may leave the
+    database out for `setCurrentDatabase` to fill in, so neither is checked. An empty table name
+    matches no table at all, though - the same silent no-op `except_data_tables` already rejects
+    for ALL.
+    """
+    valid_json_sql = (
+        "parseQueryToJSON($$BACKUP ALL EXCEPT TABLE db1.t "
+        "TO Disk('backups', 'json/')$$)"
+    )
+
+    # Sanity check: unedited, the round trip works and keeps the clause.
+    formatted = instance.query(f"SELECT formatQueryFromJSON({valid_json_sql})")
+    assert "EXCEPT TABLE db1.t" in formatted, formatted
+
+    # A foreign database is fine for ALL, so only the empty table name is rejected.
+    with pytest.raises(Exception) as exc_info:
+        instance.query(
+            f"SELECT formatQueryFromJSON(replaceAll({valid_json_sql}, "
+            "'\"table\":\"t\"', '\"table\":\"\"'))"
+        )
+    assert "Empty table name" in str(exc_info.value), str(exc_info.value)
+
+
 def test_except_data_json_table_element_rejects_inconsistent_clause_database():
     """`except_data_database` is the deferred clause database, and must stay consistent.
 
