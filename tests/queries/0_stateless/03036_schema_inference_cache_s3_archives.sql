@@ -1,9 +1,10 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
 
--- The schema inference cache is keyed on `session_timezone`, and this test lists the entries of
--- a whole source, so a randomized (or repeated with another value) `session_timezone` would add
--- an entry of its own for the same file. Pin it to keep the listing deterministic.
+-- The schema inference cache is keyed on `session_timezone`, and this test lists every entry of
+-- a source instead of counting one. The cache outlives a single run, so repeated runs against
+-- one server - the flaky check, a retry - each add an entry of their own for the same file once
+-- the randomized `session_timezone` differs. Pin it to keep the listing deterministic.
 SET session_timezone = 'UTC';
 
 SELECT * FROM s3(s3_conn, filename='03036_archive1.zip :: example{1,2}.csv') ORDER BY tuple(*);
