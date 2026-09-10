@@ -54,9 +54,11 @@
             <ast_fuzzer_runs>5</ast_fuzzer_runs>
             <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
 
+            <ai_function_allow_insecure_endpoint>1</ai_function_allow_insecure_endpoint>
             <allow_create_index_without_type>1</allow_create_index_without_type>
             <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
             <allow_ddl>1</allow_ddl>
+            <allow_delta_kernel_rs>1</allow_delta_kernel_rs>
             <allow_distributed_ddl>1</allow_distributed_ddl>
             <allow_drop_detached>1</allow_drop_detached>
             <allow_dynamic_type_in_join_keys>1</allow_dynamic_type_in_join_keys>
@@ -69,7 +71,6 @@
             <allow_experimental_database_materialized_postgresql>1</allow_experimental_database_materialized_postgresql>
             <allow_experimental_database_paimon_rest_catalog>1</allow_experimental_database_paimon_rest_catalog>
             <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
-            <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
             <allow_experimental_delta_lake_writes>1</allow_experimental_delta_lake_writes>
             <allow_experimental_eval_table_function>1</allow_experimental_eval_table_function>
             <allow_experimental_paimon_storage_engine>1</allow_experimental_paimon_storage_engine>
@@ -87,14 +88,14 @@
             <allow_experimental_polyglot_dialect>1</allow_experimental_polyglot_dialect>
             <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
             <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
+            <allow_experimental_trino_dialect>1</allow_experimental_trino_dialect>
             <allow_experimental_query_deduplication>1</allow_experimental_query_deduplication>
-            <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
-            <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
             <allow_experimental_unique_key>1</allow_experimental_unique_key>
             <allow_experimental_url_wildcard_from_index_pages>1</allow_experimental_url_wildcard_from_index_pages>
             <allow_experimental_ytsaurus_dictionary_source>1</allow_experimental_ytsaurus_dictionary_source>
             <allow_experimental_ytsaurus_table_engine>1</allow_experimental_ytsaurus_table_engine>
             <allow_experimental_ytsaurus_table_function>1</allow_experimental_ytsaurus_table_function>
+            <allow_get_client_http_header>1</allow_get_client_http_header>
             <allow_iceberg_remove_orphan_files>1</allow_iceberg_remove_orphan_files>
             <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
             <allow_introspection_functions>1</allow_introspection_functions>
@@ -107,6 +108,8 @@
             <allow_not_comparable_types_in_comparison_functions>1</allow_not_comparable_types_in_comparison_functions>
             <allow_not_comparable_types_in_order_by>1</allow_not_comparable_types_in_order_by>
             <allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>
+            <allow_rank_dense_rank_arguments>1</allow_rank_dense_rank_arguments>
+            <allow_replace_partition_from_empty_source>1</allow_replace_partition_from_empty_source>
             <allow_settings_after_format_in_insert>1</allow_settings_after_format_in_insert>
             <allow_suspicious_codecs>1</allow_suspicious_codecs>
             <allow_suspicious_fixed_string_types>1</allow_suspicious_fixed_string_types>
@@ -122,6 +125,7 @@
                  analyzer behind the constraint's back. See the constraint comment above. -->
             <enable_analyzer>1</enable_analyzer>
             <enable_full_text_index>1</enable_full_text_index>
+            <enable_json_ast_dialect>1</enable_json_ast_dialect>
             <enable_lightweight_delete>1</enable_lightweight_delete>
             <enable_lightweight_update>1</enable_lightweight_update>
             <enable_materialized_cte>1</enable_materialized_cte>
@@ -131,6 +135,8 @@
             <enable_quantized_codec>1</enable_quantized_codec>
             <enable_streaming_queries>1</enable_streaming_queries>
             <enable_sz3_codec>1</enable_sz3_codec>
+            <enable_time_series_aggregate_functions>1</enable_time_series_aggregate_functions>
+            <enable_time_series_table>1</enable_time_series_table>
             <enable_time_time64_type>1</enable_time_time64_type>
             <enable_zxc_codec>1</enable_zxc_codec>
             <input_format_parquet_allow_geoparquet_parser>1</input_format_parquet_allow_geoparquet_parser>

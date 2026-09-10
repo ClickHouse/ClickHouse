@@ -131,11 +131,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"disable_fetch_partition_for_zero_copy_replication", trueOrFalseSetting},
     {"disable_freeze_partition_for_zero_copy_replication", trueOrFalseSetting},
     {"distributed_index_analysis_min_indexes_bytes_to_activate", bytesRangeSetting},
-    {"distributed_index_analysis_min_indexes_size_to_activate",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
-         {"0", "1"},
-         false)},
     {"distributed_index_analysis_min_parts_to_activate",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
