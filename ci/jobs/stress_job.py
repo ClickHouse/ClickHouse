@@ -245,6 +245,66 @@ def process_results(
     return test_results, additional_files
 
 
+def select_replica_failures(
+    replica_log_pairs: List[Tuple[str, Path, Path]],
+) -> List[Tuple[str, str, List[str]]]:
+    """Pick the failures to report from every replica's (server, stderr) log pair.
+
+    A failure on one replica must not hide a (possibly higher-signal) failure on
+    another, so every pair is scanned - never breaking early. All specific
+    classifications (sanitizer, logical error, oracle mismatch, ...) are
+    collected and every distinct one is returned. A generic `<Fatal>` fallback
+    and "Unknown error" are lower-confidence signals used only when no replica
+    yielded a specific classification.
+
+    Returns a list of `(name, description, files)` tuples: all distinct specific
+    findings; otherwise a single generic-fatal finding; otherwise a single
+    "Unknown error" finding; otherwise an empty list (nothing parsed at all).
+    """
+    specific_results: List[Tuple[str, str, List[str]]] = []
+    seen_specific_names = set()
+    generic_fatal_result = None
+    fallback_result = None
+
+    for replica_name, server_log_file, stderr_log in replica_log_pairs:
+        log_parser = FuzzerLogParser(
+            server_log=server_log_file,
+            stderr_log=str(stderr_log) if stderr_log.exists() else "",
+            fuzzer_log="",
+        )
+        try:
+            name, description, files = log_parser.parse_failure()
+            file_pair_info = f"Log files: {server_log_file.name}"
+            if stderr_log.exists():
+                file_pair_info += f", {stderr_log.name}"
+            description = f"{file_pair_info}\n{description}"
+            if name == FuzzerLogParser.UNKNOWN_ERROR:
+                if fallback_result is None:
+                    fallback_result = (name, description, files)
+            elif log_parser.is_generic_fatal:
+                if generic_fatal_result is None:
+                    generic_fatal_result = (name, description, files)
+            elif name not in seen_specific_names:
+                # The same failure often surfaces on several replicas (shared
+                # storage / replication); report each distinct classification once.
+                seen_specific_names.add(name)
+                specific_results.append((name, description, files))
+        except Exception as e:
+            print(
+                f"ERROR: Failed to parse failure logs for {replica_name} "
+                f"({server_log_file.name}): {e}\n"
+                f"Server logs should still be collected."
+            )
+
+    if specific_results:
+        return specific_results
+    if generic_fatal_result:
+        return [generic_fatal_result]
+    if fallback_result:
+        return [fallback_result]
+    return []
+
+
 def run_stress_test(upgrade_check: bool = False) -> None:
     info = Info()
     logging.basicConfig(level=logging.INFO)
@@ -363,44 +423,17 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                 )
             )
         else:
-            definitive_result = None
-            fallback_result = None
-
-            for replica_name, server_log_file, stderr_log in replica_log_pairs:
-                log_parser = FuzzerLogParser(
-                    server_log=server_log_file,
-                    stderr_log=str(stderr_log) if stderr_log.exists() else "",
-                    fuzzer_log="",
-                )
-                try:
-                    name, description, files = log_parser.parse_failure()
-                    file_pair_info = f"Log files: {server_log_file.name}"
-                    if stderr_log.exists():
-                        file_pair_info += f", {stderr_log.name}"
-                    description = f"{file_pair_info}\n{description}"
-                    if name != FuzzerLogParser.UNKNOWN_ERROR:
-                        definitive_result = (name, description, files)
-                        break
-                    if fallback_result is None:
-                        fallback_result = (name, description, files)
-                except Exception as e:
-                    print(
-                        f"ERROR: Failed to parse failure logs for {replica_name} "
-                        f"({server_log_file.name}): {e}\n"
-                        f"Server logs should still be collected."
+            results = select_replica_failures(replica_log_pairs)
+            if results:
+                for name, description, files in results:
+                    failed_results.append(
+                        Result.create_from(
+                            name=name,
+                            info=description,
+                            status=Result.Status.FAIL,
+                            files=files,
+                        )
                     )
-
-            result = definitive_result or fallback_result
-            if result:
-                name, description, files = result
-                failed_results.append(
-                    Result.create_from(
-                        name=name,
-                        info=description,
-                        status=Result.Status.FAIL,
-                        files=files,
-                    )
-                )
             else:
                 failed_results.append(
                     Result.create_from(
