@@ -26,7 +26,7 @@ SETTINGS index_granularity = 1;
 INSERT INTO tab VALUES ('tenant_a', 1, 'visible apple phrase'), ('tenant_b', 2, 'hidden zebra phrase');
 
 CREATE USER $user_name IDENTIFIED WITH plaintext_password BY 'password';
-GRANT SELECT(secret_text) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
+GRANT SELECT ON $CLICKHOUSE_DATABASE.tab TO $user_name;
 CREATE ROW POLICY p_05153 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING tenant_id = 'tenant_a' TO $user_name;
 "
 
