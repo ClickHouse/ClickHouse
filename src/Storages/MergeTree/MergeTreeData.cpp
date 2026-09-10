@@ -57,6 +57,9 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
@@ -3091,21 +3094,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
-    /// UNIQUE KEY — SST sweep + per-part validation for parts that landed
-    /// without a usable sidecar (restore, freeze taken before UK shipped, or a
-    /// corrupt/truncated SST that survived because it carries no checksums.txt
-    /// entry). The active set is captured here under `part_lock`; the I/O-heavy
+    /// UNIQUE KEY - per-part validation. The sidecar is recorded in
+    /// `checksums.txt`, so a missing or wrongly-sized SST is already rejected by
+    /// `checkConsistencyBase` above; what is left for the validation below is
+    /// size-preserving damage plus parts that legitimately carry no SST entry
+    /// (UNIQUE KEY added by ALTER, or a restored backup without the sidecar).
+    /// The active set is captured here under `part_lock`; the I/O-heavy
     /// per-part validate+rebuild runs below, after the lock is released.
     ///
-    /// The sweep deletes files, so it stays gated on writability. Validation is
-    /// read-only I/O and runs regardless: a UK part with a missing/corrupt SST
-    /// on readonly storage must fail the load, not activate unprobeable. (UK
-    /// tables require local disks per the storage-policy guard, so static/web
-    /// UK parts are practically unreachable — still fail closed, not skip.)
+    /// Validation is read-only I/O and runs regardless: a UK part with an
+    /// unusable SST on readonly storage must fail the load, not activate
+    /// unprobeable.
     MutableDataPartsVector active_uk_parts_to_rebuild;
-    const bool uk_storage_is_writable = !is_static_storage && !all_disks_are_readonly && !is_table_readonly;
-    if (uk_storage_is_writable)
-        unique_key_dense_index_ops->sweepOrphans(part_lock);
     {
         auto metadata_snapshot_for_rebuild = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
         if (metadata_snapshot_for_rebuild && metadata_snapshot_for_rebuild->hasUniqueKey())
@@ -3131,7 +3131,20 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     {
         try
         {
-            unique_key_dense_index_ops->ensureValidDenseIndex(p, uk_storage_is_writable);
+            /// `loadDataPart` already counted the part into the data-volume
+            /// totals with its pre-repair size; the rebuild below may change it
+            /// (a new SST sidecar) and refreshes the per-part cache itself, so
+            /// adjust the aggregate by the delta. Rows and part count are
+            /// unaffected by the rebuild.
+            const auto bytes_on_disk_before = p->getBytesOnDisk();
+            /// Writability is per-part: a mixed policy can place parts on
+            /// readonly disks even when the table itself is writable, and a
+            /// table-wide flag would misroute such parts to the rebuild path.
+            const bool part_storage_is_writable
+                = !is_static_storage && !is_table_readonly && !p->isStoredOnReadonlyDisk();
+            unique_key_dense_index_ops->ensureValidDenseIndex(p, part_storage_is_writable);
+            if (const auto bytes_on_disk_after = p->getBytesOnDisk(); bytes_on_disk_after != bytes_on_disk_before)
+                increaseDataVolume(static_cast<ssize_t>(bytes_on_disk_after - bytes_on_disk_before), 0, 0);
         }
         catch (...)
         {
@@ -3345,6 +3358,19 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
         }
         else
         {
+            try
+            {
+                unique_key_dense_index_ops->ensureValidDenseIndex(res.part, /*storage_is_writable=*/false);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log,
+                    fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
+                if (res.part->getState() == DataPartState::PreActive)
+                    removePartsFromWorkingSetImmediatelyAndSetTemporaryState({res.part});
+                continue;
+            }
+
             {
                 auto part_lock = lockParts();
                 Transaction transaction(*this, nullptr);
@@ -5411,55 +5437,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
 
-    /// UNIQUE KEY tables must remain on a local-only storage policy. Mirror the
-    /// CREATE-time check from registerStorageMergeTree.cpp here so ALTER ...
-    /// MODIFY/RESET SETTING storage_policy|disk cannot bypass the gate. Runs on
-    /// the post-apply new_metadata so a MODIFY_SETTING that injects
-    /// settings_changes into a previously-empty old_metadata is also covered.
-    if (old_metadata.hasUniqueKey())
-    {
-        for (const auto & command : commands)
-        {
-            if (command.type == AlterCommand::RESET_SETTING
-                && (command.settings_resets.contains("storage_policy")
-                    || command.settings_resets.contains("disk")))
-            {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... RESET SETTING storage_policy|disk is not supported "
-                    "on tables with UNIQUE KEY: the table must remain on a local-only "
-                    "storage policy.");
-            }
-        }
-
-        if (new_metadata.settings_changes)
-        {
-            auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-            MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
-
-            for (const auto & changed : new_changes)
-            {
-                StoragePolicyPtr new_policy;
-                if (changed.name == "storage_policy")
-                    new_policy = local_context->getStoragePolicy(changed.value.safeGet<String>());
-                else if (changed.name == "disk")
-                    new_policy = local_context->getStoragePolicyFromDisk(changed.value.safeGet<String>());
-                else
-                    continue;
-
-                for (const auto & disk : new_policy->getDisks())
-                {
-                    const auto & desc = disk->getDataSourceDescription();
-                    if (desc.type != DataSourceType::Local)
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "UNIQUE KEY on non-local disks is not yet supported "
-                            "(disk `{}` has source type `{}`). "
-                            "UNIQUE KEY tables must currently reside on a local-only storage policy.",
-                            disk->getName(), desc.toString());
-                }
-            }
-        }
-    }
-
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
@@ -5499,6 +5476,95 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+
+    /// Statistics of a column that is not physically stored can never be built: the column is absent
+    /// from every written block. Only the state after all commands can decide, because one command can
+    /// turn a column non-physical and another give it statistics.
+    /// A `Replicated` database re-executes the ALTER per replica here, so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    /// Shared Catalog secondaries replay without a metadata transaction and are told apart by the
+    /// client info instead (the same marker `AlterCommands` and `StorageKeeperMap` use).
+    {
+        const auto txn = local_context->getZooKeeperMetadataTransaction();
+        const bool is_ddl_replay = txn && !txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        const bool is_shared_catalog_replay = local_context->getClientInfo().is_shared_catalog_internal
+            && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+        const bool is_shared_catalog_replay = false;
+#endif
+
+        if (!is_ddl_replay && !is_shared_catalog_replay)
+        {
+            /// Only effective commands count. `command.ignore` covers a command that is a no-op against
+            /// the pre-ALTER snapshot (`ADD COLUMN IF NOT EXISTS` for a column that already exists), but
+            /// it is decided before any command ran, so the commands are replayed here against the set
+            /// of names present after each preceding one, the way `AlterCommand::apply` will see them:
+            /// an `ADD COLUMN IF NOT EXISTS` of a name a preceding rename created adds nothing, and a
+            /// rename or drop of a name a preceding drop or rename already removed moves nothing.
+            NameSet present;
+            for (const auto & column : old_columns)
+                present.insert(column.name);
+
+            NameSet statistics_named_by_alter;
+            NameSet dropped_by_alter;
+            std::unordered_map<String, String> renamed_from;
+            for (const auto & command : commands)
+            {
+                if (command.ignore)
+                    continue;
+
+                if (command.type == AlterCommand::ADD_COLUMN)
+                {
+                    if (present.contains(command.column_name))
+                        continue;
+                    present.insert(command.column_name);
+                }
+
+                if (command.column_statistics_decl != nullptr)
+                    statistics_named_by_alter.insert(command.column_name);
+
+                /// A drop only ends the stored column's identity while that column still holds the
+                /// name. `CLEAR COLUMN` shares this type but only erases data, leaving the column in place.
+                if (command.type == AlterCommand::DROP_COLUMN && !command.clear && present.erase(command.column_name))
+                    dropped_by_alter.insert(command.column_name);
+
+                if (command.type == AlterCommand::RENAME_COLUMN && present.erase(command.column_name))
+                {
+                    present.insert(command.rename_to);
+                    renamed_from[command.rename_to] = command.column_name;
+                }
+            }
+
+            for (const auto & column : new_metadata.columns)
+            {
+                if (new_metadata.columns.hasPhysical(column.name) || !column.statistics.hasExplicitStatistics())
+                    continue;
+
+                /// A table created before this check stays alterable: the state is only refused when
+                /// this ALTER produced it, not when it was inherited untouched. A rename carries the
+                /// whole column description across, so resolve the pre-ALTER name. One hop is the
+                /// whole relation: transitive renames in one statement are rejected earlier, so a
+                /// second hop can only reach a different column reusing a name freed here.
+                String old_name = column.name;
+                if (auto it = renamed_from.find(old_name); it != renamed_from.end())
+                    old_name = it->second;
+
+                /// Dropping the stored column ends its identity, so a later column of the same name is
+                /// a new one and the state it carries is this ALTER's, however it reached that name.
+                if (!statistics_named_by_alter.contains(column.name)
+                    && !dropped_by_alter.contains(old_name)
+                    && old_columns.has(old_name)
+                    && !old_columns.hasPhysical(old_name)
+                    && old_columns.get(old_name).statistics.hasExplicitStatistics())
+                    continue;
+
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+            }
+        }
+    }
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -6199,12 +6265,12 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
 
             /// MATERIALIZE / CLEAR COLUMN rewrite the whole part via MutateTask
-            /// regardless of which column is targeted (compact and full-rewrite
-            /// parts lose all sidecars; `unique_key_index.sst` is in
-            /// `getFileNamesWithoutChecksums` → `files_to_skip`), so the dense
-            /// index is dropped even for a non-UK column. Reject both for the
-            /// whole table until mutation-side SST rebuild lands (mirrors the
-            /// REWRITE-family stance below).
+            /// regardless of which column is targeted, so the dense index is
+            /// invalidated even for a non-UK column: a full rewrite produces no
+            /// `unique_key_index.sst`, and the hardlink path would carry over an
+            /// SST whose `row_number` values no longer match the new part's row
+            /// offsets. Reject both for the whole table until mutation-side SST
+            /// rebuild lands (mirrors the REWRITE-family stance below).
             if (command.type == MutationCommand::MATERIALIZE_COLUMN)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported on tables with UNIQUE KEY: "
