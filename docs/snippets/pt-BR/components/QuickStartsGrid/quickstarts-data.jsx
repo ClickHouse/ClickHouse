@@ -29,7 +29,7 @@ export const quickStartsData = [
   {
     "id": "create-your-first-mergetree-table",
     "title": "Crie sua primeira tabela MergeTree",
-    "description": "Aprenda como funciona o principal engine de tabela do ClickHouse criando uma tabela MergeTree, carregando dados de preços de imóveis do Reino Unido e observando como as partes e os merges afetam o armazenamento e o desempenho das consultas.",
+    "description": "Aprenda como funciona o principal motor de tabela do ClickHouse criando uma tabela MergeTree, carregando dados de preços de imóveis do Reino Unido e observando como as partes e os merges afetam o armazenamento e o desempenho das consultas.",
     "href": "/pt-BR/get-started/quickstarts/create-your-first-mergetree-table",
     "useCases": [
       "all"
@@ -53,15 +53,15 @@ export const quickStartsData = [
   },
   {
     "id": "create-your-first-service-on-cloud",
-    "title": "Crie seu primeiro serviço do ClickHouse Cloud e carregue dados de exemplo",
-    "description": "Crie um serviço do ClickHouse Cloud, explore o Console SQL e carregue um conjunto de dados de exemplo para começar a consultar dados reais em poucos minutos.",
-    "href": "/pt-BR/get-started/quickstarts/create-your-first-service-on-cloud",
+    "title": "Início rápido do ClickHouse Cloud",
+    "description": "Guia de início rápido do ClickHouse Cloud",
     "useCases": [
       "all"
     ],
     "products": [
       "cloud"
-    ]
+    ],
+    "href": "/pt-BR/get-started/setup/cloud"
   },
   {
     "id": "creating-tables",
@@ -102,7 +102,7 @@ export const quickStartsData = [
   {
     "id": "obtain-your-cloud-connection-details",
     "title": "Obtenha os detalhes de conexão do Cloud",
-    "description": "Saiba como encontrar o hostname, a porta e as credenciais do seu serviço no ClickHouse Cloud para se conectar por clientes externos, CLIs e aplicativos.",
+    "description": "Saiba como encontrar o hostname, a porta e as credenciais do seu serviço do ClickHouse Cloud para se conectar por clientes externos, CLIs e aplicativos.",
     "href": "/pt-BR/get-started/quickstarts/obtain-your-cloud-connection-details",
     "useCases": [
       "all"
@@ -114,7 +114,7 @@ export const quickStartsData = [
   {
     "id": "tutorial",
     "title": "Tutorial avançado",
-    "description": "Aprenda a fazer a ingestão e consultar dados no ClickHouse usando um conjunto de dados de exemplo de táxis da cidade de Nova York.",
+    "description": "Aprenda a ingerir e consultar dados no ClickHouse usando um conjunto de dados de exemplo de táxis da cidade de Nova York.",
     "href": "/pt-BR/get-started/quickstarts/tutorial",
     "useCases": [
       "real-time-analytics",

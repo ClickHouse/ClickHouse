@@ -136,6 +136,34 @@ public:
     /// Callback for any exception
     static std::function<void(std::string_view format_string, int code, bool remote, const Exception::Trace & trace)> callback;
 
+    /// Prevent exceptions constructed on the current thread from being recorded in `system.errors`
+    /// and consequently `system.error_log`.
+    /// An exception that leaves the scope must be recorded explicitly with `recordToSystemErrors`.
+    /// `recordToSystemErrors` bypasses active suppression and records the exception at most once.
+    /// Example:
+    ///     try
+    ///     {
+    ///         SuppressErrorCodesScope scope;
+    ///         speculativeOperation();
+    ///     }
+    ///     catch (Exception & e)
+    ///     {
+    ///         e.recordToSystemErrors();
+    ///         throw;
+    ///     }
+    class SuppressErrorCodesScope
+    {
+    public:
+        SuppressErrorCodesScope();
+        ~SuppressErrorCodesScope();
+
+        SuppressErrorCodesScope(const SuppressErrorCodesScope &) = delete;
+        SuppressErrorCodesScope & operator=(const SuppressErrorCodesScope &) = delete;
+
+    private:
+        bool previous;
+    };
+
 protected:
     static thread_local bool can_use_thread_frame_pointers;
     /// Because of unknown order of static destructor calls,
@@ -231,17 +259,30 @@ public:
 
     std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
 
+    /// Record an exception that was constructed under `SuppressErrorCodesScope` but will be propagated.
+    /// This method bypasses active suppression and is idempotent.
+    void recordToSystemErrors();
+
     void markAsLogged() { logged.store(true, std::memory_order_relaxed); }
 
     /// Indicates if the error code triggers alerts in ClickHouse Cloud
     bool isErrorCodeImportant() const;
 
 private:
+    enum class ErrorIndexState : size_t
+    {
+        NotRecorded = static_cast<size_t>(-1),
+        Suppressed = static_cast<size_t>(-2),
+    };
+
+    static size_t handleErrorCode(
+        const std::string & msg, std::string_view format_string, int code, bool remote, const Trace & trace);
+
     bool remote = false;
     std::atomic<bool> logged = false;
 
-    /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
-    size_t error_index = static_cast<size_t>(-1);
+    /// Number of this error among errors with the same code and `remote` flag, or why it has no index.
+    size_t error_index = static_cast<size_t>(ErrorIndexState::NotRecorded);
 
     const char * className() const noexcept override { return "DB::Exception"; }
 

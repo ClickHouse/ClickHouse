@@ -28,10 +28,16 @@
 "x","t","y"
 "UInt8","Tuple()","UInt8"
 1,,2
--- non-null Nullable(Tuple(...)): value flattens, so the header flattens the inner tuple too
-"User.ID","User.Name"
-"UInt64","String"
-1,"a"
+-- Nullable(Tuple(...)): kept as a single CSV field (NOT flattened) so NULL and non-null rows have the same width (issue #107342)
+"User"
+"Nullable(Tuple(ID UInt64, Name String))"
+"(1,'a')"
+\N
+"(1,'a')"
+\N
+-- nested Nullable(Tuple(..., Tuple(...))): still one CSV field
+"t"
+"(1,(2,3))"
 -- scalar Nullable column: stays one cell with the full Nullable type name
 "n","s"
 "Nullable(UInt64)","String"
@@ -60,3 +66,21 @@
 (1,'a')
 -- round-trip: CustomSeparatedWithNamesAndTypes flattened header+types read back positionally (both use_header = 0)
 (1,'a')
+-- round-trip: Nullable(Tuple) with NULLs reads back by name
+(1,'a')
+\N
+(1,'a')
+\N
+-- empty input field into Nullable(Tuple()): empty_as_default=1 (default) gives NULL, "()" parses
+\N
+()
+-- empty input field into Nullable(Tuple(Int32)): NULL, "(5)" parses
+\N
+(5)
+-- input: new single-field encoding reads (with NULL rows), setting = 1 (default)
+(1,'a')
+\N
+(2,'b')
+-- input: single-field encoding reads the same with the separate-columns setting = 0
+(3,'c')
+\N

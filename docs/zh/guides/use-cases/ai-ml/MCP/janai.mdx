@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/AI/MCP/janai
 sidebarTitle: '集成 Jan.ai'
-title: 将 ClickHouse MCP 服务器与 Jan.ai 搭配使用
+title: '将 ClickHouse MCP 服务器与 Jan.ai 搭配使用'
 description: '本指南介绍如何为 Jan.ai 配置 ClickHouse MCP 服务器。'
 keywords: ['AI', 'Jan.ai', 'MCP']
 show_related_blogs: true
@@ -13,18 +13,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 > 本指南介绍如何将 ClickHouse MCP 服务器与 [Jan.ai](https://jan.ai/docs) 搭配使用。
 
 <Steps>
-  <Step>
-    ## 安装 Jan.ai
-
+  <Step title="安装 Jan.ai" id="install-janai">
     Jan.ai 是一款开源的 ChatGPT 替代方案，可 100% 离线运行。
-    你可以下载适用于 [Mac](https://jan.ai/docs/desktop/mac)、[Windows](https://jan.ai/docs/desktop/windows) 或 [Linux](https://jan.ai/docs/desktop/linux) 的 Jan.ai。
+    你可以下载适用于 [Mac](https://jan.ai/docs/desktop/install/mac)、[Windows](https://jan.ai/docs/desktop/windows) 或 [Linux](https://jan.ai/docs/desktop/linux) 的 Jan.ai。
 
     它是一款原生应用，因此下载后即可启动。
   </Step>
 
-  <Step>
-    ## 将 LLM 添加到 Jan.ai
-
+  <Step title="将 LLM 添加到 Jan.ai" id="add-llm-to-janai">
     我们可以通过设置菜单启用模型。
 
     要启用 OpenAI，我们需要提供一个 API key，如下所示：
@@ -32,9 +28,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="启用 OpenAI 模型" size="md" />
   </Step>
 
-  <Step>
-    ## 启用 MCP servers
-
+  <Step title="启用 MCP servers" id="enable-mcp-servers">
     在撰写本文时，`MCP servers` 是 Jan.ai 中的一项 Experimental 功能。
     我们可以通过打开 experimental features 来启用它们：
 
@@ -43,9 +37,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     打开该开关后，我们会在左侧菜单中看到 `MCP servers`。
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse MCP 服务器
-
+  <Step title="配置 ClickHouse MCP 服务器" id="configure-clickhouse-mcp-server">
     如果我们点击 `MCP servers` 菜单，就会看到一个可连接的 MCP servers 列表：
 
     <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="MCP servers 列表" size="md" />
@@ -65,9 +57,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="ClickHouse MCP 服务器工具" size="md" />
   </Step>
 
-  <Step>
-    ## 使用 Jan.ai 与 ClickHouse MCP 服务器聊天
-
+  <Step title="使用 Jan.ai 与 ClickHouse MCP 服务器聊天" id="chat-to-clickhouse-mcp-server">
     现在可以开始围绕存储在 ClickHouse 中的数据展开对话了！
     让我们先提出一个问题：
 

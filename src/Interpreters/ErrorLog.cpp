@@ -1,6 +1,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
+#include <Common/StackTrace.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -86,7 +87,9 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "last_error_trace",
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "A stack trace that represents a list of physical addresses where the called methods are stored."
+                "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary "
+                "are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse "
+                "server process."
             }
     };
 }
@@ -106,13 +109,7 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(last_error_message);
     columns[column_idx++]->insert(last_error_query_id);
 
-    std::vector<uintptr_t> last_error_trace_array;
-    last_error_trace_array.reserve(last_error_trace.size());
-
-    for (auto * ptr : last_error_trace)
-        last_error_trace_array.emplace_back(reinterpret_cast<uintptr_t>(ptr));
-
-    columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
+    columns[column_idx++]->insert(Array(last_error_trace.begin(), last_error_trace.end()));
 }
 
 struct ValuePair
@@ -127,37 +124,52 @@ void ErrorLog::stepFunction(TimePoint current_time)
 
     auto event_time = std::chrono::system_clock::to_time_t(current_time);
 
+    auto to_addrs = [](const auto & trace)
+    {
+        std::vector<UInt64> addrs;
+        addrs.reserve(trace.size());
+        for (auto * ptr : trace)
+            addrs.push_back(StackTrace::resolveAddressForStorage(ptr));
+        return addrs;
+    };
+
     for (ErrorCodes::ErrorCode code = 0, end = ErrorCodes::end(); code < end; ++code)
     {
         const auto & error = ErrorCodes::values[code].get();
+        /// previous_values is guarded by the mutex held above; thread-safety analysis cannot see the lock
+        /// through the add() callback, so suppress the false positive on the accesses made inside it.
         if (error.local.count != previous_values.at(code).local)
         {
-            ErrorLogElement local_elem {
-                .event_time=event_time,
-                .code=code,
-                .value=error.local.count - previous_values.at(code).local,
-                .remote=false,
-                .last_error_time=(error.local.error_time_ms / 1000),
-                .last_error_message=error.local.message,
-                .last_error_query_id=error.local.query_id,
-                .last_error_trace=error.local.trace
-            };
-            this->add(std::move(local_elem));
+            this->add([&](ErrorLogElement & element)
+            {
+                element = ErrorLogElement {
+                    .event_time=event_time,
+                    .code=code,
+                    .value=error.local.count - TSA_SUPPRESS_WARNING_FOR_READ(previous_values).at(code).local,
+                    .remote=false,
+                    .last_error_time=(error.local.error_time_ms / 1000),
+                    .last_error_message=error.local.message,
+                    .last_error_query_id=error.local.query_id,
+                    .last_error_trace=to_addrs(error.local.trace)
+                };
+            });
             previous_values[code].local = error.local.count;
         }
         if (error.remote.count != previous_values.at(code).remote)
         {
-            ErrorLogElement remote_elem {
-                .event_time=event_time,
-                .code=code,
-                .value=error.remote.count - previous_values.at(code).remote,
-                .remote=true,
-                .last_error_time=(error.remote.error_time_ms / 1000),
-                .last_error_message=error.remote.message,
-                .last_error_query_id=error.remote.query_id,
-                .last_error_trace=error.remote.trace
-            };
-            add(std::move(remote_elem));
+            add([&](ErrorLogElement & element)
+            {
+                element = ErrorLogElement {
+                    .event_time=event_time,
+                    .code=code,
+                    .value=error.remote.count - TSA_SUPPRESS_WARNING_FOR_READ(previous_values).at(code).remote,
+                    .remote=true,
+                    .last_error_time=(error.remote.error_time_ms / 1000),
+                    .last_error_message=error.remote.message,
+                    .last_error_query_id=error.remote.query_id,
+                    .last_error_trace=to_addrs(error.remote.trace)
+                };
+            });
             previous_values[code].remote = error.remote.count;
         }
     }

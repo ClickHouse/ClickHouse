@@ -1,0 +1,199 @@
+---
+title: 'Comment interroger un serveur ClickHouse distant'
+sidebarTitle: 'Interroger ClickHouse à distance'
+slug: /chdb/guides/query-remote-clickhouse
+description: 'Dans ce guide, nous allons voir comment interroger un serveur ClickHouse distant depuis chDB.'
+keywords: ['chdb', 'clickhouse']
+doc_type: 'guide'
+---
+
+Dans ce guide, nous allons voir comment interroger un serveur ClickHouse distant depuis chDB.
+
+<div id="setup">
+  ## Préparation
+</div>
+
+Commençons par créer un environnement virtuel :
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Et maintenant, nous allons installer chDB.
+Assurez-vous d’avoir la version 2.0.2 ou une version ultérieure :
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+Nous allons maintenant installer pandas et ipython :
+
+```bash
+pip install pandas ipython
+```
+
+Nous allons utiliser `ipython` pour exécuter les commandes dans la suite du guide, que vous pouvez lancer avec :
+
+```bash
+ipython
+```
+
+Vous pouvez également utiliser le code dans un script Python ou dans votre notebook préféré.
+
+<div id="an-intro-to-clickpy">
+  ## Une introduction à ClickPy
+</div>
+
+Le serveur ClickHouse distant que nous allons interroger est [ClickPy](https://clickpy.clickhouse.com).
+ClickPy suit tous les téléchargements des paquets PyPI et vous permet d’explorer les statistiques des paquets via une interface utilisateur.
+La base de données sous-jacente peut être interrogée à l’aide de l’utilisateur `play`.
+
+Vous pouvez en savoir plus sur ClickPy dans [son dépôt GitHub](https://github.com/ClickHouse/clickpy).
+
+<div id="querying-the-clickpy-clickhouse-service">
+  ## Interroger le service ClickHouse ClickPy
+</div>
+
+Importons chDB :
+
+```python
+import chdb
+```
+
+Nous allons interroger ClickPy à l’aide de la fonction `remoteSecure`.
+Cette fonction prend au minimum un nom d’hôte, un nom de table et un nom d’utilisateur.
+
+Nous pouvons écrire la requête suivante pour renvoyer le nombre de téléchargements par jour du [paquet `openai`](https://clickpy.clickhouse.com/dashboard/openai) sous forme de Pandas DataFrame :
+
+```python
+query = """
+SELECT
+    toStartOfDay(date)::Date32 AS x,
+    sum(count) AS y
+FROM remoteSecure(
+  'clickpy-clickhouse.clickhouse.com', 
+  'pypi.pypi_downloads_per_day', 
+  'play'
+)
+WHERE project = 'openai'
+GROUP BY x
+ORDER BY x ASC
+"""
+
+openai_df = chdb.query(query, "DataFrame")
+openai_df.sort_values(by=["x"], ascending=False).head(n=10)
+```
+
+```text
+               x        y
+2392  2024-10-02  1793502
+2391  2024-10-01  1924901
+2390  2024-09-30  1749045
+2389  2024-09-29  1177131
+2388  2024-09-28  1157323
+2387  2024-09-27  1688094
+2386  2024-09-26  1862712
+2385  2024-09-25  2032923
+2384  2024-09-24  1901965
+2383  2024-09-23  1777554
+```
+
+Faisons maintenant la même chose pour obtenir les téléchargements de [`scikit-learn`](https://clickpy.clickhouse.com/dashboard/scikit-learn) :
+
+```python
+query = """
+SELECT
+    toStartOfDay(date)::Date32 AS x,
+    sum(count) AS y
+FROM remoteSecure(
+  'clickpy-clickhouse.clickhouse.com', 
+  'pypi.pypi_downloads_per_day', 
+  'play'
+)
+WHERE project = 'scikit-learn'
+GROUP BY x
+ORDER BY x ASC
+"""
+
+sklearn_df = chdb.query(query, "DataFrame")
+sklearn_df.sort_values(by=["x"], ascending=False).head(n=10)
+```
+
+```text
+               x        y
+2392  2024-10-02  1793502
+2391  2024-10-01  1924901
+2390  2024-09-30  1749045
+2389  2024-09-29  1177131
+2388  2024-09-28  1157323
+2387  2024-09-27  1688094
+2386  2024-09-26  1862712
+2385  2024-09-25  2032923
+2384  2024-09-24  1901965
+2383  2024-09-23  1777554
+```
+
+<div id="merging-pandas-dataframes">
+  ## Fusion de DataFrames Pandas
+</div>
+
+Nous avons maintenant deux DataFrames, que nous pouvons fusionner à partir de la date (qui correspond à la colonne `x`), comme ceci :
+
+```python
+df = openai_df.merge(
+  sklearn_df, 
+  on="x", 
+  suffixes=("_openai", "_sklearn")
+)
+df.head(n=5)
+```
+
+```text
+            x  y_openai  y_sklearn
+0  2018-02-26        83      33971
+1  2018-02-27        31      25211
+2  2018-02-28         8      26023
+3  2018-03-01         8      20912
+4  2018-03-02         5      23842
+```
+
+Nous pouvons alors calculer le ratio entre les téléchargements d’OpenAI et ceux de `scikit-learn` comme ceci :
+
+```python
+df['ratio'] = df['y_openai'] / df['y_sklearn']
+df.head(n=5)
+```
+
+```text
+            x  y_openai  y_sklearn     ratio
+0  2018-02-26        83      33971  0.002443
+1  2018-02-27        31      25211  0.001230
+2  2018-02-28         8      26023  0.000307
+3  2018-03-01         8      20912  0.000383
+4  2018-03-02         5      23842  0.000210
+```
+
+<div id="querying-pandas-dataframes">
+  ## Interroger des DataFrames Pandas
+</div>
+
+Ensuite, supposons que nous voulions trouver les dates présentant les meilleurs et les pires ratios.
+Nous pouvons revenir à chDB et calculer ces valeurs :
+
+```python
+chdb.query("""
+SELECT max(ratio) AS bestRatio,
+       argMax(x, ratio) AS bestDate,
+       min(ratio) AS worstRatio,
+       argMin(x, ratio) AS worstDate
+FROM Python(df)
+""", "DataFrame")
+```
+
+```text
+   bestRatio    bestDate  worstRatio   worstDate
+0   0.693855  2024-09-19    0.000003  2020-02-09
+```
+
+Si vous souhaitez en savoir plus sur l’interrogation de DataFrames Pandas, consultez le [guide du développeur sur les DataFrames Pandas](/fr/chdb/guides/querying-pandas).

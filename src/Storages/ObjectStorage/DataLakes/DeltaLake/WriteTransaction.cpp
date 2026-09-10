@@ -10,6 +10,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -72,9 +73,11 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 {
     DB::ColumnsWithTypeAndName names_and_types{
         {std::make_shared<DB::DataTypeString>(), "path"},
+        /// Partition values are nullable: Delta commits a JSON null for a null-equivalent
+        /// partition value (SQL NULL or empty string), distinct from the string "null".
         {std::make_shared<DB::DataTypeMap>(
             std::make_shared<DB::DataTypeString>(),
-            std::make_shared<DB::DataTypeString>()), "partitionValues"},
+            std::make_shared<DB::DataTypeNullable>(std::make_shared<DB::DataTypeString>())), "partitionValues"},
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
         {std::make_shared<DB::DataTypeTuple>(
@@ -145,6 +148,12 @@ const std::string & WriteTransaction::getDataPath() const
 {
     assertTransactionCreated();
     return path_prefix;
+}
+
+const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
+{
+    assertTransactionCreated();
+    return write_schema;
 }
 
 void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)

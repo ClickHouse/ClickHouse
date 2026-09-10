@@ -72,7 +72,7 @@ This function is slow and may impose security considerations.
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
-- Set setting [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) to `1`.
+- Set setting [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) to `1`.
     )";
     FunctionDocumentation::Syntax syntax = "addressToLine(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {
@@ -84,7 +84,7 @@ To enable this introspection function:
         "Selecting the first string from the `trace_log` system table",
         R"(
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
         )",
         R"(
 -- The `trace` field contains the stack trace at the moment of sampling.
@@ -103,7 +103,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
         "Getting the source code filename and the line number for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
         )",
         R"(
 Row 1:
@@ -121,7 +121,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
         )",
         R"(
 Row 1:

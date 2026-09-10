@@ -39,7 +39,7 @@ ColumnsDescription CrashLogElement::getColumnsDescription()
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread ID."},
         {"query_id", std::make_shared<DataTypeString>(), "Query ID."},
         {"query", std::make_shared<DataTypeString>(), "Query text that was being executed when the crash occurred."},
-        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of crash. Each element is a virtual memory address inside ClickHouse server process."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of crash. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
         {"trace_full", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Stack trace at the moment of crash. Each element contains a called method inside ClickHouse server process."},
         {"fault_address", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Memory address that caused the fault."},
         {"fault_access_type", std::make_shared<DataTypeString>(), "Type of memory access that caused the fault (e.g., 'read', 'write')."},
@@ -121,7 +121,7 @@ void collectCrashLog(
         trace_full.reserve(num_frames);
 
         for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-            trace.push_back(reinterpret_cast<uintptr_t>(stack_trace.getFramePointers()[i]));
+            trace.push_back(StackTrace::resolveAddressForStorage(stack_trace.getFramePointers()[i]));
 
         stack_trace.toStringEveryLine([&trace_full](std::string_view line) { trace_full.push_back(line); });
 
@@ -136,22 +136,24 @@ void collectCrashLog(
                 [&current_exception_trace_full](std::string_view line) { current_exception_trace_full.push_back(line); });
         }
 
-        CrashLogElement element{
-            static_cast<time_t>(time / 1000000000),
-            time,
-            signal,
-            signal_code,
-            thread_id,
-            query_id,
-            query,
-            trace,
-            trace_full,
-            fault_address,
-            fault_access_type,
-            signal_description,
-            current_exception_trace_full,
-            GIT_HASH,
-            Poco::Environment::osArchitecture()};
-        crash_log_owned->add(std::move(element));
+        crash_log_owned->add([&](CrashLogElement & element)
+        {
+            element = CrashLogElement{
+                static_cast<time_t>(time / 1000000000),
+                time,
+                signal,
+                signal_code,
+                thread_id,
+                query_id,
+                query,
+                trace,
+                trace_full,
+                fault_address,
+                fault_access_type,
+                signal_description,
+                current_exception_trace_full,
+                GIT_HASH,
+                Poco::Environment::osArchitecture()};
+        });
     }
 }

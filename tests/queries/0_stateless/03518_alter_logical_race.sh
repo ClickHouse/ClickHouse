@@ -69,6 +69,10 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table"
 # concurrent INSERT load they can starve the first mutation, which (replicated alters finish in strict
 # version order) stalls every later `MODIFY` until `timeout` fires with a spurious failure. CI report:
 # https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=2a3a502d2ed0af65bb0a5c91223c91c1b2e28047&name_0=MasterCI&name_1=Stateless%20tests%20%28arm_binary%2C%20parallel%29
+# Regular merges are disabled too (`max_bytes_to_merge_at_max_space_in_pool = 0`): the merge-selecting
+# task tries a merge before a mutation, so while this test's INSERTs keep mergeable ranges available
+# every pass is spent on a merge and the ALTER's mutation never gets its `MUTATE_PART` entries. With
+# merges off parts accumulate, so the per-partition INSERT delay/throw thresholds are raised to match.
 $CLICKHOUSE_CLIENT << SQL
 CREATE TABLE alter_table (a UInt8, b UInt8, c UInt8, d UInt8, e UInt8, f UInt8, g UInt8)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_03518/alter_table', 'r1')
@@ -76,7 +80,10 @@ ORDER BY a
 PARTITION BY b % 10
 SETTINGS old_parts_lifetime = 1,
   max_replicated_mutations_in_queue = 100000,
-  number_of_free_entries_in_pool_to_execute_mutation = 0
+  number_of_free_entries_in_pool_to_execute_mutation = 0,
+  max_bytes_to_merge_at_max_space_in_pool = 0,
+  parts_to_delay_insert = 100000,
+  parts_to_throw_insert = 100000
 SQL
 
 # True while the workers should keep issuing (and retrying) statements. Every worker - both

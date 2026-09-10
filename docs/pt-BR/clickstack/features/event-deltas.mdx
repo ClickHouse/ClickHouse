@@ -11,7 +11,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Event deltas combina um heatmap de latência com análise automática de atributos para que você possa visualizar o perfil dos seus dados de trace e descobrir o que diferencia os spans lentos, sem precisar escrever consultas. Há três formas de usá-lo:
 
-* **Modo de distribuição (sempre ativo)**: quando não há nenhuma seleção no heatmap, a distribuição de valores de cada atributo é exibida para a população atual de spans. Útil para identificar valores dominantes ou incomumente raros (outliers de cardinalidade).
+* **Modo de distribuição (sempre ativo)**: quando não há nenhuma seleção no heatmap, a distribuição de valores de cada atributo é exibida para a população atual de spans. Útil para identificar valores dominantes ou incomumente raros (valores atípicos de cardinalidade).
 * **Modo de comparação**: arraste um retângulo no heatmap para comparar os spans dentro da seleção (Selection) com tudo o que está fora dela (Background). Útil para isolar desvios.
 * **Drill-down iterativo**: clique em qualquer barra para filtrar (ou excluir) esse valor. O heatmap é renderizado novamente com base na população filtrada, para que você possa continuar refinando até que a causa fique óbvia.
 
@@ -92,7 +92,7 @@ Quando o heatmap mostrar duas populações de latência claramente separadas no 
 
 Desenhe o retângulo bem ajustado em torno da faixa superior, com um espaço horizontal visível entre ela e a massa densa. Um retângulo frouxo que invade a população rápida dilui a divergência.
 
-A linha de limite de 100 s já é informativa por si só: uma linha horizontal constante em um número redondo é a assinatura de um timeout fixo. Se nenhum atributo de span diferenciar claramente as duas populações, isso também é um resultado útil: aponta para métricas no nível do host e do runtime (pausas de GC, contenção de E/S, latência do escalonador, efeitos de cache frio, vizinhos ruidosos), e não para atributos de span.
+A linha de limite de 100 s já é informativa por si só: uma linha horizontal constante em um número redondo é a assinatura de um timeout fixo. Se nenhum atributo de span diferenciar claramente as duas populações, isso também é um resultado útil: aponta para métricas no nível do host e do runtime (pausas de GC, contenção de E/S, latência do scheduler, efeitos de cache frio, vizinhos ruidosos), e não para atributos de span.
 
 Esse é o padrão certo quando você quer perguntar &quot;o que torna os spans lentos diferentes dos rápidos?&quot; em vez de buscar uma anomalia específica. Um atributo divergente aponta para uma causa no caminho do código ou na entrada; uma comparação sem diferença aponta para uma causa sistêmica.
 
@@ -127,8 +127,8 @@ O ícone de engrenagem no canto superior direito do heatmap abre o painel latera
 | Parâmetro | Padrão           | Descrição                                                                                                     |
 | --------- | ---------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Scale** | Log              | Log lida bem com faixas amplas de latência; Linear é melhor para distribuições estreitas e uniformes.         |
-| **Value** | `(Duration)/1e6` | Qualquer expression numérica: tamanho da resposta, taxa de erro ou um attribute personalizado do span.        |
-| **Count** | `count()`        | aggregation usada para a cor. Mude para `avg()`, `sum()`, `p95()` ou expressions como `countDistinct(field)`. |
+| **Value** | `(Duration)/1e6` | Qualquer expressão numérica: tamanho da resposta, taxa de erro ou um attribute personalizado do span.        |
+| **Count** | `count()`        | aggregation usada para a cor. Mude para `avg()`, `sum()`, `p95()` ou expressões como `countDistinct(field)`. |
 
 Clique em **Apply** para atualizar o heatmap; a análise de atributos abaixo acompanha a mudança.
 
@@ -141,7 +141,7 @@ Clique em **Apply** para atualizar o heatmap; a análise de atributos abaixo aco
 Cenários comuns em que você pode querer alterar esses padrões:
 
 * **Mude Scale para Linear** quando a faixa de latência for estreita (por exemplo, um service cujos spans ficam todos entre 5 e 50 ms). A escala Log desperdiça espaço vertical na parte superior, onde não há dados.
-* **Plote algo diferente de Duration no eixo Y.** Definir **Value** como `SpanAttributes.http.response.size` permite investigar respostas *grandes* lentas; uma expression como `if(StatusCode = 'Error', 1, 0)` plota a frequência de erro ao longo do tempo entre services.
+* **Plote algo diferente de Duration no eixo Y.** Definir **Value** como `SpanAttributes.http.response.size` permite investigar respostas *grandes* lentas; uma expressão como `if(StatusCode = 'Error', 1, 0)` plota a frequência de erro ao longo do tempo entre services.
 * **Use cor com base em algo diferente de count.** Definir **Count** como `p95(Duration)` colore cada bucket pela tail latency em vez do volume, destacando bolsões raros, mas lentos, que uma visualização baseada em contagem acaba ocultando. `countDistinct(TraceId)` distingue o volume de traces do volume de spans quando um trace produz muitos spans.
 
 <div id="tips">

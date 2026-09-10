@@ -16,6 +16,7 @@ workflow = Workflow.Config(
     name="PRVersionInfo",
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     inputs=[
         Workflow.Config.InputConfig(
             name="days",
@@ -30,7 +31,7 @@ workflow = Workflow.Config(
         Job.Config(
             name="Update PR version info",
             command="python3 ./tests/ci/pr_version_info.py --days 10",
-            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
     ],

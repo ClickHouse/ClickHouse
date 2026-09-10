@@ -8,7 +8,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-[갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)는 개념적으로 전통적인 OLTP 데이터베이스의 materialized view와 유사합니다. 지정된 쿼리의 결과를 저장해 빠르게 조회할 수 있게 하고, 리소스를 많이 소모하는 쿼리를 반복 실행할 필요를 줄여줍니다. ClickHouse의 [증분형 materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)와 달리, 갱신 가능 구체화 뷰는 전체 데이터셋에 대해 쿼리를 주기적으로 실행해야 합니다. 이렇게 생성된 결과는 쿼리할 수 있도록 대상 테이블에 저장됩니다. 이 result set은 이론적으로 원본 데이터셋보다 더 작아야 하므로, 후속 쿼리를 더 빠르게 실행할 수 있습니다.
+[갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)는 개념적으로 전통적인 OLTP 데이터베이스의 materialized view와 유사합니다. 지정된 쿼리의 결과를 저장해 빠르게 조회할 수 있게 하고, 리소스를 많이 소모하는 쿼리를 반복 실행할 필요를 줄여줍니다. ClickHouse의 [증분형 materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)와 달리, 갱신 가능 구체화 뷰는 전체 데이터셋에 대해 쿼리를 주기적으로 실행해야 합니다. 이렇게 생성된 결과는 쿼리할 수 있도록 대상 테이블에 저장됩니다. 이 결과 집합은 이론적으로 원본 데이터셋보다 더 작아야 하므로, 후속 쿼리를 더 빠르게 실행할 수 있습니다.
 
 다음 다이어그램은 갱신 가능 구체화 뷰가 작동하는 방식을 설명합니다:
 
