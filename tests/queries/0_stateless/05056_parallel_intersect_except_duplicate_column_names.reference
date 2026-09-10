@@ -21,8 +21,7 @@ IntersectOrExcept × 4 2 → 1
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%';
 Distinct
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN PIPELINE (SELECT id, *, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, *, b FROM t_intersect_except_dup)) WHERE explain LIKE '%DistinctTransform%' OR explain LIKE '%ScatterByPartition%';
-DistinctTransform × 4
-ScatterByPartitionTransform × 4 1 → 4
+DistinctTransform
 ScatterByPartitionTransform × 2 1 → 4
 -- The same query with a header whose names are unique does keep the property.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 (SELECT id, a, b FROM t_intersect_except_dup) INTERSECT DISTINCT (SELECT id, a, b FROM t_intersect_except_dup)) WHERE explain LIKE '%Distinct%' OR explain LIKE '%Skip stream merging%';
