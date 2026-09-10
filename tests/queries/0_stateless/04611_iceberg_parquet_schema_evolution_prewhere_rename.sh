@@ -47,6 +47,9 @@ rm -rf "${ICEBERG_PATH}"
 # (c0 Int64, c1 String, c2 Int32). One data file, 100 rows.
 ${CLICKHOUSE_CLIENT} --query "
     SET allow_experimental_insert_into_iceberg = 1;
+    -- StorageObjectStorage caches supportsPrewhere() at CREATE time from this
+    -- session setting; pinning it only on the SELECTs below is too late.
+    SET input_format_parquet_use_native_reader_v3 = 1;
 
     CREATE TABLE ${TEST_TABLE} (c0 Int64, c1 String, c2 Int32)
         ENGINE = IcebergLocal('${ICEBERG_PATH}', 'Parquet');
