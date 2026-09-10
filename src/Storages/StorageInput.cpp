@@ -127,8 +127,8 @@ void ReadFromInput::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT,
             "Table function `input` can only be read once per query because it is a one-shot stream from the client. "
             "To reference the data multiple times, wrap `input` in a `MATERIALIZED` CTE "
-            "and enable the `enable_materialized_cte` setting: "
-            "`SETTINGS enable_materialized_cte = 1 WITH cte AS MATERIALIZED (SELECT ... FROM input(...)) ...`.");
+            "and enable the analyzer and the `enable_materialized_cte` setting: "
+            "`SETTINGS enable_analyzer = 1, enable_materialized_cte = 1 WITH cte AS MATERIALIZED (SELECT ... FROM input(...)) ...`.");
 
     if (!pipe.empty())
     {
