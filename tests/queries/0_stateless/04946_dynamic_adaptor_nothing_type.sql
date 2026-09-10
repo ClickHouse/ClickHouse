@@ -1,5 +1,3 @@
-SET allow_suspicious_types_in_order_by = 1;
-
 -- Indexing an empty array with a Dynamic argument returns NULL for every row.
 
 -- One stored type, no NULLs.
@@ -22,9 +20,14 @@ SELECT arrayElement(arrayPopFront([]), d) FROM (SELECT CAST(1, 'Dynamic') AS d);
 SELECT arrayElement(d, 1) FROM (SELECT CAST([], 'Dynamic') AS d);
 SELECT arrayElement(d, 1) FROM (SELECT if(number % 2, CAST([], 'Dynamic'), CAST(NULL, 'Dynamic')) AS d FROM numbers(4));
 
+-- Some variants produce Nothing while others produce a real type, so a NULL slot has to line up
+-- against a real result column.
+SELECT number, arrayElement(d, 1) FROM (SELECT number, if(number % 2, CAST([], 'Dynamic'), CAST([7, 8], 'Dynamic')) AS d FROM numbers(4)) ORDER BY number;
+
 -- A non-empty array is still indexed normally.
 SELECT arrayElement(d, 1) FROM (SELECT CAST([7, 8], 'Dynamic') AS d);
 SELECT arrayElement([10, 20], d) FROM (SELECT CAST(2, 'Dynamic') AS d);
 
--- An argument that cannot index an array is still rejected.
-SELECT arrayElement([], d) FROM (SELECT CAST('s', 'Dynamic') AS d); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- An argument that cannot index an array is still rejected. dynamic_throw_on_type_mismatch is pinned
+-- because with 0 the mismatch yields NULL instead, which would make this check vacuous.
+SELECT arrayElement([], d) FROM (SELECT CAST('s', 'Dynamic') AS d) SETTINGS dynamic_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

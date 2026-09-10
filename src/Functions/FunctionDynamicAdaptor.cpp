@@ -162,7 +162,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
 
         /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
         /// Nothing can appear when the function is executed on an empty type (e.g. arrayElement on Array(Nothing)).
-        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
+        if (isNothingOrNullableNothing(nested_result_type))
         {
             auto res = result_type->createColumn();
             res->insertManyDefaults(dynamic_column.size());
@@ -261,7 +261,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         nested_result = nested_result->convertToFullColumnIfConst();
 
         /// If result is Nullable(Nothing) or Nothing, just return column filled with NULLs/defaults.
-        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
+        if (isNothingOrNullableNothing(nested_result_type))
         {
             auto res = result_type->createColumn();
             res->insertManyDefaults(dynamic_column.size());
@@ -505,7 +505,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         nested_result = nested_result->convertToFullColumnIfConst();
 
         /// Append nullptr in case of only NULL or Nothing values, we will insert NULL for rows of this selector.
-        if (nested_result_type->onlyNull() || isNothing(nested_result_type))
+        if (isNothingOrNullableNothing(nested_result_type))
         {
             variants_results.emplace_back();
         }
