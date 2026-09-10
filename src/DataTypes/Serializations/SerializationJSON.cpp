@@ -109,7 +109,7 @@ struct JSONParserState
 
 }
 
-struct JSONParsingState
+struct JSONParsingPools
 {
     /// The pool key owns the serialization, so an address cannot be reused for a different schema.
     /// Each backend has its own pool; the timezone also isolates dynamically inferred types.
@@ -123,11 +123,6 @@ struct JSONParsingState
     ObjectPoolMap<JSONParserState<DummyJSONParser>, Key> dummy;
 #endif
 };
-
-std::shared_ptr<JSONParsingState> createJSONParsingState()
-{
-    return std::make_shared<JSONParsingState>();
-}
 
 namespace Setting
 {
@@ -379,9 +374,11 @@ void SerializationJSON::deserializeObject(IColumn & column, std::string_view obj
     const auto & timezone_lut = session_timezone_name.empty()
         ? DateLUT::serverTimezoneInstance() : DateLUT::instance(session_timezone_name);
 
-    const auto & state = settings.json_parsing_state;
-    JSONParsingState::Key key{shared_from_this(), &timezone_lut};
-    auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingState::Key> & pool)
+    auto & holder = *settings.json_parsing_state;
+    std::call_once(holder.initialization_flag, [&] { holder.pools = std::make_shared<JSONParsingPools>(); });
+    const auto & state = holder.pools;
+    JSONParsingPools::Key key{shared_from_this(), &timezone_lut};
+    auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingPools::Key> & pool)
     {
         auto lease = pool.get(key, [&]
         {

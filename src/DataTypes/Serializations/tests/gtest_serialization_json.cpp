@@ -150,6 +150,7 @@ TEST(SerializationJSON, ParsingSettingsOwnResources)
     std::weak_ptr<const ISerialization> weak_serialization;
     std::weak_ptr<const IDataType> weak_type;
     auto settings = std::make_unique<FormatSettings>();
+    EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
     {
         FormatSettings copy;
         EXPECT_NE(settings->json_parsing_state, copy.json_parsing_state);
@@ -160,8 +161,10 @@ TEST(SerializationJSON, ParsingSettingsOwnResources)
         weak_type = type;
         weak_serialization = serialization;
         auto column = type->createColumn();
+        EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
         ReadBufferFromString input(std::string_view(R"({"x":42,"nested":{"a":[1,2]}})"));
         serialization->deserializeWholeText(*column, input, copy);
+        EXPECT_NE(settings->json_parsing_state->pools, nullptr);
     }
     EXPECT_TRUE(weak_type.expired());
     EXPECT_FALSE(weak_serialization.expired());
