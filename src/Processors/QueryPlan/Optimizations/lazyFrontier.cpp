@@ -5,12 +5,18 @@
 namespace DB::QueryPlanOptimizations
 {
 
+Placement LazyFrontier::at(const ActionsDAG::Node * node) const
+{
+    if (const auto it = placement.find(node); it != placement.end())
+        return it->second;
+
+    return {};
+}
+
 bool LazyFrontier::defersAnything() const
 {
-    if (!recomputed_after_merge.empty())
-        return true;
-
-    return std::ranges::any_of(recomputed_under_mask, [](const auto & nodes) { return !nodes.empty(); });
+    return std::ranges::any_of(
+        placement, [](const auto & entry) { return entry.second.above != Placement::Above::No; });
 }
 
 namespace
@@ -52,43 +58,45 @@ public:
     FrontierChooser(const MergedPlanDAG & merged_, const std::vector<bool> & lazy_sources_)
         : merged(merged_), lazy_sources(lazy_sources_)
     {
-        frontier.recomputed_under_mask.resize(merged.stuffings.size());
-        frontier.lazily_read_inputs.resize(merged.sources.size());
     }
 
     /// Everything a filter, a join condition or the sort order needs is computed below the `LIMIT`,
     /// together with everything those values are computed from.
-    void markEager(const ActionsDAG::NodeRawConstPtrs & roots)
-    {
-        for (const auto * node : findReachableNodes(roots))
-            frontier.eager.insert(node);
-    }
+    void markComputedBelow(const ActionsDAG::NodeRawConstPtrs & roots) { markComputedBelow(roots, frontier); }
 
-    /// Values the main branch has to hand over anyway, the sort keys above all: they are part of the block
-    /// the `LIMIT` produces whatever this decides, so taking them costs nothing.
-    void markFreeToCarry(const ActionsDAG::NodeRawConstPtrs & nodes)
-    {
-        free_to_carry.insert(nodes.begin(), nodes.end());
-    }
+    /// Values the main branch has to hand over anyway, the sort keys above all: they are part of the
+    /// block the `LIMIT` produces whatever this decides, so taking them costs nothing.
+    void markFreeToCross(const ActionsDAG::NodeRawConstPtrs & nodes) { free_to_cross.insert(nodes.begin(), nodes.end()); }
 
-    /// Places `node` and everything it reads. Every node can be placed: what cannot be recomputed above
-    /// the `LIMIT` is computed below it and carried, which is what the plan did anyway.
+    /// Places `node` and everything it reads. Every value can be placed: what cannot be recomputed above
+    /// the `LIMIT` is computed below it and crosses, which is what the plan did anyway.
     void place(const ActionsDAG::Node * node) { placeNode(node, frontier); }
 
     LazyFrontier takeFrontier() { return std::move(frontier); }
 
 private:
+    static void markComputedBelow(const ActionsDAG::NodeRawConstPtrs & roots, LazyFrontier & candidate)
+    {
+        for (const auto * node : findReachableNodes(roots))
+        {
+            auto & below = candidate.placement[node].below;
+            if (below == Placement::Below::No)
+                below = Placement::Below::Computed;
+        }
+    }
+
     void placeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
     {
-        if (candidate.carried.contains(node) || isPlaced(node, candidate))
+        const auto placed = candidate.at(node);
+        if (placed.below == Placement::Below::ComputedAndCrossing || placed.above != Placement::Above::No)
             return;
 
-        if (candidate.eager.contains(node))
+        if (placed.below == Placement::Below::Computed)
         {
             /// The main branch hands this one over regardless, so there is nothing to weigh up.
-            if (free_to_carry.contains(node))
+            if (free_to_cross.contains(node))
             {
-                carry(node, candidate);
+                cross(node, candidate);
                 return;
             }
 
@@ -97,14 +105,14 @@ private:
             /// may still be recomputed above, since that gives the same answer.
             if (!canBeRecomputed(node))
             {
-                carry(node, candidate);
+                cross(node, candidate);
                 return;
             }
 
             /// Recomputing costs nothing below the `LIMIT` and at most `limit` rows above it, while a
-            /// carried column is read for every scanned row and replicated by every join on the way up.
+            /// crossing column is read for every scanned row and replicated by every join on the way up.
             /// So recompute, unless doing so drags in more than one column nothing else reads - then one
-            /// carried column is the smaller price.
+            /// crossing column is the smaller price.
             LazyFrontier attempt = candidate;
             if (recomputeNode(node, attempt) && countLazyReads(attempt) <= countLazyReads(candidate) + 1)
             {
@@ -112,16 +120,16 @@ private:
                 return;
             }
 
-            carry(node, candidate);
+            cross(node, candidate);
             return;
         }
 
         if (!recomputeNode(node, candidate))
-            carry(node, candidate);
+            cross(node, candidate);
     }
 
-    /// Returns false when the node cannot be computed above the `LIMIT` at all, leaving `candidate` in
-    /// whatever state it reached - the caller either carries the node or drops the attempt.
+    /// Returns false when the value cannot be had above the `LIMIT` at all, leaving `candidate` in
+    /// whatever state it reached - the caller either lets it cross or drops the attempt.
     bool recomputeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
     {
         if (const auto source = findSourceOfInput(merged, node))
@@ -130,8 +138,8 @@ private:
             if (!lazy_sources[*source])
                 return false;
 
-            candidate.lazily_read_inputs[*source].insert(node);
-            return placeMasked(node, candidate);
+            candidate.placement[node].above = Placement::Above::LazyRead;
+            return true;
         }
 
         /// An input reading no source, or more than one, is not something this can place.
@@ -142,58 +150,30 @@ private:
         if (node->type == ActionsDAG::ActionType::ARRAY_JOIN)
             return false;
 
+        /// A child that has to cross is computed below the `LIMIT`, which `cross` takes care of.
         for (const auto * child : node->children)
-        {
             placeNode(child, candidate);
-            /// A child that had to be carried has to be computed below the `LIMIT`, which is where it
-            /// already is: `carry` puts it and everything it reads into the eager set.
-        }
 
-        return placeMasked(node, candidate);
-    }
-
-    /// Where a join can leave this node's side unmatched, the node has a value of its own only on the
-    /// rows where that join matched; the value it stuffed stands everywhere else. Everything the node
-    /// reads is available above the `LIMIT` all the same, carried columns included, so this is the same
-    /// placement, restricted by that join's mask.
-    bool placeMasked(const ActionsDAG::Node * node, LazyFrontier & candidate)
-    {
-        if (const auto stuffing = merged.getNearestStuffing(node))
-            candidate.recomputed_under_mask[*stuffing].insert(node);
-        else
-            candidate.recomputed_after_merge.insert(node);
-
+        candidate.placement[node].above = Placement::Above::Recomputed;
         return true;
     }
 
-    /// A carried value is computed below the `LIMIT`, so everything it reads is computed there too.
-    void carry(const ActionsDAG::Node * node, LazyFrontier & candidate)
+    /// A crossing value is computed below the `LIMIT`, so everything it reads is computed there too.
+    static void cross(const ActionsDAG::Node * node, LazyFrontier & candidate)
     {
-        candidate.carried.insert(node);
-        for (const auto * needed : findReachableNodes({node}))
-            candidate.eager.insert(needed);
-    }
-
-    static bool isPlaced(const ActionsDAG::Node * node, const LazyFrontier & candidate)
-    {
-        if (candidate.recomputed_after_merge.contains(node))
-            return true;
-
-        return std::ranges::any_of(
-            candidate.recomputed_under_mask, [&](const auto & nodes) { return nodes.contains(node); });
+        markComputedBelow({node}, candidate);
+        candidate.placement[node].below = Placement::Below::ComputedAndCrossing;
     }
 
     static size_t countLazyReads(const LazyFrontier & candidate)
     {
-        size_t count = 0;
-        for (const auto & inputs : candidate.lazily_read_inputs)
-            count += inputs.size();
-        return count;
+        return std::ranges::count_if(
+            candidate.placement, [](const auto & entry) { return entry.second.above == Placement::Above::LazyRead; });
     }
 
     const MergedPlanDAG & merged;
     const std::vector<bool> & lazy_sources;
-    NodeSet free_to_carry;
+    NodeSet free_to_cross;
     LazyFrontier frontier;
 };
 
@@ -210,23 +190,40 @@ LazyFrontier chooseLazyFrontier(
 
     FrontierChooser chooser(merged, lazy_sources);
 
-    ActionsDAG::NodeRawConstPtrs eager_roots = merged.filter_nodes;
-    eager_roots.append_range(merged.join_condition_nodes);
+    ActionsDAG::NodeRawConstPtrs computed_below_roots = merged.filter_nodes;
+    computed_below_roots.append_range(merged.join_condition_nodes);
 
-    ActionsDAG::NodeRawConstPtrs free_to_carry;
+    ActionsDAG::NodeRawConstPtrs free_to_cross;
     for (size_t position : eager_output_positions)
     {
-        eager_roots.push_back(outputs[position]);
-        free_to_carry.push_back(outputs[position]);
+        computed_below_roots.push_back(outputs[position]);
+        free_to_cross.push_back(outputs[position]);
     }
 
-    chooser.markEager(eager_roots);
-    chooser.markFreeToCarry(free_to_carry);
+    chooser.markComputedBelow(computed_below_roots);
+    chooser.markFreeToCross(free_to_cross);
 
     for (const auto * output : outputs)
         chooser.place(output);
 
     return chooser.takeFrontier();
+}
+
+std::vector<NodeSet> collectLazyReads(const MergedPlanDAG & merged, const LazyFrontier & frontier)
+{
+    std::vector<NodeSet> reads(merged.sources.size());
+
+    for (const auto & [node, placed] : frontier.placement)
+    {
+        if (placed.above != Placement::Above::LazyRead)
+            continue;
+
+        const auto & node_sources = merged.getSources(node);
+        chassert(node_sources.count() == 1);
+        reads[*node_sources.begin()].insert(node);
+    }
+
+    return reads;
 }
 
 }
