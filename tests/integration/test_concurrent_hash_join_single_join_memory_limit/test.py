@@ -33,10 +33,10 @@ def test_single_join_exceeding_limit_is_caught():
             "max_threads": 256,
             "join_algorithm": "parallel_hash",
             "max_memory_usage": "512Ki",
-            # One join's bucket layout is about a megabyte, which fits inside the default
-            # max_untracked_memory, so the thread-local counter has to be flushed on every
-            # allocation for the query's tracker to see the overshoot at all.
-            "max_untracked_memory": 1,
+            # One join's bucket layout is about a megabyte, under the four megabytes a thread may
+            # leave uncharged, so this depends on the flush at the end of the constructor.
+            # max_untracked_memory is deliberately left at its default.
+            "parallel_hash_join_threshold": 0,
         },
     )
     assert "MEMORY_LIMIT_EXCEEDED" in error

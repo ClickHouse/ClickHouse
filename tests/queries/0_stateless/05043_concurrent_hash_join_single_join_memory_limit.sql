@@ -3,11 +3,14 @@
 
 SET max_threads = 256, join_algorithm = 'parallel_hash';
 
--- One join's bucket layout is about a megabyte, which fits inside the default
--- `max_untracked_memory`, so the thread-local counter has to be flushed on every allocation for
--- the query's tracker to see the overshoot at all.
-SET max_untracked_memory = 1;
+-- Once a join has run here, the hash table statistics can give a later run a row estimate, and an
+-- estimate below `parallel_hash_join_threshold` picks the serial layout, which costs nothing. Pin
+-- the threshold so this test measures the bucketed layout however often it has run before.
+SET parallel_hash_join_threshold = 0;
 
+-- One join's bucket layout is about a megabyte, which is under the four megabytes a thread may
+-- leave uncharged. Catching this needs the flush at the end of the constructor, not any single
+-- allocation being refused, so `max_untracked_memory` is deliberately left at its default.
 SET max_memory_usage = '512Ki';
 EXPLAIN
 SELECT count() FROM (SELECT number AS id, number AS val FROM numbers(1)) AS a

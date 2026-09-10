@@ -588,12 +588,6 @@ HashJoin::HashJoin(
     /// `bucket_bytes` only accumulates insert deltas, so seed it with what `create` allocated.
     recomputeBucketBytes();
 
-    /// The layout is many small allocations, and `max_untracked_memory` lets a thread accumulate
-    /// them before any is charged to the query, so a 256-bucket map can carry the query past
-    /// `max_memory_usage` without a single allocation being refused. Charge and check the total
-    /// once the layout is built.
-    CurrentMemoryTracker::check();
-
     if (table_join->getMixedJoinExpression())
     {
         const auto & required_cols = table_join->getMixedJoinExpression()->getRequiredColumnsWithTypes();
@@ -623,6 +617,13 @@ HashJoin::HashJoin(
             ++pos;
         }
     }
+
+    /// Building the buckets is many small allocations. Each one is charged to the thread, and the
+    /// thread only passes the total up to the query once it crosses `max_untracked_memory`, so a
+    /// 256-bucket layout can leave a megabyte uncharged. Flush that and let the query's limit
+    /// apply, rather than reporting a join the query cannot afford as built.
+    CurrentThread::flushUntrackedMemory();
+    CurrentMemoryTracker::check();
 }
 
 size_t HashJoin::NullMapHolder::allocatedBytes() const
