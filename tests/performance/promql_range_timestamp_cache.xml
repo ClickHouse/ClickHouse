@@ -18,7 +18,7 @@
         CREATE TABLE promql_range_timestamp_cache ENGINE = TimeSeries
     </create_query>
 
-    <!-- 16384 series x 1024 samples = 16,777,216 response samples. -->
+    <!-- 16384 series x 256 samples = 4,194,304 response samples. -->
     <fill_query>
         INSERT INTO promql_range_timestamp_cache (metric_name, tags, time_series)
         SELECT
@@ -26,7 +26,7 @@
             map('instance', toString(number)),
             arrayMap(
                 step -&gt; (toDateTime64(1700000000 + step * 15, 3), toFloat64(1)),
-                range(1024))
+                range(256))
         FROM numbers_mt(16384)
     </fill_query>
 
@@ -34,7 +34,7 @@
         ${CLICKHOUSE_CURL} -G "${CLICKHOUSE_URL}prometheus/api/v1/query_range" \
             --data-urlencode "query=cache_metric" \
             --data-urlencode "start=1700000000" \
-            --data-urlencode "end=1700015345" \
+            --data-urlencode "end=1700003825" \
             --data-urlencode "step=15" \
             --data-urlencode "max_block_size=16384" \
             --data-urlencode "max_threads=8" \
