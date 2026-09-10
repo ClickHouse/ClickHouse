@@ -46,7 +46,8 @@ struct ActionsDAGOutputLineage
 
 /// Classify a single node relative to its source child. This does not recursively
 /// establish that the child itself reaches an input. Absence means the hop is unsupported.
-std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node);
+/// Reuse the constant-expression cache across hops to avoid rescanning shared subtrees.
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node, NodeMap & constant_expressions);
 
 /// Trace every output to at most one input using iterative, memoized traversal.
 /// The returned vector is ordered by output position and remains unambiguous even

@@ -317,6 +317,30 @@ TEST(ColumnStatsDerivation, DeepChainOfFunctionsResolves)
     EXPECT_EQ(stats[current->result_name].num_distinct_values, distinct_values);
 }
 
+TEST(ColumnStatsDerivation, SharedConstantSubexpressionsPropagateBound)
+{
+    tryRegisterFunctions();
+
+    auto int_type = std::make_shared<DataTypeUInt64>();
+    ActionsDAG dag;
+    const auto & input = dag.addInput("n", int_type);
+    const auto & one = dag.addColumn({int_type->createColumnConst(1, UInt64(1)), int_type, "one"});
+    const ActionsDAG::Node * constant = &dag.addFunction(
+        FunctionFactory::instance().get("materialize", getContext().context), {&one}, "constant");
+
+    /// Without memoization, the two references to each non-folded constant cause exponential traversal.
+    auto plus = FunctionFactory::instance().get("plus", getContext().context);
+    for (size_t i = 0; i < 30; ++i)
+        constant = &dag.addFunction(plus, {constant, constant}, "constant_" + std::to_string(i));
+    addOutputFunction(dag, "plus", {constant, &input}, "shifted");
+
+    auto stats = statsOf("n", 100);
+    remapColumnStats(stats, dag);
+
+    ASSERT_TRUE(stats.contains("shifted"));
+    EXPECT_EQ(stats.at("shifted").num_distinct_values, 100);
+}
+
 TEST(ColumnStatsDerivation, LineageDistinguishesIdentityFromDistinctValueBounds)
 {
     tryRegisterFunctions();
@@ -453,6 +477,36 @@ TEST(ColumnStatsDerivation, RemapColumnStatsTracksWidthAcrossEntireLineage)
     EXPECT_DOUBLE_EQ(stats["formatted"].avg_bytes, 0);
     /// Returning to the source type does not restore width after an intermediate type change.
     EXPECT_DOUBLE_EQ(stats["roundtrip"].avg_bytes, 0);
+}
+
+TEST(ColumnStatsDerivation, StringFunctionsDropWidthAndKeepDistinctValueBound)
+{
+    tryRegisterFunctions();
+
+    auto string_type = std::make_shared<DataTypeString>();
+    ActionsDAG dag;
+    const auto & input = dag.addInput("s", string_type);
+    const auto & prefix = dag.addColumn({string_type->createColumnConst(1, String(1000, 'x')), string_type, "prefix"});
+    const auto & materialized_prefix = dag.addFunction(
+        FunctionFactory::instance().get("materialize", getContext().context), {&prefix}, "materialized_prefix");
+    addOutputFunction(dag, "concat", {&materialized_prefix, &input}, "prefixed");
+    auto int_type = std::make_shared<DataTypeUInt64>();
+    const auto & offset = dag.addColumn({int_type->createColumnConst(1, UInt64(2)), int_type, "offset"});
+    addOutputFunction(dag, "substring", {&input, &offset}, "suffix");
+    addOutputFunction(dag, "materialize", {&input}, "materialized");
+
+    auto stats = statsOf("s", 100);
+    stats.at("s").avg_bytes = 10;
+    remapColumnStats(stats, dag);
+
+    for (const auto * name : {"prefixed", "suffix", "materialized"})
+    {
+        ASSERT_TRUE(stats.contains(name));
+        EXPECT_EQ(stats.at(name).num_distinct_values, 100);
+    }
+    EXPECT_DOUBLE_EQ(stats.at("prefixed").avg_bytes, 0);
+    EXPECT_DOUBLE_EQ(stats.at("suffix").avg_bytes, 0);
+    EXPECT_DOUBLE_EQ(stats.at("materialized").avg_bytes, 10);
 }
 
 /// The bound propagates through a chain of deterministic single-argument functions: no link can

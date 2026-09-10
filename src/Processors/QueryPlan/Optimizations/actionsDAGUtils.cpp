@@ -552,40 +552,53 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     return new_inputs;
 }
 
-static bool isConstantExpression(const ActionsDAG::Node * node)
+static bool isConstantExpression(const ActionsDAG::Node * node, NodeMap & constant_expressions)
 {
-    std::stack<const ActionsDAG::Node *> nodes;
-    nodes.push(node);
+    if (auto it = constant_expressions.find(node); it != constant_expressions.end())
+        return it->second;
+
+    std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes;
+    nodes.push({node, false});
     while (!nodes.empty())
     {
-        const auto * current = nodes.top();
-        nodes.pop();
-
+        const auto [current, children_pushed] = nodes.top();
+        if (constant_expressions.contains(current))
+        {
+            nodes.pop();
+            continue;
+        }
         if (current->column)
-            continue;
-
-        if (current->type == ActionsDAG::ActionType::ALIAS && current->children.size() == 1)
         {
-            nodes.push(current->children[0]);
+            constant_expressions[current] = true;
+            nodes.pop();
             continue;
         }
 
-        if (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
-            && current->function_base->isDeterministicInScopeOfQuery())
+        if ((current->type == ActionsDAG::ActionType::ALIAS && current->children.size() == 1)
+            || (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
+                && current->function_base->isDeterministicInScopeOfQuery()))
         {
-            for (const auto * child : current->children)
-                nodes.push(child);
+            if (!children_pushed)
+            {
+                nodes.top().second = true;
+                for (const auto * child : current->children)
+                    if (!constant_expressions.contains(child))
+                        nodes.push({child, false});
+                continue;
+            }
 
-            continue;
+            constant_expressions[current] = std::ranges::all_of(
+                current->children, [&](const auto * child) { return constant_expressions.at(child); });
         }
-
-        return false;
+        else
+            constant_expressions[current] = false;
+        nodes.pop();
     }
 
-    return true;
+    return constant_expressions.at(node);
 }
 
-std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node, NodeMap & constant_expressions)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
         return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true, 0};
@@ -609,7 +622,7 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
         std::optional<size_t> non_constant_child;
         for (size_t i = 0; i < node.children.size(); ++i)
         {
-            if (isConstantExpression(node.children[i]))
+            if (isConstantExpression(node.children[i], constant_expressions))
                 continue;
 
             if (non_constant_child)
@@ -627,8 +640,11 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     /// non-Nullable result can map NULL to one additional counted value.
     const bool collapses_null
         = isNullableOrLowCardinalityNullable(node.children[source_child_index]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
-    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
-        ->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type));
+    const auto result_type = removeLowCardinalityAndNullable(node.result_type);
+    /// Equal types do not imply equal widths for variable-size values.
+    const bool preserves_width = result_type->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type))
+        && (kind == ActionsDAGLineageKind::ValuePreserving || function_name == "_CAST" || function_name == "CAST"
+            || result_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion());
     return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width, source_child_index};
 }
 
@@ -642,6 +658,7 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
         input_positions[inputs[input_position]] = input_position;
 
     std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
+    NodeMap constant_expressions;
     const auto & outputs = actions.getOutputs();
     for (const auto * output : outputs)
     {
@@ -663,7 +680,7 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
                 continue;
             }
 
-            const auto hop = describeActionsDAGLineageHop(*node);
+            const auto hop = describeActionsDAGLineageHop(*node, constant_expressions);
             if (hop && !child_pushed)
             {
                 nodes_to_process.top().second = true;
