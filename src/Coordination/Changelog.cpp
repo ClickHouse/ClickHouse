@@ -1407,7 +1407,9 @@ void LogEntryStorage::addLocation(uint64_t index, uint64_t term, int32_t value_t
 
 void LogEntryStorage::addEntryToLatestCache(uint64_t index, const LogEntryPtr & log_entry)
 {
-    while (!latest_logs_cache.hasSpaceAvailable(cachedLogEntryBytes(log_entry)))
+    /// Invariant across the loop, and every evaluation costs a size-class lookup.
+    const size_t entry_bytes = cachedLogEntryBytes(log_entry);
+    while (!latest_logs_cache.hasSpaceAvailable(entry_bytes))
         latest_logs_cache.popOldestEntry();
     latest_logs_cache.addEntry(index, log_entry);
 }
