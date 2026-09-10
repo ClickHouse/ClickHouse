@@ -18,7 +18,7 @@ integration:
 
 在 ClickHouse Cloud 控制台中打开你的 ClickHouse Managed Postgres 服务，然后在侧边栏中点击 **Sync to ClickHouse**。向导会自动填好源端连接信息，你只需选择目标端 ClickHouse 服务、复制方式以及要复制的表即可，无需另行配置用户、publication 或网络。
 
-详细的分步操作说明请参阅 [Sync to ClickHouse](/zh/products/managed-postgres/clickhouse-integration) 指南。
+详细的分步操作说明请参阅 [Sync to ClickHouse](/zh/products/managed-postgres/clickpipes) 指南。如果需要低延迟复制，你还可以选择 [WalShadow](/zh/products/managed-postgres/walshadow)，这是一种在文件系统层面读取数据的原生复制引擎，目前处于私有预览阶段。
 
 ## 方式 2：在 ClickPipes 中选择 ClickHouse Managed Postgres 作为源 {#clickpipes-source}
 

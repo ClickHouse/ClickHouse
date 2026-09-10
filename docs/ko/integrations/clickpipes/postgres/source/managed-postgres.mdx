@@ -18,7 +18,7 @@ ClickHouse Managed Postgres 인스턴스에서 복제를 시작하는 방법은 
 
 ClickHouse Cloud 콘솔에서 ClickHouse Managed Postgres 서비스를 열고 사이드바의 **Sync to ClickHouse**를 클릭하십시오. 마법사가 소스 연결 정보를 미리 채워 주며, 대상 ClickHouse 서비스와 복제 방식, 복제할 테이블을 선택할 수 있습니다. 사용자, publication, 네트워크 설정은 별도로 필요하지 않습니다.
 
-단계별 안내는 [Sync to ClickHouse](/ko/products/managed-postgres/clickhouse-integration) 가이드를 참고하십시오.
+단계별 안내는 [Sync to ClickHouse](/ko/products/managed-postgres/clickpipes) 가이드를 참고하십시오. 지연 시간이 짧은 복제가 필요하다면, 파일 시스템 수준에서 읽기를 수행하는 네이티브 복제 엔진인 [WalShadow](/ko/products/managed-postgres/walshadow)를 선택할 수도 있습니다. 현재 비공개 프리뷰로 제공됩니다.
 
 ## 옵션 2: ClickPipes에서 ClickHouse Managed Postgres를 소스로 선택 {#clickpipes-source}
 

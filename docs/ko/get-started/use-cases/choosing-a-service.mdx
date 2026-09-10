@@ -12,13 +12,13 @@ ClickHouse Cloud는 분석용 ClickHouse와 트랜잭션 워크로드용 ClickHo
 
 ## 워크로드에 맞는 시작점 찾기 {#workload-map}
 
-| 애플리케이션에 필요한 것                                                    | 먼저 검토할 대상                                                                                        | 선택 전에 확인할 사항                                           |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| 대규모 이벤트 또는 결과 이력에 대한 집계, 필터링, 비교                                 | [ClickHouse Cloud의 ClickHouse 서비스](/ko/products/cloud/getting-started/intro)                        | 대표 쿼리, 수집 배치, 데이터 신선도, 동시 쿼리, 업데이트 및 재시도 설계            |
-| 주문, 재고 예약, 상태 전이에 트랜잭션과 제약 조건이 필요한 작업처럼 트랜잭션이 필요한 애플리케이션 상태 | [ClickHouse Cloud의 ClickHouse Managed Postgres](/ko/products/managed-postgres/overview)             | 트랜잭션 경계, 제약 조건, 인덱스, 커넥션 관리, 해당 서비스가 지원하는 기능과 가용성 |
-| 트랜잭션 기반 애플리케이션 상태와 더불어 독립적인 서빙 시스템이 필요한 분석 쿼리                    | [ClickHouse Cloud의 Postgres 및 ClickHouse 서비스](/ko/products/managed-postgres/clickhouse-integration) | 복제가 필요한 테이블, 허용 가능한 복제 지연, 스키마 변경, 두 서비스의 비용과 운영       |
-| 애플리케이션 로그, 메트릭, 트레이스를 검색하고 분석하기 위한 관리형 환경                        | [Managed ClickStack](/ko/clickstack/getting-started/managed)                                        | 계측, 텔레메트리 수집, 보존 기간, 팀에 필요한 관측성 워크플로                   |
-| 로컬 애플리케이션이나 노트북 내 파일 또는 인메모리 데이터 분석                              | [chDB](/ko/chdb/index)                                                                              | 로컬 리소스, 별도로 호스팅되는 공유 데이터베이스 서비스의 필요 여부                 |
+| 애플리케이션에 필요한 것                                               | 먼저 검토할 대상                                                                            | 선택 전에 확인할 사항                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| 대규모 이벤트 또는 결과 이력에 대한 집계, 필터링, 비교                            | [ClickHouse Cloud의 ClickHouse 서비스](/ko/products/cloud/getting-started/intro)            | 대표 쿼리, 수집 배치, 데이터 신선도, 동시 쿼리, 업데이트 및 재시도 설계       |
+| 주문, 재고 예약, 상태 전이에 트랜잭션과 제약 조건이 필요한 작업처럼 트랜잭션 기반 애플리케이션 상태 | [ClickHouse Cloud의 ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) | 트랜잭션 경계, 제약 조건, 인덱스, 커넥션 관리, 해당 서비스가 지원하는 기능과 가용성 |
+| 트랜잭션 기반 애플리케이션 상태와 더불어 독립적인 서빙 시스템이 필요한 분석 쿼리               | [ClickHouse Cloud의 Postgres 및 ClickHouse 서비스](/ko/products/managed-postgres/clickpipes) | 복제가 필요한 테이블, 허용 가능한 복제 지연, 스키마 변경, 두 서비스의 비용과 운영  |
+| 애플리케이션 로그, 메트릭, 트레이스를 검색하고 분석하기 위한 관리형 환경                   | [Managed ClickStack](/ko/clickstack/getting-started/managed)                            | 계측, 텔레메트리 수집, 보존 기간, 팀에 필요한 관측성 워크플로              |
+| 로컬 애플리케이션이나 노트북 내 파일 또는 인메모리 데이터 분석                         | [chDB](/ko/chdb/index)                                                                  | 로컬 리소스, 별도로 호스팅되는 공유 데이터베이스 서비스의 필요 여부            |
 
 현재 제공 여부, 리전, 제한 사항은 링크된 제품 문서를 확인하십시오. ClickHouse Managed Postgres는 현재 퍼블릭 베타 단계이며, [빠른 시작](/ko/products/managed-postgres/quickstart)을 참조하십시오.
 
@@ -49,7 +49,7 @@ Postgres는 리포팅 쿼리도 처리할 수 있습니다. 모든 리포팅 애
 
 ### 트랜잭션과 분석을 함께 사용하기 {#transactions-and-analytics}
 
-두 워크로드가 각각 별도의 서비스를 둘 만한 이유가 있다면, 트랜잭션 상태는 Postgres에 유지하고 필요한 테이블만 [ClickPipes](/ko/products/managed-postgres/clickhouse-integration)로 ClickHouse에 복제하십시오. 이때 복제 지연(replication lag)을 감안해야 하며, 최신 애플리케이션 상태가 필요한 판단에는 계속 트랜잭션 원본을 사용하십시오. 복제한다고 해서 Postgres 쓰기와 ClickHouse 읽기가 하나의 트랜잭션으로 묶이지는 않습니다.
+두 워크로드가 각각 별도의 서비스를 둘 만한 이유가 있다면, 트랜잭션 상태는 Postgres에 유지하고 필요한 테이블만 [ClickPipes](/ko/products/managed-postgres/clickpipes) 또는 [WalShadow](/ko/products/managed-postgres/walshadow)로 ClickHouse에 복제하십시오. 이때 복제 지연(replication lag)을 감안해야 하며, 최신 애플리케이션 상태가 필요한 판단에는 계속 트랜잭션 원본을 사용하십시오. 복제한다고 해서 Postgres 쓰기와 ClickHouse 읽기가 하나의 트랜잭션으로 묶이지는 않습니다.
 
 [pg&#95;clickhouse 확장 기능](/ko/products/managed-postgres/extensions/pg_clickhouse/introduction)을 사용하면 Postgres를 통해 ClickHouse에 액세스할 수 있습니다. 다만 쿼리 진입점을 공유한다고 해서 두 서비스가 하나의 데이터베이스 엔진이 되는 것은 아니며, 데이터 신선도를 고려해야 할 필요가 사라지는 것도 아닙니다.
 

@@ -51,7 +51,8 @@
     {
       "group": "ClickHouse Integration",
       "pages": [
-        "ar/products/managed-postgres/clickhouse-integration"
+        "ar/products/managed-postgres/sync-to-clickhouse/clickpipes",
+        "ar/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {

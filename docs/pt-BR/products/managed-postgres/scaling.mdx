@@ -137,7 +137,7 @@ Essa abordagem é ideal para aplicações com alta proporção de leituras em re
   ### Escalonamento de CDC para a integração com o ClickHouse {#cdc-scaling}
 </div>
 
-Se você estiver replicando dados para o ClickHouse usando [ClickPipes](/pt-BR/products/managed-postgres/clickhouse-integration), poderá escalar de forma independente o pipeline de CDC (captura de alterações de dados):
+Se você estiver replicando dados para o ClickHouse usando [ClickPipes](/pt-BR/products/managed-postgres/clickpipes), poderá escalar de forma independente o pipeline de CDC (captura de alterações de dados):
 
 * Escalone os workers de CDC de 1 a 24 núcleos de CPU
 * A memória é ajustada automaticamente para 4x o número de núcleos de CPU

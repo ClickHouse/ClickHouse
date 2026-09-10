@@ -16,9 +16,9 @@ integration:
 
 ## الخيار 1: المزامنة إلى ClickHouse من خدمة Postgres {#sync-to-clickhouse}
 
-افتح خدمة ClickHouse Managed Postgres الخاصة بك في ClickHouse Cloud console وانقر على **Sync to ClickHouse** في الشريط الجانبي. يملأ المعالج بيانات source connection تلقائيًا، ويتيح لك اختيار destination خدمة ClickHouse وطريقة replication والجداول المراد نسخها. ولا يتطلب ذلك إعداد أي USER أو publication أو شبكة.
+افتح خدمة ClickHouse Managed Postgres الخاصة بك في كونسول ClickHouse Cloud وانقر على **Sync to ClickHouse** في الشريط الجانبي. يملأ المعالج بيانات اتصال المصدر تلقائيًا، ويتيح لك اختيار destination خدمة ClickHouse وطريقة النسخ المتماثل والجداول المراد نسخها. ولا يتطلب ذلك إعداد أي USER أو publication أو شبكة.
 
-اتبع دليل [Sync to ClickHouse](/ar/products/managed-postgres/clickhouse-integration) للحصول على شرح تفصيلي خطوة بخطوة.
+اتبع دليل [Sync to ClickHouse](/ar/products/managed-postgres/clickpipes) للحصول على شرح تفصيلي خطوة بخطوة. وللحصول على النسخ المتماثل بزمن استجابة منخفض، يمكنك أيضًا اختيار [WalShadow](/ar/products/managed-postgres/walshadow)، وهو engine للنسخ المتماثل native يقرأ على مستوى نظام الملفات، وهو متاح حاليًا في private preview.
 
 ## الخيار 2: اختيار ClickHouse Managed Postgres كمصدر في ClickPipes {#clickpipes-source}
 

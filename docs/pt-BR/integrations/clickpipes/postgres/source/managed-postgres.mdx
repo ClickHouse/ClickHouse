@@ -18,7 +18,7 @@ Há duas maneiras de começar a replicar a partir de uma instância do ClickHous
 
 Abra seu ClickHouse Managed serviço Postgres no ClickHouse Cloud console e clique em **Sync to ClickHouse** na barra lateral. O assistente já preenche a source connection e permite escolher o serviço ClickHouse de destino, o método de replicação e as tabelas a serem replicadas. Não é necessário configurar usuário, publication ou rede.
 
-Siga o guia [Sync to ClickHouse](/pt-BR/products/managed-postgres/clickhouse-integration) para um passo a passo detalhado.
+Siga o guia [Sync to ClickHouse](/pt-BR/products/managed-postgres/clickpipes) para um passo a passo detalhado. Para replicação de baixa latência, você também pode escolher o [WalShadow](/pt-BR/products/managed-postgres/walshadow), um engine de replicação nativo que faz a leitura em nível de sistema de arquivos, atualmente em private preview.
 
 ## Opção 2: selecionar o ClickHouse Managed Postgres como fonte no ClickPipes {#clickpipes-source}
 

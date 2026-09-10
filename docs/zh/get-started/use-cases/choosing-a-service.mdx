@@ -12,13 +12,13 @@ ClickHouse Cloud 是提供托管服务的平台，其中包括用于分析的 Cl
 
 ## 将工作负载映射到起点 {#workload-map}
 
-| 应用需求                              | 从评估以下内容开始                                                                                         | 选择前需要确认的事项                                  |
-| --------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| 对大量事件或结果历史数据进行聚合、筛选和比较            | [ClickHouse Cloud 中的 ClickHouse 服务](/zh/products/cloud/getting-started/intro)                        | 具有代表性的查询、摄取批次、数据新鲜度、并发查询，以及更新或重试的设计         |
-| 事务型应用状态，例如订单、库存预留，或状态流转需要事务和约束的作业 | [ClickHouse Cloud 中的 ClickHouse Managed Postgres](/zh/products/managed-postgres/overview)            | 事务边界、约束、索引、连接管理，以及该服务支持的功能和可用性              |
-| 事务型应用状态，再加上需要独立服务系统承载的分析查询        | [ClickHouse Cloud 中的 Postgres 与 ClickHouse 服务](/zh/products/managed-postgres/clickhouse-integration) | 哪些表需要复制、可接受的复制延迟、schema 变更，以及运行两个服务的成本和运维投入 |
-| 用于搜索和排查应用日志、指标与链路追踪的托管式体验         | [托管 ClickStack](/zh/clickstack/getting-started/managed)                                              | 埋点、遥测数据摄取、保留期，以及团队所需的可观测性工作流                |
-| 在本地应用或 notebook 中分析文件或内存中的数据      | [chDB](/zh/chdb/index)                                                                               | 本地资源，以及是否需要单独托管的共享数据库服务                     |
+| 应用需求                              | 从评估以下内容开始                                                                              | 选择前需要确认的事项                                  |
+| --------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------- |
+| 对大量事件或结果历史数据进行聚合、筛选和比较            | [ClickHouse Cloud 中的 ClickHouse 服务](/zh/products/cloud/getting-started/intro)             | 具有代表性的查询、摄取批次、数据新鲜度、并发查询，以及更新或重试的设计         |
+| 事务型应用状态，例如订单、库存预留，或状态流转需要事务和约束的作业 | [ClickHouse Cloud 中的 ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) | 事务边界、约束、索引、连接管理，以及该服务支持的功能和可用性              |
+| 事务型应用状态，再加上需要独立服务系统承载的分析查询        | [ClickHouse Cloud 中的 Postgres 与 ClickHouse 服务](/zh/products/managed-postgres/clickpipes)  | 哪些表需要复制、可接受的复制延迟、schema 变更，以及运行两个服务的成本和运维投入 |
+| 用于搜索和排查应用日志、指标与链路追踪的托管式体验         | [托管 ClickStack](/zh/clickstack/getting-started/managed)                                   | 埋点、遥测数据摄取、保留期，以及团队所需的可观测性工作流                |
+| 在本地应用或 notebook 中分析文件或内存中的数据      | [chDB](/zh/chdb/index)                                                                    | 本地资源，以及是否需要单独托管的共享数据库服务                     |
 
 请查阅相关产品文档，了解当前的可用性、区域和限制。ClickHouse Managed Postgres 目前处于 Public Beta 阶段；请参阅其[快速入门](/zh/products/managed-postgres/quickstart)。
 
@@ -49,7 +49,7 @@ Postgres 同样可以承担报表类查询。只有当实际的查询性能、�
 
 ### 事务与分析并存 {#transactions-and-analytics}
 
-当两类工作负载确实需要各自独立的服务时，请将事务性状态保留在 Postgres 中，并使用 [ClickPipes](/zh/products/managed-postgres/clickhouse-integration) 将所需的表复制到 ClickHouse。要将复制延迟考虑在内；对于依赖应用当前状态的决策，仍应以事务性数据源为准。复制并不会让一次 Postgres 写入和一次 ClickHouse 读取处于同一个事务中。
+当两类工作负载确实需要各自独立的服务时，请将事务性状态保留在 Postgres 中，并使用 [ClickPipes](/zh/products/managed-postgres/clickpipes) 或 [WalShadow](/zh/products/managed-postgres/walshadow) 将所需的表复制到 ClickHouse。要将复制延迟考虑在内；对于依赖应用当前状态的决策，仍应以事务性数据源为准。复制并不会让一次 Postgres 写入和一次 ClickHouse 读取处于同一个事务中。
 
 [pg&#95;clickhouse 扩展](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction)可以通过 Postgres 提供对 ClickHouse 的访问。共享同一个查询入口并不会把这两个服务变成同一个数据库引擎，也不意味着无需再关注数据新鲜度。
 

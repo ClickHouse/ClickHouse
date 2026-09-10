@@ -18,7 +18,7 @@ ClickHouse Managed Postgres インスタンスからレプリケーションを�
 
 ClickHouse Cloud コンソールで ClickHouse Managed Postgres サービスを開き、サイドバーの **Sync to ClickHouse** をクリックします。ウィザードではソース接続があらかじめ入力されており、宛先となる ClickHouse サービス、レプリケーション方式、レプリケーション対象のテーブルを選択できます。ユーザー、publication、ネットワークの設定は一切不要です。
 
-手順の詳細については、[Sync to ClickHouse](/ja/products/managed-postgres/clickhouse-integration) ガイドを参照してください。
+手順の詳細については、[Sync to ClickHouse](/ja/products/managed-postgres/clickpipes) ガイドを参照してください。低レイテンシのレプリケーションを求める場合は、ファイルシステムレベルで読み取りを行うネイティブなレプリケーションエンジンである [WalShadow](/ja/products/managed-postgres/walshadow) を選択することもできます (現在プライベートプレビュー) 。
 
 ## オプション2: ClickPipes でソースとして ClickHouse Managed Postgres を選択する {#clickpipes-source}
 

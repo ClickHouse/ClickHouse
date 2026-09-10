@@ -141,13 +141,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### تحجيم CDC لتكامل ClickHouse {#cdc-scaling}
 </div>
 
-إذا كنت تُكرّر البيانات إلى ClickHouse باستخدام [ClickPipes](/ar/products/managed-postgres/clickhouse-integration)، يمكنك تحجيم مسار CDC (التقاط تغييرات البيانات) بشكل مستقل:
+إذا كنت تنسخ البيانات نسخًا متماثلًا إلى ClickHouse باستخدام [ClickPipes](/ar/products/managed-postgres/clickpipes)، يمكنك تحجيم مسار CDC (التقاط تغييرات البيانات) بشكل مستقل:
 
 * تحجيم workers الخاصة بـ CDC من 1 إلى 24 من أنوية CPU
 * تتوسع الذاكرة تلقائيًا إلى 4x عدد أنوية CPU
 * اضبط التحجيم عبر [ClickPipes OpenAPI](/ar/integrations/clickpipes/postgres/scaling)
 
-يتيح لك ذلك تحسين معدل نقل التكرار بشكل منفصل عن موارد مثيل Postgres.
+يتيح لك ذلك تحسين معدل نقل النسخ المتماثل بشكل منفصل عن موارد مثيل Postgres.
 
 ## التحجيم التلقائي {#autoscaling}
 
