@@ -1492,9 +1492,15 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     std::vector<PartWithVersion> all_parts;
     auto data_parts = getDataPartsVectorForInternalUsage();
     all_parts.reserve(data_parts.size());
+    /// Postpone reasons are keyed by part name, so the scope predicate needs the part behind it.
+    std::unordered_map<std::string_view, DataPartPtr> active_parts_by_name;
+    active_parts_by_name.reserve(data_parts.size());
     for (const auto & part : data_parts)
+    {
         all_parts.push_back(
             {PartVersionWithName{part->info.getDataVersion(), part->name, part->getBytesOnDisk(), part->info}, part});
+        active_parts_by_name.emplace(part->name, part);
+    }
 
     /// The live fraction of the parts currently being rewritten, for byte-weighted progress.
     /// The merge list has its own mutex, no lock ordering issue with the mutex held above.
@@ -1571,7 +1577,9 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
         std::map<String, String> parts_postpone_reasons_map;
-        if (!parts_to_do_names.empty())
+        /// A part still pending its transaction's commit is in scope too, and the reason recorded
+        /// for it is the only diagnostic the entry has while it holds nothing else.
+        if (!parts_to_do_names.empty() || has_uncommitted_part_in_scope)
         {
             for (const auto &[part_name, postpone_reason] : current_parts_postpone_reasons)
             {
@@ -1579,13 +1587,17 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 {
                     parts_postpone_reasons_map[part_name] = postpone_reason;
                     chassert(current_parts_postpone_reasons.size() == 1);
+                    continue;
                 }
-                else
-                {
-                    auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-                    if (part_info.getDataVersion() < mutation_version)
-                        parts_postpone_reasons_map[part_name] = postpone_reason;
-                }
+
+                /// Same scope rule as `parts_to_do_names`, so the diagnostic cannot blame a part this
+                /// mutation never rewrites; a part that is gone keeps the plain block-number rule.
+                const auto part_it = active_parts_by_name.find(part_name);
+                const bool in_scope = part_it != active_parts_by_name.end()
+                    ? getPartMutationScope(*part_it->second, mutation_version, entry.tid) != PartMutationScope::Outside
+                    : MergeTreePartInfo::fromPartName(part_name, format_version).getDataVersion() < mutation_version;
+                if (in_scope)
+                    parts_postpone_reasons_map[part_name] = postpone_reason;
             }
         }
 
