@@ -48,4 +48,4 @@ target_compile_options (codegen_select_fuzzer PRIVATE -Wno-newline-eof -Wno-miss
 target_link_libraries(protoc ch_contrib::fuzzer)
 
 target_include_directories(codegen_select_fuzzer SYSTEM BEFORE PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-target_link_libraries(codegen_select_fuzzer PRIVATE ch_contrib::protobuf_mutator ch_contrib::protoc clickhouse_functions dbms)
+target_link_libraries(codegen_select_fuzzer PRIVATE ch_contrib::protobuf_mutator ch_contrib::protobuf clickhouse_functions dbms)
