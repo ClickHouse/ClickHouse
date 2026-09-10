@@ -31,6 +31,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat merge_selector_base;
     extern const MergeTreeSettingsUInt64 min_parts_to_merge_at_once;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
+    extern const MergeTreeSettingsUInt64 merge_selector_small_parts_threshold;
+    extern const MergeTreeSettingsUInt64 merge_selector_small_parts_min_count;
+    extern const MergeTreeSettingsUInt64 merge_selector_small_parts_max_age;
 }
 
 namespace
@@ -119,11 +122,20 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     simple_merge_settings.parts_to_throw_insert = ctx.merge_tree_settings[MergeTreeSetting::parts_to_throw_insert];
     simple_merge_settings.partitions_stats = &ctx.partitions_stats;
 
+    simple_merge_settings.small_parts_threshold = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_small_parts_threshold];
+    simple_merge_settings.small_parts_min_count = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_small_parts_min_count];
+    simple_merge_settings.small_parts_max_age = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_small_parts_max_age];
+
     if (!ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
         simple_merge_settings.min_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_seconds];
 
     if (ctx.aggressive)
+    {
         simple_merge_settings.base = 1;
+        /// Aggressive selection (`OPTIMIZE` without `FINAL`) is an explicit user request that ignores
+        /// part novelty, so the background anti-churn gate for fresh small parts must not apply to it.
+        simple_merge_settings.small_parts_min_count = 0;
+    }
 
     return simple_merge_settings;
 }
