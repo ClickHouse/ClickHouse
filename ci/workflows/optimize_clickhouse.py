@@ -7,6 +7,7 @@ workflow = Workflow.Config(
     name="OptimizeClickHouse",
     event=Workflow.Event.DISPATCH,
     branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *JobConfigs.collect_clickhouse_profiles_jobs,
     ],
