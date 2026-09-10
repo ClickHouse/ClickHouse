@@ -92,9 +92,15 @@ mutation_id=$($CLICKHOUSE_CLIENT --query "
     SELECT mutation_id FROM system.mutations
     WHERE database = currentDatabase() AND table = 't_lwu_patch_span' AND NOT is_done")
 
-# parts_in_progress_names is read from the same map the merge predicate now reads, so this waits
-# for exactly the state under test.
+# parts_in_progress_names is read from the same map the merge predicate reads, so this observes the
+# tagger entry appear. It appears when the task is selected, which is before MutateTask::prepare
+# runs, so the parked thread is observed separately below.
 wait_for_mutation_in_progress "t_lwu_patch_span" "$mutation_id"
+
+if ! timeout 60 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $FAILPOINT PAUSE"; then
+    echo "mutate task of t_lwu_patch_span never parked at $FAILPOINT" >&2
+    exit 1
+fi
 
 $CLICKHOUSE_CLIENT --query "
     SET enable_lightweight_update = 1;
