@@ -1160,6 +1160,27 @@ void KeeperStateMachine::commit_config(const uint64_t log_idx, nuraft::ptr<nuraf
     keeper_context->setLastCommitIndex(log_idx);
 }
 
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::preCommitEntry(uint64_t log_idx, const nuraft::ptr<nuraft::log_entry> & entry)
+{
+    auto buf = entry->get_buf_ptr();
+    buf->pos(0);
+    return pre_commit_ext(nuraft::state_machine::ext_op_params(log_idx, buf, entry));
+}
+
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::commitEntry(uint64_t log_idx, const nuraft::ptr<nuraft::log_entry> & entry)
+{
+    auto buf = entry->get_buf_ptr();
+    buf->pos(0);
+    return commit_ext(nuraft::state_machine::ext_op_params(log_idx, buf, entry, entry->get_term()));
+}
+
+void KeeperStateMachine::rollbackEntry(uint64_t log_idx, const nuraft::ptr<nuraft::log_entry> & entry)
+{
+    auto buf = entry->get_buf_ptr();
+    buf->pos(0);
+    rollback_ext(nuraft::state_machine::ext_op_params(log_idx, buf, entry));
+}
+
 void KeeperStateMachine::rollback_ext(const nuraft::state_machine::ext_op_params & params)
 {
     /// Don't rollback anything until the first commit because nothing was preprocessed

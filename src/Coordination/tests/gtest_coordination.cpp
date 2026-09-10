@@ -551,8 +551,8 @@ static void testLogAndStateMachine(
 
         waitDurableLogs(changelog);
 
-        state_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
-        state_machine->commit(i, changelog.entry_at(i)->get_buf());
+        state_machine->preCommitEntry(i, changelog.entry_at(i));
+        state_machine->commitEntry(i, changelog.entry_at(i));
         bool snapshot_created = false;
         if (i % (*settings)[DB::CoordinationSetting::snapshot_distance] == 0)
         {
@@ -600,8 +600,8 @@ static void testLogAndStateMachine(
 
     for (size_t i = restore_machine->last_commit_index() + 1; i < restore_changelog.next_slot(); ++i)
     {
-        restore_machine->pre_commit(i, changelog.entry_at(i)->get_buf());
-        restore_machine->commit(i, changelog.entry_at(i)->get_buf());
+        restore_machine->preCommitEntry(i, changelog.entry_at(i));
+        restore_machine->commitEntry(i, changelog.entry_at(i));
     }
 
     auto & source_storage = state_machine->getStorageUnsafe();
@@ -703,8 +703,8 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     request_c->path = "/hello";
     request_c->is_ephemeral = true;
     auto entry_c = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request_c);
-    state_machine->pre_commit(1, entry_c->get_buf());
-    state_machine->commit(1, entry_c->get_buf());
+    state_machine->preCommitEntry(1, entry_c);
+    state_machine->commitEntry(1, entry_c);
     const auto & storage = state_machine->getStorageUnsafe();
 
     EXPECT_EQ(storage.committed_ephemerals.size(), 1);
@@ -712,8 +712,8 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     request_d->path = "/hello";
     /// Delete from other session
     auto entry_d = getLogEntryFromZKRequest(0, 2, state_machine->getNextZxid(), request_d);
-    state_machine->pre_commit(2, entry_d->get_buf());
-    state_machine->commit(2, entry_d->get_buf());
+    state_machine->preCommitEntry(2, entry_d);
+    state_machine->commitEntry(2, entry_d);
 
     EXPECT_EQ(storage.committed_ephemerals.size(), 0);
 }
@@ -741,7 +741,7 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
 
     // Add auth data to the session
     auto auth_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), auth_req);
-    state_machine->pre_commit(1, auth_entry->get_buf());
+    state_machine->preCommitEntry(1, auth_entry);
 
     // Create a node with 'auth' scheme for ACL
     String node_path = "/hello";
@@ -751,14 +751,14 @@ TEST_P(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecommitte
     // create nodes with this ACL.
     create_req->acls = {{.permissions = 31, .scheme = "auth", .id = ""}};
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
-    state_machine->pre_commit(2, create_entry->get_buf());
+    state_machine->preCommitEntry(2, create_entry);
 
     auto & storage = state_machine->getStorageUnsafe();
     ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));
 
     // commit log entries
-    state_machine->commit(1, auth_entry->get_buf());
-    state_machine->commit(2, create_entry->get_buf());
+    state_machine->commitEntry(1, auth_entry);
+    state_machine->commitEntry(2, create_entry);
 
     ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));
     auto acls = getUncommittedACLs(storage, node_path);
@@ -792,8 +792,8 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
 
     // Add auth data to the session
     auto auth_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), auth_req);
-    state_machine->pre_commit(1, auth_entry->get_buf());
-    state_machine->commit(1, auth_entry->get_buf());
+    state_machine->preCommitEntry(1, auth_entry);
+    state_machine->commitEntry(1, auth_entry);
 
     std::string node_without_acl = "/node_without_acl";
     {
@@ -801,8 +801,8 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         create_req->path = node_without_acl;
         create_req->data = "notmodified";
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
-        state_machine->pre_commit(2, create_entry->get_buf());
-        state_machine->commit(2, create_entry->get_buf());
+        state_machine->preCommitEntry(2, create_entry);
+        state_machine->commitEntry(2, create_entry);
         ASSERT_TRUE(committedNodeExists(storage, node_without_acl));
     }
 
@@ -813,8 +813,8 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
         create_req->data = "notmodified";
         create_req->acls = {{.permissions = ACL::All, .scheme = "auth", .id = ""}};
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
-        state_machine->pre_commit(3, create_entry->get_buf());
-        state_machine->commit(3, create_entry->get_buf());
+        state_machine->preCommitEntry(3, create_entry);
+        state_machine->commitEntry(3, create_entry);
         ASSERT_TRUE(committedNodeExists(storage, node_with_acl));
     }
 
@@ -836,52 +836,52 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
 
         // test we can modify both nodes
         auto set_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_with_acl);
-        state_machine->pre_commit(5, set_entry->get_buf());
-        state_machine->commit(5, set_entry->get_buf());
+        state_machine->preCommitEntry(5, set_entry);
+        state_machine->commitEntry(5, set_entry);
         ASSERT_EQ(committedNodeData(storage, node_with_acl), "modified");
         reset_node_value(node_with_acl);
 
         set_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
-        state_machine->pre_commit(6, set_entry->get_buf());
-        state_machine->commit(6, set_entry->get_buf());
+        state_machine->preCommitEntry(6, set_entry);
+        state_machine->commitEntry(6, set_entry);
         ASSERT_EQ(committedNodeData(storage, node_without_acl), "modified");
         reset_node_value(node_without_acl);
 
         auto close_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), close_req);
 
         // Pre-commit close session
-        state_machine->pre_commit(7, close_entry->get_buf());
+        state_machine->preCommitEntry(7, close_entry);
 
         /// will be rejected because we don't have required auth
         auto set_entry_with_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_with_acl);
-        state_machine->pre_commit(8, set_entry_with_acl->get_buf());
+        state_machine->preCommitEntry(8, set_entry_with_acl);
 
         /// will be accepted because no ACL
         auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
-        state_machine->pre_commit(9, set_entry_without_acl->get_buf());
+        state_machine->preCommitEntry(9, set_entry_without_acl);
 
         ASSERT_EQ(uncommittedNodeData(storage, node_with_acl), "notmodified");
         ASSERT_EQ(uncommittedNodeData(storage, node_without_acl), "modified");
 
-        state_machine->rollback(9, set_entry_without_acl->get_buf());
-        state_machine->rollback(8, set_entry_with_acl->get_buf());
+        state_machine->rollbackEntry(9, set_entry_without_acl);
+        state_machine->rollbackEntry(8, set_entry_with_acl);
 
         // let's commit close and verify we get same outcome
-        state_machine->commit(7, close_entry->get_buf());
+        state_machine->commitEntry(7, close_entry);
 
         /// will be rejected because we don't have required auth
         set_entry_with_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_with_acl);
-        state_machine->pre_commit(8, set_entry_with_acl->get_buf());
+        state_machine->preCommitEntry(8, set_entry_with_acl);
 
         /// will be accepted because no ACL
         set_entry_without_acl = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), set_req_without_acl);
-        state_machine->pre_commit(9, set_entry_without_acl->get_buf());
+        state_machine->preCommitEntry(9, set_entry_without_acl);
 
         ASSERT_EQ(uncommittedNodeData(storage, node_with_acl), "notmodified");
         ASSERT_EQ(uncommittedNodeData(storage, node_without_acl), "modified");
 
-        state_machine->commit(8, set_entry_with_acl->get_buf());
-        state_machine->commit(9, set_entry_without_acl->get_buf());
+        state_machine->commitEntry(8, set_entry_with_acl);
+        state_machine->commitEntry(9, set_entry_without_acl);
 
         ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
         ASSERT_EQ(committedNodeData(storage, node_without_acl), "modified");
@@ -894,51 +894,51 @@ TEST_P(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
 
         // test we can modify only node without acl
         auto set_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_with_acl);
-        state_machine->pre_commit(10, set_entry->get_buf());
-        state_machine->commit(10, set_entry->get_buf());
+        state_machine->preCommitEntry(10, set_entry);
+        state_machine->commitEntry(10, set_entry);
         ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
 
         set_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
-        state_machine->pre_commit(11, set_entry->get_buf());
-        state_machine->commit(11, set_entry->get_buf());
+        state_machine->preCommitEntry(11, set_entry);
+        state_machine->commitEntry(11, set_entry);
         ASSERT_EQ(committedNodeData(storage, node_without_acl), "modified");
         reset_node_value(node_without_acl);
 
         auto close_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), close_req);
 
         // Pre-commit close session
-        state_machine->pre_commit(12, close_entry->get_buf());
+        state_machine->preCommitEntry(12, close_entry);
 
         /// will be rejected because we don't have required auth
         auto set_entry_with_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_with_acl);
-        state_machine->pre_commit(13, set_entry_with_acl->get_buf());
+        state_machine->preCommitEntry(13, set_entry_with_acl);
 
         /// will be accepted because no ACL
         auto set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
-        state_machine->pre_commit(14, set_entry_without_acl->get_buf());
+        state_machine->preCommitEntry(14, set_entry_without_acl);
 
         ASSERT_EQ(uncommittedNodeData(storage, node_with_acl), "notmodified");
         ASSERT_EQ(uncommittedNodeData(storage, node_without_acl), "modified");
 
-        state_machine->rollback(14, set_entry_without_acl->get_buf());
-        state_machine->rollback(13, set_entry_with_acl->get_buf());
+        state_machine->rollbackEntry(14, set_entry_without_acl);
+        state_machine->rollbackEntry(13, set_entry_with_acl);
 
         // let's commit close and verify we get same outcome
-        state_machine->commit(12, close_entry->get_buf());
+        state_machine->commitEntry(12, close_entry);
 
         /// will be rejected because we don't have required auth
         set_entry_with_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_with_acl);
-        state_machine->pre_commit(13, set_entry_with_acl->get_buf());
+        state_machine->preCommitEntry(13, set_entry_with_acl);
 
         /// will be accepted because no ACL
         set_entry_without_acl = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), set_req_without_acl);
-        state_machine->pre_commit(14, set_entry_without_acl->get_buf());
+        state_machine->preCommitEntry(14, set_entry_without_acl);
 
         ASSERT_EQ(uncommittedNodeData(storage, node_with_acl), "notmodified");
         ASSERT_EQ(uncommittedNodeData(storage, node_without_acl), "modified");
 
-        state_machine->commit(13, set_entry_with_acl->get_buf());
-        state_machine->commit(14, set_entry_without_acl->get_buf());
+        state_machine->commitEntry(13, set_entry_with_acl);
+        state_machine->commitEntry(14, set_entry_without_acl);
 
         ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
         ASSERT_EQ(committedNodeData(storage, node_without_acl), "modified");
@@ -971,8 +971,8 @@ TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
 
     // Add auth data to the session
     auto auth_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), auth_req);
-    state_machine->pre_commit(1, auth_entry->get_buf());
-    state_machine->commit(1, auth_entry->get_buf());
+    state_machine->preCommitEntry(1, auth_entry);
+    state_machine->commitEntry(1, auth_entry);
 
     std::string node_with_acl = "/node_with_acl";
     {
@@ -981,8 +981,8 @@ TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
         create_req->data = "notmodified";
         create_req->acls = {{.permissions = ACL::Read, .scheme = "auth", .id = ""}};
         auto create_entry = getLogEntryFromZKRequest(term, session_with_auth, state_machine->getNextZxid(), create_req);
-        state_machine->pre_commit(3, create_entry->get_buf());
-        state_machine->commit(3, create_entry->get_buf());
+        state_machine->preCommitEntry(3, create_entry);
+        state_machine->commitEntry(3, create_entry);
         ASSERT_TRUE(committedNodeExists(storage, node_with_acl));
     }
     Requests ops;
@@ -990,8 +990,8 @@ TEST_P(CoordinationTest, TestMultiRequestWithNoAuth)
     ops.push_back(zkutil::makeCheckRequest("/nonexistentnode", -1));
     auto multi_req = std::make_shared<ZooKeeperMultiRequest>(ops, ACLs{});
     auto multi_entry = getLogEntryFromZKRequest(term, session_without_auth, state_machine->getNextZxid(), multi_req);
-    state_machine->pre_commit(4, multi_entry->get_buf());
-    state_machine->commit(4, multi_entry->get_buf());
+    state_machine->preCommitEntry(4, multi_entry);
+    state_machine->commitEntry(4, multi_entry);
 
     ASSERT_TRUE(committedNodeExists(storage, node_with_acl));
     ASSERT_EQ(committedNodeData(storage, node_with_acl), "notmodified");
@@ -1020,14 +1020,14 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
 
     // Add auth data to the session
     auto auth_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), auth_req);
-    state_machine->pre_commit(1, auth_entry->get_buf());
+    state_machine->preCommitEntry(1, auth_entry);
 
     // Create a node
     String node_path = "/hello";
     std::shared_ptr<ZooKeeperCreateRequest> create_req = std::make_shared<ZooKeeperCreateRequest>();
     create_req->path = node_path;
     auto create_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), create_req);
-    state_machine->pre_commit(2, create_entry->get_buf());
+    state_machine->preCommitEntry(2, create_entry);
 
     // Set ACL with 'auth' scheme for ACL
     std::shared_ptr<ZooKeeperSetACLRequest> set_acl_req = std::make_shared<ZooKeeperSetACLRequest>();
@@ -1036,12 +1036,12 @@ TEST_P(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitted)
     // set this ACL.
     set_acl_req->acls = {{.permissions = 31, .scheme = "auth", .id = ""}};
     auto set_acl_entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_acl_req);
-    state_machine->pre_commit(3, set_acl_entry->get_buf());
+    state_machine->preCommitEntry(3, set_acl_entry);
 
     // commit all entries
-    state_machine->commit(1, auth_entry->get_buf());
-    state_machine->commit(2, create_entry->get_buf());
-    state_machine->commit(3, set_acl_entry->get_buf());
+    state_machine->commitEntry(1, auth_entry);
+    state_machine->commitEntry(2, create_entry);
+    state_machine->commitEntry(3, set_acl_entry);
 
     auto & storage = state_machine->getStorageUnsafe();
     ASSERT_TRUE(storage.nodes_storage->getUncommittedNodeSimple(node_path, /*out_stats=*/nullptr, /*out_data=*/nullptr));

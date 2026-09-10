@@ -1355,8 +1355,8 @@ TEST_P(CoordinationTest, ApplySnapshotReplacesCommittedState)
     state_machine->init();
 
     auto old_entry = makeCreateEntry(*state_machine, "/old", "old");
-    state_machine->pre_commit(1, old_entry->get_buf());
-    state_machine->commit(1, old_entry->get_buf());
+    state_machine->preCommitEntry(1, old_entry);
+    state_machine->commitEntry(1, old_entry);
 
     auto snapshot_storage = DB::KeeperStorage::create(500, "", ctx);
     addNode(*snapshot_storage,"/committed", "from_snapshot");
@@ -1390,16 +1390,16 @@ TEST_P(CoordinationTest, ApplySnapshotPreservesPreprocessedTailAboveSnapshotInde
 
     auto base_entry = makeCreateEntry(*state_machine, "/committed", "base");
     changelog.append(base_entry);
-    state_machine->pre_commit(1, base_entry->get_buf());
-    state_machine->commit(1, base_entry->get_buf());
+    state_machine->preCommitEntry(1, base_entry);
+    state_machine->commitEntry(1, base_entry);
 
     auto set_entry = makeSetEntry(*state_machine, "/committed", "tail_update");
     changelog.append(set_entry);
-    state_machine->pre_commit(2, set_entry->get_buf());
+    state_machine->preCommitEntry(2, set_entry);
 
     auto create_tail_entry = makeCreateEntry(*state_machine, "/tail", "tail_create");
     changelog.append(create_tail_entry);
-    state_machine->pre_commit(3, create_tail_entry->get_buf());
+    state_machine->preCommitEntry(3, create_tail_entry);
 
     changelog.end_of_append_batch(0, 0);
 
@@ -1414,8 +1414,8 @@ TEST_P(CoordinationTest, ApplySnapshotPreservesPreprocessedTailAboveSnapshotInde
     EXPECT_TRUE(state_machine->apply_snapshot(snapshot));
     ASSERT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/committed"));
 
-    state_machine->commit(2, set_entry->get_buf());
-    state_machine->commit(3, create_tail_entry->get_buf());
+    state_machine->commitEntry(2, set_entry);
+    state_machine->commitEntry(3, create_tail_entry);
 
     auto & storage = state_machine->getStorageUnsafe();
     ASSERT_TRUE(committedNodeExists(storage, "/committed"));
@@ -1440,13 +1440,13 @@ TEST_P(CoordinationTest, ApplySnapshotPreservesEphemeralTailForClosePreprocess)
 
     auto base_entry = makeCreateEntry(*state_machine, "/base", "base");
     changelog.append(base_entry);
-    state_machine->pre_commit(1, base_entry->get_buf());
-    state_machine->commit(1, base_entry->get_buf());
+    state_machine->preCommitEntry(1, base_entry);
+    state_machine->commitEntry(1, base_entry);
 
     static constexpr int64_t session_id = 7;
     auto ephemeral_entry = makeEphemeralCreateEntry(*state_machine, session_id, "/ephemeral", "tail_ephemeral");
     changelog.append(ephemeral_entry);
-    state_machine->pre_commit(2, ephemeral_entry->get_buf());
+    state_machine->preCommitEntry(2, ephemeral_entry);
 
     changelog.end_of_append_batch(0, 0);
 
@@ -1462,12 +1462,12 @@ TEST_P(CoordinationTest, ApplySnapshotPreservesEphemeralTailForClosePreprocess)
 
     auto close_entry = makeCloseEntry(*state_machine, session_id);
     changelog.append(close_entry);
-    state_machine->pre_commit(3, close_entry->get_buf());
+    state_machine->preCommitEntry(3, close_entry);
 
-    state_machine->commit(2, ephemeral_entry->get_buf());
+    state_machine->commitEntry(2, ephemeral_entry);
     ASSERT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/ephemeral"));
 
-    state_machine->commit(3, close_entry->get_buf());
+    state_machine->commitEntry(3, close_entry);
     EXPECT_FALSE(committedNodeExists(state_machine->getStorageUnsafe(), "/ephemeral"));
     EXPECT_EQ(state_machine->last_commit_index(), 3);
 }
@@ -1482,8 +1482,8 @@ TEST_P(CoordinationTest, CorruptSnapshotPrefixFailsBeforeDroppingStorage)
     state_machine->init();
 
     auto old_entry = makeCreateEntry(*state_machine, "/old", "old");
-    state_machine->pre_commit(1, old_entry->get_buf());
-    state_machine->commit(1, old_entry->get_buf());
+    state_machine->preCommitEntry(1, old_entry);
+    state_machine->commitEntry(1, old_entry);
 
     auto snapshot_storage = DB::KeeperStorage::create(500, "", ctx);
     addNode(*snapshot_storage,"/replacement", "replacement");
@@ -1567,8 +1567,8 @@ TEST_P(CoordinationTest, InterruptedInstallThenOlderReinstallConverges)
     state_machine->init();
 
     auto old_entry = makeCreateEntry(*state_machine, "/old", "old");
-    state_machine->pre_commit(1, old_entry->get_buf());
-    state_machine->commit(1, old_entry->get_buf());
+    state_machine->preCommitEntry(1, old_entry);
+    state_machine->commitEntry(1, old_entry);
 
     /// Local create win at 1 -> mark 1.
     nuraft::snapshot s1(1, 0, std::make_shared<nuraft::cluster_config>());
@@ -1601,8 +1601,8 @@ TEST_P(CoordinationTest, InterruptedInstallThenOlderReinstallConverges)
 
     /// Replay continues from idx 4.
     auto tail_entry = makeCreateEntry(*state_machine, "/tail", "tail");
-    state_machine->pre_commit(4, tail_entry->get_buf());
-    state_machine->commit(4, tail_entry->get_buf());
+    state_machine->preCommitEntry(4, tail_entry);
+    state_machine->commitEntry(4, tail_entry);
     EXPECT_TRUE(committedNodeExists(state_machine->getStorageUnsafe(), "/tail"));
     EXPECT_EQ(state_machine->last_commit_index(), 4);
 }
@@ -1619,11 +1619,11 @@ TEST_P(CoordinationTest, StaleDuplicateInstallKeepsHighWaterMarkAndSize)
     state_machine->init();
 
     auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
-    state_machine->pre_commit(1, e1->get_buf());
-    state_machine->commit(1, e1->get_buf());
+    state_machine->preCommitEntry(1, e1);
+    state_machine->commitEntry(1, e1);
     auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
-    state_machine->pre_commit(2, e2->get_buf());
-    state_machine->commit(2, e2->get_buf());
+    state_machine->preCommitEntry(2, e2);
+    state_machine->commitEntry(2, e2);
 
     nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
     {
@@ -1641,8 +1641,8 @@ TEST_P(CoordinationTest, StaleDuplicateInstallKeepsHighWaterMarkAndSize)
 
     /// A later local create at 3 still works and advances the mark.
     auto e3 = makeCreateEntry(*state_machine, "/n3", "v3");
-    state_machine->pre_commit(3, e3->get_buf());
-    state_machine->commit(3, e3->get_buf());
+    state_machine->preCommitEntry(3, e3);
+    state_machine->commitEntry(3, e3);
     nuraft::snapshot s3(3, 0, std::make_shared<nuraft::cluster_config>());
     {
         auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s3);
@@ -1665,8 +1665,8 @@ TEST_P(CoordinationTest, RestartAfterSavedButNotAppliedRecoversNewestDiskSnapsho
         sm1->init();
 
         auto e1 = makeCreateEntry(*sm1, "/old", "old");
-        sm1->pre_commit(1, e1->get_buf());
-        sm1->commit(1, e1->get_buf());
+        sm1->preCommitEntry(1, e1);
+        sm1->commitEntry(1, e1);
 
         saveInstallSnapshot(*sm1, ctx, 5, "/from_snap5");
         EXPECT_EQ(snapshotFilesForIdx("./snapshots", 5).size(), 1u);
@@ -1705,11 +1705,11 @@ TEST_P(CoordinationTest, HighWaterMarkStaysServableAndNeverRegressesUnderReceive
 
     /// (1) commits 1-2, create win at 2 -> map {2}, mark/protected 2.
     auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
-    state_machine->pre_commit(1, e1->get_buf());
-    state_machine->commit(1, e1->get_buf());
+    state_machine->preCommitEntry(1, e1);
+    state_machine->commitEntry(1, e1);
     auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
-    state_machine->pre_commit(2, e2->get_buf());
-    state_machine->commit(2, e2->get_buf());
+    state_machine->preCommitEntry(2, e2);
+    state_machine->commitEntry(2, e2);
     nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
     {
         auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2);
@@ -1773,8 +1773,8 @@ TEST_P(CoordinationTest, CoveredStaleApplySkipsWithoutDivergence)
     for (uint64_t idx = 1; idx <= 3; ++idx)
     {
         auto entry = makeCreateEntry(*state_machine, fmt::format("/n{}", idx), "v");
-        state_machine->pre_commit(idx, entry->get_buf());
-        state_machine->commit(idx, entry->get_buf());
+        state_machine->preCommitEntry(idx, entry);
+        state_machine->commitEntry(idx, entry);
     }
     EXPECT_EQ(state_machine->last_commit_index(), 3);
 
@@ -1824,8 +1824,8 @@ TEST_P(CoordinationTest, QueuedSameIndexCreateAdoptsRegisteredInstallSnapshot)
         for (uint64_t idx = 1; idx <= 5; ++idx)
         {
             auto entry = makeCreateEntry(*sm1, fmt::format("/n{}", idx), "v");
-            sm1->pre_commit(idx, entry->get_buf());
-            sm1->commit(idx, entry->get_buf());
+            sm1->preCommitEntry(idx, entry);
+            sm1->commitEntry(idx, entry);
 
             if (idx == 1)
             {
@@ -1892,11 +1892,11 @@ TEST_P(CoordinationTest, CreateSkipReturnsHighWaterMarkFileNotMapMax)
     state_machine->init();
 
     auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
-    state_machine->pre_commit(1, e1->get_buf());
-    state_machine->commit(1, e1->get_buf());
+    state_machine->preCommitEntry(1, e1);
+    state_machine->commitEntry(1, e1);
     auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
-    state_machine->pre_commit(2, e2->get_buf());
-    state_machine->commit(2, e2->get_buf());
+    state_machine->preCommitEntry(2, e2);
+    state_machine->commitEntry(2, e2);
 
     nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
     {
@@ -1932,11 +1932,11 @@ TEST_P(CoordinationTest, LocalCreateBelowSavedInstallsSurvivesRetention)
 
     /// (1) commits 1-2, create win at 2 -> mark/protected 2.
     auto e1 = makeCreateEntry(*state_machine, "/n1", "v1");
-    state_machine->pre_commit(1, e1->get_buf());
-    state_machine->commit(1, e1->get_buf());
+    state_machine->preCommitEntry(1, e1);
+    state_machine->commitEntry(1, e1);
     auto e2 = makeCreateEntry(*state_machine, "/n2", "v2");
-    state_machine->pre_commit(2, e2->get_buf());
-    state_machine->commit(2, e2->get_buf());
+    state_machine->preCommitEntry(2, e2);
+    state_machine->commitEntry(2, e2);
     nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
     {
         auto info = executeCreateSnapshotTask(*state_machine, snapshots_queue, s2);
@@ -1955,8 +1955,8 @@ TEST_P(CoordinationTest, LocalCreateBelowSavedInstallsSurvivesRetention)
     for (uint64_t idx = 3; idx <= 5; ++idx)
     {
         auto entry = makeCreateEntry(*state_machine, fmt::format("/n{}", idx), "v");
-        state_machine->pre_commit(idx, entry->get_buf());
-        state_machine->commit(idx, entry->get_buf());
+        state_machine->preCommitEntry(idx, entry);
+        state_machine->commitEntry(idx, entry);
     }
 
     /// (4) local create at 5: write wins, advancing the mark (and protection) to 5 inside
@@ -2272,8 +2272,8 @@ TEST_P(CoordinationTest, CreateSnapshotKeepsPreviousMetadataAndAllowsRetryAfterF
     auto request1 = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request1->path = "/node1";
     auto entry1 = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request1);
-    state_machine->pre_commit(1, entry1->get_buf());
-    state_machine->commit(1, entry1->get_buf());
+    state_machine->preCommitEntry(1, entry1);
+    state_machine->commitEntry(1, entry1);
 
     nuraft::snapshot s1(1, 0, std::make_shared<nuraft::cluster_config>());
     bool callback_called_1 = false;
@@ -2289,8 +2289,8 @@ TEST_P(CoordinationTest, CreateSnapshotKeepsPreviousMetadataAndAllowsRetryAfterF
     auto request2 = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request2->path = "/node2";
     auto entry2 = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request2);
-    state_machine->pre_commit(2, entry2->get_buf());
-    state_machine->commit(2, entry2->get_buf());
+    state_machine->preCommitEntry(2, entry2);
+    state_machine->commitEntry(2, entry2);
 
     nuraft::snapshot s2(2, 0, std::make_shared<nuraft::cluster_config>());
     bool callback_called_2 = false;
@@ -2598,8 +2598,8 @@ TEST_P(CoordinationTest, QueuePushFailureCleansSnapshotAndCallsWhenDone)
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request->path = "/node";
     auto entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request);
-    state_machine->pre_commit(1, entry->get_buf());
-    state_machine->commit(1, entry->get_buf());
+    state_machine->preCommitEntry(1, entry);
+    state_machine->commitEntry(1, entry);
 
     snapshots_queue.finish();
 
@@ -2641,8 +2641,8 @@ TEST_P(CoordinationTest, SameIndexReceiveDuringLocalCreate)
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request->path = "/node";
     auto entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request);
-    state_machine->pre_commit(1, entry->get_buf());
-    state_machine->commit(1, entry->get_buf());
+    state_machine->preCommitEntry(1, entry);
+    state_machine->commitEntry(1, entry);
 
     auto snapshot_buf = makeSingleNodeSnapshotBuffer(ctx, 1, "/from_receive", "from_receive");
 
@@ -2821,8 +2821,8 @@ TEST_P(CoordinationTest, ApplySnapshotDoesNotWaitForLocalCreate)
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request->path = "/old_node";
     auto entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request);
-    state_machine->pre_commit(1, entry->get_buf());
-    state_machine->commit(1, entry->get_buf());
+    state_machine->preCommitEntry(1, entry);
+    state_machine->commitEntry(1, entry);
 
     auto snapshot_buf = makeSingleNodeSnapshotBuffer(ctx, 2, "/replacement", "from_receive");
 
@@ -2910,8 +2910,8 @@ TEST_P(CoordinationTest, CreateLosesRaceToNewerSnapshotRetiresWrittenFile)
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request->path = "/node";
     auto entry = getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), request);
-    state_machine->pre_commit(1, entry->get_buf());
-    state_machine->commit(1, entry->get_buf());
+    state_machine->preCommitEntry(1, entry);
+    state_machine->commitEntry(1, entry);
 
     auto snapshot_buf = makeSingleNodeSnapshotBuffer(ctx, 2, "/newer", "from_receive");
 
