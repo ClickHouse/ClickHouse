@@ -226,7 +226,8 @@ ColumnPtr MergeTreeIndexTextPostprocessor::processTokensArrayBatch(const ColumnA
 }
 
 ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
-    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast) const
+    const String & col_name, const DataTypePtr & col_type, const String & tokenizer_description, const ASTPtr & source_ast,
+    bool drop_empty_tokens) const
 {
     chassert(actions);
 
@@ -262,6 +263,15 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
     expr = makeASTFunction("arrayMap",
         makeASTLambda({postprocessor_lambda_arg}, std::move(expr)),
         std::move(tokens_ast));
+
+    /// arrayFilter(x -> notEmpty(x), <postprocessed tokens>)
+    if (drop_empty_tokens)
+    {
+        expr = makeASTFunction("arrayFilter",
+            makeASTLambda({postprocessor_lambda_arg},
+                makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(postprocessor_lambda_arg))),
+            std::move(expr));
+    }
 
     NamesAndTypesList source_columns{{col_name, col_type}};
     return buildActionsDAGFromAST(std::move(expr), source_columns);
