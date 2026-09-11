@@ -418,6 +418,28 @@ TEST_F(MemoryTrackerLargeAllocationTrace, SilentBelowTheThreshold)
     EXPECT_EQ(tracedLargeAllocations(), before);
 }
 
+TEST_F(MemoryTrackerLargeAllocationTrace, FiresAtExactlyTheThreshold)
+{
+    const auto before = tracedLargeAllocations();
+    chargeAndRelease(TRACE_THRESHOLD);
+
+    /// The setting is documented as a minimum, so the comparison is inclusive: this is the case
+    /// that distinguishes it from a strict one.
+    EXPECT_EQ(tracedLargeAllocations(), before + 1);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, FiresAtExactlyTheThresholdOnTheBlockedGlobalPath)
+{
+    const auto before = tracedLargeAllocations();
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        chargeAndRelease(TRACE_THRESHOLD);
+    }
+
+    /// The second detect site carries its own copy of the comparison, so it needs its own case.
+    EXPECT_EQ(tracedLargeAllocations(), before + 1);
+}
+
 TEST_F(MemoryTrackerLargeAllocationTrace, TracedUnderTheUntrackedAllocationsBlocker)
 {
     const auto before = tracedLargeAllocations();
