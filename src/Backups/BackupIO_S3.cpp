@@ -39,7 +39,6 @@ namespace Setting
     extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsBool s3_disable_checksum;
-    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
 }
@@ -164,7 +163,6 @@ private:
 
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
-        const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
         /// The passed-in role_arn comes from the query/named collection; if empty, fall back to server config.
@@ -219,7 +217,6 @@ private:
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
-        client_configuration.maxConnections = static_cast<unsigned>(global_settings[Setting::s3_max_connections]);
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour

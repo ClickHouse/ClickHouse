@@ -627,9 +627,6 @@ Limit on Azure PUT request per second rate before throttling. Zero means unlimit
     DECLARE(UInt64, azure_max_put_burst, 0, R"(
 Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_put_rps`
 )", 0) \
-    DECLARE(UInt64, s3_max_connections, S3::DEFAULT_MAX_CONNECTIONS, R"(
-The maximum number of connections per server.
-)", 0) \
     DECLARE(UInt64, s3_max_get_rps, 0, R"(
 Limit on S3 GET request per second rate before throttling. Zero means unlimited.
 )", 0) \
@@ -9418,6 +9415,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, false) \
     MAKE_OBSOLETE(M, Bool, use_projection_index_in_read_pools, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_codecs, false) \
+    MAKE_OBSOLETE(M, UInt64, s3_max_connections, 1024) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
