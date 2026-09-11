@@ -390,7 +390,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         return;
 
     std::vector<FutureSetPtr> sets_to_prepare;
-    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare) && condition.alwaysUnknownOrTrue())
+    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare))
         return;
     /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
     for (auto & set : sets_to_prepare)
@@ -509,17 +509,6 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
     /// We will iterate over the range of granules and check if there is at least one elemnent from the sets passing the filter.
     /// But if there are no set elements at all, it means no info, and the granule will also pass.
     size_t block_pos = 0;
-
-    bool has_space_filling_curve_condition = false;
-    for (const auto & element : condition.getRPN())
-    {
-        if (element.function == KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE)
-        {
-            has_space_filling_curve_condition = true;
-            break;
-        }
-    }
-
     for (size_t i = 0; i < total_granules; ++i)
     {
         size_t current_granule = granules.min_granule + i;
@@ -534,56 +523,19 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
         {
             /// This granule has set elements - check if any of them pass the filter.
             chassert(current_granule == current_granule_in_block);
-
-            size_t granule_end = block_pos;
-            while (granule_end < block_size && current_granule_in_block == granule_nums[granule_end])
-                ++granule_end;
-
-            bool condition_may_be_true = true;
-            if (has_space_filling_curve_condition)
+            for (bool passed = false; block_pos < block_size && current_granule_in_block == granule_nums[block_pos]; ++block_pos)
             {
-                Ranges set_hyperrectangle;
-                set_hyperrectangle.reserve(block.columns() - 1);
-
-                for (size_t column_num = 0; column_num + 1 < block.columns(); ++column_num)
+                if (!passed)
                 {
-                    Field min_val;
-                    Field max_val;
-                    const auto & block_column = block.getByPosition(column_num).column;
-                    const auto extremes_column = block_column->lowCardinality()
-                        ? block_column->convertToFullColumnIfLowCardinality()
-                        : block_column;
-
-                    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(extremes_column.get()))
-                        column_nullable->getExtremesNullLast(min_val, max_val, block_pos, granule_end - block_pos);
-                    else
-                        extremes_column->getExtremes(min_val, max_val, block_pos, granule_end - block_pos);
-
-                    set_hyperrectangle.emplace_back(min_val, true, max_val, true);
-                }
-
-                condition_may_be_true = condition.checkInHyperrectangle(set_hyperrectangle, index_data_types, {}, {}).can_be_true;
-            }
-
-            if (condition_may_be_true)
-            {
-                bool passed = false;
-                for (; block_pos < granule_end; ++block_pos)
-                {
-                    if (!passed)
-                    {
-                        /// The first part of the condition checks if any of them pass the filter.
-                        /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
-                        /// Only in case the column is not nullable, check the null map.
-                        passed = (filter_result[block_pos] & 1) && (nullable || !null_map || !(*null_map)[block_pos]);
-                        if (passed)
-                            res.push_back(current_granule);
-                        /// After we found that it passes, we just iterate over the block to the next granule or the end.
-                    }
+                    /// The first part of the condition checks if any of them pass the filter.
+                    /// The second part of the conditions checks if column is nullable, in that case there is no need to check null map since filter function possibly handles null values.
+                    /// Only in case the column is not nullable, check the null map.
+                    passed = (filter_result[block_pos] & 1) && (nullable || !null_map || !(*null_map)[block_pos]);
+                    if (passed)
+                        res.push_back(current_granule);
+                    /// After we found that it passes, we just iterate over the block to the next granule or the end.
                 }
             }
-            else
-                block_pos = granule_end;
         }
     }
 

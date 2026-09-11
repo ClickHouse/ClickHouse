@@ -27,12 +27,6 @@ SETTINGS index_granularity = 1;
 INSERT INTO t_curve_direct_idx VALUES (5, 7), (6, 8);
 SELECT x, y FROM t_curve_direct_idx WHERE x = 5;
 SELECT x, y FROM t_curve_direct_idx WHERE y = 7;
-SELECT countIf(explain ILIKE '%Name: i_hilbert%') > 0
-    AND countIf(explain ILIKE '%Granules: 1/2%') > 0
-FROM (EXPLAIN indexes = 1
-    SELECT x, y FROM t_curve_direct_idx WHERE y = 7
-    SETTINGS force_data_skipping_indices = 'i_hilbert', ignore_data_skipping_indices = 'i_morton',
-        use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0);
 
 -- Curve pruning still applies when the curve is a key column.
 CREATE TABLE t_curve_plain (x UInt32, y UInt32)
