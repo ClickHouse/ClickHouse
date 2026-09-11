@@ -122,13 +122,6 @@ std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
     return {};
 }
 
-void normalizeHeaderNames(HTTPHeaderEntries & headers)
-{
-    for (auto & header : headers)
-        std::transform(header.name.begin(), header.name.end(), header.name.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-}
-
 void translateHeadersToGCS(Aws::Http::HttpRequest & request)
 {
     const auto before = request.GetHeaders();

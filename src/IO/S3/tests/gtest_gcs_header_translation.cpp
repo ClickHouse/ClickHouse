@@ -4,6 +4,7 @@
 
 #if USE_AWS_S3
 
+#include <IO/HTTPHeaderEntries.h>
 #include <IO/S3/Requests.h>
 
 namespace
@@ -120,7 +121,7 @@ TEST(GCSHeaderTranslation, NormalizesHeaderNames)
         {"Custom-Auth-Token", "KeepTheValue"},
     };
 
-    DB::S3::normalizeHeaderNames(headers);
+    DB::normalizeHeaderNames(headers);
 
     EXPECT_EQ(headers[0].name, "x-amz-meta-owner");
     EXPECT_EQ(headers[1].name, "x-amz-storage-class");

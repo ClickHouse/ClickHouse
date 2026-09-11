@@ -126,13 +126,6 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
 /// it per request type would miss the second.
 void translateHeadersToGCS(Aws::Http::HttpRequest & request);
 
-/// Lower-case every header name in place. HTTP header names are case-insensitive (RFC 7230 3.2),
-/// but the two places that decide whether an entry is an `x-amz-` one compare literally, so a
-/// mixed-case `X-Amz-Meta-Owner` would be classified as an ordinary header, attached after signing
-/// and never translated. Normalising once at the point `extra_headers` is assembled makes both
-/// comparisons right by construction; Poco lower-cases on the wire anyway.
-void normalizeHeaderNames(HTTPHeaderEntries & headers);
-
 /// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
 /// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
 std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);
