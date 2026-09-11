@@ -1,3 +1,5 @@
+-- Tags: memory-engine
+
 -- A rewrite to a subcolumn must land on the subcolumn it means. Subcolumn names are flat, so a
 -- Tuple element or a JSON path can claim the name of an automatic subcolumn with the same type,
 -- and an enclosing Nullable can wrap the automatic subcolumn. Every query below must give the same

@@ -784,7 +784,7 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
-    return metadata_storage->supportsHardLinks();
+    return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
 
 String DiskObjectStorage::getReadResourceNameNoLock() const

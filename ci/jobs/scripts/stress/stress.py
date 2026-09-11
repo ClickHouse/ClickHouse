@@ -506,8 +506,10 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("max_parallel_replicas=3")
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
-        if random.random() < 1 / 2:
-            # Ship serialized query plans to the replicas instead of query text.
+        # Ship serialized query plans to the replicas instead of query text. The upgrade
+        # check's only test load runs against the previous release, so a failure on this
+        # path there cannot be fixed by any change to master.
+        if random.random() < 1 / 2 and not upgrade_check:
             client_options.append("serialize_query_plan=1")
 
     if random.random() < 0.2:

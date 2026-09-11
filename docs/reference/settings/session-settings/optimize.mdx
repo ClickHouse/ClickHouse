@@ -17,7 +17,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT sectio
+Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
 
 ## optimize_append_index {#optimize_append_index}
 
@@ -135,7 +135,7 @@ only when col is of String or FixedString type.
 
 Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
 - indices in simple filtering expressions
-- cross to inner join optimizatio
+- cross to inner join optimization
 
 ## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
 

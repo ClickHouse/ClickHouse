@@ -593,7 +593,8 @@ const ActionsDAG::Node & MergeTreeIndexConditionSet::traverseDAG(const ActionsDA
             /// through the regular filter path.
             /// A type with no boolean reading takes the same way out. A wide integer is an integer,
             /// so `__bitWrapperFunc` would read `indexHint(toUInt256(v))` as `v != 0` and prune the
-            /// granules holding `v = 0`, while nothing else in the query reads that hint at all.
+            /// granules holding `v = 0`, while `WHERE toUInt256(v)` is rejected, so no row-level
+            /// filter corresponds to what was skipped.
             const auto & atom_result_type = atom_node_ptr->result_type;
             const bool is_integer_atom = WhichDataType(atom_result_type).isLowCardinality()
                 ? WhichDataType(removeLowCardinality(atom_result_type)).isInteger()
