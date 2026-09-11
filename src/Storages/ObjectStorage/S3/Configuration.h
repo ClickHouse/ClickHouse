@@ -16,6 +16,27 @@
 namespace DB
 {
 
+/// Reject query-overridden GCP service account impersonation settings on a named collection whose GCP identity
+/// comes from the collection: the exchange that mints the impersonated token is performed with that identity, so
+/// an overridden `impersonate_service_account` would escalate to a target the operator did not provision, and an
+/// overridden `iam_credentials_endpoint` / `impersonation_scopes` would send the collection's access token to a
+/// chosen host or widen the minted token. The override is honored only when the same query also supplied the
+/// full Google Application Default Credentials triple, i.e. brought its own source identity. This is the GCP
+/// counterpart of the `role_arn` override check, and unlike it the setting cannot merely be dropped: the query
+/// would then read as the collection's own identity and silently report success.
+/// Only the settings that select an identity or redirect the token exchange are covered;
+/// `impersonation_lifetime_seconds` is not, since it escalates nothing.
+/// On a metadata load the stored definition is re-parsed with the restriction back on, so refusing the query
+/// would leave the table unattachable. `auth_settings` is then stripped of its GCP OAuth block instead, which
+/// leaves the table loadable and merely inaccessible -- but only when
+/// `s3_load_table_anonymously_if_credentials_restricted` is enabled; the operator can disable it to have such a
+/// load fail loudly instead, exactly as on the other restricted-load paths.
+void checkQueryOverriddenGcpImpersonation(
+    const NamedCollection & collection,
+    const ContextPtr & context,
+    S3::S3AuthSettings & auth_settings,
+    bool is_loading_from_existing_metadata);
+
 struct S3StorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageS3Configuration;
@@ -83,7 +104,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     String path_suffix;
 
 public:
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context, bool is_loading_from_existing_metadata);
     void fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     S3StorageParsedArguments() = default;

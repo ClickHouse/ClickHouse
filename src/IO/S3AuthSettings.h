@@ -72,10 +72,25 @@ struct S3AuthSettings
     void clearRoleArn();
 
     /// Clear the GCP OAuth metadata-service mechanism (`http_client`, `service_account`, `metadata_service`,
-    /// `request_token_path`, and the explicit Application Default Credentials triple). Used by restricted paths
-    /// whose syntax cannot supply these fields, so any value here came from the server `<s3>` config and would
-    /// otherwise mint a server-identity bearer token for a user-chosen endpoint.
+    /// `request_token_path`, the explicit Application Default Credentials triple, and the service account
+    /// impersonation settings). Used by restricted paths whose syntax cannot supply these fields, so any value
+    /// here came from the server `<s3>` config and would otherwise mint a server-identity bearer token for a
+    /// user-chosen endpoint.
     void clearServerManagedGcpOAuth();
+
+    /// Clear the GCP service account impersonation settings (`impersonate_service_account`,
+    /// `impersonation_delegates`, `impersonation_scopes`, `impersonation_lifetime_seconds`,
+    /// `iam_credentials_endpoint`). This is the GCP counterpart of `clearRoleArn`: restricted paths drop an
+    /// impersonation target inherited from the server `<s3>` config, so the target is never impersonated with
+    /// the server's identity as the source; the caller decides when a query-supplied target may be kept.
+    void clearGcpImpersonation();
+
+    /// Take the whole GCP service account impersonation block from `other`, changed and unchanged fields alike.
+    /// The five settings are only meaningful together -- the qualifiers describe the target they were configured
+    /// alongside -- so a consumer that must not end up with a target from one source and its qualifiers from
+    /// another takes them all from one place, which `updateIfChanged` cannot do (it skips unchanged fields, so a
+    /// deliberately empty qualifier does not displace a configured one).
+    void copyGcpImpersonationFrom(const S3AuthSettings & other);
 
     HTTPHeaderEntries headers;
     HTTPHeaderEntries access_headers;

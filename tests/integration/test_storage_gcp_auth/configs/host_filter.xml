@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Allows the GCS endpoint but not the IAM Credentials endpoint on port 22235, so the token exchange has to
+         be refused by the filter rather than reaching a host the operator did not allow. -->
+    <remote_url_allow_hosts>
+        <host>resolver:22234</host>
+    </remote_url_allow_hosts>
+</clickhouse>

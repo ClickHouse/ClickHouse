@@ -1,0 +1,37 @@
+<clickhouse>
+    <s3>
+        <!-- Root-level `<s3>` impersonation qualifiers, which apply to every endpoint below. Only
+             `extra_credentials` can supply these in a query, so a value here is always server-configured and must
+             never be mistaken for a query-supplied one: for an endpoint that names no target they have nothing to
+             qualify and must stay inert instead of failing the query. -->
+        <impersonation_scopes>https://www.googleapis.com/auth/cloud-platform</impersonation_scopes>
+        <impersonation_delegates>root-delegate@test-project.iam.gserviceaccount.com</impersonation_delegates>
+
+        <!-- Accepts the impersonated token, so a query that names its own target in `extra_credentials` can be
+             read end to end. The root-level qualifiers above reach this endpoint too, and must not be attached
+             to a target the query supplied: they were provisioned for a target of the operator's. -->
+        <gcp_oauth_endpoint>
+            <endpoint>http://resolver:22234/test/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <service_account>impersonation-source</service_account>
+            <metadata_service>resolver</metadata_service>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcp_oauth_endpoint>
+
+        <!-- No impersonation target, so the root-level qualifiers above have nothing to qualify. Reads here use
+             the source identity directly and must keep working.
+
+             `iam_credentials_endpoint` is set even though no exchange should happen: unset it defaults to the
+             real `iamcredentials.googleapis.com`, and the root-level qualifiers above are exactly what a bug
+             would mistake for a reason to impersonate. Pointing it at the mock keeps such a bug inside the
+             container, where the counter assertion catches it, instead of sending the source identity's token
+             to Google. -->
+        <gcp_oauth_no_target_endpoint>
+            <endpoint>http://resolver:22237/test/</endpoint>
+            <http_client>gcp_oauth</http_client>
+            <service_account>impersonation-source</service_account>
+            <metadata_service>resolver</metadata_service>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcp_oauth_no_target_endpoint>
+    </s3>
+</clickhouse>
