@@ -147,8 +147,10 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
+std::string_view SchemaConverter::useColumnMapperIfNeeded(
+    const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const
 {
+    out_not_in_schema = false;
     if (!column_mapper)
         return element.name;
     const auto & map = column_mapper->getFieldIdToClickHouseName();
@@ -162,19 +164,30 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     auto it = map.find(element.field_id);
     if (it == map.end())
     {
-        /// Iceberg reserves field ids greater than 2147483447 (Integer.MAX_VALUE - 200) for metadata
-        /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
-        /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
-        /// write these into data files, but they are not part of the table schema. Per the Iceberg
-        /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
-        /// reserved-range field ids they don't recognize rather than failing. Such a column is
-        /// never requested, so returning its physical name lets the existing "unrequested column"
-        /// path skip it.
-        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
+        /// Reserved field ids (https://iceberg.apache.org/spec/#reserved-field-ids) are not part of
+        /// the table schema, e.g. the v3 row-lineage fields `_row_id` (2147483540) and
+        /// `_last_updated_sequence_number` (2147483539) that spec-compliant writers materialize
+        /// into data files. Those are requested by their physical name, so they are matched by name.
+        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
         if (element.field_id > iceberg_max_user_field_id)
             return element.name;
 
-        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
+        /// An id at or below `last-column-id` of the table metadata belongs to a column dropped
+        /// from the table: `DROP COLUMN` is metadata-only, so data files keep the column. Any other
+        /// id means the file does not belong to this table, or its schema was resolved to a wrong
+        /// one, which is reported rather than silently ignored.
+        const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
+        if (element.field_id < 1 || !last_assigned_field_id.has_value() || element.field_id > *last_assigned_field_id)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
+                "assigned that field id: the highest field id it ever assigned is {}",
+                element.name,
+                element.field_id,
+                last_assigned_field_id.has_value() ? std::to_string(*last_assigned_field_id) : String("unknown"));
+
+        out_not_in_schema = true;
+        return element.name;
     }
 
     /// At top level (empty path), return the full mapped name. For nested
@@ -221,9 +234,13 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
+        bool not_in_schema = false;
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
 
-        if (sample_block)
+        /// A column that is not in the data lake schema is never requested, and its physical name
+        /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
+        /// later re-added `x` have different field ids), so it must not be matched by name.
+        if (sample_block && !not_in_schema)
         {
             /// Doing this lookup on each schema element to support reading individual tuple elements.
             /// E.g.:
@@ -761,6 +778,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple with {} elements, requested type is Tuple with {} elements", node.getNameForLogging(), node.element->num_children, tuple_type_hint->getElements().size());
         }
     }
+
+    /// `num_children` comes directly from untrusted input file, need to sanity-check before doing
+    /// `elements.resize(num_children)`.
+    if (node.element->num_children < 0 || size_t(node.element->num_children) > file_metadata.schema.size() - schema_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", node.getNameForLogging(), node.element->num_children, file_metadata.schema.size() - schema_idx);
+
     if (!lookup_by_name && node.requested)
         elements.resize(size_t(node.element->num_children), UINT64_MAX);
 
@@ -778,11 +801,15 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
+        bool not_in_schema = false;
+        const String & element_name = element_names_in_file.emplace_back(
+            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
-            idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
+            idx_in_output_tuple = std::nullopt;
+            if (!not_in_schema)
+                idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
 
             if (idx_in_output_tuple.has_value() && elements.at(idx_in_output_tuple.value()) != UINT64_MAX)
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", node.getNameForLogging(), element_name);
