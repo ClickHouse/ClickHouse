@@ -1,1 +1,1 @@
-streams	34	every file is opened at most once	1
+prefetch does not open more files	1
