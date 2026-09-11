@@ -51,7 +51,7 @@ INTERNAL_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 # robot-ch-test-poll4, ...) already classify as MEMBER; this covers the ones
 # that do not, and the `robot-` prefix guards any future robot account that has
 # not been added to the organization yet.
-INTERNAL_BOTS = {"groeneai", "oranjeai", "clickgapai", "actueleai"}
+INTERNAL_BOTS = {"groeneai", "oranjeai", "clickgapai", "actueleai", "snelheidai"}
 
 
 def _is_internal(author: str, association: str, user_type: str) -> bool:
