@@ -327,7 +327,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
     {
         variant_col.get(n, res);
         if (!res.isNull())
-            res = convertFieldToType(res, *getTypeAt(n));
+            res = convertFieldToType(res, *getTypeAt(n), nullptr, getFormatSettings());
         return;
     }
 
