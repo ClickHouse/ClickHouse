@@ -28,7 +28,8 @@ LazyUnorderedReadFromMergeTreeSource::LazyUnorderedReadFromMergeTreeSource(
     const MergeTreeData & data_,
     ContextPtr context_,
     const std::string & log_name_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor({}, {std::move(header)})
     , max_block_size(max_block_size_)
     , max_threads(max_threads_)
@@ -39,6 +40,7 @@ LazyUnorderedReadFromMergeTreeSource::LazyUnorderedReadFromMergeTreeSource(
     , context(std::move(context_))
     , log_name(log_name_)
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
+    , updater(std::move(updater_))
 {
 }
 
@@ -143,6 +145,11 @@ Pipe LazyUnorderedReadFromMergeTreeSource::buildPipe()
 
     reading->setLazyMaterializingRows(lazy_materializing_rows);
     reading->disableQueryConditionCache();
+    /// This step reads through a `ReadFromMergeTree` it builds here, so the statistics the step was
+    /// asked to collect are recorded by that read. It is built without `FINAL` above, which is what
+    /// `ReadFromMergeTree` requires to support the collection.
+    if (updater)
+        reading->setRuntimeDataflowStatisticsCacheUpdater(updater);
 
     QueryPipelineBuilder pipeline;
     reading->initializePipeline(pipeline, BuildQueryPipelineSettings(context));

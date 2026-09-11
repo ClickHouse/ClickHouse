@@ -59,7 +59,8 @@ void LazilyUnorderedReadFromMergeTree::initializePipeline(QueryPipelineBuilder &
         data,
         context,
         log_name,
-        lazy_materializing_rows);
+        lazy_materializing_rows,
+        dataflow_cache_updater);
 
     processors.emplace_back(source);
     pipeline.init(Pipe(std::move(source)));
