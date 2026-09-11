@@ -45,26 +45,24 @@ SQL
 done
 
 queries=''
-# Probe the second block of each part and a missing value.
-for row in 7 56 90; do
-    for predicate in \
-        "j.s = 'v${row}'" \
-        "j.n = 'v${row}'" \
-        "has(j.arr, ['v${row}'])" \
-        "j.m['k$((row % 3))'] = 'v${row}' SETTINGS optimize_functions_to_subcolumns = 0" \
-        "j.t.obj.v = 'v${row}'" \
-        "has(j.items[].v, 'tail${row}')" \
-        "j.shared.k$((row % 3)) = 'v${row}'"; do
-        queries+="SELECT arraySort(groupArray(id)) FROM json_bf_lc_ranges WHERE ${predicate};"
-    done
+# Probe the second block of each part and a missing value in one scan per path.
+for predicate in \
+    "j.s IN ('v7', 'v58', 'v91')" \
+    "j.n IN ('v7', 'v58', 'v91')" \
+    "hasAny(j.arr, [['v7'], ['v58'], ['v91']])" \
+    "j.m['k1'] IN ('v7', 'v58', 'v91') SETTINGS optimize_functions_to_subcolumns = 0" \
+    "j.t.obj.v IN ('v7', 'v58', 'v91')" \
+    "hasAny(j.items[].v, ['tail7', 'tail58', 'tail91'])" \
+    "j.shared.k1 = 'v7' OR j.shared.k1 = 'v58' OR j.shared.k1 = 'v91'"; do
+    queries+="SELECT arraySort(groupArray(id)) FROM json_bf_lc_ranges WHERE ${predicate};"
 done
 
+expected=$($CLICKHOUSE_CLIENT --multiquery --use_skip_indexes=0 --query "$queries")
 for stage in insert merge materialize; do
     case "$stage" in
         merge) $CLICKHOUSE_CLIENT --multiquery --query 'SYSTEM START MERGES json_bf_lc_ranges; OPTIMIZE TABLE json_bf_lc_ranges FINAL;' ;;
         materialize) $CLICKHOUSE_CLIENT --query 'ALTER TABLE json_bf_lc_ranges MATERIALIZE INDEX idx SETTINGS mutations_sync = 2' ;;
     esac
-    expected=$($CLICKHOUSE_CLIENT --multiquery --use_skip_indexes=0 --query "$queries")
     actual=$($CLICKHOUSE_CLIENT --multiquery --force_data_skipping_indices=idx --query "$queries")
     diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual")
     echo "$stage: indexed results match full scan"
