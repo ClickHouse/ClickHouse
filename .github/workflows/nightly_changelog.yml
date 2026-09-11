@@ -82,10 +82,10 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Prepare changelog' --workflow "NightlyChangelog" --ci --timestamp
 
-  label_external_issues:
+  label_external_contributors:
     runs-on: [self-hosted, arm-tiny]
     needs: [config_workflow]
-    name: "Label external issues"
+    name: "Label external contributors"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -113,4 +113,4 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Label external issues' --workflow "NightlyChangelog" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Label external contributors' --workflow "NightlyChangelog" --ci --timestamp

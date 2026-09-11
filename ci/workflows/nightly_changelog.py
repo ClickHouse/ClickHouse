@@ -22,13 +22,12 @@ workflow = Workflow.Config(
             runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
-        # Label issues opened by external (non-ClickHouse-org) contributors,
-        # complementing the pull-request labeling done by the can_be_tested
-        # pre-hook. Scans the last few days of new issues; run manually with
+        # Label issues and pull requests opened by external (non-ClickHouse-org)
+        # contributors. Scans the last few days of new items; run manually with
         # --all to backfill the whole history.
         Job.Config(
-            name="Label external issues",
-            command="python3 ./ci/jobs/label_external_issues.py",
+            name="Label external contributors",
+            command="python3 ./ci/jobs/label_external_contributors.py",
             runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
