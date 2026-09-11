@@ -53,7 +53,13 @@ bool aRollbackMayWriteOver(IObjectStorage & object_storage, const std::filesyste
 /// generation it reports is the one that was written unless another writer got in between the two
 /// requests; a copy that reported the generation it created would close that window, and the
 /// `IObjectStorage` copy does not report one.
-StoredObject nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
+///
+/// Nothing is returned when the blob is on Azure and the generation of it cannot be named at all -
+/// the `HEAD` does not find the blob, or the endpoint answers without an `ETag`. A delete by path
+/// alone is exactly the cross-generation loss the pinning exists to prevent, so the caller has to
+/// fail closed rather than fall back to one. For every other object storage the object is returned
+/// as it was and not a single extra request is made.
+std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
 
 class MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation final : public IMetadataOperation
 {
@@ -272,6 +278,10 @@ private:
     /// The generation of the destination blob as it was right after the copy wrote it, so that the
     /// delete in `undo` is pinned to it and cannot take away a generation written by somebody else.
     StoredObject destination;
+    /// Whether `destination` names a generation. The execute side refuses to go on without one, so
+    /// `undo` only ever sees it unset for a move that was refused for exactly that reason, and it
+    /// then leaves the blob the copy wrote alone instead of deleting the key blindly.
+    bool destination_generation_is_named{false};
 
 public:
     MetadataStorageFromPlainObjectStorageMoveFileOperation(

@@ -1765,10 +1765,21 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 /// rewritten object would be dropped for good. So the processing is reset without a
                 /// failure instead, and the newer generation is picked up on a later pass.
                 const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ;
+
+                /// Resetting the processing means the path is read again from offset 0 on a later
+                /// pass. That is only free while the file has emitted nothing: rows of the
+                /// generation that was replaced may already be in the destination table, and
+                /// replaying the path from the start would insert them a second time. The
+                /// shutdown path above declines to abort a partially read file for the same
+                /// reason, and allows it only where `deduplication_v2` drops the replayed rows.
+                /// Without that, the file keeps the ordinary failure handling: the retry budget is
+                /// charged, and the path ends up `failed` rather than ingested twice.
+                const bool a_replay_would_duplicate_rows
+                    = file_metadata->getFileStatus()->processed_rows > 0 && !is_deduplication_v2;
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_during_read,
-                    /* reduce_retry_count */!the_generation_was_rewritten);
+                    /* reduce_retry_count */!the_generation_was_rewritten || a_replay_would_duplicate_rows);
                 break;
             }
         }

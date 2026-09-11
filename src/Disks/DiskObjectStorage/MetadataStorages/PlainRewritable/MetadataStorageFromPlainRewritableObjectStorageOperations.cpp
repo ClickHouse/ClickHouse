@@ -94,19 +94,19 @@ bool aRollbackMayWriteOver(IObjectStorage & object_storage, const std::filesyste
     return !object_storage.exists(StoredObject(remote_path));
 }
 
-StoredObject nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
+std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path)
 {
     StoredObject object(remote_path);
 
     if (object_storage.getType() != ObjectStorageType::Azure)
         return object;
 
-    if (auto metadata = object_storage.tryGetObjectMetadata(remote_path, /*with_tags=*/ false))
-    {
-        object.bytes_size = metadata->size_bytes;
-        object.etag = metadata->etag;
-    }
+    auto metadata = object_storage.tryGetObjectMetadata(remote_path, /*with_tags=*/ false);
+    if (!metadata || metadata->etag.empty())
+        return {};
 
+    object.bytes_size = metadata->size_bytes;
+    object.etag = metadata->etag;
     return object;
 }
 
@@ -692,7 +692,21 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         /// because the directory is rebuilt from the blobs that are in the bucket. The generation
         /// that was just written is named here so that the delete in `undo` is pinned to it.
         copied_to_destination = true;
-        destination = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to);
+        if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to))
+        {
+            destination = std::move(*named);
+            destination_generation_is_named = true;
+        }
+        else
+            throw Exception(
+                ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                "Cannot move '{}' to '{}': the generation of the blob at {} that the copy has just "
+                "written cannot be named, so a rollback of this move could only delete that key "
+                "blindly. The move is refused here, before the source is deleted, and the blob the "
+                "copy wrote is left in the bucket",
+                path_from.string(),
+                path_to.string(),
+                remote_path_to.string());
 
         try
         {
@@ -720,7 +734,21 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 
     /// The copy to the destination is undone whether or not the delete of the source that follows
     /// it succeeded: `copied_to_destination` is set between the two.
-    if (copied_to_destination)
+    if (copied_to_destination && !destination_generation_is_named)
+    {
+        /// The move was refused because the generation the copy wrote could not be named, so the
+        /// only delete available here is one by path, which is what would take away a generation
+        /// another writer has put at the key since. The blob stays and its path is logged instead.
+        LOG_WARNING(
+            log,
+            "Not removing the blob at {} that the move of '{}' to '{}' wrote: the generation it "
+            "holds was never named, so it cannot be deleted without the risk of taking away a "
+            "generation written by somebody else. Remove it by hand if it is not wanted",
+            remote_path_to.string(),
+            path_from,
+            path_to);
+    }
+    else if (copied_to_destination)
     {
         LOG_WARNING(
             log,

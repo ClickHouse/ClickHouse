@@ -2836,7 +2836,9 @@ TEST(AzurePlainRewritableRollback, TheDestinationDeleteIsPinnedToWhatTheCopyWrot
         ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
     auto object_storage = objectStorageOver(transport);
 
-    const DB::StoredObject destination = DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob");
+    const auto named = DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob");
+    ASSERT_TRUE(named.has_value());
+    const DB::StoredObject & destination = *named;
     ASSERT_EQ(destination.etag, ETagBehaviour::first_generation);
 
     transport->overwriteObject(ETagBehaviour::second_generation);
@@ -2870,6 +2872,33 @@ TEST(AzurePlainRewritableRollback, AnUnpinnedDestinationDeleteTakesAwayTheNewGen
 
     ASSERT_NO_THROW(object_storage->removeObjectIfExists(DB::StoredObject("blob")));
     ASSERT_EQ(transport->deletedGenerations(), std::vector<std::string>{ETagBehaviour::second_generation});
+}
+
+/// An endpoint that answers without an `ETag` names no generation for the blob the copy has just
+/// written, so nothing is returned and the move refuses to go on. Returning the bare object instead
+/// would hand `undo` a delete by path alone, which is the delete of the test above - the one that
+/// takes away whatever another writer has put at the key since.
+TEST(AzurePlainRewritableRollback, ADestinationWithoutAGenerationIsNotNamed)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ false, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = "", .etag_after_first = "", .honour_if_match = false});
+    auto object_storage = objectStorageOver(transport);
+
+    ASSERT_FALSE(DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob").has_value());
+}
+
+/// The same, for a blob that the `HEAD` after the copy does not find at all: a key that holds
+/// nothing now can hold a generation of somebody else's by the time the rollback runs.
+TEST(AzurePlainRewritableRollback, ADestinationThatIsNotThereIsNotNamed)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
+        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false, /* blob_missing */ true);
+    auto object_storage = objectStorageOver(transport);
+
+    ASSERT_FALSE(DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob").has_value());
 }
 
 /// The blob of a file the metadata says exists is not there when the generation is named. Returning
