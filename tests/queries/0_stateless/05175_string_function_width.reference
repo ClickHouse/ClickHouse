@@ -1,0 +1,2 @@
+width: concat(materialize(repeat(\'x\', 1000)), s)	1
+width: identity(s)	1

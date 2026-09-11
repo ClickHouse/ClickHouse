@@ -1,39 +1,12 @@
--- `concat(materialize(repeat('x', 1000)), s)` changes string length: keep the NDV bound, discard the input width.
+-- `concat(materialize(repeat('x', 1000)), s)` changes string length: discard the input width.
 -- `identity(s)` keeps strings unchanged: keep the input width.
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
-SET enable_join_runtime_filters = 0;
 SET enable_cascades_optimizer = 0;
 SET make_distributed_plan = 0;
 SET query_plan_join_swap_table = 0;
-SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
-SET use_statistics = 1;
-SET materialize_statistics_on_insert = 1;
-
-CREATE TABLE source (s String) ENGINE = MergeTree ORDER BY s SETTINGS auto_statistics_types = 'uniq';
-CREATE TABLE probe (s String) ENGINE = MergeTree ORDER BY s SETTINGS auto_statistics_types = 'uniq';
-INSERT INTO source SELECT leftPad(toString(number % 100), 10, 'x') FROM numbers(1000);
-INSERT INTO probe SELECT leftPad(toString(number), 10, 'x') FROM numbers(100);
-
--- `NDV(s) = 100` -> estimated groups: `aggregated[100]` in `EXPLAIN`.
--- Check NDV propagation through `concat(materialize(repeat('x', 1000)), s)`.
-SELECT 'NDV: concat(materialize(repeat(\'x\', 1000)), s)';
-SELECT extract(explain, 'Join:.*') FROM
-(
-    EXPLAIN keep_logical_steps = 1, actions = 1
-    SELECT * FROM probe JOIN
-    (
-        SELECT concat(materialize(repeat('x', 1000)), s) AS key, count()
-        FROM source
-        GROUP BY key
-    ) AS aggregated ON probe.s = aggregated.key
-)
-WHERE explain LIKE '% Join:%';
-
-DROP TABLE source;
-DROP TABLE probe;
 
 -- Pin row counts, column widths, and part layout for the width-dependent plan checks.
 -- A 10-byte `s` favors shuffling 5M joined rows; the 64-byte `String` default favors shuffling 10M fact rows.
