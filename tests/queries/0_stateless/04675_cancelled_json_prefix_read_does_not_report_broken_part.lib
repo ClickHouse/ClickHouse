@@ -1,35 +1,33 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-fasttest, no-shared-merge-tree
-# Tag long: only the flaky check caps a single run at 180s, and this fixture builds and scans two
-#   parts of 100000 JSON keys, which exceeds that cap once several copies of it run at once.
-# Tag zookeeper: parts_to_check and the part check thread only exist on a replicated table.
-# Tag no-fasttest: the Fast test job runs with --timeout 60, which this fixture exceeds.
-# Tag no-shared-merge-tree: the oracle counts ReplicatedMergeTreePartCheckThread log lines, so under
-#   --replace-replicated-with-shared it would read 0 whether or not the guard works. Same tag as the
-#   other part-check tests (04603, 04604).
-
-CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=../shell_config.sh
-. "$CUR_DIR"/../shell_config.sh
 
 # Cancelling a SELECT while it is inside an Object/JSON structure-prefix read must not raise a
 # suspicion that the part is broken. The readers' catch-all reports a part broken for any
 # non-retryable failure, and a cancellation says nothing about the part's health.
 #
-# Both part types are covered because the two readers carry the suppression independently:
-# MergeTreeReaderCompactSingleBuffer::readRows and MergeTreeReaderWide::readRows.
+# The two readers carry the suppression independently, so both part types need covering:
+# MergeTreeReaderCompactSingleBuffer::readRows and MergeTreeReaderWide::readRows. Each part type
+# gets its own test file calling this function, rather than one file looping over both, because
+# writing one such part already costs minutes once several copies of the fixture run at once, and
+# the per-test cap applies to a whole run.
 #
 # The observable is the part check thread's own log line rather than system.replicas.parts_to_check:
 # parts_to_check is the live queue length, so it drains as the check thread runs and reads 0 even
 # on a build that did report the part. The thread's logger is named after the table, so text_log
 # gives a durable per-table count.
-
-for part_type in compact wide; do
+function check_cancelled_prefix_read()
+{
+    local part_type=$1
+    local wide_threshold
     if [ "$part_type" = "compact" ]; then
         wide_threshold=1000000000
     else
         wide_threshold=0
     fi
+
+    # No query here may run unbounded: on a loaded runner this scan is what a per-test timeout
+    # kills, and a killed test reports nothing. A ceiling turns that into a measurement that is
+    # merely a lower bound, and a budget taken from a lower bound still lands inside the read.
+    local read_ceiling=10
 
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_${part_type} SYNC"
     # object_serialization_version is pinned because the runner randomizes it between v2 and v3, and
@@ -72,7 +70,7 @@ for part_type in compact wide; do
     # discriminator (measured: 1 under v3+advanced, 0 under v2 and under map/map_with_buckets).
     #
     # The part type, because the two readers carry the suppression independently, so if a threshold
-    # change or a randomizer made both cells produce the same part type, one reader would silently
+    # change or a randomizer made this cell produce the other part type, one reader would silently
     # stop being covered.
     echo "${part_type} advanced shared data: $(${CLICKHOUSE_CLIENT} -q "
         SELECT countIf(s LIKE '%object_shared_data.copy.%') > 0
@@ -91,23 +89,25 @@ for part_type in compact wide; do
     # assertion below fails even though the guard is present and working.
     #
     # Hence the budget is a fraction of this fixture's own read cost, timed here rather than assumed.
-    # The cost differs per part type by roughly an order of magnitude, so it is timed per cell.
     # The scan is timed by the server via query_log rather than by clock reads around it: with the
     # old analyzer a subquery whose result is unused is removed before execution, so any pair of
     # in-query clock reads measures nothing and every budget collapses to the floor.
     # The logging settings are pinned rather than assumed: without a finish row the fallback would
     # be the floor again, which is the very thing being fixed, so a missing row prints 0 and the
     # assertion below reports it instead of the run passing on an uncalibrated budget.
+    # The row is taken whatever type it carries, because a scan stopped by the ceiling above is
+    # logged as an exception and its duration is still the lower bound the budget needs.
     time_read_ms() {
         local qid="04675-${part_type}-$$-${RANDOM}"
         ${CLICKHOUSE_CLIENT} --query_id="${qid}" --log_queries=1 --log_queries_probability=1 \
-            --log_queries_min_query_duration_ms=0 --log_queries_min_type='QUERY_START' -q "
-            SELECT count() FROM t_${part_type} WHERE length(JSONAllPaths(j)) > 0" > /dev/null
+            --log_queries_min_query_duration_ms=0 --log_queries_min_type='QUERY_START' \
+            --max_execution_time "${read_ceiling}" -q "
+            SELECT count() FROM t_${part_type} WHERE length(JSONAllPaths(j)) > 0" > /dev/null 2>&1
         ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
         ${CLICKHOUSE_CLIENT} -q "
             SELECT toUInt64(max(query_duration_ms)) FROM system.query_log
             WHERE current_database = currentDatabase()
-              AND query_id = '${qid}' AND type = 'QueryFinish'"
+              AND query_id = '${qid}' AND type != 'QueryStart'"
     }
     read_ms=$(time_read_ms)
     echo "${part_type} read cost measured: $([ -n "${read_ms}" ] && [ "${read_ms}" -gt 0 ] 2>/dev/null && echo 1 || echo 0)"
@@ -117,14 +117,15 @@ for part_type in compact wide; do
     in_reader=0
     # Fractions from just inside the read's start to short of its end, retried because an individual
     # attempt still races the scheduler, and every cancellation on the way must leave the part
-    # unsuspected. The measurement is refreshed every 8 attempts so that a run whose speed changed
+    # unsuspected. The measurement is refreshed part way through so that a run whose speed changed
     # after the first timing - a sanitizer build sharing the machine with 17 other copies - converges
-    # instead of retrying a stale budget 40 times. Stopping after a fixed count would let the
-    # assertion below pass vacuously on a run where none landed inside the reader.
+    # instead of retrying a stale budget 40 times; refreshing more often than that costs more than
+    # the attempts it serves, since a refresh is a whole read. Stopping after a fixed count would let
+    # the assertion below pass vacuously on a run where none landed inside the reader.
     for attempt in $(seq 1 40); do
         # A refresh that returns no row keeps the previous measurement rather than replacing it
         # with an empty string, which would make the budget expression below a syntax error.
-        if [ "$((attempt % 8))" = 0 ]; then
+        if [ "$((attempt % 16))" = 0 ]; then
             refreshed=$(time_read_ms)
             if [ -n "${refreshed}" ] && [ "${refreshed}" -gt 0 ] 2>/dev/null; then read_ms=${refreshed}; fi
         fi
@@ -179,4 +180,6 @@ for part_type in compact wide; do
     echo "${part_type} rows after cancellations: $(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_${part_type}")"
 
     ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_${part_type} SYNC"
-done
+}
+
+# vi: ft=bash
