@@ -2,6 +2,8 @@
 
 #include "config.h"
 
+#include <Server/ServerType.h>
+
 #include <base/types.h>
 #include <memory>
 #include <string>
@@ -24,6 +26,7 @@ public:
     ProtocolServerAdapter(
         const std::string & listen_host_,
         const char * port_name_,
+        ServerType::Type protocol_type_,
         const std::string & description_,
         std::unique_ptr<TCPServer> tcp_server_,
         bool supports_runtime_reconfiguration_ = true);
@@ -32,6 +35,7 @@ public:
     ProtocolServerAdapter(
         const std::string & listen_host_,
         const char * port_name_,
+        ServerType::Type protocol_type_,
         const std::string & description_,
         std::unique_ptr<IGRPCServer> grpc_server_,
         bool supports_runtime_reconfiguration_ = true);
@@ -77,6 +81,14 @@ public:
 
     const std::string & getPortName() const { return port_name; }
 
+    /// The protocol this server speaks. Used to report per-protocol metrics without matching
+    /// on `port_name`: `port_name` is a config key, and a server declared under `<protocols>`
+    /// has `port_name == "protocols.<name>.port"`, which no fixed list can enumerate.
+    /// For such servers this is the type of the innermost layer of the protocol stack
+    /// (e.g. `TCP_SECURE` for a `tls` layer over `tcp`), not `CUSTOM`.
+    /// `END` means the server has no protocol type of its own (Keeper listeners).
+    ServerType::Type getProtocolType() const { return protocol_type; }
+
     const std::string & getDescription() const { return description; }
 
 private:
@@ -98,6 +110,7 @@ private:
 
     std::string listen_host;
     std::string port_name;
+    ServerType::Type protocol_type;
     std::string description;
     std::unique_ptr<Impl> impl;
     bool supports_runtime_reconfiguration = true;

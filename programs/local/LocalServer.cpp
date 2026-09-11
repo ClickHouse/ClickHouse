@@ -776,7 +776,7 @@ void LocalServer::startServers(const ServerType & server_type)
             std::lock_guard lock(servers_lock);
             result.reserve(servers.size());
             for (const auto & server : servers)
-                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentConnections(), 0});
+                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.getProtocolType(), server.currentConnections(), 0});
             return result;
         };
         /// Note: we intentionally don't call `start` on it, to avoid an extra background thread
@@ -854,6 +854,7 @@ void LocalServer::startServers(const ServerType & server_type)
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::TCP,
                         "native protocol (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new TCPHandlerFactory(*this, /* secure= */ false, /* parse_proxy_protocol_= */ false,
@@ -884,6 +885,7 @@ void LocalServer::startServers(const ServerType & server_type)
                         return ProtocolServerAdapter(
                             listen_host,
                             port_name,
+                            ServerType::Type::HTTP,
                             "http://" + address.toString(),
                             std::make_unique<HTTPServer>(
                                 std::make_shared<HTTPContext>(global_context),
