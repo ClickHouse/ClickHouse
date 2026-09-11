@@ -125,8 +125,19 @@ private:
     ClusterPtr makeCluster(const ClusterInfo & cluster_info);
 
     bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
-    bool upsertCluster(ClusterInfo & cluster_info);
-    void removeCluster(const String & name, bool is_dynamic);
+
+    enum class UpsertResult
+    {
+        Updated,
+        NeedRetry,
+        Empty,
+    };
+
+    UpsertResult upsertCluster(ClusterInfo & cluster_info);
+
+    /// `name` is taken by value on purpose: the dynamic path erases the `clusters_info` entry,
+    /// and callers pass `cluster_info.name`, which lives inside the node being erased.
+    void removeCluster(String name, bool is_dynamic);
 
     bool runMainThread(std::function<void()> up_to_date_callback);
     void shutdown();
