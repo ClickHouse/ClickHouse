@@ -34,7 +34,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 * اسم المضيف أو عنوان IP الخاص بـ ClickStack
 
 <Steps>
-  <Step title="تثبيت وحدة OpenTelemetry لـ Nginx" id="install-module">
+  <Step>
+    #### تثبيت وحدة OpenTelemetry لـ Nginx
+
     أسهل طريقة لإضافة التتبّع إلى Nginx هي استخدام صورة Nginx الرسمية التي تتضمن دعم OpenTelemetry بشكل مدمج.
 
     ##### استخدام الصورة nginx:otel
@@ -53,7 +55,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="إعداد Nginx لإرسال التتبعات إلى ClickStack" id="configure-nginx">
+  <Step>
+    #### إعداد Nginx لإرسال التتبعات إلى ClickStack
+
     أضف إعدادات OpenTelemetry إلى ملف `nginx.conf`. تُحمّل هذه الإعدادات الوحدة وتوجّه التتبعات إلى نقطة نهاية OTLP الخاصة بـ ClickStack.
 
     أولًا، احصل على مفتاح API الخاص بك:
@@ -155,7 +159,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="التحقق من التتبعات في HyperDX" id="verifying-traces">
+  <Step>
+    #### التحقق من التتبعات في HyperDX
+
     بعد إتمام الإعداد، سجّل الدخول إلى HyperDX وتحقق من تدفّق التتبعات. من المفترض أن ترى شيئًا مشابهًا لما يلي. وإذا لم تظهر أي تتبعات، فجرّب تعديل النطاق الزمني:
 
     <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="عرض التتبعات" />
@@ -169,7 +175,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 للمستخدمين الذين يريدون اختبار تكامل تتبعات nginx قبل تهيئة أنظمتهم الإنتاجية، نوفر مجموعة بيانات نموذجية لتتبعات Nginx مُولَّدة مسبقًا بأنماط حركة مرور واقعية.
 
 <Steps>
-  <Step title="ابدأ ClickStack" id="start-clickstack">
+  <Step>
+    #### ابدأ ClickStack
+
     إذا لم يكن ClickStack قيد التشغيل لديك بعد، فابدأه باستخدام:
 
     ```bash
@@ -185,7 +193,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * المنفذ 4318: نقطة نهاية OTLP HTTP (تُستخدم للتتبعات التجريبية)
   </Step>
 
-  <Step title="نزّل مجموعة البيانات النموذجية" id="download-sample">
+  <Step>
+    #### نزّل مجموعة البيانات النموذجية
+
     نزّل ملف التتبعات النموذجي وحدّث الطوابع الزمنية إلى الوقت الحالي:
 
     ```bash
@@ -202,7 +212,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * الحفاظ على أنماط حركة المرور الأصلية مع ترحيلها إلى الوقت الحالي
   </Step>
 
-  <Step title="أرسل التتبعات إلى ClickStack" id="send-traces">
+  <Step>
+    #### أرسل التتبعات إلى ClickStack
+
     اضبط مفتاح API الخاص بك كمتغير بيئة (إذا لم يكن مضبوطًا بالفعل):
 
     ```bash
@@ -230,10 +242,12 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
       يفترض هذا العرض التجريبي أن ClickStack يعمل محليًا على `localhost:4318`. بالنسبة إلى المثيلات البعيدة، استبدل `localhost` باسم المضيف الخاص بـ ClickStack.
     </Info>
 
-    يجب أن ترى استجابة مثل `{"partialSuccess":{}}`، ما يشير إلى أنه تم إرسال التتبعات بنجاح. وسيتم استيعاب جميع التتبعات البالغ عددها 1,000 في ClickStack.
+    يجب أن ترى استجابة مثل `{"partialSuccess":{}}`، ما يشير إلى أنه تم إرسال التتبعات بنجاح. وسيتم إدخال جميع التتبعات البالغ عددها 1,000 إلى ClickStack.
   </Step>
 
-  <Step title="تحقّق من التتبعات في HyperDX" id="verify-demo-traces">
+  <Step>
+    #### تحقّق من التتبعات في HyperDX
+
     1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
     2. انتقل إلى عرض Search واضبط المصدر على `Traces`
     3. اضبط النطاق الزمني على **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
@@ -251,17 +265,19 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="dashboards">
-  ## لوحات معلومات والمرئيات
+  ## لوحات المعلومات والمرئيات
 </div>
 
 لمساعدتك على بدء مراقبة التتبعات باستخدام ClickStack، نوفر مرئيات أساسية لبيانات التتبّع.
 
 <Steps>
-  <Step title="تنزيل ملف إعداد لوحة المعلومات" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">تنزيل ملف إعداد لوحة المعلومات</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">تنزيل</TrackedLink> إعداد لوحة المعلومات
   </Step>
 
-  <Step title="استيراد لوحة المعلومات الجاهزة مسبقًا" id="import-dashboard">
+  <Step>
+    #### استيراد لوحة المعلومات الجاهزة مسبقًا
+
     1. افتح HyperDX وانتقل إلى قسم Dashboards.
     2. انقر على &quot;Import Dashboard&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
 
@@ -272,7 +288,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="إتمام الاستيراد" />
   </Step>
 
-  <Step title="سيتم إنشاء لوحة المعلومات مع تهيئة جميع المرئيات مسبقًا." id="created-dashboard">
+  <Step>
+    #### سيتم إنشاء لوحة المعلومات مع تهيئة جميع المرئيات مسبقًا.
+
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
     </Note>

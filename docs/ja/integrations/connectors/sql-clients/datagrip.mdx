@@ -14,7 +14,7 @@ keywords: ['DataGrip', 'データベースIDE', 'JetBrains', 'SQLクライアン
 import { Image } from "/snippets/ja/components/Image.jsx";
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
-import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -24,51 +24,55 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
 DataGrip は https://www.jetbrains.com/datagrip/ から入手できます。
 
-<Steps>
-  <Step title="接続情報を確認する" id="1-gather-your-connection-details">
-    <ConnectionDetails />
-  </Step>
+<div id="1-gather-your-connection-details">
+  ## 1. 接続情報を確認する
+</div>
 
-  <Step title="ClickHouse ドライバーを読み込む" id="2-load-the-clickhouse-driver">
-    1. DataGrip を起動し、**Data Sources and Drivers** ダイアログの **Data Sources** タブで **+** アイコンをクリックします
+<ConnectionDetails />
 
-    <Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="DataGrip の Data Sources タブで + アイコンが強調表示されている" />
+<div id="2-load-the-clickhouse-driver">
+  ## 2. ClickHouseドライバーを読み込む
+</div>
 
-    **ClickHouse** を選択します
+1. DataGrip を起動し、**Data Sources and Drivers** ダイアログの **Data Sources** タブで **+** アイコンをクリックします
 
-    <Tip>
-      接続を作成していくと表示順が変わるため、ClickHouse がまだリストの先頭に表示されていない場合があります。
-    </Tip>
+<Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="**+** アイコンが強調表示された DataGrip の Data Sources タブ" />
 
-    <Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="DataGrip でデータソース一覧から ClickHouse を選択している" />
+**ClickHouse** を選択します
 
-    * **Drivers** タブに切り替えて、ClickHouse ドライバーを読み込みます
+<Tip>
+  接続を作成していくと表示順が変わるため、ClickHouse がまだリストの先頭に表示されていない場合があります。
+</Tip>
 
-      ダウンロードサイズを最小限に抑えるため、DataGrip にはドライバーが同梱されていません。**Drivers** タブで
-      **Complete Support** リストから **ClickHouse** を選択し、**+** 記号を展開します。**Provided Driver** オプションから **Latest stable** ドライバーを選択します。
+<Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="データソースの一覧から ClickHouse を選択している DataGrip" />
 
-    <Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="DataGrip の Drivers タブに ClickHouse ドライバーのインストールが表示されている" />
-  </Step>
+* **Drivers** タブに切り替えて、ClickHouse ドライバーを読み込みます
 
-  <Step title="ClickHouse に接続する" id="3-connect-to-clickhouse">
-    * データベースの接続情報を入力し、**Test Connection** をクリックします。
-      手順 1 で確認した接続情報をもとに、ホスト URL、ポート、ユーザー名、パスワード、データベース名を入力してから、接続をテストします。
+  DataGrip には、ダウンロードサイズを最小限に抑えるため、ドライバーが同梱されていません。**Drivers** タブで、
+  **Complete Support** の一覧から **ClickHouse** を選択し、**+** 記号をクリックして展開します。**Provided Driver** オプションから **Latest stable** ドライバーを選択します。
 
-    <Tip>
-      **Host** フィールドには、`https://` のようなプロトコルのプレフィックスを付けず、ホスト名のみを入力してください (例: `your-host.clickhouse.cloud`) 。
+<Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="ClickHouse ドライバーのインストール画面を表示している DataGrip の Drivers タブ" />
 
-      ClickHouse Cloud に接続する場合は、ホストの下にある **URL** フィールドに `?ssl=true` を追加する必要があります。完全な JDBC URL は次のようになります。
+<div id="3-connect-to-clickhouse">
+  ## 3. ClickHouse に接続する
+</div>
 
-      `jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
+* データベースの接続情報を入力し、**Test Connection** をクリックします。
+  手順 1 で確認した接続情報をもとに、ホスト URL、ポート、ユーザー名、パスワード、データベース名を入力してから、接続をテストします。
 
-      ClickHouse Cloud では、すべての接続で SSL 暗号化が必須です。`?ssl=true` パラメータがないと、認証情報が正しくても &quot;Connection reset&quot; エラーが表示されます。
+<Tip>
+  **Host** フィールドには、`https://` のようなプロトコルのプレフィックスを付けず、ホスト名のみを入力してください (例: `your-host.clickhouse.cloud`) 。
 
-      JDBC URL の設定について詳しくは、[ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java) リポジトリを参照してください。
-    </Tip>
+  ClickHouse Cloud に接続する場合は、ホストの下にある **URL** フィールドに `?ssl=true` を追加する必要があります。完全な JDBC URL は次のようになります。
 
-    <Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="ClickHouse 設定を含む DataGrip の接続情報フォーム" />
-  </Step>
-</Steps>
+  `jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
+
+  ClickHouse Cloud では、すべての接続で SSL 暗号化が必須です。`?ssl=true` パラメータがないと、認証情報が正しくても &quot;Connection reset&quot; エラーが表示されます。
+
+  JDBC URL の設定について詳しくは、[ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java) リポジトリを参照してください。
+</Tip>
+
+<Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="ClickHouse 設定を含む DataGrip の接続情報フォーム" />
 
 <div id="learn-more">
   ## 詳細情報

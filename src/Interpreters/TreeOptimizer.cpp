@@ -105,16 +105,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
     if (!select_query->groupBy())
         return;
 
-    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
-    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
-    /// row. In such a row the key is output as its column default. Rewriting f(g) -> g makes the
-    /// output projection recompute f(defaultOf(g)) instead of defaultOf(typeOf(f(g))) (e.g.
-    /// toString(number) from number = 0 gives '0' instead of the required String default ''),
-    /// which changes the result. See #110715.
-    if (select_query->group_by_with_cube || select_query->group_by_with_rollup
-        || select_query->group_by_with_grouping_sets || select_query->group_by_with_totals)
-        return;
-
     const auto is_literal = [] (const ASTPtr & ast) -> bool
     {
         return ast->as<ASTLiteral>();
@@ -174,10 +164,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 {
                     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
                     if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
-                    {
-                        UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(context);
                         function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, context);
-                    }
                 }
 
                 if (!function_builder)
@@ -620,16 +607,6 @@ void TreeOptimizer::optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     if (!select_query->groupBy())
         return;
 
-    /// Skip when a GROUP BY modifier produces rows where a grouping key is absent from the set
-    /// being aggregated: CUBE/ROLLUP subtotals, GROUPING SETS non-member sets, and the WITH TOTALS
-    /// row. In such a row the key is output as its column default. Dropping a key that is a function
-    /// of other keys makes the output projection recompute it from those keys' totals-row defaults
-    /// (e.g. toString(number) from number = 0 gives '0' instead of the required String default ''),
-    /// which changes the result. See #110715.
-    if (select_query->group_by_with_cube || select_query->group_by_with_rollup
-        || select_query->group_by_with_grouping_sets || select_query->group_by_with_totals)
-        return;
-
     auto group_by = select_query->groupBy();
     const auto & group_by_keys = group_by->children;
 
@@ -708,17 +685,11 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings[Setting::optimize_injective_functions_inside_uniq])
         optimizeInjectiveFunctionsInsideUniq(query, context);
 
-    /// Eliminate min/max/any aggregators of functions of GROUP BY keys.
-    /// GROUPING SETS with a single set is classified as an ordinary GROUP BY by ExpressionAnalyzer
-    /// (see analyzeAggregation), so it emits no rows with a key absent from the aggregated set and
-    /// the elimination stays valid; only the multi-set form has to be skipped.
-    const bool is_multi_set_grouping_sets = select_query->group_by_with_grouping_sets
-        && select_query->groupBy() && select_query->groupBy()->children.size() > 1;
+    /// Eliminate min/max/any aggregators of functions of GROUP BY keys
     if (settings[Setting::optimize_aggregators_of_group_by_keys]
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
-        && !select_query->group_by_with_cube
-        && !is_multi_set_grouping_sets)
+        && !select_query->group_by_with_cube)
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY

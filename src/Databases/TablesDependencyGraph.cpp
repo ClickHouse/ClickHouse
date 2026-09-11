@@ -240,15 +240,11 @@ std::vector<StorageID> TablesDependencyGraph::removeDependencies(const StorageID
         }
     }
 
-    /// `table_node` was its own dependency if it was removed above, and is dangling from then on.
-    if (!table_node_removed)
+    chassert(table_node->dependencies.empty());
+    if (remove_isolated_tables && !table_node_removed && table_node->dependents.empty())
     {
-        chassert(table_node->dependencies.empty());
-        if (remove_isolated_tables && table_node->dependents.empty())
-        {
-            /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
-            removeNode(table_node);
-        }
+        /// The table `table_id` has no dependencies and no dependents now, so we will remove it from the graph.
+        removeNode(table_node);
     }
 
     setNeedRecalculateLevels();

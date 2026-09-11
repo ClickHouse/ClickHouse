@@ -4,29 +4,21 @@ title: التأكّد في واجهة المستخدم
 
 افتح خدمتك في [ClickHouse Cloud console](https://console.clickhouse.cloud)، ثم اختر **ClickStack** من القائمة اليسرى وبعدها **Start Ingestion**.
 
-<Frame>
-  <img src="/images/use-cases/observability/clickstack-cloud-first-time.webp" alt="تشغيل ClickStack" />
-</Frame>
+<Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="تشغيل ClickStack" border />
 
 يمكن تخطي الخطوة التالية لأنك أعددت collector بالفعل. انقر **Launch ClickStack** للمتابعة.
 
 سيفتح ClickStack في علامة تبويب جديدة، ويجب أن يتم توجيهك تلقائيًا إلى صفحة **Getting Started**. إذا لم يحدث ذلك، فاختر **Getting Started** من القائمة اليسرى، ثم انقر **Start Ingestion** متبوعًا بـ **Next**.
 
-<Frame>
-  <img src="/images/use-cases/observability/clickstack-start-ingestion.webp" alt="بدء الاستيعاب في ClickStack" />
-</Frame>
+<Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="بدء الاستيعاب في ClickStack" border />
 
 ستصل إلى صفحة **Getting Started**. إذا طُلب منك بدء الاستيعاب، فتابع عبر شاشات onboarding التي ترشدك إلى تشغيل Docker collector. وبما أنك أكملت هذه الخطوة بالفعل، يمكنك ببساطة النقر عبرها. سيكتشف ClickStack تلقائيًا بيانات telemetry والجداول، وبعد ذلك يمكنك اختيار **Start Exploring** لبدء استخدام المنصة.
 
-<Frame>
-  <img src="/images/use-cases/observability/clickstack-start-exploring.webp" alt="بدء الاستكشاف في ClickStack" />
-</Frame>
+<Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="بدء الاستكشاف في ClickStack" border />
 
 بدّل المصدر إلى `Logs` واضبط النطاق الزمني على **Last 15 minutes**. ينبغي أن تظهر السجلات الاصطناعية من `telemetrygen` خلال بضع ثوانٍ.
 
-<Frame>
-  <img src="/images/use-cases/observability/clickstack-search.webp" alt="عرض البحث في ClickStack مع ظهور السجلات" />
-</Frame>
+<Image img="/images/use-cases/observability/clickstack-search.webp" size="lg" alt="عرض البحث في ClickStack مع ظهور السجلات" />
 
 إذا لم يظهر شيء:
 

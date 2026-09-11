@@ -11,7 +11,9 @@ doc_type: 'guide'
 > يشرح هذا الدليل كيفية استخدام ClickHouse MCP server مع Ollama.
 
 <Steps>
-  <Step title="ثبّت Ollama" id="install-ollama">
+  <Step>
+    ## ثبّت Ollama
+
     Ollama عبارة عن مكتبة لتشغيل نماذج اللغة الكبيرة (LLMs) على جهازك الخاص.
     وهي توفّر [مجموعة واسعة من النماذج](https://ollama.com/library) كما أنها سهلة الاستخدام.
 
@@ -82,7 +84,9 @@ doc_type: 'guide'
     يمكننا أن نرى من هذا الناتج أن نموذج qwen3 الافتراضي يحتوي على أكثر قليلًا من 8 مليارات مُعامِل.
   </Step>
 
-  <Step title="تثبيت MCPHost" id="install-mcphost">
+  <Step>
+    ## تثبيت MCPHost
+
     حتى وقت كتابة هذا النص (يوليو 2025)، لا تتوفر وظيفة مدمجة لاستخدام Ollama مع خوادم MCP.
     ومع ذلك، يمكننا استخدام [MCPHost](https://github.com/mark3labs/mcphost) لتشغيل نماذج Ollama مع خوادم MCP.
 
@@ -96,7 +100,9 @@ doc_type: 'guide'
     سيُثبَّت الملف التنفيذي ضمن `~/go/bin`، لذا نحتاج إلى التأكد من أن هذا المجلد مُضاف إلى مسار `PATH` لدينا.
   </Step>
 
-  <Step title="إعداد ClickHouse MCP server" id="configure-clickhouse-mcp-server">
+  <Step>
+    ## إعداد ClickHouse MCP server
+
     يمكننا إعداد خوادم MCP باستخدام MCPHost في ملفات YAML أو JSON.
     سيبحث MCPHost عن ملفات التهيئة في دليلك الرئيسي بالترتيب التالي:
 
@@ -144,7 +150,9 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step title="تشغيل MCPHost" id="running-mcphost">
+  <Step>
+    ## تشغيل MCPHost
+
     بمجرد تكوين ClickHouse MCP server، يمكنك تشغيل MCPHost بتنفيذ الأمر التالي:
 
     ```bash

@@ -42,7 +42,9 @@ ClickHouse Cloud は、Google Cloud のサービスアカウントに関連付�
 </div>
 
 <Steps>
-  <Step title="Google Cloud のサービス アカウントを作成する" id="create-gcs-account">
+  <Step>
+    ### Google Cloud のサービス アカウントを作成する
+
     1. Google Cloud Console で、IAM &amp; Admin → Service Accounts に移動します
 
     <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
@@ -80,7 +82,9 @@ ClickHouse Cloud は、Google Cloud のサービスアカウントに関連付�
     <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
   </Step>
 
-  <Step title="サービス アカウントにバケットへのアクセス権を付与する" id="grant-bucket-access-to-service-account">
+  <Step>
+    ### サービス アカウントにバケットへのアクセス権を付与する
+
     アクセス権は、プロジェクト レベルまたは個々のバケット レベルで付与できます。
 
     #### オプション 1: 特定のバケットへのアクセス権を付与する (推奨)
@@ -113,7 +117,9 @@ ClickHouse Cloud は、Google Cloud のサービスアカウントに関連付�
     </Warning>
   </Step>
 
-  <Step title="サービス アカウント用の HMAC キーを生成する" id="generate-hmac-keys-for-service-account">
+  <Step>
+    ### サービス アカウント用の HMAC キーを生成する
+
     `Cloud Storage` → `Settings` → `Interoperability` に移動します。
 
     <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />

@@ -1,23 +1,27 @@
 ---
-title: Modifier l’invite de commande dans clickhouse-client
-description: "Cet article explique comment remplacer l’invite de commande :) par un préfixe suivi de :) dans votre client ClickHouse et dans la fenêtre de terminal clickhouse-local"
+title: Modifier l’invite dans clickhouse-client
+description: "Cet article explique comment remplacer l’invite :) par un préfixe suivi de :) dans votre client ClickHouse et dans la fenêtre de terminal clickhouse-local"
 date: 2023-11-16
 tags: ['Paramètres', 'Clients et interfaces natifs']
-keywords: ['Client ClickHouse', 'Modifier l’invite de commande']
+keywords: ['Client ClickHouse', 'Modifier l’invite']
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Si la façon dont `clickhouse client` et clickhouse-local affichent l’invite de commande dans votre terminal ne vous convient pas, vous pouvez la modifier en y ajoutant un préfixe.
-Cet article explique comment modifier l’invite de commande comme vous le souhaitez.
+{frontMatter.description}
 
-L’invite de commande par défaut est le nom de votre ordinateur local suivi de `:) ` :
+{/* truncate */}
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="Invite de commande par défaut du client ClickHouse" />
+Si la façon dont `clickhouse client` et clickhouse-local affichent l’invite dans votre terminal ne vous convient pas, vous pouvez la modifier en y ajoutant un préfixe.
+Cet article explique comment modifier l’invite comme vous le souhaitez.
 
-Voici les variables que vous pouvez utiliser dans une invite de commande : `{user}`, `{host}`
+L’invite par défaut est le nom de votre ordinateur local suivi de `:) ` :
 
-Il existe plusieurs façons de mettre à jour l’invite de commande, et nous allons les passer en revue une par une.
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="Invite par défaut du client ClickHouse" />
+
+Voici les variables que vous pouvez utiliser dans une invite : `{user}`, `{host}`
+
+Il existe plusieurs façons de mettre à jour l’invite, et nous allons les passer en revue une par une.
 
 <div id="--prompt-flag">
   ## Option --prompt
