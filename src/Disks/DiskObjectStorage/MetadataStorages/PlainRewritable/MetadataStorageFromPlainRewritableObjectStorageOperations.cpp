@@ -47,6 +47,7 @@ namespace FailPoints
     extern const char plain_object_storage_fail_on_directory_move_undo[];
     extern const char plain_object_storage_fail_on_file_move_undo[];
     extern const char plain_object_storage_fail_after_copy_on_file_move[];
+    extern const char plain_object_storage_pause_on_directory_move[];
 }
 
 namespace
@@ -330,6 +331,10 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
         auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/validate_content ? std::make_optional(sub_path_from) : std::nullopt);
 
         rewriteSingleDirectory(sub_path_from, sub_path_to, remote_info.value(), *write_buf);
+
+        /// Lets a test hold the move once one marker carries its new path, so that it can decide what the rest of the
+        /// move and the reversal of this marker run into.
+        FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_on_directory_move);
     }
 
     fs_tree->moveDirectory(path_from, path_to);

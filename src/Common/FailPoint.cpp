@@ -222,6 +222,7 @@ static struct InitFiu
     ONCE(plain_object_storage_fail_on_directory_move_undo) \
     ONCE(plain_object_storage_fail_on_file_move_undo) \
     ONCE(plain_object_storage_fail_after_copy_on_file_move) \
+    PAUSEABLE_ONCE(plain_object_storage_pause_on_directory_move) \
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
     REGULAR(plain_rewritable_object_storage_azure_not_found_on_init) \

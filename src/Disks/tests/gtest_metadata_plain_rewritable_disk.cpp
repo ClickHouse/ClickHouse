@@ -18,9 +18,15 @@
 
 #include <base/scope_guard.h>
 
+#include <Poco/AutoPtr.h>
+#include <Poco/Channel.h>
+#include <Poco/Logger.h>
+#include <Poco/Message.h>
+
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <ranges>
@@ -31,13 +37,118 @@ namespace ProfileEvents
     extern const Event DiskPlainRewritableUndoStageRetries;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
 using namespace DB;
+
+/// A local object storage that can be told to reject every request that changes something, the way object storage
+/// behaves during an outage. Reads keep working, so a test can still look at what is stored.
+class FailingLocalObjectStorage : public LocalObjectStorage
+{
+public:
+    using LocalObjectStorage::LocalObjectStorage;
+
+    void failRequests(bool fail) { failing = fail; }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeObject(
+        const StoredObject & object,
+        WriteMode mode,
+        std::optional<ObjectAttributes> attributes = {},
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        const WriteSettings & write_settings = {}) override
+    {
+        throwIfFailing(object);
+        return LocalObjectStorage::writeObject(object, mode, attributes, buf_size, write_settings);
+    }
+
+    void copyObject(
+        const StoredObject & object_from,
+        const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        std::optional<ObjectAttributes> object_to_attributes = {}) override
+    {
+        throwIfFailing(object_to);
+        LocalObjectStorage::copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+    }
+
+    void removeObjectIfExists(const StoredObject & object) override
+    {
+        throwIfFailing(object);
+        LocalObjectStorage::removeObjectIfExists(object);
+    }
+
+private:
+    std::atomic<bool> failing = false;
+
+    void throwIfFailing(const StoredObject & object) const
+    {
+        if (failing)
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Object storage is unavailable, cannot change '{}'", object.remote_path);
+    }
+};
+
+/// Collects log messages, so that a test can assert on what the code reported rather than only on its return values.
+class CapturingChannel : public Poco::Channel
+{
+public:
+    void log(const Poco::Message & message) override
+    {
+        std::lock_guard lock(mutex);
+        messages.push_back(message.getText());
+    }
+
+    size_t count(const std::string & substring) const
+    {
+        std::lock_guard lock(mutex);
+        return std::ranges::count_if(messages, [&](const auto & message) { return message.find(substring) != std::string::npos; });
+    }
+
+private:
+    mutable std::mutex mutex;
+    std::vector<std::string> messages;
+};
+
+/// Sends everything a logger reports to a `CapturingChannel` for as long as it is alive.
+class LogCapture
+{
+public:
+    explicit LogCapture(const std::string & logger_name)
+        : logger(Poco::Logger::get(logger_name))
+        , previous_channel(logger.getChannel())
+        , previous_level(logger.getLevel())
+        , channel(new CapturingChannel)
+    {
+        logger.setChannel(channel);
+        logger.setLevel("error");
+    }
+
+    ~LogCapture()
+    {
+        logger.setChannel(previous_channel);
+        logger.setLevel(previous_level);
+    }
+
+    size_t count(const std::string & substring) const { return channel->count(substring); }
+
+private:
+    Poco::Logger & logger;
+    Poco::AutoPtr<Poco::Channel> previous_channel;
+    int previous_level;
+    Poco::AutoPtr<CapturingChannel> channel;
+};
 
 class MetadataPlainRewritableDiskTest : public testing::Test
 {
 public:
     /// The `enable_hard_links` setting of the disk. Set it before the first `getMetadataStorage` call of a test.
     bool hard_links_enabled = true;
+    /// Whether the object storage of the disk can be told to reject requests. Set it before the first
+    /// `getMetadataStorage` call of a test, and reach it with `getFailingObjectStorage`.
+    bool object_storage_can_fail = false;
 
     void SetUp() override
     {
@@ -73,6 +184,12 @@ public:
         return active_object_storages.at(key_prefix);
     }
 
+    std::shared_ptr<FailingLocalObjectStorage> getFailingObjectStorage(const std::string & key_prefix)
+    {
+        std::unique_lock<std::mutex> lock(active_metadatas_mutex);
+        return std::dynamic_pointer_cast<FailingLocalObjectStorage>(active_object_storages.at(key_prefix));
+    }
+
     void TearDown() override
     {
         for (const auto & [_, metadata] : active_metadatas)
@@ -90,7 +207,9 @@ private:
     {
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
-        auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
+        std::shared_ptr<LocalObjectStorage> object_storage = object_storage_can_fail
+            ? std::make_shared<FailingLocalObjectStorage>(std::move(settings))
+            : std::make_shared<LocalObjectStorage>(std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", hard_links_enabled);
 
         active_metadatas.emplace(key_prefix, metadata_storage);
@@ -3233,23 +3352,30 @@ TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndoRemovesABlobPublishedByAFail
     EXPECT_FALSE(metadata->existsFile("/A/moved"));
 }
 
-/// A shutdown has to reach a reversal that is already retrying, on the thread that runs the commit.
+/// A reversal that object storage keeps rejecting never finishes on its own, and a shutdown is the only thing that
+/// ends it. The move is held once one marker carries its new path, object storage is then told to reject every change,
+/// and what the reversal reports is read back from the log: it repeats the same step, and it stops on the shutdown
+/// rather than by succeeding or by giving up on its own.
 TEST_F(MetadataPlainRewritableDiskTest, UndoStopsRetryingWhenTheDiskShutsDownWhileRetrying)
 {
+    object_storage_can_fail = true;
+
     auto metadata = getMetadataStorage("UndoShutdownWhileRetrying");
+    auto object_storage = getFailingObjectStorage("UndoShutdownWhileRetrying");
+    ASSERT_TRUE(object_storage);
 
     {
         auto tx = metadata->createTransaction();
         tx->createDirectory("A");
+        tx->createDirectory("A/B");
         tx->commit(DB::NoCommitOptions{});
     }
 
+    LogCapture log_capture("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation");
     const auto retries_before = ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries];
 
-    /// Fires in `rewriteSingleDirectory`, which both the move and its reversal use, so the reversal keeps failing and
-    /// the retry loop cannot finish on its own.
-    FailPointInjection::enableFailPoint("plain_object_storage_write_fail_on_directory_move");
-    SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_write_fail_on_directory_move"));
+    FailPointInjection::enableFailPoint("plain_object_storage_pause_on_directory_move");
+    SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_pause_on_directory_move"));
 
     std::atomic<bool> commit_threw = false;
     std::thread committing([&]
@@ -3267,12 +3393,24 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoStopsRetryingWhenTheDiskShutsDownWhi
         }
     });
 
-    /// Wait for the reversal to fail once, so the shutdown lands on a thread that is inside the retry loop.
-    while (ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries] == retries_before)
+    /// One marker now carries its new path, and the move is waiting.
+    FailPointInjection::waitForPause("plain_object_storage_pause_on_directory_move");
+
+    /// From here every change is rejected, so the rest of the move fails and the reversal of the marker above cannot
+    /// succeed either.
+    object_storage->failRequests(true);
+    FailPointInjection::notifyFailPoint("plain_object_storage_pause_on_directory_move");
+
+    /// Wait until the same step has been repeated, which is the state a shutdown has to be able to end.
+    while (log_capture.count("failed") < 2)
         std::this_thread::yield();
 
     metadata->shutdown();
     committing.join();
 
     EXPECT_TRUE(commit_threw);
+    EXPECT_EQ(log_capture.count("because the disk is shutting down"), 1u);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries], retries_before);
+
+    object_storage->failRequests(false);
 }
