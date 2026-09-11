@@ -93,6 +93,11 @@ SELECT 'left_outer_extra_cond' AS t,
         ON l.user_id = r.user_id AND l.request_id = r.request_id AND r.extra < 500
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
 
+-- Unlike the result comparisons above, the two checks below assert the SHAPE of the plan, so the
+-- inputs to the join-order decision have to be pinned: the test harness randomizes join order
+-- (`query_plan_optimize_join_order_randomize`), which moves the build side and with it which
+-- column statistics the demotion can see.
+--
 -- Every case above compares a demoted plan against a non-demoted one, so all of them pass
 -- whether or not the optimization actually fired. Assert that it does fire on this fixture,
 -- otherwise the cases silently stop testing anything - which is how the perf test for this
@@ -103,6 +108,8 @@ FROM (
     SELECT count() FROM jks2_left l JOIN jks2_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
+        allow_statistics = 1, use_statistics = 1,
         query_plan_hash_join_subset_keys_min_rows = 0,
         query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
         query_plan_hash_join_subset_keys_max_probe_cost_ns = 1e9,
@@ -119,6 +126,8 @@ FROM (
     SELECT count() FROM jks2_left l JOIN jks2_right r
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
+        query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
+        allow_statistics = 1, use_statistics = 1,
         query_plan_hash_join_subset_keys_min_rows = 0,
         query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001
 );
