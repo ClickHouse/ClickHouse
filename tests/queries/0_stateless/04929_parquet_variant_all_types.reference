@@ -1,0 +1,28 @@
+1	None	\N
+2	Bool	true
+3	Bool	false
+4	Int8	-128
+5	Int16	-32768
+6	Int32	100000
+7	Int64	1234567890123
+8	Float64	3.5
+9	Decimal(9, 2)	123.45
+10	Decimal(18, 4)	12345678.9012
+11	Decimal(38, 10)	12345678901234567890.123456789
+12	Date32	2026-08-28
+13	DateTime64(6, \'UTC\')	2026-08-28 12:34:56.789012
+14	DateTime64(6)	2026-08-28 12:34:56.789012
+15	Float32	1.5
+16	String	bin
+17	String	yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+18	Time64(6)	12:34:56.789012
+19	DateTime64(9, \'UTC\')	2026-08-28 12:34:56.789012000
+20	DateTime64(9)	2026-08-28 12:34:56.789012000
+21	UUID	61f0c404-5cb3-11e7-907b-a6006ad3dba0
+22	String	hello
+23	Map(String, Dynamic)	{'a':1,'b':'x'}
+24	Array(Dynamic)	[1,2,'three']
+25	Map(String, Dynamic)	{'arr':[1,2],'obj':{'k':7}}
+26	Map(String, Dynamic)	{}
+27	Array(Dynamic)	[]
+28	None	\N
