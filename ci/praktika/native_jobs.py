@@ -486,6 +486,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             info=message,
         )
 
+    if env.RUN_ID:
+        # Resolved here, in the first job of the run, so that every job
+        # inherits one value with this environment. A rerun runs this job
+        # again and reads back the same `created_at`.
+        env.WORKFLOW_START_TIME = GH.get_workflow_run_created_at()
+        print(f"NOTE: Workflow run started at [{env.WORKFLOW_START_TIME}]")
+        env.dump()
+
     # refresh PR data
     if env.PR_NUMBER > 0:
         title, body, labels = GH.get_pr_title_body_labels()
@@ -966,11 +974,13 @@ def _finish_workflow(workflow, job_name):
             normalized_name = Utils.normalize_string(result.name)
             gh_job = workflow_job_data.get(normalized_name, {})
             gh_job_result = (gh_job.get("result") or "").lower()
-            if gh_job_result in ("cancelled", "canceled"):
+            # `abandoned` is GitHub's undocumented verdict for a job it queued and never assigned a runner.
+            if gh_job_result in ("cancelled", "canceled", "abandoned"):
                 print(
                     f"NOTE: not finished job [{result.name}] in the workflow but GitHub status is [{gh_job_result}] - set status to dropped"
                 )
                 result.status = Result.Status.DROPPED
+                result.add_note(f"{ResultInfo.JOB_DID_NOT_FINISH} [{gh_job_result}]")
                 workflow_result.dump()
                 workflow_result.ext["is_cancelled"] = True
                 update_final_report = True
@@ -986,7 +996,8 @@ def _finish_workflow(workflow, job_name):
                 continue
             else:
                 print(
-                    f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
+                    f"ERROR: not finished job [{result.name}] in the workflow, "
+                    f"GitHub verdict [{gh_job_result or 'none'}] - set status to error"
                 )
                 result.status = Result.Status.ERROR
                 result.add_error(ResultInfo.NOT_FINALIZED)
