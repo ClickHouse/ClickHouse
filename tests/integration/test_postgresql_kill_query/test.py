@@ -1,5 +1,6 @@
 import pytest
 import socket
+from contextlib import contextmanager
 import uuid
 import threading
 import time
@@ -548,19 +549,15 @@ ENGINE = PostgreSQL(
         assert not query_thread.is_alive(), "query thread outlived the test"
 
 
-def test_kill_query_while_the_read_is_stalled(started_cluster, setup_streaming_view):
-    """A cancel arriving while the COPY is streaming must not wait for the server.
-    The proxy stays stalled across the kill, so only the transport itself can end the read.
-    """
+@contextmanager
+def stalled_postgres_table(started_cluster, table):
+    """An engine table read through a `ResponseStallingProxy`. Released and dropped on exit."""
     proxy = ResponseStallingProxy()
     port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
     proxy_host = socket.gethostbyname(socket.gethostname())
-    query_id = str(uuid.uuid4())
-    query_errors = []
-
-    node1.query("DROP TABLE IF EXISTS read_stalled_counter")
+    node1.query(f"DROP TABLE IF EXISTS {table}")
     node1.query(
-        f"""CREATE TABLE read_stalled_counter (counter Nullable(Int32))
+        f"""CREATE TABLE {table} (counter Nullable(Int32))
 ENGINE = PostgreSQL(
     '{proxy_host}:{port}',
     'postgres_database',
@@ -568,38 +565,113 @@ ENGINE = PostgreSQL(
     'postgres',
     'ClickHouse_PostgreSQL_P@ssw0rd')"""
     )
-
-    def execute_query():
-        _, error = node1.query_and_get_answer_with_error(
-            "SELECT * FROM read_stalled_counter",
-            query_id=query_id,
-            timeout=120,
-        )
-        query_errors.append(error)
-
-    query_thread = threading.Thread(target=execute_query)
-    query_thread.start()
-
     try:
-        proxy.wait_until_stalled()
-
-        # Nothing is buffered after `CopyOutResponse`, so from here the source blocks in the read.
-        node1.wait_for_log_line(f"{query_id}.*Generate a chunk from stream")
-
-        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
-
-        # Still stalled: without the fix the read waits for as long as the peer stays silent.
-        query_thread.join(timeout=30)
-        assert (
-            not query_thread.is_alive()
-        ), "cancelled query kept waiting on a silent connection"
-        assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+        yield proxy
     finally:
-        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
         proxy.stop()
-        query_thread.join(timeout=60)
-        node1.query("DROP TABLE IF EXISTS read_stalled_counter")
-        assert not query_thread.is_alive(), "query thread outlived the test"
+        node1.query(f"DROP TABLE IF EXISTS {table}")
+
+
+def wait_until_blocked_in_read(proxy, query_id):
+    proxy.wait_until_stalled()
+    # Nothing is buffered after `CopyOutResponse`, so from here the source blocks in the read.
+    node1.wait_for_log_line(f"{query_id}.*Generate a chunk from stream")
+
+
+def test_kill_query_while_the_read_is_stalled(started_cluster, setup_streaming_view):
+    """A cancel arriving while the COPY is streaming must not wait for the server.
+    The proxy stays stalled across the kill, so only the transport itself can end the read.
+    """
+    query_id = str(uuid.uuid4())
+    query_errors = []
+
+    with stalled_postgres_table(started_cluster, "read_stalled_counter") as proxy:
+
+        def execute_query():
+            _, error = node1.query_and_get_answer_with_error(
+                "SELECT * FROM read_stalled_counter", query_id=query_id, timeout=120
+            )
+            query_errors.append(error)
+
+        query_thread = threading.Thread(target=execute_query)
+        query_thread.start()
+        try:
+            wait_until_blocked_in_read(proxy, query_id)
+            node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+
+            # Still stalled: without the fix the read waits for as long as the peer stays silent.
+            query_thread.join(timeout=30)
+            assert (
+                not query_thread.is_alive()
+            ), "cancelled query kept waiting on a silent connection"
+            assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+        finally:
+            node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
+            query_thread.join(timeout=60)
+            assert not query_thread.is_alive(), "query thread outlived the test"
+
+
+def test_max_execution_time_while_the_read_is_stalled(started_cluster, setup_streaming_view):
+    """The deadline is enforced by a background thread and has to end a read the query itself
+    cannot leave.
+    """
+    query_id = str(uuid.uuid4())
+    query_errors = []
+
+    with stalled_postgres_table(started_cluster, "read_stalled_counter") as proxy:
+
+        def execute_query():
+            _, error = node1.query_and_get_answer_with_error(
+                "SELECT * FROM read_stalled_counter SETTINGS max_execution_time = 5",
+                query_id=query_id,
+                timeout=120,
+            )
+            query_errors.append(error)
+
+        query_thread = threading.Thread(target=execute_query)
+        query_thread.start()
+        try:
+            proxy.wait_until_stalled()
+
+            # Still stalled: without the fix the deadline fires, but nothing wakes the read.
+            query_thread.join(timeout=30)
+            assert (
+                not query_thread.is_alive()
+            ), "timed-out query kept waiting on a silent connection"
+            assert query_errors and "TIMEOUT_EXCEEDED" in query_errors[0], query_errors
+        finally:
+            node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
+            query_thread.join(timeout=60)
+            assert not query_thread.is_alive(), "query thread outlived the test"
+
+
+def test_drop_refreshable_view_while_the_read_is_stalled(started_cluster, setup_streaming_view):
+    """Dropping a refreshable view waits for its refresh to stop, so the cancel it sends has to
+    end a stalled read as well.
+    """
+    with stalled_postgres_table(started_cluster, "read_stalled_counter") as proxy:
+        node1.query("DROP TABLE IF EXISTS stalled_refresh")
+        node1.query(
+            """CREATE MATERIALIZED VIEW stalled_refresh REFRESH EVERY 1 HOUR
+ENGINE = MergeTree ORDER BY tuple() EMPTY AS SELECT * FROM read_stalled_counter"""
+        )
+        try:
+            node1.query("SYSTEM REFRESH VIEW stalled_refresh")
+
+            # The refresh is the only query reading the table.
+            refresh_query = (
+                "SELECT query_id FROM system.processes "
+                "WHERE query LIKE '%read_stalled_counter%' AND query NOT LIKE '%system.processes%'"
+            )
+            assert_eq_with_retry(
+                node1, f"SELECT count() FROM ({refresh_query})", "1", retry_count=60, sleep_time=0.5
+            )
+            wait_until_blocked_in_read(proxy, node1.query(refresh_query).strip())
+
+            # Still stalled: without the fix the drop waits for the refresh, which waits for the peer.
+            node1.query("DROP TABLE stalled_refresh", timeout=30)
+        finally:
+            node1.query("DROP TABLE IF EXISTS stalled_refresh")
 
 
 def test_kill_query_when_postgresql_cancel_connection_fails(
@@ -643,11 +715,13 @@ def test_kill_query_when_postgresql_cancel_connection_fails(
         )
         wait_for_port_forward_connection(port_forward)
 
-        # Keep the data connection open but refuse new ones. The kill must get by without one.
+        # Keep the data connection open but refuse new ones: the cancel request fails, and the
+        # kill has to get by without it.
         port_forward.stop()
         wait_for_proxy_listener_closed(proxy_host, port)
 
         node1.query(f"KILL QUERY WHERE query_id='{query_id}'")
+        node1.wait_for_log_line("PQcancel\\(\\) -- connect\\(\\) failed", timeout=30)
 
         assert_eq_with_retry(
             node1,
@@ -663,7 +737,7 @@ def test_kill_query_when_postgresql_cancel_connection_fails(
     query_thread.join(timeout=30)
     assert not query_thread.is_alive()
     assert not query_exceptions
-    assert query_errors
+    assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
 
 
 def test_kill_infinite_query(setup_infinite_query):
