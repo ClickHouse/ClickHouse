@@ -1389,6 +1389,10 @@ try
     {
         global_context->createTraceCollector();
 
+        /// The config reloader applies this too; the seed here covers startup, which runs before its first callback.
+        MemoryTracker::setMinAllocationSizeToLogStackTrace(
+            server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
+
         /// Set up server-wide memory profiler (for total memory tracker).
         if (server_settings[ServerSetting::total_memory_profiler_step])
             total_memory_tracker.setProfilerStep(server_settings[ServerSetting::total_memory_profiler_step]);

@@ -62,6 +62,15 @@ def stack_of_first_record(instance):
     return frames
 
 
+def effective_threshold(instance):
+    return int(
+        instance.query(
+            "SELECT value FROM system.server_settings "
+            "WHERE name = 'min_allocation_size_to_log_stack_trace'"
+        ).strip()
+    )
+
+
 def test_setting_is_reported_as_changeable():
     assert (
         node.query(
@@ -117,3 +126,17 @@ def test_addresses_are_hidden_when_disabled():
         FRAME_WITHOUT_ADDRESS.match(frame) and not TRACER_FRAME.search(frame) for frame in frames
     ), frames
     assert not any("0x" in frame for frame in frames), frames
+
+
+def test_threshold_is_applied_by_a_runtime_reload():
+    # Startup and the config reloader apply the threshold at separate places, and only a reload
+    # exercises the second one. Both directions, since the setting is lowered as well as raised.
+    config = "/etc/clickhouse-server/config.d/with_addresses.yaml"
+    try:
+        node.replace_in_config(config, "64Mi", "128Mi")
+        node.query("SYSTEM RELOAD CONFIG")
+        assert effective_threshold(node) == 2 * THRESHOLD
+    finally:
+        node.replace_in_config(config, "128Mi", "64Mi")
+        node.query("SYSTEM RELOAD CONFIG")
+    assert effective_threshold(node) == THRESHOLD
