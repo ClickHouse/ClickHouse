@@ -2,6 +2,8 @@
 
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
@@ -22,6 +24,13 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeSerializedBytes;
+    extern const Event StreamingExchangeSerializeMicroseconds;
+    extern const Event StreamingExchangeDeserializeMicroseconds;
+}
 
 namespace DB
 {
@@ -80,6 +89,7 @@ namespace
 
 size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out)
 {
+    Stopwatch watch;
     const size_t packet_offset = out.count();
     PacketHeader packet_header{.packet_type = PacketType::Data, .bytes_size = 0};
     out.write(reinterpret_cast<const char *>(&packet_header), sizeof(packet_header));
@@ -123,6 +133,7 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
             writer.write(block);
             writer.flush();
             compressed_buf.finalize();
+            ProfileEvents::increment(ProfileEvents::StreamingExchangeSerializedBytes, compressed_buf.count());
         }
         catch (...)
         {
@@ -131,6 +142,7 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
         }
     }
 
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeSerializeMicroseconds, watch.elapsedMicroseconds());
     return packet_offset;
 }
 
@@ -212,9 +224,11 @@ DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const Str
     packet.end_of_stream = end_of_stream;
     if (num_columns != 0)
     {
+        Stopwatch watch;
         CompressedReadBuffer compressed_buf(body);
         NativeReader reader(compressed_buf, header, DBMS_TCP_PROTOCOL_VERSION);
         Block block = reader.read();
+        ProfileEvents::increment(ProfileEvents::StreamingExchangeDeserializeMicroseconds, watch.elapsedMicroseconds());
         packet.chunk = Chunk(block.getColumns(), num_rows);
         if (has_aggregated_chunk_info)
         {

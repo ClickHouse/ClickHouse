@@ -8,11 +8,21 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Poco/Net/NetException.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/PODArray.h>
 #include <cstring>
 #include <base/scope_guard.h>
 #include <base/types.h>
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeReceiveBytes;
+    extern const Event StreamingExchangePacketsReceived;
+    extern const Event StreamingExchangeReceiveWaitMicroseconds;
+    extern const Event StreamingExchangeEarlyCloses;
+}
 
 namespace DB
 {
@@ -199,6 +209,7 @@ void StreamingExchangeSource::onUpdatePorts()
 
 void StreamingExchangeSource::sendNoMoreDataNeeded()
 {
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeEarlyCloses);
     /// Sent blocking, under the handshake's send timeout: the source sends nothing else, so the send
     /// buffer is empty and the packet never waits.
     socket->setBlocking(true);
@@ -219,7 +230,14 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
         if (received == 0)
         {
             /// Socket is not ready for reading, wait for epoll event.
+            if (!receive_wait)
+                receive_wait.emplace();
             break;
+        }
+        if (receive_wait)
+        {
+            ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveWaitMicroseconds, receive_wait->elapsedMicroseconds());
+            receive_wait.reset();
         }
 
         LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket->sockfd());
@@ -232,7 +250,9 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
 void StreamingExchangeSource::tryReadHeader()
 {
     /// Read remaining size to header buffer
+    const size_t header_bytes_before = current_packet_header_bytes_filled;
     readFromSocket(reinterpret_cast<char*>(&current_packet_header) , sizeof(current_packet_header), current_packet_header_bytes_filled);
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveBytes, current_packet_header_bytes_filled - header_bytes_before);
     if (current_packet_header_bytes_filled == sizeof(current_packet_header))
     {
         if (current_packet_header.packet_type != StreamingExchangeProtocol::PacketType::Data)
@@ -255,7 +275,9 @@ void StreamingExchangeSource::tryReadHeader()
 void StreamingExchangeSource::tryReadBody()
 {
     /// Read remaining size of the packet
+    const size_t body_bytes_before = current_packet_body_bytes_filled;
     readFromSocket(reinterpret_cast<char *>(current_packet_body.data()), current_packet_body.size(), current_packet_body_bytes_filled);
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveBytes, current_packet_body_bytes_filled - body_bytes_before);
     if (current_packet_body_bytes_filled == current_packet_body.size())
     {
         packet_receive_state = ReceivingHeader;
@@ -263,6 +285,7 @@ void StreamingExchangeSource::tryReadBody()
         packet_in = std::make_unique<ReadBufferFromMemory>(
             reinterpret_cast<const char *>(current_packet_body.data()) + sizeof(current_packet_header),
             current_packet_body.size() - sizeof(current_packet_header));
+        ProfileEvents::increment(ProfileEvents::StreamingExchangePacketsReceived);
     }
 }
 

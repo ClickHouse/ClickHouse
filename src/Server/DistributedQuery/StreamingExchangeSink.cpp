@@ -10,11 +10,25 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Common/Epoll.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Poco/Net/NetException.h>
 
 #include <unistd.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeSendBytes;
+    extern const Event StreamingExchangePacketsSent;
+    extern const Event StreamingExchangeSendQueueFullMicroseconds;
+    extern const Event StreamingExchangeConnectionWaitMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric StreamingExchangeSinksWithFullSendQueue;
+}
 
 namespace DB
 {
@@ -44,6 +58,9 @@ void StreamingExchangeSink::extractSocket()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Future connection is expected be ready at this point. Wrong sequence of prepare/schedule/work calls for exchange stream {}", stream_name);
 
     LOG_TRACE(log, "Extracting socket from future connection for exchange stream {}", stream_name);
+    if (connection_wait)
+        ProfileEvents::increment(ProfileEvents::StreamingExchangeConnectionWaitMicroseconds, connection_wait->elapsedMicroseconds());
+    connection_wait.reset();
     socket = std::make_unique<Poco::Net::StreamSocket>(future_connection->getSocket());
     future_connection.reset();
     chassert(socket);
@@ -135,6 +152,7 @@ void StreamingExchangeSink::sendToSocket()
             send_position += sent;
             send_queue_bytes -= sent;
             total_bytes_sent += sent;
+            ProfileEvents::increment(ProfileEvents::StreamingExchangeSendBytes, sent);
             if (send_position == buffer.size())
             {
                 send_queue.pop_front();
@@ -157,6 +175,13 @@ void StreamingExchangeSink::sendToSocket()
 bool StreamingExchangeSink::canAddChunk() const
 {
     return (send_queue_bytes + out->count()) < MAX_PENDING_BYTES;
+}
+
+ISink::Status StreamingExchangeSink::waitForSendQueueRoom()
+{
+    if (!send_queue_full)
+        send_queue_full.emplace(SendQueueFull{Stopwatch{}, CurrentMetrics::Increment{CurrentMetrics::StreamingExchangeSinksWithFullSendQueue}});
+    return Status::Async;
 }
 
 void StreamingExchangeSink::flushSerializedData()
@@ -190,7 +215,17 @@ ISink::Status StreamingExchangeSink::prepare()
 {
     /// If socket is not ready yet, wait for it
     if (!socket)
+    {
+        if (!connection_wait)
+            connection_wait.emplace();
         return Status::Async;
+    }
+
+    if (send_queue_full && canAddChunk())
+    {
+        ProfileEvents::increment(ProfileEvents::StreamingExchangeSendQueueFullMicroseconds, send_queue_full->since.elapsedMicroseconds());
+        send_queue_full.reset();
+    }
 
     /// The peer will not read this stream anymore (for example, its LIMIT is satisfied).
     /// Close the input so the stop propagates to the upstream stages; without this they
@@ -202,14 +237,14 @@ ISink::Status StreamingExchangeSink::prepare()
     }
 
     if (has_input)
-        return canAddChunk() ? Status::Ready : Status::Async;
+        return canAddChunk() ? Status::Ready : waitForSendQueueRoom();
 
     if (input.isFinished())
     {
         if (!final_chunk_added)
         {
             if (!canAddChunk())
-                return Status::Async;
+                return waitForSendQueueRoom();
             /// Input is finished, send an empty chunk to signal end-of-stream.
             input_is_finished = true;
             current_chunk = {};
@@ -229,7 +264,7 @@ ISink::Status StreamingExchangeSink::prepare()
 
     /// Propagate back-pressure upstream: don't pull until there's room.
     if (!canAddChunk())
-        return Status::Async;
+        return waitForSendQueueRoom();
 
     input.setNeeded();
     if (!input.hasData())
@@ -365,6 +400,7 @@ void StreamingExchangeSink::consume(Chunk chunk)
         const size_t packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out);
         StreamingExchangeProtocol::finishDataPacket(const_cast<char *>(out->stringView().data()) + packet_offset, out->count() - packet_offset);
     }
+    ProfileEvents::increment(ProfileEvents::StreamingExchangePacketsSent);
 
     /// A packet without rows ends the stream or carries only bucket information: do not hold it back.
     if (chunk.getNumRows() == 0)

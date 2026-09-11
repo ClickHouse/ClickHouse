@@ -2,6 +2,8 @@
 
 #include <memory>
 #include <Common/Epoll.h>
+#include <Common/Stopwatch.h>
+#include <optional>
 #include <Common/Logger.h>
 #include <Common/WakeupFd.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -118,6 +120,8 @@ private:
     std::unique_ptr<ReadBufferFromMemory> packet_in;    /// One full packet
     size_t rows_read = 0;
     size_t bytes_read = 0;
+    /// Runs from a read that found no bytes until bytes arrive.
+    std::optional<Stopwatch> receive_wait;
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Combines the socket and the output-update wakeup into one fd that the executor polls
