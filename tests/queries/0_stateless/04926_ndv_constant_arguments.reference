@@ -1,6 +1,6 @@
-constant argument before the non-const argument
+toUInt64(dateTrunc('month', d))
 Join: probe[10] ⋈ aggregated[10]
-constant argument wrapped in the materialize function
+plus(materialize(1), n)
 Join: probe[10] ⋈ aggregated[10]
-constant scalar subquery argument
+toUInt64(dateTrunc((SELECT 'month'), d))
 Join: probe[10] ⋈ aggregated[10]

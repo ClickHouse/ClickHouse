@@ -1,5 +1,7 @@
--- Check that deterministic functions with one non-constant argument inherit its NDV as an upper bound.
--- Constants are passed directly, wrapped in the `materialize` function, or returned by scalar subqueries.
+-- Check NDV propagation (upper bound 10) through:
+--   `toUInt64(dateTrunc('month', d))`
+--   `plus(materialize(1), n)`
+--   `toUInt64(dateTrunc((SELECT 'month'), d))`
 
 CREATE TABLE source (n UInt64, d Date) ENGINE = MergeTree ORDER BY n SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE probe (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS auto_statistics_types = 'uniq';
@@ -17,8 +19,8 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 
--- Expect `EXPLAIN` to show `aggregated[10]`, estimating the group count from the source NDV of 10.
-SELECT 'constant argument before the non-const argument';
+-- `NDV(d) = NDV(n) = 10` -> estimated groups: `aggregated[10]` in `EXPLAIN`.
+SELECT 'toUInt64(dateTrunc(\'month\', d))';
 SELECT extract(explain, 'Join:.*') FROM
 (
     EXPLAIN keep_logical_steps = 1, actions = 1
@@ -34,8 +36,8 @@ SELECT extract(explain, 'Join:.*') FROM
 )
 WHERE explain LIKE '% Join:%';
 
--- The `materialize` function turns a constant into a regular column with the same value in every row.
-SELECT 'constant argument wrapped in the materialize function';
+-- The function call `materialize(1)` produces a regular column `[1, 1, ...]`.
+SELECT 'plus(materialize(1), n)';
 SELECT extract(explain, 'Join:.*') FROM
 (
     EXPLAIN keep_logical_steps = 1, actions = 1
@@ -51,7 +53,7 @@ SELECT extract(explain, 'Join:.*') FROM
 )
 WHERE explain LIKE '% Join:%';
 
-SELECT 'constant scalar subquery argument';
+SELECT 'toUInt64(dateTrunc((SELECT \'month\'), d))';
 SELECT extract(explain, 'Join:.*') FROM
 (
     EXPLAIN keep_logical_steps = 1, actions = 1
