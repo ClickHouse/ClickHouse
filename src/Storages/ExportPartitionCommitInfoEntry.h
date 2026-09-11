@@ -8,14 +8,6 @@
 namespace DB
 {
 
-/// Paths reported by the destination storage when a partition export commit lands.
-///
-/// Recorded exactly once, atomically with the task's transition to COMPLETED:
-///  - `Replicated*MergeTree` writes it to <export-entry>/commit_info
-///    (see ExportPartitionUtils::commit),
-///  - plain `MergeTree` embeds it in the on-disk task descriptor
-///    (see MergeTreePartitionExportScheduler::tryCommit).
-///
 /// All Iceberg fields are empty for non-Iceberg destinations. They may also be
 /// empty for an Iceberg destination if the committing node crashed between
 /// writing the object-storage files and recording this entry; in that case the

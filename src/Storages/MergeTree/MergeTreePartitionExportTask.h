@@ -64,8 +64,6 @@ struct MergeTreePartitionExportTask
     Status status = Status::PENDING;
     LastException last_exception;
 
-    /// Paths reported by the destination storage, recorded together with the COMPLETED transition.
-    /// Stays nullopt until the commit lands, and for descriptors written before this field existed.
     std::optional<ExportPartitionCommitInfoEntry> commit_info;
 
     size_t retry_initial_backoff_seconds = 5;

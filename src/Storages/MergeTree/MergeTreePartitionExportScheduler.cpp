@@ -660,9 +660,6 @@ void MergeTreePartitionExportScheduler::tryCommit(const String & transaction_id)
         if (success)
         {
             updated.status = MergeTreePartitionExportTask::Status::COMPLETED;
-            /// Recorded in the same descriptor write as COMPLETED. A task that had nothing to
-            /// commit records an entry with empty paths, matching the replicated path, which also
-            /// always writes commit_info together with the status transition.
             updated.commit_info = ExportPartitionCommitInfoEntry{
                 destination_commit_info.iceberg_metadata_file,
                 destination_commit_info.iceberg_manifest_list,
