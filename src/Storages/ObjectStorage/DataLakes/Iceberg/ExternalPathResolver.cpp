@@ -1,6 +1,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 #include <Core/Settings.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
@@ -10,6 +11,7 @@
 #include <IO/S3/URI.h>
 #include <Interpreters/Context.h>
 #include <Poco/String.h>
+#include <Poco/URI.h>
 #include <Poco/Util/MapConfiguration.h>
 #include <fmt/format.h>
 #include <filesystem>
@@ -212,6 +214,16 @@ std::pair<std::string, std::string> splitAbfsAuthority(const std::string & autho
     if (auto suffix_pos = account_name.find('.'); suffix_pos != std::string::npos)
         account_name = account_name.substr(0, suffix_pos);
     return {authority.substr(0, at_pos), account_name};
+}
+
+/// A table definition runs the endpoint it names through the remote host filter before any storage is
+/// built for it (`StorageS3Configuration::check`, `StorageAzureConfiguration::check`,
+/// `StorageHDFSConfiguration::check`). A path in Iceberg metadata names an endpoint just the same, so it
+/// passes the same gate: otherwise the metadata could make the server connect to a host that an ordinary
+/// `S3`, `AzureBlobStorage` or `HDFS` table is not allowed to reach.
+void checkRemoteHostIsAllowed(const ContextPtr & context, const std::string & url)
+{
+    context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(url));
 }
 
 /// Look `cache_key` up in the secondary-storage cache and, on a miss, create the storage with `create_fn`
@@ -577,6 +589,8 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                 endpoint_to_use = make_endpoint_with_bucket();
         }
 
+        checkRemoteHostIsAllowed(context, endpoint_to_use);
+
         const bool propagate_creds = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
 
         /// Decide whether the base storage's S3 credentials apply to this target
@@ -821,6 +835,8 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                     "account '{}'.",
                     account_name, base_account, account_name);
 
+            checkRemoteHostIsAllowed(context, conn_params.getConnectionURL());
+
             /// The accounts are the same, so whatever authenticates the base table authenticates this
             /// container too. Clone the base connection parameters rather than synthesize a config for
             /// `ObjectStorageFactory`: a config cannot express the query-string auth of a SAS URL
@@ -834,8 +850,8 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                 {
                     auto params = conn_params;
                     params.endpoint.container_name = container_name;
-                    /// The base prefix is the table directory in the base container; keys of the target
-                    /// container are resolved from its root.
+                    /// Keys of the target container are resolved from its root, so a blob prefix the base
+                    /// was configured with must not carry over and be prepended to them.
                     params.endpoint.prefix.clear();
 
                     /// A container named by the metadata already exists, so do not probe or create it.
@@ -856,6 +872,11 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
         }
     }
 #endif
+
+    /// `file://` has no authority (enforced above) and is read from the local filesystem, so only the
+    /// schemes that name a remote host reach the filter.
+    if (!target_decomposed.authority.empty())
+        checkRemoteHostIsAllowed(context, target_scheme_normalized + "://" + target_decomposed.authority + "/");
 
     /// Handle storage types that need new storage creation
     return getOrCreateStorageAndKey(

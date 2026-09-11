@@ -1578,12 +1578,17 @@ void IcebergMetadata::drop(ContextPtr context)
     /// a failure propagate rather than wiping the metadata re-enumeration on retry depends on (fail closed).
     /// History is not walked here: `drop` deletes what it enumerates, and deleting objects referenced
     /// only by expired historical metadata is out of scope (see the review discussion in #90740).
+    /// The catalog cannot be consulted for the head: `StorageObjectStorage::drop` removes the table from
+    /// it before this runs. Enumerate from the configured `iceberg_metadata_file_path` instead, which is
+    /// where a catalog-backed table reads from (`DatabaseDataLake` stores the committed head there), so a
+    /// higher `v*.metadata.json` left in storage by an interrupted write does not hide the head's files.
     std::vector<std::pair<ObjectStoragePtr, String>> external_files;
     try
     {
         external_files = Iceberg::collectReachableFiles(
             object_storage, persistent_components, data_lake_settings, context, log, *external_storages,
-            /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false).external_files;
+            /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false,
+            /* ignore_explicit_metadata_file_path */ false).external_files;
     }
     catch (const Exception & e)
     {

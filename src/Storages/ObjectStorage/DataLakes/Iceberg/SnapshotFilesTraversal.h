@@ -58,7 +58,12 @@ struct ReachableFilesResult
 /// Collect all files reachable through the current metadata graph.
 ///
 /// The graph is rooted at the metadata file `catalog` currently points at; without a catalog
-/// (`catalog` is null) the latest metadata file visible in storage is used.
+/// (`catalog` is null) it is rooted at the explicitly configured `iceberg_metadata_file_path` when
+/// `ignore_explicit_metadata_file_path` is false, and at the latest metadata file visible in storage
+/// otherwise. A caller that deletes what the graph does *not* reach (`remove_orphan_files`) must use
+/// the latest version, or a configured older head would make every later file look unreachable; a
+/// caller that deletes what the graph *does* reach (`drop`) must use the configured head, which is
+/// where the table itself reads from.
 /// Traverses: metadata JSON files (from metadata-log), manifest lists (from snapshots),
 /// manifest files (from manifest lists), data/delete files (from manifest files),
 /// and statistics files. Base-storage files inside `table_path` go to `files` (as keys); everything
@@ -79,7 +84,8 @@ ReachableFilesResult collectReachableFiles(
     ExternalStorageCache & external_storages,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier,
-    bool scan_metadata_log_history);
+    bool scan_metadata_log_history,
+    bool ignore_explicit_metadata_file_path);
 
 }
 

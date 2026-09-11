@@ -273,7 +273,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     /// orphaned objects in another bucket/prefix that this operation cannot see.
     auto [reachable, metadata_version, external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
-        catalog, table_name, /* scan_metadata_log_history */ true);
+        catalog, table_name, /* scan_metadata_log_history */ true, /* ignore_explicit_metadata_file_path */ true);
 
     if (!external_files.empty())
         throw Exception(
@@ -303,7 +303,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     /// Only the metadata version matters here (TOCTOU detection), so skip the history walk.
     auto [_recheck_files, recheck_version, _recheck_external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
-        catalog, table_name, /* scan_metadata_log_history */ false);
+        catalog, table_name, /* scan_metadata_log_history */ false, /* ignore_explicit_metadata_file_path */ true);
     if (recheck_version != metadata_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Metadata version changed during orphan scan (v{} -> v{}); "

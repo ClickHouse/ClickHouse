@@ -58,6 +58,16 @@ def started_cluster():
             with_azurite=True,
             stay_alive=True,
         )
+        # `remote_url_allow_hosts` is a server-level setting, so the host filter needs its own instance.
+        cluster.add_instance(
+            "node_restricted",
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/remote_host_filter.xml",
+            ],
+            user_configs=["configs/users.d/users.xml"],
+            with_minio=True,
+        )
 
         cluster.start()
 
@@ -657,10 +667,36 @@ def relocate_manifest_lists_to_bucket(started_cluster, table_name, manifest_list
     return base_path
 
 
+def _delete_file_names(metadata_dir: str) -> set:
+    """Base names of the delete files (`data_file.content` != 0) the manifests reference."""
+    names = set()
+    for mf in find_files(metadata_dir, ".avro"):
+        if os.path.basename(mf).startswith("snap-"):
+            continue
+        with open(mf, 'rb') as f:
+            reader = avro.datafile.DataFileReader(f, avro.io.DatumReader())
+            try:
+                for record in reader:
+                    data_file = record.get("data_file", {})
+                    if data_file.get("content", 0) != 0:
+                        names.add(os.path.basename(data_file["file_path"]))
+            finally:
+                reader.close()
+    return names
+
+
 def _rewrite_manifests_and_reupload(started_cluster, host_path, base_path, file_path_modifier):
     """Rewrite every manifest's `data_file.file_path` via `file_path_modifier` and re-upload the
     manifests to the base bucket. Manifest lists and metadata.json are left untouched."""
     metadata_dir = os.path.join(host_path, "metadata")
+
+    # A position delete file names its data files with the exact spelling the manifest uses, both in its
+    # own rows and in the `file_path` bounds its manifest entry carries. Rewriting the data-file paths
+    # here would leave both behind, and the table would read as if nothing had been deleted. Relocate the
+    # delete files instead (`relocate_delete_files_to_bucket`), which leaves those references intact.
+    assert not _delete_file_names(metadata_dir), \
+        f"{host_path} has delete files; relocating its data files would silently disable them"
+
     manifest_files = [f for f in find_files(metadata_dir, ".avro") if not os.path.basename(f).startswith("snap-")]
     for mf in manifest_files:
         modify_avro_file(mf, ["data_file", "file_path"], file_path_modifier)
@@ -680,6 +716,38 @@ def relocate_data_files_to_bucket(started_cluster, table_name, data_bucket):
                                     lambda p: path_modifier(p, data_storage, started_cluster, base_path))
 
     _move_files_to_bucket(started_cluster, find_files(data_dir, ".parquet"), data_bucket, host_path, base_path)
+
+    shutil.rmtree(temp_dir)
+    return base_path
+
+
+def relocate_delete_files_to_bucket(started_cluster, table_name, delete_bucket):
+    """Move the table's delete files to `delete_bucket`; their manifest entries are rewritten to point
+    there and the stale base-bucket copies are deleted. The data files stay where they are, so the
+    data-file paths a position delete file names -- in its rows and in its manifest bounds -- keep
+    matching."""
+    delete_storage = f"s3:{delete_bucket}"
+
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster, table_name)
+    metadata_dir = os.path.join(host_path, "metadata")
+    delete_names = _delete_file_names(metadata_dir)
+    assert delete_names, f"{table_name} has no delete files to relocate"
+
+    def to_delete_bucket(old_path):
+        if os.path.basename(old_path) not in delete_names:
+            return old_path
+        return path_modifier(old_path, delete_storage, started_cluster, base_path)
+
+    for mf in find_files(metadata_dir, ".avro"):
+        if os.path.basename(mf).startswith("snap-"):
+            continue
+        modify_avro_file(mf, ["data_file", "file_path"], to_delete_bucket)
+        rel = os.path.relpath(mf, host_path)
+        started_cluster.default_s3_uploader.upload_file(mf, f"{base_path}/{rel}")
+
+    delete_files = [f for f in find_files(os.path.join(host_path, "data"), ".parquet")
+                    if os.path.basename(f) in delete_names]
+    _move_files_to_bucket(started_cluster, delete_files, delete_bucket, host_path, base_path)
 
     shutil.rmtree(temp_dir)
     return base_path
@@ -768,10 +836,10 @@ def test_optimize_rejects_external_paths(started_cluster):
 
     TABLE_NAME = f"test_optimize_rejects_external_{get_uuid_str()}"
     base_bucket = started_cluster.minio_bucket
-    data_bucket = f"{base_bucket}-storage1"
+    delete_bucket = f"{base_bucket}-storage1"
 
     # The positional delete file is what makes the table worth compacting, so the run gets as far as
-    # the cleanup that would delete the external data files.
+    # the cleanup that would delete it, and it is also the file put outside the table directory.
     spark.sql(
         f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg "
         f"TBLPROPERTIES ('format-version'='2', 'write.delete.mode'='merge-on-read')")
@@ -779,7 +847,7 @@ def test_optimize_rejects_external_paths(started_cluster):
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
 
     default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
-    base_path = relocate_data_files_to_bucket(started_cluster, TABLE_NAME, data_bucket)
+    base_path = relocate_delete_files_to_bucket(started_cluster, TABLE_NAME, delete_bucket)
 
     minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
     args = f"s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{base_bucket}/'"
@@ -789,11 +857,11 @@ def test_optimize_rejects_external_paths(started_cluster):
     def external_objects():
         return sorted(
             obj.object_name for obj in
-            started_cluster.minio_client.list_objects(data_bucket, prefix=f"{base_path}/", recursive=True))
+            started_cluster.minio_client.list_objects(delete_bucket, prefix=f"{base_path}/", recursive=True))
 
-    # Sanity check: the data really is external, and readable.
+    # Sanity check: the delete file really is external, and is still applied to the read.
     objects_before = external_objects()
-    assert objects_before, "The data files should have been relocated to the other bucket"
+    assert objects_before, "The delete file should have been relocated to the other bucket"
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n3\tgamma\n"
 
     error = instance.query_and_get_error(
@@ -1079,6 +1147,93 @@ def test_delete_data_on_drop_removes_same_bucket_external_files(started_cluster)
     # Both the table directory and the same-bucket external data files must be gone.
     assert count_objects(base_bucket, f"{base_path}/") == 0
     assert count_objects(base_bucket, f"{external_prefix}/") == 0
+
+
+# Regression test: an endpoint named by Iceberg metadata passes `remote_url_allow_hosts` just like one
+# named in a table definition (`StorageS3Configuration::check` and its `HDFS` / Azure siblings). Without
+# it the metadata could make the server build a storage for -- and connect to -- a host that an ordinary
+# `S3`, `AzureBlobStorage` or `HDFS` table is not allowed to reach.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3990706589
+def test_external_endpoint_is_rejected_by_remote_host_filter(started_cluster):
+    instance = started_cluster.instances["node_restricted"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_host_filter_{get_uuid_str()}"
+    base_bucket = started_cluster.minio_bucket
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+
+    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+
+    # The data files are named by an explicit URL on a host the filter does not list. They stay where
+    # they are: the endpoint is refused before any request is made for them.
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster, TABLE_NAME)
+    _rewrite_manifests_and_reupload(
+        started_cluster, host_path, base_path,
+        lambda p: f"http://not-allowed-host:{started_cluster.minio_port}/{base_bucket}/{base_path}/data/{os.path.basename(p)}")
+    shutil.rmtree(temp_dir)
+
+    minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
+    args = f"s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{base_bucket}/'"
+
+    # The table itself is on an allowed host, so it is the external endpoint that is refused.
+    error = instance.query_and_get_error(f"SELECT * FROM icebergS3({args})")
+    assert "not allowed in configuration file" in error, error
+    assert "not-allowed-host" in error, error
+
+
+# Regression test: `DROP TABLE ... SYNC` with `iceberg_delete_data_on_drop = 1` enumerated the files to
+# delete from the highest `v*.metadata.json` visible in storage instead of the head the table reads. A
+# metadata document left behind by an interrupted write is a higher version than the committed head, and
+# its snapshot does not name the head's external files, so those files were leaked with nothing left to
+# rediscover them from. The catalog cannot be asked at that point -- `StorageObjectStorage::drop` removes
+# the table from it first -- so the drop enumerates from the configured `iceberg_metadata_file_path`,
+# which is where `DatabaseDataLake` puts the catalog's committed head.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3990706553
+def test_delete_data_on_drop_uses_configured_metadata_head(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_drop_stale_head_{get_uuid_str()}"
+    base_bucket = started_cluster.minio_bucket
+    external_prefix = f"external_data/{TABLE_NAME}"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+
+    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    # Data files live elsewhere in the SAME bucket; metadata / manifests stay in the table directory.
+    base_path = relocate_data_files_within_base_bucket(started_cluster, TABLE_NAME, external_prefix)
+
+    temp_dir, host_path, _ = _download_table_for_relocation(started_cluster, TABLE_NAME)
+    metadata_files = sorted(find_files(os.path.join(host_path, "metadata"), ".metadata.json"))
+    head = os.path.basename(metadata_files[-1])
+    # A stale higher version, as an interrupted write leaves behind: the table's own first metadata
+    # document, which has no snapshot and therefore names no data file at all.
+    started_cluster.default_s3_uploader.upload_file(
+        metadata_files[0], f"{base_path}/metadata/99999-{get_uuid_str()}.metadata.json")
+    shutil.rmtree(temp_dir)
+
+    def count_objects(prefix):
+        return sum(1 for _ in started_cluster.minio_client.list_objects(base_bucket, prefix=prefix, recursive=True))
+
+    minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
+    args = f"s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{base_bucket}/'"
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    instance.query(
+        f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergS3({args}) "
+        f"SETTINGS iceberg_metadata_file_path = 'metadata/{head}'")
+
+    # The table reads the configured head, not the stale one.
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n2\tbeta\n3\tgamma\n"
+    assert count_objects(f"{external_prefix}/") > 0
+
+    # `SYNC` waits for the background drop (which runs `IcebergMetadata::drop`) to finish.
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+    assert count_objects(f"{base_path}/") == 0
+    assert count_objects(f"{external_prefix}/") == 0
 
 
 def _manifest_lists_delete_files(avro_path: str) -> bool:
@@ -1450,9 +1605,10 @@ def _relocate_data_files_to_bucket_by_ip(started_cluster, table_name, data_bucke
 # credentials are handed to a secondary storage built for a file the metadata places elsewhere.
 # Without it they are reused only when the target resolves to the same endpoint, which is compared
 # by scheme and authority -- so addressing the very same MinIO through its IP instead of its host
-# name makes the target a different endpoint while the object stays exactly where it is. The data
-# bucket is private (only `minio_bucket` is made anonymously readable by `prepare_s3_bucket`), so an
-# uncredentialed secondary storage is genuinely refused rather than quietly succeeding.
+# name makes the target a different endpoint while the object stays exactly where it is. A secondary
+# storage with no credentials is then genuinely refused rather than quietly succeeding: `getClient`
+# will not stand in the server's own credentials for a user query, and the data bucket is private
+# anyway (only `minio_bucket` is made anonymously readable by `prepare_s3_bucket`).
 def test_propagate_credentials_to_other_endpoint(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -1470,9 +1626,10 @@ def test_propagate_credentials_to_other_endpoint(started_cluster):
     table_function = f"icebergS3(s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{started_cluster.minio_bucket}/')"
 
     # Default: the data files name another endpoint, so the base credentials do not apply to them and
-    # the secondary storage is built without any -- the private bucket refuses the anonymous read.
+    # the secondary storage is built without any -- the read fails closed instead of falling back to
+    # whatever identity the server itself is configured with.
     error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id")
-    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+    assert "not allowed to use the server's own credentials" in error, error
 
     # Opted in: the base credentials are propagated to that endpoint and the same read succeeds.
     result = instance.query(

@@ -187,12 +187,13 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
 
     assert data_entries_checked > 0
 
-# Regression test: the cleanup of the files `OPTIMIZE` replaced cannot be undone, so it attempts every
-# removal instead of stopping at the first failure and names the leftovers in the exception -- the only
-# pointer left for a file outside the table directory, which `remove_orphan_files` does not scan for.
-# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3959096995
+# Regression test: the compacted metadata is written as a lower version than the files it replaces, so the
+# table becomes current only once the whole old `metadata` prefix is gone. A metadata file that cannot be
+# removed leaves the old snapshot current, so the cleanup must stop there instead of going on to delete the
+# manifests and data that snapshot still references.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3990706541
 @pytest.mark.parametrize("storage_type", ["local"])
-def test_optimize_reports_files_it_could_not_remove(started_cluster_iceberg_with_spark, storage_type):
+def test_optimize_keeps_data_when_it_cannot_remove_metadata(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_optimize_failed_cleanup_" + storage_type + "_" + get_uuid_str()
@@ -239,14 +240,13 @@ def test_optimize_reports_files_it_could_not_remove(started_cluster_iceberg_with
     finally:
         instance.query("SYSTEM DISABLE FAILPOINT local_object_storage_network_error_during_remove")
 
-    # The file the removal failed on is named in the error, not just logged.
-    assert "could not be removed and have to be deleted by hand" in error, error
-    assert "Injected error after remove object" not in error, \
-        f"The cleanup stopped at the first failure instead of attempting every removal: {error}"
+    # The failure is reported with what it means for the table, not as a bare removal error.
+    assert "the metadata files the compaction replaced" in error, error
 
-    # Every other removal was still carried out, so the rewritten table is current and reads.
-    assert not list_dir("data") & data_before, \
-        f"Replaced data files left behind: {sorted(list_dir('data') & data_before)}"
-    assert not list_dir("metadata") & metadata_before, \
-        f"Replaced metadata files left behind: {sorted(list_dir('metadata') & metadata_before)}"
+    # The cleanup stopped inside the `metadata` prefix, so the old snapshot is still the current one and
+    # everything it references is still there and reads.
+    assert list_dir("metadata") & metadata_before, \
+        "The whole old `metadata` prefix was removed even though one of its removals failed"
+    assert data_before <= list_dir("data"), \
+        f"Data files of the still-current snapshot were deleted: {sorted(data_before - list_dir('data'))}"
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80

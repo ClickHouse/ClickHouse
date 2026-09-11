@@ -1388,29 +1388,50 @@ static void writeMetadataFiles(
     }
 }
 
+/// The files the rewrite replaces, split by the role they play in the head switch (see `clearOldFiles`).
 /// Only the base storage is listed: `compactIcebergTable` rejects a table that references anything
 /// outside `table_path` there, so every file the rewrite replaces is under one of these two prefixes.
-static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
+struct OldFiles
 {
-    /// The `metadata` prefix comes first on purpose, see `clearOldFiles`.
-    auto result = listFiles(*object_storage, table_path, "metadata", "");
+    std::vector<String> metadata_files;
+    std::vector<String> data_files;
+};
 
-    for (auto && data_file : listFiles(*object_storage, table_path, "data", ""))
-        result.push_back(std::move(data_file));
-
-    return result;
+static OldFiles getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
+{
+    return {listFiles(*object_storage, table_path, "metadata", ""), listFiles(*object_storage, table_path, "data", "")};
 }
 
-/// Keep the order of `old_files`: the compacted metadata is written as `v0.metadata.json`, a lower
-/// version than the files it replaces, so the rewritten table becomes current only once the old
-/// `metadata` prefix is gone. Nothing here can be undone, so every removal is attempted and the
-/// leftovers are named in the exception rather than left to a log line nobody reads.
-static void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
+/// The compacted metadata is written as `v0.metadata.json`, a lower version than the files it replaces,
+/// so the rewritten table becomes current only once the old `metadata` prefix is gone. Until then the old
+/// head still points at the old manifests and data, so a metadata file that survives is a stop sign:
+/// deleting anything further would strip a table that readers still resolve to the old snapshot.
+/// Once the head has switched, the data files are unreferenced, so their removals are all attempted and
+/// the leftovers are named in the exception rather than left to a log line nobody reads.
+static void clearOldFiles(ObjectStoragePtr object_storage, const OldFiles & old_files)
 {
     auto log = getLogger("IcebergCompaction");
 
+    for (const auto & key : old_files.metadata_files)
+    {
+        LOG_DEBUG(log, "Removing old file during compaction: {}", key);
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(key));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "while removing '{}', one of the metadata files the compaction replaced. The table is still at its "
+                "previous state and its data is intact; the compacted files written next to it are orphaned and the "
+                "old files that were not reached are left in place",
+                key);
+            throw;
+        }
+    }
+
     std::vector<String> not_removed;
-    for (const auto & key : old_files)
+    for (const auto & key : old_files.data_files)
     {
         LOG_DEBUG(log, "Removing old file during compaction: {}", key);
         try
