@@ -13,6 +13,7 @@
 #include <Examples/clickhouse_examples.h>
 #include <Examples/storage_memory_profiler.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -342,17 +343,15 @@ void StorageMemoryProfiler::initializeContext()
         const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * cache_size_to_ram_max_ratio);
 
         String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
-        size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
+        const size_t configured_mark_cache_size = server_settings[ServerSetting::mark_cache_size];
+        const size_t mark_cache_size = std::min(configured_mark_cache_size, max_cache_size);
         const double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
-        if (mark_cache_size > max_cache_size)
-            mark_cache_size = max_cache_size;
         global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
         String index_mark_cache_policy = server_settings[ServerSetting::index_mark_cache_policy];
-        size_t index_mark_cache_size = server_settings[ServerSetting::index_mark_cache_size];
+        const size_t configured_index_mark_cache_size = server_settings[ServerSetting::index_mark_cache_size];
+        const size_t index_mark_cache_size = std::min(configured_index_mark_cache_size, max_cache_size);
         const double index_mark_cache_size_ratio = server_settings[ServerSetting::index_mark_cache_size_ratio];
-        if (index_mark_cache_size > max_cache_size)
-            index_mark_cache_size = max_cache_size;
         global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
     }
 
