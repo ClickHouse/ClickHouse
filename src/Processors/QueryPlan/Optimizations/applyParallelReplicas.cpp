@@ -159,17 +159,7 @@ static bool subtreeHasUnshippableRead(const QueryPlan::Node * node)
 /// reason the barrier keeps a `SQL SECURITY DEFINER` / `NONE` view's inner query on the initiator.
 /// Fail closed: not lifting the split keeps the join (and the view read inside it) local, while the
 /// coordinated read below the join is still distributed.
-static bool subtreeHasSecurityBarrier(const QueryPlan::Node * node)
-{
-    if (!node)
-        return false;
-    if (node->step->isSecurityBarrier())
-        return true;
-    for (const auto * child : node->children)
-        if (subtreeHasSecurityBarrier(child))
-            return true;
-    return false;
-}
+/// `subtreeHasSecurityBarrier` itself lives in `Optimizations/Utils.h`, shared with the runtime-filter pass.
 
 /// A fragment is cloned and then serialized, so every step in it must be serializable. Checking that
 /// generically (instead of enumerating step types) keeps new non-serializable steps out automatically:
