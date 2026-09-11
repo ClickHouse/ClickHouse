@@ -84,21 +84,8 @@ void MultipleFileWriter::finalize()
     output_format->flush();
     output_format->finalize();
     buffer->finalize();
-    auto buffer_bytes = buffer->count();
-    UInt64 file_bytes = 0;
-    if (buffer_bytes > 0)
-    {
-        file_bytes = buffer_bytes;
-        total_bytes += file_bytes;
-    }
-    else if (!data_file_names.empty())
-    {
-        /// Some storage backends (e.g. Azure) don't track bytes in the write buffer.
-        /// Fall back to querying the actual object size.
-        auto obj_metadata = object_storage->getObjectMetadata(path_resolver.resolve(data_file_names.back()), /*with_tags=*/false);
-        file_bytes = obj_metadata.size_bytes;
-        total_bytes += file_bytes;
-    }
+    UInt64 file_bytes = buffer->count();
+    total_bytes += file_bytes;
 
     if (current_file_stats)
         completed_file_stats.push_back(std::move(current_file_stats));
