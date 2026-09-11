@@ -1,0 +1,263 @@
+<test>
+    <!--
+        Query analysis of a tree of parameterized views, see
+        https://github.com/ClickHouse/ClickHouse/issues/118736.
+
+        The inner view has a large body that references its parameter many times;
+        the outer view calls it three times with different arguments, joins the
+        results on several columns and filters them with a long AND chain of
+        comparisons. The base tables are empty, so the time is spent in analysis
+        and planning, not in execution. Every column of a parameterized view keeps
+        a reference to the view's table node, and passes such as the logical
+        expression optimizer hash the operands of every comparison in a chain and
+        compare their sources, so any per-call cost attached to the table node
+        (like hashing the substituted view query) is multiplied here.
+    -->
+    <create_query>
+CREATE TABLE pv_events
+(
+    ts DateTime64(3),
+    host String,
+    cluster String,
+    status String,
+    a00 Int64,
+    a01 Int64,
+    a02 Int64,
+    a03 Int64,
+    a04 Int64,
+    a05 Int64,
+    a06 Int64,
+    a07 Int64,
+    a08 Int64,
+    a09 Int64,
+    a10 Int64,
+    a11 Int64,
+    a12 Int64,
+    a13 Int64,
+    a14 Int64,
+    a15 Int64,
+    a16 Int64,
+    a17 Int64,
+    a18 Int64,
+    a19 Int64,
+    a20 Int64,
+    a21 Int64,
+    a22 Int64,
+    a23 Int64,
+    a24 Int64,
+    a25 Int64,
+    a26 Int64,
+    a27 Int64,
+    a28 Int64,
+    a29 Int64,
+    a30 Int64,
+    a31 Int64
+)
+ENGINE = MergeTree ORDER BY (ts, host)
+    </create_query>
+
+    <create_query>
+CREATE TABLE pv_meta
+(
+    ts DateTime64(3),
+    host String,
+    k String,
+    v String
+)
+ENGINE = MergeTree ORDER BY (ts, host)
+    </create_query>
+
+    <create_query>
+CREATE VIEW pv_inner AS
+WITH
+    latest AS
+    (
+        SELECT
+            host,
+            argMax(cluster, ts) AS cluster,
+            argMax(status, ts) AS status,
+            argMax(a00, ts) AS a00,
+        argMax(a01, ts) AS a01,
+        argMax(a02, ts) AS a02,
+        argMax(a03, ts) AS a03,
+        argMax(a04, ts) AS a04,
+        argMax(a05, ts) AS a05,
+        argMax(a06, ts) AS a06,
+        argMax(a07, ts) AS a07,
+        argMax(a08, ts) AS a08,
+        argMax(a09, ts) AS a09,
+        argMax(a10, ts) AS a10,
+        argMax(a11, ts) AS a11,
+        argMax(a12, ts) AS a12,
+        argMax(a13, ts) AS a13,
+        argMax(a14, ts) AS a14,
+        argMax(a15, ts) AS a15,
+        argMax(a16, ts) AS a16,
+        argMax(a17, ts) AS a17,
+        argMax(a18, ts) AS a18,
+        argMax(a19, ts) AS a19,
+        argMax(a20, ts) AS a20,
+        argMax(a21, ts) AS a21,
+        argMax(a22, ts) AS a22,
+        argMax(a23, ts) AS a23,
+        argMax(a24, ts) AS a24,
+        argMax(a25, ts) AS a25,
+        argMax(a26, ts) AS a26,
+        argMax(a27, ts) AS a27,
+        argMax(a28, ts) AS a28,
+        argMax(a29, ts) AS a29,
+        argMax(a30, ts) AS a30,
+        argMax(a31, ts) AS a31
+        FROM pv_events
+        WHERE ts &lt;= {ts:DateTime64(3)} AND ts &gt; {ts:DateTime64(3)} - INTERVAL 6 HOUR
+        GROUP BY host
+    ),
+    meta AS
+    (
+        SELECT host, argMax(v, ts) AS v
+        FROM pv_meta
+        WHERE ts &lt;= {ts:DateTime64(3)} AND ts &gt; {ts:DateTime64(3)} - INTERVAL 30 DAY AND k = 'owner'
+        GROUP BY host
+    ),
+    gone AS
+    (
+        SELECT host
+        FROM pv_events
+        WHERE ts &lt;= {ts:DateTime64(3)} AND ts &gt; {ts:DateTime64(3)} - INTERVAL 30 DAY
+        GROUP BY host
+        HAVING max(ts) &lt; {ts:DateTime64(3)} - INTERVAL 6 HOUR
+    )
+SELECT
+    {ts:DateTime64(3)} AS ts,
+    l.host AS host,
+    l.cluster AS cluster,
+    multiIf(l.status = 'down', 'DOWN', l.host IN (SELECT host FROM gone), 'GONE', coalesce(m.v, '') = '', 'UNOWNED', 'OK') AS state,
+    multiIf(l.a00 &lt; 0, 0, m.v = toString(l.a00), 1, l.a00 + 0) AS n00,
+    multiIf(l.a01 &lt; 0, 0, m.v = toString(l.a01), 1, l.a01 + 1) AS n01,
+    multiIf(l.a02 &lt; 0, 0, m.v = toString(l.a02), 1, l.a02 + 2) AS n02,
+    multiIf(l.a03 &lt; 0, 0, m.v = toString(l.a03), 1, l.a03 + 3) AS n03,
+    multiIf(l.a04 &lt; 0, 0, m.v = toString(l.a04), 1, l.a04 + 4) AS n04,
+    multiIf(l.a05 &lt; 0, 0, m.v = toString(l.a05), 1, l.a05 + 5) AS n05,
+    multiIf(l.a06 &lt; 0, 0, m.v = toString(l.a06), 1, l.a06 + 6) AS n06,
+    multiIf(l.a07 &lt; 0, 0, m.v = toString(l.a07), 1, l.a07 + 7) AS n07,
+    multiIf(l.a08 &lt; 0, 0, m.v = toString(l.a08), 1, l.a08 + 8) AS n08,
+    multiIf(l.a09 &lt; 0, 0, m.v = toString(l.a09), 1, l.a09 + 9) AS n09,
+    multiIf(l.a10 &lt; 0, 0, m.v = toString(l.a10), 1, l.a10 + 10) AS n10,
+    multiIf(l.a11 &lt; 0, 0, m.v = toString(l.a11), 1, l.a11 + 11) AS n11,
+    multiIf(l.a12 &lt; 0, 0, m.v = toString(l.a12), 1, l.a12 + 12) AS n12,
+    multiIf(l.a13 &lt; 0, 0, m.v = toString(l.a13), 1, l.a13 + 13) AS n13,
+    multiIf(l.a14 &lt; 0, 0, m.v = toString(l.a14), 1, l.a14 + 14) AS n14,
+    multiIf(l.a15 &lt; 0, 0, m.v = toString(l.a15), 1, l.a15 + 15) AS n15,
+    multiIf(l.a16 &lt; 0, 0, m.v = toString(l.a16), 1, l.a16 + 16) AS n16,
+    multiIf(l.a17 &lt; 0, 0, m.v = toString(l.a17), 1, l.a17 + 17) AS n17,
+    multiIf(l.a18 &lt; 0, 0, m.v = toString(l.a18), 1, l.a18 + 18) AS n18,
+    multiIf(l.a19 &lt; 0, 0, m.v = toString(l.a19), 1, l.a19 + 19) AS n19,
+    multiIf(l.a20 &lt; 0, 0, m.v = toString(l.a20), 1, l.a20 + 20) AS n20,
+    multiIf(l.a21 &lt; 0, 0, m.v = toString(l.a21), 1, l.a21 + 21) AS n21,
+    multiIf(l.a22 &lt; 0, 0, m.v = toString(l.a22), 1, l.a22 + 22) AS n22,
+    multiIf(l.a23 &lt; 0, 0, m.v = toString(l.a23), 1, l.a23 + 23) AS n23,
+    multiIf(l.a24 &lt; 0, 0, m.v = toString(l.a24), 1, l.a24 + 24) AS n24,
+    multiIf(l.a25 &lt; 0, 0, m.v = toString(l.a25), 1, l.a25 + 25) AS n25,
+    multiIf(l.a26 &lt; 0, 0, m.v = toString(l.a26), 1, l.a26 + 26) AS n26,
+    multiIf(l.a27 &lt; 0, 0, m.v = toString(l.a27), 1, l.a27 + 27) AS n27,
+    multiIf(l.a28 &lt; 0, 0, m.v = toString(l.a28), 1, l.a28 + 28) AS n28,
+    multiIf(l.a29 &lt; 0, 0, m.v = toString(l.a29), 1, l.a29 + 29) AS n29,
+    multiIf(l.a30 &lt; 0, 0, m.v = toString(l.a30), 1, l.a30 + 30) AS n30,
+    multiIf(l.a31 &lt; 0, 0, m.v = toString(l.a31), 1, l.a31 + 31) AS n31
+FROM latest AS l
+LEFT JOIN meta AS m ON m.host = l.host
+    </create_query>
+
+    <create_query>
+CREATE VIEW pv_outer AS
+SELECT
+    a.host AS host,
+    a.state AS state,
+    b.state AS state_1h_ago,
+    c.state AS state_1d_ago,
+    a.n00 - b.n00 AS d00,
+    a.n01 - b.n01 AS d01,
+    a.n02 - b.n02 AS d02,
+    a.n03 - b.n03 AS d03,
+    a.n04 - b.n04 AS d04,
+    a.n05 - b.n05 AS d05,
+    a.n06 - b.n06 AS d06,
+    a.n07 - b.n07 AS d07,
+    a.n08 - b.n08 AS d08,
+    a.n09 - b.n09 AS d09,
+    a.n10 - b.n10 AS d10,
+    a.n11 - b.n11 AS d11,
+    a.n12 - b.n12 AS d12,
+    a.n13 - b.n13 AS d13,
+    a.n14 - b.n14 AS d14,
+    a.n15 - b.n15 AS d15,
+    a.n16 - b.n16 AS d16,
+    a.n17 - b.n17 AS d17,
+    a.n18 - b.n18 AS d18,
+    a.n19 - b.n19 AS d19,
+    a.n20 - b.n20 AS d20,
+    a.n21 - b.n21 AS d21,
+    a.n22 - b.n22 AS d22,
+    a.n23 - b.n23 AS d23,
+    a.n24 - b.n24 AS d24,
+    a.n25 - b.n25 AS d25,
+    a.n26 - b.n26 AS d26,
+    a.n27 - b.n27 AS d27,
+    a.n28 - b.n28 AS d28,
+    a.n29 - b.n29 AS d29,
+    a.n30 - b.n30 AS d30,
+    a.n31 - b.n31 AS d31
+FROM pv_inner(ts = {ts:DateTime64(3)}) AS a
+LEFT JOIN pv_inner(ts = {ts:DateTime64(3)} - INTERVAL 1 HOUR) AS b ON b.host = a.host AND b.cluster = a.cluster
+    AND b.n00 = a.n00
+    AND b.n04 = a.n04
+    AND b.n08 = a.n08
+    AND b.n12 = a.n12
+    AND b.n16 = a.n16
+    AND b.n20 = a.n20
+    AND b.n24 = a.n24
+    AND b.n28 = a.n28
+LEFT JOIN pv_inner(ts = {ts:DateTime64(3)} - INTERVAL 1 DAY) AS c ON c.host = a.host AND c.cluster = a.cluster
+WHERE a.state = 'DOWN' AND b.state = 'OK' AND c.state = 'OK'
+    AND a.n00 >= 0 AND a.n00 &lt; 1000000 AND b.n00 &lt;= a.n00
+    AND a.n01 >= 0 AND a.n01 &lt; 1000000 AND b.n01 &lt;= a.n01
+    AND a.n02 >= 0 AND a.n02 &lt; 1000000 AND b.n02 &lt;= a.n02
+    AND a.n03 >= 0 AND a.n03 &lt; 1000000 AND b.n03 &lt;= a.n03
+    AND a.n04 >= 0 AND a.n04 &lt; 1000000 AND b.n04 &lt;= a.n04
+    AND a.n05 >= 0 AND a.n05 &lt; 1000000 AND b.n05 &lt;= a.n05
+    AND a.n06 >= 0 AND a.n06 &lt; 1000000 AND b.n06 &lt;= a.n06
+    AND a.n07 >= 0 AND a.n07 &lt; 1000000 AND b.n07 &lt;= a.n07
+    AND a.n08 >= 0 AND a.n08 &lt; 1000000 AND b.n08 &lt;= a.n08
+    AND a.n09 >= 0 AND a.n09 &lt; 1000000 AND b.n09 &lt;= a.n09
+    AND a.n10 >= 0 AND a.n10 &lt; 1000000 AND b.n10 &lt;= a.n10
+    AND a.n11 >= 0 AND a.n11 &lt; 1000000 AND b.n11 &lt;= a.n11
+    AND a.n12 >= 0 AND a.n12 &lt; 1000000 AND b.n12 &lt;= a.n12
+    AND a.n13 >= 0 AND a.n13 &lt; 1000000 AND b.n13 &lt;= a.n13
+    AND a.n14 >= 0 AND a.n14 &lt; 1000000 AND b.n14 &lt;= a.n14
+    AND a.n15 >= 0 AND a.n15 &lt; 1000000 AND b.n15 &lt;= a.n15
+    AND a.n16 >= 0 AND a.n16 &lt; 1000000 AND b.n16 &lt;= a.n16
+    AND a.n17 >= 0 AND a.n17 &lt; 1000000 AND b.n17 &lt;= a.n17
+    AND a.n18 >= 0 AND a.n18 &lt; 1000000 AND b.n18 &lt;= a.n18
+    AND a.n19 >= 0 AND a.n19 &lt; 1000000 AND b.n19 &lt;= a.n19
+    AND a.n20 >= 0 AND a.n20 &lt; 1000000 AND b.n20 &lt;= a.n20
+    AND a.n21 >= 0 AND a.n21 &lt; 1000000 AND b.n21 &lt;= a.n21
+    AND a.n22 >= 0 AND a.n22 &lt; 1000000 AND b.n22 &lt;= a.n22
+    AND a.n23 >= 0 AND a.n23 &lt; 1000000 AND b.n23 &lt;= a.n23
+    AND a.n24 >= 0 AND a.n24 &lt; 1000000 AND b.n24 &lt;= a.n24
+    AND a.n25 >= 0 AND a.n25 &lt; 1000000 AND b.n25 &lt;= a.n25
+    AND a.n26 >= 0 AND a.n26 &lt; 1000000 AND b.n26 &lt;= a.n26
+    AND a.n27 >= 0 AND a.n27 &lt; 1000000 AND b.n27 &lt;= a.n27
+    AND a.n28 >= 0 AND a.n28 &lt; 1000000 AND b.n28 &lt;= a.n28
+    AND a.n29 >= 0 AND a.n29 &lt; 1000000 AND b.n29 &lt;= a.n29
+    AND a.n30 >= 0 AND a.n30 &lt; 1000000 AND b.n30 &lt;= a.n30
+    AND a.n31 >= 0 AND a.n31 &lt; 1000000 AND b.n31 &lt;= a.n31
+    </create_query>
+
+    <query>SELECT * FROM pv_outer(ts = toDateTime64('2026-01-01 00:00:00', 3)) FORMAT Null</query>
+    <query>SELECT host FROM pv_inner(ts = toDateTime64('2026-01-01 00:00:00', 3)) WHERE host IN (SELECT host FROM pv_inner(ts = toDateTime64('2026-01-01 01:00:00', 3)) WHERE state = 'DOWN') AND host NOT IN (SELECT host FROM pv_inner(ts = toDateTime64('2026-01-01 02:00:00', 3)) WHERE state = 'GONE') FORMAT Null</query>
+
+    <drop_query>DROP VIEW IF EXISTS pv_outer</drop_query>
+    <drop_query>DROP VIEW IF EXISTS pv_inner</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pv_meta</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pv_events</drop_query>
+</test>
