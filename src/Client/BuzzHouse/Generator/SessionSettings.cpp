@@ -921,6 +921,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"enable_http_compression", trueOrFalseSettingNoOracle},
     {"enable_job_stack_trace", trueOrFalseSettingNoOracle},
     {"enable_json_ast_dialect", trueOrFalseSettingNoOracle},
+    {"enable_materialized_cte", trueOrFalseSettingNoOracle},
     {"enable_memory_bound_merging_of_aggregation_results", trueOrFalseSettingNoOracle},
     {"enable_multiple_prewhere_read_steps", trueOrFalseSetting},
     {"enable_named_columns_in_function_tuple", trueOrFalseSettingNoOracle},
@@ -993,6 +994,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"force_aggregate_partitions_independently", trueOrFalseSetting},
     {"force_creating_set_partitions_independently", trueOrFalseSetting},
     {"force_distinct_partitions_independently", trueOrFalseSetting},
+    {"force_materialized_cte", trueOrFalseSettingNoOracle},
     {"force_read_through_distributed_cache",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)

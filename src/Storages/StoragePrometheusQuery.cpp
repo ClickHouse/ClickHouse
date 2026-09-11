@@ -200,8 +200,11 @@ void StoragePrometheusQuery::readImpl(
 
     /// Isolate the settings required by generated PromQL from the outer query.
     auto query_context = Context::createCopy(context);
-    if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
+    if (!context->getSettingsRef()[Setting::enable_materialized_cte])
+    {
+        LOG_DEBUG(log, "Enabling setting `enable_materialized_cte` for the PromQL query: the generated SQL relies on materialized CTEs");
         query_context->setSetting("enable_materialized_cte", true);
+    }
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);

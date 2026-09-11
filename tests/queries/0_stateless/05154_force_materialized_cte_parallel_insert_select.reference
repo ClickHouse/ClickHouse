@@ -1,0 +1,22 @@
+Distributed fast path, local shard executes the query itself
+0	5
+Distributed fast path, query text is sent to the shard
+0	5
+parallel replicas insert route after the Distributed fast path declined
+0	5
+parallel replicas insert route after the ReplicatedMergeTree fast path declined
+0	5
+a CTE with ORDER BY LIMIT in FROM is not distributed per replica
+1	1
+1	1
+materialization disabled: rejected, and inlined with the guard off
+1
+WITH aliases still resolve on every route with both analyzers
+1
+11
+1
+11
+1
+11
+1
+11

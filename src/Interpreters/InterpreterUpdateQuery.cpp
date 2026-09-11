@@ -12,6 +12,7 @@
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/RejectMaterializedCTEVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTUpdateQuery.h>
@@ -105,6 +106,23 @@ BlockIO InterpreterUpdateQuery::execute()
         replaceLegacyToTime(*query_ptr);
 
     auto & update_query = query_ptr->as<ASTUpdateQuery &>();
+
+    /// Before the query is enqueued for a Replicated database; the rewrite below would inline the CTE.
+    if (shouldRejectMaterializedCTE(getContext()))
+    {
+        RejectMaterializedCTEVisitor::Data data;
+        data.reason = "are not supported in a lightweight `UPDATE`";
+        if (update_query.predicate)
+        {
+            ASTPtr predicate = update_query.predicate->ptr();
+            RejectMaterializedCTEVisitor(data).visit(predicate);
+        }
+        if (update_query.assignments)
+        {
+            ASTPtr assignments = update_query.assignments->ptr();
+            RejectMaterializedCTEVisitor(data).visit(assignments);
+        }
+    }
 
     /// Setting the `_row_exists` lightweight-delete marker to 0 is a delete, not an update
     /// (`DELETE FROM` may rewrite to `UPDATE ... SET _row_exists = 0`), so govern that exact form by

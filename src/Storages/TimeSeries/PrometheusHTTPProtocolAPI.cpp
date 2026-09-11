@@ -244,8 +244,11 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
 
     /// Isolate the settings required by generated PromQL from the request context.
     auto query_context = Context::createCopy(getContext());
-    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
+    if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte])
+    {
+        LOG_DEBUG(log, "Enabling setting `enable_materialized_cte` for the PromQL query: the generated SQL relies on materialized CTEs");
         query_context->setSetting("enable_materialized_cte", true);
+    }
 
     /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
     query_context->setSetting("allow_experimental_analyzer", true);

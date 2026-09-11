@@ -36,6 +36,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/RejectMaterializedCTEVisitor.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -159,6 +160,7 @@ namespace Setting
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool extremes;
+    extern const SettingsBool force_materialized_cte;
     extern const SettingsBool final;
     extern const SettingsBool force_aggregation_in_order;
     extern const SettingsUInt64 group_by_two_level_threshold;
@@ -643,6 +645,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     // Only propagate WITH elements to subqueries if we're not a subquery
     if (!options.is_subquery)
     {
+        if (settings[Setting::force_materialized_cte])
+        {
+            RejectMaterializedCTEVisitor::Data data;
+            data.reason = "require the analyzer, which is not used for this query";
+            RejectMaterializedCTEVisitor(data).visit(query_ptr);
+        }
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
         ApplyWithSubqueryVisitor::visit(query_ptr);

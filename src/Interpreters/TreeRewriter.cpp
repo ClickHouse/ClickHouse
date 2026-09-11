@@ -23,6 +23,7 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/RejectMaterializedCTEVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/RewriteOrderByVisitor.hpp>
 #include <Interpreters/TableJoin.h>
@@ -77,6 +78,7 @@ namespace Setting
     extern const SettingsString count_distinct_implementation;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool force_materialized_cte;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool legacy_column_name_of_tuple_literal;
     extern const SettingsBool normalize_function_names;
@@ -1705,6 +1707,15 @@ void TreeRewriter::normalize(
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query, context_);
+
+    /// After UDF expansion, so a materialized CTE hidden in a UDF body is seen too. The constructor check of
+    /// `InterpreterSelectQuery` runs earlier but cannot see UDF bodies; the `WITH` element survives the CTE rewrite.
+    if (settings[Setting::force_materialized_cte])
+    {
+        RejectMaterializedCTEVisitor::Data data;
+        data.reason = "require the analyzer, which is not used for this query";
+        RejectMaterializedCTEVisitor(data).visit(query);
+    }
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings[Setting::count_distinct_implementation]};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);

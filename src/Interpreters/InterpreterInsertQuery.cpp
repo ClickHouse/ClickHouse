@@ -733,7 +733,17 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
         return {};
 
-    if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
+    /// Eligibility is judged on the expanded query: a CTE in `FROM` is a subquery whose own `ORDER BY` / `LIMIT`
+    /// must not be applied independently on each replica. The query executed and forwarded stays unexpanded.
+    auto query_for_eligibility = boost::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
+    auto & eligibility_select = query_for_eligibility->select->as<ASTSelectWithUnionQuery &>();
+    if (eligibility_select.list_of_selects->children.size() == 1)
+    {
+        if (settings[Setting::enable_global_with_statement])
+            ApplyWithAliasVisitor::visit(eligibility_select.list_of_selects->children.at(0));
+        ApplyWithSubqueryVisitor::visit(eligibility_select.list_of_selects->children.at(0));
+    }
+    if (!isInsertSelectTrivialEnoughForDistributedExecution(*query_for_eligibility))
         return {};
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
@@ -1070,17 +1080,20 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
         return {};
 
-    auto & select = query.select->as<ASTSelectWithUnionQuery &>();
+    /// Same as in `StorageDistributed::distributedWrite`: detect on a copy, keep `query.select` untouched for the
+    /// parallel-replicas route and the general path. `select_query` points into the copy for the filter extraction.
+    ASTPtr select_for_detection = query.select->clone();
+    auto & detection_union = select_for_detection->as<ASTSelectWithUnionQuery &>();
     StoragePtr src_storage;
     const ASTSelectQuery * select_query = nullptr;
-    if (select.list_of_selects->children.size() == 1)
+    if (detection_union.list_of_selects->children.size() == 1)
     {
-        if (auto * sq = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
+        if (auto * sq = detection_union.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
             select_query = sq;
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
+                ApplyWithAliasVisitor::visit(detection_union.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(detection_union.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *sq);
             if (joined_tables.tablesCount() == 1)

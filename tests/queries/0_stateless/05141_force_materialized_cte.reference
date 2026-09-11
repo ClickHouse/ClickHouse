@@ -1,0 +1,22 @@
+analyzer, materialization disabled: throws
+analyzer, force disabled: inlined
+9
+2
+analyzer, materialization enabled: works
+9
+9
+compatibility restores the old behaviour
+9
+view definitions: rejected even with materialization enabled
+view definitions: force disabled inlines
+9
+view read: rejected when materialization is disabled
+9
+lightweight UPDATE: rejected even with materialization enabled
+0
+0
+lightweight UPDATE: force disabled inlines
+3
+12
+old analyzer: throws, force disabled inlines
+9

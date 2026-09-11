@@ -147,7 +147,8 @@ This is especially useful when the same CTE is referenced multiple times in a qu
 <Note>
 Materialized CTEs are an **experimental** feature.
 They require the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) and the setting `enable_materialized_cte` to be enabled.
-If the setting is disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
+With the default `force_materialized_cte = 1`, using `AS MATERIALIZED` when these conditions are not met is an error (`SUPPORT_IS_DISABLED`).
+Set `force_materialized_cte = 0` to have the keyword ignored instead: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
 </Note>
 
 ### Syntax {#materialized-common-table-expressions-syntax}
@@ -255,8 +256,9 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 
 ### Restrictions {#materialized-cte-restrictions}
 
-- **Experimental setting required**: The setting `enable_materialized_cte` must be enabled. If it is disabled, the `MATERIALIZED` keyword is ignored: the CTE is inlined at each reference like an ordinary CTE, and a warning is logged.
-- **Analyzer required**: Materialized CTEs only work with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled (`enable_analyzer = 1`).
+- **Experimental setting required**: The setting `enable_materialized_cte` must be enabled. Otherwise `MATERIALIZED` results in a `SUPPORT_IS_DISABLED` exception, unless `force_materialized_cte = 0`, in which case the keyword is ignored and the CTE is inlined like an ordinary CTE.
+- **Analyzer required**: Materialized CTEs only work with the [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) enabled (`enable_analyzer = 1`). Otherwise `MATERIALIZED` results in a `SUPPORT_IS_DISABLED` exception, unless `force_materialized_cte = 0`, in which case the keyword is ignored and the CTE is inlined.
+- **Not supported in view definitions or lightweight `UPDATE`**: the CTE would be inlined when the definition is stored, so it is rejected unless `force_materialized_cte = 0`. This includes materialized CTEs introduced by SQL user-defined functions used in the definition.
 - **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 
