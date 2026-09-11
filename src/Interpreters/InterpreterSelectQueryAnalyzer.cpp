@@ -406,7 +406,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
         result.pipeline.setQuota(context->getQuota());
     result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
-    if (auto plan_profiler = context->getPlanProfiler())
+    if (plan_profiler)
         plan_profiler->instrumentPipeline(result.pipeline);
 
     return result;
@@ -435,8 +435,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     BuildQueryPipelineSettings build_pipeline_settings(context);
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
-
-    auto plan_profiler = context->getPlanProfiler();
 
     /// Step descriptions produced by optimizations (e.g. merged expressions) are passed through
     /// IQueryPlanStep::setStepDescription(description, limit), which truncates to `limit` — and the

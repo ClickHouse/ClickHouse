@@ -3130,6 +3130,9 @@ static BlockIO executeQueryImpl(
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
+                if (interpreter)
+                    interpreter->setPlanProfiler(context->getPlanProfiler());
+
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
                 {

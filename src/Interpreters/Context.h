@@ -318,9 +318,6 @@ class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
 using QueryMetadataCacheWeakPtr = std::weak_ptr<QueryMetadataCache>;
 
-class QueryPlanProfiler;
-using QueryPlanProfilerPtr = std::shared_ptr<QueryPlanProfiler>;
-
 using DatabasePtr = std::shared_ptr<IDatabase>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
