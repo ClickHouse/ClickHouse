@@ -5,9 +5,10 @@
 -- count, and the plan for `CAST(t2.k AS Int64) = t3.k` must stay the plan the unoptimized query has.
 -- Requested at https://github.com/ClickHouse/ClickHouse/pull/119305#discussion_r3990785321.
 --
--- The oracle is the Join/Read skeleton of the plan, in depth-first order: for a 3-way join
+-- The plan arms read the Join/Read skeleton of the plan, in depth-first order: for a 3-way join
 -- `Join, Join, Read, Read, Read` is left-deep and `Join, Read, Join, Read, Read` is right-deep.
--- EXPLAIN only, so no arm can throw. Two arms are non-vacuity controls: `cast-nullable cd_a` must
+-- They use EXPLAIN, so they cannot throw; the executed arms after them assert the exception the
+-- plan choice exists to preserve. Two plan arms are non-vacuity controls: `cast-nullable cd_a` must
 -- still reassociate (it reddens if every CAST is rejected instead of only the non-Nullable ones),
 -- and `plain cd_a` must reassociate (it proves the detector is live and is what moves the plan).
 
@@ -88,6 +89,25 @@ SELECT 'plain         cd_a ' AS arm, s AS step FROM (
             query_plan_optimize_join_order_use_conflict_detector_a = 1
     )
 ) WHERE s IN ('Join', 'Read(t1)', 'Read(t2)', 'Read(t3)');
+
+-- A plan arm cannot see a change that keeps the left-deep skeleton and stops evaluating the cast on
+-- the null-extended row, so the executed query is asserted too: the unoptimized query raises, and
+-- under either detector it must still raise.
+SELECT count(), sum(ifNull(t2.k, -1)), sum(ifNull(t3.k, -1))
+FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
+SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+
+SELECT count(), sum(ifNull(t2.k, -1)), sum(ifNull(t3.k, -1))
+FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
+SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+    query_plan_optimize_join_order_algorithm = 'dpsub',
+    query_plan_optimize_join_order_use_conflict_detector_a = 1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+
+SELECT count(), sum(ifNull(t2.k, -1)), sum(ifNull(t3.k, -1))
+FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON CAST(t2.k AS Int64) = t3.k
+SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+    query_plan_optimize_join_order_algorithm = 'dpsub',
+    query_plan_optimize_join_order_use_conflict_detector_c = 1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 
 -- The reordering that stays permitted must not change the result.
 SELECT 'rows cast-nullable noopt', count(), sum(ifNull(t2.k, -1)), sum(ifNull(t3.k, -1))
