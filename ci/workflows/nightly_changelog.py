@@ -1,6 +1,11 @@
 from praktika import Job, Workflow
 
-from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
+from ci.defs.defs import (
+    BASE_BRANCH,
+    GH_AUTH_TRUSTED_LAMBDA_NAME,
+    SECRETS,
+    RunnerLabels,
+)
 
 # Daily preparation of CHANGELOG.md for the upcoming release. The job
 # generates raw changelog entries for the pull requests newly merged into
@@ -15,6 +20,7 @@ workflow = Workflow.Config(
     engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
+    gh_auth_lambda_name=GH_AUTH_TRUSTED_LAMBDA_NAME,
     jobs=[
         Job.Config(
             name="Prepare changelog",
@@ -22,9 +28,6 @@ workflow = Workflow.Config(
             runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
-        # Label issues and pull requests opened by external (non-ClickHouse-org)
-        # contributors. Scans the last few days of new items; run manually with
-        # --all to backfill the whole history.
         Job.Config(
             name="Label external contributors",
             command="python3 ./ci/jobs/label_external_contributors.py",
