@@ -266,6 +266,8 @@ void validateClientInfo(const ClientInfo & session_client_info, const ClientInfo
 /// `UNEXPECTED_PACKET_FROM_CLIENT` closes the connection, so the payload is never needed - and
 /// deserializing it would expose a large amount of code (data types, serializations and aggregate
 /// function states in a `Data` packet) to a peer that, in interserver mode, has not authenticated yet.
+/// The unread payload is also why the connection cannot be reused: the leftover input starts
+/// mid-packet, so `runImpl` does not try to skip it for this error code.
 [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type)
 {
     throw Exception(
@@ -1198,7 +1200,10 @@ void TCPHandler::runImpl()
 
                 /// A query packet is always followed by one or more data packets.
                 /// If some of those data packets are left, try to skip them.
-                if (!query_state->read_all_data)
+                /// Not after `UNEXPECTED_PACKET_FROM_CLIENT`: the payload of the rejected packet is
+                /// left unread on purpose, so skipping would deserialize it as a packet stream of its
+                /// own and then block until `receive_timeout`. The connection is closed right below.
+                if (!query_state->read_all_data && exception_code != ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
                     skipData(*query_state);
             }
             catch (...)
@@ -1210,8 +1215,8 @@ void TCPHandler::runImpl()
 
             /// We close the connection after an exception if there is something wrong with the connection,
             /// otherwise we try to preserve it and reuse for other queries.
-            if (exception->code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || exception->code() == ErrorCodes::USER_EXPIRED
-                || exception->code() == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
+            if (exception_code == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || exception_code == ErrorCodes::USER_EXPIRED
+                || exception_code == ErrorCodes::TCP_CONNECTION_LIMIT_REACHED)
             {
                 LOG_DEBUG(log, "Going to close connection due to exception: {}", exception->message());
                 query_state->finalizeOut(out);
@@ -2832,9 +2837,9 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
 void TCPHandler::processObsoleteIgnoredPartUUIDs()
 {
-    /// Reject before reading the peer-controlled payload: this packet only ever arrives pre-query,
-    /// so the exception closes the connection
-    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+    /// Reject before reading the peer-controlled payload. The error code has to be one that closes
+    /// the connection, because the unread payload cannot be told apart from the next packet.
+    throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
         "Received IgnoredPartUUIDs packet, but query deduplication "
         "(allow_experimental_query_deduplication) is no longer supported. "
         "Disable the setting on the initiator or finish the cluster upgrade.");
@@ -2843,22 +2848,23 @@ void TCPHandler::processObsoleteIgnoredPartUUIDs()
 bool TCPHandler::receiveQueryPlan(QueryState & state)
 {
     bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
-    auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
 
-    /// The plan will not be executed when we are draining leftover packets (skipping_data) or when it
-    /// arrives unexpectedly (deserialized against the global context, which lacks the parallel-replicas
-    /// coordinator callbacks). Only consume the bytes off the buffer, without building a runnable plan.
-    if (state.skipping_data || unexpected_packet)
+    if (unexpected_packet && !state.skipping_data)
+        throwUnexpectedPacket(Protocol::Client::QueryPlan);
+
+    /// While draining the leftover packets of a query that has already failed, only consume the
+    /// bytes off the buffer, without building a runnable plan.
+    if (state.skipping_data)
     {
+        /// Out of place even for the drain: the global context lacks the parallel-replicas
+        /// coordinator callbacks a runnable plan would need.
+        auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
         QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context), /*skip_data=*/true);
-
-        if (!state.skipping_data && unexpected_packet)
-            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
-
         return true;
     }
 
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
+    const auto & context = state.query_context;
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
     LOG_TRACE(log, "Received query plan");
 

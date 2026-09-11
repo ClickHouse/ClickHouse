@@ -1,8 +1,11 @@
 Data before a query: connection closed
 Scalar before a query: connection closed
 Hello before a query: connection closed
-Query during an insert: UNEXPECTED_PACKET_FROM_CLIENT
-Hello during an insert: UNEXPECTED_PACKET_FROM_CLIENT
-TablesStatusRequest during an insert: UNEXPECTED_PACKET_FROM_CLIENT
+Query during an insert: UNEXPECTED_PACKET_FROM_CLIENT, connection closed
+Hello during an insert: UNEXPECTED_PACKET_FROM_CLIENT, connection closed
+TablesStatusRequest during an insert: UNEXPECTED_PACKET_FROM_CLIENT, connection closed
+QueryPlan during an insert: UNEXPECTED_PACKET_FROM_CLIENT, connection closed
+IgnoredPartUUIDs during an insert: UNEXPECTED_PACKET_FROM_CLIENT, connection closed
+leftover bytes after a rejected packet: not parsed, connection closed
 data after a failed insert: discarded, connection preserved
 server alive	0

@@ -10,6 +10,10 @@
 # else: a server that reads the payload waits for the missing bytes until the receive timeout, so
 # the socket timeout here fails the test instead of the server answering right away.
 #
+# An unread payload cannot be told apart from the next packet, so the connection cannot be reused
+# either: every scenario keeps the socket open and requires the server to close it. A server that
+# drains the leftover input instead parses that payload as a packet stream of its own and blocks.
+#
 # The client speaks the raw native protocol pinned to revision 54482, so the set of exchanged,
 # revision-gated fields is fixed and does not drift.
 
@@ -262,10 +266,17 @@ def connectAndHandshake(s):
     sendAddendum(s)
 
 
-def sendPacketTypeOnly(s, packet_type):
+def sendPacketTypeOnly(s, packet_type, trailing=b""):
     ba = bytearray()
     writeVarUInt(packet_type, ba)
+    ba.extend(trailing)
     s.sendall(ba)
+
+
+def assertConnectionClosed(s):
+    # `socket.timeout` is not caught on purpose: it is how a server that keeps waiting for the
+    # payload of the rejected packet fails this test.
+    assert s.recv(1) == b"", "Expected the server to close the connection"
 
 
 def sendUInt64Block(s, values):
@@ -303,21 +314,47 @@ def beforeQueryScenario(packet_type, packet_name):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         connectAndHandshake(s)
         sendPacketTypeOnly(s, packet_type)
-        assert s.recv(1) == b"", "Expected the server to close the connection"
+        assertConnectionClosed(s)
         print("{} before a query: connection closed".format(packet_name))
 
 
-def duringInsertScenario(packet_type, packet_name):
+def duringInsertScenario(packet_type, packet_name, expected_message=None):
     # In the middle of an INSERT the query context is already there, so the exception itself is
-    # observable.
+    # observable - but it is sent before the leftover input would be drained, so it arrives either
+    # way. Only the close that follows proves the payload of the rejected packet was left alone.
+    if expected_message is None:
+        expected_message = "Unexpected packet {} received from client".format(packet_name)
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         connectAndHandshake(s)
         startInsert(s)
 
         sendPacketTypeOnly(s, packet_type)
         text = readExceptionPacket(s, UNEXPECTED_PACKET_FROM_CLIENT)
-        assert "Unexpected packet {} received from client".format(packet_name) in text, text
-        print("{} during an insert: UNEXPECTED_PACKET_FROM_CLIENT".format(packet_name))
+        assert expected_message in text, text
+        assertConnectionClosed(s)
+        print("{} during an insert: UNEXPECTED_PACKET_FROM_CLIENT, connection closed".format(packet_name))
+
+
+def leftoverBytesScenario():
+    # The bytes that follow a rejected packet must not be parsed as packets of their own. `13` is the
+    # type of a `QueryPlan` packet, so a drain of the leftover input would hand it to
+    # `QueryPlan::deserialize` and block there until `receive_timeout`.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        connectAndHandshake(s)
+        startInsert(s)
+
+        sendPacketTypeOnly(s, 1, trailing=bytes([13]))  # Query, followed by a QueryPlan packet type
+
+        # The server closes with that trailing byte still unread, so the connection is reset instead
+        # of shut down in order, and the exception may be dropped with it. Hence only the prompt end
+        # of the connection is asserted here; the scenarios above cover the exception.
+        try:
+            while s.recv(4096):
+                pass
+        except ConnectionResetError:
+            pass
+        print("leftover bytes after a rejected packet: not parsed, connection closed")
 
 
 def dataAfterFailedInsertScenario():
@@ -350,7 +387,11 @@ def main():
     duringInsertScenario(1, "Query")
     duringInsertScenario(0, "Hello")
     duringInsertScenario(5, "TablesStatusRequest")
+    duringInsertScenario(13, "QueryPlan")
+    # The obsolete `IgnoredPartUUIDs` packet keeps its own message about the removed setting.
+    duringInsertScenario(8, "IgnoredPartUUIDs", expected_message="query deduplication")
 
+    leftoverBytesScenario()
     dataAfterFailedInsertScenario()
 
 
