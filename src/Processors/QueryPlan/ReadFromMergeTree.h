@@ -534,18 +534,10 @@ public:
     /// Hold read-in-order to these columns when it looks for what a filter fixes. A pushed condition
     /// the replicas never saw may prune this read, but it must not order it: the coordination mode the
     /// initiator announces has to follow only from what both sides know, or it announces `WithOrder`
-    /// against the replicas' `Default` and the read fails.
-    void restrictFixedColumns(NameSet columns) { fixed_columns_the_replicas_also_have = std::move(columns); }
-    const std::optional<NameSet> & getFixedColumnRestriction() const { return fixed_columns_the_replicas_also_have; }
-
-    /// Carries the restriction over from a read step this one replaces. Every rewrite that rebuilds a
-    /// read of a parallel-replicas local fragment has to do this, or the rebuilt read derives ordering
-    /// the replicas do not - `clone`, `createLocalParallelReplicasReadingStep`, and the projection
-    /// rewrites, which run before read-in-order looks for a read to order.
-    void copyFixedColumnRestriction(const ReadFromMergeTree & replaced_step)
-    {
-        fixed_columns_the_replicas_also_have = replaced_step.fixed_columns_the_replicas_also_have;
-    }
+    /// against the replicas' `Default` and the read fails. Kept in `query_info` so that a rewrite
+    /// rebuilding this read carries it along with everything else it takes from there.
+    void restrictFixedColumns(NameSet columns) { query_info.fixed_columns_the_replicas_also_have = std::move(columns); }
+    const std::optional<NameSet> & getFixedColumnRestriction() const { return query_info.fixed_columns_the_replicas_also_have; }
 
 private:
     MergeTreeSettingsPtr data_settings;
@@ -715,12 +707,6 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
-
-    /// The columns read-in-order may treat as fixed, when something has restricted them. Set on the
-    /// read of a parallel-replicas local fragment once a condition the replicas do not have is pushed
-    /// into it, and holding the columns the fragment's own filters had already fixed - the ones the
-    /// replicas fix too, from their copy of the same fragment.
-    std::optional<NameSet> fixed_columns_the_replicas_also_have;
 
     bool allow_query_condition_cache = true;
 

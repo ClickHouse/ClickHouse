@@ -1546,12 +1546,6 @@ std::optional<String> optimizeUseAggregateProjections(
             reading->isParallelReadingEnabled(),
             reading->getParallelReadingExtension());
 
-        /// The read keeps reading for the parallel replicas, so it keeps whatever the fragment was held
-        /// to as well. This rewrite runs before read-in-order, and without the restriction the
-        /// projection read could order itself off a condition only this replica has.
-        if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
-            projection_reading_step->copyFixedColumnRestriction(*reading);
-
         /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
         filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
         has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
