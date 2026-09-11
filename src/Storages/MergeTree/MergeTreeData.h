@@ -981,7 +981,9 @@ public:
         Republish,
     };
 
-    /// Throws `SERIALIZATION_ERROR` if any of `parts` may not be removed without a transaction yet.
+    /// Throws `SERIALIZATION_ERROR` if any of `parts` may not be removed without a transaction yet --
+    /// either because the transaction that created it has not committed, or because another
+    /// transaction is already removing it and holds its removal lock.
     ///
     /// `NonTransactionalRemovalLocks` already keeps a removal batch all-or-nothing, but `REPLACE
     /// PARTITION` and `MOVE PARTITION TO TABLE` commit their own new parts *before* removing the old

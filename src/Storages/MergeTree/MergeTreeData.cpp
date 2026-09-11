@@ -7112,6 +7112,15 @@ void MergeTreeData::checkPartsCanBeRemovedNonTransactionally(const DataPartsVect
                 "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
                 version.getObjectName(), version.getInfo().creation_tid);
         }
+
+        /// The other way the later removal can be refused: another transaction is already removing the
+        /// part, so `lockRemovalTID` will not give up the lock. A part that is *already* removed is not
+        /// a problem -- the removal skips it -- but one that is merely locked is. Both this check and
+        /// the removal run under the same parts lock, so the answer cannot change in between.
+        if (!version.getInfo().isRemoved() && version.isRemovalTIDLocked())
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {}, it is locked for removal by another transaction",
+                version.getObjectName());
     }
 }
 
