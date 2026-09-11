@@ -457,7 +457,7 @@ ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, 
     }
 }
 
-template <typename T, typename MinMaxT = std::conditional_t<is_signed_v<T>, Int64, UInt64>>
+template <typename T>
 void restoreUpperBits(T * buf, T upper_min, T upper_max [[maybe_unused]], T sign_bit [[maybe_unused]], UInt32 tail = 64)
 {
     if constexpr (is_signed_v<T>)
@@ -630,11 +630,6 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
     bytes_size -= bytes_to_skip;
     src += bytes_to_skip;
     dst += bytes_to_skip;
-
-    if (uncompressed_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, unexpected uncompressed size ({})"
-                        " isn't a multiple of the data type size ({})",
-                        uncompressed_size, sizeof(T));
 
     if (uncompressed_size == 0)
         return static_cast<UInt32>(dst - original_dst);
