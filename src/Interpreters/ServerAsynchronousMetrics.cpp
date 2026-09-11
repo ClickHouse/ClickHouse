@@ -73,6 +73,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 namespace
@@ -550,16 +551,18 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                     calculateMaxAndSum(max_inserts_in_queue, sum_inserts_in_queue, status.queue.inserts_in_queue);
                     calculateMaxAndSum(max_merges_in_queue, sum_merges_in_queue, status.queue.merges_in_queue);
 
-                    if (!status.is_readonly)
+                    /// `status.is_readonly` is only the transient flag, while `getReplicaDelays`
+                    /// also rejects static storage; `isTableReadOnly()` covers both states.
+                    if (!table_replicated_merge_tree->isTableReadOnly())
                     {
                         try
                         {
                             time_t absolute_delay = 0;
                             time_t relative_delay = 0;
                             {
-                                /// The table can turn readonly between the `status.is_readonly` check
-                                /// above and this call, which then throws before doing any work. That
-                                /// race is not an error of this server, so it must not reach `system.errors`.
+                                /// The table can turn readonly between the check above and this
+                                /// call, which then throws before doing any work. That race is not
+                                /// an error of this server, so it must not reach `system.errors`.
                                 Exception::SuppressErrorCodesScope suppress_error_codes;
                                 table_replicated_merge_tree->getReplicaDelays(absolute_delay, relative_delay);
                             }
@@ -569,19 +572,17 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                         }
                         catch (Exception & e)
                         {
+                            const bool benign_readonly = e.code() == ErrorCodes::TABLE_IS_READ_ONLY
+                                || e.code() == ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY;
+
                             /// The same call also talks to Keeper, and those failures are real
                             /// operational errors that belong in `system.errors`.
-                            if (e.code() != ErrorCodes::TABLE_IS_READ_ONLY)
+                            if (!benign_readonly)
                                 e.recordToSystemErrors();
 
-                            /// The readonly race is benign for a background metrics thread, so do not
-                            /// pollute the error log / stderr with it.
-                            auto level = e.code() == ErrorCodes::TABLE_IS_READ_ONLY
-                                ? LogsLevel::debug
-                                : LogsLevel::error;
                             tryLogCurrentException(__PRETTY_FUNCTION__,
                                 "Cannot get replica delay for table: " + backQuoteIfNeed(db.first) + "." + backQuoteIfNeed(iterator->name()),
-                                level);
+                                benign_readonly ? LogsLevel::debug : LogsLevel::error);
                         }
                         catch (...)
                         {
