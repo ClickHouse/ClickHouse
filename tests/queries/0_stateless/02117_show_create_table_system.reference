@@ -711,6 +711,7 @@ CREATE TABLE system.processes
     `written_bytes` UInt64,
     `memory_usage` Int64,
     `peak_memory_usage` Int64,
+    `spillable_memory_bytes` Int64,
     `query` String,
     `normalized_query_hash` UInt64,
     `query_kind` String,
