@@ -124,7 +124,8 @@ ASTPtr parseMongoQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    const std::string & database)
+    const std::string & database,
+    const std::string & collection)
 {
     /// The wire protocol handlers format the returned AST unconditionally, so a failed
     /// parse must throw here - a returned nullptr would be dereferenced. The exception
@@ -134,14 +135,8 @@ ASTPtr parseMongoQuery(
 
     /// A `SET` is parsed by the ClickHouse parser here as well: the client is not the only one that
     /// parses the text of a query, the server parses it again with the dialect of the session.
-    {
-        Tokens set_tokens(begin, end, max_query_size, true);
-        IParser::Pos set_iterator(set_tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
-        Expected set_expected;
-        ASTPtr set_query;
-        if (ParserSetQuery().parse(set_iterator, set_query, set_expected))
-            return set_query;
-    }
+    if (ASTPtr set_query = tryParseLeadingSetQuery(begin, end, max_query_size, max_parser_depth, max_parser_backtracks))
+        return set_query;
 
     /// This path carries a single statement: a trailing `;` is tolerated, a second statement
     /// after it is not - it would be silently dropped rather than executed.
@@ -155,7 +150,7 @@ ASTPtr parseMongoQuery(
     Expected expected;
     ASTPtr res;
     Tokens token_subquery(begin, end, max_query_size, true);
-    auto metadata = extractMetadataFromRequest(begin, end, database);
+    auto metadata = extractMetadataFromRequest(begin, end, database, collection);
     metadata->add_data_to_query = false;
     auto [data_begin, data_end] = getSettingsSubstring(begin, end);
 

@@ -413,6 +413,19 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+ASTPtr tryParseLeadingSetQuery(
+    const char * begin, const char * end, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    Tokens tokens(begin, end, max_query_size, true);
+    IParser::Pos iterator(tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
+    Expected expected;
+    ASTPtr set_query;
+    if (ParserSetQuery().parse(iterator, set_query, expected))
+        return set_query;
+    return nullptr;
+}
+
+
 }
 
 namespace DB
