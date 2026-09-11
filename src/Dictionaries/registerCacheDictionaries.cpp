@@ -277,7 +277,7 @@ The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
-That applies to looking a key **up** - `dictGet` and the other dictionary functions. Reading the dictionary **as a table** with `SELECT ... FROM <dictionary>` is different: it returns the cells that happen to be resident in the cache at that moment and requests nothing from the source, because a cache keeps no record of which keys exist. A `WHERE` on the key is an ordinary filter over those resident cells, not a list of keys to fetch:
+That applies to looking a key **up** - `dictGet` and the other dictionary functions. Reading the dictionary **as a table** with `SELECT ... FROM <dictionary>` is different: because a cache keeps no record of which keys exist, the read enumerates only the cells that happen to be resident in the cache at that moment, and a `WHERE` on the key is an ordinary filter over those resident cells, not a list of keys to fetch. A key that is not in the cache cannot be discovered this way, no matter what the `WHERE` says. Resident cells are not free of the source either: an expired cell is read through the same path as `dictGet`, so it is re-requested from the source - synchronously, or asynchronously if `allow_read_expired_keys` is enabled.
 
 ```sql
 CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
@@ -295,7 +295,7 @@ SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
 3
 ```
 
-So a cache dictionary is meant to be used through the dictionary functions. If you need `SELECT ... FROM <dictionary> WHERE key IN (...)` to fetch from the source, use the [direct](/sql-reference/statements/create/dictionary/layouts/direct) layout, which queries the source on every request and caches nothing; to read the whole dictionary as a table, use a layout that holds all of it, such as [flat](/sql-reference/statements/create/dictionary/layouts/flat) or [hashed](/sql-reference/statements/create/dictionary/layouts/hashed).
+So a cache dictionary is meant to be used through the dictionary functions. If you need a lookup of arbitrary keys to always reach the source, use `dictGet` with the [direct](/sql-reference/statements/create/dictionary/layouts/direct) layout, which queries the source on every lookup and caches nothing. Note that a table read of a `direct` dictionary is not a keyed fetch either: `SELECT ... FROM <dictionary> WHERE key IN (...)` loads the whole source and filters afterwards, because ClickHouse does not push the key filter into the dictionary. To read a dictionary as a table, use a layout that holds all of it, such as [flat](/sql-reference/statements/create/dictionary/layouts/flat) or [hashed](/sql-reference/statements/create/dictionary/layouts/hashed).
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
@@ -371,7 +371,7 @@ ClickHouse is not recommended as a source for this layout. Dictionary lookups re
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true, true, Documentation{
         .description = "Like `cache`, but supports composite keys. Reading it as a table returns only the cells "
-                       "currently held in the cache and does not query the source; see `cache`.",
+                       "currently held in the cache and cannot discover keys absent from it; see `cache`.",
         .syntax = "LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS n))",
         .related = {"cache"}});
 
@@ -396,7 +396,7 @@ ClickHouse is not recommended as a source for this layout. Dictionary lookups re
 
 Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
 
-Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held and does not query the source. See [cache](/sql-reference/statements/create/dictionary/layouts/cache).
+Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held and cannot discover keys absent from the cache; resident cells that have expired are still re-requested from the source. See [cache](/sql-reference/statements/create/dictionary/layouts/cache).
 
 The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 
