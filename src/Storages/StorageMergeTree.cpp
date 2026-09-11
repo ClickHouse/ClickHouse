@@ -3018,6 +3018,11 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
             if (!part)
                 throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found, won't try to drop it.", part_name);
 
+            /// `renameAndCommitEmptyParts` below can refuse to remove the part. Find that out before
+            /// `makeCloneInDetached` writes a copy to `detached/`, otherwise a failed DETACH leaves the
+            /// clone behind and every retry adds another `_tryN` directory next to it.
+            checkPartsCanBeRemovedNonTransactionally({part}, NonTransactionalRemovalKind::Discard);
+
             if (detach)
             {
                 auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
@@ -3133,6 +3138,10 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 String partition_id = getPartitionIDFromQuery(partition, query_context);
                 parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
             }
+
+            /// Same as in `dropPart`: refuse before `makeCloneInDetached` writes anything to
+            /// `detached/`, and before the empty covering parts are built.
+            checkPartsCanBeRemovedNonTransactionally(parts, NonTransactionalRemovalKind::Discard);
 
             if (detach)
             {

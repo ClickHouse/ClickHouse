@@ -30,6 +30,9 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM t_drop_partition_non_tx"
 tx 2 "BEGIN TRANSACTION"
 tx 2 "INSERT INTO t_drop_partition_non_tx SETTINGS async_insert = 0 VALUES (2)"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t_drop_partition_non_tx DETACH PARTITION ALL" 2>&1 | grep -o -F "SERIALIZATION_ERROR" | head -1
+# The refused DETACH must not leave a copy in `detached/`: it is checked before the clone is made,
+# so retrying does not pile up `_tryN` directories either.
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't_drop_partition_non_tx'"
 tx 2 "COMMIT"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t_drop_partition_non_tx"
 
