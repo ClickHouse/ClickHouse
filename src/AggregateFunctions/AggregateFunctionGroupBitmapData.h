@@ -97,7 +97,7 @@ public:
 
             /// `SmallSet` has no erase, so rebuild it without the value. It holds at most
             /// `small_set_size` values, so this is a bounded amount of work.
-            std::array<T, small_set_size> kept;
+            std::array<T, small_set_size> kept{};
             size_t kept_size = 0;
             for (const auto & x : small)
                 if (x.getValue() != value)
