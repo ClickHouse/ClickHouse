@@ -2705,6 +2705,14 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         if (loaded_columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
+        /// loadColumnsSubstreams() requires exactly this list once loadColumns() returns; checking it
+        /// here reports a mismatch as corrupted data and keeps the incomplete list off disk.
+        auto recorded_columns = getColumnsSubstreams().getColumnNames();
+        if (!recorded_columns.empty() && recorded_columns != loaded_columns.getNames())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Cannot rebuild columns.txt of part {}: it stores columns [{}], the list rebuilt from the table metadata is [{}]",
+                name, fmt::join(recorded_columns, ", "), fmt::join(loaded_columns.getNames(), ", "));
+
         if (!is_readonly_storage)
             writeColumns(loaded_columns, {});
     }

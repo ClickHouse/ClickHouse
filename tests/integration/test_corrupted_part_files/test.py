@@ -779,6 +779,9 @@ def test_empty_columns_txt_discarded_substreams_refused(started_cluster):
     assert node1.query(f"SELECT count() FROM system.parts WHERE database = 'default' AND table = '{table}' AND active") == "0\n"
     # The part is kept for recovery rather than deleted.
     assert node1.query(f"SELECT count() FROM system.detached_parts WHERE database = 'default' AND table = '{table}'") == "1\n"
+    # Pin the branch: the part state above is also what the other refusals and an unfixed server
+    # produce, so without this the case passes with the discarded-substreams guard removed.
+    assert node1.contains_in_log("was discarded as corrupted")
 
     node1.query(f"DROP TABLE {table} SYNC")
 
@@ -851,6 +854,54 @@ def test_empty_columns_txt_without_substreams_file_shared_offsets(started_cluste
     assert node1.query(f"SELECT sum(arraySum(n.a)), sum(length(n.b)) FROM {control}") == "1000000\t2000\n"
     assert node1.query(f"CHECK TABLE {control} SETTINGS check_query_single_value_result = 1") == "1\n"
     node1.query(f"DROP TABLE {control} SYNC")
+
+
+def renamed_column_part(table):
+    """A wide part that predates a still-pending ALTER RENAME COLUMN.
+
+    RENAME COLUMN renames files in a mutation, so with merges stopped the part keeps `arr` on disk
+    and is read as `arr2` through AlterConversions. A list rebuilt from the current metadata can
+    only look for `arr2`, and Array has no serialization.json entry, so nothing further in the load
+    notices that the rebuild dropped the column.
+    """
+    create_wide_part_table(table, "a UInt64, arr Array(UInt64)", "a")
+    node1.query(f"SYSTEM STOP MERGES {table}")
+    node1.query(f"INSERT INTO {table} SELECT number, [number, number + 1] FROM numbers(1000)", settings=ONE_PART_PER_INSERT)
+    node1.query(f"ALTER TABLE {table} RENAME COLUMN arr TO arr2", settings={"alter_sync": 0})
+
+    data_path = single_wide_part_path(table)
+    assert node1.query(f"SELECT count(), sum(arraySum(arr2)) FROM {table}") == "1000\t1000000\n"
+    return data_path
+
+
+def assert_renamed_part_left_for_recovery(table, log_message):
+    """The part must be detached with its data and its emptied columns.txt as they were.
+
+    A row count is not the oracle here: loading the part without `arr` keeps all 1000 rows and
+    answers `arr2` as default values, and the pending rename then materializes that loss into a new
+    part. The rebuilt list must also not have reached disk, or the next load repeats it.
+    """
+    assert node1.query(f"SELECT count(), sum(arraySum(arr2)) FROM {table}") == "0\t0\n"
+    detached = node1.query(f"SELECT path FROM system.detached_parts WHERE database = 'default' AND table = '{table}'").strip()
+    assert detached.startswith("/"), f"Part was not detached: {detached}"
+    detached = detached.rstrip("/") + "/"
+    assert bash(node1, f"stat -c %s {shlex.quote(detached + 'columns.txt')}").strip() == "0"
+    assert file_exists(node1, detached + "arr.bin")
+    assert node1.contains_in_log(log_message)
+
+
+def test_empty_columns_txt_renamed_column(started_cluster):
+    # columns_substreams.txt names the columns the part wrote, so the rebuilt list is checked
+    # against it and the part is kept for recovery instead of losing the renamed column.
+    table = "t_empty_columns_renamed"
+    data_path = renamed_column_part(table)
+
+    node1.query(f"DETACH TABLE {table}")
+    truncate_file(node1, data_path + "columns.txt")
+    node1.query(f"ATTACH TABLE {table}")
+
+    assert_renamed_part_left_for_recovery(table, "it stores columns")
+    node1.query(f"DROP TABLE {table} SYNC")
 
 
 def test_empty_columns_txt_projection_part(started_cluster):
