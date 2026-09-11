@@ -117,14 +117,18 @@ struct RegrResult
 };
 
 /// TY is the type of the dependent variable (the first argument), TX of the independent one.
+///
+/// The sums are always accumulated in Float64, whatever the arguments are. corr and covar* narrow
+/// their state to Float32 for a pair of Float32 columns, but the regression aggregates add up
+/// squares and cross-products, and Float32 loses them: over two million rows of an exact
+/// y = 3x + 7, a Float32 state returns an intercept of -23.25 instead of 7. Float64 also keeps
+/// regr_avgx and regr_avgy equal to avg(x) and avg(y), which finalize to Float64 as well.
 template <typename TY, typename TX>
 class AggregateFunctionRegr final
-    : public IAggregateFunctionDataHelper<
-          CorrMoments<std::conditional_t<std::is_same_v<TY, TX> && std::is_same_v<TY, Float32>, Float32, Float64>>,
-          AggregateFunctionRegr<TY, TX>>
+    : public IAggregateFunctionDataHelper<CorrMoments<Float64>, AggregateFunctionRegr<TY, TX>>
 {
 public:
-    using ResultType = std::conditional_t<std::is_same_v<TY, TX> && std::is_same_v<TY, Float32>, Float32, Float64>;
+    using ResultType = Float64;
     using Data = CorrMoments<ResultType>;
     using ColVecTY = ColumnVector<TY>;
     using ColVecTX = ColumnVector<TX>;

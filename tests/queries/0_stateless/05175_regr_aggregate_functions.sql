@@ -83,6 +83,22 @@ SELECT regr_count(y, x) FILTER (WHERE x > 50000) = countIf(x > 50000), round(reg
 WITH t AS (SELECT if(number % 13 = 0, NULL, number * 1.0) AS x, if(number % 17 = 0, NULL, number * 2.0 + 1) AS y FROM numbers(100000))
 SELECT regr_count(y, x) = countIf(x IS NOT NULL AND y IS NOT NULL), round(regr_slope(y, x), 9) FROM t;
 
+SELECT 'Float32 arguments still accumulate and return Float64';
+SELECT
+    toTypeName(regr_count(y, x)),
+    toTypeName(regr_avgx(y, x)),
+    toTypeName(regr_slope(y, x)),
+    toTypeName(regr_r2(y, x))
+FROM VALUES('x Float32, y Float32', (1, 2), (2, 4));
+
+WITH t AS (SELECT toFloat32(number) AS x, toFloat32(number * 3 + 7) AS y FROM numbers(200000))
+SELECT
+    regr_avgx(y, x) = avg(x),
+    regr_avgy(y, x) = avg(y),
+    abs(regr_slope(y, x) - 3) < 1e-9,
+    abs(regr_intercept(y, x) - 7) < 1e-6
+FROM t;
+
 SELECT 'wrong argument types are rejected';
 SELECT regr_slope('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT regr_slope(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
