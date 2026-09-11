@@ -2549,7 +2549,7 @@ MemoryTracker * Aggregator::switchToOwnTracker(AggregatedDataVariants & result, 
     /// aggregation state across all threads; the per-table tracker under it accounts for one table only.
     /// It is created by an executing thread: the pipeline may be built under another thread group
     /// (EXPLAIN ANALYZE), whose query tracker is not the one the executor threads report to.
-    MemoryTracker * tracker;
+    MemoryTracker * tracker = nullptr;
     {
         std::lock_guard lock(memory_tracker_mutex);
         if (!memory_tracker)
