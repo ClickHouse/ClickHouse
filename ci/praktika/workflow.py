@@ -108,6 +108,8 @@ class Workflow:
         # If set, every runs_on label across user-defined and Praktika-injected
         # jobs is prefixed with this string, except "self-hosted".
         runs_on_label_prefix: str = ""
+        # Override the dispatch `concurrency.group`; empty keeps `${{ github.workflow }}`.
+        concurrency_group: str = ""
         # If set, GHAuth mints the GitHub token for this workflow's jobs by
         # invoking this AWS Lambda instead of Settings.GH_AUTH_LAMBDA_NAME. Lets
         # a workflow control its token's permission scope - e.g. a more
