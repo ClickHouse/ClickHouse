@@ -122,6 +122,36 @@ SELECT countIf(abs(s - 3) < 1e-6), count() FROM (
     GROUP BY g
 );
 
+SELECT 'a filtered-out NaN or Inf does not reach the sums';
+SELECT regr_slopeIf(y, x, isFinite(x) AND isFinite(y))
+FROM VALUES('x Float64, y Float64', (1, 2), (nan, 5), (2, 4));
+
+SELECT regr_slopeIf(y, x, isFinite(x) AND isFinite(y))
+FROM VALUES('x Float64, y Float64', (1, 2), (inf, 5), (2, 4), (5, -inf), (3, 6));
+
+-- an Inf that passes the filter is part of the data: the row (5, -inf) has a finite x
+SELECT regr_slopeIf(y, x, isFinite(x))
+FROM VALUES('x Float64, y Float64', (1, 2), (2, 4), (5, -inf));
+
+SELECT
+    regr_countIf(y, x, isFinite(x)),
+    regr_avgxIf(y, x, isFinite(x)),
+    regr_sxxIf(y, x, isFinite(x)),
+    regr_sxyIf(y, x, isFinite(x)),
+    regr_interceptIf(y, x, isFinite(x)),
+    regr_r2If(y, x, isFinite(x))
+FROM VALUES('x Float64, y Float64', (1, 2), (nan, 5), (2, 4), (inf, 9), (3, 6));
+
+-- a NaN that is not filtered out is part of the data and does reach the result
+SELECT regr_slope(y, x) FROM VALUES('x Float64, y Float64', (1, 2), (nan, 5), (2, 4));
+
+SELECT 'NULL rows do not reach the sums either';
+SELECT regr_slope(y, x), regr_count(y, x)
+FROM VALUES('x Nullable(Float64), y Nullable(Float64)', (1, 2), (NULL, 5), (2, 4), (3, NULL), (4, 8));
+
+SELECT regr_slopeIf(y, x, x IS NULL OR isFinite(x))
+FROM VALUES('x Nullable(Float64), y Nullable(Float64)', (1, 2), (NULL, 5), (2, 4), (3, 6));
+
 SELECT 'wrong argument types are rejected';
 SELECT regr_slope('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT regr_slope(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

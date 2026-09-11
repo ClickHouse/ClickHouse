@@ -2,6 +2,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/Moments.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -166,8 +167,10 @@ struct RegrMoments
         for (size_t i = row_begin; i < row_end; ++i)
         {
             const bool add = !!condition_map[i] ^ add_if_zero;
-            const Float64 dx = (static_cast<Float64>(x_ptr[i]) - x0) * add;
-            const Float64 dy = (static_cast<Float64>(y_ptr[i]) - y0) * add;
+            /// Zeroing the bit pattern rather than multiplying by the flag: a discarded row may
+            /// hold a NaN or an Inf, and 0 * NaN is NaN, which would poison every sum.
+            const Float64 dx = maskFloatingPoint(static_cast<Float64>(x_ptr[i]) - x0, add);
+            const Float64 dy = maskFloatingPoint(static_cast<Float64>(y_ptr[i]) - y0, add);
             acc_count += add;
             acc_sx += dx;
             acc_sy += dy;

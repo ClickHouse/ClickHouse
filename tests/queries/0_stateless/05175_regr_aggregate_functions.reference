@@ -41,4 +41,13 @@ states shifted by different values merge into the single-pass answer
 3	7	83333250
 every group is fitted on its own
 100	100
+a filtered-out NaN or Inf does not reach the sums
+2
+2
+nan
+3	2	2	4	0	1
+nan
+NULL rows do not reach the sums either
+2	3
+2
 wrong argument types are rejected
