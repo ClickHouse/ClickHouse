@@ -129,6 +129,7 @@ void StorageMemoryProfiler::printUsage()
         "  -p, --path DIR          Storage path for persistent data\n"
         "  --prefix PREFIX         Prefix for heap dump files (default: memory_profile_)\n"
         "  --no-system-tables      Skip system tables for faster startup\n"
+        "  --no-mark-caches        Leave mark caches uninitialized (for uncached-read testing)\n"
         "  --symbolize             Symbolize each heap dump immediately\n"
         "  -h, --help              Show this help message\n"
         "\n"
@@ -335,22 +336,25 @@ void StorageMemoryProfiler::initializeContext()
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
-    const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
-    const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * cache_size_to_ram_max_ratio);
+    if (initialize_mark_caches)
+    {
+        const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
+        const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * cache_size_to_ram_max_ratio);
 
-    String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
-    size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
-    const double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
-    if (mark_cache_size > max_cache_size)
-        mark_cache_size = max_cache_size;
-    global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+        String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
+        size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
+        const double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
+        if (mark_cache_size > max_cache_size)
+            mark_cache_size = max_cache_size;
+        global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
-    String index_mark_cache_policy = server_settings[ServerSetting::index_mark_cache_policy];
-    size_t index_mark_cache_size = server_settings[ServerSetting::index_mark_cache_size];
-    const double index_mark_cache_size_ratio = server_settings[ServerSetting::index_mark_cache_size_ratio];
-    if (index_mark_cache_size > max_cache_size)
-        index_mark_cache_size = max_cache_size;
-    global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
+        String index_mark_cache_policy = server_settings[ServerSetting::index_mark_cache_policy];
+        size_t index_mark_cache_size = server_settings[ServerSetting::index_mark_cache_size];
+        const double index_mark_cache_size_ratio = server_settings[ServerSetting::index_mark_cache_size_ratio];
+        if (index_mark_cache_size > max_cache_size)
+            index_mark_cache_size = max_cache_size;
+        global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
+    }
 
     /// Limit on total number of concurrently executing queries.
     global_context->getProcessList().setMaxSize(0);
@@ -516,6 +520,10 @@ int StorageMemoryProfiler::run(const VectorWithMemoryTracking<String> & args)
         else if (arg == "--no-system-tables")
         {
             no_system_tables = true;
+        }
+        else if (arg == "--no-mark-caches")
+        {
+            initialize_mark_caches = false;
         }
         else if (arg == "--symbolize")
         {
