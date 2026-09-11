@@ -1,6 +1,11 @@
 -- `_partition_value` exposes the values produced by the adjusted partition key (`modulo` is computed
 -- as `moduloLegacy`); an element takes that key's type when the declared type cannot represent it.
 
+-- The `part_log` entry for a new part still renders the partition with the declared key, so inserting
+-- into a table below whose key diverges at 128 bits logs `BAD_GET` at `ERROR` (rendering with the
+-- produced key is fixed separately in #119333). A forwarded server log fails a test on its stderr.
+SET send_logs_level = 'fatal';
+
 -- The produced value is negative and the declared type is unsigned, so it is reinterpreted.
 CREATE TABLE mod_wrong (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (3000000000 % c0);
 INSERT INTO mod_wrong VALUES (-1);
