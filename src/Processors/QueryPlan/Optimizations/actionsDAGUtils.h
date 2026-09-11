@@ -25,6 +25,7 @@ struct ActionsDAGLineageHop
     UInt64 ndv_delta;
     /// Whether the input column's average value width remains applicable after this hop.
     bool preserves_width;
+    /// Index of the child whose statistics can be propagated to this node.
     size_t source_child_index;
 };
 
