@@ -302,6 +302,12 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
             if (try_sort)
                 return;
 
+            /// `trySort` leaves the range partially permuted when it gives up.
+            /// The radix sort below keeps equal keys in the order it receives them.
+            /// Restore the ascending order of row numbers, which is required for equal keys in a stable sort.
+            if (sort_is_stable)
+                ::sort(begin, end);
+
             PaddedPODArray<ValueWithIndex<NativeT>> pairs(size);
             size_t index = 0;
 
