@@ -97,7 +97,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "`JemallocSample` represents collecting of jemalloc samples. "
             "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only)."
             "`Instrumentation` represents traces collected by the instrumentation performed through XRay."
-            "`MemoryLargeAllocation` represents a single allocation charged to the global memory tracker whose size reached `min_allocation_size_to_log_stack_trace`; such a trace is also written to the server log (for ClickHouse developers only)."
+            " `MemoryLargeAllocation` represents a single allocation charged to the global memory tracker whose size reached `min_allocation_size_to_log_stack_trace`; such a trace is also written to the server log (for ClickHouse developers only)."
         },
         {"cpu_id", std::make_shared<DataTypeUInt64>(), "CPU identifier."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
@@ -109,7 +109,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "Instrumentation trace rows are an exception: they store raw virtual memory addresses."},
         {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck, MemoryLargeAllocation or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
         {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
-        {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory/MemoryPeak): {}", context_description)},
+        {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory, MemoryPeak and MemoryLargeAllocation): {}", context_description)},
         {"memory_blocked_context", std::make_shared<ContextDataType>(context_values), fmt::format("Context for which memory tracker is blocked (for ClickHouse developers only): {}", context_description)},
         {"event", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "For trace type ProfileEvent is the name of updated profile event, for other trace types is an empty string."},
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
