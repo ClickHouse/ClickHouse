@@ -222,6 +222,11 @@ size_t findNextDifferentMark(const MergeTreeMarksGetter & marks, size_t from, si
 
 bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
 {
+    /// All marks of an empty file point to its beginning, so there is at most one distinct mark,
+    /// and there is no need to load them.
+    if (file_size == 0)
+        return (marks_count == 0 ? 0 : 1) <= max_transitions;
+
     auto marks = marks_loader->loadMarks();
 
     size_t num_distinct = 0;
