@@ -66,7 +66,7 @@ namespace ErrorCodes
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_tag_value, "", "Tag value to tag processed files in the storage", 0) \
     DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
-    DECLARE(String, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
+    DECLARE(SensitiveString, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
     DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to", 0) \
     DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string", 0) \
     DECLARE(Bool, use_hive_partitioning, false, "DEPRECATED: Use partitioning_mode='hive' instead. Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", 0) \

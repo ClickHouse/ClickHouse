@@ -20,7 +20,7 @@ namespace DB::FailPoints
 namespace DataLake
 {
 
-void validateBearerToken(const DB::ContextPtr & context, const std::string & bearer_token)
+void validateBearerToken(const DB::ContextPtr & context, std::string_view bearer_token)
 {
     /// `createWithBearerToken` turns a non-empty token into an `Authorization: Bearer <token>`
     /// header. Validate that synthetic header the same way a user-supplied `auth_header` is
@@ -29,14 +29,14 @@ void validateBearerToken(const DB::ContextPtr & context, const std::string & bea
     if (bearer_token.empty())
         return;
 
-    DB::HTTPHeaderEntries auth_header{{"Authorization", "Bearer " + bearer_token}};
+    DB::HTTPHeaderEntries auth_header{{"Authorization", fmt::format("Bearer {}", bearer_token)}};
     context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(auth_header);
 }
 
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const std::string & bearer_token,
+    std::string_view bearer_token,
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,
@@ -66,7 +66,7 @@ DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
 std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     const std::string & endpoint,
     DB::ContextPtr context,
-    const std::string & bearer_token,
+    std::string_view bearer_token,
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers,
     const std::string & method,

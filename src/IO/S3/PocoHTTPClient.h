@@ -8,6 +8,7 @@
 #if USE_AWS_S3
 
 #include <Common/HistogramMetrics.h>
+#include <Common/SensitiveString.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
@@ -33,6 +34,8 @@ class StandardHttpResponse;
 namespace DB
 {
 class Context;
+
+using SensitiveHTTPHeaderEntries = std::vector<std::pair<String, SensitiveString>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 }
 
 namespace Poco::Net
@@ -76,14 +79,14 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
 
-    HTTPHeaderEntries extra_headers;
+    SensitiveHTTPHeaderEntries extra_headers;
     String http_client;
     String service_account;
     String metadata_service;
     String request_token_path;
     String google_adc_client_id;
-    String google_adc_client_secret;
-    String google_adc_refresh_token;
+    SensitiveString google_adc_client_secret;
+    SensitiveString google_adc_refresh_token;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -237,7 +240,7 @@ protected:
 
     HTTPRequestThrottler request_throttler;
 
-    const HTTPHeaderEntries extra_headers;
+    const SensitiveHTTPHeaderEntries extra_headers;
 };
 
 class PocoHTTPClientGCPOAuth : public PocoHTTPClient
@@ -255,7 +258,7 @@ private:
 
     struct BearerToken
     {
-        String token;
+        SensitiveString token;
         std::chrono::system_clock::time_point is_valid_to;
     };
 
@@ -263,8 +266,8 @@ private:
     const String metadata_service;
     const String request_token_path;
     const String google_adc_client_id;
-    const String google_adc_client_secret;
-    const String google_adc_refresh_token;
+    const SensitiveString google_adc_client_secret;
+    const SensitiveString google_adc_refresh_token;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);

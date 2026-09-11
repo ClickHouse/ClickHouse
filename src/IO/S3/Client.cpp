@@ -22,6 +22,7 @@
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/ErrorMacros.h>
 #include <aws/core/utils/logging/LogLevel.h>
+#include <aws/core/utils/memory/MemorySystemInterface.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Exception.h>
@@ -31,6 +32,7 @@
 #include <IO/S3/PocoHTTPClientFactory.h>
 #include <IO/S3/AWSLogger.h>
 #include <IO/S3/Credentials.h>
+#include <Common/JemallocNoDumpArenas.h>
 #include <Interpreters/Context.h>
 
 #include <Common/assert_cast.h>
@@ -196,14 +198,14 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
 
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
-    const HTTPHeaderEntries & extra_headers
+    const SensitiveHTTPHeaderEntries & extra_headers
 )
 {
     for (const auto & [name, value] : extra_headers)
     {
         if (name.starts_with("x-amz-"))
         {
-            request.SetAdditionalCustomHeaderValue(name, value);
+            request.SetAdditionalCustomHeaderValue(name, String(value.view()));
         }
     }
 }
@@ -1231,9 +1233,27 @@ void ClientCacheRegistry::clearCacheForAll()
     }
 }
 
+namespace
+{
+
+class NoDumpMemoryManager : public Aws::Utils::Memory::MemorySystemInterface
+{
+public:
+    void Begin() override {}
+    void End() override {}
+    void * AllocateMemory(std::size_t block_size, std::size_t alignment, const char *) override { return JemallocNoDumpArenas::allocate(block_size, alignment); }
+    void FreeMemory(void * ptr) override { JemallocNoDumpArenas::deallocate(ptr); }
+};
+
+NoDumpMemoryManager no_dump_memory_manager;
+
+}
+
 ClientFactory::ClientFactory()
 {
     aws_options = Aws::SDKOptions{};
+
+    aws_options.memoryManagementOptions.sensitiveMemoryManager = &no_dump_memory_manager;
 
     aws_options.cryptoOptions = Aws::CryptoOptions{};
     aws_options.cryptoOptions.initAndCleanupOpenSSL = false;
@@ -1270,37 +1290,41 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const PocoHTTPClientConfiguration & cfg_,
     ClientSettings client_settings,
     const String & access_key_id,
-    const String & secret_access_key,
-    const String & server_side_encryption_customer_key_base64,
+    std::string_view secret_access_key,
+    std::string_view server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
     HTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
-    const String & session_token,
+    std::string_view session_token,
     const std::shared_ptr<ClientCache> & shared_cache)
 {
     PocoHTTPClientConfiguration client_configuration = cfg_;
     client_configuration.updateSchemeAndRegion();
 
+    SensitiveHTTPHeaderEntries extra_headers;
+    for (const auto & header : headers)
+        extra_headers.emplace_back(header.name, SensitiveString(header.value));
+
     if (!server_side_encryption_customer_key_base64.empty())
     {
         /// See Client::GeneratePresignedUrlWithSSEC().
 
-        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
-            Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)});
+        extra_headers.emplace_back(Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM,
+            SensitiveString(Aws::S3::Model::ServerSideEncryptionMapper::GetNameForServerSideEncryption(Aws::S3::Model::ServerSideEncryption::AES256)));
 
-        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
-            server_side_encryption_customer_key_base64});
+        extra_headers.emplace_back(Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY,
+            SensitiveString(server_side_encryption_customer_key_base64));
 
-        Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(server_side_encryption_customer_key_base64);
+        Aws::Utils::ByteBuffer buffer = Aws::Utils::HashingUtils::Base64Decode(Aws::String(server_side_encryption_customer_key_base64));
         String str_buffer(reinterpret_cast<char *>(buffer.GetUnderlyingData()), buffer.GetLength());
-        headers.push_back({Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
-            Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))});
+        extra_headers.emplace_back(Aws::S3::SSEHeaders::SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5,
+            SensitiveString(Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateMD5(str_buffer))));
     }
 
     // These will be added after request signing
-    client_configuration.extra_headers = std::move(headers);
+    client_configuration.extra_headers = std::move(extra_headers);
 
-    Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
+    Aws::Auth::AWSCredentials credentials(access_key_id, Aws::SensitiveString(secret_access_key), Aws::String(session_token));
 
     // we need to force environment credentials if explicit credentials are empty and we have role_arn
     // this is a crutch because we know that we have environment credentials on our Cloud.

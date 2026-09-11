@@ -129,7 +129,7 @@ void PaimonRestCatalog::loadConfig()
     }
 }
 
-String PaimonRestCatalog::createAuthHeaders(
+std::string_view PaimonRestCatalog::createAuthHeaders(
     DB::HTTPHeaderEntries & current_headers,
     const String & resource_path,
     const std::unordered_map<String, String> & query_params,
@@ -144,7 +144,7 @@ String PaimonRestCatalog::createAuthHeaders(
     {
         /// The bearer token is applied by `create` (it fills the `Authorization` header), so it is
         /// returned rather than spliced into `current_headers` here.
-        return token->bearer_token;
+        return token->bearer_token.view();
     }
     else if (token->token_provider == "dlf")
     {
@@ -228,7 +228,7 @@ String PaimonRestCatalog::createAuthHeaders(
                  bytesToHex(DB::encodeSHA256(canonical_request))},
                 DLF_NEW_LINE));
 
-            String key_secret = fmt::format("aliyun_v4{}", token->dlf_access_key_secret);
+            String key_secret = fmt::format("aliyun_v4{}", token->dlf_access_key_secret.view());
             std::vector<uint8_t> key_secret_byte(key_secret.data(), key_secret.data() + key_secret.length());
             auto date_key = DB::hmacSHA256(key_secret_byte, date);
             auto date_region_key = DB::hmacSHA256(date_key, region);
@@ -283,7 +283,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             query_parameters_map.emplace(entry.first, entry.second);
         }
         DB::HTTPHeaderEntries request_headers(headers);
-        const String bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
+        const std::string_view bearer_token = createAuthHeaders(request_headers, endpoint, query_parameters_map, method);
         validateBearerToken(context, bearer_token);
 
         DB::WriteBufferFromOwnString headers_string;

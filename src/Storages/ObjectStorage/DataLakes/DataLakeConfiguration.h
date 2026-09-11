@@ -58,13 +58,13 @@ namespace DataLakeStorageSetting
     extern DataLakeStorageSettingsDatabaseDataLakeCatalogType storage_catalog_type;
     extern DataLakeStorageSettingsString object_storage_endpoint;
     extern DataLakeStorageSettingsString storage_aws_access_key_id;
-    extern DataLakeStorageSettingsString storage_aws_secret_access_key;
+    extern DataLakeStorageSettingsSensitiveString storage_aws_secret_access_key;
     extern DataLakeStorageSettingsString storage_region;
     extern DataLakeStorageSettingsString storage_aws_role_arn;
     extern DataLakeStorageSettingsString storage_aws_role_session_name;
     extern DataLakeStorageSettingsString storage_catalog_url;
     extern DataLakeStorageSettingsString storage_warehouse;
-    extern DataLakeStorageSettingsString storage_catalog_credential;
+    extern DataLakeStorageSettingsSensitiveString storage_catalog_credential;
 
     extern DataLakeStorageSettingsString storage_auth_scope;
     extern DataLakeStorageSettingsString storage_auth_header;

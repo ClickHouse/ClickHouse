@@ -361,12 +361,12 @@ public:
         const PocoHTTPClientConfiguration & cfg,
         ClientSettings client_settings,
         const String & access_key_id,
-        const String & secret_access_key,
-        const String & server_side_encryption_customer_key_base64,
+        std::string_view secret_access_key,
+        std::string_view server_side_encryption_customer_key_base64,
         ServerSideEncryptionKMSConfig sse_kms_config,
         HTTPHeaderEntries headers,
         CredentialsConfiguration credentials_configuration,
-        const String & session_token = "",
+        std::string_view session_token = {},
         const std::shared_ptr<ClientCache> & shared_cache = nullptr);
 
     PocoHTTPClientConfiguration createClientConfiguration(

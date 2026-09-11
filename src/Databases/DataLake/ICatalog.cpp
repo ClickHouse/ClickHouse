@@ -342,7 +342,7 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     DB::SettingsChanges changes;
     changes.emplace_back("storage_endpoint", storage_endpoint);
     changes.emplace_back("aws_access_key_id", aws_access_key_id);
-    changes.emplace_back("aws_secret_access_key", aws_secret_access_key);
+    changes.emplace_back("aws_secret_access_key", aws_secret_access_key.view());
     changes.emplace_back("region", region);
     changes.emplace_back("aws_role_arn", aws_role_arn);
     changes.emplace_back("aws_role_session_name", aws_role_session_name);

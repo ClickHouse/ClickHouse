@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
+#include <Common/SensitiveString.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -50,6 +51,8 @@ template <typename T> T getConfigValueOrDefault(
     {
         if constexpr (std::is_same_v<T, String>)
             return config.getString(path);
+        else if constexpr (std::is_same_v<T, SensitiveString>)
+            return SensitiveString(config.getString(path));
         else if constexpr (std::is_same_v<T, UInt64>)
             return config.getUInt64(path);
         else if constexpr (std::is_same_v<T, Int64>)
@@ -62,7 +65,7 @@ template <typename T> T getConfigValueOrDefault(
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Unsupported type in getConfigValueOrDefault(). "
-                "Supported types are String, UInt64, Int64, Float64, bool");
+                "Supported types are String, SensitiveString, UInt64, Int64, Float64, bool");
     }
     catch (const Poco::SyntaxException &)
     {
@@ -239,6 +242,8 @@ void setOverridable(Poco::Util::AbstractConfiguration & config, const std::strin
 
 template String getConfigValue<String>(const Poco::Util::AbstractConfiguration & config,
                                        const std::string & path);
+template SensitiveString getConfigValue<SensitiveString>(const Poco::Util::AbstractConfiguration & config,
+                                                         const std::string & path);
 template UInt64 getConfigValue<UInt64>(const Poco::Util::AbstractConfiguration & config,
                                        const std::string & path);
 template Int64 getConfigValue<Int64>(const Poco::Util::AbstractConfiguration & config,
@@ -250,6 +255,8 @@ template bool getConfigValue<bool>(const Poco::Util::AbstractConfiguration & con
 
 template String getConfigValueOrDefault<String>(const Poco::Util::AbstractConfiguration & config,
                                                 const std::string & path, const String * default_value);
+template SensitiveString getConfigValueOrDefault<SensitiveString>(const Poco::Util::AbstractConfiguration & config,
+                                                const std::string & path, const SensitiveString * default_value);
 template UInt64 getConfigValueOrDefault<UInt64>(const Poco::Util::AbstractConfiguration & config,
                                                 const std::string & path, const UInt64 * default_value);
 template Int64 getConfigValueOrDefault<Int64>(const Poco::Util::AbstractConfiguration & config,

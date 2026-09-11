@@ -42,7 +42,7 @@ public:
 
     template <typename T> T get(const Key & key) const;
 
-    template <typename T> T getOrDefault(const Key & key, const T & default_value) const;
+    template <typename T> T getOrDefault(const Key & key, const T & default_value = {}) const;
 
     template <typename T> T getAny(const std::initializer_list<Key> & keys) const;
 

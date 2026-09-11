@@ -3,9 +3,9 @@
 namespace DB::DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSensitiveString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString storage_aws_access_key_id;
-    extern const DatabaseDataLakeSettingsString storage_aws_secret_access_key;
+    extern const DatabaseDataLakeSettingsSensitiveString storage_aws_secret_access_key;
 }
 
 namespace DataLake
@@ -13,7 +13,7 @@ namespace DataLake
 
 namespace
 {
-std::shared_ptr<IStorageCredentials> tryMakeStaticS3Credentials(const String & access_key_id, const String & secret_access_key)
+std::shared_ptr<IStorageCredentials> tryMakeStaticS3Credentials(const String & access_key_id, std::string_view secret_access_key)
 {
     if (access_key_id.empty() || secret_access_key.empty())
         return nullptr;
@@ -31,7 +31,7 @@ std::shared_ptr<IStorageCredentials> tryGetStaticStorageCredentials(
 
     if (auto credentials = tryMakeStaticS3Credentials(
             settings[DB::DatabaseDataLakeSetting::aws_access_key_id].value,
-            settings[DB::DatabaseDataLakeSetting::aws_secret_access_key].value))
+            settings[DB::DatabaseDataLakeSetting::aws_secret_access_key].value.view()))
     {
         return credentials;
     }
@@ -39,7 +39,7 @@ std::shared_ptr<IStorageCredentials> tryGetStaticStorageCredentials(
     /// Keep backward compatibility with storage_* names, but do not mix the two setting namespaces.
     return tryMakeStaticS3Credentials(
         settings[DB::DatabaseDataLakeSetting::storage_aws_access_key_id].value,
-        settings[DB::DatabaseDataLakeSetting::storage_aws_secret_access_key].value);
+        settings[DB::DatabaseDataLakeSetting::storage_aws_secret_access_key].value.view());
 }
 
 }

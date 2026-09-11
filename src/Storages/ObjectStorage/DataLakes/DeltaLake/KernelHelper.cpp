@@ -120,7 +120,7 @@ public:
 
         SipHash hash;
         hash.update(credentials.GetAWSAccessKeyId());
-        hash.update(credentials.GetAWSSecretKey());
+        hash.update(std::string_view(credentials.GetAWSSecretKey()));
         hash.update(credentials.GetSessionToken());
         auto fp = hash.get128();
         /// Simulates a credentials rotation between consecutive reads of the same cached
@@ -163,7 +163,7 @@ public:
         if (!access_key_id.empty())
             set_option("aws_access_key_id", access_key_id);
         if (!secret_access_key.empty())
-            set_option("aws_secret_access_key", secret_access_key);
+            set_option("aws_secret_access_key", String(secret_access_key));
 
         /// Set even if token is empty to prevent delta-kernel
         /// from trying to access token api.
@@ -444,7 +444,7 @@ namespace DB
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
+    extern const S3AuthSettingsSensitiveString secret_access_key;
     extern const S3AuthSettingsString region;
 }
 

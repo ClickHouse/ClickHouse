@@ -18,6 +18,7 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/SensitiveString.h>
 #include <Common/ThreadPool_fwd.h>
 
 #include <Disks/DirectoryIterator.h>
@@ -47,19 +48,19 @@ using ContainerClient = ContainerClientWrapper;
 class StaticCredential : public Azure::Core::Credentials::TokenCredential
 {
 public:
-    StaticCredential(std::string token_, std::chrono::system_clock::time_point expires_on_)
-        : token(std::move(token_)), expires_on(expires_on_)
+    StaticCredential(std::string_view token_, std::chrono::system_clock::time_point expires_on_)
+        : token(token_), expires_on(expires_on_)
     {}
 
     Azure::Core::Credentials::AccessToken GetToken(
         Azure::Core::Credentials::TokenRequestContext const &,
         Azure::Core::Context const &) const override
     {
-        return Azure::Core::Credentials::AccessToken { .Token = token, .ExpiresOn = expires_on };
+        return Azure::Core::Credentials::AccessToken { .Token = String(token.view()), .ExpiresOn = expires_on };
     }
 
 private:
-    std::string token;
+    SensitiveString token;
     std::chrono::system_clock::time_point expires_on;
 };
 
@@ -69,7 +70,7 @@ private:
 class TokenProviderCredential : public Azure::Core::Credentials::TokenCredential
 {
 public:
-    using TokenProvider = std::function<std::pair<std::string, std::chrono::system_clock::time_point>()>;
+    using TokenProvider = std::function<std::pair<SensitiveString, std::chrono::system_clock::time_point>()>;
 
     explicit TokenProviderCredential(TokenProvider provider_)
         : provider(std::move(provider_))
@@ -80,7 +81,7 @@ public:
         Azure::Core::Context const &) const override
     {
         auto [token, expires_on] = provider();
-        return Azure::Core::Credentials::AccessToken { .Token = std::move(token), .ExpiresOn = expires_on };
+        return Azure::Core::Credentials::AccessToken { .Token = String(token.view()), .ExpiresOn = expires_on };
     }
 
 private:

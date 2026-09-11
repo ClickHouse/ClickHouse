@@ -53,10 +53,10 @@ namespace ErrorCodes
 namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
-    extern const S3AuthSettingsString secret_access_key;
-    extern const S3AuthSettingsString session_token;
+    extern const S3AuthSettingsSensitiveString secret_access_key;
+    extern const S3AuthSettingsSensitiveString session_token;
     extern const S3AuthSettingsString region;
-    extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsSensitiveString server_side_encryption_customer_key_base64;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
     extern const S3AuthSettingsString external_id;
@@ -165,8 +165,8 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
         client_configuration,
         client_settings,
         auth_settings[S3AuthSetting::access_key_id],
-        auth_settings[S3AuthSetting::secret_access_key],
-        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
+        auth_settings[S3AuthSetting::secret_access_key].value.view(),
+        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value.view(),
         auth_settings.server_side_encryption_kms_config,
         auth_settings.headers,
         S3::CredentialsConfiguration{
@@ -178,7 +178,7 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
             .role_session_name = auth_settings[S3AuthSetting::role_session_name],
             .external_id = auth_settings[S3AuthSetting::external_id],
         },
-        auth_settings[S3AuthSetting::session_token]);
+        auth_settings[S3AuthSetting::session_token].value.view());
 
     return std::make_unique<ReadBufferFromS3>(
         std::move(client), uri.bucket, uri.key, uri.version_id, S3::S3RequestSettings{}, context->getReadSettings());

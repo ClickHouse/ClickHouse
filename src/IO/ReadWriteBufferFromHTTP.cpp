@@ -817,7 +817,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::create(const Poco::Net::HTTP
     return createWithBearerToken(/*bearer_token_=*/ "", credentials_);
 }
 
-ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const std::string & bearer_token_)
+ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(std::string_view bearer_token_)
 {
     /// The buffer keeps a reference to the credentials, hence the immutable static empty object.
     static const Poco::Net::HTTPBasicCredentials no_credentials;
@@ -825,7 +825,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(const 
 }
 
 ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
-    const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
+    std::string_view bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_)
 {
     ProxyConfiguration proxy_configuration;
 
@@ -844,7 +844,7 @@ ReadWriteBufferFromHTTPPtr BuilderRWBufferFromHTTP::createWithBearerToken(
     /// the same builder can be reused without carrying over a stale `Authorization` header.
     HTTPHeaderEntries header_entries = http_header_entries;
     if (!bearer_token_.empty())
-        header_entries.emplace_back("Authorization", "Bearer " + bearer_token_);
+        header_entries.emplace_back("Authorization", fmt::format("Bearer {}", bearer_token_));
 
     // todo it could be a problem if ReadWriteBufferFromHTTP throws
     std::unique_ptr<ReadWriteBufferFromHTTP> ptr(new ReadWriteBufferFromHTTP(

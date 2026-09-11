@@ -489,7 +489,7 @@ TEST(RestCatalog, ApplySettingsChangesCredentialMode)
 
     const auto snapshot = catalog.getStateSnapshot();
     EXPECT_EQ(snapshot->client_id, "client-2");
-    EXPECT_EQ(snapshot->client_secret, "secret-2");
+    EXPECT_EQ(snapshot->client_secret.view(), "secret-2");
 
     DB::SettingsChanges mode_switch;
     mode_switch.emplace_back("auth_header", "Authorization: Bearer token");
@@ -556,7 +556,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
 
     const auto snapshot_before = catalog.getStateSnapshot();
     EXPECT_EQ(snapshot_before->tenant_id, "tenant-1");
-    EXPECT_EQ(snapshot_before->bearer_token, "token-1");
+    EXPECT_EQ(snapshot_before->bearer_token.view(), "token-1");
     ASSERT_TRUE(snapshot_before->auth_header.has_value());
     EXPECT_EQ(snapshot_before->auth_header->value, "Bearer token-1");
 
@@ -567,12 +567,12 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
 
     const auto snapshot_after = catalog.getStateSnapshot();
     EXPECT_EQ(snapshot_after->tenant_id, "tenant-2");
-    EXPECT_EQ(snapshot_after->bearer_token, "token-2");
+    EXPECT_EQ(snapshot_after->bearer_token.view(), "token-2");
     ASSERT_TRUE(snapshot_after->auth_header.has_value());
     EXPECT_EQ(snapshot_after->auth_header->value, "Bearer token-2");
 
     EXPECT_EQ(snapshot_before->tenant_id, "tenant-1");
-    EXPECT_EQ(snapshot_before->bearer_token, "token-1");
+    EXPECT_EQ(snapshot_before->bearer_token.view(), "token-1");
 
     DB::SettingsChanges mode_switch;
     mode_switch.emplace_back("onelake_tenant_id", "tenant-3");
@@ -668,7 +668,7 @@ TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
 
     const auto requests_before_storage_token = server.tokenRequests();
     const auto [storage_token, expires_on] = catalog.getCurrentAccessToken();
-    EXPECT_TRUE(storage_token.starts_with("mock-access-token-"));
+    EXPECT_TRUE(storage_token.view().starts_with("mock-access-token-"));
     EXPECT_GT(server.tokenRequests(), requests_before_storage_token);
 }
 
@@ -732,7 +732,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
     DB::SettingsChanges changes;
     changes.emplace_back("onelake_refresh_token", "another-good-refresh");
     catalog.applySettingsChanges(changes);
-    EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+    EXPECT_EQ(catalog.getStateSnapshot()->refresh_token.view(), "another-good-refresh");
 
     /// The mode is fixed: a bearer token cannot be set on a refresh-token catalog.
     DB::SettingsChanges mode_switch;
@@ -743,7 +743,7 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
     DB::SettingsChanges expired;
     expired.emplace_back("onelake_refresh_token", "expired-refresh");
     expectThrowsCode([&] { catalog.applySettingsChanges(expired); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
-    EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+    EXPECT_EQ(catalog.getStateSnapshot()->refresh_token.view(), "another-good-refresh");
 }
 
 TEST(RestCatalog, HorizonParseCredentialKeepsColonsInSecret)
@@ -751,13 +751,13 @@ TEST(RestCatalog, HorizonParseCredentialKeepsColonsInSecret)
     {
         const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("my-pat-token");
         EXPECT_TRUE(client_id.empty());
-        EXPECT_EQ(client_secret, "my-pat-token");
+        EXPECT_EQ(client_secret.view(), "my-pat-token");
     }
     {
         /// Snowflake PATs may contain `:`; Horizon must not split them into client_id/client_secret.
         const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("ver:1-hint:abc:rest-of-token");
         EXPECT_TRUE(client_id.empty());
-        EXPECT_EQ(client_secret, "ver:1-hint:abc:rest-of-token");
+        EXPECT_EQ(client_secret.view(), "ver:1-hint:abc:rest-of-token");
     }
     {
         const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("");
@@ -784,7 +784,7 @@ TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
 
     EXPECT_EQ(catalog.getCatalogType(), DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON);
     EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
-    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "horizon-pat-without-colon");
+    EXPECT_EQ(catalog.getStateSnapshot()->client_secret.view(), "horizon-pat-without-colon");
     EXPECT_FALSE(catalog.empty());
 
     TableMetadata metadata;
@@ -836,7 +836,7 @@ TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
     changes.emplace_back("catalog_credential", "pat-two");
     catalog.applySettingsChanges(changes);
     EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
-    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "pat-two");
+    EXPECT_EQ(catalog.getStateSnapshot()->client_secret.view(), "pat-two");
 
     /// Mode is fixed: cannot switch to auth_header on a credential catalog.
     DB::SettingsChanges mode_switch;

@@ -85,13 +85,13 @@ namespace ProfileEvents
 
 namespace DB::DatabaseDataLakeSetting
 {
-    extern const DatabaseDataLakeSettingsString catalog_credential;
+    extern const DatabaseDataLakeSettingsSensitiveString catalog_credential;
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
-    extern const DatabaseDataLakeSettingsString onelake_bearer_token;
-    extern const DatabaseDataLakeSettingsString onelake_refresh_token;
+    extern const DatabaseDataLakeSettingsSensitiveString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsSensitiveString onelake_refresh_token;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
-    extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsSensitiveString onelake_client_secret;
 }
 
 namespace DataLake
@@ -106,13 +106,13 @@ static constexpr auto UNKNOWN_EXPIRATION_TOKEN_LIFETIME = std::chrono::minutes(1
 namespace
 {
 
-std::pair<std::string, std::string> parseCatalogCredential(const std::string & catalog_credential)
+std::pair<std::string, DB::SensitiveString> parseCatalogCredential(std::string_view catalog_credential)
 {
     /// Parse a string of format "<client_id>:<client_secret>"
     /// into separare strings client_id and client_secret.
 
     std::string client_id;
-    std::string client_secret;
+    DB::SensitiveString client_secret;
     if (!catalog_credential.empty())
     {
         auto pos = catalog_credential.find(':');
@@ -194,7 +194,7 @@ std::string RestCatalog::Config::toString() const
 RestCatalog::RestCatalog(
     const std::string & warehouse_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     const std::string & auth_scope_,
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
@@ -321,12 +321,12 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
         auto current = access_token.get();
         if (!current || update_token)
         {
-            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken(catalog_state.client_id, catalog_state.client_secret)));
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken(catalog_state.client_id, catalog_state.client_secret.view())));
             current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + current->token);
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", current->token.view()));
         return headers;
     }
     return {};
@@ -337,9 +337,9 @@ OneLakeCatalog::OneLakeCatalog(
     const std::string & base_url_,
     const std::string & onelake_tenant_id,
     const std::string & onelake_client_id,
-    const std::string & onelake_client_secret,
-    const std::string & bearer_token_,
-    const std::string & refresh_token_,
+    std::string_view onelake_client_secret,
+    std::string_view bearer_token_,
+    std::string_view refresh_token_,
     const std::string & auth_scope_,
     const std::string & oauth_server_uri_,
     bool oauth_server_use_request_body_,
@@ -355,7 +355,7 @@ OneLakeCatalog::OneLakeCatalog(
             /// Pre-obtained token scoped to https://storage.azure.com. Used for both catalog header
             /// and Azure Blob access. Does not support refresh.
             initial_state.bearer_token = bearer_token_;
-            initial_state.auth_header = DB::HTTPHeaderEntry("Authorization", "Bearer " + bearer_token_);
+            initial_state.auth_header = DB::HTTPHeaderEntry("Authorization", fmt::format("Bearer {}", bearer_token_));
             validateAuthHeaders(initial_state.auth_header.value());
             break;
         }
@@ -491,13 +491,13 @@ void RestCatalog::applySettingsChangesToState(
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected setting `{}` after validation", change.name);
     }
 
-    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret))
+    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret.view() != old_state.client_secret.view()))
     {
         /// Eagerly fetch a token with the not-yet-published credentials: wrong credentials
         /// fail the ALTER right here, and the config reload authenticates with that token
         /// instead of the cached one.
-        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret.view()));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token.view())}};
     }
 }
 
@@ -507,7 +507,7 @@ DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(const CatalogState & catalo
     if (!catalog_state.refresh_token.empty())
     {
         const auto token = getValidAccessToken(catalog_state, update_token);
-        headers.emplace_back("Authorization", "Bearer " + token.token);
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", token.token.view()));
     }
     else
     {
@@ -530,7 +530,7 @@ AccessToken OneLakeCatalog::getValidAccessToken(const CatalogState & catalog_sta
     return *current;
 }
 
-std::pair<std::string, std::chrono::system_clock::time_point> OneLakeCatalog::getCurrentAccessToken() const
+std::pair<DB::SensitiveString, std::chrono::system_clock::time_point> OneLakeCatalog::getCurrentAccessToken() const
 {
     const auto state_snapshot = state.get();
     const auto token = getValidAccessToken(*state_snapshot, /* force_update */ false);
@@ -572,7 +572,7 @@ void OneLakeCatalog::applySettingsChangesToState(
     std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
     std::unique_ptr<AccessToken> & new_access_token)
 {
-    const auto auth_mode = getAuthMode(old_state.bearer_token, old_state.refresh_token);
+    const auto auth_mode = getAuthMode(old_state.bearer_token.view(), old_state.refresh_token.view());
 
     validateSettingsChanges(changes, auth_mode);
 
@@ -594,7 +594,7 @@ void OneLakeCatalog::applySettingsChangesToState(
 
     if (auth_mode == AuthMode::BearerToken)
     {
-        new_state.auth_header = DB::HTTPHeaderEntry("Authorization", "Bearer " + new_state.bearer_token);
+        new_state.auth_header = DB::HTTPHeaderEntry("Authorization", fmt::format("Bearer {}", new_state.bearer_token.view()));
         validateAuthHeaders(new_state.auth_header.value());
     }
     else if (auth_mode == AuthMode::RefreshToken)
@@ -603,28 +603,28 @@ void OneLakeCatalog::applySettingsChangesToState(
         /// fails the ALTER right here, and the config reload authenticates with the fresh
         /// access token instead of the cached one.
         new_access_token = std::make_unique<AccessToken>(retrieveAccessTokenViaRefreshToken(new_state));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token.view())}};
     }
-    else if (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret)
+    else if (new_state.client_id != old_state.client_id || new_state.client_secret.view() != old_state.client_secret.view())
     {
         /// Eagerly fetch a token with the not-yet-published credentials: wrong credentials
         /// fail the ALTER right here, and the config reload authenticates with that token
         /// instead of the cached one.
-        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret.view()));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token.view())}};
     }
 }
 
-std::pair<std::string, std::string> HorizonCatalog::parseHorizonCredential(const std::string & catalog_credential)
+std::pair<std::string, DB::SensitiveString> HorizonCatalog::parseHorizonCredential(std::string_view catalog_credential)
 {
     /// Always secret-only. Snowflake PATs may contain `:`, so we must not split like RestCatalog.
-    return {"", catalog_credential};
+    return {"", DB::SensitiveString(catalog_credential)};
 }
 
 HorizonCatalog::HorizonCatalog(
     const std::string & warehouse_,
     const std::string & base_url_,
-    const std::string & catalog_credential_,
+    std::string_view catalog_credential_,
     const std::string & auth_scope_,
     const std::string & auth_header_,
     const std::string & oauth_server_uri_,
@@ -689,10 +689,10 @@ void HorizonCatalog::applySettingsChangesToState(
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected setting `{}` after validation", change.name);
     }
 
-    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret))
+    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret.view() != old_state.client_secret.view()))
     {
-        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret.view()));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token.view())}};
     }
 }
 
@@ -719,8 +719,8 @@ namespace
         [](const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)
         {
             const auto auth_mode = OneLakeCatalog::getAuthMode(
-                current_settings[DB::DatabaseDataLakeSetting::onelake_bearer_token].value,
-                current_settings[DB::DatabaseDataLakeSetting::onelake_refresh_token].value);
+                current_settings[DB::DatabaseDataLakeSetting::onelake_bearer_token].value.view(),
+                current_settings[DB::DatabaseDataLakeSetting::onelake_refresh_token].value.view());
             OneLakeCatalog::validateSettingsChanges(changes, auth_mode);
         });
     return true;
@@ -741,7 +741,7 @@ namespace
 
 }
 
-AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, const std::string & client_secret) const
+AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, std::string_view client_secret) const
 {
     static constexpr auto oauth_tokens_endpoint = "oauth/tokens";
 
@@ -761,7 +761,7 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
         Poco::URI::QueryParameters params = {
             {"grant_type", "client_credentials"},
             {"scope", auth_scope},
-            {"client_secret", client_secret},
+            {"client_secret", String(client_secret)},
         };
         /// Snowflake Horizon OAuth uses secret-only credentials (PAT/JWT); omit empty client_id.
         if (!client_id.empty())
@@ -880,8 +880,8 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
     String encoded_refresh_token;
     Poco::URI::encode(auth_scope, auth_scope, encoded_auth_scope);
     Poco::URI::encode(catalog_state.client_id, catalog_state.client_id, encoded_client_id);
-    Poco::URI::encode(catalog_state.client_secret, catalog_state.client_secret, encoded_client_secret);
-    Poco::URI::encode(catalog_state.refresh_token, catalog_state.refresh_token, encoded_refresh_token);
+    Poco::URI::encode(catalog_state.client_secret.view(), catalog_state.client_secret.view(), encoded_client_secret);
+    Poco::URI::encode(catalog_state.refresh_token.view(), catalog_state.refresh_token.view(), encoded_refresh_token);
 
     String body = fmt::format(
         "grant_type=refresh_token&scope={}&client_id={}&refresh_token={}",
@@ -971,8 +971,8 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_service_account_,
     const std::string & google_metadata_service_,
     const std::string & google_adc_client_id_,
-    const std::string & google_adc_client_secret_,
-    const std::string & google_adc_refresh_token_,
+    std::string_view google_adc_client_secret_,
+    std::string_view google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
     DB::ContextPtr context_,
     bool allow_server_credentials_in_user_queries_)
@@ -1013,7 +1013,7 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalo
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + current->token);
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", current->token.view()));
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -1041,7 +1041,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
 
     const auto & context = getContext();
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, timeouts);
+    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret.view(), google_adc_refresh_token.view(), timeouts);
 
     AccessToken token;
     token.token = std::move(result.access_token);

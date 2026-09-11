@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <mutex>
+#include <Common/SensitiveString.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
@@ -35,7 +36,7 @@ public:
         bool use_environment_credentials = false;
 
         std::optional<std::string> access_key_id;
-        std::optional<std::string> secret_access_key;
+        std::optional<SensitiveString> secret_access_key;
     };
 
     DatabaseS3(const String & name, const Configuration& config, ContextPtr context);
