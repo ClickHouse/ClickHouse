@@ -85,10 +85,10 @@ SELECT groupArrayInsertAt(0, 10, 5)(x, pos) FROM VALUES('x Int32, pos UInt32', (
 SELECT groupArrayInsertAt(0, 16777216)(x, pos) FROM VALUES('x Int32, pos UInt32', (1, 0)); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- Lines 91-92: position argument has non-UInt type → ILLEGAL_TYPE_OF_ARGUMENT
-SELECT groupArrayInsertAt()(x, pos) FROM VALUES('x Int32, pos String', (1, 'a')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT groupArrayInsertAt(x, pos) FROM VALUES('x Int32, pos String', (1, 'a')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Lines 121-124: position value at runtime >= 16777215 → TOO_LARGE_ARRAY_SIZE
-SELECT groupArrayInsertAt()(x, pos) FROM VALUES('x Int32, pos UInt32', (1, 16777215)); -- { serverError TOO_LARGE_ARRAY_SIZE }
+SELECT groupArrayInsertAt(x, pos) FROM VALUES('x Int32, pos UInt32', (1, 16777215)); -- { serverError TOO_LARGE_ARRAY_SIZE }
 
 -- Lines 128-131: duplicate position — second write silently skipped; first wins.
-SELECT groupArrayInsertAt()(val, pos) FROM VALUES('val String, pos UInt32', ('a', 0), ('b', 0), ('c', 1));
+SELECT groupArrayInsertAt(val, pos) FROM VALUES('val String, pos UInt32', ('a', 0), ('b', 0), ('c', 1));

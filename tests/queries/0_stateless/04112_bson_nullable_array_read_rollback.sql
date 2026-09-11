@@ -58,6 +58,8 @@ SELECT * FROM format(BSONEachRow, 'a Nullable(Int64)',
 SELECT * FROM format(BSONEachRow, 'a Array(Nullable(Int64))',
   x'2e000000046100260000001230000100000000000000123100020000000000000012320003000000000000000000');
 
+SET enable_analyzer = 1; -- formatRow(... AS val) needs the analyzer: the old path drops the alias, the BSON field is skipped as unknown, and the error assertions never fire
+
 -- Coverage for src/Formats/BSONTypes.cpp: getBSONType, getBSONBinarySubtype,
 -- getBSONTypeName, getBSONBinarySubtypeName — called in error paths of
 -- BSONEachRowRowInputFormat but never exercised by existing CI tests.
