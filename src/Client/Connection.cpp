@@ -983,6 +983,31 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
 }
 
 
+CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings)
+{
+    if (!settings)
+        return CompressionCodecFactory::instance().getDefaultCodec();
+
+    std::optional<int> level;
+    std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
+
+    /// Bad custom logic
+    /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
+    /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
+    /// be broken afterwards.
+    if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
+
+    /// More bad custom logic
+    if (method == "ZSTD")
+        level = (*settings)[Setting::network_zstd_compression_level];
+
+    CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
+    return CompressionCodecFactory::instance().get(method, level);
+}
+
+
 void Connection::sendQuery(
     const ConnectionTimeouts & timeouts,
     const String & query,
@@ -1038,28 +1063,7 @@ void Connection::sendQuery(
     socket->setReceiveTimeout(timeouts.receive_timeout);
     socket->setSendTimeout(timeouts.send_timeout);
 
-    if (settings)
-    {
-        std::optional<int> level;
-        std::string method = Poco::toUpper((*settings)[Setting::network_compression_method].toString());
-
-        /// Bad custom logic
-        /// We only allow any of following generic codecs. CompressionCodecFactory will happily return other
-        /// codecs (e.g. T64) but these may be specialized and not support all data types, i.e. SELECT 'abc' may
-        /// be broken afterwards.
-        if (method != "NONE" && method != "ZSTD" && method != "LZ4" && method != "LZ4HC")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting 'network_compression_method' must be NONE, ZSTD, LZ4 or LZ4HC");
-
-        /// More bad custom logic
-        if (method == "ZSTD")
-            level = (*settings)[Setting::network_zstd_compression_level];
-
-        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
-        compression_codec = CompressionCodecFactory::instance().get(method, level);
-    }
-    else
-        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
+    compression_codec = chooseNetworkCompressionCodec(settings);
 
     query_id = query_id_;
 
