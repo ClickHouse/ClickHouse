@@ -129,7 +129,7 @@
     {"KeeperLastLogTerm", "Raft term of the last log stored in ClickHouse Keeper."},
     {"KeeperLastSnapshotIdx", "Index of the last log present in the last created snapshot."},
     {"KeeperLatestLogsCacheEntries", "Number of entries stored in the in-memory cache for latest logs"},
-    {"KeeperLatestLogsCacheSize", "Total size of in-memory cache for latest logs"},
+    {"KeeperLatestLogsCacheSize", "Memory held by the in-memory cache for latest logs: the log entries themselves plus the per-entry allocation overhead. This is the value bounded by `latest_logs_cache_size_threshold`"},
     {"KeeperLatestSnapshotSize", "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper."},
     {"KeeperMaxFileDescriptorCount", "The maximum number of open file descriptors in ClickHouse Keeper. `-1` if the value cannot be determined."},
     {"KeeperMaxLatency", "Maximum request latency of ClickHouse Keeper."},
