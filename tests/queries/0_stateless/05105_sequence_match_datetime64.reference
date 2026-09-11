@@ -16,4 +16,6 @@ a duration larger than the ticks of the timestamp type is still evaluated
 1	0
 timestamps at the boundary of the type do not overflow
 0	1
+a condition at the upper boundary of DateTime64(9)
+1	0
 other types are still rejected

@@ -82,5 +82,13 @@ SELECT
     sequenceMatch('(?1)(?t>5)(?2)')(ts, e = 1, e = 2) AS after_5s
 FROM (SELECT arrayJoin([(reinterpret(toInt64(-9223372036854775807), 'DateTime64(0, \'UTC\')'), 1), (reinterpret(toInt64(9223372036854775807), 'DateTime64(0, \'UTC\')'), 2)]) AS x, x.1 AS ts, x.2 AS e);
 
+SELECT 'a condition at the upper boundary of DateTime64(9)';
+-- `2262-04-11 23:47:16` is `9223372036000000000` ticks at scale 9, which is the last whole second the type
+-- can hold, so adding even a one-second window to that base timestamp would leave the range of `Int64`.
+SELECT
+    sequenceMatch('(?1)(?t<=1)(?2)')(ts, e = 1, e = 2) AS within_1s,
+    sequenceMatch('(?1)(?t>1)(?2)')(ts, e = 1, e = 2) AS after_1s
+FROM (SELECT arrayJoin([(toDateTime64('2262-04-11 23:47:16', 9, 'UTC'), 1), (toDateTime64('2262-04-11 23:47:16.5', 9, 'UTC'), 2)]) AS x, x.1 AS ts, x.2 AS e);
+
 SELECT 'other types are still rejected';
 SELECT sequenceMatch('(?1)(?2)')('a', 1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
