@@ -459,6 +459,8 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
             insertFrom(src_, position);
     };
 
+    /// Nested insertManyFrom repeats one value, so it can represent a repeated Array row
+    /// directly only when source_size == 1.
     /// Keep the existing scalar implementation outside the narrow fast path.
     if (getDataPtr().get() == src.getDataPtr().get()
         || source_size > 1

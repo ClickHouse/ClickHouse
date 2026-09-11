@@ -61,14 +61,18 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
     const size_t src_buf_size
         = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
 
+    const size_t old_rows = offsets.size();
+    const size_t new_rows = old_rows + length;
+    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
+    offsets.reserve(new_rows);
+
     const size_t old_size = chars.size();
     const size_t new_size = old_size + src_buf_size * length;
     chars.resize(new_size);
 
     const UInt8 * src_buf = &src_concrete.chars[src_offset];
 
-    const size_t old_rows = offsets.size();
-    offsets.resize(old_rows + length);
+    offsets.resize_assume_reserved(new_rows);
 
     for (size_t current_offset = old_size; current_offset < new_size; current_offset += src_buf_size)
         memcpySmallAllowReadWriteOverflow15(&chars[current_offset], src_buf, src_buf_size);
