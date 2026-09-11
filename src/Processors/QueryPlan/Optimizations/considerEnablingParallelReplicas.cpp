@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -175,6 +176,39 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find replicas_plan_top_node in hash table");
     }
+}
+
+/// Lazy materialization splits one read in two: `findReadingStep` returns the `ReadFromMergeTree` that
+/// kept the sorting column, and this returns the `LazilyReadFromMergeTree` that reads the columns taken
+/// out of it. Both are executed by every replica - the plan the initiator ships is the whole query, so
+/// each replica materializes its own rows lazily - so both belong in the same statistics.
+LazilyReadFromMergeTree * findLazyReadingStep(const QueryPlan::Node & top_of_single_replica_plan)
+{
+    LazilyReadFromMergeTree * found = nullptr;
+
+    std::vector<const QueryPlan::Node *> to_visit{&top_of_single_replica_plan};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+
+        /// The step is reached through a `shared_ptr`, so a const node still hands out a mutable step.
+        if (auto * lazy = typeid_cast<LazilyReadFromMergeTree *>(node->step.get()))
+        {
+            // TODO(nickitat): support multiple read steps with parallel replicas
+            if (found)
+            {
+                LOG_DEBUG(getLogger("optimizeTree"), "More than one lazy reading step, not collecting their statistics");
+                return nullptr;
+            }
+            found = lazy;
+        }
+
+        for (const auto * child : node->children)
+            to_visit.push_back(child);
+    }
+
+    return found;
 }
 
 ReadFromMergeTree * findReadingStep(const QueryPlan::Node & top_of_single_replica_plan)
@@ -481,6 +515,11 @@ void considerEnablingParallelReplicas(
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_node_hash, rows_to_read);
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+        /// Share the updater with the lazy read so its bytes land in the same `input_bytes`. Without
+        /// it the statistics describe only the sorting column, while the lazy read is the larger of
+        /// the two by far, and the cost model prices the query on a fraction of what replicas read.
+        if (auto * lazy_reading_step = findLazyReadingStep(*corresponding_node_in_single_replica_plan))
+            lazy_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
     }
 }
 
