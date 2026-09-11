@@ -979,13 +979,7 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     Aws::S3::S3Client::BuildHttpRequest(request, httpRequest);
 
     if (api_mode == ApiMode::GCS)
-    {
-        /// some GCS requests don't like S3 specific headers that the client sets
-        /// all "x-amz-*" headers have to be either converted or deleted
-        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
-        httpRequest->DeleteHeader("x-amz-api-version");
         translateHeadersToGCS(*httpRequest);
-    }
 }
 
 std::string Client::getGCSOAuthToken() const

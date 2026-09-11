@@ -73,6 +73,24 @@ TEST(GCSHeaderTranslation, MetadataDirectiveIsNotCustomMetadata)
     EXPECT_EQ(translated.count("x-goog-meta-data-directive"), 0u);
 }
 
+/// `x-amz-api-version` has no GCS counterpart and some GCS requests reject it, so it is dropped
+/// rather than renamed. The SDK's own `amz-sdk-*` headers carry no `x-amz-` prefix and stay.
+TEST(GCSHeaderTranslation, DropsHeadersWithNoCounterpart)
+{
+    Aws::Http::HeaderValueCollection headers{
+        {"x-amz-api-version", "2006-03-01"},
+        {"amz-sdk-invocation-id", "some-id"},
+        {"amz-sdk-request", "attempt=1; max=3"},
+    };
+
+    const auto translated = DB::S3::translateHeadersToGCS(headers);
+
+    EXPECT_EQ(translated.count("x-amz-api-version"), 0u);
+    EXPECT_EQ(translated.count("x-goog-api-version"), 0u);
+    EXPECT_EQ(headerOrEmpty(translated, "amz-sdk-invocation-id"), "some-id");
+    EXPECT_EQ(headerOrEmpty(translated, "amz-sdk-request"), "attempt=1; max=3");
+}
+
 /// The response side recognises exactly what the request side renames, so the two cannot drift.
 TEST(GCSHeaderTranslation, RecognisesTheSameNamesComingBack)
 {

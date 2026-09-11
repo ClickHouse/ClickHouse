@@ -94,6 +94,12 @@ constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[]
 constexpr std::string_view AMZ_META_PREFIX = "x-amz-meta-";
 constexpr std::string_view GCS_META_PREFIX = "x-goog-meta-";
 
+/// No GCS counterpart, and some GCS requests reject them. `amz-sdk-invocation-id` and
+/// `amz-sdk-request` carry no `x-amz-` prefix, so they survive.
+constexpr std::string_view GCS_DROPPED_HEADERS[] = {
+    "x-amz-api-version",
+};
+
 }
 
 std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
@@ -153,6 +159,9 @@ Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCol
 
     for (const auto & [amz_header, gcs_header] : GCS_TRANSLATED_HEADERS)
         replace_with_gcs_header(amz_header, gcs_header);
+
+    for (const auto & dropped_header : GCS_DROPPED_HEADERS)
+        headers.erase(std::string(dropped_header));
 
     /// replace all x-amz-meta- headers
     VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
