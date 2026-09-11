@@ -73,7 +73,8 @@ UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
 {
 #if USE_SIMDUTF
     /// simdutf validates in 64-byte blocks and pads a short tail into a full one, so at and below one
-    /// block it does a whole block's work whatever the input size.
+    /// block it does a whole block's work whatever the input size. From a block up it is entered
+    /// directly, since the ASCII pre-pass below advances only eight bytes per iteration.
     static constexpr UInt64 simdutf_min_len = 64;
     if (len >= simdutf_min_len)
         return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
@@ -87,6 +88,15 @@ UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
         data += 8;
         len -= 8;
     }
+
+#if USE_SIMDUTF
+    /// The pre-pass stopped at a word that is not plain ASCII, so what is left has to be walked a code
+    /// point at a time. From this length up a padded block does it for less, except where the walk
+    /// rejects at once.
+    static constexpr UInt64 simdutf_min_len_after_ascii = 16;
+    if (len >= simdutf_min_len_after_ascii)
+        return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
+#endif
 
     while (len)
     {
