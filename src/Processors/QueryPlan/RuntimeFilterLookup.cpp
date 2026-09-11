@@ -206,9 +206,11 @@ RuntimeBloomFilter::RuntimeBloomFilter(size_t bytes, size_t hashes_, UInt64 seed
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Runtime bloom filter supports from 1 to {} hash functions, got {}", RUNTIME_BLOOM_MAX_HASHES, hashes);
 
-    /// A power of two number of blocks: the block is selected by masking the first hash.
+    /// A power of two number of blocks: the block is selected by masking the first hash. `bytes` is a
+    /// budget (`join_runtime_bloom_filter_bytes`, or the statistics-based size, which is already a
+    /// power of two), so it is rounded down, never exceeded.
     const size_t requested_blocks = std::max<size_t>(1, bytes / (RUNTIME_BLOOM_BLOCK_WORDS * sizeof(UInt64)));
-    const size_t num_blocks = std::bit_ceil(requested_blocks);
+    const size_t num_blocks = std::bit_floor(requested_blocks);
     word_index_mask = num_blocks - 1; /// a block index mask, despite the name
     words.assign(num_blocks * RUNTIME_BLOOM_BLOCK_WORDS, 0);
 }
@@ -416,7 +418,11 @@ UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 
     const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
     const double ideal_bloom_filter_bytes = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
     const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
-    return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
+    /// `RuntimeBloomFilter` rounds its byte budget down to a power of two, so round the ideal size up
+    /// to one first (the maximum is a power of two, so the clamp holds); a default that is not a
+    /// power of two is a user-set budget and is left as it is.
+    const UInt64 pow2_bloom_filter_bytes = std::bit_ceil(static_cast<UInt64>(clamped_bloom_filter_bytes));
+    return std::max(pow2_bloom_filter_bytes, default_bloom_filter_bytes);
 }
 }
 
