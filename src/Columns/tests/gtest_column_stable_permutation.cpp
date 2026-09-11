@@ -503,7 +503,9 @@ TEST(StablePermutation, UpdatePermutationPreservesEqualKeys)
             IColumn::Permutation actual;
             actual.resize(size);
             iota(actual.data(), size, IColumn::Permutation::value_type(0));
-            IColumn::Permutation expected = actual;
+            IColumn::Permutation expected;
+            expected.resize(size);
+            iota(expected.data(), size, IColumn::Permutation::value_type(0));
             EqualRanges ranges{{0, size}};
 
             /// Check every sorting stage against an independent stable reference.
