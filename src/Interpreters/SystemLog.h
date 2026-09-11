@@ -11,7 +11,10 @@
 #include <Parsers/CommonParsers.h>
 
 #include <Interpreters/SystemLogFlushPolicy.h>
+#include <Storages/ColumnsDescription.h>
 #include <boost/noncopyable.hpp>
+
+#include <vector>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
     M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
@@ -193,6 +196,15 @@ struct SystemLogSettings
     bool union_table_merge_rotated_tables = false;
     String union_table_cluster;
 };
+
+struct SystemLogTableMetadata
+{
+    String name;
+    String comment;
+    ColumnsDescription columns;
+};
+
+std::vector<SystemLogTableMetadata> getSystemLogTableMetadata();
 
 template <typename LogElement>
 class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, public WithContext

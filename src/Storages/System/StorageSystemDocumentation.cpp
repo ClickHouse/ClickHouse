@@ -3,13 +3,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/IColumn.h>
-#include <Common/AsynchronousMetrics.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Documentation.h>
-#include <Common/FunctionDocumentation.h>
-#include <Common/ProfileEvents.h>
-#include <Common/StringUtils.h>
-#include <Common/re2.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
@@ -29,6 +22,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/SystemLog.h>
 #include <Parsers/StatementFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -37,11 +31,19 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/AsynchronousMetrics.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Documentation.h>
+#include <Common/FunctionDocumentation.h>
+#include <Common/ProfileEvents.h>
+#include <Common/StringUtils.h>
+#include <Common/re2.h>
 
 #include <algorithm>
 #include <source_location>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <Poco/String.h>
@@ -115,6 +117,7 @@ constexpr std::string_view MERGE_TREE_SETTINGS_SOURCE = "src/Storages/MergeTree/
 constexpr std::string_view SERVER_SETTINGS_SOURCE = "src/Core/ServerSettings.cpp";
 constexpr std::string_view PROFILE_EVENTS_SOURCE = "src/Common/ProfileEvents.cpp";
 constexpr std::string_view CURRENT_METRICS_SOURCE = "src/Common/CurrentMetrics.cpp";
+constexpr std::string_view SYSTEM_LOGS_SOURCE = "src/Interpreters/SystemLog.h";
 
 /// The source paths captured by `std::source_location` (in `Documentation`/`FunctionDocumentation`) are produced by
 /// the compiler: relative to the repository root when the build remaps source paths (`ENABLE_BUILD_PATH_MAPPING`,
@@ -1061,10 +1064,20 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
 
     /// System tables document themselves with their table comment, authored at the attachment site.
+    /// System logs are defined independently of whether the corresponding table is configured, so keep their
+    /// metadata available even when there is no live table to inspect.
+    const auto system_log_tables = getSystemLogTableMetadata();
+    std::unordered_map<std::string_view, const SystemLogTableMetadata *> system_log_tables_by_name;
+    system_log_tables_by_name.reserve(system_log_tables.size());
+    for (const auto & metadata : system_log_tables)
+        system_log_tables_by_name.emplace(metadata.name, &metadata);
+
+    std::unordered_set<String> attached_system_logs;
     if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))
     {
         for (auto iterator = system_database->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
+            const String table_name = iterator->name();
             if (const auto & table = iterator->table())
             {
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
@@ -1073,12 +1086,31 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                     /// Bind to a reference first: `typeid(*table)` would warn about evaluating an expression with
                     /// side effects (the smart pointer dereference) as the operand of a polymorphic `typeid`.
                     const IStorage & storage = *table;
-                    addRow(res_columns, EntityType::SystemTable, iterator->name(),
+                    const auto system_log = system_log_tables_by_name.find(table_name);
+                    addRow(
+                        res_columns,
+                        EntityType::SystemTable,
+                        table_name,
                         renderSystemTableDoc(metadata_snapshot->comment, metadata_snapshot->getColumns()),
-                        makeRepoRelative(getSystemTableSource(typeid(storage))));
+                        system_log == system_log_tables_by_name.end() ? makeRepoRelative(getSystemTableSource(typeid(storage)))
+                                                                      : String(SYSTEM_LOGS_SOURCE));
+                    if (system_log != system_log_tables_by_name.end())
+                        attached_system_logs.emplace(table_name);
                 }
             }
         }
+    }
+
+    for (const auto & metadata : system_log_tables)
+    {
+        if (attached_system_logs.contains(metadata.name))
+            continue;
+        addRow(
+            res_columns,
+            EntityType::SystemTable,
+            metadata.name,
+            renderSystemTableDoc(metadata.comment, metadata.columns),
+            String(SYSTEM_LOGS_SOURCE));
     }
 }
 
