@@ -1039,7 +1039,7 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             /// If we fail to do so (keeper unavailable) then we don't know if the changes were applied or not so
             /// we can't delete the local part, as if the changes were applied then inserted block appeared in
             /// `/blocks/`, and it can not be inserted again.
-            new_retry_controller.actionAfterLastFailedRetry([&]
+            new_retry_controller.onGiveUp([&]
             {
                 {
                     /// While we could not verify in keeper whether the part was committed, the failed-quorum
@@ -1049,7 +1049,12 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                     /// so we check the state under the parts lock to make the decision free of a race with the cleanup.
                     auto parts_lock = storage.lockParts();
                     if (part->getState() == MergeTreeDataPartState::PreActive)
+                    {
+                        /// Suppress writeExistingPart's try_rollback_part_rename after we keep the part.
+                        /// Keeper status may still be unknown; enqueuePartForCheck reconciles that later.
+                        part->new_part_was_committed_to_zookeeper_after_rename_on_disk = true;
                         transaction.commit(parts_lock);
+                    }
                     else
                     {
                         /// The cleanup already committed the part storage transaction and moved the part
@@ -1426,7 +1431,7 @@ void ReplicatedMergeTreeSink::resolveQuorum(const ZooKeeperWithFaultInjectionPtr
             context->getProcessListElement()
         });
 
-    quorum_retries_ctl.actionAfterLastFailedRetry([&]
+    quorum_retries_ctl.onGiveUp([&]
     {
         ProfileEvents::increment(ProfileEvents::QuorumFailedInserts);
         /// We do not know whether or not data has been inserted in other replicas
