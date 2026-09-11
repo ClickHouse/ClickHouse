@@ -2,6 +2,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
@@ -119,6 +120,13 @@ const Context * CurrentThread::retainQueryContext()
     if (unlikely(!current_thread))
         return nullptr;
     return current_thread->retainQueryContext();
+}
+
+MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
+{
+    if (auto group = getGroup())
+        return group->memory_pressure_monitor;
+    return getGlobalMemoryPressureMonitor();
 }
 
 void CurrentThread::checkIfNotCancelled()
