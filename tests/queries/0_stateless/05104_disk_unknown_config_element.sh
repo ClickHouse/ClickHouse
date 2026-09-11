@@ -26,3 +26,45 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT * FROM known_elements;
     DROP TABLE known_elements SYNC;
 "
+
+# A section of a disk definition is not blessed as a whole: an unknown element inside it is reported as well.
+
+CONFIG="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_locations.xml"
+
+write_config()
+{
+    cat > "${CONFIG}" <<XML
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <multiple_locations>
+                <type>object_storage</type>
+                <metadata_type>local</metadata_type>
+                <locations>
+                    <one>
+                        <local>true</local>
+                        <enabled>true</enabled>
+                        <object_storage_type>local</object_storage_type>
+                        <path>${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_one/</path>
+                        $1
+                    </one>
+                </locations>
+            </multiple_locations>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+XML
+}
+
+write_config "<metdata_path>${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_typo/</metdata_path>"
+${CLICKHOUSE_LOCAL} --config-file="${CONFIG}" --path="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_db" \
+    -q "SELECT name FROM system.disks WHERE name = 'multiple_locations'" 2>&1 \
+    | grep -oF "locations.one.metdata_path" | head -n 1
+
+# The same configuration without the unknown element works.
+
+write_config ""
+${CLICKHOUSE_LOCAL} --config-file="${CONFIG}" --path="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_db" \
+    -q "SELECT name FROM system.disks WHERE name = 'multiple_locations'"
+
+rm -rf "${CONFIG}" "${CLICKHOUSE_TMP:?}/${CLICKHOUSE_DATABASE}_db" "${CLICKHOUSE_TMP:?}/${CLICKHOUSE_DATABASE}_one"

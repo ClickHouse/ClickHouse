@@ -1,3 +1,5 @@
 UNKNOWN_ELEMENT_IN_CONFIG
 lazy_initialization, background_load
 1
+locations.one.metdata_path
+multiple_locations

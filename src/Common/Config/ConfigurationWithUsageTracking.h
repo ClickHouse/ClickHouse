@@ -33,8 +33,9 @@ public:
 
     /// The leaf keys inside `prefix` that were neither read through this object nor marked as used.
     /// An empty prefix means the whole configuration. The names are returned relative to `prefix`.
-    /// A key is also considered used when one of its parents has been read, because reading a section
-    /// as a whole (usually with `has`) is a legitimate way to use everything inside it.
+    /// Reading a section itself does not make the keys inside it used: `has` of a section is only
+    /// a check that the code is going to descend into it, and it still has to read every key it
+    /// supports, so a typo inside a section has to be reported as well.
     Strings getUnusedKeys(const String & prefix) const;
 
 protected:
@@ -49,7 +50,7 @@ private:
     mutable std::unordered_set<String> used_keys;
 
     bool isUsed(const String & key) const;
-    void collectUnusedKeys(const String & prefix, const String & relative_key, bool parent_is_used, Strings & result) const;
+    void collectUnusedKeys(const String & prefix, const String & relative_key, Strings & result) const;
 };
 
 }

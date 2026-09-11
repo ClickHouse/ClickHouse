@@ -33,8 +33,12 @@ static std::pair<FileCachePtr, FileCacheSettings> getCache(
     bool is_custom_disk)
 {
     FileCacheSettings file_cache_settings;
-    auto predefined_configuration = config.has("cache_name")
-        ? NamedCollectionFactory::instance().tryGet(config.getString("cache_name"))
+    /// The key has to be looked up inside the section of the disk: for a disk defined in a query
+    /// the section is the whole configuration, but a disk from the server configuration file lives
+    /// in `storage_configuration.disks.<name>`, where the key was not found before.
+    const String cache_name_key = config_prefix + ".cache_name";
+    auto predefined_configuration = config.has(cache_name_key)
+        ? NamedCollectionFactory::instance().tryGet(config.getString(cache_name_key))
         : nullptr;
 
     std::string cache_path_prefix_if_relative;
@@ -146,7 +150,7 @@ void registerDiskCache(DiskFactory & factory, bool global_skip_access_check)
                 "Cannot wrap disk `{}` with cache layer `{}`: cached disk is allowed only on top of object storage",
                 disk_name, name);
 
-        auto cached_disk_object_storage = std::dynamic_pointer_cast<DiskObjectStorage>(disk)->wrapWithCache(cache, cache_settings, name);
+        auto cached_disk_object_storage = std::dynamic_pointer_cast<DiskObjectStorage>(disk)->wrapWithCache(cache, cache_settings, name, config, config_prefix);
         cached_disk_object_storage->startup(skip_access_check);
 
         LOG_INFO(

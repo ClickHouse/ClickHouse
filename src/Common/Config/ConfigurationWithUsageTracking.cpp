@@ -25,6 +25,23 @@ String normalizeKey(const String & key)
     return key.substr(pos);
 }
 
+/// `Poco::Util::AbstractConfiguration::keys` escapes the dots inside a name, because a dot is the
+/// separator of the path. Such a name appears when a disk is defined in a query as
+/// `disk(..., a.b = 1)`: it is a single element named `a.b`, not a section `a` with an element `b`.
+/// The escaping is an implementation detail of the path syntax, and it is removed before reporting.
+String unescapeDots(const String & key)
+{
+    String result;
+    result.reserve(key.size());
+    for (size_t i = 0; i < key.size(); ++i)
+    {
+        if (key[i] == '\\' && i + 1 < key.size() && key[i + 1] == '.')
+            continue;
+        result += key[i];
+    }
+    return result;
+}
+
 }
 
 ConfigurationWithUsageTracking::ConfigurationWithUsageTracking(const Poco::Util::AbstractConfiguration & config_)
@@ -71,12 +88,12 @@ bool ConfigurationWithUsageTracking::isUsed(const String & key) const
 Strings ConfigurationWithUsageTracking::getUnusedKeys(const String & prefix) const
 {
     Strings result;
-    collectUnusedKeys(prefix, "", false, result);
+    collectUnusedKeys(prefix, "", result);
     return result;
 }
 
 void ConfigurationWithUsageTracking::collectUnusedKeys(
-    const String & prefix, const String & relative_key, bool parent_is_used, Strings & result) const
+    const String & prefix, const String & relative_key, Strings & result) const
 {
     String key;
     if (relative_key.empty())
@@ -86,21 +103,20 @@ void ConfigurationWithUsageTracking::collectUnusedKeys(
     else
         key = prefix + "." + relative_key;
 
-    /// The section itself (an empty relative key) is used by definition - we are looking inside it.
-    const bool is_used = parent_is_used || (!relative_key.empty() && isUsed(key));
-
     Keys children;
     config.keys(key, children);
 
+    /// Only the leaves carry values, and only they can be reported: an intermediate node is read
+    /// as a section (with `has`), which says nothing about the keys inside it.
     if (children.empty())
     {
-        if (!is_used && !relative_key.empty())
-            result.push_back(relative_key);
+        if (!relative_key.empty() && !isUsed(key))
+            result.push_back(unescapeDots(relative_key));
         return;
     }
 
     for (const auto & child : children)
-        collectUnusedKeys(prefix, relative_key.empty() ? child : relative_key + "." + child, is_used, result);
+        collectUnusedKeys(prefix, relative_key.empty() ? child : relative_key + "." + child, result);
 }
 
 }
