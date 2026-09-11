@@ -11,10 +11,18 @@ WHERE type = 'System Table' AND name IN ('documentation', 'parts')
 ORDER BY name;
 
 -- Documentation rows follow the attached system tables, independently of
--- which optional tables are enabled by the server configuration.
+-- which optional tables are enabled by the server configuration. The tables
+-- which are documented even where they are not attached - because their
+-- availability depends on the configuration while their documentation does
+-- not - are the only exception.
 SELECT count()
 FROM system.documentation
 WHERE type = 'System Table'
+    AND name NOT IN (
+        'asynchronous_metrics',
+        'keeper_changelogs', 'keeper_cluster', 'keeper_snapshots', 'keeper_storage',
+        'transactions',
+        'zookeeper', 'zookeeper_connection', 'zookeeper_info', 'zookeeper_watches')
     AND name NOT IN (
         SELECT name
         FROM system.tables
