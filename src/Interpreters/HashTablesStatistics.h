@@ -84,6 +84,24 @@ struct HashJoinEntry
     size_t source_rows; // the number of rows in the source table
 };
 
+/// Probe-time fan-out actually observed for a hash table keyed on one particular key set: how many
+/// candidate rows the probe had to look at per probe row before any non-key condition filtered
+/// them. The optimizer's own estimate assumes every distinct key is equally likely, which
+/// understates a skewed key badly - 4.9 against a real 55 on one measured join - so a demotion
+/// scored from it can create far more probe work than it predicted.
+struct HashJoinFanoutEntry
+{
+    bool shouldBeUpdated(const HashJoinFanoutEntry & new_entry) const
+    {
+        return new_entry.candidates_per_probe_row < candidates_per_probe_row / 2
+            || candidates_per_probe_row < new_entry.candidates_per_probe_row;
+    }
+
+    std::string dump() const { return fmt::format("candidates_per_probe_row={}", candidates_per_probe_row); }
+
+    double candidates_per_probe_row;
+};
+
 struct HashJoinMatchEntry
 {
     bool shouldBeUpdated(const HashJoinMatchEntry & new_entry) const { return new_entry.matches * 2 < matches || new_entry.matches > matches * 2; }
@@ -132,4 +150,5 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics();
 std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params, size_t tables_cnt);
 std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats_collecting_params);
 std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params);
+std::optional<HashJoinFanoutEntry> getHashJoinFanoutHint(const DB::StatsCollectingParams & stats_collecting_params);
 }

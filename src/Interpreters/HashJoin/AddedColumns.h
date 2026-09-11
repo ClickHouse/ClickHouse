@@ -66,6 +66,11 @@ struct LazyOutput
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all refs and ref lists
     size_t hash_table_matches = 0; /// Total number of hash table matches
+    /// Candidate rows the probe looked at before the additional filter ran, and the probe rows they
+    /// came from. Only the additional-filter path fills these: without one every candidate is a
+    /// match, and `hash_table_matches` already says how many there were.
+    size_t candidate_rows = 0;
+    size_t probe_rows = 0;
 
     /// Resolves RowRef::block_no at emit time; points into the join's StoredColumnsIndex,
     /// which is immutable once the build phase is finished. Used by the cold paths

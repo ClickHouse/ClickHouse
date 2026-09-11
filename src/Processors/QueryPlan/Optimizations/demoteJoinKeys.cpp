@@ -147,7 +147,8 @@ bool demoteHighNdvKeysToProbe(
     JoinStepLogical & join_step,
     std::optional<UInt64> build_rows,
     const std::unordered_map<String, ColumnStats> & build_column_stats,
-    const CachedSubsetNdvLookup & cached_subset_ndv)
+    const CachedSubsetNdvLookup & cached_subset_ndv,
+    const MeasuredFanoutLookup & measured_fanout)
 {
     const auto & join_settings = join_step.getJoinSettings();
     if (!join_settings.query_plan_hash_join_subset_keys_auto)
@@ -353,8 +354,20 @@ bool demoteHighNdvKeysToProbe(
         if (demoted_types.empty())
             continue;
 
-        const Float64 mean_bucket = rows / std::max(1.0, static_cast<Float64>(candidate.ndv));
-        const Float64 cost = mean_bucket
+        /// What one probe row will look at. The uniform estimate is a lower bound under skew, so
+        /// prefer what a previous execution of this same key subset actually measured.
+        Float64 fanout = rows / std::max(1.0, static_cast<Float64>(candidate.ndv));
+        if (measured_fanout)
+        {
+            std::vector<const ActionsDAG::Node *> candidate_nodes;
+            candidate_nodes.reserve(candidate.indices.size());
+            for (size_t i : candidate.indices)
+                candidate_nodes.push_back(right_key_nodes[i]);
+            if (auto measured = measured_fanout(candidate_nodes))
+                fanout = std::max(fanout, *measured);
+        }
+
+        const Float64 cost = fanout
             * probeCostPerCandidateNs(demoted_types, join_operator.kind, join_operator.strictness);
         if (cost > join_settings.query_plan_hash_join_subset_keys_max_probe_cost_ns)
             continue;

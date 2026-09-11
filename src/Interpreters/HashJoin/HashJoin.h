@@ -214,6 +214,30 @@ public:
         size_t bucket_idx, size_t num_buckets) const override;
 
     void onBuildPhaseFinish() override;
+    /// Candidate rows the probe examined before the additional filter, and the probe rows they came
+    /// from. Only the additional-filter path reports these; without such a filter every candidate is
+    /// a match and `hash_table_matches` already counts them.
+    void recordProbeFanout(size_t candidate_rows, size_t probe_rows) const
+    {
+        if (!probe_rows)
+            return;
+        probe_candidate_rows.fetch_add(candidate_rows, std::memory_order_relaxed);
+        probe_row_count.fetch_add(probe_rows, std::memory_order_relaxed);
+    }
+
+    /// The raw sums, for a wrapper that has to combine several instances before taking the ratio.
+    size_t getProbeCandidateRows() const { return probe_candidate_rows.load(std::memory_order_relaxed); }
+    size_t getProbeRowCount() const { return probe_row_count.load(std::memory_order_relaxed); }
+
+    /// Measured candidates per probe row, or 0 when no additional filter ran.
+    double getProbeFanout() const
+    {
+        const size_t rows = probe_row_count.load(std::memory_order_relaxed);
+        if (!rows)
+            return 0.0;
+        return static_cast<double>(probe_candidate_rows.load(std::memory_order_relaxed)) / static_cast<double>(rows);
+    }
+
     void onProbePhaseFinish(size_t matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
@@ -705,6 +729,11 @@ private:
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
     size_t hash_table_matches = 0;
+
+    /// Probe-time fan-out summed across probe streams. Written from the probe, which holds the join
+    /// by const reference, hence `mutable`.
+    mutable std::atomic<size_t> probe_candidate_rows{0};
+    mutable std::atomic<size_t> probe_row_count{0};
 
     /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
     bool use_set_maps = false;

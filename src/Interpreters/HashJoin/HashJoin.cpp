@@ -1464,6 +1464,15 @@ HashJoin::~HashJoin()
 
             if (stats_collecting_params.match.isCollectionAndUseEnabled() && probe_phase_finished)
                 getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, stats_collecting_params.match);
+
+            /// Keyed like the build statistics, because the fan-out belongs to this build side keyed
+            /// on this key set - which is exactly what a demotion is choosing between.
+            if (stats_collecting_params.build.isCollectionAndUseEnabled() && probe_phase_finished)
+            {
+                if (const double fanout = getProbeFanout(); fanout > 0.0)
+                    getHashTablesStatistics<HashJoinFanoutEntry>().update(
+                        {.candidates_per_probe_row = fanout}, stats_collecting_params.build);
+            }
         }
     }
     catch (...)

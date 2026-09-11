@@ -193,6 +193,17 @@ struct RuntimeHashStatisticsContext
         return getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(probe_key));
     }
 
+    /// Same key as `getCachedHintForKeys`, different measurement: the probe-time fan-out a previous
+    /// execution saw for a table keyed on exactly these columns.
+    std::optional<HashJoinFanoutEntry> getCachedFanoutForKeys(
+        UInt64 raw_hash, const String & step_serialization_name, const std::vector<const ActionsDAG::Node *> & key_nodes)
+    {
+        if (!raw_hash || key_nodes.empty())
+            return {};
+        const UInt64 probe_key = raw_hash ^ calculateJoinStepCacheKeyContribution(step_serialization_name, key_nodes);
+        return getHashTablesStatistics<HashJoinFanoutEntry>().getSizeHint(params.setKey(probe_key));
+    }
+
     /// Mirror what `calculateHashTableCacheKeys` would have produced for an equivalent join in
     /// the original tree, but for `new_node` that the join-reorder pass is emitting on top of
     /// `left_child_node` and `right_child_node` (which can themselves be original leaves or
@@ -1643,6 +1654,14 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                             auto hint = statistics_context.getCachedHintForKeys(
                                 right_raw_hash, join_step->getSerializationName(), key_nodes);
                             return hint ? std::optional<UInt64>(hint->ht_size) : std::nullopt;
+                        },
+                        [&](const std::vector<const ActionsDAG::Node *> & key_nodes) -> std::optional<double>
+                        {
+                            if (!right_raw_hash)
+                                return {};
+                            auto hint = statistics_context.getCachedFanoutForKeys(
+                                right_raw_hash, join_step->getSerializationName(), key_nodes);
+                            return hint ? std::optional<double>(hint->candidates_per_probe_row) : std::nullopt;
                         });
                 }
             }
