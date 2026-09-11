@@ -28,6 +28,8 @@ node = cluster.add_instance(
 KEY_PREFIX = "data/"
 # `PlainRewritableLayout::REMOVED_NAME_PREFIX`
 REMOVED_NAME_PREFIX = "__removed."
+# `PlainRewritableLayout::constructTombstoneMarkerKey`
+TOMBSTONE_KEY_PREFIX = KEY_PREFIX + "__meta/__tombstone/"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -77,6 +79,11 @@ def read_key(key):
         response.release_conn()
 
 
+def tombstone_markers(keys):
+    """A removal marks the reserved name it uses, and only a marked name is reclaimed."""
+    return [key for key in keys if key.startswith(TOMBSTONE_KEY_PREFIX)]
+
+
 def has_removed_directory(keys):
     """`RemoveRecursive` rewrites `prefix.path` of every directory of the subtree to a path under a reserved name."""
     return any(
@@ -123,6 +130,16 @@ def wait_failpoint_paused(failpoint, timeout=60):
         raise AssertionError(f"failpoint {failpoint} was not reached within {timeout}s")
     pool.shutdown(wait=False)
     future.result()
+
+
+def wait_for_keys_to_disappear(keys, timeout=60):
+    """A disk is loaded when it is first used, so the reclamation can happen a bit after the start."""
+    deadline = time.time() + timeout
+    remaining = [key for key in keys if key_exists(key)]
+    while remaining and time.time() < deadline:
+        time.sleep(0.5)
+        remaining = [key for key in remaining if key_exists(key)]
+    assert remaining == [], f"objects remain: {remaining}"
 
 
 def wait_for_empty_prefix(timeout=60):
@@ -191,13 +208,18 @@ def test_drop_table_killed_before_finalize(
     try:
         wait_failpoint_paused(failpoint)
         # The removal is committed in the metadata but the objects are still there, under a reserved name.
-        assert is_removal_in_progress(list_keys())
+        keys = list_keys()
+        assert is_removal_in_progress(keys)
+        # The name is marked as a leftover of a removal, which is what makes it reclaimable.
+        assert tombstone_markers(keys) != []
         node.stop_clickhouse(kill=True)
     finally:
         drop_thread.join()
 
-    # The killed process left everything behind.
-    assert is_removal_in_progress(list_keys())
+    # The killed process left everything behind, marker included.
+    keys = list_keys()
+    assert is_removal_in_progress(keys)
+    assert tombstone_markers(keys) != []
 
     node.start_clickhouse()
 
@@ -214,9 +236,9 @@ def test_drop_table_killed_before_finalize(
 
 
 def test_names_that_only_look_reserved_are_kept():
-    """Only the exact shape of `PlainRewritableLayout::generateRemovedName` denotes an unfinished removal.
-    A name that merely starts with the prefix could have been created as ordinary data before the shape
-    became reserved, so it is loaded as usual and never deleted.
+    """A reserved name denotes an unfinished removal only while it has a marker object. Any name of that
+    shape, the exact one included, could have been created as ordinary data by a version that reserved
+    nothing and wrote no markers, so without a marker it is loaded as usual and never deleted.
     """
     node.query("DROP TABLE IF EXISTS t SYNC")
     wait_for_empty_prefix()
@@ -229,6 +251,9 @@ def test_names_that_only_look_reserved_are_kept():
     node.stop_clickhouse()
 
     look_alike_names = [
+        # Exactly the generated shape, which an older server could have been asked to create as ordinary
+        # data, for example `BACKUP TO Disk('s3_plain_rewritable', '__removed.abcdefghijklmnop')`.
+        REMOVED_NAME_PREFIX + "abcdefghijklmnop",
         # A name that an older server could have been asked to create, for example for a backup.
         REMOVED_NAME_PREFIX + "mybackup",
         # One character short of the generated shape, and one character too long.
@@ -239,9 +264,9 @@ def test_names_that_only_look_reserved_are_kept():
     ]
 
     # A top-level directory and a root file with each of these names, as an older server would have left them.
-    preexisting_keys = []
+    keys_of_name = {}
     for index, name in enumerate(look_alike_names):
-        remote_name = "abcdefghijklmno" + chr(ord("a") + index)
+        remote_name = "zyxwvutsrqponml" + chr(ord("a") + index)
         keys = {
             f"{KEY_PREFIX}__root/{name}": b"a root file",
             f"{KEY_PREFIX}__meta/{remote_name}/prefix.path": f"{name}/".encode(),
@@ -249,14 +274,33 @@ def test_names_that_only_look_reserved_are_kept():
         }
         for key, data in keys.items():
             put_key(key, data)
-        preexisting_keys += list(keys)
+        keys_of_name[name] = list(keys)
+
+    preexisting_keys = [key for keys in keys_of_name.values() for key in keys]
 
     node.start_clickhouse()
     assert int(node.query("SELECT count() FROM t")) == 1
 
     assert [key for key in preexisting_keys if not key_exists(key)] == []
 
+    # The marker is what decides: the same name, marked, is reclaimed on the next writable start, while the
+    # names that have no marker are kept.
+    marked_name = look_alike_names[0]
+    marked_keys = keys_of_name[marked_name]
+
+    node.stop_clickhouse()
+    put_key(TOMBSTONE_KEY_PREFIX + marked_name, marked_name.encode())
+    node.start_clickhouse()
+
+    wait_for_keys_to_disappear(marked_keys + [TOMBSTONE_KEY_PREFIX + marked_name])
+    assert [
+        key
+        for key in preexisting_keys
+        if key not in marked_keys and not key_exists(key)
+    ] == []
+
     node.query("DROP TABLE t SYNC")
     for key in preexisting_keys:
-        remove_key(key)
+        if key not in marked_keys:
+            remove_key(key)
     wait_for_empty_prefix()
