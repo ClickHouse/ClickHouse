@@ -27,6 +27,7 @@ struct AggregateFunctionTimeseriesChangesTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
+    using ResultType = ValueType_;
 
     static String getName()
     {
@@ -134,6 +135,8 @@ struct AggregateFunctionTimeseriesChangesTraits
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
+
+    static constexpr UInt16 FORMAT_VERSION = 3;
 };
 
 
@@ -153,13 +156,10 @@ public:
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesChanges, Traits>;
     using Base::Base;
 
-    Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return {};
     }
-
-    static constexpr UInt16 FORMAT_VERSION = 3;
-    static constexpr bool DateTime64Supported = true;
 };
 
 /// Each SQL function as a 3-argument template with its is_resets variant baked in, so registration names the

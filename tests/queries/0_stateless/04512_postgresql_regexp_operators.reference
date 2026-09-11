@@ -1,0 +1,13 @@
+1	0	0	1
+0	1	0	1
+0	1	0
+1	0
+1
+1
+1
+0
+1
+SELECT match(\'abc\', \'a\'), matchCaseInsensitive(\'abc\', \'A\'), notMatch(\'abc\', \'z\'), notMatchCaseInsensitive(\'abc\', \'Z\')
+1
+1
+1

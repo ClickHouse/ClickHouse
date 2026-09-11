@@ -1,0 +1,29 @@
+-- let binds a parenthesized source --
+1
+-- let binds a union --
+2
+6
+-- a union bound in a function body still works --
+2
+-- a parenthesized scalar stays a scalar --
+3
+-- a parenthesized pipeline still binds a table --
+2
+-- in takes a tabular expression --
+x
+0
+z
+x
+x
+2
+-- the list form still works --
+true
+false
+true
+-- in~ does not take a tabular expression --
+-- datetime bin_at with a negative bin size is null --
+true
+true
+-- and a positive one keeps rounding from the fixed point --
+2026-08-01 12:30:00.0000000
+4.5

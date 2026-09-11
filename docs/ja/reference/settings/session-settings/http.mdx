@@ -13,6 +13,55 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
+<div id="http_allow_database_as_path">
+  ## http_allow_database_as_path
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTPリクエストのURLパス内のデータベース名を認識するための新しい設定。"}]}]} />
+
+有効にすると、HTTPインターフェイスはURLパス内の`/database/`部分を認識し、これを現在のデータベースとして使用します。
+
+これは、ルーティングされたパス形式のリクエストを解釈するかどうかを制御するユーザーごとの設定です。ルーティング自体は、サーバーレベルの設定`http_allow_path_requests` (デフォルトでは無効) によってグローバルに制御されます。HTTPインターフェイスがパス形式のリクエスト (`/my_db/my_table.csv`など) をクエリハンドラーにルーティングするには、この設定を有効にする必要があります。ルーティングの判定はリクエストの認証前に行われるため、ユーザーごとの設定に依存させることはできません。`http_allow_path_requests`が無効の場合、未知のパスには通常の`404`が返されます。ルーティング後、この設定は認証済みユーザーに有効な設定に照らして再度確認されるため、ユーザー、ロール、またはプロファイルごとに選択的に有効化できます。
+
+<div id="http_allow_filters_as_path">
+  ## http_allow_filters_as_path
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP リクエストの URL パス内にある Hive スタイルの `name=value` フィルターを認識するための新しい設定。"}]}]} />
+
+有効にすると、HTTP インターフェイスはパス内の `/name=value/` 部分 (Hive パーティション化スタイル) を認識し、AND で結合したフィルターに変換します。演算子 `>`、`<`、`>=`、`<=`、`!=`、`<>` も認識されます。
+
+[`http_allow_database_as_path`](/ja/reference/settings/session-settings/http#http_allow_database_as_path) と同様に、これはユーザーごとの設定です。パス形式のリクエストのルーティングは、サーバーレベルの `http_allow_path_requests` 設定によってグローバルに制御されます (ルーティングは認証前に行われます) 。
+
+<div id="http_allow_filters_as_unrecognized_url_parameters">
+  ## http_allow_filters_as_unrecognized_url_parameters
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "認識されない URL パラメータを HTTP リクエストのフィルター式として扱うための新しい設定。"}]}]} />
+
+有効にすると、既知のパラメータ、設定、`param_*` プレフィックスのいずれにも該当しない URL パラメータはすべてフィルターとして扱われ、AND で結合されます。次の 2 つの形式を使用できます。
+
+* 単純な `name=value` は、等価比較 `` `name` = 'value' `` になります (識別子はバッククォートで囲まれ、値は文字列リテラルとして引用されます) 。
+* 比較演算子 (`!=`、`>`、`<`、`>=`、`<=`、`<>`) を指定すると、比較として扱われます。パラメータをまたいで指定することも (`?a!=2`、`?a>=2`) 、URL 内に分割対象となる `=` がない場合はインラインで記述することもできます (`?a<>2`、`?f(x)>3`) 。後者では、再構成された `name[=value]` が完全な SQL 式として解析されます。
+
+<div id="http_allow_table_as_file">
+  ## http_allow_table_as_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "HTTP リクエストの URL パス内のテーブル名を、任意のフォーマット\/圧縮拡張子付きで認識するための新しい設定。"}]}]} />
+
+有効にすると、HTTP インターフェイスは URL パスの最後の部分を、`table`、`table.format`、または `table.format.compression` 形式のテーブル名として認識します。このパスは `SELECT * FROM table` として解釈されます。
+
+[`http_allow_database_as_path`](/ja/reference/settings/session-settings/http#http_allow_database_as_path) と同様に、これはユーザーごとの設定です。パス形式のリクエストのルーティングは、サーバーレベルの `http_allow_path_requests` 設定によってグローバルに制御されます (ルーティングは認証前に行われます) 。
+
 <div id="http_connection_timeout">
   ## http_connection_timeout
 </div>

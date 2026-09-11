@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/es/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/es/clickpipes/_target_ch_partition_by.mdx';
 
 <BetaBadge />
 
@@ -21,7 +22,7 @@ import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.
   La ingesta de datos de MySQL a ClickHouse Cloud mediante ClickPipes está en beta pública.
 </Info>
 
-El ClickPipe para MySQL proporciona una forma totalmente gestionada y resiliente de ingestar datos desde bases de datos MySQL y MariaDB a ClickHouse Cloud. Admite tanto **cargas masivas** para una sola ingestión como **captura de cambios en los datos (CDC)** para la ingestión continua.
+El ClickPipe para MySQL proporciona una forma totalmente gestionada y resiliente de ingestar datos desde bases de datos MySQL y MariaDB a ClickHouse Cloud. Admite tanto **cargas masivas** para una **ingestión única** como **captura de cambios en los datos (CDC)** para la ingestión continua.
 
 Los ClickPipes para MySQL pueden desplegarse y gestionarse manualmente mediante la UI de ClickPipes, así como de forma programática mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
@@ -133,11 +134,13 @@ Puede configurar las opciones avanzadas si es necesario. A continuación, se inc
 
 6. Puedes seleccionar las tablas que quieres replicar desde la base de datos MySQL de origen. Mientras las seleccionas, también puedes cambiarles el nombre en la base de datos de destino de ClickHouse, así como excluir columnas específicas.
 
+7. <SettingPartitionBy />
+
 <div id="review-permissions-and-start-the-clickpipe">
   ### Revisa los permisos e inicia ClickPipe
 </div>
 
-7. Selecciona el rol &quot;Full access&quot; en el menú desplegable de permisos y haz clic en &quot;Complete Setup&quot;.
+8. Selecciona el rol &quot;Full access&quot; en el menú desplegable de permisos y haz clic en &quot;Complete Setup&quot;.
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Revisar permisos" size="lg" border />
 

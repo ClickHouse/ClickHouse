@@ -661,7 +661,7 @@ topK(N, load_factor, 'counts')(column)
         "Usage example",
         R"(
 SELECT topK(3)(AirlineID) AS res
-FROM ontime;
+FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
         )",
         R"(
 ┌─res─────────────────┐
@@ -710,9 +710,9 @@ SELECT topKWeighted(2)(k, w) FROM
 VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
         )",
         R"(
-┌─topKWeighted(2)(k, w)──┐
-│ ['z','x']              │
-└────────────────────────┘
+┌─topKWeighted(2)(k, w)─┐
+│ ['z','x']             │
+└───────────────────────┘
         )"
     },
     {
@@ -761,7 +761,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
         )",
         R"(
 ┌─approx_top_k(2)(k)────┐
-│ [('y',3,0),('x',1,0)] │
+│ [('y',3,0),('z',1,0)] │
 └───────────────────────┘
         )"
     }
