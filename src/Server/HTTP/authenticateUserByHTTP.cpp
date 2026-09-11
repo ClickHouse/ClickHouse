@@ -34,6 +34,7 @@ namespace ErrorCodes
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+    extern const ServerSettingsString ssl_certificate_username_field;
 }
 
 
@@ -77,6 +78,43 @@ namespace
         else
             LOG_TEST(getLogger("authenticateUserByHTTP"), "Skipping memory limit check for user: {}", user_name);
     }
+
+#if USE_SSL
+    /// Derives the user name from the subjects of the TLS client certificate according to the
+    /// `ssl_certificate_username_field` server setting. Returns an empty string when the certificate
+    /// has no subject of the requested kind; the caller rejects the empty user name.
+    String extractUserNameFromCertificateSubjects(const X509Certificate::Subjects & subjects, const String & field)
+    {
+        if (field == "CN")
+        {
+            const auto & common_names = subjects.at(X509Certificate::Subjects::Type::CN);
+            return common_names.empty() ? "" : *common_names.begin();
+        }
+
+        if (field == "SAN:DNS" || field == "SAN:URI")
+        {
+            /// SAN subjects are stored with the "DNS:" or "URI:" prefix, see X509Certificate::extractAllSubjects.
+            const std::string_view prefix = (field == "SAN:DNS") ? "DNS:" : "URI:";
+            String user_name;
+            for (const auto & subject : subjects.at(X509Certificate::Subjects::Type::SAN))
+            {
+                if (!subject.starts_with(prefix))
+                    continue;
+                if (!user_name.empty())
+                    throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                                    "Invalid authentication: the TLS client certificate contains multiple Subject Alternative Name "
+                                    "entries of the type requested by the `ssl_certificate_username_field` server setting ('{}'), "
+                                    "so the user name cannot be derived unambiguously", field);
+                user_name = subject.substr(prefix.size());
+            }
+            return user_name;
+        }
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid value '{}' of the `ssl_certificate_username_field` server setting: "
+                        "must be 'CN', 'SAN:DNS' or 'SAN:URI'", field);
+    }
+#endif
 }
 
 
@@ -156,6 +194,11 @@ bool authenticateUserByHTTP(
     std::string spnego_challenge;
 #if USE_SSL
     X509Certificate::Subjects certificate_subjects;
+
+    /// When nonempty, a TLS client certificate that passed the handshake verification authenticates
+    /// the request by itself (the user name is derived from the configured certificate field), with
+    /// no `X-ClickHouse-SSL-Certificate-Auth` header required.
+    const String ssl_certificate_username_field = String(global_context->getServerSettings()[ServerSetting::ssl_certificate_username_field]);
 
     /// Capture the TLS client certificate (if the client presented one) regardless of the selected
     /// authentication method, so that session_log records it even when the connection authenticates
@@ -275,6 +318,22 @@ bool authenticateUserByHTTP(
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: '{}' HTTP Authorization scheme is not supported", scheme);
         }
     }
+#if USE_SSL
+    else if (peer_certificate && !ssl_certificate_username_field.empty()
+             && !has_config_credentials && !has_credentials_in_query_params && !has_authorization_header)
+    {
+        /// The client presented a TLS certificate that passed the handshake verification and the
+        /// request carries no credentials of any other kind (they all take precedence over the
+        /// certificate and are handled above or excluded by this condition): authenticate by the
+        /// certificate alone, deriving the user name from the certificate field configured in the
+        /// `ssl_certificate_username_field` server setting. The derived user is still subject to
+        /// the `ssl_certificate` authentication method: its configured subjects must match the
+        /// certificate, as if the user name arrived in the `X-ClickHouse-User` header.
+        certificate_subjects = peer_certificate->extractAllSubjects();
+        user = extractUserNameFromCertificateSubjects(certificate_subjects, ssl_certificate_username_field);
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "TLS client certificate", global_context, session, client_address);
+    }
+#endif
     else
     {
         /// Authentication via the URL query parameters (or, if absent, the default session user).

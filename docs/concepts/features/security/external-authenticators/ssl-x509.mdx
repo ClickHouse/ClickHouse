@@ -44,3 +44,23 @@ To enable SSL certificate authentication, a list of `Common Name`'s or `Subject 
 ```
 
 For the SSL [`chain of trust`](https://en.wikipedia.org/wiki/Chain_of_trust) to work correctly, it is also important to make sure that the [`caConfig`](/reference/settings/server-settings/settings/other#openssl) parameter is configured properly.
+
+## Authenticating HTTPS requests by the certificate alone {#authenticating-https-requests-by-the-certificate-alone}
+
+Over the HTTPS interface, certificate authentication normally has to be requested explicitly with the `X-ClickHouse-SSL-Certificate-Auth: on` HTTP header, and the user name is taken from the `X-ClickHouse-User` header. The `ssl_certificate_username_field` server setting removes the need for both headers: when it is set and a request presents a TLS client certificate that passed the handshake verification and carries no other credentials, the user name is derived from the configured certificate field and the request is authenticated with the `ssl_certificate` method.
+
+**Example**
+```xml
+<clickhouse>
+    <!-- The user name is the Common Name of the client certificate.
+         Other possible values: 'SAN:DNS' and 'SAN:URI' - the user name is the single
+         Subject Alternative Name entry of the corresponding type. -->
+    <ssl_certificate_username_field>CN</ssl_certificate_username_field>
+</clickhouse>
+```
+
+```bash
+echo 'SELECT currentUser()' | curl 'https://host.domain.com:8443' --cert example_user.crt --key example_user.key --cacert ca.crt --data-binary @-
+```
+
+Explicit credentials (the `Authorization` header, the `X-ClickHouse-User`/`X-ClickHouse-Key` headers, or the `user`/`password` query parameters) always take precedence over the certificate. The derived user must still be configured with the `ssl_certificate` authentication method listing a matching certificate subject: the setting only substitutes the user name, it does not bypass the subject check.
