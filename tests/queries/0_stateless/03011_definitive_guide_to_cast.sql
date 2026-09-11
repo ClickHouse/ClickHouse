@@ -91,7 +91,7 @@ SELECT CAST(1e20 AS DateTime64(6, 'Europe/Amsterdam'));
 
 -- A special case is DateTime64(9) - the maximum resolution, where the representable range is narrower than the usual range,
 -- because the ticks are stored in an Int64 (with nanosecond precision the maximum is around 2262-04-11). Out-of-range
--- values saturate to the representable boundary, consistently with the other DateTime64 scales:
+-- values saturate to the representable boundary instead of overflowing, consistently with the other DateTime64 scales:
 
 SELECT CAST(1e20 AS DateTime64(9, 'Europe/Amsterdam'));
 
