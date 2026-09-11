@@ -1,0 +1,22 @@
+the NULL slot holds a value that is not in the enum	0
+LIKE	1
+ILIKE	1
+NOT LIKE	1
+match	1
+position	1
+hasToken	1
+countSubstrings	1
+toString and LIKE	1
+equals	1
+IN	1
+\N	\N	\N
+a	1	1
+b	0	0
+short circuit off	1
+short circuit on	1
+a constant NULL	\N
+hash	15
+parallel_hash	15
+full_sorting_merge	15
+grace_hash	15
+above the join	16
