@@ -96,7 +96,7 @@ namespace ErrorCodes
     DECLARE(UInt64, write_throttling_min_delay_us, 10000, "LSMT: when write throttling kicks in, this is the smallest delay added to a write, in microseconds. The delay grows exponentially (by write_throttling_factor) the further background work falls behind, up to write_throttling_max_delay_ms.", HOT_RELOAD) \
     DECLARE(UInt64, write_throttling_max_delay_us, 1000000, "LSMT: the maximum delay added to a write by write throttling, in microseconds.", HOT_RELOAD) \
     DECLARE(Float, write_throttling_factor, 32.0f, "LSMT: write throttling delay is multiplied by this factor if soft limit is exceeded by 2x. Should be greater than 1. Delay = write_throttling_min_delay_us * pow(write_throttling_factor, value / soft_limit - 1).", HOT_RELOAD) \
-    DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
+    DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum memory held by the in-memory cache of latest log entries, counting the per-entry allocation overhead and not just the entries themselves.", 0) \
     DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Deprecated. Used as the value of log_readahead_commit_window_bytes if that setting is not itself set.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
