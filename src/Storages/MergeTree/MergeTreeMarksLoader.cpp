@@ -1,4 +1,3 @@
-#include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -56,6 +55,8 @@ MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t n
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Number of marks {} is not divisible by number of columns in mark {}",
             marks->getNumberOfMarks(), num_columns_in_mark);
+
+    reader = marks->createReader();
 }
 
 MarkInCompressedFile MergeTreeMarksGetter::getMark(size_t row_index, size_t column_index) const
@@ -64,7 +65,7 @@ MarkInCompressedFile MergeTreeMarksGetter::getMark(size_t row_index, size_t colu
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Column index {} is out of range [0, {})", column_index, num_columns_in_mark);
 
-    return marks->get(row_index * num_columns_in_mark + column_index);
+    return marks->get(row_index * num_columns_in_mark + column_index, reader.get());
 }
 
 MergeTreeMarksLoader::MergeTreeMarksLoader(
@@ -177,11 +178,22 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
             expected_uncompressed_size);
 
     auto buffer = data_part_storage->readFile(mrk_path, read_settings.adjustBufferSize(file_size), file_size);
-    std::unique_ptr<ReadBuffer> reader;
-    if (!index_granularity_info.mark_type.compressed)
-        reader = std::move(buffer);
-    else
-        reader = std::make_unique<CompressedReadBufferFromFile>(std::move(buffer));
+    if (index_granularity_info.mark_type.compressed)
+    {
+        PODArray<char, 4096, JemallocCacheAllocator> content(file_size);
+        buffer->readStrict(content.data(), file_size);
+        if (!buffer->eof())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Too many bytes in marks file {}", full_mark_path);
+
+        auto res = MarksInCompressedFile::createFromCompressedFile(
+            std::move(content), marks_count, num_columns_in_mark, index_granularity_info.mark_type.adaptive, full_mark_path);
+        ProfileEvents::increment(ProfileEvents::LoadedMarksFiles);
+        ProfileEvents::increment(ProfileEvents::LoadedMarksCount, total_marks);
+        ProfileEvents::increment(ProfileEvents::LoadedMarksMemoryBytes, res->approximateMemoryUsage());
+        return res;
+    }
+
+    std::unique_ptr<ReadBuffer> reader = std::move(buffer);
 
     /// When streaming, compress marks block-by-block via Builder to avoid
     /// materializing the full plain marks array (can be hundreds of MiB

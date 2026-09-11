@@ -1,7 +1,14 @@
 #include <Formats/MarkInCompressedFile.h>
 
+#include <algorithm>
+#include <array>
+#include <iterator>
+#include <mutex>
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -10,6 +17,87 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
+}
+
+namespace
+{
+    /// Index blocks using the same validation as `CompressedReadBufferFromFile`.
+    class CompressedMarksReader : public CompressedReadBufferBase
+    {
+    public:
+        using CompressedReadBufferBase::CompressedReadBufferBase;
+        using CompressedReadBufferBase::readCompressedData;
+    };
+}
+
+struct MarksInCompressedFile::CompressedFile
+{
+    struct Block
+    {
+        size_t compressed_offset;
+        size_t decompressed_offset;
+    };
+
+    PODArray<char, 4096, JemallocCacheAllocator> content;
+    PODArray<Block, 4096, JemallocCacheAllocator> blocks;
+    String file_name;
+    size_t num_columns;
+    size_t row_size;
+};
+
+struct MarksInCompressedFile::Reader::Impl
+{
+    explicit Impl(std::shared_ptr<const CompressedFile> file_) : file(std::move(file_))
+    {
+        for (auto & reader : readers)
+        {
+            reader = std::make_unique<CompressedReadBufferFromFile>(std::make_unique<ReadBufferFromOutsideMemoryFile>(
+                file->file_name, std::string_view(file->content.data(), file->content.size())));
+            /// The immutable compressed bytes were already checksummed while indexing.
+            reader->disableChecksumming();
+        }
+    }
+
+    const std::shared_ptr<const CompressedFile> file;
+    std::mutex mutex;
+    std::array<std::unique_ptr<CompressedReadBufferFromFile>, 2> readers;
+    size_t next_eviction = 0;
+
+    MarkInCompressedFile get(size_t index)
+    {
+        std::lock_guard lock(mutex);
+        size_t offset = index / file->num_columns * file->row_size + index % file->num_columns * sizeof(MarkInCompressedFile);
+        auto end = std::upper_bound(file->blocks.begin(), file->blocks.end(), offset,
+            [](size_t value, const CompressedFile::Block & block) { return value < block.decompressed_offset; });
+        for (size_t i = 0; i < readers.size(); ++i)
+        {
+            if (!readers[i]->buffer().empty() && static_cast<size_t>(readers[i]->getPosition()) == end->compressed_offset)
+            {
+                next_eviction = i;
+                break;
+            }
+        }
+        auto & reader = *readers[next_eviction];
+        if (reader.isCanceled())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot reuse a failed marks reader for {}", file->file_name);
+        next_eviction = (next_eviction + 1) % readers.size();
+        const auto & block = *std::prev(end);
+        reader.seek(block.compressed_offset, offset - block.decompressed_offset);
+        MarkInCompressedFile mark;
+        readBinaryLittleEndian(mark.offset_in_compressed_file, reader);
+        readBinaryLittleEndian(mark.offset_in_decompressed_block, reader);
+        return mark;
+    }
+};
+
+MarksInCompressedFile::Reader::Reader(std::shared_ptr<const CompressedFile> file) : impl(std::make_unique<Impl>(std::move(file))) {}
+MarksInCompressedFile::Reader::~Reader() = default;
+
+MarkInCompressedFile MarksInCompressedFile::Reader::get(size_t idx)
+{
+    return impl->get(idx);
 }
 
 String MarkInCompressedFile::toString() const
@@ -30,13 +118,76 @@ std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::create(const Plain
     return builder.finish();
 }
 
-MarkInCompressedFile MarksInCompressedFile::get(size_t idx) const
+std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::createFromCompressedFile(
+    PODArray<char, 4096, JemallocCacheAllocator> && content, size_t num_rows,
+    size_t num_columns, bool adaptive, const String & file_name)
+{
+    if (!num_columns || num_columns > (std::numeric_limits<size_t>::max() - sizeof(UInt64)) / sizeof(MarkInCompressedFile))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid column count {} in marks file {}", num_columns, file_name);
+
+    auto file = std::make_shared<CompressedFile>();
+    file->content = std::move(content);
+    file->file_name = file_name;
+    file->num_columns = num_columns;
+    file->row_size = num_columns * sizeof(MarkInCompressedFile) + (adaptive ? sizeof(UInt64) : 0);
+    if (num_rows > std::numeric_limits<size_t>::max() / file->row_size)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid row count {} in marks file {}", num_rows, file_name);
+    size_t expected_size = num_rows * file->row_size;
+    size_t decompressed_offset = 0;
+    ReadBufferFromMemory input(file->content.data(), file->content.size());
+    CompressedMarksReader reader(&input);
+    try
+    {
+        while (!input.eof())
+        {
+            size_t offset = input.count();
+            size_t decompressed_size = 0;
+            size_t compressed_size = 0;
+            size_t total_size = reader.readCompressedData(decompressed_size, compressed_size, false);
+            if (!total_size || !decompressed_size || decompressed_size > expected_size - decompressed_offset)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected size of compressed marks block at offset {}", offset);
+
+            file->blocks.push_back(CompressedFile::Block{offset, decompressed_offset});
+            decompressed_offset += decompressed_size;
+        }
+        if (decompressed_offset != expected_size)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unexpected decompressed size {}, expected {}", decompressed_offset, expected_size);
+        /// Sentinel for locating the last block and recognizing a reader positioned at its end.
+        file->blocks.push_back(CompressedFile::Block{file->content.size(), decompressed_offset});
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("While indexing compressed marks from {}", file_name);
+        throw;
+    }
+    auto result = std::shared_ptr<MarksInCompressedFile>(new MarksInCompressedFile(num_rows * num_columns, {}, {}));
+    result->compressed_file = std::move(file);
+    return result;
+}
+
+std::unique_ptr<MarksInCompressedFile::Reader> MarksInCompressedFile::createReader() const
+{
+    return compressed_file ? std::unique_ptr<Reader>(new Reader(compressed_file)) : nullptr;
+}
+
+MarkInCompressedFile MarksInCompressedFile::get(size_t idx, Reader * reader) const
 {
     if (idx >= num_marks)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Mark index {} is out of range [0, {})",
             idx, num_marks);
+
+    if (compressed_file)
+    {
+        if (reader)
+        {
+            chassert(reader->impl->file == compressed_file);
+            return reader->get(idx);
+        }
+        Reader local_reader(compressed_file);
+        return local_reader.get(idx);
+    }
 
     auto [block, offset] = lookUpMark(idx);
     size_t x = block->min_x + readBitsPacked64(packed.data(), offset, block->bits_for_x);
@@ -54,6 +205,9 @@ std::tuple<const MarksInCompressedFile::BlockInfo *, size_t> MarksInCompressedFi
 
 size_t MarksInCompressedFile::approximateMemoryUsage() const
 {
+    if (compressed_file)
+        return sizeof(*this) + sizeof(CompressedFile) + compressed_file->content.allocated_bytes()
+            + compressed_file->blocks.allocated_bytes() + compressed_file->file_name.capacity();
     return sizeof(*this) + blocks.allocated_bytes() + packed.allocated_bytes();
 }
 

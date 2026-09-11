@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <tuple>
 #include <unordered_map>
 
@@ -30,12 +31,11 @@ struct MarkInCompressedFile
 /**
  * In-memory representation of an array of marks.
  *
- * Uses an ad-hoc compression scheme that decreases memory usage while allowing
- * random access in O(1) time.
- * This is independent from the marks *file* format, which may be uncompressed
- * or use a different compression method.
+ * Compressed files can be retained with an immutable block index, while each
+ * `Reader` keeps a bounded set of decoded blocks. Plain marks use a bit-packed
+ * representation that allows random access in O(1) time.
  *
- * Typical memory usage:
+ * Typical memory usage of the bit-packed representation:
  *  * ~3 bytes/mark for integer columns
  *  * ~5 bytes/mark for string columns
  *  * ~0.3 bytes/mark for trivial marks in auxiliary dict files of LowCardinality columns
@@ -43,6 +43,7 @@ struct MarkInCompressedFile
 class MarksInCompressedFile
 {
 private:
+    struct CompressedFile;
     /** Throughout this class:
      *   * "x" stands for offset_in_compressed_file,
      *   * "y" stands for offset_in_decompressed_block.
@@ -89,10 +90,30 @@ private:
 public:
     using PlainArray = PODArray<MarkInCompressedFile>;
 
+    /// Reader-local decompressed blocks. The shared mark-cache entry stays immutable.
+    class Reader
+    {
+    public:
+        ~Reader();
+
+    private:
+        friend MarksInCompressedFile;
+        struct Impl;
+        explicit Reader(std::shared_ptr<const CompressedFile> file);
+        MarkInCompressedFile get(size_t idx);
+        std::unique_ptr<Impl> impl;
+    };
+
     /// Create from a complete plain marks array.
     static std::shared_ptr<MarksInCompressedFile> create(const PlainArray & marks);
 
-    MarkInCompressedFile get(size_t idx) const;
+    /// Index and checksum the compressed blocks without decoding all marks.
+    static std::shared_ptr<MarksInCompressedFile> createFromCompressedFile(
+        PODArray<char, 4096, JemallocCacheAllocator> && content, size_t num_rows,
+        size_t num_columns, bool adaptive, const String & file_name);
+
+    std::unique_ptr<Reader> createReader() const;
+    MarkInCompressedFile get(size_t idx, Reader * reader = nullptr) const;
 
     size_t approximateMemoryUsage() const;
 
@@ -146,6 +167,7 @@ private:
     size_t num_marks;
     PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
     PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
+    std::shared_ptr<const CompressedFile> compressed_file;
 
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;

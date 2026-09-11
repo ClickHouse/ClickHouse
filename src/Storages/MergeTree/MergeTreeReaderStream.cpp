@@ -195,19 +195,36 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 namespace
 {
 
-/// Index of the first mark after `from` that points to a different position, or `marks_count` if
-/// there is none. Marks are non-decreasing positions in the file, so equal marks form contiguous
-/// runs and binary search is valid.
+/// Equal mark positions form contiguous runs. Bound the run locally before binary search,
+/// avoiding distant compressed mark blocks when only a few neighboring marks are equal.
+template <typename GetPosition>
+size_t findNextDifferentPosition(size_t from, size_t marks_count, GetPosition get_position)
+{
+    const auto position = get_position(from);
+    auto same_position = [&](size_t index) { return get_position(index) == position; };
+    size_t begin = from + 1;
+    size_t end = marks_count;
+    size_t step = 1;
+    while (step < end - begin)
+    {
+        size_t probe = begin + step - 1;
+        if (!same_position(probe))
+        {
+            end = probe;
+            break;
+        }
+        begin = probe + 1;
+        step += std::min(step, end - begin);
+    }
+
+    auto indices = collections::range(begin, end);
+    auto it = std::partition_point(indices.begin(), indices.end(), same_position);
+    return begin + std::distance(indices.begin(), it);
+}
+
 size_t findNextDifferentMark(const MergeTreeMarksGetter & marks, size_t from, size_t marks_count)
 {
-    auto indices = collections::range(from, marks_count);
-    auto less_mark = [&](size_t lhs, size_t rhs)
-    {
-        return marks.getMark(lhs, 0).asTuple() < marks.getMark(rhs, 0).asTuple();
-    };
-
-    auto it = std::upper_bound(indices.begin(), indices.end(), from, std::move(less_mark));
-    return it == indices.end() ? marks_count : *it;
+    return findNextDifferentPosition(from, marks_count, [&](size_t index) { return marks.getMark(index, 0); });
 }
 
 }
@@ -361,15 +378,10 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     /// it has some data from mark 6 and we have to read
     /// compressed block  [84995; 126531 in a whole.
 
-    auto indices = collections::range(right_mark, marks_count);
-    auto next_different_compressed_offset = [&](auto lhs, auto rhs)
-    {
-        return marks_getter->getMark(lhs, 0).offset_in_compressed_file < marks_getter->getMark(rhs, 0).offset_in_compressed_file;
-    };
-
-    auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, std::move(next_different_compressed_offset));
-    if (it != indices.end())
-        return marks_getter->getMark(*it, 0).offset_in_compressed_file;
+    size_t next_different_mark = findNextDifferentPosition(right_mark, marks_count,
+        [&](size_t index) { return marks_getter->getMark(index, 0).offset_in_compressed_file; });
+    if (next_different_mark != marks_count)
+        return marks_getter->getMark(next_different_mark, 0).offset_in_compressed_file;
 
     return file_size;
 }
