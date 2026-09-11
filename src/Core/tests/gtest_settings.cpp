@@ -16,6 +16,7 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 namespace
@@ -323,6 +324,106 @@ GTEST_TEST(SettingsCompatibility, MarkChangedByCompatibilityAsUnchangedKeepsTheV
     /// `resetSettingsChangedByCompatibility` must not touch them.
     settings.resetSettingsChangedByCompatibility();
     ASSERT_EQ(settings.get("network_compression_method"), derived_method);
+}
+
+GTEST_TEST(SettingFieldNonZeroUInt32, RejectsZeroAndOutOfRange)
+{
+    /// In-range values, including both boundaries, are kept exactly.
+    ASSERT_EQ(SettingFieldNonZeroUInt32{}.value, 1u);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(UInt64(1))).value, 1u);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(UInt64(4294967295))).value, 4294967295u);
+
+    /// Zero violates the non-zero half of the type.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(UInt64(0))), DB::Exception);
+
+    /// Out-of-range values are rejected instead of wrapping mod 2^32. Before the check, 2^32 + 4
+    /// wrapped to 4 - for `logs_to_keep` of a Replicated database that made the cleanup thread
+    /// delete almost the whole DDL log.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(UInt64(4294967300ULL))), DB::Exception);
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(Float64(5e9))), DB::Exception);
+
+    /// The same holds when the value arrives as a string, whether inside a Field or not. This is
+    /// the path a plain `SettingFieldUInt32` wraps on, because its parse does not check overflow.
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(String("10000000000"))), DB::Exception);
+    ASSERT_THROW(SettingFieldNonZeroUInt32(Field(String("0"))), DB::Exception);
+    ASSERT_EQ(SettingFieldNonZeroUInt32(Field(String("4294967295"))).value, 4294967295u);
+
+    SettingFieldNonZeroUInt32 setting;
+    ASSERT_THROW(setting = Field(UInt64(4294967300ULL)), DB::Exception);
+    ASSERT_THROW(setting = Field(String("10000000000")), DB::Exception);
+    ASSERT_THROW(setting.parseFromString("4294967300"), DB::Exception);
+    ASSERT_THROW(setting.parseFromString("0"), DB::Exception);
+
+    /// Size suffixes still work on the checked path.
+    setting.parseFromString("1K");
+    ASSERT_EQ(setting.value, 1000u);
+
+    /// Like every other setting field type, construction from a Field leaves the field unchanged;
+    /// only assignment marks it changed.
+    ASSERT_FALSE(SettingFieldNonZeroUInt32(Field(UInt64(5))).changed);
+    SettingFieldNonZeroUInt32 assigned;
+    assigned = Field(UInt64(5));
+    ASSERT_TRUE(assigned.changed);
+}
+
+GTEST_TEST(SettingFieldNonZeroUInt32, ReadBinaryRejectsZeroAndOutOfRange)
+{
+    /// The binary form of an unsigned setting is a VarUInt of up to 64 bits regardless of the field's
+    /// width, and the base `SettingFieldUInt32::readBinary` narrows it silently. The non-zero type
+    /// has to range-check the wide value before narrowing, the same as it does for strings.
+    auto read = [](UInt64 wire_value)
+    {
+        WriteBufferFromOwnString out;
+        writeVarUInt(wire_value, out);
+        const String bytes = out.str();
+        ReadBufferFromString in(bytes);
+        SettingFieldNonZeroUInt32 setting;
+        setting.readBinary(in);
+        return setting;
+    };
+
+    /// In-range values, including both boundaries, are decoded exactly and marked changed.
+    ASSERT_EQ(read(1).value, 1u);
+    ASSERT_EQ(read(1000).value, 1000u);
+    ASSERT_EQ(read(4294967295ULL).value, 4294967295u);
+    ASSERT_TRUE(read(1000).changed);
+
+    /// Zero violates the non-zero half of the type. Pinned to the code of the non-zero check.
+    try
+    {
+        read(0);
+        FAIL() << "zero was accepted from the binary form";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    /// Values wider than UInt32 are rejected instead of wrapping mod 2^32. Pinned to the code of the
+    /// range check, so that the wrapped value 4 or 0 failing some other way cannot pass here.
+    for (UInt64 wide : {UInt64(4294967296ULL), UInt64(4294967300ULL), std::numeric_limits<UInt64>::max()})
+    {
+        try
+        {
+            read(wide);
+            FAIL() << "value " << wide << " was accepted from the binary form";
+        }
+        catch (const Exception & e)
+        {
+            ASSERT_EQ(e.code(), ErrorCodes::CANNOT_CONVERT_TYPE);
+        }
+    }
+
+    /// The bytes the field writes for itself are what its own readBinary consumes.
+    SettingFieldNonZeroUInt32 written(4294967295u);
+    WriteBufferFromOwnString out;
+    written.writeBinary(out);
+    const String bytes = out.str();
+    ReadBufferFromString in(bytes);
+    SettingFieldNonZeroUInt32 reread;
+    reread.readBinary(in);
+    ASSERT_EQ(reread.value, written.value);
+    ASSERT_TRUE(in.eof());
 }
 
 GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)

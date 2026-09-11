@@ -1,0 +1,5 @@
+<clickhouse>
+    <database_replicated>
+        <logs_to_keep>10000000000</logs_to_keep>
+    </database_replicated>
+</clickhouse>
