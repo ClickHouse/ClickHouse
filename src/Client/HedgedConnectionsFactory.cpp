@@ -188,6 +188,7 @@ int HedgedConnectionsFactory::getNextIndex()
 
         /// Check if we can try this replica.
         if (replicas[next_index].connection_establisher->getResult().entry.isNull()
+            && !replicas[next_index].connection_establisher->isCancelled()
             && (max_tries == 0 || shuffled_pools[next_index].error_count < max_tries))
             finish = true;
 
