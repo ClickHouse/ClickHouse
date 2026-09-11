@@ -499,6 +499,13 @@ void optimizeTreeSecondPass(
                 if (optimization_settings.query_plan_optimize_count_from_text_index)
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
 
+                /// Has to run after the projection passes above, for the same reason the pass
+                /// before it does: it replaces the `ReadFromMergeTree` a projection would have
+                /// been matched against. It is gated by nothing here, because the step it matches
+                /// - `GPUAggregatingStep` - only exists when `allow_experimental_gpu_aggregation`
+                /// put it there.
+                optimizeAggregationFromGPUResidentColumns(*frame.node, nodes, optimization_settings);
+
                 /// Exchanges do not preserve the order an in-order aggregation needs, so keep
                 /// hash aggregation whenever a distributed plan is intended.
                 if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)

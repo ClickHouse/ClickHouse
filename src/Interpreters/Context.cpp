@@ -45,6 +45,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context_fwd.h>
 #include <Server/ServerType.h>
+#include <GPU/GPUColumnCache.h>
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
 #include <Common/JemallocCacheArena.h>
@@ -619,6 +620,11 @@ struct ContextSharedPart : boost::noncopyable
     mutable ResourceManagerPtr resource_manager;
     mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
+#if USE_GPU
+    /// Columns of `MergeTree` parts held in GPU device memory - see `GPUColumnCache`. Null when
+    /// `gpu_column_cache_size` is 0, which is what turns the whole resident-column path off.
+    mutable GPUColumnCachePtr gpu_column_cache TSA_GUARDED_BY(mutex);
+#endif
     mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
     mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
@@ -4657,6 +4663,34 @@ void Context::clearMarkCache() const
     JemallocCacheArena::purge();
 }
 
+void Context::setGPUColumnCache([[maybe_unused]] size_t max_cache_size_in_bytes)
+{
+#if USE_GPU
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->gpu_column_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GPU column cache has been already created.");
+
+    /// Zero leaves it unregistered rather than creating an empty cache, so that
+    /// `optimizeAggregationFromGPUResidentColumns` can refuse by asking for the cache and getting
+    /// nothing - and so that a server which is not going to use a device does not carry the object.
+    if (max_cache_size_in_bytes == 0)
+        return;
+
+    shared->gpu_column_cache = std::make_shared<GPUColumnCache>(max_cache_size_in_bytes);
+#endif
+}
+
+std::shared_ptr<GPUColumnCache> Context::getGPUColumnCache() const
+{
+#if USE_GPU
+    SharedLockGuard lock(shared->mutex);
+    return shared->gpu_column_cache;
+#else
+    return nullptr;
+#endif
+}
+
 void Context::setUniqueKeyIndexCache(
     [[maybe_unused]] const String & cache_policy,
     [[maybe_unused]] size_t max_cache_size_in_bytes,
@@ -5492,6 +5526,12 @@ void Context::clearCaches() const
 
     if (shared->mark_cache)
         shared->mark_cache->clear();
+
+#if USE_GPU
+    /// Releases GPU device memory, and with it the parts the entries were pinning.
+    if (shared->gpu_column_cache)
+        shared->gpu_column_cache->clear();
+#endif
 
     if (shared->primary_index_cache)
         shared->primary_index_cache->clear();

@@ -441,6 +441,11 @@
     M(GPUAggregationRows, "Number of rows summed on a GPU by the experimental GPU aggregation.", ValueType::Number) \
     M(GPUAggregationBatches, "Number of batches of values sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction.", ValueType::Number) \
     M(GPUAggregationMicroseconds, "Total time spent transferring batches of values to a GPU and reducing them there.", ValueType::Microseconds) \
+    M(GPUColumnCacheHits, "Number of columns of a MergeTree part that a GPU aggregation found in device memory and summed without reading anything on the host.", ValueType::Number) \
+    M(GPUColumnCacheMisses, "Number of columns of a MergeTree part that a GPU aggregation had to read and upload because they were not in device memory.", ValueType::Number) \
+    M(GPUColumnCacheUploadedBytes, "Number of bytes of column data copied from host memory into device memory by the GPU column cache.", ValueType::Bytes) \
+    M(GPUColumnCacheEvictedBytes, "Number of bytes of column data released from device memory by the GPU column cache to stay within gpu_column_cache_size.", ValueType::Bytes) \
+    M(GPUColumnCacheEvictions, "Number of columns released from device memory by the GPU column cache to stay within gpu_column_cache_size.", ValueType::Number) \
     M(GPUJoinBuildRows, "Number of right table rows sent to a GPU by the experimental GPU hash join.", ValueType::Number) \
     M(GPUJoinProbeRows, "Number of left table rows whose join key was sent to a GPU by the experimental GPU hash join. The rest of a left row never leaves host memory.", ValueType::Number) \
     M(GPUJoinMatchedRows, "Number of rows the experimental GPU hash join produced, one per matching pair of a left and a right row.", ValueType::Number) \

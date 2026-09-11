@@ -136,6 +136,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt32 allow_feature_tier;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsUInt64 gpu_column_cache_size;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
     extern const ServerSettingsBool jemalloc_enable_background_threads;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
@@ -1572,6 +1573,15 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+#if USE_GPU
+    /// Columns of `MergeTree` parts held in GPU device memory for the experimental GPU
+    /// aggregation. Deliberately not clamped against `max_cache_size` the way the caches around it
+    /// are: that bound is a fraction of the host's RAM, and this cache holds none of it. Its size
+    /// is device memory, which no limit in the server covers, so `gpu_column_cache_size` is taken
+    /// as it is given.
+    global_context->setGPUColumnCache(server_settings[ServerSetting::gpu_column_cache_size]);
+#endif
 
     /// UNIQUE KEY delete-bitmap cache. Zero size disables.
     String unique_key_bitmap_cache_policy_name = server_settings[ServerSetting::unique_key_bitmap_cache_policy];

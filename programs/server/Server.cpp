@@ -244,6 +244,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsUInt64 database_catalog_shutdown_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsUInt64 gpu_column_cache_size;
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
@@ -2191,6 +2192,15 @@ try
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+#if USE_GPU
+    /// Columns of `MergeTree` parts held in GPU device memory for the experimental GPU
+    /// aggregation. Deliberately not clamped against `max_cache_size` the way the caches around it
+    /// are: that bound is a fraction of the host's RAM, and this cache holds none of it. Its size
+    /// is device memory, which no limit in the server covers, so `gpu_column_cache_size` is taken
+    /// as it is given.
+    global_context->setGPUColumnCache(server_settings[ServerSetting::gpu_column_cache_size]);
+#endif
 
     String unique_key_index_cache_policy_name = server_settings[ServerSetting::unique_key_index_cache_policy];
     size_t unique_key_index_cache_size = server_settings[ServerSetting::unique_key_index_cache_size_bytes];

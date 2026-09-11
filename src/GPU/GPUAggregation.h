@@ -9,6 +9,7 @@
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray.h>
 
+#include <mutex>
 #include <optional>
 #include <vector>
 
@@ -19,6 +20,30 @@ namespace DB::GPU
 /// first call: bringing a CUDA context up takes long enough to be worth not repeating, and long
 /// enough that this should not be called while planning a query that would not use the device.
 const String & deviceProbeError();
+
+
+/// The lock every device call of the keyless `sum` - this engine's `SumAccumulator` and
+/// `DeviceBuffer` below - is made under.
+///
+/// There is one device, and everything behind the boundary runs on cuDF's default stream: one
+/// resource behind one stream. cuDF does not promise that two threads may drive the same stream at
+/// once, and the resident-column path makes that a real possibility rather than a theoretical one -
+/// several streams fill and reduce different parts' columns at the same time, and the accumulator
+/// above them reduces the partial sums they produce. So those calls are serialized here instead.
+/// It costs nothing that would not have been paid anyway: the transfers share one link and the
+/// reductions one set of memory controllers, and the device is busy either way. The alternative was
+/// to reason about cuDF's internal state and conclude that interleaving happens to be harmless,
+/// which is not a thing to bet a wrong answer on.
+///
+/// Take it only around a call over the boundary, and never while a cache is being looked up or
+/// written. Freeing a buffer takes this lock and an eviction frees buffers, so the `GPUColumnCache`
+/// is a lock taken before this one - and a thread that held this one while asking for the cache
+/// would be the other order of the same two locks, which is a deadlock rather than a slow query.
+///
+/// The grouped sum and the hash join do not take it. Not because interleaving them is safe, but
+/// because neither is reached by the path this lock was added for, and putting the other two
+/// operators under it is a change to them rather than to this one.
+std::unique_lock<std::mutex> lockDevice();
 
 
 /// The host side's half of the boundary's type mapping. Shared by the aggregation below and by
@@ -33,6 +58,13 @@ const String & deviceProbeError();
 /// `Decimal`, and also `Date` and `DateTime` - which are stored as integers but are not integer
 /// types - are all turned away by it rather than by a check of their own.
 std::optional<int> elementTypeOf(const IDataType & type);
+
+/// What a sum of `type` comes back as, or nothing when `type` is not one of the three types a sum
+/// is returned in. `UInt64`, `Int64` and `Float64` are those three, which is also why they are the
+/// only types `ReadFromGPUResidentColumns` accepts: for them, and only for them, a `sum` has the
+/// column's own type, so a column of partial sums per part is a column of the same type as the one
+/// that was summed.
+std::optional<int> sumTypeOf(const IDataType & type);
 
 /// How many bytes one value of `element_type` occupies. The same on both sides of the boundary,
 /// which is what lets a column's own bytes be the thing that is copied.
@@ -108,6 +140,58 @@ private:
     /// wraparound `sum` has on the CPU as well stays defined behaviour here.
     UInt64 integer_sum = 0;
     Float64 float_sum = 0;
+};
+
+
+/// One column of one `MergeTree` part, held in device memory - what a `GPUColumnCache` entry owns,
+/// and the only thing on this side that keeps a device resource alive between queries.
+///
+/// This is where the speed of the whole GPU path comes from. On this machine, over 200 million
+/// `UInt64` values: the reduction takes 6 ms at 265 GB/s when the values are already here, and
+/// 334 ms at 4.8 GB/s to put them here - while the same query on sixteen cores takes 430 ms, of
+/// which 390 ms is reading and decompressing the part. So a column that is here already is summed
+/// seventy times faster than the CPU answers the query, and everything else this engine does is
+/// spent getting the bytes across.
+///
+/// Filled by copying each block of the part straight out of the column's own memory into its place
+/// in the buffer, never through a staging buffer of our own: a host copy of those same 1.49 GiB
+/// costs 294 ms, which is as much as the transfer, and it buys nothing - the link runs at 4.8 GB/s
+/// for one copy of the whole column and at 4.7 GB/s for the same bytes in half-megabyte pieces, so
+/// there is nothing to gain by first making the pieces bigger.
+class DeviceBuffer
+{
+public:
+    /// Allocates `bytes_` of device memory, and throws when the device cannot give it - which is
+    /// what a cache sized larger than the card looks like from here.
+    ///
+    /// Device memory is outside every memory limit the server knows about: it is not in
+    /// `max_memory_usage`, not in `max_server_memory_usage`, and not in the memory tracker's
+    /// accounting at all. `gpu_column_cache_size` is the only thing that bounds how much of this
+    /// exists.
+    explicit DeviceBuffer(size_t bytes_);
+
+    ~DeviceBuffer();
+
+    /// Holds a device resource, and there is no use for a second name for one.
+    DeviceBuffer(const DeviceBuffer &) = delete;
+    DeviceBuffer & operator=(const DeviceBuffer &) = delete;
+
+    /// Copies the `bytes` at `host_data` into the buffer at `offset`. Returns once the copy has
+    /// run, so the block the bytes came from may be released as soon as this does.
+    void copyIn(size_t offset, const char * host_data, size_t bytes);
+
+    /// Sums the first `num_rows` values, which have to be of `element_type`, and returns the sum as
+    /// a `Field` of the type `sum_type` names. Nothing crosses the link but those eight bytes.
+    Field sum(int element_type, int sum_type, size_t num_rows) const;
+
+    /// What the cache weighs this at - device bytes, the thing `gpu_column_cache_size` limits.
+    size_t size() const { return bytes; }
+
+private:
+    const size_t bytes;
+
+    /// The device memory, behind the boundary. Owned - see the destructor.
+    void * handle = nullptr;
 };
 
 

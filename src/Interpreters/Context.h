@@ -102,6 +102,7 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class GPUColumnCache;
 class UniqueKeyIndexCache;
 class DeleteBitmapCache;
 class PrimaryIndexCache;
@@ -1572,6 +1573,14 @@ public:
     std::shared_ptr<MarkCache> getMarkCache() const;
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
+
+    /// Columns of `MergeTree` parts held in GPU device memory for the experimental GPU
+    /// aggregation, sized by `gpu_column_cache_size`. Unregistered when that is 0, so callers get
+    /// `nullptr` and the plan optimization that reads from the cache does not fire. There is no
+    /// `update...Configuration` for it: the size is device memory and is fixed when the server
+    /// starts, because lowering it at runtime would have to free buffers that queries are reducing.
+    void setGPUColumnCache(size_t max_cache_size_in_bytes);
+    std::shared_ptr<GPUColumnCache> getGPUColumnCache() const;
 
     /// UNIQUE KEY index cache: ClickHouse-side `CacheBase` adapter
     /// over the RocksDB block cache used by SST-backed UNIQUE KEY indexes.

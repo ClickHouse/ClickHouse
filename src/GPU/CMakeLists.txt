@@ -33,7 +33,7 @@ target_link_libraries (clickhouse_gpu_cudf PUBLIC
     ch_gpu::cudart
 )
 
-add_library (clickhouse_gpu STATIC GPUAggregation.cpp)
+add_library (clickhouse_gpu STATIC GPUAggregation.cpp GPUColumnCache.cpp)
 
 target_link_libraries (clickhouse_gpu PUBLIC clickhouse_gpu_cudf)
 

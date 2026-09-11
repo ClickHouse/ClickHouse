@@ -641,6 +641,21 @@ This setting can be modified at runtime and will take effect immediately.
 )", 0) \
     DECLARE(Double, mark_cache_size_ratio, DEFAULT_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
+    DECLARE(UInt64, gpu_column_cache_size, 0, R"(
+Maximum size, in bytes of **GPU device memory**, of the cache of [`MergeTree`](/reference/engines/table-engines/mergetree-family) column data held on a GPU for the experimental GPU aggregation.
+
+An entry is one column of one part, uploaded the first time a query with `allow_experimental_gpu_aggregation` sums it and summed on the device without reading anything on the host afterwards - no disk, no decompression, no transfer. Entries are evicted least-recently-used. A part whose column is larger than the whole cache is summed and dropped rather than emptying the cache for it.
+
+A value of `0` disables the cache, and with it the plan optimization that reads from it: such a query aggregates on the device as before, uploading its columns again every time.
+
+<Note>
+This is device memory, not host memory. It is outside `max_server_memory_usage`, outside `max_memory_usage`, and outside the server's memory tracker entirely - nothing else will notice it or reclaim it, so this setting is the only thing bounding it. Keep it below the memory of the device, with room for what a query needs while it runs.
+</Note>
+
+<Note>
+Because an entry holds the part it was filled from, the part's files stay on disk until the entry is evicted, even after a merge or a mutation has replaced that part. This is what makes a cached column impossible to read staleness from: a part never changes once written, and a merge produces a different part, which is a different entry.
+</Note>
+)", 0) \
     DECLARE(String, unique_key_index_cache_policy, "SLRU", R"(UNIQUE KEY index cache policy name (SLRU or LRU).)", 0) \
     DECLARE(UInt64, unique_key_index_cache_size_bytes, 1_GiB, R"(Maximum size (bytes) of the in-process cache for UNIQUE KEY index (SST) blocks. Set to 0 to disable the cache.)", 0) \
     DECLARE(Double, unique_key_index_cache_size_ratio, 0.5, R"(The size of the protected queue (in case of SLRU policy) in the UNIQUE KEY index cache relative to the cache's total size.)", 0) \

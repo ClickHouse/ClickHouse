@@ -398,6 +398,8 @@
     M(DNSAddressesCacheSize, "Number of cached DNS addresses") \
     M(MarkCacheBytes, "Total size of mark cache in bytes") \
     M(MarkCacheFiles, "Total number of mark files cached in the mark cache") \
+    M(GPUColumnCacheBytes, "Total size of the GPU column cache in bytes. This is GPU device memory, not host memory: it is outside every server and query memory limit, and `gpu_column_cache_size` is the only thing that bounds it") \
+    M(GPUColumnCacheColumns, "Total number of columns of MergeTree parts held in GPU device memory by the GPU column cache") \
     M(UniqueKeyIndexCacheBytes, "Total size of UNIQUE KEY index cache in bytes") \
     M(UniqueKeyIndexCacheEntries, "Total number of UNIQUE KEY index blocks cached") \
     M(DeleteBitmapCacheBytes, "Total size of the UNIQUE KEY delete-bitmap cache in bytes") \

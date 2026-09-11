@@ -21,6 +21,7 @@ namespace ProfileEvents
     extern const Event GPUAggregationRows;
     extern const Event GPUAggregationBatches;
     extern const Event GPUAggregationMicroseconds;
+    extern const Event GPUColumnCacheUploadedBytes;
 }
 
 namespace DB
@@ -112,6 +113,8 @@ std::optional<int> sumTypeFor(int element_type)
     }
 }
 
+}
+
 std::optional<int> sumTypeOf(const IDataType & type)
 {
     switch (type.getTypeId())
@@ -123,6 +126,12 @@ std::optional<int> sumTypeOf(const IDataType & type)
     }
 }
 
+std::unique_lock<std::mutex> lockDevice()
+{
+    /// One mutex in the process, function-local so that nothing can end up with a second copy of
+    /// it - the same reason `setUpDeviceMemoryResourceOnce` keeps its flag in one place.
+    static std::mutex device_mutex;
+    return std::unique_lock{device_mutex};
 }
 
 const String & deviceProbeError()
@@ -219,8 +228,13 @@ void SumAccumulator::sumBatchOnDevice()
     char error[error_buffer_size] = {};
 
     Stopwatch watch;
-    const int status
-        = clickhouseGPUSum(element_type, sum_type, staged.data(), num_rows, &batch_sum, error, sizeof(error));
+    /// One device call at a time - see `lockDevice`. Released before anything else happens, so
+    /// that the staging of the next batch, which needs no device, does not wait for it.
+    const int status = [&]
+    {
+        auto lock = lockDevice();
+        return clickhouseGPUSum(element_type, sum_type, staged.data(), num_rows, &batch_sum, error, sizeof(error));
+    }();
     const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
 
     if (status != 0)
@@ -250,6 +264,91 @@ Field SumAccumulator::finalize()
             return Field(static_cast<Int64>(integer_sum));
         default:
             return Field(float_sum);
+    }
+}
+
+DeviceBuffer::DeviceBuffer(size_t bytes_)
+    : bytes(bytes_)
+{
+    char error[error_buffer_size] = {};
+
+    const int status = [&]
+    {
+        auto lock = lockDevice();
+        return clickhouseGPUDeviceBufferAllocate(bytes, &handle, error, sizeof(error));
+    }();
+
+    if (status != 0)
+        throw Exception(ErrorCodes::GPU_ERROR, "Cannot hold {} bytes of a column in device memory: {}", bytes, error);
+}
+
+DeviceBuffer::~DeviceBuffer()
+{
+    auto lock = lockDevice();
+    clickhouseGPUDeviceBufferFree(handle);
+}
+
+void DeviceBuffer::copyIn(size_t offset, const char * host_data, size_t bytes_to_copy)
+{
+    char error[error_buffer_size] = {};
+
+    Stopwatch watch;
+    const int status = [&]
+    {
+        auto lock = lockDevice();
+        return clickhouseGPUDeviceBufferCopyIn(handle, offset, host_data, bytes_to_copy, error, sizeof(error));
+    }();
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, watch.elapsedMicroseconds());
+
+    if (status != 0)
+        throw Exception(
+            ErrorCodes::GPU_ERROR,
+            "Cannot copy {} bytes of a column to the device at offset {} of {}: {}",
+            bytes_to_copy,
+            offset,
+            bytes,
+            error);
+
+    /// Counted here rather than where the blocks are read, because this is the call the bytes
+    /// actually cross the link in - and every byte this feature puts on the device crosses it here.
+    ProfileEvents::increment(ProfileEvents::GPUColumnCacheUploadedBytes, bytes_to_copy);
+}
+
+Field DeviceBuffer::sum(int element_type, int sum_type, size_t num_rows) const
+{
+    /// Eight bytes for the device's answer, read back as whatever `sum_type` says below - the same
+    /// convention `SumAccumulator` reads a batch's sum with.
+    UInt64 raw_sum = 0;
+    char error[error_buffer_size] = {};
+
+    Stopwatch watch;
+    const int status = [&]
+    {
+        auto lock = lockDevice();
+        return clickhouseGPUDeviceBufferSum(handle, element_type, sum_type, num_rows, &raw_sum, error, sizeof(error));
+    }();
+    const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+
+    if (status != 0)
+        throw Exception(ErrorCodes::GPU_ERROR, "Cannot sum {} values held on the device: {}", num_rows, error);
+
+    /// The same events the uploading path increments: from `system.events` a reduction is a
+    /// reduction, and what says that this one read no host memory is that the bytes it summed are
+    /// not in `GPUColumnCacheUploadedBytes` for this query.
+    ProfileEvents::increment(ProfileEvents::GPUAggregationRows, num_rows);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationBatches);
+    ProfileEvents::increment(ProfileEvents::GPUAggregationMicroseconds, elapsed_microseconds);
+
+    switch (sum_type)
+    {
+        case CLICKHOUSE_GPU_SUM_UINT64:
+            return Field(raw_sum);
+        case CLICKHOUSE_GPU_SUM_INT64:
+            return Field(static_cast<Int64>(raw_sum));
+        case CLICKHOUSE_GPU_SUM_FLOAT64:
+            return Field(std::bit_cast<Float64>(raw_sum));
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU sum type {}", sum_type);
     }
 }
 

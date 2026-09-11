@@ -42,6 +42,11 @@ public:
     /// the query rather than about this step, and the planner checks it.
     static bool canRunOnDevice(const Block & input_header, const Aggregator::Params & params);
 
+    /// What this step aggregates, for a plan pass that has to know - as
+    /// `optimizeAggregationFromGPUResidentColumns` does, which matches the aggregates by name and
+    /// their arguments by type.
+    const Aggregator::Params & getParams() const { return params; }
+
 private:
     void updateOutputHeader() override;
 
