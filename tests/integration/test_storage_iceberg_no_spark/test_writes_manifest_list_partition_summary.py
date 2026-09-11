@@ -12,6 +12,7 @@ import glob
 import json
 import math
 import os
+import re
 import shutil
 import struct
 import tempfile
@@ -49,6 +50,28 @@ def _manifest_list_of_last_snapshot(table_path):
     return matches[0]
 
 
+def _manifest_list_of_newest_metadata(table_path):
+    """The manifest list of the newest snapshot, resolved by `(last-updated-ms, metadata version)`.
+    `get_last_snapshot` compares timestamps alone, so two commits that land in the same millisecond
+    leave the winner to `os.listdir` order."""
+    metadata_dir = f"{table_path}/metadata"
+    best_key = None
+    snapshot_id = None
+    for filename in os.listdir(metadata_dir):
+        if not filename.endswith(".json"):
+            continue
+        with open(os.path.join(metadata_dir, filename)) as f:
+            data = json.load(f)
+        version = re.match(r"v?0*(\d+)", filename)
+        key = (data.get("last-updated-ms", 0), int(version.group(1)) if version else 0)
+        if best_key is None or key > best_key:
+            best_key = key
+            snapshot_id = data.get("current-snapshot-id")
+    matches = glob.glob(f"{table_path}/metadata/snap-{snapshot_id}-*.avro")
+    assert len(matches) == 1, matches
+    return matches[0]
+
+
 def _encode_bound(value):
     """A single-value bound as Iceberg serializes it: UTF-8 for a string, little-endian two's
     complement for an int."""
@@ -57,12 +80,12 @@ def _encode_bound(value):
     return struct.pack("<i", value)
 
 
-def _entries_of_last_snapshot(table_path):
+def _entries_of_last_snapshot(table_path, manifest_list=None):
     """Every manifest-list entry of the newest snapshot, paired with the partition tuple stored
     inside the manifest it points at. Pairing by manifest path is what makes a summary attached to
     the wrong entry visible."""
     entries = []
-    for entry in _read_avro(_manifest_list_of_last_snapshot(table_path)):
+    for entry in _read_avro(manifest_list or _manifest_list_of_last_snapshot(table_path)):
         manifest = os.path.join(
             table_path, "metadata", os.path.basename(unescape_path(entry["manifest_path"]))
         )
@@ -324,6 +347,71 @@ def test_writes_manifest_list_partition_summary_bucket_transform(
     assert instance.query(f"SELECT id FROM {TABLE_NAME} WHERE s = 'eu'") == "1\n"
     assert instance.query(f"SELECT id FROM {TABLE_NAME} WHERE s = 'us'") == "2\n"
     assert instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE s = 'nowhere'") == "0\n"
+
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_writes_manifest_list_partition_summary_after_compaction(
+    started_cluster_iceberg_no_spark, storage_type
+):
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    TABLE_NAME = (
+        "test_writes_manifest_list_partition_summary_compaction_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    create_iceberg_table(
+        storage_type,
+        instance,
+        TABLE_NAME,
+        started_cluster_iceberg_no_spark,
+        "(s String, id Int32)",
+        2,
+        partition_by="(icebergBucket(16, s))",
+        order_by="id",
+    )
+    for values in ("('eu', 1), ('us', 2)", "('eu', 3), ('us', 4)"):
+        instance.query(
+            f"INSERT INTO {TABLE_NAME} VALUES {values};",
+            settings={"allow_insert_into_iceberg": 1},
+        )
+    # One manifest per INSERT per bucket. Pinning this count and the manifest-list name is what
+    # makes the assertions below read a list that compaction wrote: a compaction that silently does
+    # nothing leaves these four entries, whose summaries satisfy the same oracle.
+    before_path = _download_table(
+        started_cluster_iceberg_no_spark, storage_type, TABLE_NAME
+    )
+    before_list = _manifest_list_of_newest_metadata(before_path)
+    assert len(_entries_of_last_snapshot(before_path, before_list)) == 4
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 2,
+        },
+    )
+
+    table_path = _download_table(
+        started_cluster_iceberg_no_spark, storage_type, TABLE_NAME
+    )
+    after_list = _manifest_list_of_newest_metadata(table_path)
+    assert os.path.basename(after_list) != os.path.basename(before_list)
+    entries = _entries_of_last_snapshot(table_path, after_list)
+    assert len(entries) == 2
+
+    # Compaction rewrites the manifest list through its own `generateManifestList` call, so a
+    # rewritten entry carries the same four-byte bucket bound the insert path writes.
+    for _, partition, summary in entries:
+        assert summary is not None
+        assert _summary_tuples(summary) == _expected_summary(partition)
+
+    assert (
+        instance.query(f"SELECT id FROM {TABLE_NAME} WHERE s = 'eu' ORDER BY id")
+        == "1\n3\n"
+    )
+    assert instance.query(f"SELECT count() FROM {TABLE_NAME}") == "4\n"
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
