@@ -343,6 +343,12 @@ std::optional<Range> closedRange(std::optional<Interval> interval, std::optional
     return Range(interval->first, true, last, true);
 }
 
+/// The calendar is `UTC` because that is the one the Iceberg specification counts the `day`, `month`
+/// and `year` transforms in: their value is derived from the stored number of days or microseconds
+/// since 1970-01-01, with no timezone applied. The declared timezone of the `DateTime64` a
+/// `timestamp` column is read into only affects how ClickHouse renders and does calendar arithmetic
+/// on that column, not the number the writer put into the partition value, so it must not be taken
+/// into account when that number is inverted back into a range.
 std::optional<Interval> dayIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
 {
     if (kind == PartitionTransformKind::Day)
