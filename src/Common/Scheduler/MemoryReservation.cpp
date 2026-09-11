@@ -37,7 +37,6 @@ namespace ErrorCodes
 {
     extern const int MEMORY_RESERVATION_KILLED;
     extern const int MEMORY_RESERVATION_FAILED;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
