@@ -1645,6 +1645,16 @@ bool RestCatalog::tryGetTableMetadata(
         }
         throw;
     }
+    catch (const std::exception & ex)
+    {
+        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
+        return false;
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log);
+        return false;
+    }
 }
 
 void RestCatalog::getTableMetadata(
