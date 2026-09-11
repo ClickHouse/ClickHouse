@@ -116,8 +116,17 @@ public:
         /// could represent: an unknown atom, a `LIKE` estimated by a default, or a clause already
         /// reduced to a selectivity. Under `AND` such a factor is absorbed rather than forcing both
         /// sides to be finalized, which is what keeps the ranges around it mergeable.
+        ///
+        /// `ALWAYS_TRUE` and `ALWAYS_FALSE` are deliberately excluded although they carry no ranges
+        /// either. They are read back as a `function` - the `AND`/`OR` folding drops or propagates a
+        /// constant operand by its tag, and `NOT` flips the tag - while `finalize` only ever sets
+        /// `selectivity`. Treating them as a factor would leave the tag saying the opposite of the
+        /// number and the folding would act on the tag.
         bool isConstantFactor() const
         {
+            if (function == ALWAYS_TRUE || function == ALWAYS_FALSE)
+                return false;
+
             return column_ranges.empty() && column_not_ranges.empty()
                 && null_check_columns.empty() && not_null_check_columns.empty();
         }
