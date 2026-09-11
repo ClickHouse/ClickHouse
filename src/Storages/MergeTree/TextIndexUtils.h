@@ -114,7 +114,9 @@ private:
     bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
-    /// Adjusts all row ids in place; no-op without merged part offsets.
+    /// Throws CORRUPTED_DATA if the sorted row ids do not fit into the rows of the part; no-op without merged part offsets.
+    void checkRowIdsInPart(std::span<const UInt32> row_ids, size_t part_index) const;
+    /// Checks and adjusts all row ids in place; no-op without merged part offsets.
     void adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const;
 
     /// One source's posting list metadata for the current token; postings are decoded lazily on flush.

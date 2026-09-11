@@ -5,8 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # A merge of text indexes decodes the posting lists of the source parts segment by segment.
-# The segment headers come from disk, so a corrupted part must fail the merge with CORRUPTED_DATA
-# instead of growing the decode buffers to the sizes claimed by the corrupted header.
+# The segments come from disk, so a corrupted part must fail the merge with CORRUPTED_DATA
+# instead of growing the decode buffers to the sizes claimed by the corrupted header
+# or passing row ids outside of the row range of the segment to the merged posting list.
 
 data_path="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
@@ -42,6 +43,8 @@ function corrupt_and_merge()
 
 corrupt_and_merge 'payload bytes beyond the bound for the cardinality' 1 '\xff\x7f'
 corrupt_and_merge 'segment cardinality beyond the token cardinality' 3 '\xe9\x07'
+corrupt_and_merge 'first row id outside the row range' 5 '\x05'
+corrupt_and_merge 'zeroed deltas make the last row id fall short of the row range' 8 '\x00'
 
 echo '-- the intact postings merge'
 cp "${data_path}/postings.bak" "$postings_file"

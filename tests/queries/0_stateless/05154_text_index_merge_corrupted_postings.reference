@@ -4,6 +4,12 @@ CORRUPTED_DATA
 -- segment cardinality beyond the token cardinality
 CORRUPTED_DATA
 2
+-- first row id outside the row range
+CORRUPTED_DATA
+2
+-- zeroed deltas make the last row id fall short of the row range
+CORRUPTED_DATA
+2
 -- the intact postings merge
 1
 2000

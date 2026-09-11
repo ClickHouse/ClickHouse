@@ -266,9 +266,24 @@ static UInt64 getMaxSegmentCardinality(const TokenPostingsInfo & info, size_t se
     return std::min<UInt64>(info.cardinality, range.end - range.begin + 1);
 }
 
+/// The row range of a segment is written as its first and its last row id, so a decoded segment must start and end at them.
+/// This is the only check of the decoded row ids: their order inside the segment is not verified.
+static void checkSegmentRowRange(const TokenPostingsInfo & info, size_t segment_idx, UInt64 cardinality, UInt64 first_row_id, UInt64 last_row_id)
+{
+    const auto & range = info.ranges[segment_idx];
+
+    if (cardinality == 0 || first_row_id != range.begin || last_row_id != range.end)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in text index: posting list segment {} has {} row ids from {} to {} while its row range is [{}, {}]",
+            segment_idx, cardinality, first_row_id, last_row_id, range.begin, range.end);
+    }
+}
+
 PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx)
 {
     checkPostingListFlags(info.header);
+    auto postings = std::make_shared<PostingList>();
 
     /// Small posting lists are stored as raw VarUInt-encoded row ids.
     if (info.header & RawPostings)
@@ -279,32 +294,37 @@ PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, con
         for (size_t i = 0; i < info.cardinality; ++i)
             readVarUInt(raw_postings_buffer[i], istr);
 
-        auto postings = std::make_shared<PostingList>();
         postings->addMany(info.cardinality, raw_postings_buffer.data());
-        return postings;
+    }
+    else
+    {
+        resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), *postings, raw_data_buffer);
     }
 
-    auto postings = std::make_shared<PostingList>();
-    resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), *postings, raw_data_buffer);
+    checkSegmentRowRange(info, segment_idx, postings->cardinality(), postings->minimum(), postings->maximum());
     return postings;
 }
 
 void PostingsSerialization::deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids)
 {
     checkPostingListFlags(info.header);
+    size_t old_size = row_ids.size();
 
     /// Small posting lists are stored as raw VarUInt-encoded row ids.
     if (info.header & RawPostings)
     {
-        size_t old_size = row_ids.size();
         row_ids.resize(old_size + info.cardinality);
 
         for (size_t i = old_size; i < row_ids.size(); ++i)
             readVarUInt(row_ids[i], istr);
-        return;
+    }
+    else
+    {
+        resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), row_ids, raw_data_buffer);
     }
 
-    resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), row_ids, raw_data_buffer);
+    size_t cardinality = row_ids.size() - old_size;
+    checkSegmentRowRange(info, segment_idx, cardinality, cardinality ? row_ids[old_size] : 0, cardinality ? row_ids.back() : 0);
 }
 
 
@@ -1257,6 +1277,14 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupted data in text index: posting list row range [{}, {}] of block {} is inverted",
                     rows_range.begin, rows_range.end, j);
+            }
+
+            /// Blocks hold disjoint row ranges in the increasing order: readers rely on it to search and to merge them.
+            if (j != 0 && rows_range.begin <= info.ranges.back().end)
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted data in text index: posting list row range [{}, {}] of block {} does not follow the previous range [{}, {}]",
+                    rows_range.begin, rows_range.end, j, info.ranges.back().begin, info.ranges.back().end);
             }
 
             info.offsets.emplace_back(offset_in_file);

@@ -222,7 +222,10 @@ struct PostingsSerialization
         HasPositions = 1ULL << 5,
     };
 
+    /// Reads the `segment_idx`-th segment of the posting list described by `info` and checks it against the metadata:
+    /// a segment cannot hold more row ids than the token or than its row range, and it starts and ends at the range bounds.
     PostingListPtr deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx);
+    /// The same, but appends the row ids to `row_ids`.
     void deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 

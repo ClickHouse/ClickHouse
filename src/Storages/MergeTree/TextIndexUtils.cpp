@@ -503,10 +503,29 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     tokens_queue.push(tokens_cursors[source_num]);
 }
 
+void MergeTextIndexesTask::checkRowIdsInPart(std::span<const UInt32> row_ids, size_t part_index) const
+{
+    if (!merged_part_offsets || row_ids.empty())
+        return;
+
+    /// The row ids are sorted by the format, so the last one bounds them all.
+    /// The offsets map has an entry per row of the part, and a row id beyond it would be looked up outside of the map.
+    size_t part_rows = merged_part_offsets->getPartRowsCount(part_index);
+
+    if (row_ids.back() >= part_rows)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in text index: row id {} exceeds the number of rows {} in the source part",
+            row_ids.back(), part_rows);
+    }
+}
+
 void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t part_index) const
 {
     if (!merged_part_offsets)
         return;
+
+    checkRowIdsInPart(row_ids, part_index);
 
     for (UInt32 & row_id : row_ids)
         row_id = adjustPartOffset(*merged_part_offsets, part_index, row_id);
@@ -545,12 +564,16 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
             readPostingsSegment(source, i, cursor.row_ids);
     }
 
+    size_t part_index = segments[source.source_num].part_index;
+
     if (has_positions)
     {
+        /// Positions are remapped by the row ids they are paired with, so the bound is checked before that.
+        checkRowIdsInPart(cursor.row_ids, part_index);
         readAndAppendPositions(source, cursor.row_ids);
     }
 
-    adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
+    adjustPartOffsets(cursor.row_ids, part_index);
     cursor.next_segment = info.offsets.size();
     cursor.pos = 0;
 }
@@ -576,6 +599,7 @@ bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)
     ++cursor.next_segment;
     cursor.pos = 0;
 
+    /// Deserialization rejects an empty segment and a segment outside its row range; the order inside is not verified.
     chassert(!cursor.row_ids.empty());
     chassert(std::is_sorted(cursor.row_ids.begin(), cursor.row_ids.end()));
     return true;
@@ -620,12 +644,25 @@ std::pair<UInt64, UInt64> MergeTextIndexesTask::PostingsMergeQueue::consumeWindo
         const auto & row_ids = cursor.row_ids;
         size_t pos = cursor.pos;
 
-        while (pos < row_ids.size() && row_ids[pos] < window.end)
+        while (pos < row_ids.size())
         {
-            UInt32 bit = static_cast<UInt32>(row_ids[pos] - window.begin);
+            /// A row id below the window wraps around and stops the scan like a row id beyond the window.
+            UInt64 bit = row_ids[pos] - window.begin;
+            if (bit >= WINDOW_ROWS)
+                break;
+
             window_bits[bit / 64] |= 1ULL << (bit % 64);
             bits_summary |= 1ULL << (bit / 64);
             ++pos;
+        }
+
+        /// The window starts at the smallest head, so only an unsorted (corrupted) source has a row id below it.
+        /// Such a row id would address the bitset out of bounds, hence the scan above stops on it.
+        if (pos < row_ids.size() && row_ids[pos] < window.begin)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: row id {} of a source posting list is below the merge window [{}, {})",
+                row_ids[pos], window.begin, window.end);
         }
 
         num_consumed += pos - cursor.pos;
