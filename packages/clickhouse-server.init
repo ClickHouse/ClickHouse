@@ -99,6 +99,15 @@ forcestop()
 }
 
 
+systemd_service_exists()
+{
+    [ -x "/bin/systemctl" ] && [ -d /run/systemd/system ] &&
+        { [ -f /etc/systemd/system/$PROGRAM.service ] ||
+          [ -f /lib/systemd/system/$PROGRAM.service ] ||
+          [ -f /usr/lib/systemd/system/$PROGRAM.service ]; }
+}
+
+
 service_or_func()
 {
     if [ -n "${SYSTEMCTL_SKIP_REDIRECT+x}" ]; then
@@ -106,11 +115,9 @@ service_or_func()
         return
     fi
 
-    if [ -x "/bin/systemctl" ] && [ -d /run/systemd/system ]; then
-        if [ -f /etc/systemd/system/clickhouse-server.service ] || [ -f /lib/systemd/system/clickhouse-server.service ]; then
-            systemctl $1 $PROGRAM
-            return
-        fi
+    if systemd_service_exists; then
+        systemctl $1 $PROGRAM
+        return
     fi
 
     $1
@@ -126,7 +133,7 @@ forcerestart()
 use_cron()
 {
     # 1. running systemd
-    if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
+    if systemd_service_exists; then
         return 1
     fi
     # 2. checking whether the config is existed
@@ -226,8 +233,8 @@ status()
 # Running commands without need of locking
 case "$1" in
 status)
-    status
-    exit 0
+    service_or_func status
+    exit $?
     ;;
 esac
 
