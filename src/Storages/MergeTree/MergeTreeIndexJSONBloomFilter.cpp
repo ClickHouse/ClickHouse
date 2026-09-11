@@ -1655,9 +1655,8 @@ void MergeTreeIndexGranuleJSONBloomFilter::prepareDynamicProbe(
         {
             ReadBufferFromString type_buffer(encoded_type);
             const auto runtime_type = decodeDataType(type_buffer);
-            /// `Bool` shares `UInt8`'s underlying type, but casting to it changes every nonzero value to one.
-            const bool changes_type = dynamic.cast_type
-                && (!runtime_type->equals(*dynamic.cast_type) || isBool(runtime_type) != isBool(dynamic.cast_type));
+            /// Type equality ignores timezones and custom names such as `Bool`, which affect casts and comparisons.
+            const bool changes_type = dynamic.cast_type && runtime_type->getName() != dynamic.cast_type->getName();
             DataTypePtr common_type;
             if (changes_type && isNativeNumber(*runtime_type) && isNativeNumber(*dynamic.cast_type) && !isBool(dynamic.cast_type))
                 common_type = tryGetLeastSupertype(DataTypes{runtime_type, dynamic.cast_type});
