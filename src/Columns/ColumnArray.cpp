@@ -453,37 +453,18 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
     const size_t new_rows = old_rows + length;
     const size_t old_offset = offsets_data.back();
 
-    /// Keep the scalar path for an aliased singleton array.
-    if (source_size == 1 && getDataPtr().get() == src.getDataPtr().get())
+    auto insert_scalar = [&]
     {
         for (size_t i = 0; i < length; ++i)
             insertFrom(src_, position);
-        return;
-    }
+    };
 
-    /// Repeating an array with two or more elements requires interleaving the nested values,
-    /// which cannot be expressed by one insertManyFrom call on the nested column.
-    if (source_size > 1)
+    /// Keep the existing scalar implementation outside the narrow fast path.
+    if (getDataPtr().get() == src.getDataPtr().get()
+        || source_size > 1
+        || getData().hasDynamicStructure())
     {
-        const size_t source_offset = src.offsetAt(position);
-        if (new_rows > offsets_data.capacity())
-            offsets_data.reserve(new_rows);
-
-        const auto data_checkpoint = getData().getCheckpoint();
-        try
-        {
-            for (size_t i = 0; i < length; ++i)
-                getData().insertRangeFrom(src.getData(), source_offset, source_size);
-        }
-        catch (...)
-        {
-            getData().rollback(*data_checkpoint);
-            throw;
-        }
-
-        offsets_data.resize_assume_reserved(new_rows);
-        for (size_t i = 0; i < length; ++i)
-            offsets_data[old_rows + i] = old_offset + (i + 1) * source_size;
+        insert_scalar();
         return;
     }
 
@@ -492,39 +473,16 @@ void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t
 
     if (source_size == 0)
     {
-        /// A zero-length nested insert is not always a no-op. Columns with dynamic structure
-        /// can use it to combine the source and destination structures, as insertFrom does.
-        if (getData().hasDynamicStructure())
-        {
-            const auto data_checkpoint = getData().getCheckpoint();
-            try
-            {
-                getData().insertRangeFrom(src.getData(), src.offsetAt(position), 0);
-            }
-            catch (...)
-            {
-                getData().rollback(*data_checkpoint);
-                throw;
-            }
-        }
-
         offsets_data.resize_assume_reserved(new_rows);
         std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
         return;
     }
 
-    /// Nested bulk insertion can make partial progress before throwing. Roll it back before
-    /// returning so that the nested data and offsets remain consistent.
-    const auto data_checkpoint = getData().getCheckpoint();
-    try
-    {
-        getData().insertManyFrom(src.getData(), src.offsetAt(position), length);
-    }
-    catch (...)
-    {
-        getData().rollback(*data_checkpoint);
-        throw;
-    }
+    /// source_size == 1
+    if (length > std::numeric_limits<Offset>::max() - old_offset)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", old_offset, length);
+
+    getData().insertManyFrom(src.getData(), src.offsetAt(position), length);
 
     offsets_data.resize_assume_reserved(new_rows);
     for (size_t i = 0; i < length; ++i)
