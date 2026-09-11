@@ -838,9 +838,8 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
 
     /// With explicit columns, `createTable` writes commit 0 (fresh) or attaches (existing). Without columns
     /// we can only attach, so a fresh location (no `_delta_log`) is rejected here.
-    bool created_fresh = false;
     if (has_explicit_columns)
-        created_fresh = createTable(
+        createTable(
             object_storage, configuration, local_context, *columns, partition_by, delta_log_exists, if_not_exists);
     else if (!delta_log_exists)
         throw Exception(
@@ -848,8 +847,7 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
             "CREATE TABLE for a new DeltaLake table requires explicit column definitions");
 
     if (register_with_catalog)
-        registerDeltaTableInCatalog(
-            catalog, object_storage, configuration_ptr, columns, created_fresh, if_not_exists, table_id_);
+        registerDeltaTableInCatalog(catalog, object_storage, configuration_ptr, if_not_exists, table_id_);
 }
 
 void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const

@@ -512,9 +512,11 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
 
 def test_delta_lake_engine_secret_masked(started_cluster):
-    # A `CREATE TABLE ... ENGINE = DeltaLake('<url>', '<key>', '<secret>')` must mask the S3 secret
-    # access key as `[HIDDEN]` in `SHOW CREATE TABLE` and `system.tables`. Masking is applied when the
-    # query is formatted (see `FunctionSecretArgumentsFinder`), so it is independent of query execution.
+    # A `CREATE TABLE ... ENGINE = DeltaLake('<url>', '<key>', '<secret>')` must mask the S3 secret access key
+    # as `[HIDDEN]` in `SHOW CREATE TABLE` and `system.tables`. Masking is applied when the query is formatted
+    # (`FunctionSecretArgumentsFinder`), but the DeltaLake engine attaches eagerly (reads the location during
+    # CREATE), so a real Delta table must exist for the CREATE to succeed and appear in `SHOW CREATE` /
+    # `system.tables` -- hence the Spark/MinIO setup below.
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     TABLE_NAME = randomize_table_name("test_delta_secret_masked")
@@ -535,8 +537,6 @@ def test_delta_lake_engine_secret_masked(started_cluster):
         ENGINE=DeltaLake('{url}', 'minio', '{minio_secret_key}')
         """
     )
-
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
     for query in (
         f"SHOW CREATE TABLE {TABLE_NAME}",

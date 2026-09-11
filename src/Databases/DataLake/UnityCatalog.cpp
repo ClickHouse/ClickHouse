@@ -343,7 +343,7 @@ bool UnityCatalog::tryGetTableMetadata(
 void UnityCatalog::createTable(
     const String & namespace_name,
     const String & table_name,
-    const String & new_metadata_path,
+    const String & table_location,
     Poco::JSON::Object::Ptr metadata_content) const
 {
     /// Build the Unity `ColumnInfo` array from the Delta schema fields, with `type_json` matching what the read path (`tryGetTableMetadata`) parses back.
@@ -416,11 +416,11 @@ void UnityCatalog::createTable(
     body->set("schema_name", namespace_name);
     body->set("table_type", "EXTERNAL");
     body->set("data_source_format", "DELTA");
-    body->set("storage_location", new_metadata_path);
+    body->set("storage_location", table_location);
     body->set("columns", columns);
     body->set("properties", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
 
-    LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, new_metadata_path);
+    LOG_DEBUG(log, "Creating table {}.{}.{} at `{}` in Unity catalog", warehouse, namespace_name, table_name, table_location);
 
     try
     {

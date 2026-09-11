@@ -52,10 +52,11 @@ public:
     }
 
     /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
+    /// The shared `ICatalog` parameter (a `vN.metadata.json` path for Iceberg) is the table's storage location for DeltaLake/Unity.
     void createTable(
         const String & namespace_name,
         const String & table_name,
-        const String & new_metadata_path,
+        const String & table_location,
         Poco::JSON::Object::Ptr metadata_content) const override;
 
 private:

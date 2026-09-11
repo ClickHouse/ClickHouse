@@ -3,8 +3,9 @@
 # Tag no-fasttest: delta-kernel-rs is not in fast test
 # Tag no-msan: delta-kernel-rs is not built with MSan
 #
-# Nested ClickHouse types (Array, Map, Tuple/struct, Nullable, and their combinations) are supported for
-# CREATE TABLE and mapped to the corresponding Delta complex types (array, map, struct).
+# Nested ClickHouse types (Array, Map, named Tuple/struct, Nullable leaves and element-level nesting) are
+# supported for CREATE TABLE, mapped to the corresponding Delta complex types (array/map/struct), and the
+# declared schema round-trips through a re-attach that reads it back from the `_delta_log`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,13 +47,27 @@ for delta_type in array map struct; do
 done
 echo "commit-json: contains nested Delta types"
 
-# The table must be readable (empty), proving the nested-type mapping does not break read-back.
+# Round-trip check: the declared schema must survive a re-attach that reads it back from the `_delta_log`
+# (a columnless CREATE), so a complex type that reattaches with a different ClickHouse type -- a lost Nullable
+# wrapper or a renamed Tuple field -- is caught (the empty read-back alone would not catch it).
+SCHEMA_QUERY="SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_dl_nested' ORDER BY name"
+DECLARED=$($CLICKHOUSE_CLIENT --query "SET allow_experimental_delta_kernel_rs = 1; ${SCHEMA_QUERY}")
+
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
-SET allow_delta_lake_create_table = 1;
-SELECT count() FROM t_dl_nested;
 DROP TABLE t_dl_nested;
+CREATE TABLE t_dl_nested ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
 "
+REATTACHED=$($CLICKHOUSE_CLIENT --query "SET allow_experimental_delta_kernel_rs = 1; ${SCHEMA_QUERY}")
+
+if [ "$DECLARED" = "$REATTACHED" ]; then
+    echo "reattach: schema preserved"
+else
+    echo "reattach: schema MISMATCH"
+    echo "declared:";   echo "$DECLARED"
+    echo "reattached:"; echo "$REATTACHED"
+fi
+
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dl_nested"
 
 rm -rf "$TABLE_PATH"

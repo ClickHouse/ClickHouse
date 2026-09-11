@@ -718,7 +718,7 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
 void DeltaLakeMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
-    [[maybe_unused]] const ContextPtr & local_context,
+    const ContextPtr & local_context,
     [[maybe_unused]] const std::optional<ColumnsDescription> & columns,
     [[maybe_unused]] ASTPtr partition_by,
     [[maybe_unused]] ASTPtr order_by,
