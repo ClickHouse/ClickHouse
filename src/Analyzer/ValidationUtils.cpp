@@ -553,6 +553,40 @@ void validateSubqueryDepth(const QueryTreeNodePtr &node, size_t initial_subquery
 
 }
 
+/// A table in a database with `lazy_load_tables`, and a permanent table created `AS` a table function
+/// (`CREATE TABLE t AS view(SELECT ...)`), is attached as a `StorageProxy` around the real storage.
+/// A proxy forwards `isRemote` and `readsFromOtherTables` but not its type, and the look-throughs in
+/// `readsFromRemoteTable` are keyed on the concrete storage - so a lazily loaded `Merge` would fall
+/// through to the dependency walk, which records nothing for `Merge`. `StorageTableFunctionProxy` is
+/// worse still: it reports `isView() == false` outright, and the `StorageView` it wraps answers the
+/// `IStorage` default `readsFromOtherTables() == false`, so neither predicate recognizes such a table
+/// as opaque unless the proxy is resolved first.
+///
+/// Resolving the nested storage costs nothing at every call site below: each one is reached only after
+/// an `isRemote` call, which already materialized it.
+static StoragePtr unwrapStorageProxy(const StoragePtr & storage)
+{
+    static constexpr size_t max_proxy_depth = 16;
+
+    StoragePtr nested_storage = storage;
+    for (size_t i = 0; i < max_proxy_depth && nested_storage; ++i)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
+        if (!proxy)
+            break;
+        nested_storage = proxy->getNested();
+    }
+    return nested_storage;
+}
+
+/// Whether a table's own storage is local but reading it reads other tables, so what it reaches has to
+/// be resolved through the catalog's dependency graph.
+static bool isOpaqueTable(const StoragePtr & storage)
+{
+    auto nested_storage = unwrapStorageProxy(storage);
+    return nested_storage && (nested_storage->isView() || nested_storage->readsFromOtherTables());
+}
+
 /// Whether reading this table reaches a remote table. A `VIEW` is an opaque `TABLE` node at this
 /// point - the analyzer expands it later, inside `StorageView::read` - so its own `isRemote` says
 /// nothing about what it reads. Follow the referential dependencies the catalog records for such a
@@ -587,19 +621,7 @@ static bool readsFromRemoteTable(
     if (!table_id.table_name.empty() && !visited.insert(table_id.getFullTableName()).second)
         return false;
 
-    /// A table in a database with `lazy_load_tables`, and a table created `AS` a table function, is attached
-    /// as a `StorageProxy` around the real storage. A proxy forwards `isRemote` and `readsFromOtherTables`
-    /// but not its type, and the look-throughs below are keyed on the concrete storage - so a lazily loaded
-    /// `Merge` would fall through to the dependency walk, which records nothing for `Merge`. Resolving the
-    /// nested storage costs nothing here: the `isRemote` call above already materialized it.
-    StoragePtr nested_storage = storage;
-    for (size_t i = 0; i < max_dependency_depth; ++i)
-    {
-        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
-        if (!proxy)
-            break;
-        nested_storage = proxy->getNested();
-    }
+    StoragePtr nested_storage = unwrapStorageProxy(storage);
 
     /// Reading a materialized view only ever reads its target table, so follow that target rather than the
     /// referential dependencies: those also include the `SELECT` source, which is read at insert time only,
@@ -678,7 +700,7 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPt
                 const auto & storage = table_node.getStorage();
                 if (storage && storage->isRemote())
                     has_remote = true;
-                else if (storage && (storage->isView() || storage->readsFromOtherTables()))
+                else if (storage && isOpaqueTable(storage))
                     opaque_tables.emplace_back(storage, table_node.getStorageID());
                 break;
             }
@@ -691,7 +713,7 @@ void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPt
                 /// A parameterized view is resolved as a `TableFunctionNode` wrapping the real `StorageView`,
                 /// not as a `TableNode`, so it needs the same look-through as an ordinary view. The `merge`
                 /// table function arrives the same way.
-                else if (storage && (storage->isView() || storage->readsFromOtherTables()))
+                else if (storage && isOpaqueTable(storage))
                     opaque_tables.emplace_back(storage, table_function_node.getStorageID());
                 break;
             }

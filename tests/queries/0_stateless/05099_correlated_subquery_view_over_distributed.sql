@@ -13,6 +13,8 @@ DROP TABLE IF EXISTS t_corr_view_dist;
 DROP TABLE IF EXISTS t_corr_view_mv_target;
 DROP TABLE IF EXISTS m_corr_view_merge;
 DROP TABLE IF EXISTS m_corr_view_merge_local;
+DROP TABLE IF EXISTS t_corr_view_as_function;
+DROP TABLE IF EXISTS t_corr_view_as_function_local;
 DROP VIEW IF EXISTS v_corr_view_remote;
 DROP VIEW IF EXISTS v_corr_view_local;
 DROP VIEW IF EXISTS v_corr_view_nested;
@@ -45,6 +47,17 @@ SELECT o.v FROM v_corr_view_nested AS o WHERE EXISTS (SELECT 1 FROM v_corr_view_
 SELECT 'through a parameterized view';
 CREATE VIEW pv_corr_view_remote AS SELECT * FROM t_corr_view_dist WHERE n = {pn:UInt32};
 SELECT o.v FROM pv_corr_view_remote(pn = 1) AS o WHERE EXISTS (SELECT 1 FROM pv_corr_view_remote(pn = 1) AS i WHERE i.k = o.k); -- { serverError NOT_IMPLEMENTED }
+
+-- A permanent table created `AS` a table function is attached as a `StorageTableFunctionProxy`, which
+-- reports `isView() == false` outright, and the `StorageView` it wraps answers the default
+-- `readsFromOtherTables() == false` - so the proxy has to be resolved before either predicate is asked.
+SELECT 'through a permanent table created AS view(...)';
+CREATE TABLE t_corr_view_as_function AS view(SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.t_corr_view_dist);
+SELECT o.v FROM t_corr_view_as_function AS o WHERE EXISTS (SELECT 1 FROM t_corr_view_as_function AS i WHERE i.n = o.n); -- { serverError NOT_IMPLEMENTED }
+
+SELECT 'a permanent table created AS view(...) over a local table still works';
+CREATE TABLE t_corr_view_as_function_local AS view(SELECT * FROM {CLICKHOUSE_DATABASE:Identifier}.t_corr_view_local);
+SELECT count() FROM (SELECT o.v FROM t_corr_view_as_function_local AS o WHERE EXISTS (SELECT 1 FROM t_corr_view_as_function_local AS i WHERE i.n = o.n));
 
 -- `Merge` matches its sources by a pattern resolved at read time, so the catalog records no
 -- referential dependency for it and its own `isRemote` asks every source only about itself.
@@ -85,6 +98,8 @@ DROP VIEW mv_corr_view_dist_target;
 DROP VIEW mv_corr_view_remote_target;
 DROP VIEW mv_corr_view_remote_source;
 DROP TABLE t_corr_view_mv_target;
+DROP TABLE t_corr_view_as_function_local;
+DROP TABLE t_corr_view_as_function;
 DROP TABLE m_corr_view_merge_local;
 DROP TABLE m_corr_view_merge;
 DROP VIEW pv_corr_view_remote;
