@@ -938,15 +938,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
         /// are marked with `attach_short_syntax` (see `createTableFromAST`). A `Replicated` database
         /// follower replays committed metadata and can use either `SECONDARY_CREATE` or `ATTACH` for a
-        /// full-definition `ATTACH`; the Keeper transaction identifies that replay independently of the
+        /// full-definition `ATTACH`; the metadata replay markers identify that independently of the
         /// loading strictness. These definitions may have been accepted by an older server and must
-        /// remain loadable during a rolling upgrade.
-        const auto metadata_transaction = args.getLocalContext()->getZooKeeperMetadataTransaction();
-        const bool validate_text_indices_as_new = args.mode == LoadingStrictnessLevel::ATTACH
-            && !args.query.attach_short_syntax
-            && !args.is_restore_from_backup
-            && !args.getLocalContext()->isRecoveryFromStoredMetadata()
-            && (!metadata_transaction || metadata_transaction->isInitialQuery());
+        /// remain loadable during a rolling upgrade, including when replayed through Shared Catalog.
+        const bool validate_text_indices_as_new = args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax
+            && !args.is_restore_from_backup && !args.getLocalContext()->isRecoveryFromStoredMetadata() && !is_ddl_replay
+            && !is_shared_catalog_replay;
 
         /// Previously validated definitions must stay loadable even if the current strictness settings
         /// would reject them (`TTLValidationMode::Attach`), but a fresh definition gets full validation:

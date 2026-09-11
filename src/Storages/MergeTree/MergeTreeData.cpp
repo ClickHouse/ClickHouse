@@ -6099,8 +6099,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
     /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
     /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
-    const auto txn = local_context->getZooKeeperMetadataTransaction();
-    const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
+    const auto metadata_transaction = local_context->getZooKeeperMetadataTransaction();
+    const bool is_replicated_database_replay = metadata_transaction && !metadata_transaction->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay
+        = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+    const bool is_replay_on_another_replica = is_replicated_database_replay || is_shared_catalog_replay;
 
     /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
     /// an override simply gone from the new list.
@@ -6110,7 +6117,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
     /// A follower replays metadata that the initiating replica already validated. Treat it like an
     /// attach for compatibility checks so a newer replica can apply an ALTER committed by an older
-    /// version during a rolling upgrade.
+    /// version during a rolling upgrade, including when replayed through Shared Catalog.
     checkProperties(
         new_metadata,
         old_metadata,
