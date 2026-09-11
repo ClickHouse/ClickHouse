@@ -291,12 +291,11 @@ void MemoryTracker::setMinAllocationSizeToLogStackTrace(UInt64 value)
         value = 0;
     }
 
-    /// Switching the diagnostic on refills the trace budget, so re-enabling it to investigate a live
-    /// incident is not starved by traces spent earlier. A config reload that leaves the value
-    /// unchanged is not a transition and refills nothing.
-    const UInt64 previous = min_allocation_size_to_log_stack_trace.exchange(value, std::memory_order_relaxed);
-    if (value && !previous)
+    /// Reset the budget while the threshold is still 0, so no thread can be spending it, then
+    /// publish. A reload that leaves the value unchanged is not a transition and refills nothing.
+    if (value && !min_allocation_size_to_log_stack_trace.load(std::memory_order_relaxed))
         large_allocations_traced.store(0, std::memory_order_relaxed);
+    min_allocation_size_to_log_stack_trace.store(value, std::memory_order_relaxed);
 }
 
 UInt64 MemoryTracker::getMinAllocationSizeToLogStackTrace()
