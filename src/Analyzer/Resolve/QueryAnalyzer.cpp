@@ -4433,6 +4433,18 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     {
         table_expression_data.table_name = query_node ? query_node->getCTEName() : union_node->getCTEName();
         table_expression_data.table_expression_description = "subquery";
+
+        /** An inlined view keeps the name it had as a table expression, so that references qualified by
+          * the view name, with or without the database name, resolve the way they do without inlining -
+          * where a table name qualifies references even when the table expression also has an alias.
+          * Example: `SELECT default.v.b FROM t JOIN default.v USING (k)`.
+          */
+        auto inlined_view_it = table_expression_to_inlined_view_name.find(table_expression_node.get());
+        if (inlined_view_it != table_expression_to_inlined_view_name.end())
+        {
+            table_expression_data.database_name = inlined_view_it->second.storage_id.database_name;
+            table_expression_data.table_name = inlined_view_it->second.storage_id.table_name;
+        }
     }
     else if (table_function_node)
     {
@@ -5971,8 +5983,7 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     join_tree_node = std::move(result_node);
     scope.table_expressions_in_resolve_process.insert(join_tree_node.get());
 
-    if (aliased_by_view_name)
-        table_expressions_aliased_by_inlined_view_name.insert(join_tree_node.get());
+    table_expression_to_inlined_view_name.emplace(join_tree_node.get(), InlinedViewName{storage_id, aliased_by_view_name});
 }
 
 /** Resolve query join tree.
@@ -6175,9 +6186,16 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
               * a reference to `v` resolves to the first of the two. Keep that resolution instead of
               * rejecting the query only because the view was inlined.
               */
+            auto takes_the_name_of_an_inlined_view = [&](const IQueryTreeNode * node)
+            {
+                auto inlined_view_it = table_expression_to_inlined_view_name.find(node);
+                return inlined_view_it != table_expression_to_inlined_view_name.end()
+                    && inlined_view_it->second.is_the_alias_as_well;
+            };
+
             const bool duplicate_of_an_inlined_view_name
-                = table_expressions_aliased_by_inlined_view_name.contains(table_expression_node.get())
-                && table_expressions_aliased_by_inlined_view_name.contains(it->second.get());
+                = takes_the_name_of_an_inlined_view(table_expression_node.get())
+                && takes_the_name_of_an_inlined_view(it->second.get());
 
             if (it->second->getNodeType() == QueryTreeNodeType::IDENTIFIER)
                 it->second = table_expression_node;

@@ -4,12 +4,20 @@ a join with the view written without an alias
 columns qualified by the view name
 50	49
 50	49
+columns qualified by the database name and the view name
+50	49
+50	49
 the same view on both sides, neither aliased
 100
 100
 an alias of its own still wins
 50
 50
+a view name qualifies even next to an alias of its own, as a table name does
+50	49
+50	49
+50	49
+50	49
 a view over a view, and a view over a union
 50
 50

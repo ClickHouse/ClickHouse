@@ -29,6 +29,10 @@ SELECT 'columns qualified by the view name';
 SELECT count(), max(v_inline.b) FROM t_inline_left INNER JOIN v_inline USING (k) SETTINGS analyzer_inline_views = 1;
 SELECT count(), max(v_inline.b) FROM t_inline_left INNER JOIN v_inline USING (k) SETTINGS analyzer_inline_views = 0;
 
+SELECT 'columns qualified by the database name and the view name';
+SELECT count(), max({CLICKHOUSE_DATABASE:Identifier}.v_inline.b) FROM t_inline_left INNER JOIN {CLICKHOUSE_DATABASE:Identifier}.v_inline USING (k) SETTINGS analyzer_inline_views = 1;
+SELECT count(), max({CLICKHOUSE_DATABASE:Identifier}.v_inline.b) FROM t_inline_left INNER JOIN {CLICKHOUSE_DATABASE:Identifier}.v_inline USING (k) SETTINGS analyzer_inline_views = 0;
+
 SELECT 'the same view on both sides, neither aliased';
 SELECT count() FROM v_inline INNER JOIN v_inline USING (k) SETTINGS analyzer_inline_views = 1;
 SELECT count() FROM v_inline INNER JOIN v_inline USING (k) SETTINGS analyzer_inline_views = 0;
@@ -36,6 +40,12 @@ SELECT count() FROM v_inline INNER JOIN v_inline USING (k) SETTINGS analyzer_inl
 SELECT 'an alias of its own still wins';
 SELECT count() FROM t_inline_left INNER JOIN v_inline AS x USING (k) SETTINGS analyzer_inline_views = 1;
 SELECT count() FROM t_inline_left INNER JOIN v_inline AS x USING (k) SETTINGS analyzer_inline_views = 0;
+
+SELECT 'a view name qualifies even next to an alias of its own, as a table name does';
+SELECT count(), max(v_inline.b) FROM t_inline_left INNER JOIN v_inline AS x USING (k) SETTINGS analyzer_inline_views = 1;
+SELECT count(), max(v_inline.b) FROM t_inline_left INNER JOIN v_inline AS x USING (k) SETTINGS analyzer_inline_views = 0;
+SELECT count(), max({CLICKHOUSE_DATABASE:Identifier}.v_inline.b) FROM t_inline_left INNER JOIN v_inline AS x USING (k) SETTINGS analyzer_inline_views = 1;
+SELECT count(), max({CLICKHOUSE_DATABASE:Identifier}.v_inline.b) FROM t_inline_left INNER JOIN v_inline AS x USING (k) SETTINGS analyzer_inline_views = 0;
 
 SELECT 'a view over a view, and a view over a union';
 SELECT count() FROM t_inline_left INNER JOIN v_inline_over_view USING (k) SETTINGS analyzer_inline_views = 1;
