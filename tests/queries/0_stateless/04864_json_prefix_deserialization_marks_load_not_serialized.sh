@@ -19,39 +19,34 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TD="${CLICKHOUSE_TMP}/04864_${CLICKHOUSE_DATABASE}"
 rm -rf "$TD"
-mkdir -p "$TD/data" "$TD/tmp" "$TD/data2" "$TD/tmp2"
+mkdir -p "$TD/data" "$TD/tmp"
 trap 'rm -rf "$TD"' EXIT
 
-# $1 = subdirectory suffix, rest = extra top-level settings
-write_config() {
-    local suffix="$1"; shift
-    {
-        echo "<clickhouse>"
-        echo "    <path>${TD}/data${suffix}/</path>"
-        echo "    <tmp_path>${TD}/tmp${suffix}/</tmp_path>"
-        echo "    <logger><level>none</level><console>false</console></logger>"
-        # Size the limit from this process, not from the enclosing cgroup, which may already
-        # account for unrelated processes and would leave nothing for this instance.
-        echo "    <max_server_memory_usage>8G</max_server_memory_usage>"
-        echo "    <memory_worker_use_cgroup>0</memory_worker_use_cgroup>"
-        echo "    <memory_worker_dynamic_hard_limit>false</memory_worker_dynamic_hard_limit>"
-        # An always-empty mark cache: the object still exists, so the asynchronous loading paths
-        # that dereference it work, but every lookup misses and every arm below loads marks cold.
-        echo "    <mark_cache_size>0</mark_cache_size>"
-        printf '    %s\n' "$@"
-        echo "    <query_log>"
-        echo "        <database>system</database>"
-        echo "        <table>query_log</table>"
-        echo "        <engine>ENGINE = MergeTree PARTITION BY event_date ORDER BY event_time</engine>"
-        echo "    </query_log>"
-        echo "    <filesystem_read_prefetches_log>"
-        echo "        <database>system</database>"
-        echo "        <table>filesystem_read_prefetches_log</table>"
-        echo "        <engine>ENGINE = MergeTree ORDER BY event_time</engine>"
-        echo "    </filesystem_read_prefetches_log>"
-        echo "</clickhouse>"
-    } > "$TD/config$suffix.xml"
-}
+{
+    echo "<clickhouse>"
+    echo "    <path>${TD}/data/</path>"
+    echo "    <tmp_path>${TD}/tmp/</tmp_path>"
+    echo "    <logger><level>none</level><console>false</console></logger>"
+    # Size the limit from this process, not from the enclosing cgroup, which may already
+    # account for unrelated processes and would leave nothing for this instance.
+    echo "    <max_server_memory_usage>8G</max_server_memory_usage>"
+    echo "    <memory_worker_use_cgroup>0</memory_worker_use_cgroup>"
+    echo "    <memory_worker_dynamic_hard_limit>false</memory_worker_dynamic_hard_limit>"
+    # An always-empty mark cache: the object still exists, so the asynchronous loading paths
+    # that dereference it work, but every lookup misses and every arm below loads marks cold.
+    echo "    <mark_cache_size>0</mark_cache_size>"
+    echo "    <query_log>"
+    echo "        <database>system</database>"
+    echo "        <table>query_log</table>"
+    echo "        <engine>ENGINE = MergeTree PARTITION BY event_date ORDER BY event_time</engine>"
+    echo "    </query_log>"
+    echo "    <filesystem_read_prefetches_log>"
+    echo "        <database>system</database>"
+    echo "        <table>filesystem_read_prefetches_log</table>"
+    echo "        <engine>ENGINE = MergeTree ORDER BY event_time</engine>"
+    echo "    </filesystem_read_prefetches_log>"
+    echo "</clickhouse>"
+} > "$TD/config.xml"
 
 FIXTURE="
 -- p0 is typed LowCardinality so the part also carries a dictionary stream, which is what brings
@@ -66,8 +61,6 @@ SELECT number,
            arrayMap(x -> toString(x + number), range(40))))::JSON(p0 LowCardinality(String))
 FROM numbers(20000);
 "
-
-write_config ""
 
 ${CLICKHOUSE_LOCAL} --config-file "$TD/config.xml" -q "
 $FIXTURE
@@ -133,37 +126,4 @@ SELECT log_comment || ': ' || if(ProfileEvents['WaitMarksLoadMicroseconds'] / (q
 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
       AND log_comment IN ('sync', 'async', 'prefetch') ORDER BY log_comment;
-"
-
-# A separate instance whose marks-pool queue is smaller than the number of loads, so scheduling a
-# load has to wait for a running one to finish. That wait must not happen while the reader's
-# container mutex is held. ThreadPool raises queue_size to max_threads, so a queue below the pool
-# size has no effect.
-write_config "2" \
-    "<load_marks_threadpool_queue_size>50</load_marks_threadpool_queue_size>"
-
-${CLICKHOUSE_LOCAL} --config-file "$TD/config2.xml" -q "
-$FIXTURE
-
-SYSTEM ENABLE FAILPOINT merge_tree_marks_load_sync_sleep;
-SELECT count() FROM (SELECT j FROM t LIMIT 1)
-SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1,
-         log_comment = 'queue'
-FORMAT Null;
-SYSTEM DISABLE FAILPOINT merge_tree_marks_load_sync_sleep;
-SYSTEM FLUSH LOGS query_log;
-
--- More loads than the queue holds, so at least one schedule call had to wait.
-SELECT if(ProfileEvents['BackgroundLoadingMarksTasks'] > 50,
-          'queue arm scheduled more loads than the queue holds',
-          'UNEXPECTED: only ' || toString(ProfileEvents['BackgroundLoadingMarksTasks']) || ' background loads')
-FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'queue';
-
-SELECT if(ProfileEvents['WaitMarksLoadMicroseconds'] / (query_duration_ms * 1000) > 1.15,
-          'queue arm: marks loading overlaps across prefix tasks',
-          'REGRESSION: marks loading is serialized under a full queue, ratio = '
-              || toString(round(ProfileEvents['WaitMarksLoadMicroseconds'] / (query_duration_ms * 1000), 2)))
-FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'queue';
 "

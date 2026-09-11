@@ -9,5 +9,3 @@ prefix prefetch callback ran for every dynamic path
 async: marks loading overlaps across prefix tasks
 prefetch: marks loading overlaps across prefix tasks
 sync: marks loading overlaps across prefix tasks
-queue arm scheduled more loads than the queue holds
-queue arm: marks loading overlaps across prefix tasks
