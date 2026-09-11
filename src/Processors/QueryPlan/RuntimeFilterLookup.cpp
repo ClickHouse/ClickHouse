@@ -153,29 +153,59 @@ bool RuntimeFilterEvaluationState::shouldSkip(size_t next_block_rows) const
 
 namespace
 {
+ALWAYS_INLINE UInt64 mix64(UInt64 h)
+{
+    h ^= h >> 33;
+    h *= 0xff51afd7ed558ccdULL;
+    h ^= h >> 33;
+    h *= 0xc4ceb9fe1a85ec53ULL;
+    h ^= h >> 33;
+    return h;
+}
+
 /// A block is one cache line: 512 bits, eight words. The block is selected by the first hash, the
-/// `k` bit positions inside it are nine bits of the second hash each (so `k <= 7`), taken from the
-/// most significant bits down: for the fixed-size keys the second hash is a single multiplication of
-/// the first one, whose high bits depend on all bits of the multiplicand, while its low bits would
-/// repeat the block index.
+/// `k` bit positions inside it are nine bits each, taken from the most significant bits of the
+/// second hash down: for the fixed-size keys the second hash is a single multiplication of the
+/// first one, whose high bits depend on all bits of the multiplicand, while its low bits would
+/// repeat the block index. The second hash holds seven positions; the positions past the seventh
+/// (`join_runtime_bloom_filter_hash_functions` goes up to 10) come from one more mixing of it.
 constexpr size_t RUNTIME_BLOOM_BLOCK_WORDS = 8;
 constexpr size_t RUNTIME_BLOOM_BLOCK_BITS = RUNTIME_BLOOM_BLOCK_WORDS * 64;
+constexpr size_t RUNTIME_BLOOM_POSITION_BITS = 9;
+constexpr size_t RUNTIME_BLOOM_POSITIONS_PER_WORD = 64 / RUNTIME_BLOOM_POSITION_BITS;
+constexpr size_t RUNTIME_BLOOM_MAX_HASHES = 2 * RUNTIME_BLOOM_POSITIONS_PER_WORD;
+
+template <typename F>
+ALWAYS_INLINE void visitBlockBit(UInt64 word, size_t index, F && f)
+{
+    const size_t pos = (word >> (64 - RUNTIME_BLOOM_POSITION_BITS * (index + 1))) & (RUNTIME_BLOOM_BLOCK_BITS - 1);
+    f(pos / 64, 1ULL << (pos % 64));
+}
 
 template <size_t compile_time_hashes, typename F>
 ALWAYS_INLINE void forEachBlockBit(UInt64 hash2, size_t hashes, F && f)
 {
     const size_t count = compile_time_hashes != 0 ? compile_time_hashes : hashes;
-    for (size_t i = 0; i < count; ++i)
+    const size_t first_word_count = std::min(count, RUNTIME_BLOOM_POSITIONS_PER_WORD);
+    for (size_t i = 0; i < first_word_count; ++i)
+        visitBlockBit(hash2, i, f);
+    if (count > RUNTIME_BLOOM_POSITIONS_PER_WORD)
     {
-        const size_t pos = (hash2 >> (64 - 9 * (i + 1))) & (RUNTIME_BLOOM_BLOCK_BITS - 1);
-        f(pos / 64, 1ULL << (pos % 64));
+        const UInt64 hash3 = mix64(hash2);
+        for (size_t i = RUNTIME_BLOOM_POSITIONS_PER_WORD; i < count; ++i)
+            visitBlockBit(hash3, i - RUNTIME_BLOOM_POSITIONS_PER_WORD, f);
     }
 }
 }
 
 RuntimeBloomFilter::RuntimeBloomFilter(size_t bytes, size_t hashes_, UInt64 seed_)
-    : hashes(std::clamp<size_t>(hashes_, 1, 7)), seed(seed_)
+    : hashes(hashes_), seed(seed_)
 {
+    /// `BuildRuntimeFilterStep` validates the setting; anything else here is a programming error.
+    if (hashes == 0 || hashes > RUNTIME_BLOOM_MAX_HASHES)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Runtime bloom filter supports from 1 to {} hash functions, got {}", RUNTIME_BLOOM_MAX_HASHES, hashes);
+
     /// A power of two number of blocks: the block is selected by masking the first hash.
     const size_t requested_blocks = std::max<size_t>(1, bytes / (RUNTIME_BLOOM_BLOCK_WORDS * sizeof(UInt64)));
     const size_t num_blocks = std::bit_ceil(requested_blocks);
@@ -274,16 +304,6 @@ void extendRange(bool & has_range, Field & range_min, Field & range_max, const F
 /// hash is one more multiplication of the first: the blocked filter reads its bit positions from the
 /// high bits of the product, which mix all bits of the first hash. Longer keys keep CityHash. The
 /// choice depends only on the byte length, so the build and the probe side of a filter always agree.
-ALWAYS_INLINE UInt64 mix64(UInt64 h)
-{
-    h ^= h >> 33;
-    h *= 0xff51afd7ed558ccdULL;
-    h ^= h >> 33;
-    h *= 0xc4ceb9fe1a85ec53ULL;
-    h ^= h >> 33;
-    return h;
-}
-
 template <size_t value_size>
 ALWAYS_INLINE BloomFilterHashPair hashFixedKey(const char * data, UInt64 seed)
 {
