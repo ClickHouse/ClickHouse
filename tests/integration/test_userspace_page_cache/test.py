@@ -28,7 +28,11 @@ def _is_sanitizer_build():
             text=True,
             timeout=30,
         )
-        return "-fsanitize=" in result.stdout
+        # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake),
+        # same predicate as ClickHouseInstance.is_built_with_sanitizer. A bare
+        # -fsanitize= test would also match the CFI build (-fsanitize=cfi-vcall,...),
+        # which attaches no sanitizer runtime and runs at release speed.
+        return "-DSANITIZER" in result.stdout
     except Exception:
         return False
 
