@@ -557,45 +557,18 @@ static bool isConstantExpression(const ActionsDAG::Node * node, NodeMap & consta
     if (auto it = constant_expressions.find(node); it != constant_expressions.end())
         return it->second;
 
-    std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes;
-    nodes.push({node, false});
-    while (!nodes.empty())
+    bool is_constant = static_cast<bool>(node->column);
+    if (!is_constant
+        && ((node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+            || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+                && node->function_base->isDeterministicInScopeOfQuery())))
     {
-        const auto [current, children_pushed] = nodes.top();
-        if (constant_expressions.contains(current))
-        {
-            nodes.pop();
-            continue;
-        }
-        if (current->column)
-        {
-            constant_expressions[current] = true;
-            nodes.pop();
-            continue;
-        }
-
-        if ((current->type == ActionsDAG::ActionType::ALIAS && current->children.size() == 1)
-            || (current->type == ActionsDAG::ActionType::FUNCTION && current->function_base
-                && current->function_base->isDeterministicInScopeOfQuery()))
-        {
-            if (!children_pushed)
-            {
-                nodes.top().second = true;
-                for (const auto * child : current->children)
-                    if (!constant_expressions.contains(child))
-                        nodes.push({child, false});
-                continue;
-            }
-
-            constant_expressions[current] = std::ranges::all_of(
-                current->children, [&](const auto * child) { return constant_expressions.at(child); });
-        }
-        else
-            constant_expressions[current] = false;
-        nodes.pop();
+        is_constant
+            = std::ranges::all_of(node->children, [&](const auto * child) { return isConstantExpression(child, constant_expressions); });
     }
 
-    return constant_expressions.at(node);
+    constant_expressions[node] = is_constant;
+    return is_constant;
 }
 
 std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node, NodeMap & constant_expressions)
