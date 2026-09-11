@@ -449,10 +449,6 @@ def test_ai_functions_host_filter(start_cluster):
 
 
 def test_hive_catalog_host_filter(start_cluster):
-    # A Hive metastore catalog talks Thrift over a raw socket instead of going through the HTTP
-    # client that carries the host check for the other `DataLakeCatalog` types, so the allow-list
-    # has to be applied by the catalog itself. Nothing listens on port 1; the check runs before
-    # the connection, so no metastore is needed.
     query = (
         "CREATE DATABASE test_hive_host_filter ENGINE = DataLakeCatalog('thrift://localhost:1') "
         "SETTINGS catalog_type = 'hive', warehouse = 'test_warehouse'"
