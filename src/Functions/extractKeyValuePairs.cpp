@@ -474,11 +474,23 @@ public:
         auto & offsets_data = offsets->getData();
         offsets_data.reserve(input_rows_count);
 
+        /// The output size is roughly proportional to the number of rows. After a sample of rows
+        /// it is extrapolated and reserved at once, so the columns do not regrow while they are filled.
+        const size_t sample_rows = std::max<size_t>(1, input_rows_count / 32);
+
         UInt64 offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             offset += extractor.extract(data_column.getDataAt(i), *keys, *values);
             offsets_data.push_back(offset);
+
+            if (i + 1 == sample_rows)
+            {
+                keys->getChars().reserve(keys->getChars().size() * input_rows_count / sample_rows);
+                values->getChars().reserve(values->getChars().size() * input_rows_count / sample_rows);
+                keys->getOffsets().reserve(offset * input_rows_count / sample_rows);
+                values->getOffsets().reserve(offset * input_rows_count / sample_rows);
+            }
         }
 
         return ColumnMap::create(ColumnPtr(std::move(keys)), ColumnPtr(std::move(values)), ColumnPtr(std::move(offsets)));
