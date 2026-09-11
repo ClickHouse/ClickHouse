@@ -14,6 +14,7 @@
 #include <IO/WriteSettings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
+#include <base/scope_guard.h>
 
 #include <chrono>
 #include <thread>
@@ -97,8 +98,23 @@ void ObjectStorageQueuePostProcessor::ChangedGeneration::rethrowIfAny() const
         std::rethrow_exception(exception);
 }
 
-void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) const
+void ObjectStorageQueuePostProcessor::process(
+    const StoredObjects & objects,
+    UnorderedSetWithMemoryTracking<String> & failed_object_paths) const
 {
+    StoredObjects successful_objects;
+
+    SCOPE_EXIT({
+        UnorderedSetWithMemoryTracking<std::string_view> successful_paths;
+        successful_paths.reserve(successful_objects.size());
+        for (const auto & object : successful_objects)
+            successful_paths.insert(object.remote_path);
+
+        for (const auto & object : objects)
+            if (!successful_paths.contains(object.remote_path))
+                failed_object_paths.insert(object.remote_path);
+    });
+
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
@@ -131,7 +147,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
                     throw Exception(ErrorCodes::FAULT_INJECTED, "Failed to remove objects");
                 });
                 /// Deletes every object it can before reporting one that changed.
-                object_storage->removeObjectsIfExist(objects);
+                object_storage->removeObjectsIfExist(objects, &successful_objects);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
         }
@@ -152,10 +168,10 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         switch (type)
         {
             case ObjectStorageType::Azure:
-                moveAzureBlobs(objects);
+                moveAzureBlobs(objects, successful_objects);
                 break;
             case ObjectStorageType::S3:
-                moveS3Objects(objects);
+                moveS3Objects(objects, successful_objects);
                 break;
             default:
                 throw Exception(
@@ -173,7 +189,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         try
         {
             doWithRetries([&]{
-                object_storage->tagObjects(objects, tag_key, tag_value);
+                object_storage->tagObjects(objects, tag_key, tag_value, &successful_objects);
             });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
         }
@@ -274,7 +290,11 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
 
 #endif
 
-void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const
+void ObjectStorageQueuePostProcessor::moveWithinBucket(
+    const StoredObjects & objects,
+    const String & move_prefix,
+    bool preserve_path,
+    StoredObjects & successful_objects) const
 {
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
@@ -289,14 +309,23 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     std::atomic<size_t> moved_objects = 0;
     ChangedGeneration changed_generation;
 
+    std::vector<UInt8> succeeded(objects.size(), 0);
+
+    SCOPE_EXIT_SAFE({
+        for (size_t i = 0; i < objects.size(); ++i)
+            if (succeeded[i])
+                successful_objects.emplace_back(objects[i]);
+    });
+
     try
     {
+        size_t objects_index = 0;
         for (const auto & object_from_of_this_iteration : objects)
         {
             /// The task runs asynchronously, so it owns the object it works on: everything it
             /// needs - the source, and the destination derived from it - has to be a copy that
             /// does not depend on where the loop over `objects` has got to by then.
-            task_tracker.add([&, object_from = object_from_of_this_iteration]{
+            task_tracker.add([&, objects_index, object_from = object_from_of_this_iteration]{
                 try
                 {
                     doWithRetries([&]{
@@ -324,6 +353,9 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
+
+                    succeeded[objects_index] = 1;
+
                     ++moved_objects;
                 }
                 catch (...)
@@ -337,8 +369,11 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                     );
                 }
             });
+
+            ++objects_index;
         }
         task_tracker.waitAll();
+
     }
     catch (...)
     {
@@ -351,13 +386,15 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
 
         task_tracker.safeWaitAll();
 
+        std::erase_if(successful_objects, [](const StoredObject& object) { return object.remote_path.empty(); });
+
         throw;
     }
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
     changed_generation.rethrowIfAny();
 }
 
-void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects) const
+void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const
 {
 #if USE_AWS_S3
     const String & move_uri = settings.after_processing_move_uri;
@@ -450,6 +487,9 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
+
+                    successful_objects.emplace_back(object_from);
+
                     moved_objects += 1;
                 }
                 catch (...)
@@ -473,7 +513,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
     }
     else
     {
@@ -481,10 +521,11 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
 #else
     UNUSED(objects);
+    UNUSED(successful_objects);
 #endif
 }
 
-void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects) const
+void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const
 {
 #if USE_AZURE_BLOB_STORAGE
     const String & move_connection_string = settings.after_processing_move_connection_string;
@@ -572,6 +613,9 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
+
+                    successful_objects.emplace_back(object_from);
+
                     moved_objects += 1;
                 }
                 catch (...)
@@ -595,7 +639,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
     else if (!move_prefix.empty())
     {
-        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path);
+        moveWithinBucket(objects, move_prefix, settings.after_processing_move_preserve_path, successful_objects);
     }
     else
     {
@@ -603,6 +647,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
 #else
     UNUSED(objects);
+    UNUSED(successful_objects);
 #endif
 }
 

@@ -47,7 +47,9 @@ public:
     /// would leave the newer generation in the bucket and never ingest it. A post-processing that
     /// merely failed (a network error, say) is reported to the log only, as before: the generation
     /// that was ingested is then still the one in the bucket, and committing the file is right.
-    void process(const StoredObjects & objects) const;
+    void process(
+        const StoredObjects & objects,
+        UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
 
 private:
     /// The first object of a batch found to be no longer the generation that was ingested
@@ -71,11 +73,11 @@ private:
 
     /// Move processed objects to another prefix. Each of the three rethrows the first
     /// `FILE_CHANGED_DURING_READ` once the whole batch has been handled (see `process`).
-    void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path) const;
+    void moveWithinBucket(const StoredObjects & objects, const String & move_prefix, bool preserve_path, StoredObjects & successful_objects) const;
     /// Move processed S3 objects, possibly to another S3 storage
-    void moveS3Objects(const StoredObjects & objects) const;
+    void moveS3Objects(const StoredObjects & objects, StoredObjects & successful_objects) const;
     /// Move processed Azure blobs, possibly to another Azure storage
-    void moveAzureBlobs(const StoredObjects & objects) const;
+    void moveAzureBlobs(const StoredObjects & objects, StoredObjects & successful_objects) const;
 
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;
