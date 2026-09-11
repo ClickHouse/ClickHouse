@@ -535,8 +535,13 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
                 variable.name, variable.begin - header.records_begin, header.record_size);
     }
 
-    /// The slabs of the record variables inside a record also have to be disjoint, or two
-    /// variables would silently serve the same bytes as their values.
+    /// The slabs of the record variables inside a record have to be packed exactly as the reader
+    /// lays them out: the record of the index `i` of a variable is read at `begin + i * record_size`,
+    /// and `record_size` is the sum of the padded slabs, so a header where a slab does not start at
+    /// the padded end of the previous one describes a record stride that differs from the one the
+    /// offsets imply. Only the first record would be read from the right place, and the later ones
+    /// from the padding between the slabs. Two slabs that overlap are the same problem inside the
+    /// first record already: two variables would silently serve the same bytes as their values.
     std::vector<const NetCDFVariable *> record_variables;
     for (const auto & variable : header.variables)
         if (variable.is_record)
@@ -545,18 +550,25 @@ NetCDFHeader readNetCDFHeader(ReadBuffer & in)
     std::sort(record_variables.begin(), record_variables.end(),
         [](const NetCDFVariable * lhs, const NetCDFVariable * rhs) { return lhs->begin < rhs->begin; });
 
-    for (size_t i = 1; i < record_variables.size(); ++i)
+    /// A file with a single record variable is the special case of the format: its slab is not
+    /// padded, and it is the whole record, which the loop above has already made sure of.
+    if (record_variables.size() > 1)
     {
-        const NetCDFVariable & previous = *record_variables[i - 1];
-        const NetCDFVariable & next = *record_variables[i];
+        UInt64 expected_offset = 0;
+        for (const auto * variable : record_variables)
+        {
+            /// The subtraction does not underflow: `records_begin` is the minimum of the offsets.
+            UInt64 offset = variable->begin - header.records_begin;
+            if (offset != expected_offset)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "The variable {} of the NetCDF file begins at the offset {} of a record, but the slabs of the "
+                    "record variables before it end at the offset {}: the records of the file are not packed the "
+                    "way the format lays them out",
+                    variable->name, offset, expected_offset);
 
-        /// The sum does not overflow: the loop above proved that it is at most record_size.
-        if (previous.begin - header.records_begin + previous.slab_size > next.begin - header.records_begin)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "The variables {} and {} of the NetCDF file overlap: their slabs begin at the offsets {} and {} "
-                "of a record, and the first one is {} bytes",
-                previous.name, next.name, previous.begin - header.records_begin,
-                next.begin - header.records_begin, previous.slab_size);
+            /// The sum does not overflow: the loop above proved that it is at most `record_size`.
+            expected_offset = offset + alignUpTo4(variable->slab_size);
+        }
     }
 
     /// The data of the fixed-size variables lives between the header and the records, and the

@@ -1084,8 +1084,10 @@ back as a `NULL`. Read the file back with `input_format_netcdf_fill_value_as_nul
 case for a small type whose every value is present in the data: a `Nullable(UInt8)` column that
 contains a `NULL` and all of the 256 values of `UInt8` cannot be written, and throws an exception.
 A column that has no `NULL`s at all is written without the attribute instead, and is read back as
-not `Nullable`. A `NULL` in a String column is written as an empty string, because the format has
-no way to mark a missing string.
+not `Nullable`. A String column works the same way: the `_FillValue` of a `char` variable is a
+string, chosen so that the data of the column does not contain it, so a `NULL` and an empty string
+stay different values. The chosen string can be longer than the longest string of the column, and
+then the length of the dimension of the variable grows to hold it.
 
 ## Format settings {#format-settings}
 

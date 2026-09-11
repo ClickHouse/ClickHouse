@@ -42,38 +42,43 @@ with open(path, 'wb') as f:
 PYTHON
 }
 
+# Every `clickhouse-local` of this test starts a new process, and a start takes tens of seconds
+# under a sanitizer, so the cases are read in parallel and their output is printed afterwards in
+# the order of the cases.
 read_file()
 {
-    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('$FILE', NetCDF)" 2>&1 | grep -c "$1"
+    local case_name=$1
+    local dimension_name=$2
+    local variable_name=$3
+
+    write_file "${FILE}.${case_name}" "$dimension_name" "$variable_name"
+    $CLICKHOUSE_LOCAL -q "SELECT * FROM file('${FILE}.${case_name}', NetCDF)" > "${FILE}.${case_name}.out" 2>&1 &
 }
 
+read_file conforming 74 76
+read_file empty_variable_name 74 ''
+read_file not_utf8 74 76ff
+read_file control_character 74 760178
+read_file trailing_space 74 7620
+read_file leading_dot 2e74 76
+read_file slash 612f62 76
+
+wait
+
 echo "--- a conforming file is read"
-write_file "$FILE" 74 76
-read_file 'INCORRECT_DATA'
-$CLICKHOUSE_LOCAL -q "SELECT * FROM file('$FILE', NetCDF)"
+cat "${FILE}.conforming.out"
 
-echo "--- an empty variable name"
-write_file "$FILE" 74 ''
-read_file 'INCORRECT_DATA'
+for case_name in empty_variable_name not_utf8 control_character trailing_space leading_dot slash
+do
+    case "$case_name" in
+        empty_variable_name) echo "--- an empty variable name" ;;
+        not_utf8) echo "--- a variable name that is not valid UTF-8" ;;
+        control_character) echo "--- a variable name with a control character" ;;
+        trailing_space) echo "--- a variable name with a trailing space" ;;
+        leading_dot) echo "--- a dimension name that begins with a dot" ;;
+        slash) echo "--- a dimension name with a slash" ;;
+    esac
+    grep -c "INCORRECT_DATA" "${FILE}.${case_name}.out"
+done
 
-echo "--- a variable name that is not valid UTF-8"
-write_file "$FILE" 74 76ff
-read_file 'INCORRECT_DATA'
-
-echo "--- a variable name with a control character"
-write_file "$FILE" 74 760178
-read_file 'INCORRECT_DATA'
-
-echo "--- a variable name with a trailing space"
-write_file "$FILE" 74 7620
-read_file 'INCORRECT_DATA'
-
-echo "--- a dimension name that begins with a dot"
-write_file "$FILE" 2e74 76
-read_file 'INCORRECT_DATA'
-
-echo "--- a dimension name with a slash"
-write_file "$FILE" 612f62 76
-read_file 'INCORRECT_DATA'
-
-rm -f "$FILE"
+rm -f "${FILE}".*

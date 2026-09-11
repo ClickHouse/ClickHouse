@@ -28,10 +28,10 @@ ccc	xy
 --- NULLs
  C D F 002
 n	Nullable(Int32)					
-s	String					
+s	Nullable(String)					
 0	0
 \N	1
-2	
+2	\N
 --- dates and times
  C D F 005
 d	UInt16					

@@ -369,17 +369,33 @@ String chooseFillValue(const IColumn & column, const UInt8 * null_map, const Str
     }
 }
 
-void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * null_map, UInt64 string_length)
+/// Picks the string to write the NULLs of a `char` variable as, looking at the data of the column.
+/// The strings of the length `n` that are made of the byte `0x01` are candidates, and a column of
+/// strings of at most `max_length` bytes cannot contain the candidate of `max_length + 1` bytes, so
+/// there is always one to pick. The result may be longer than the longest string of the column, and
+/// then the dimension of the variable grows by the difference.
+String chooseStringFillValue(const std::unordered_set<UInt64> & taken_candidate_lengths)
+{
+    UInt64 length = 1;
+    while (taken_candidate_lengths.contains(length))
+        ++length;
+    return String(length, '\x01');
+}
+
+void writeStringColumn(WriteBuffer & out, const IColumn & column, const UInt8 * null_map, UInt64 string_length, const String & fill_value)
 {
     static constexpr char zeros[64] = {};
 
     for (size_t i = 0; i < column.size(); ++i)
     {
-        /// A NULL is written as an empty string. The column under a `ColumnNullable` is allowed to
-        /// hold arbitrary garbage in the rows that are NULL, so it must not be looked at.
+        /// A NULL is written as the `_FillValue` of the variable, which is a string that the data
+        /// of the column does not contain. The column under a `ColumnNullable` is allowed to hold
+        /// arbitrary garbage in the rows that are NULL, so it must not be looked at.
         std::string_view value;
         if (!null_map || !null_map[i])
             value = column.getDataAt(i);
+        else
+            value = fill_value;
         UInt64 to_write = std::min<UInt64>(value.size(), string_length);
         writeString(value.substr(0, to_write), out);
 
@@ -437,9 +453,8 @@ NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
             variable.time_multiplier = common::exp10_i64(static_cast<int>(getCanonicalTimeScale(scale) - scale));
         }
 
-        /// There is nothing in the format to mark a string as missing: an empty string is the
-        /// closest thing, and it is what a NULL is written as. For the other types the value that
-        /// the NULLs are written as is chosen in `finalizeImpl`, when the data is all there.
+        /// The value that the NULLs are written as is chosen in `finalizeImpl`, when the data is
+        /// all there: it has to be a value that the data of the column does not contain.
         if (is_nullable)
             variable.null_map = ColumnUInt8::create();
 
@@ -502,17 +517,27 @@ void NetCDFOutputFormat::finalizeImpl()
                 variable.string_length = fixed_string->getN();
 
             /// The dimension of a variable of strings is the length of the longest string in the
-            /// column. The rows that are NULL are written as empty strings, and the data under
-            /// them is arbitrary, so they are not taken into account.
+            /// column. The rows that are NULL are written as the `_FillValue` of the variable, and
+            /// the data under them is arbitrary, so they are not taken into account.
             const UInt8 * null_map = variable.null_map
                 ? assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data()
                 : nullptr;
+            bool has_nulls = false;
+            /// The lengths of the strings of the column that are a candidate for the `_FillValue`,
+            /// which is chosen below only when the column has a NULL in it.
+            std::unordered_set<UInt64> taken_candidate_lengths;
             for (size_t i = 0; i < variable.data->size(); ++i)
             {
                 if (null_map && null_map[i])
+                {
+                    has_nulls = true;
                     continue;
+                }
 
                 std::string_view value = variable.data->getDataAt(i);
+
+                if (!value.empty() && std::ranges::all_of(value, [](char c) { return c == '\x01'; }))
+                    taken_candidate_lengths.insert(value.size());
 
                 /// A string shorter than the dimension of the variable is padded with zero bytes,
                 /// so a value that itself ends in a zero byte cannot be read back intact: every
@@ -525,6 +550,16 @@ void NetCDFOutputFormat::finalizeImpl()
 
                 if (!fixed_string)
                     variable.string_length = std::max<UInt64>(variable.string_length, value.size());
+            }
+
+            /// A NULL of a string column is written as a string that the data of the column does
+            /// not contain, published as the `_FillValue` attribute, so that a NULL and an empty
+            /// string are not both stored as the same empty payload. A column with no NULLs in it
+            /// gets no attribute and is read back as not `Nullable`.
+            if (has_nulls)
+            {
+                variable.fill_value = chooseStringFillValue(taken_candidate_lengths);
+                variable.string_length = std::max<UInt64>(variable.string_length, variable.fill_value.size());
             }
 
             /// A dimension of a length of zero is only allowed for the unlimited dimension.
@@ -675,7 +710,8 @@ void NetCDFOutputFormat::writeHeader(WriteBuffer & buffer) const
         writeSize(buffer, num_attributes, version);
 
         if (!variable.fill_value.empty())
-            writeAttribute(buffer, "_FillValue", variable.type, 1, variable.fill_value, version);
+            writeAttribute(buffer, "_FillValue", variable.type,
+                variable.is_string ? variable.fill_value.size() : 1, variable.fill_value, version);
         if (!variable.units.empty())
             writeAttribute(buffer, "units", NetCDFType::Char, variable.units.size(), variable.units, version);
 
@@ -687,15 +723,15 @@ void NetCDFOutputFormat::writeHeader(WriteBuffer & buffer) const
 
 void NetCDFOutputFormat::writeVariableData(const Variable & variable) const
 {
-    /// A string column has no `_FillValue`: the NULLs are written as empty strings, so the null map
-    /// is needed for it as well.
+    /// The null map is needed whenever there is a value to write the NULLs as, and for a string
+    /// column also to keep the arbitrary payload under the NULLs out of the file.
     const UInt8 * null_map = nullptr;
     if (variable.null_map && (variable.is_string || !variable.fill_value.empty()))
         null_map = assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data();
 
     if (variable.is_string)
     {
-        writeStringColumn(out, *variable.data, null_map, variable.string_length);
+        writeStringColumn(out, *variable.data, null_map, variable.string_length, variable.fill_value);
     }
     else
     {
