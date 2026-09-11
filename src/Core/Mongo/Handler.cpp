@@ -731,6 +731,69 @@ std::optional<Int64> getWholeNumberOption(const rapidjson::Value & json, const c
     return it->value.GetInt64();
 }
 
+std::vector<Document>
+getWriteBatch(const std::vector<OpMessageSection> & sections, const char * field_name, const char * command)
+{
+    if (sections.empty() || sections[0].documents.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' command does not contain a command document", command);
+
+    std::vector<Document> batch;
+
+    /// A document sequence is identified by the name of the field it stands for, so a section
+    /// naming something else must not be read as this batch.
+    for (size_t i = 1; i < sections.size(); ++i)
+    {
+        const auto & section = sections[i];
+        if (section.kind != 1)
+            continue;
+        if (section.identifier != field_name)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The '{}' command carries a document sequence '{}', while it expects '{}'",
+                command,
+                section.identifier,
+                field_name);
+        for (const auto & document : section.documents)
+            batch.push_back(document);
+    }
+
+    if (!batch.empty())
+        return batch;
+
+    /// Otherwise the batch is an array of the command body. Its elements are taken from the BSON
+    /// directly, so that the types of their values survive: a conversion to JSON and back would
+    /// lose, for instance, the width of an integer.
+    bson_iter_t iter;
+    if (!bson_iter_init_find(&iter, sections[0].documents[0].getBson(), field_name) || !BSON_ITER_HOLDS_ARRAY(&iter))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' command does not contain the '{}' array", command, field_name);
+
+    bson_iter_t element;
+    if (!bson_iter_recurse(&iter, &element))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' command of a malformed '{}' array", command, field_name);
+
+    while (bson_iter_next(&element))
+    {
+        if (!BSON_ITER_HOLDS_DOCUMENT(&element))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Every element of the '{}' array of a '{}' command must be a document", field_name, command);
+
+        const uint8_t * data = nullptr;
+        uint32_t length = 0;
+        bson_iter_document(&element, &length, &data);
+
+        bson_t * document = bson_new_from_data(data, length);
+        if (!document)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "A malformed document in the '{}' array of a '{}' command", field_name, command);
+        batch.emplace_back(document);
+    }
+
+    if (batch.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '{}' array of a '{}' command is empty", field_name, command);
+
+    return batch;
+}
+
 String CollectionRef::getQualifiedName() const
 {
     return backQuoteIfNeed(database) + "." + backQuoteIfNeed(collection);

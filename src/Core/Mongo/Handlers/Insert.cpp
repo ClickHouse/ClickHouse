@@ -358,14 +358,9 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
 {
     auto collection = getCollectionRef(documents[0].documents[0], "insert");
 
-    /// The documents to insert are sent in the sections that follow the command itself.
-    std::vector<const Document *> to_insert;
-    for (size_t section_id = 1; section_id < documents.size(); ++section_id)
-        for (const auto & doc : documents[section_id].documents)
-            to_insert.push_back(&doc);
-
-    if (to_insert.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'insert' command does not contain any document");
+    /// The documents to insert come either as a `documents` document sequence or as the
+    /// `documents` array of the command body itself, see `getWriteBatch`.
+    const auto to_insert = getWriteBatch(documents, "documents", "insert");
 
     /// Values never go into the query text: the rows are passed as `JSONEachRow` data, which
     /// rapidjson escapes, so no value can change the meaning of the query. Unknown fields are
@@ -377,11 +372,11 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     WriteBufferFromOwnString data;
     std::vector<DocumentField> schema;
 
-    for (const auto * doc : to_insert)
+    for (const auto & doc : to_insert)
     {
         rapidjson::Value flattened(rapidjson::kObjectType);
         std::map<String, String> wrapper_types;
-        flattenDocument(doc->getRapidJSONRepresentation(), "", flattened, allocator, wrapper_types);
+        flattenDocument(doc.getRapidJSONRepresentation(), "", flattened, allocator, wrapper_types);
 
         /// The schema comes from the first document only, as in Mongo a collection has no
         /// schema of its own.

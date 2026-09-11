@@ -23,17 +23,20 @@ namespace DB::MongoProtocol
 
 std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
-    if (documents.size() < 2 || documents[1].documents.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'delete' command does not contain any filter");
-
     auto collection = getCollectionRef(documents[0].documents[0], "delete");
+
+    /// The specs come either as a `deletes` document sequence or as the `deletes` array of the
+    /// command body itself, see `getWriteBatch`.
+    const auto delete_specs = getWriteBatch(documents, "deletes", "delete");
 
     /// The 'delete' command carries one or more delete specs, each with its own 'q' filter
     /// and 'limit'. Execute every spec; 'limit: 1' (deleteOne) cannot be expressed as a
     /// ClickHouse mutation over an unordered table, so it is rejected instead of being
     /// silently widened into deleteMany.
-    /// Every spec is translated first, and only then executed: a malformed filter has to be an
-    /// error whether the collection exists or not.
+    /// A spec is translated and executed before the next one is read, so that the writes of the
+    /// earlier specs of an ordered batch - the Mongo default - survive an error raised by a later
+    /// one. The translation of a spec still happens before its execution, so that a malformed
+    /// filter is an error whether the collection exists or not.
     /// A ClickHouse mutation says nothing about the rows it will remove, so the documents a spec
     /// matches are counted with the very same filter, translated as a `find`, before the mutation
     /// is submitted. Without it the reply would claim that a successful `deleteMany` removed
@@ -51,7 +54,8 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
             10000,
             10000,
             10000,
-            collection.database);
+            collection.database,
+            collection.collection);
 
         String sql_query;
         {
@@ -61,9 +65,12 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
         return sql_query;
     };
 
-    std::vector<String> sql_queries;
-    std::vector<String> select_queries;
-    for (const auto & delete_spec : documents[1].documents)
+    /// A delete from a collection that does not exist matches no document, which Mongo reports as
+    /// a delete of zero documents rather than an error.
+    const bool collection_exists = objectExists(executor, "TABLE", collection.getQualifiedName());
+
+    Int64 deleted = 0;
+    for (const auto & delete_spec : delete_specs)
     {
         String serialized_filter;
         {
@@ -86,19 +93,13 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
         }
         serialized_filter = modifyFilter(serialized_filter);
 
-        sql_queries.push_back(translate(fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter)));
-        select_queries.push_back(translate(fmt::format("db.{}.find({})", collection.collection, serialized_filter)));
-    }
+        const String sql_query = translate(fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter));
+        const String select_query = translate(fmt::format("db.{}.find({})", collection.collection, serialized_filter));
 
-    /// A delete from a collection that does not exist matches no document, which Mongo reports as
-    /// a delete of zero documents rather than an error.
-    Int64 deleted = 0;
-    if (objectExists(executor, "TABLE", collection.getQualifiedName()))
-    {
-        for (size_t i = 0; i < sql_queries.size(); ++i)
+        if (collection_exists)
         {
-            deleted += countMatchedRows(select_queries[i], executor);
-            executor->execute(sql_queries[i], getMutationSettings());
+            deleted += countMatchedRows(select_query, executor);
+            executor->execute(sql_query, getMutationSettings());
         }
     }
 

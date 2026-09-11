@@ -42,18 +42,21 @@ String serializeRequiredMember(const rapidjson::Value & json, const char * name)
 
 std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
-    if (sections.size() < 2 || sections[1].documents.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'update' command does not contain any update statement");
-
     auto collection = getCollectionRef(sections[0].documents[0], "update");
+
+    /// The specs come either as an `updates` document sequence or as the `updates` array of the
+    /// command body itself, see `getWriteBatch`.
+    const auto update_specs = getWriteBatch(sections, "updates", "update");
 
     /// The 'update' command carries one or more update specs, each with its own 'q', 'u',
     /// 'multi', and 'upsert'. Execute every spec; 'multi: false' (updateOne) cannot be
     /// expressed as a ClickHouse mutation over an unordered table and 'upsert' has no
     /// counterpart either, so both are rejected instead of being silently widened into
     /// updateMany or dropped.
-    /// Every spec is translated first, and only then executed: a malformed update has to be an
-    /// error whether the collection exists or not.
+    /// A spec is translated and executed before the next one is read, so that the writes of the
+    /// earlier specs of an ordered batch - the Mongo default - survive an error raised by a later
+    /// one. The translation of a spec still happens before its execution, so that a malformed
+    /// update is an error whether the collection exists or not.
     /// A ClickHouse mutation is asynchronous and says nothing about the rows it will rewrite, so
     /// the documents a spec matches are counted with the very same filter, translated as a `find`,
     /// before the mutation is submitted. Without it the reply would claim that a successful
@@ -69,7 +72,8 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
             10000,
             10000,
             10000,
-            collection.database);
+            collection.database,
+            collection.collection);
 
         String sql_query;
         {
@@ -79,9 +83,12 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         return sql_query;
     };
 
-    std::vector<String> alter_queries;
-    std::vector<String> select_queries;
-    for (const auto & update_spec : sections[1].documents)
+    /// An update of a collection that does not exist matches no document, which Mongo reports as
+    /// an update of zero documents rather than an error.
+    const bool collection_exists = objectExists(executor, "TABLE", collection.getQualifiedName());
+
+    Int64 matched = 0;
+    for (const auto & update_spec : update_specs)
     {
         String serialized_filter;
         String serialized_update;
@@ -107,25 +114,19 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         }
 
         auto alter_settings = IAST::FormatSettings(true, IdentifierQuotingRule::WhenNecessary, IdentifierQuotingStyle::Backticks);
-        alter_queries.push_back(translate(
-            fmt::format("db.{}.updateMany({}, {})", collection.collection, serialized_filter, serialized_update), alter_settings));
-        select_queries.push_back(
-            translate(fmt::format("db.{}.find({})", collection.collection, serialized_filter), IAST::FormatSettings(true)));
-    }
+        const String alter_query = translate(
+            fmt::format("db.{}.updateMany({}, {})", collection.collection, serialized_filter, serialized_update), alter_settings);
+        const String select_query
+            = translate(fmt::format("db.{}.find({})", collection.collection, serialized_filter), IAST::FormatSettings(true));
 
-    /// An update of a collection that does not exist matches no document, which Mongo reports as
-    /// an update of zero documents rather than an error.
-    Int64 matched = 0;
-    if (objectExists(executor, "TABLE", collection.getQualifiedName()))
-    {
-        for (size_t i = 0; i < alter_queries.size(); ++i)
+        if (collection_exists)
         {
             /// Mongo applies the specs one after another, so each mutation is awaited (see
             /// `getMutationSettings`) before the next spec is counted: otherwise a spec whose
             /// predicate an earlier one has already changed would still be counted against the
             /// pre-mutation rows and the reply would over-report the matches.
-            matched += countMatchedRows(select_queries[i], executor);
-            executor->execute(alter_queries[i], getMutationSettings());
+            matched += countMatchedRows(select_query, executor);
+            executor->execute(alter_query, getMutationSettings());
         }
     }
 

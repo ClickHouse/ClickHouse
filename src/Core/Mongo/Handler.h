@@ -30,6 +30,17 @@ String serializePipeline(const rapidjson::Value & pipeline);
   */
 std::optional<Int64> getWholeNumberOption(const rapidjson::Value & json, const char * name, const char * command);
 
+/** The write batch of an `OP_MSG` write command: the `documents` of an `insert`, the `deletes` of
+  * a `delete` and the `updates` of an `update`. `OP_MSG` lets a client send it either inside the
+  * command body as an array or as a separate kind-`1` document sequence section, and the section
+  * is bound by its `identifier` - the name of that very field - rather than by its position in
+  * the message. This reads both shapes: a document sequence whose identifier is `field_name` if
+  * the message carries one, the array of the command body otherwise. A document sequence with
+  * any other identifier is a controlled error rather than a payload read by position.
+  */
+std::vector<Document>
+getWriteBatch(const std::vector<OpMessageSection> & sections, const char * field_name, const char * command);
+
 /** The target of a Mongo command: the collection named by the command field itself and the
   * database taken from the `$db` field of the command document. Mongo databases are mapped
   * to ClickHouse databases, so collections with the same name in different Mongo databases

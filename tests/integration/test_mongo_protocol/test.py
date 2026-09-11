@@ -92,6 +92,35 @@ def read_op_msg(sock):
     return bson.decode(payload[5:])
 
 
+def encode_op_msg_with_sequence(command, identifier, documents, request_id=1):
+    """Encodes a command as an OP_MSG frame whose write batch is a kind-`1` document sequence
+    named `identifier`, which is the shape every driver sends."""
+    body = b"\x00" + bson.encode(command)
+    encoded = b"".join(bson.encode(document) for document in documents)
+    section = identifier.encode() + b"\x00" + encoded
+    sequence = b"\x01" + struct.pack("<i", 4 + len(section)) + section
+    payload = struct.pack("<I", 0) + body + sequence
+    header = struct.pack("<iiii", 16 + len(payload), request_id, 0, OP_MSG)
+    return header + payload
+
+
+def authenticate_raw(sock, user="default", password="123"):
+    """The `PLAIN` SASL handshake of a hand built connection: `authzid \0 authcid \0 password`."""
+    sock.sendall(
+        encode_op_msg(
+            {
+                "saslStart": 1,
+                "mechanism": "PLAIN",
+                "payload": bson.Binary(b"\x00" + user.encode() + b"\x00" + password.encode()),
+                "$db": "admin",
+            }
+        )
+    )
+    reply = read_op_msg(sock)
+    assert reply["ok"] == 1, reply
+    assert reply["done"] is True, reply
+
+
 def connect_raw():
     node = cluster.instances["node"]
     sock = socket.create_connection((node.ip_address, server_port), timeout=30)
@@ -1785,3 +1814,154 @@ def test_create_index_needs_the_field_to_be_a_column(started_cluster):
     assert "not a column" in str(error.value)
 
     collection.drop()
+
+
+def test_write_batches_are_accepted_in_the_command_body(started_cluster):
+    """`OP_MSG` allows the write batch of an `insert`, an `update` or a `delete` either as a
+    kind-`1` document sequence or as an array of the command body itself. Every driver sends the
+    sequence - `pymongo` moves the array out of the command document even for a raw
+    `database.command` - so the body shape is exercised over a hand built connection here. It used
+    to be rejected with "does not contain any document"."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.body_batches", password="123")
+
+    sock = connect_raw()
+    try:
+        authenticate_raw(sock)
+
+        sock.sendall(
+            encode_op_msg(
+                {
+                    "insert": "body_batches",
+                    "documents": [{"id": 1, "v": "a"}, {"id": 2, "v": "b"}],
+                    "$db": "db",
+                }
+            )
+        )
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 1, reply
+        assert reply["n"] == 2, reply
+
+        sock.sendall(
+            encode_op_msg(
+                {
+                    "update": "body_batches",
+                    "updates": [{"q": {"id": 1}, "u": {"$set": {"v": "c"}}, "multi": True}],
+                    "$db": "db",
+                }
+            )
+        )
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 1, reply
+        assert reply["n"] == 1, reply
+
+        sock.sendall(
+            encode_op_msg(
+                {
+                    "delete": "body_batches",
+                    "deletes": [{"q": {"id": 2}, "limit": 0}],
+                    "$db": "db",
+                }
+            )
+        )
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 1, reply
+        assert reply["n"] == 1, reply
+
+        # A document sequence is bound by its identifier and not by its position, so a sequence
+        # standing for another field of the command is a controlled error rather than the batch.
+        sock.sendall(
+            encode_op_msg_with_sequence(
+                {"insert": "body_batches", "$db": "db"}, "deletes", [{"id": 3}]
+            )
+        )
+        reply = read_op_msg(sock)
+        assert reply["ok"] == 0, reply
+        assert "document sequence 'deletes'" in reply["errmsg"], reply
+    finally:
+        sock.close()
+
+    collection = make_client()["db"]["body_batches"]
+    assert sorted(
+        (document["id"], document["v"]) for document in collection.find({})
+    ) == [(1, "c")]
+
+    node.query("DROP TABLE db.body_batches", password="123")
+
+
+def test_an_ordered_bulk_write_keeps_the_writes_before_the_error(started_cluster):
+    """Mongo applies the specs of a write command in order by default, so a later unsupported spec
+    must not undo the writes of the earlier ones: each spec is translated and executed before the
+    next one is read. The command still stops at the failing spec."""
+    client = make_client()
+    database = client["db"]
+    collection = database["ordered_bulk_write"]
+
+    collection.drop()
+    collection.insert_many([{"id": i, "k": i} for i in range(4)])
+
+    # The second spec deletes a limited number of documents, which is not supported.
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        database.command(
+            {
+                "delete": "ordered_bulk_write",
+                "deletes": [{"q": {"k": 0}, "limit": 0}, {"q": {"k": 1}, "limit": 1}],
+            }
+        )
+    assert "only 'limit: 0'" in str(error.value)
+
+    # The first spec was applied before the second one failed, and nothing after it was.
+    assert wait_for(lambda: collection.count_documents({"k": 0}) == 0)
+    assert collection.count_documents({"k": 1}) == 1
+
+    # The same for `update`, whose second spec updates a single document.
+    with pytest.raises(pymongo.errors.OperationFailure) as error:
+        database.command(
+            {
+                "update": "ordered_bulk_write",
+                "updates": [
+                    {"q": {"k": 2}, "u": {"$set": {"k": 20}}, "multi": True},
+                    {"q": {"k": 3}, "u": {"$set": {"k": 30}}, "multi": False},
+                ],
+            }
+        )
+    assert "only 'multi: true'" in str(error.value)
+
+    assert wait_for(lambda: collection.count_documents({"k": 20}) == 1)
+    assert collection.count_documents({"k": 3}) == 1
+
+    collection.drop()
+
+
+def test_a_dotted_collection_name_is_a_namespace(started_cluster):
+    """A `.` is legal in a Mongo collection name, and namespaces such as `fs.files` of GridFS use
+    it. The dialect reads a statement as `<database>.<collection>.<operation>`, so the wire path
+    passes the collection it took from the command itself instead of letting the text be split at
+    the second `.`; before that, every command on `fs.files` addressed a collection `fs`."""
+    client = make_client()
+    database = client["db"]
+    collection = database["fs.files"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "v": "a"}, {"id": 2, "v": "b"}, {"id": 3, "v": "b"}])
+
+    assert sorted(document["id"] for document in collection.find({})) == [1, 2, 3]
+    assert [document["id"] for document in collection.find({"v": "a"})] == [1]
+    assert collection.count_documents({"v": "b"}) == 2
+    assert sorted(collection.distinct("v")) == ["a", "b"]
+    assert [
+        document["_id"]
+        for document in collection.aggregate(
+            [{"$group": {"_id": "$v", "n": {"$sum": 1}}}, {"$sort": {"_id": 1}}]
+        )
+    ] == ["a", "b"]
+
+    assert collection.update_many({"v": "a"}, {"$set": {"v": "c"}}).matched_count == 1
+    assert wait_for(lambda: collection.count_documents({"v": "c"}) == 1)
+
+    assert collection.delete_many({"v": "b"}).deleted_count == 2
+    assert wait_for(lambda: collection.count_documents({}) == 1)
+
+    collection.drop()
+
