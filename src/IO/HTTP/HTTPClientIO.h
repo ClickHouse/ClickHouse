@@ -23,6 +23,12 @@ using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 /// handed to a single `send` call, and for chunked encoding the chunk header and trailer are
 /// written into the space reserved around the buffer, so that a chunk still costs one `send`
 /// and the payload is never copied.
+///
+/// A request that carries a body with neither framing - a `POST`, `PUT` or `PATCH` without
+/// `Content-Length` and without chunked encoding - is delimited by the end of the connection, so
+/// it can never be finished on a connection that is meant to be reused. Finalizing such a body
+/// leaves the request incomplete, which is what makes the pool drop the connection instead of
+/// handing it to the next request.
 class HTTPRequestBodyWriteBuffer : public WriteBuffer
 {
 public:

@@ -275,6 +275,22 @@ void HTTPRequestBodyWriteBuffer::finalizeImpl()
             bytes_written,
             content_length);
 
+    if (encoding == Poco::Net::HTTPClientSession::BodyEncoding::UntilEOF)
+    {
+        /// This framing means "the body ends when the connection is closed", so writing its last
+        /// byte does not end it: the server keeps waiting for more until the sending side is shut
+        /// down. Nothing this buffer does can make such a request complete, and the connection
+        /// must not return to the pool - the next borrower would start its request inside the body
+        /// of this one, from the server's point of view.
+        ///
+        /// `HTTPStreamBuf::close`, the counterpart of this function on the `std::iostream` path,
+        /// does the same two things: it half-closes a session that is not keep-alive, and
+        /// `HTTPOutputStream::isComplete` reports incomplete unconditionally.
+        if (!session.getKeepAlive())
+            session.socket().shutdownSend();
+        return;
+    }
+
     session.setRequestBodyComplete(true);
 }
 

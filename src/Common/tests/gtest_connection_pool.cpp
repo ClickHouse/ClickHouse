@@ -1016,6 +1016,40 @@ TEST_F(ConnectionPoolTest, LegacyStreamApiHalfSentRequestIsNotPreserved)
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
 }
 
+/// A `PUT`, `POST` or `PATCH` with neither `Content-Length` nor chunked encoding carries a body
+/// that is delimited by the end of the connection (`BodyEncoding::UntilEOF`). Writing its last byte
+/// therefore does not end it - the server goes on waiting for more - so the request can never be
+/// completed on a connection that is to be reused, and the pool has to drop that connection. None
+/// of the callers in the server sends such a request, they all set one framing or the other, but
+/// the transport must not promise reusability it cannot deliver: the next borrower would start its
+/// request inside the body of this one.
+TEST_F(ConnectionPoolTest, RequestBodyWithoutFramingIsNotPreserved)
+{
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        auto request_body = DB::sendHTTPRequest(*connection, request);
+        DB::writeString("Hello", *request_body);
+        request_body->finalize();
+
+        /// Everything the caller had was written, and the request is still not complete.
+        ASSERT_FALSE(connection->isRequestBodyComplete());
+    }
+
+    /// No response is read here: the server cannot know that the body ended, which is the whole
+    /// reason this connection is not reusable. The pool resets it.
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+    ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
 TEST_F(ConnectionPoolTest, ReconnectedWhenConnectionIsHoldTooLong)
 {
     auto ka = Poco::Timespan(1, 0); // 1 seconds
