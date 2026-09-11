@@ -54,6 +54,12 @@ plus(1, item_id)	plus(1, brand)	plus(1, other)
 -- PASTE JOIN allows equally named columns, but only for the columns it combines itself
 a	b	c
 1	2	3
+-- ARRAY JOIN keeps the columns of the table expression it wraps
+1
+0
+1
+1
+2
 -- The restriction can be disabled entirely
 100
 100

@@ -1152,26 +1152,36 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
     return JoinTableSide::Left;
 }
 
+/** A subquery, union or table function without an alias cannot be referenced by name.
+  *
+  * `ARRAY JOIN` is transparent for this purpose: it keeps the columns of the table expression it wraps, and an
+  * array-joined column is a column of that table expression, so it is qualifiable only if the wrapped table
+  * expression is. The column source of an array-joined column is the `ArrayJoinNode` itself, hence the unwrapping.
+  */
+static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionTableExpression(const QueryTreeNodePtr & table_expression)
+{
+    if (!table_expression || table_expression->hasAlias())
+        return nullptr;
+
+    switch (table_expression->getNodeType())
+    {
+        case QueryTreeNodeType::QUERY:
+            return table_expression->as<QueryNode &>().getCTEName().empty() ? table_expression : nullptr;
+        case QueryTreeNodeType::UNION:
+            return table_expression->as<UnionNode &>().getCTEName().empty() ? table_expression : nullptr;
+        case QueryTreeNodeType::TABLE_FUNCTION:
+            return table_expression;
+        case QueryTreeNodeType::ARRAY_JOIN:
+            return getUnaliasedSubqueryOrTableFunctionTableExpression(table_expression->as<ArrayJoinNode &>().getTableExpressionNode());
+        default:
+            return nullptr;
+    }
+}
+
 QueryTreeNodePtr IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(const QueryTreeNodePtr & resolved_expression)
 {
     if (const auto * column_node = resolved_expression->as<ColumnNode>())
-    {
-        auto column_source = column_node->getColumnSourceOrNull();
-        if (!column_source || column_source->hasAlias())
-            return nullptr;
-
-        switch (column_source->getNodeType())
-        {
-            case QueryTreeNodeType::QUERY:
-                return column_source->as<QueryNode &>().getCTEName().empty() ? column_source : nullptr;
-            case QueryTreeNodeType::UNION:
-                return column_source->as<UnionNode &>().getCTEName().empty() ? column_source : nullptr;
-            case QueryTreeNodeType::TABLE_FUNCTION:
-                return column_source;
-            default:
-                return nullptr;
-        }
-    }
+        return getUnaliasedSubqueryOrTableFunctionTableExpression(column_node->getColumnSourceOrNull());
 
     /// Subcolumns and `Nested` columns are resolved into functions (`getSubcolumn`, `nested`) over the actual columns.
     if (const auto * function_node = resolved_expression->as<FunctionNode>())
