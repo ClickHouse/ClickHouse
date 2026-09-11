@@ -30,6 +30,11 @@ SELECT '-- evaluating the predicate raises what the scan raises';
 SELECT count() FROM tab_ip WHERE m['nokey'] != 'zzz'; -- { serverError CANNOT_PARSE_IPV6 }
 SELECT count() FROM tab_ip WHERE m['nokey'] != 'zzz' SETTINGS ignore_data_skipping_indices = 'idx'; -- { serverError CANNOT_PARSE_IPV6 }
 
+-- The subscript divides by a length that is zero only for the empty map the evaluation substitutes.
+SELECT '-- an error only the substituted default raises declines the index instead';
+SELECT count() FROM tab_ip WHERE m[if(intDiv(1, length(toString(m)) - 2) = 0, 'abc', 'zzz')] = '2001:db8:1:2:3:4:5:6';
+SELECT count() FROM tab_ip WHERE m[if(intDiv(1, length(toString(m)) - 2) = 0, 'abc', 'zzz')] = '2001:db8:1:2:3:4:5:6' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
 DROP TABLE tab_ip;
 
 DROP TABLE IF EXISTS tab_str;
@@ -164,6 +169,11 @@ SELECT '-- and a set inside the subscript on that carrier too, whether or not it
 SELECT count() FROM tab_values WHERE m[if(0 IN (SELECT number FROM numbers(1)), 'abc', 'zzz')] = 'hello';
 SELECT count() FROM tab_values WHERE m[if(0 IN (SELECT number FROM numbers(5)), 'abc', 'zzz')] = 'hello'
 SETTINGS use_index_for_in_with_subqueries_max_values = 1, force_data_skipping_indices = 'idx';
+
+-- `sleep` refuses constant folding so that query analysis cannot run it, which the guard would.
+SELECT '-- a subscript analysis may not evaluate declines the carrier';
+SELECT count() FROM tab_values WHERE m[if(sleep(0) = 0, 'abc', 'zzz')] = 'hello';
+SELECT count() FROM tab_values WHERE m[if(sleep(0) = 0, 'abc', 'zzz')] = 'hello' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE tab_values;
 

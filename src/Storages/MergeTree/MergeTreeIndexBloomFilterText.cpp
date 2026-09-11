@@ -14,13 +14,16 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -539,10 +542,22 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
     if (required_columns.size() != 1 || outputs.size() != 1)
         return true;
 
+    const auto & required_column = required_columns.front();
+    const auto output_name = outputs.front()->result_name;
+
+    /// The evaluation below runs the predicate's own functions, so a predicate holding one that analysis
+    /// may not run is declined instead; `sleep` refuses constant folding for exactly that reason.
     /// A Set the predicate reads is built later during execution, so it must be prepared before the evaluation below.
     /// Readiness is all the evaluation needs; the elements the build stores are for range analysis and may be dropped.
     for (const auto & node : subdag.getNodes())
     {
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (!node.function_base->isDeterministic() || !node.function_base->isSuitableForConstantFolding())
+                return true;
+            continue;
+        }
+
         if (node.type != ActionsDAG::ActionType::COLUMN)
             continue;
 
@@ -559,11 +574,26 @@ bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG
             return true;
     }
 
-    const auto & required_column = required_columns.front();
-    const auto output_name = outputs.front()->result_name;
-
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
-    ExpressionActions(std::move(subdag)).execute(block);
+
+    /// A function reading the map can throw on the substituted default although no stored row reaches
+    /// that input, such as a division by a length that is zero only for an empty map. Analysis must
+    /// raise nothing the scan itself would not.
+    try
+    {
+        ExpressionActions(std::move(subdag)).execute(block);
+    }
+    catch (const Exception &)
+    {
+        /// A killed or timed-out query must report that, not an index it could not use. The check throws
+        /// for a killed one, and returns false once the deadline passed under `break`, which the
+        /// cancellation check inside a function reports by throwing too.
+        if (auto process_list_element = context->getProcessListElementSafe())
+            if (!process_list_element->checkTimeLimit())
+                throw;
+        return true;
+    }
+
     const bool default_matches = block.getByName(output_name).column->getBool(0);
     return negating ? !default_matches : default_matches;
 }

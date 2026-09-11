@@ -12,6 +12,8 @@
 1
 0
 -- evaluating the predicate raises what the scan raises
+-- an error only the substituted default raises declines the index instead
+1
 -- the whole predicate decides, not equality with the default
 1
 1
@@ -61,6 +63,8 @@
 1
 -- and a set inside the subscript on that carrier too, whether or not its elements are stored
 1
+1
+-- a subscript analysis may not evaluate declines the carrier
 1
 -- the mapValues carrier over a non-String domain, arrayElement spelling
 1
