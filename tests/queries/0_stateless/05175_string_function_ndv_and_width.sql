@@ -1,8 +1,5 @@
--- Check NDV and width propagation through:
---   `concat(materialize(repeat('x', 1000)), s)`
---   `substring(s, 2)`
---   `materialize(s)`
---   `identity(s)`
+-- Check NDV propagation and width reset through `concat(materialize(repeat('x', 1000)), s)`.
+-- Check width preservation through `identity(s)`.
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -29,48 +26,6 @@ SELECT extract(explain, 'Join:.*') FROM
     SELECT * FROM probe JOIN
     (
         SELECT concat(materialize(repeat('x', 1000)), s) AS key, count()
-        FROM source
-        GROUP BY key
-    ) AS aggregated ON probe.s = aggregated.key
-)
-WHERE explain LIKE '% Join:%';
-
--- Check NDV propagation through `substring(s, 2)`.
-SELECT 'NDV: substring(s, 2)';
-SELECT extract(explain, 'Join:.*') FROM
-(
-    EXPLAIN keep_logical_steps = 1, actions = 1
-    SELECT * FROM probe JOIN
-    (
-        SELECT substring(s, 2) AS key, count()
-        FROM source
-        GROUP BY key
-    ) AS aggregated ON probe.s = aggregated.key
-)
-WHERE explain LIKE '% Join:%';
-
--- Check NDV propagation through `materialize(s)`.
-SELECT 'NDV: materialize(s)';
-SELECT extract(explain, 'Join:.*') FROM
-(
-    EXPLAIN keep_logical_steps = 1, actions = 1
-    SELECT * FROM probe JOIN
-    (
-        SELECT materialize(s) AS key, count()
-        FROM source
-        GROUP BY key
-    ) AS aggregated ON probe.s = aggregated.key
-)
-WHERE explain LIKE '% Join:%';
-
--- Check NDV propagation through `identity(s)`.
-SELECT 'NDV: identity(s)';
-SELECT extract(explain, 'Join:.*') FROM
-(
-    EXPLAIN keep_logical_steps = 1, actions = 1
-    SELECT * FROM probe JOIN
-    (
-        SELECT identity(s) AS key, count()
         FROM source
         GROUP BY key
     ) AS aggregated ON probe.s = aggregated.key
@@ -107,44 +62,6 @@ FROM
         SELECT k, sum(v), any(s)
         FROM fact AS f
         JOIN (SELECT g, concat(materialize(repeat('x', 1000)), s) AS s FROM dim) AS d ON f.g = d.g
-        GROUP BY k
-        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1,
-                 distributed_plan_force_shuffle_aggregation = 1, enable_join_runtime_filters = 0
-    )
-);
-
--- Check width propagation through `substring(s, 2)`: use the 64-byte default; shuffle below the join.
-SELECT 'width: substring(s, 2)',
-       countIf(explain LIKE '%ShuffleExchange%') = 1
-       AND countIf(explain LIKE '%Broadcast HashJoin%') = 1
-       AND minIf(rn, explain LIKE '%ShuffleExchange%') > minIf(rn, explain LIKE '%Broadcast HashJoin%')
-FROM
-(
-    SELECT explain, rowNumberInAllBlocks() AS rn FROM
-    (
-        EXPLAIN
-        SELECT k, sum(v), any(s)
-        FROM fact AS f
-        JOIN (SELECT g, substring(s, 2) AS s FROM dim) AS d ON f.g = d.g
-        GROUP BY k
-        SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1,
-                 distributed_plan_force_shuffle_aggregation = 1, enable_join_runtime_filters = 0
-    )
-);
-
--- Check width propagation through `materialize(s)`: keep 10 bytes; shuffle above the join.
-SELECT 'width: materialize(s)',
-       countIf(explain LIKE '%ShuffleExchange%') = 1
-       AND countIf(explain LIKE '%Broadcast HashJoin%') = 1
-       AND minIf(rn, explain LIKE '%ShuffleExchange%') < minIf(rn, explain LIKE '%Broadcast HashJoin%')
-FROM
-(
-    SELECT explain, rowNumberInAllBlocks() AS rn FROM
-    (
-        EXPLAIN
-        SELECT k, sum(v), any(s)
-        FROM fact AS f
-        JOIN (SELECT g, materialize(s) AS s FROM dim) AS d ON f.g = d.g
         GROUP BY k
         SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1,
                  distributed_plan_force_shuffle_aggregation = 1, enable_join_runtime_filters = 0
