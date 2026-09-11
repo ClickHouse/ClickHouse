@@ -46,7 +46,7 @@ def _is_internal(login: str, user_type: str, members: set) -> bool:
     if user_type == "Bot":
         return True
     low = login.lower()
-    return low in INTERNAL_BOTS or low.startswith("robot-") or low in members
+    return low in INTERNAL_BOTS or low in members
 
 
 def _parse_iso8601(value: str) -> datetime.datetime:
