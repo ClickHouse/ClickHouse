@@ -1186,8 +1186,9 @@ private:
                     serialization->serializeForHashCalculation(*column, i, *buf);
                 const auto & bytes = buf->str();
                 hash = apply(key, bytes.data(), bytes.size());
-                /// str() finalized the buffer: restart() makes it writable again, keeping the capacity.
-                buf->restart();
+                /// str() finalized the buffer: restart() makes it writable again, and past the cap it
+                /// frees an outlier row's allocation instead of pinning it for the rest of the column.
+                buf->restart(DBMS_DEFAULT_BUFFER_SIZE);
             }
             if constexpr (first)
                 vec_to[i] = hash;
