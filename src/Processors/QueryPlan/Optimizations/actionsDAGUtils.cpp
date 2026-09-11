@@ -552,24 +552,59 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     return new_inputs;
 }
 
-static bool isConstantExpression(const ActionsDAG::Node * node, NodeMap & constant_expressions)
+static bool canInheritConstnessFromChildren(const ActionsDAG::Node & node)
 {
-    if (auto it = constant_expressions.find(node); it != constant_expressions.end())
+    if (node.type == ActionsDAG::ActionType::ALIAS)
+        return node.children.size() == 1;
+
+    /// Server constants may differ between shards of the same query.
+    return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && node.function_base->isDeterministicInScopeOfQuery()
+        && !node.function_base->isServerConstant();
+}
+
+static bool isConstantExpression(const ActionsDAG::Node * root, NodeMap & constant_expressions)
+{
+    if (auto it = constant_expressions.find(root); it != constant_expressions.end())
         return it->second;
 
-    if (node->column)
-        return constant_expressions[node] = true;
-
-    if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
-        return constant_expressions[node] = isConstantExpression(node->children[0], constant_expressions);
-
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->isDeterministicInScopeOfQuery())
+    struct Frame
     {
-        return constant_expressions[node]
-            = std::ranges::all_of(node->children, [&](const auto * child) { return isConstantExpression(child, constant_expressions); });
+        const ActionsDAG::Node * node;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> nodes;
+    nodes.push({root});
+    auto finish = [&](bool is_constant)
+    {
+        constant_expressions[nodes.top().node] = is_constant;
+        nodes.pop();
+    };
+
+    while (!nodes.empty())
+    {
+        auto & frame = nodes.top();
+        const auto * node = frame.node;
+
+        if (node->column)
+            finish(true);
+        else if (!canInheritConstnessFromChildren(*node))
+            finish(false);
+        else if (frame.next_child == node->children.size())
+            finish(true);
+        else
+        {
+            const auto * child = node->children[frame.next_child];
+            if (auto it = constant_expressions.find(child); it == constant_expressions.end())
+                nodes.push({child});
+            else if (!it->second)
+                finish(false);
+            else
+                ++frame.next_child;
+        }
     }
 
-    return constant_expressions[node] = false;
+    return constant_expressions.at(root);
 }
 
 std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node, NodeMap & constant_expressions)
