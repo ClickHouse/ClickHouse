@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 
 #include <filesystem>
+#include <ranges>
 
 #include <fmt/ranges.h>
 
@@ -46,6 +47,28 @@ std::vector<String> listFiles(
             res.push_back(file_with_metadata->relative_path);
     }
     LOG_TRACE(getLogger("DataLakeCommon"), "Listed {} files ({})", res.size(), fmt::join(res, ", "));
+    return res;
+}
+
+RelativePathsWithMetadata listFilesWithMetadata(
+    const IObjectStorage & object_storage,
+    const String & path,
+    const String & prefix, const String & suffix)
+{
+    auto key = std::filesystem::path(path) / prefix;
+    RelativePathsWithMetadata files_with_metadata;
+    object_storage.listObjects(key, files_with_metadata, 0);
+    RelativePathsWithMetadata res;
+    for (const auto & file_with_metadata : files_with_metadata)
+    {
+        if (file_with_metadata->relative_path.ends_with(suffix))
+            res.push_back(file_with_metadata);
+    }
+    LOG_TRACE(
+        getLogger("DataLakeCommon"),
+        "Listed {} files ({})",
+        res.size(),
+        fmt::join(std::views::transform(res, [](const auto & file) -> const String & { return file->relative_path; }), ", "));
     return res;
 }
 

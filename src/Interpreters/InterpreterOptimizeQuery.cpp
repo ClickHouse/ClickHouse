@@ -49,6 +49,11 @@ BlockIO InterpreterOptimizeQuery::execute()
     auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
+    /// A data lake table refreshes its metadata - the schema, the pinned table state, and the
+    /// trusted `table-uuid` behind the metadata cache key - only here. It has to happen before
+    /// the snapshot below is captured, or the optimization would be planned from the previous
+    /// state of the table while its storage already holds the new one.
+    table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
     auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, getContext());
 

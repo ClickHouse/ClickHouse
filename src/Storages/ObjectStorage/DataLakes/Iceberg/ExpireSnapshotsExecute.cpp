@@ -363,6 +363,7 @@ void collectRetainedFiles(
     ContextPtr context,
     LoggerPtr log,
     Int32 current_schema_id,
+    std::optional<UInt64> validated_incarnation,
     std::set<Iceberg::IcebergPathFromMetadata> & retained_manifest_paths,
     std::set<Iceberg::IcebergPathFromMetadata> & retained_data_file_paths,
     std::set<Iceberg::IcebergPathFromMetadata> & retained_manifest_list_paths)
@@ -383,7 +384,7 @@ void collectRetainedFiles(
             retained_manifest_paths.insert(manifest_entry.manifest_file_path);
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log,
-                manifest_entry, current_schema_id);
+                manifest_entry, current_schema_id, validated_incarnation);
             collectAllFilePaths(entries_handle, retained_data_file_paths);
         }
     }
@@ -408,7 +409,8 @@ ExpiredFiles collectExpiredFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id)
+    Int32 current_schema_id,
+    std::optional<UInt64> validated_incarnation)
 {
     ExpiredFiles result;
     std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_list_paths;
@@ -444,7 +446,7 @@ ExpiredFiles collectExpiredFiles(
             {
                 auto entries_handle = getManifestFileEntriesHandle(
                     object_storage, persistent_table_components, context, log,
-                    manifest_entry, current_schema_id);
+                    manifest_entry, current_schema_id, validated_incarnation);
 
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                     if (!retained_data_file_paths.contains(entry->parsed_entry->file_path_key))
@@ -665,7 +667,8 @@ ExpireSnapshotsResult expireSnapshots(
     const PersistentTableComponents & persistent_table_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name)
+    const String & table_name,
+    std::optional<UInt64> validated_incarnation)
 {
     auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
@@ -681,7 +684,12 @@ ExpireSnapshotsResult expireSnapshots(
     {
         FileNamesGenerator filename_generator(persistent_table_components.path_resolver.getTableLocation(), false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergExpireSnapshots");
-        auto [last_version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+
+        /// The snapshots to expire and the files they hold are read below; they must belong to the
+        /// incarnation this statement was validated for, not to a table that replaced it.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE expire_snapshots");
+
+        auto [last_version, metadata_path, compression_method, _identity] = getLatestMetadataFileAndVersionWithCatalog(
             object_storage,
             catalog,
             table_name,
@@ -690,7 +698,7 @@ ExpireSnapshotsResult expireSnapshots(
             persistent_table_components.metadata_cache,
             context,
             log.get(),
-            persistent_table_components.table_uuid,
+            persistent_table_components.getTableUuid(),
             persistent_table_components.metadata_compression_method);
 
         filename_generator.setVersion(last_version + 1);
@@ -703,7 +711,12 @@ ExpireSnapshotsResult expireSnapshots(
             context,
             log,
             compression_method,
-            persistent_table_components.table_uuid);
+            persistent_table_components.getTableUuid());
+
+        /// The read may have gone to storage rather than to the cache, so the incarnation alone
+        /// does not vouch for the file: check that it still belongs to the validated table.
+        persistent_table_components.checkMetadataBelongsToValidatedTable(
+            metadata, validated_incarnation, "EXECUTE expire_snapshots");
 
         if (metadata->getValue<Int32>(f_format_version) < 2)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "expire_snapshots is supported only for the second version of iceberg format");
@@ -753,10 +766,11 @@ ExpireSnapshotsResult expireSnapshots(
         std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_list_paths;
         collectRetainedFiles(
             partition.retained_snapshots, object_storage, persistent_table_components, context, log,
-            current_schema_id, retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
+            current_schema_id, validated_incarnation, retained_manifest_paths, retained_data_file_paths,
+            retained_manifest_list_paths);
         auto expired_files = collectExpiredFiles(
             partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
-            object_storage, persistent_table_components, context, log, current_schema_id);
+            object_storage, persistent_table_components, context, log, current_schema_id, validated_incarnation);
 
         if (options.dry_run)
         {
@@ -772,6 +786,13 @@ ExpireSnapshotsResult expireSnapshots(
         }
 
         updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
+
+        /// The commit below rewrites the metadata and the deletion that follows it removes the
+        /// expired files for good, so this is the last point at which a replacement can be caught.
+        persistent_table_components.checkTableWasNotReplaced(validated_incarnation, "EXECUTE expire_snapshots");
+        Iceberg::checkStorageStillHoldsValidatedTable(
+            persistent_table_components, object_storage, data_lake_settings, context, validated_incarnation,
+            "EXECUTE expire_snapshots");
 
         std::string json_representation = stringifyJSON(metadata, 4);
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
@@ -835,7 +856,8 @@ Pipe executeExpireSnapshots(
     const PersistentTableComponents & persistent_components,
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
-    const String & table_name)
+    const String & table_name,
+    std::optional<UInt64> validated_incarnation)
 {
     auto parsed = makeSchema().parse(args);
     auto options = buildOptions(parsed);
@@ -848,7 +870,8 @@ Pipe executeExpireSnapshots(
         persistent_components,
         write_format,
         catalog,
-        table_name);
+        table_name,
+        validated_incarnation);
 
     return resultToPipe(result);
 }

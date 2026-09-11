@@ -3,6 +3,7 @@
 #if USE_AVRO
 
 #include <cstddef>
+#include <optional>
 
 
 #include <Databases/DataLake/Common.h>
@@ -36,7 +37,8 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     ContextPtr local_context,
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
-    Int32 table_snapshot_schema_id);
+    Int32 table_snapshot_schema_id,
+    std::optional<UInt64> pinned_incarnation = {});
 
 
 ManifestFileCacheKeys getManifestList(

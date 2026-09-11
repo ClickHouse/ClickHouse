@@ -233,7 +233,9 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
     return MetadataFileWithInfo{
         .version = parseMetadataVersion(version_str, file_name),
         .path = path,
-        .compression_method = getCompressionMethodFromMetadataFile(path)};
+        .compression_method = getCompressionMethodFromMetadataFile(path),
+        /// The name alone says nothing about the content of the file.
+        .identity = std::nullopt};
 }
 
 /// Resolve metadata filename from version hint content.
@@ -497,6 +499,7 @@ struct ShortMetadataFileInfo
     Int32 version;
     UInt64 last_updated_ms;
     String path;
+    std::optional<Iceberg::MetadataFileIdentity> identity;
 };
 
 std::string normalizeUuid(const std::string & uuid)
@@ -1192,10 +1195,10 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
 
-        std::vector<String> metadata_files;
+        RelativePathsWithMetadata metadata_files;
         for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
         {
-            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+            metadata_files = listFilesWithMetadata(*object_storage, table_path, "metadata", ".metadata.json");
             if (!metadata_files.empty())
                 break;
             LOG_DEBUG(
@@ -1212,12 +1215,20 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         }
         std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
         metadata_files_with_versions.reserve(metadata_files.size());
-        for (const auto & path : metadata_files)
+        for (const auto & file : metadata_files)
         {
+            const auto & path = file->relative_path;
             String filename = std::filesystem::path(path).filename();
             if (isTemporaryMetadataFile(filename))
                 continue;
-            auto [version, metadata_file_path, compression_method] = getMetadataFileAndVersion(path);
+            auto [version, metadata_file_path, compression_method, _] = getMetadataFileAndVersion(path);
+
+            /// A storage that reports no strong `etag` gives no way to tell this file apart from
+            /// a later rewrite of itself, so it reports no identity at all rather than an identity
+            /// that could compare equal across a rewrite.
+            std::optional<Iceberg::MetadataFileIdentity> identity;
+            if (file->metadata && file->metadata->isEtagUsableAsCacheKey())
+                identity = Iceberg::MetadataFileIdentity{file->metadata->etag};
 
             if (need_all_metadata_files_parsing)
             {
@@ -1231,7 +1242,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                         if (normalizeUuid(table_uuid.value()) == normalizeUuid(current_table_uuid))
                         {
                             metadata_files_with_versions.emplace_back(
-                                version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                                version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path, identity);
                         }
                     }
                     else
@@ -1245,12 +1256,12 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 }
                 else
                 {
-                    metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path);
+                    metadata_files_with_versions.emplace_back(version, metadata_file_object->getValue<UInt64>(Iceberg::f_last_updated_ms), metadata_file_path, identity);
                 }
             }
             else
             {
-                metadata_files_with_versions.emplace_back(version, 0, metadata_file_path);
+                metadata_files_with_versions.emplace_back(version, 0, metadata_file_path, identity);
             }
         }
 
@@ -1288,7 +1299,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                     [](const ShortMetadataFileInfo & a, const ShortMetadataFileInfo & b) { return a.version < b.version; });
             }
         }();
-        return MetadataFileWithInfo{latest_metadata_file_info.version, latest_metadata_file_info.path, getCompressionMethodFromMetadataFile(latest_metadata_file_info.path)};
+        return MetadataFileWithInfo{
+            latest_metadata_file_info.version,
+            latest_metadata_file_info.path,
+            getCompressionMethodFromMetadataFile(latest_metadata_file_info.path),
+            latest_metadata_file_info.identity};
     };
 
     /// We'll query latest metadata from either cache or the actual remote catalog with a certain configured tolerance of staleness
@@ -1644,6 +1659,65 @@ PartitionColumnValues getIdentityPartitionColumnValues(
     }
 
     return result;
+}
+
+void checkStorageStillHoldsValidatedTable(
+    const PersistentTableComponents & persistent_table_components,
+    const ObjectStoragePtr & object_storage,
+    const DataLakeStorageSettings & /*data_lake_settings*/,
+    const ContextPtr & context,
+    std::optional<UInt64> validated_incarnation,
+    std::string_view operation)
+{
+    if (!validated_incarnation.has_value())
+        return;
+
+    /// The file the statement was validated against, which is what this check interrogates. It is
+    /// deliberately not a fresh listing of the table directory: which file a listing should select
+    /// is not decided by storage for every table - a table reached through a catalog has its
+    /// current metadata named by the catalog, and files left in its directory by the registration
+    /// belong to no version sequence a listing can rank. Reading the validated file needs no such
+    /// ranking.
+    ///
+    /// What this does not see is a replacement that left the validated file untouched and became
+    /// current under other file names. The read path still refuses to serve such a table through
+    /// `checkMetadataBelongsToValidatedTable` and the incarnation checks; at publish time no
+    /// catalog offers a compare-and-swap on table identity to close it.
+    const auto validated_file = persistent_table_components.trusted_table_uuid->getValidatedFile();
+    if (!validated_file.has_value())
+        return;
+
+    auto log = getLogger("IcebergValidatedTableCheck");
+
+    /// Read it bypassing the UUID-keyed content cache: the cache is keyed by the trusted UUID and
+    /// the path, so a replacement reusing the path would be answered with the validated table's
+    /// own cached JSON - exactly the answer that must not be trusted here.
+    auto metadata_object = getMetadataJSONObject(
+        validated_file->path,
+        object_storage,
+        persistent_table_components.metadata_cache,
+        context,
+        log,
+        getCompressionMethodFromMetadataFile(validated_file->path),
+        /* table_uuid */ std::nullopt);
+
+    persistent_table_components.checkMetadataBelongsToValidatedTable(metadata_object, validated_incarnation, operation);
+
+    /// A format-version 1 table may carry no `table-uuid` at all, and then the check above has
+    /// nothing to compare. A metadata file is immutable - a commit writes a new file and never
+    /// rewrites an existing one - so the same path answering with different content is not this
+    /// table moving on, it is another table that took the path over. This also covers the storages
+    /// that report no strong object identity, such as HDFS with its synthesized etag.
+    if (validated_file->content_token.has_value()
+        && computeMetadataContentToken(metadata_object) != *validated_file->content_token)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The Iceberg table at {} was replaced while {} was running: {}, the metadata file the statement was validated against, no "
+            "longer carries the content it was validated with, and the table carries no `table-uuid` to tell the two tables apart. "
+            "Retry the statement.",
+            persistent_table_components.table_path,
+            operation,
+            validated_file->path);
 }
 
 }

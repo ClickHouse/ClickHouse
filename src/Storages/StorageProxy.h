@@ -50,6 +50,15 @@ public:
     bool supportsTTL() const override { return getNested()->supportsTTL(); }
     bool supportsStatistics() const override { return getNested()->supportsStatistics(); }
 
+    /// The interpreter refreshes the external metadata of the storage the statement is addressed
+    /// to, which for a lazily loaded table is the proxy. Without forwarding, a datalake table
+    /// reached through a proxy is never refreshed, and the state a statement is validated against
+    /// never reaches its execution - so every replacement check silently has nothing to compare.
+    void updateExternalDynamicMetadataIfExists(ContextPtr context) override
+    {
+        getNested()->updateExternalDynamicMetadataIfExists(context);
+    }
+
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
     ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { return getNested()->getColumnSizes(columns, calculate_subcolumn_sizes); }
 

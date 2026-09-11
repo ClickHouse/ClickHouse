@@ -230,6 +230,7 @@ public:
         SharedHeader /* sample_block */,
         const StorageID & /* table_id */,
         ObjectStoragePtr /* object_storage */,
+        const StorageMetadataPtr & /* metadata_snapshot */,
         const std::optional<FormatSettings> & /* format_settings */,
         ContextPtr /* context */,
         std::shared_ptr<DataLake::ICatalog> /* catalog */)
@@ -268,7 +269,8 @@ public:
         const AlterCommands & /*params*/,
         ContextPtr /*context*/,
         const StorageID & /*storage_id*/,
-        std::shared_ptr<DataLake::ICatalog> /*catalog*/) {}
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/) {}
 
     virtual const DataLakeStorageSettings & getDataLakeSettings() const
     {
