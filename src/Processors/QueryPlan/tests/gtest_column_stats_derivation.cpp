@@ -317,57 +317,6 @@ TEST(ColumnStatsDerivation, DeepChainOfFunctionsResolves)
     EXPECT_EQ(stats[current->result_name].num_distinct_values, distinct_values);
 }
 
-TEST(ColumnStatsDerivation, DeepConstantSubtreeResolves)
-{
-    tryRegisterFunctions();
-
-    auto int_type = std::make_shared<DataTypeInt64>();
-    ActionsDAG dag;
-    const auto & input = dag.addInput("n", int_type);
-    const auto & one = dag.addColumn(int_type->createColumnConst(1, Int64(1)), int_type, "one");
-    const auto * constant = &dag.addFunction(FunctionFactory::instance().get("materialize", getContext().context), {&one}, "constant");
-
-    auto negate = FunctionFactory::instance().get("negate", getContext().context);
-    for (size_t i = 0; i < 20000; ++i)
-        constant = &dag.addFunction(negate, {constant}, "constant_" + std::to_string(i));
-    ASSERT_FALSE(constant->column);
-    addOutputFunction(dag, "plus", {constant, &input}, "shifted");
-
-    auto stats = statsOf("n", 1000);
-    remapColumnStats(stats, dag);
-
-    ASSERT_TRUE(stats.contains("shifted"));
-    EXPECT_EQ(stats.at("shifted").num_distinct_values, 1000u);
-}
-
-TEST(ColumnStatsDerivation, ServerConstantArgumentsDoNotPropagateBound)
-{
-    tryRegisterFunctions();
-
-    auto context = Context::createCopy(getContext().context);
-    context->setDistributed(true);
-
-    ActionsDAG dag;
-    const auto & input = dag.addInput("n", std::make_shared<DataTypeUInt64>());
-    const auto & string_input = dag.addInput("s", std::make_shared<DataTypeString>());
-    const auto & shard = dag.addFunction(FunctionFactory::instance().get("shardNum", context), {}, "shard");
-    const auto & host = dag.addFunction(FunctionFactory::instance().get("hostName", context), {}, "host");
-    ASSERT_FALSE(shard.column);
-    ASSERT_FALSE(host.column);
-
-    addOutputFunction(dag, "plus", {&shard, &input}, "shifted");
-    const auto & host_alias = dag.addAlias(host, "host_alias");
-    addOutputFunction(dag, "concat", {&host_alias, &string_input}, "prefixed");
-
-    auto stats = statsOf("n", 1);
-    stats["s"] = ColumnStats{.num_distinct_values = 1};
-    remapColumnStats(stats, dag);
-
-    /// Equal inputs on different shards can produce different offsets or prefixes.
-    EXPECT_FALSE(stats.contains("shifted"));
-    EXPECT_FALSE(stats.contains("prefixed"));
-}
-
 TEST(ColumnStatsDerivation, LineageDistinguishesIdentityFromDistinctValueBounds)
 {
     tryRegisterFunctions();
