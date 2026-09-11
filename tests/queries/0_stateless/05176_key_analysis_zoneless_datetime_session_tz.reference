@@ -1,0 +1,45 @@
+-- the key type keeps the zone it was created with (otherwise every arm below is a tautology)
+UTC
+
+-- monotonic chain over a zone-less key, equality and range
+1	1
+1	1
+
+-- the same key through a Nullable wrapper
+1	1
+
+-- a timezone-sensitive non-monotonic key: the pruner must look for the key value computed in
+-- the frozen zone (hour 20 in UTC), because that is the zone the stored values were computed in
+1	1
+Condition: (dt in [\'1704225600\', \'1704225600\'])
+Condition: (cityHash64(toHour(dt)) in [1626306447464072420, 1626306447464072420])
+Condition: true
+1626306447464072420
+
+-- a single CAST as the whole key expression
+1	1
+
+-- pruning is still active: the matching literal reads one part of two, a non-matching one none
+Condition: (dt in [\'1704225600\', \'1704225600\'])
+Parts: 1/2
+Condition: (toYYYYMMDD(dt) in [20240102, 20240102])
+Parts: 1/1
+Condition: true
+Parts: 1/1
+Condition: (dt in [\'1706731200\', \'1706731200\'])
+Parts: 0/2
+Condition: (toYYYYMMDD(dt) in [20240131, 20240131])
+Parts: 0/0
+Condition: true
+Parts: 0/0
+
+-- negative control: a type that names its zone keeps parsing in it, whatever the session says
+1	1
+
+-- negative control: a constant that is not text is not parsed, so it keeps its own zone
+1	1
+
+-- negative control: a key whose CAST input is not a DateTime still takes the direct fast path,
+-- which is what makes granule pruning possible for a round trip that cannot be done safely
+1	1
+Granules: 1/2
