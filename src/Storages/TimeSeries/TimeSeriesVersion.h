@@ -18,13 +18,15 @@ class StorageTimeSeries;
 ///   0 - Tables created before the `version` setting was introduced (including "prealpha" tables
 ///       and tables without the recent samples table).
 ///   1 - The `version` setting was introduced.
+///   2 - The outer column `time_series` was renamed to `samples`. The stored data didn't change,
+///       tables of older versions get the new column name when their definition is normalized.
 namespace TimeSeriesVersion
 {
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 1;
+    constexpr UInt64 LATEST = 2;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.

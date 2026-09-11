@@ -158,11 +158,11 @@ def create_and_fill_prealpha_time_series(time_series_columns=PREALPHA_COLUMNS,
     node.query("ATTACH TABLE prometheus")
 
     # The prealpha version's outer columns (`id`, `timestamp`, `value`, ...) must be replaced by the canonical
-    # current outer column `time_series Array(Tuple(timestamp, value))` during the load-time normalization.
+    # current outer column `samples Array(Tuple(timestamp, value))` during the load-time normalization.
     outer_columns = set(node.query(
         "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus'"
     ).split())
-    assert "time_series" in outer_columns
+    assert "samples" in outer_columns
     assert "id" not in outer_columns
 
 

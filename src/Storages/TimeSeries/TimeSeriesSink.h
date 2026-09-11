@@ -24,7 +24,7 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (time_series, metric_name, tags, metric_family, type, unit, help)
+/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
 /// into blocks for the three inner target tables (Tags, Samples, Metrics).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {

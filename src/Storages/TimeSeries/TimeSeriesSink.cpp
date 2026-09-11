@@ -254,7 +254,7 @@ namespace
         return count;
     }
 
-    /// Returns the total number of samples in the column `time_series` across all rows.
+    /// Returns the total number of samples in the column `samples` across all rows.
     size_t getTotalSamples(const ColumnArray::Offsets & ts_offsets)
     {
         return ts_offsets.empty() ? 0 : ts_offsets.back();
@@ -434,7 +434,7 @@ TimeSeriesSink::TimeSeriesSink(
 
     insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
         || is_insert_column(TimeSeriesColumnNames::Tags)
-        || is_insert_column(TimeSeriesColumnNames::TimeSeries);
+        || is_insert_column(TimeSeriesColumnNames::Samples);
 
     insert_metrics = is_insert_column(TimeSeriesColumnNames::MetricFamily)
         || is_insert_column(TimeSeriesColumnNames::Type)
@@ -509,14 +509,14 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         tags_header_before_id.insert(ColumnWithTypeAndName{tags_map_type, TimeSeriesColumnNames::AllTags});
     }
 
-    /// Get timestamp/value types from the time_series array's inner tuple.
+    /// Get timestamp/value types from the samples array's inner tuple.
     /// This part is different from class PrometheusRemoteWriteProtocol.
     /// Class PrometheusRemoteWriteProtocol derives these types from the samples target metadata
     /// because it creates columns from protobuf data.
     /// And here we derive them from the input chunk's column because fillSamplesColumns()
     /// later does insertRangeFrom(), which requires matching binary representations.
     /// In the end any final difference is handled by the converting actions inside `samples_pipeline`.
-    auto [timestamp_type, scalar_type] = splitTimeSeriesType(getHeader().getByName(TimeSeriesColumnNames::TimeSeries).type);
+    auto [timestamp_type, scalar_type] = splitTimeSeriesType(getHeader().getByName(TimeSeriesColumnNames::Samples).type);
 
     if (settings[TimeSeriesSetting::store_min_time_and_max_time])
     {
@@ -592,7 +592,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// Step 1. Extract columns from the input block.
     const auto & metric_name_col = block.getByName(TimeSeriesColumnNames::MetricName);
     const auto & tags_col = block.getByName(TimeSeriesColumnNames::Tags);
-    const auto & time_series_col = block.getByName(TimeSeriesColumnNames::TimeSeries);
+    const auto & time_series_col = block.getByName(TimeSeriesColumnNames::Samples);
 
     const auto * tags_map_column = typeid_cast<const ColumnMap *>(tags_col.column.get());
     if (!tags_map_column)
@@ -602,12 +602,12 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
     const auto * ts_arrays = typeid_cast<const ColumnArray *>(time_series_col.column.get());
     if (!ts_arrays)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the time_series column, got {}", time_series_col.column->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the samples column, got {}", time_series_col.column->getName());
     const auto * ts_tuples = typeid_cast<const ColumnTuple *>(&ts_arrays->getData());
     if (!ts_tuples)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple for the time_series column data, got {}", ts_arrays->getData().getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple for the samples column data, got {}", ts_arrays->getData().getName());
     if (ts_tuples->tupleSize() != 2)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple with 2 elements for the time_series column data, got {}", ts_tuples->tupleSize());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple with 2 elements for the samples column data, got {}", ts_tuples->tupleSize());
     const ColumnArray::Offsets & ts_offsets = ts_arrays->getOffsets();
     size_t total_samples = getTotalSamples(ts_offsets);
 

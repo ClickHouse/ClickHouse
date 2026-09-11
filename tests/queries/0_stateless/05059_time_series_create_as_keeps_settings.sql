@@ -33,7 +33,7 @@ FROM system.tables WHERE database = currentDatabase() AND name = 'ts_derived';
 -- that needs the `tags_to_columns` setting. The database is passed explicitly because with parallel
 -- replicas the query can go to a replica where the current database is different.
 SELECT '-- the copied `tags_to_columns` fills the dedicated column';
-INSERT INTO ts_derived (metric_name, tags, time_series) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
+INSERT INTO ts_derived (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
 SELECT metric_name, job FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_derived') ORDER BY metric_name;
 DROP TABLE ts_derived;
 

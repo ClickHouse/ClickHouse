@@ -22,7 +22,7 @@ SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND nam
 
 SELECT '-- inserted samples are copied to the recent samples table and short-range queries prefer it';
 
-INSERT INTO ts_default (metric_name, tags, time_series) VALUES
+INSERT INTO ts_default (metric_name, tags, samples) VALUES
     ('default_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 42.)]);
 
 SELECT
@@ -44,7 +44,7 @@ CREATE TABLE ts_disabled ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples%';
 SELECT create_table_query LIKE '%recent_samples_ttl_seconds = 0%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts_disabled';
 
-INSERT INTO ts_disabled (metric_name, tags, time_series) VALUES
+INSERT INTO ts_disabled (metric_name, tags, samples) VALUES
     ('default_metric', map('env', 'prod'), [(now64(3) - INTERVAL 1 MINUTE, 7.)]);
 
 SELECT value FROM prometheusQuery(ts_disabled, 'default_metric', now());

@@ -1,0 +1,16 @@
+--- the old name in a new CREATE query is normalized to the new name and its type is kept ---
+samples	Array(Tuple(UInt32, Float32))
+`id` Tuple(UInt64, LowCardinality(UUID)), `timestamp` UInt32 CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(ZSTD(3))
+--- a table of version 1 declaring the old name gets the new name on ATTACH ---
+metric_name	String
+tags	Map(String, String)
+samples	Array(Tuple(DateTime64(3), Float32))
+metric_family	String
+type	String
+unit	String
+help	String
+--- the attached table can be written and read ---
+up	[('1970-01-01 00:16:40.000',1),('1970-01-01 00:17:40.000',2)]
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3), Float32))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',1),('1970-01-01 00:17:40.000',2)]

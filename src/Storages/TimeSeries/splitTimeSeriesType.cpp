@@ -20,11 +20,11 @@ std::pair<DataTypePtr, DataTypePtr> splitTimeSeriesType(const DataTypePtr & time
     const auto * array_type = typeid_cast<const DataTypeArray *>(time_series_type.get());
     if (!array_type)
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-            "Expected `Array(Tuple(timestamp, value))` for the `time_series` column, got {}", time_series_type->getName());
+            "Expected `Array(Tuple(timestamp, value))` for the `samples` column, got {}", time_series_type->getName());
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get());
     if (!tuple_type || (tuple_type->getElements().size() != 2))
         throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-            "Expected `Tuple(timestamp, value)` as the element type of the `time_series` column, got {}",
+            "Expected `Tuple(timestamp, value)` as the element type of the `samples` column, got {}",
             array_type->getNestedType()->getName());
     return {tuple_type->getElement(0), tuple_type->getElement(1)};
 }
