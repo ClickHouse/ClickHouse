@@ -155,6 +155,7 @@ void StreamingExchangeSink::sendToSocket()
             ProfileEvents::increment(ProfileEvents::StreamingExchangeSendBytes, sent);
             if (send_position == buffer.size())
             {
+                ProfileEvents::increment(ProfileEvents::StreamingExchangePacketsSent, send_queue.front().packets);
                 send_queue.pop_front();
                 send_position = 0;
             }
@@ -191,7 +192,8 @@ void StreamingExchangeSink::flushSerializedData()
 
     String data = std::move(out->str());
     out = std::make_shared<WriteBufferFromOwnString>();
-    enqueueBuffer(SendBuffer{std::move(data)});
+    enqueueBuffer(SendBuffer{.data = std::move(data), .packets = packets_in_out});
+    packets_in_out = 0;
 }
 
 void StreamingExchangeSink::enqueueBuffer(SendBuffer buffer)
@@ -393,14 +395,14 @@ void StreamingExchangeSink::consume(Chunk chunk)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Exchange stream {} expects one packet per chunk, got a chunk with {} rows", stream_name, chunk.getNumRows());
         flushSerializedData();
-        enqueueBuffer(SendBuffer{chunk.getColumns().front()});
+        enqueueBuffer(SendBuffer{.data = chunk.getColumns().front(), .packets = 1});
     }
     else
     {
         const size_t packet_offset = StreamingExchangeProtocol::writeDataPacket(chunk, input.getSharedHeader(), *out);
         StreamingExchangeProtocol::finishDataPacket(const_cast<char *>(out->stringView().data()) + packet_offset, out->count() - packet_offset);
+        ++packets_in_out;
     }
-    ProfileEvents::increment(ProfileEvents::StreamingExchangePacketsSent);
 
     /// A packet without rows ends the stream or carries only bucket information: do not hold it back.
     if (chunk.getNumRows() == 0)
@@ -483,6 +485,7 @@ void StreamingExchangeSink::markNoMoreDataNeeded()
     send_queue_bytes = 0;
     send_position = 0;
     out = std::make_shared<WriteBufferFromOwnString>();
+    packets_in_out = 0;
 }
 
 }

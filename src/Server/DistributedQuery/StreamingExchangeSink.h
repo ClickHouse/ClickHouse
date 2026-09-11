@@ -74,6 +74,8 @@ private:
     struct SendBuffer
     {
         std::variant<ColumnPtr, String> data;
+        /// Packets in `data`; counted as sent once the whole buffer is written to the socket.
+        size_t packets = 0;
 
         std::string_view bytes() const;
     };
@@ -99,6 +101,8 @@ private:
     /// In-memory buffer to which the sink serializes chunks itself.
     /// Once it becomes big enough its contents move to `send_queue`.
     std::shared_ptr<WriteBufferFromOwnString> out;
+    /// Packets serialized into `out` and not yet moved to `send_queue`.
+    size_t packets_in_out = 0;
 
     /// Ready buffers in send order: packets that arrived serialized and the flushed contents of
     /// `out`. The front buffer is being written to the socket, `send_position` bytes of it are sent.
