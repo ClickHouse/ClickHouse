@@ -30,6 +30,9 @@ SET distributed_plan_default_reader_bucket_count = 1, distributed_plan_default_s
 -- Four parts read on four streams, so there is work to spread.
 SET max_threads = 4, merge_tree_min_rows_for_concurrent_read = 1, merge_tree_min_bytes_for_concurrent_read = 1;
 SET log_processors_profiles = 1, explain_query_plan_default = 'legacy';
+-- The read fault injection splits a read into in-order layers with filters, which adds read streams
+-- and rows that never reach the serializers, so the broadcast check would not hold.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 
 -- The plans the checks run against. A change here explains a change in the layout below.
 -- 1. A round-robin scatter out of the reader task and a gather into the main task.
