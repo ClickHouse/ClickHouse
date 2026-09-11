@@ -111,7 +111,9 @@ SELECT
 -- Implicit type casting: numeric filters with different numeric probe types
 WITH
     (SELECT groupBloomFilterState(1000)(toInt64(number - 50)) FROM numbers(100)) AS int64_bf,
-    (SELECT groupBloomFilterState(1000)(toFloat64(number * 0.1)) FROM numbers(100)) AS float64_bf
+    (SELECT groupBloomFilterState(1000)(toFloat64(number * 0.1)) FROM numbers(100)) AS float64_bf,
+    (SELECT groupBloomFilterState(1000)(toFloat32(16777216)) FROM numbers(1)) AS float32_boundary_bf,
+    (SELECT groupBloomFilterState(1000)(toFloat64(9007199254740992)) FROM numbers(1)) AS float64_boundary_bf
 SELECT
     bloomFilterContains(int64_bf, toInt32(-10)),
     bloomFilterContains(float64_bf, toFloat32(4.2)),
@@ -119,7 +121,11 @@ SELECT
     bloomFilterContains(int64_bf, toDecimal64(42, 0)),
     bloomFilterContains(int64_bf, toDecimal128(42, 0)),
     bloomFilterContains(int64_bf, toDecimal256(42, 0)),
-    bloomFilterContains(float64_bf, toDecimal64(4.2, 1));
+    bloomFilterContains(float64_bf, toDecimal64(4.2, 1)),
+    bloomFilterContains(float32_boundary_bf, toDecimal32(16777216, 0)),
+    bloomFilterContains(float32_boundary_bf, toDecimal32(16777217, 0)),
+    bloomFilterContains(float64_boundary_bf, toDecimal64(9007199254740992, 0)),
+    bloomFilterContains(float64_boundary_bf, toDecimal64(9007199254740993, 0));
 
 -- Nullable, LowCardinality, narrowing, and lossy probes
 WITH

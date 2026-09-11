@@ -91,6 +91,7 @@ public:
                 getName(), arguments[0].type->getName());
 
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
+        DataTypePtr dispatch_probe_type = removeLowCardinalityAndNullable(arguments[1].type);
 
         if (!canCastProbeType(arguments[1].type, dispatch_value_type))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -102,12 +103,45 @@ public:
         /// become NULL and their result is forced to 0 below.
         ColumnPtr casted_value = castColumnAccurateOrNull(arguments[1], dispatch_value_type)->convertToFullColumnIfConst();
         const auto & nullable_value = assert_cast<const ColumnNullable &>(*casted_value);
+        const NullMap * null_map = &nullable_value.getNullMapData();
+        NullMap adjusted_null_map;
 
         ColumnsWithTypeAndName casted_arguments = arguments;
         casted_arguments[1].column = nullable_value.getNestedColumnPtr();
         casted_arguments[1].type = dispatch_value_type;
 
         WhichDataType which(dispatch_value_type);
+        WhichDataType probe_which(dispatch_probe_type);
+
+        /// `Decimal` to `Float` casts can lose precision without being rejected by the accurate cast.
+        /// Only values which survive a round trip to the original `Decimal` type can be hashed safely.
+        if (probe_which.isDecimal() && which.isFloat())
+        {
+            adjusted_null_map.resize(input_rows_count);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                adjusted_null_map[i] = (*null_map)[i];
+            null_map = &adjusted_null_map;
+
+            ColumnPtr restored_value = castColumnAccurateOrNull(
+                {nullable_value.getNestedColumnPtr(), dispatch_value_type, arguments[1].name},
+                dispatch_probe_type)->convertToFullColumnIfConst();
+            const auto & nullable_restored_value = assert_cast<const ColumnNullable &>(*restored_value);
+
+            ColumnPtr original_value = castColumnAccurateOrNull(
+                arguments[1], dispatch_probe_type)->convertToFullColumnIfConst();
+            const auto & nullable_original_value = assert_cast<const ColumnNullable &>(*original_value);
+
+            const IColumn & restored_nested_column = nullable_restored_value.getNestedColumn();
+            const IColumn & original_nested_column = nullable_original_value.getNestedColumn();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (nullable_restored_value.isNullAt(i)
+                    || nullable_original_value.isNullAt(i)
+                    || restored_nested_column.compareAt(i, i, original_nested_column, 1) != 0)
+                    adjusted_null_map[i] = 1;
+            }
+        }
 
         if (which.isUInt8())
             executeNumericType<UInt8>(casted_arguments, input_rows_count, vec_to);
@@ -162,9 +196,8 @@ public:
                 "Unexpected value type {} for function {}",
                 value_type->getName(), getName());
 
-        const NullMap & null_map = nullable_value.getNullMapData();
         for (size_t i = 0; i < input_rows_count; ++i)
-            if (null_map[i])
+            if ((*null_map)[i])
                 vec_to[i] = 0;
 
         return col_to;
