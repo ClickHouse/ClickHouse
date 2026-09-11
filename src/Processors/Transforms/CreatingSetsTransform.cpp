@@ -78,6 +78,16 @@ CreatingSetsTransform::CreatingSetsTransform(
 {
 }
 
+IProcessor::Status CreatingSetsTransform::prepare()
+{
+    /// `work` runs without the executor's graph lock, so every port access lives here. The base
+    /// class closes the input only on the path that still expects to generate output.
+    if (finished_input)
+        input.close();
+
+    return IAccumulatingTransform::prepare();
+}
+
 void CreatingSetsTransform::work()
 {
     try
@@ -86,10 +96,7 @@ void CreatingSetsTransform::work()
             init();
 
         if (done_with_set && done_with_table)
-        {
             finishConsume();
-            input.close();
-        }
 
         IAccumulatingTransform::work();
     }
