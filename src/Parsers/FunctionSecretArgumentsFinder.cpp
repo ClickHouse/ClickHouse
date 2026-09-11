@@ -26,6 +26,29 @@ namespace
         changed |= maskPresignedURLParameters(url);
         return changed;
     }
+
+    /// `AzureBlobStorage::isConnectionString` is a case sensitive `starts_with("http")`, so a mixed
+    /// case scheme is classified as a connection string and never authenticates as a SAS url. The
+    /// signature the user typed still reaches the log though, so it is masked in both spellings.
+    bool startsWithHTTPCaseInsensitive(const String & value)
+    {
+        static constexpr std::string_view scheme = "http";
+        return value.size() >= scheme.size() && equalsCaseInsensitive(std::string_view(value).substr(0, scheme.size()), scheme);
+    }
+
+    bool maskDispatchedAzureURLCredentials(String & url)
+    {
+        const size_t scheme_end = url.find("://");
+        if (scheme_end == String::npos)
+            return false;
+
+        const String scheme = url.substr(0, scheme_end);
+        if (!equalsCaseInsensitive(scheme, "az") && !equalsCaseInsensitive(scheme, "azure")
+            && !equalsCaseInsensitive(scheme, "abfss") && !equalsCaseInsensitive(scheme, "abfs"))
+            return false;
+
+        return maskAzureSASSignature(url);
+    }
 }
 
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
@@ -517,34 +540,69 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
     /// azureBlobStorageCluster('cluster_name', 'conn_string/storage_account_url', ...) has 'conn_string/storage_account_url' as its second argument.
     size_t url_arg_idx = is_cluster_function ? 1 : 0;
 
+    maskNestedSecretMaps();
+
     if (!is_cluster_function && isNamedCollectionName(0))
     {
         /// azureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
-        if (maskAzureConnectionString(-1, true, 1))
-            return;
+        maskAzureConnectionString(-1, true, 1);
         findSecretNamedArgument("account_key", 1);
         return;
     }
     if (is_cluster_function && isNamedCollectionName(1))
     {
         /// azureBlobStorageCluster(cluster, named_collection, ..., account_key = 'account_key', ...)
-        if (maskAzureConnectionString(-1, true, 2))
-            return;
+        maskAzureConnectionString(-1, true, 2);
         findSecretNamedArgument("account_key", 2);
         return;
     }
 
-    if (maskAzureConnectionString(url_arg_idx))
+    std::vector<size_t> positional;
+    bool seen_named_argument = false;
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        if (const auto nested = function->arguments->at(i)->getFunction())
+        {
+            if (nested->name() == "headers" || nested->name() == "extra_credentials")
+                continue;
+            if (nested->name() == "equals")
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+                seen_named_argument = true;
+                continue;
+            }
+        }
+        if (seen_named_argument)
+        {
+            markSecretArgument(i);
+            continue;
+        }
+        positional.push_back(i);
+    }
+
+    if (url_arg_idx >= positional.size())
         return;
+    if (maskAzureConnectionString(positional[url_arg_idx]))
+        return;
+
+    /// `azureBlobStorage(connection_string|storage_account_url, sas_token)`: the second argument of the
+    /// two-argument signature is a shared access signature, which `AzureStorageParsedArguments::fromAST`
+    /// reads as the credential. `extra_credentials(...)` and `headers(...)` are already out of
+    /// `positional`, so the count here is the one the parser sees.
+    if (positional.size() == url_arg_idx + 2)
+    {
+        markSecretArgument(positional[url_arg_idx + 1]);
+        return;
+    }
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
     /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    size_t count = function->arguments->size();
+    size_t count = positional.size();
     if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
     {
         String fourth_arg;
-        if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
+        if (tryGetStringFromArgument(positional[url_arg_idx + 3], &fourth_arg))
         {
             if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
                 return;
@@ -553,24 +611,81 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageFunctionSecretArguments(
 
     /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
     if (url_arg_idx + 4 < count)
-        markSecretArgument(url_arg_idx + 4);
+        markSecretArgument(positional[url_arg_idx + 4]);
 }
 
-bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named, size_t start)
+bool FunctionSecretArgumentsFinder::maskAzureConnectionString(
+    ssize_t url_arg_idx, bool argument_is_named, size_t start, bool positional_allowed_after_collection)
 {
-    String url_arg;
     if (argument_is_named)
     {
-        url_arg_idx = findNamedArgument(&url_arg, "connection_string", start);
-        if (url_arg_idx == -1 || url_arg.empty())
-            url_arg_idx = findNamedArgument(&url_arg, "storage_account_url", start);
-        if (url_arg_idx == -1 || url_arg.empty())
-            return false;
+        bool positional_seen = false;
+        for (size_t i = start; i < function->arguments->size(); ++i)
+        {
+            const auto equals_func = function->arguments->at(i)->getFunction();
+            if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments() || equals_func->arguments->size() != 2)
+            {
+                if (equals_func && (equals_func->name() == "headers" || equals_func->name() == "extra_credentials"))
+                    continue;
+
+                /// `BACKUP ... TO AzureBlobStorage(named_collection, 'blob_path')` takes one positional
+                /// after the collection and it is not a credential;
+                /// `registerBackupEngineAzureBlobStorage` rejects a second one. Everywhere else a
+                /// positional after a collection is rejected by the named collection parser, and so is
+                /// anything past the first one here, so both still fail closed.
+                if (positional_allowed_after_collection && !positional_seen && !equals_func)
+                {
+                    positional_seen = true;
+                    continue;
+                }
+
+                markSecretArgument(i);
+                continue;
+            }
+
+            String key;
+            if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+                continue;
+            }
+            if (key != "connection_string" && key != "storage_account_url")
+            {
+                if (key == "account_key" || key == "client_id" || key == "tenant_id")
+                    markSecretArgument(i, /* argument_is_named= */ true);
+                continue;
+            }
+
+            String value;
+            if (!equals_func->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ false))
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+                continue;
+            }
+
+            bool changed = false;
+            if (value.starts_with("http"))
+            {
+                changed = maskAzureSASSignature(value);
+            }
+            else
+            {
+                changed = maskConnectionStringKey(value, "AccountKey=") || maskConnectionStringKey(value, "SharedAccessSignature=");
+                if (!changed && startsWithHTTPCaseInsensitive(value))
+                    changed = maskAzureSASSignature(value);
+            }
+
+            if (changed)
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
+        }
+        return false;
     }
-    else
+
+    String url_arg;
+    if (!tryGetStringFromArgument(url_arg_idx, &url_arg, /* allow_identifier= */ false))
     {
-        if (!tryGetStringFromArgument(url_arg_idx, &url_arg))
-            return false;
+        markSecretArgument(url_arg_idx);
+        return false;
     }
 
     if (!url_arg.starts_with("http"))
@@ -596,6 +711,14 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
         }
     }
 
+    if (startsWithHTTPCaseInsensitive(url_arg) && maskAzureSASSignature(url_arg))
+    {
+        /// Keep the account, container and non-secret parameters visible while hiding the signature.
+        /// Return false so the caller can also mask a positional `account_key`.
+        result.replaced_arguments[static_cast<size_t>(url_arg_idx)]
+            = quoteString(url_arg);
+    }
+
     return false;
 }
 
@@ -619,7 +742,16 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
             const auto equals_func = function->arguments->at(i)->getFunction();
             if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
                 || equals_func->arguments->size() != 2)
+            {
+                /// `headers(...)` and `extra_credentials(...)` are already masked above. Anything else
+                /// after the collection name is either rejected by the parser or, with the default
+                /// `allow_named_collection_override_by_default`, silently ignored, and both happen after
+                /// the query is formatted, so a url with a secret in it would stay visible. Fail closed.
+                if (!equals_func
+                    || (equals_func->name() != "headers" && equals_func->name() != "extra_credentials"))
+                    markSecretArgument(i);
                 continue;
+            }
 
             String key;
             if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
@@ -631,7 +763,9 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
                 String url;
                 if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                 {
-                    if (maskURIPassword(&url))
+                    bool changed = maskURIPassword(&url);
+                    changed |= maskDispatchedAzureURLCredentials(url);
+                    if (changed)
                         result.replaced_arguments[i] = "url = " + quoteString(url);
                 }
                 else
@@ -650,7 +784,9 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
     if (tryGetStringFromArgument(url_offset, &uri, /* allow_identifier= */ false))
     {
         /// A readable url literal: mask only its userinfo password, keeping the host and path visible.
-        if (maskURIPassword(&uri))
+        bool changed = maskURIPassword(&uri);
+        changed |= maskDispatchedAzureURLCredentials(uri);
+        if (changed)
             result.replaced_arguments[url_offset] = quoteString(uri);
     }
     else
@@ -831,8 +967,11 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
     {
         findURLSecretArguments();
     }
-    else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+    else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue"
+             || engine_name == "IcebergAzure" || engine_name == "DeltaLakeAzure" || engine_name == "PaimonAzure")
     {
+        /// The Azure data lake engines take the same leading arguments as `AzureBlobStorage`, so the
+        /// credential sits in the same places: inside the connection string, or as `account_key`.
         findAzureBlobStorageTableEngineSecretArguments();
     }
     else if (engine_name == "Redis")
@@ -957,30 +1096,67 @@ void FunctionSecretArgumentsFinder::findS3TableEngineSecretArguments()
     maskS3PositionalSecrets(positional, 0, /* with_structure= */ false);
 }
 
-void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArguments()
+void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArguments(bool positional_allowed_after_collection)
 {
    /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format, [account_name, account_key, ...])
     size_t url_arg_idx = 0;
 
+    maskNestedSecretMaps();
+
     if (isNamedCollectionName(url_arg_idx))
     {
         /// AzureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
-        if (maskAzureConnectionString(-1, true, 1))
+        if (maskAzureConnectionString(-1, true, 1, positional_allowed_after_collection))
             return;
         findSecretNamedArgument("account_key", 1);
         return;
     }
 
-    if (maskAzureConnectionString(url_arg_idx))
+    std::vector<size_t> positional;
+    bool seen_named_argument = false;
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        if (const auto nested = function->arguments->at(i)->getFunction())
+        {
+            if (nested->name() == "headers" || nested->name() == "extra_credentials")
+                continue;
+            if (nested->name() == "equals")
+            {
+                markSecretArgument(i, /* argument_is_named= */ true);
+                seen_named_argument = true;
+                continue;
+            }
+        }
+        if (seen_named_argument)
+        {
+            markSecretArgument(i);
+            continue;
+        }
+        positional.push_back(i);
+    }
+
+    if (positional.empty())
         return;
+    if (maskAzureConnectionString(positional[url_arg_idx]))
+        return;
+
+    /// `AzureBlobStorage(connection_string|storage_account_url, sas_token)`: the second argument of the
+    /// two-argument signature is a shared access signature, which `AzureStorageParsedArguments::fromAST`
+    /// reads as the credential. `extra_credentials(...)` and `headers(...)` are already out of
+    /// `positional`, so the count here is the one the parser sees.
+    if (positional.size() == url_arg_idx + 2)
+    {
+        markSecretArgument(positional[url_arg_idx + 1]);
+        return;
+    }
 
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
-    size_t count = function->arguments->size();
+    size_t count = positional.size();
     if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
     {
         String fourth_arg;
-        if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
+        if (tryGetStringFromArgument(positional[url_arg_idx + 3], &fourth_arg))
         {
             if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
                 return;
@@ -989,7 +1165,7 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
 
     /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
     if (url_arg_idx + 4 < count)
-        markSecretArgument(url_arg_idx + 4);
+        markSecretArgument(positional[url_arg_idx + 4]);
 }
 
 void FunctionSecretArgumentsFinder::findRedisFunctionSecretArguments()
@@ -1122,6 +1298,12 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     else if (engine_name == "Backup")
     {
         findBackupDatabaseSecretArguments();
+    }
+    else if (engine_name == "URL")
+    {
+        /// URL('base_url'): the base url reaches the same backends as the `url` table function, so it
+        /// can carry userinfo credentials and, on the Azure schemes, a shared access signature.
+        findURLSecretArguments(0);
     }
 }
 
@@ -1365,7 +1547,9 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
     }
     else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
     {
-        findAzureBlobStorageTableEngineSecretArguments();
+        /// BACKUP ... TO AzureBlobStorage(named_collection, 'blob_path'): like the S3 locator, the
+        /// backup form accepts one positional after the collection, and it carries no credential.
+        findAzureBlobStorageTableEngineSecretArguments(/* positional_allowed_after_collection= */ true);
     }
 }
 
