@@ -161,7 +161,7 @@ public:
                     const auto year_int = static_cast<Int16>(year);
                     const auto days_in_year = date_lut.calc_days_in_year(year_int) + (year_int == 0 ? 1 : 0);
 
-                    if (dayofyear <= days_in_year)
+                    if (dayofyear <= static_cast<Float32>(days_in_year))
                     {
                         Int32 days_since_epoch = date_lut.makeDayNum(year_int, 1, 1) + static_cast<Int32>(dayofyear) - 1;
                         if (days_since_epoch <= max_days_since_epoch)
