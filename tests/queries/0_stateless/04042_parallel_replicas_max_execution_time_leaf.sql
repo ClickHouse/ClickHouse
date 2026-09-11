@@ -70,6 +70,29 @@ SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN SELECT sum(
 -- where the leaf timeout is honored.
 SELECT countIf(explain LIKE '%ReadFromMergeTree%') > 0 FROM (EXPLAIN SELECT sum(key) FROM test_max_execution_time_leaf SETTINGS parallel_replicas_local_plan = 1, max_execution_time = 60, max_execution_time_leaf = 1);
 
+-- The same contract holds on the planner-built parallel-replicas path for a NON-replicated 'MergeTree' table
+-- ('parallel_replicas_for_non_replicated_merge_tree = 1'). The top-level SETTINGS clause of the query is not
+-- re-serialized into the query text sent to the replicas - 'buildQueryTreeForShard' clears
+-- 'QueryNode::settings_changes' before the shipped AST is built - so the outer 'max_execution_time = 100' cannot
+-- override the leaf value substituted into the context by 'updateContextForParallelReplicas'.
+DROP TABLE IF EXISTS test_max_execution_time_leaf_plain SYNC;
+CREATE TABLE test_max_execution_time_leaf_plain
+(
+    key UInt64
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS index_granularity = 10;
+
+INSERT INTO test_max_execution_time_leaf_plain SELECT number FROM numbers(1000);
+
+SELECT sum(key) FROM test_max_execution_time_leaf_plain FORMAT Null SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1;
+SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf_plain SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1, max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
+-- The leaf 'timeout_overflow_mode' (default 'throw') must win over the outer 'break' here too.
+SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf_plain SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1, max_block_size = 1, max_execution_time = 100, max_execution_time_leaf = 1, timeout_overflow_mode = 'break'; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
+
+DROP TABLE test_max_execution_time_leaf_plain SYNC;
+
 -- The leaf timeout is also effective for INSERT SELECT executed with parallel replicas. The local-pipeline
 -- settings ('parallel_replicas_local_plan', 'parallel_replicas_insert_select_local_pipeline',
 -- 'parallel_replicas_prefer_local_replica') are intentionally left at their defaults (1): when
