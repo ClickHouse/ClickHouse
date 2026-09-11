@@ -49,8 +49,8 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"max_block_number",                           std::make_shared<DataTypeInt64>(),  "The maximum number of data parts that make up the current part after merging."},
         {"level",                                      std::make_shared<DataTypeUInt32>(), "Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts."},
         {"data_version",                               std::make_shared<DataTypeUInt64>(), "Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than data_version)."},
-        {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>(), "The amount of memory (in bytes) used by primary key values."},
-        {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>(), "The amount of memory (in bytes) reserved for primary key values."},
+        {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>(), "The amount of memory (in bytes) used by primary key values, including primary keys of projections stored in this part."},
+        {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>(), "The amount of memory (in bytes) reserved for primary key values, including primary keys of projections stored in this part."},
 
         {"database",                                   std::make_shared<DataTypeString>(), "Name of the database."},
         {"table",                                      std::make_shared<DataTypeString>(), "Name of the table."},
@@ -133,8 +133,13 @@ void StorageSystemPartsColumns::processNextStorage(
         auto min_max_date = part->getMinMaxDate();
         auto min_max_time = part->getMinMaxTime();
 
-        auto index_size_in_bytes = part->getIndexSizeInBytes();
-        auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
+        UInt64 index_size_in_bytes = part->getIndexSizeInBytes();
+        UInt64 index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
+        for (const auto & [_, projection_part] : part->getProjectionParts())
+        {
+            index_size_in_bytes += projection_part->getIndexSizeInBytes();
+            index_size_in_allocated_bytes += projection_part->getIndexSizeInAllocatedBytes();
+        }
         std::optional<Estimates> estimates;
 
         /// Lazy initialize statistics estimates if they are queried.
