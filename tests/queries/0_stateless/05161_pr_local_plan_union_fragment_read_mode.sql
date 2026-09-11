@@ -62,6 +62,17 @@ SELECT 'and answers correctly';
 SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 5;
 SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 ORDER BY ts LIMIT 5;
 
+SELECT 'asking to ship the condition changes nothing: the rewrite refuses a union';
+-- `ReadFromRemote::addFilters` splices into a query tree that has to be a `QueryNode`, and a fragment
+-- expanding to `UNION ALL` is not one - so the replicas keep the query they were given however this
+-- setting is set, and neither branch may order itself off the condition.
+SET parallel_replicas_filter_pushdown = 1;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 LIMIT 5)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 5;
+SET parallel_replicas_filter_pushdown = 0;
+
 SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 DROP VIEW v_pr_union_mode_ordered;

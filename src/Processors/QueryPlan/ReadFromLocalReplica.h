@@ -34,10 +34,11 @@ public:
     /// per read: a fragment can hold several coordinated reads, and they do not fix the same columns.
     void restrictFixedColumnsToOwnFilters();
 
-    /// Whether this fragment joins. `ReadFromRemote::addFilters` refuses to splice a condition into a
-    /// shipped query whose join tree holds more than one table expression, so for such a fragment the
-    /// replicas keep the query as it was however the settings are set.
-    bool hasJoin() const;
+    /// Whether the rewrite that splices a condition into the replicas' query refuses this fragment
+    /// whatever the settings say. `ReadFromRemote::addFilters` wants a single-table query: it returns
+    /// on a query tree that is not a `QueryNode` - a `UNION ALL` fragment - and on a join tree holding
+    /// more than one table expression. For such a fragment the replicas keep the query as it was.
+    bool remoteRewriteRefusesThisShape() const;
 
 private:
     QueryPlanPtr query_plan;

@@ -1467,15 +1467,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Each of the three leaves the replicas on the fragment as it was, so each has to leave this
         /// read unordered too.
         const auto & fragment_settings = parallel_replicas_local_plan->getContext()->getSettingsRef();
-        /// A fragment that joins is refused by the rewrite whatever the settings say: it splices into
-        /// a shipped query whose join tree must hold a single table expression. Read-in-order does not
-        /// reach a filter-fixed column through a join today - it orders off the sorting key prefix,
-        /// which the replicas derive from the same fragment anyway - so this withholds nothing that is
-        /// currently derived, and holds if that ever changes.
+        /// The settings only say the rewrite was asked for. It also refuses outright any fragment that
+        /// is not a single-table query - one that unions, one that joins - and then the replicas keep
+        /// the query they were given, so such a fragment orders off nothing it was handed.
         const bool replicas_get_the_condition = fragment_settings[Setting::parallel_replicas_filter_pushdown]
             && fragment_settings[Setting::allow_push_predicate_ast_for_distributed_subqueries]
             && !fragment_settings[Setting::serialize_query_plan]
-            && !parallel_replicas_local_plan->hasJoin();
+            && !parallel_replicas_local_plan->remoteRewriteRefusesThisShape();
 
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
         if (!replicas_get_the_condition && condition && mayFixColumn(condition))

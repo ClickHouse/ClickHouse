@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/UnionStep.h>
 
 namespace DB
 {
@@ -70,7 +71,7 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
     }
 }
 
-bool ReadFromLocalParallelReplicaStep::hasJoin() const
+bool ReadFromLocalParallelReplicaStep::remoteRewriteRefusesThisShape() const
 {
     if (!query_plan || !query_plan->isInitialized())
         return false;
@@ -81,7 +82,7 @@ bool ReadFromLocalParallelReplicaStep::hasJoin() const
         const auto * node = stack.back();
         stack.pop_back();
         if (typeid_cast<const JoinStep *>(node->step.get()) || typeid_cast<const JoinStepLogical *>(node->step.get())
-            || typeid_cast<const FilledJoinStep *>(node->step.get()))
+            || typeid_cast<const FilledJoinStep *>(node->step.get()) || typeid_cast<const UnionStep *>(node->step.get()))
             return true;
         for (const auto * child : node->children)
             stack.push_back(child);
