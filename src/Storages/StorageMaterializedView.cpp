@@ -820,6 +820,15 @@ void StorageMaterializedView::alter(
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
         new_metadata.columns = target_table_metadata->columns;
+        /// A column comment belongs to the view, not to its inner table, and the copy above replaces
+        /// the view's column descriptions wholesale. Restore the view's comments, then apply the ones
+        /// this ALTER sets, so that every comment alter this storage accepts is honoured.
+        for (const auto & column : view_metadata->columns)
+            if (new_metadata.columns.has(column.name))
+                new_metadata.columns.modify(column.name, [&](ColumnDescription & c) { c.comment = column.comment; });
+        for (const auto & command : params)
+            if (!command.ignore && command.isCommentAlter())
+                command.apply(new_metadata, mv_db_context);
     }
     else
     {
