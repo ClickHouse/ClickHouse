@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Keep producer isolation controlled by query-level sampling settings. -->
+    <total_memory_profiler_step>0</total_memory_profiler_step>
+</clickhouse>
