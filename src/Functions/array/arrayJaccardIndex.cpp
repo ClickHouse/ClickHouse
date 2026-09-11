@@ -47,14 +47,13 @@ private:
         return {left_size, right_size};
     }
 
-    template <bool left_is_const, bool right_is_const>
-    static void vector(const ColumnArray::Offsets & intersect_offsets, const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
+    static void vector(const ColumnArray::Offsets & intersect_offsets, const ColumnArray::Offsets & union_offsets, PaddedPODArray<ResultType> & res)
     {
         for (size_t i = 0; i < res.size(); ++i)
         {
-            LeftAndRightSizes sizes = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
             size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
-            res[i] = static_cast<ResultType>(intersect_size) / static_cast<ResultType>(sizes.left_size + sizes.right_size - intersect_size);
+            size_t union_size = union_offsets[i] - union_offsets[i - 1];
+            res[i] = static_cast<ResultType>(intersect_size) / static_cast<ResultType>(union_size);
         }
     }
 
@@ -76,6 +75,7 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayJaccardIndex>(context_); }
     explicit FunctionArrayJaccardIndex(ContextPtr context_)
         : array_intersect(FunctionFactory::instance().get("arrayIntersect", context_))
+        , array_union(FunctionFactory::instance().get("arrayUnion", context_))
     {
     }
     size_t getNumberOfArguments() const override { return 2; }
@@ -120,6 +120,18 @@ public:
         if (!intersect_column_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected return type for function arrayIntersect");
 
+        ColumnWithTypeAndName union_column;
+        if (!typeid_cast<const DataTypeNothing *>(intersect_column_type->getNestedType().get()))
+        {
+            auto union_array = array_union->build(arguments);
+            union_column.type = union_array->getResultType();
+            union_column.column = union_array->execute(arguments, union_column.type, input_rows_count, /* dry_run = */ false);
+
+            const auto * union_column_type = checkAndGetDataType<DataTypeArray>(union_column.type.get());
+            if (!union_column_type)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected return type for function arrayUnion");
+        }
+
         auto col_res = ColumnVector<ResultType>::create();
         typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
         vec_res.resize(input_rows_count);
@@ -130,7 +142,8 @@ public:
     else \
     { \
         const ColumnArray & intersect_column_array = checkAndGetColumn<ColumnArray>(*intersect_column.column); \
-        vector<left_is_const, right_is_const>(intersect_column_array.getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
+        const ColumnArray & union_column_array = checkAndGetColumn<ColumnArray>(*union_column.column); \
+        vector(intersect_column_array.getOffsets(), union_column_array.getOffsets(), vec_res); \
     }
 
         if (!left_is_const && !right_is_const)
@@ -149,6 +162,7 @@ public:
 
 private:
     FunctionOverloadResolverPtr array_intersect;
+    FunctionOverloadResolverPtr array_union;
 };
 
 REGISTER_FUNCTION(ArrayJaccardIndex)
