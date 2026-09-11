@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/StringUtils.h>
+#include <Common/formatIPv6.h>
 #include <Functions/URL/protocol.h>
 #include <base/find_symbols.h>
 
@@ -9,9 +10,40 @@
 namespace DB
 {
 
+/// RFC 3986, 3.2.2: IPvFuture = "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
+/// A placeholder for IP address formats beyond IPv6, e.g. "[v1.a]".
+inline bool isIPvFuture(const char * begin, const char * end)
+{
+    if (begin >= end || (*begin != 'v' && *begin != 'V'))
+        return false;
+
+    const char * pos = begin + 1;
+    const char * version_start = pos;
+    while (pos < end && isHexDigit(*pos))
+        ++pos;
+    if (pos == version_start)
+        return false;
+
+    if (pos >= end || *pos != '.')
+        return false;
+    ++pos;
+
+    const char * address_start = pos;
+    for (; pos < end; ++pos)
+    {
+        char c = *pos;
+        bool is_unreserved = isAlphaNumericASCII(c) || c == '-' || c == '.' || c == '_' || c == '~';
+        bool is_sub_delim = c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' || c == ')'
+            || c == '*' || c == '+' || c == ',' || c == ';' || c == '=';
+        if (!is_unreserved && !is_sub_delim && c != ':')
+            return false;
+    }
+    return pos > address_start;
+}
+
 inline std::string_view checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const Pos & start_of_host)
 {
-    if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1)
+    if (!dot_pos || start_of_host >= pos || pos - dot_pos == 1 || *start_of_host == '.')
         return std::string_view{};
 
     auto after_dot = *(dot_pos + 1);
@@ -84,6 +116,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         has_open_bracket = true;
         ++pos;
     }
+    Pos bracket_close_pos = nullptr;
     Pos dot_pos = nullptr;
     Pos colon_pos = nullptr;
     bool has_sub_delims = false;
@@ -96,15 +129,23 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         {
         case '.':
             if (has_open_bracket)
-                return std::string_view{};
-            if (has_at_symbol || colon_pos == nullptr)
+                continue; /// part of a mixed IPv6/IPv4 tail, e.g. "::ffff:192.0.2.128"; parseIPv6Whole validates it below
+            /// Once colon_pos is set (whether or not '@' has been seen), a dot afterward is past
+            /// the host, in what would be the port - it must not count as a dot within the host,
+            /// e.g. the '.' in "user@foo:80.bar" must not make checkAndReturnHost think "foo" has
+            /// a valid dot of its own.
+            if (colon_pos == nullptr)
                 dot_pos = pos;
             break;
         case ':':
             if (has_open_bracket)
                 continue;
-            if (has_at_symbol || colon_pos) goto done;
-            colon_pos = pos;
+            /// Whether or not '@' has been seen yet, this ':' might still turn out to be
+            /// followed by a later '@' (e.g. "user@host:80@evil.com"), which would mean it was
+            /// never the port separator at all - keep only the first one as a fallback and keep
+            /// scanning, instead of stopping the scan here.
+            if (colon_pos == nullptr)
+                colon_pos = pos;
             break;
         case '/': /// end symbols
         case '?':
@@ -113,11 +154,18 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '@': /// myemail@gmail.com
             /// Inside an IP-literal there is no userinfo: `@` is not allowed there at all.
             if (has_open_bracket) return std::string_view{};
+            /// A bracket that already closed before this '@' would have to become part of
+            /// userinfo now that '@' turned up - but raw '[' / ']' can never legally appear
+            /// there, so an authority like "[::1]:80@evil.com" is invalid, not "host evil.com".
+            if (has_end_bracket) return std::string_view{};
             if (has_terminator_after_colon) return std::string_view{};
-            if (has_at_symbol) goto done;
+            if (has_at_symbol) return std::string_view{};
             has_sub_delims = false;
             has_at_symbol = true;
             start_of_host = pos + 1;
+            colon_pos = nullptr;
+            dot_pos = nullptr;
+            has_terminator_after_colon = false;
 
             /// An IP-literal host may follow the userinfo: `http://user:password@[2001:db8::1]:8080/`
             /// (RFC 3986, 3.2). Enter the same mode as for an authority that starts with the bracket,
@@ -134,6 +182,8 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case '&':
         case '~':
         case '%':
+            if (has_open_bracket)
+                continue; /// sub-delims are also valid in IPvFuture's address part; isIPvFuture validates it below
             /// Symbols above are sub-delims in RFC3986 and should be
             /// allowed for userinfo (named identification here).
             ///
@@ -146,8 +196,15 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         case ']':
             if (has_open_bracket)
             {
+                /// Nothing may follow the closing bracket except a delimiter or end of input.
+                Pos after_bracket = pos + 1;
+                if (after_bracket < end && *after_bracket != ':' && *after_bracket != '/'
+                    && *after_bracket != '?' && *after_bracket != '#')
+                    return std::string_view{};
                 has_end_bracket = true;
-                goto done;
+                has_open_bracket = false; /// the literal is closed; ':' after it is an ordinary port separator
+                bracket_close_pos = pos;
+                break; /// keep scanning: a later '@' (e.g. "user@[::1]:80@evil.com") must still be caught
             }
             [[fallthrough]];
         case ' ': /// restricted symbols in whole URL
@@ -170,12 +227,21 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
 done:
     if (has_sub_delims)
         return std::string_view{};
-    /// A complete IP-literal is the host as it stands, whether or not a userinfo preceded it: it has no
-    /// dot to look for, and the colon that follows it belongs to the port.
-    if (has_open_bracket && has_end_bracket)
-        return std::string_view(start_of_host, pos - start_of_host);
-    if (!has_at_symbol)
-        pos = colon_pos ? colon_pos : pos;
+    /// A complete IP-literal is the host as it stands, whether or not a userinfo preceded it: it has
+    /// no dot to look for, and the colon that follows it belongs to the port. The scan kept going
+    /// past the closing bracket (rather than stopping there) so a later '@' would still be caught,
+    /// e.g. "user@[::1]:80@evil.com" - so the host itself ends at the bracket, not at `pos`.
+    if (has_end_bracket)
+    {
+        /// RFC 3986, 3.2.2: IP-literal = "[" ( IPv6address / IPvFuture ) "]"
+        unsigned char ipv6_bytes[IPV6_BINARY_LENGTH];
+        bool is_valid_ip_literal = parseIPv6Whole(start_of_host, bracket_close_pos, ipv6_bytes)
+            || isIPvFuture(start_of_host, bracket_close_pos);
+        if (!is_valid_ip_literal)
+            return std::string_view{};
+        return std::string_view(start_of_host, bracket_close_pos - start_of_host);
+    }
+    pos = colon_pos ? colon_pos : pos;
     return checkAndReturnHost(pos, dot_pos, start_of_host);
 }
 
