@@ -10,6 +10,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -548,6 +549,23 @@ bool hasAggregateFunctionType(const DataTypePtr & type)
     check(*type);
     type->forEachChild(check);
     return result;
+}
+
+bool differsOnlyByAggregateStateVariant(const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (to->equals(*from))
+        return false;
+
+    if (!hasAggregateFunctionType(from) || !hasAggregateFunctionType(to))
+        return false;
+
+    /// A state at the top level compares by its normalized state type, which additionally tolerates
+    /// equivalent spellings of the argument types. `equalsIgnoringVariant` is a method on the outer
+    /// type, so a state nested in a container can only be compared through the encoding.
+    if (const auto * to_aggregate = typeid_cast<const DataTypeAggregateFunction *>(to.get()))
+        return to_aggregate->equalsIgnoringVariant(*from);
+
+    return encodeDataType(from) == encodeDataType(to);
 }
 
 }
