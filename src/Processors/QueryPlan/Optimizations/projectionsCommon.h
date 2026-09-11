@@ -81,6 +81,7 @@ bool analyzeProjectionCandidate(
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
+    bool allow_top_k_prewhere_query_condition_cache,
     const ContextPtr & context);
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.

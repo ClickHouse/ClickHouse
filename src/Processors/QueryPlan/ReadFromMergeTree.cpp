@@ -156,31 +156,7 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
     return true;
 }
 
-/// Like `VirtualColumnUtils::isDeterministic`, but treats `__topKFilter` as deterministic.
-/// Mirrors `isDeterministicAllowingTopKFilter` in `updateQueryConditionCache.cpp` — both
-/// gates must agree, otherwise QCC writes and reads diverge on TopK plans.
-///
-/// Unlike `isNodeDeterministic`, this also rejects non-deterministic `COLUMN` nodes (such
-/// as query-time constants `now()` / `today()`). Without that check, queries whose filter
-/// captures such constants could write QCC entries and reuse them later when the constant's
-/// value has changed.
-bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
-{
-    for (const auto * child : node->children)
-        if (!isDeterministicAllowingTopKFilter(child))
-            return false;
-
-    if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministic())
-        return node->function_base->getName() == "__topKFilter";
-
-    return true;
-}
+using VirtualColumnUtils::isDeterministicAllowingTopKFilter;
 
 bool restoreDAGInputs(ActionsDAG & dag, const NameSet & inputs)
 {
@@ -602,6 +578,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// by `setTopKColumn` - and copy `allow_query_condition_cache`, which is what actually gates both
     /// index analysis and the reader.
     parallel_replicas_step->allow_query_condition_cache = allow_query_condition_cache;
+    parallel_replicas_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
     parallel_replicas_step->top_k_filter_info = top_k_filter_info;
     /// Same for the text-index read tasks: `createLocalPlanForParallelReplicas` runs the full plan
     /// optimization, so the replaced step can already have a predicate rewritten to `__text_index_*`
@@ -2681,6 +2658,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         find_exact_ranges,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
+        allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
 
@@ -2709,6 +2687,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         /*allow_query_condition_cache_=*/false,
+        /*allow_top_k_prewhere_query_condition_cache_=*/false,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/true);
 }
@@ -2733,6 +2712,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         /*find_exact_ranges=*/false,
         is_parallel_reading_from_replicas,
         allow_query_condition_cache,
+        allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/false);
 }
@@ -3319,6 +3299,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool find_exact_ranges,
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_,
+    bool allow_top_k_prewhere_query_condition_cache_,
     bool supports_skip_indexes_on_data_read,
     bool check_row_limits)
 {
@@ -3504,7 +3485,16 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     else
     {
         if (!table_has_unique_key && !filter_depends_on_non_deterministic_virtuals && allow_query_condition_cache_)
-            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, top_k_filter_info, mutations_snapshot, *indexes, context_, log);
+            MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
+                res_parts,
+                query_info_,
+                vector_search_parameters,
+                top_k_filter_info,
+                allow_top_k_prewhere_query_condition_cache_,
+                mutations_snapshot,
+                *indexes,
+                context_,
+                log);
 
         auto get_indexes_size = [&]() -> size_t
         {
@@ -4435,6 +4425,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
+    cloned_step->allow_top_k_prewhere_query_condition_cache = allow_top_k_prewhere_query_condition_cache;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
     /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read
@@ -5003,6 +4994,23 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
         reader_settings.use_query_condition_cache = false;
+
+    /// For a TopK read, granules fully filtered by the dynamic `__topKFilter` PREWHERE may be
+    /// recorded in the query condition cache under a key salted with the TopK plan parameters,
+    /// part set, and a deterministic post-PREWHERE filter that determines the running threshold (see
+    /// `MergeTreeSelectProcessor::read` for the write and
+    /// `MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache` for the consult).
+    /// `allow_query_condition_cache` is already false here when `use_query_condition_cache_for_top_k`
+    /// is off (see `setTopKColumn`), so reaching this point with the cache on means the salt applies.
+    if (top_k_filter_info && allow_top_k_prewhere_query_condition_cache && reader_settings.use_query_condition_cache
+        && (!query_info.filter_actions_dag
+            || isDeterministicAllowingTopKFilter(query_info.filter_actions_dag->getOutputs().front())))
+    {
+        size_t salt = top_k_filter_info->condition_hash;
+        if (query_info.filter_actions_dag)
+            boost::hash_combine(salt, query_info.filter_actions_dag->getOutputs().front()->getHash());
+        reader_settings.query_condition_cache_top_k_salt = salt;
+    }
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
@@ -6007,7 +6015,18 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
     /// fresh key and the now-stale decisions of the unchanged parts are never reused.
     SipHash parts_hash;
     for (const auto & part_with_ranges : getParts())
-        parts_hash.update(part_with_ranges.data_part->name);
+    {
+        const auto & data_part = part_with_ranges.data_part;
+        if (data_part->isProjectionPart())
+        {
+            /// Projection parts are all named after their projection. Use the same
+            /// `parent_part:projection` identity as the query condition cache key, so
+            /// a change to one projection's parent part invalidates the snapshot.
+            parts_hash.update(data_part->getParentPartName());
+            parts_hash.update(":");
+        }
+        parts_hash.update(data_part->name);
+    }
 
     /// `size_t` (not `UInt64`) so `boost::hash_combine` binds its seed argument on platforms where
     /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
@@ -6491,6 +6510,19 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read with the STREAM modifier");
 
+    /// A TopK-stamped read must never be shipped: the dynamic `__topKFilter` in its PREWHERE is not
+    /// registered in `FunctionFactory` and its `TopKThresholdTracker` is process-local, and neither
+    /// `top_k_filter_info` nor the TopK query-condition-cache gate
+    /// (`allow_top_k_prewhere_query_condition_cache`) is carried in the wire format. A worker would
+    /// therefore rebuild the read as an apparent plain read and lose the TopK/cache contract. Two
+    /// upstream guards already keep such reads local -- `tryOptimizeTopK` bails out under
+    /// `make_distributed_plan`, and `mergeTreeReadCanBeShipped` rejects
+    /// `isSelectedForTopKFilterOptimization` reads in `applyParallelReplicas` -- so this is defense in
+    /// depth at the boundary: fail closed rather than ship a read whose contract the peer cannot honour.
+    if (top_k_filter_info)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "A ReadFromMergeTree step selected for the TopK filter optimization cannot be serialized");
+
     verifyBucketedReadSupported();
     /// The replica path serializes deferred FINAL filters as ordinary read filters, which would apply them
     /// before FINAL. The coordinator only buckets a deferred-FINAL read for the stateless worker, so a
@@ -6528,6 +6560,26 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
     /// coordinator callbacks + its replica number from its own context, so neither is serialized here.
     if (is_parallel_reading_from_replicas)
         flags |= 32;
+    /// The optimizer may have turned the query-condition cache off for correctness rather than
+    /// performance (e.g. lazy FINAL or vector-search reads call `disableQueryConditionCache`), so the
+    /// worker's rebuilt read must not silently re-enable it. Carried as a bare flag bit with no extra
+    /// payload, so the stream layout is the same at every version -- but a peer below
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG` ignores the bit and
+    /// would rebuild the read with the cache enabled, which is exactly the contract the optimizer
+    /// rejected. Fail closed for such a peer instead of shipping a read it cannot honour.
+    /// (`allow_top_k_prewhere_query_condition_cache` needs no bit: it only matters together with
+    /// `top_k_filter_info`, and a TopK-stamped read is rejected above.)
+    if (!allow_query_condition_cache)
+    {
+        if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "A ReadFromMergeTree step with the query condition cache disabled requires query plan "
+                "serialization version >= {}, but the peer only supports version {}; all nodes must be "
+                "upgraded",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG, ctx.version);
+
+        flags |= 64;
+    }
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
@@ -6614,6 +6666,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     const bool has_row_level_filter = flags & 8;
     const bool has_prewhere_info = flags & 16;
     const bool enable_parallel_reading = flags & 32;
+    const bool query_condition_cache_disabled = flags & 64;
 
     std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
     std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
@@ -6703,23 +6756,29 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         enable_parallel_reading,
         /*extension*/ nullptr);
 
-    if (distributed_read_bucket_count)
+    if (distributed_read_bucket_count || query_condition_cache_disabled)
     {
         auto * read_from_merge_tree_step = dynamic_cast<ReadFromMergeTree *>(step.get());
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
-        read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+        if (distributed_read_bucket_count)
+        {
+            read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
 
-        /// Inject the "read in order" the coordinator chose. This replica's ReadFromMergeTree step
-        /// drives the ordinary in-order path, including the per-layer merge and the reverse transform.
-        /// Only a bucketed read carries the contract: findReadingStep installs the order only when the
-        /// exchange pair collapses, which means the read was made distributed.
-        if (has_input_order_info
-            && !read_from_merge_tree_step->requestReadingInOrder(
-                input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Coordinator asked for a read-in-order distributed read that this node refused");
-        read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
+            /// Inject the "read in order" the coordinator chose. This replica's ReadFromMergeTree step
+            /// drives the ordinary in-order path, including the per-layer merge and the reverse transform.
+            /// Only a bucketed read carries the contract: findReadingStep installs the order only when the
+            /// exchange pair collapses, which means the read was made distributed.
+            if (has_input_order_info
+                && !read_from_merge_tree_step->requestReadingInOrder(
+                    input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Coordinator asked for a read-in-order distributed read that this node refused");
+            read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
+        }
+        /// Restore the optimizer's correctness decision from the coordinator (see `serialize`).
+        if (query_condition_cache_disabled)
+            read_from_merge_tree_step->disableQueryConditionCache();
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution

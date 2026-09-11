@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -63,6 +64,12 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// Set for a TopK (`ORDER BY ... LIMIT n`) read whose granule drops may depend on the running
+    /// `__topKFilter` threshold: the TopK plan salt (`TopKFilterInfo::condition_hash`) and the
+    /// post-PREWHERE filter hash to fold into the query condition cache key when recording
+    /// PREWHERE-filtered granules, so the entries are only reused under the same TopK plan, part
+    /// set, and threshold-determining predicate. Unset for non-TopK reads.
+    std::optional<UInt64> query_condition_cache_top_k_salt;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;

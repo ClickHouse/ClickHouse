@@ -109,7 +109,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
 /// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
+/// Version 16 adds the query-condition-cache flag bit on `ReadFromMergeTree`, which carries the
+/// optimizer's correctness decision to turn the cache off (lazy `FINAL`, vector search). A peer below
+/// this version ignores the bit and would re-enable the cache, so such a read fails closed instead of
+/// being shipped.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -138,6 +142,11 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_
 /// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
 /// `LimitRangeStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
+/// First query-plan serialization version that carries the `allow_query_condition_cache` flag bit of
+/// `ReadFromMergeTree`. A read whose query-condition cache was disabled for correctness cannot be
+/// shipped to a peer below this version: the peer would ignore the bit and rebuild the read with the
+/// cache enabled, so `ReadFromMergeTree::serialize` rejects it instead.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_QUERY_CONDITION_CACHE_FLAG = 16;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
