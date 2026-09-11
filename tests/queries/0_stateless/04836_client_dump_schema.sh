@@ -1044,14 +1044,15 @@ echo '--- a remote() address the server reads locally names a real local depende
 # The server marks loopback replicas on its own port local (`Cluster::Address::isLocal`) and reads
 # their tables from its catalog, so a reader over such a `remote()` must come after its source,
 # whether the address spells the port or not, and whether it names the table or wraps `merge()`.
+# Every reader's only in-dump edge is the `remote()` one (the MV reads `system.one`), so without it
+# all sit at dependency level 0 and sort by name before `zzz_remote_src`.
 $CLICKHOUSE_CLIENT -mq "
 CREATE TABLE ${DB}.zzz_remote_src (id UInt64) ENGINE = MergeTree ORDER BY id;
-CREATE TABLE ${DB}.zzy_remote_trigger (id UInt64) ENGINE = MergeTree ORDER BY id;
 CREATE VIEW ${DB}.aaa_remote_reader AS SELECT * FROM remote('127.0.0.1', '${DB}', 'zzz_remote_src');
 CREATE VIEW ${DB}.aab_remote_reader_port AS SELECT * FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', ${DB}.zzz_remote_src);
 CREATE VIEW ${DB}.aac_remote_reader_merge AS SELECT * FROM remote('localhost', merge('${DB}', '^zzz_remote_src\$'));
-CREATE MATERIALIZED VIEW ${DB}.aad_remote_mv ENGINE = Memory AS
-    SELECT id FROM ${DB}.zzy_remote_trigger WHERE id IN (SELECT id FROM remote('127.0.0.1', ${DB}.zzz_remote_src));
+CREATE MATERIALIZED VIEW ${DB}.aad_remote_mv (id UInt64) ENGINE = Memory AS
+    SELECT dummy::UInt64 AS id FROM system.one WHERE dummy::UInt64 IN (SELECT id FROM remote('127.0.0.1', ${DB}.zzz_remote_src));
 "
 LOCAL_REMOTE_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local_remote_dump.sql"
 if $CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$LOCAL_REMOTE_DUMP_FILE" 2>"$ERR_FILE"; then
@@ -1072,7 +1073,6 @@ DROP TABLE ${DB}.aaa_remote_reader;
 DROP TABLE ${DB}.aab_remote_reader_port;
 DROP TABLE ${DB}.aac_remote_reader_merge;
 DROP TABLE ${DB}.aad_remote_mv;
-DROP TABLE ${DB}.zzy_remote_trigger;
 DROP TABLE ${DB}.zzz_remote_src;
 "
 rm -f "$LOCAL_REMOTE_DUMP_FILE"
