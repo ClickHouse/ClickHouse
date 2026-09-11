@@ -94,6 +94,10 @@ enum class CatalogShape
     /// A 404 carrying a proxy's HTML error page instead of the catalog's error model, so the cause
     /// cannot be read at all.
     TableListingUnparseableBody,
+    /// A 500 whose body still names a missing namespace. Only a 404 can mean the namespace is gone,
+    /// so the status has to decide too: reading this one as a race would report a broken catalog as
+    /// an empty namespace.
+    TableListingServerErrorWithNamespaceBody,
 };
 
 bool advertisesDoomedNamespace(CatalogShape shape)
@@ -103,7 +107,8 @@ bool advertisesDoomedNamespace(CatalogShape shape)
         || shape == CatalogShape::VanishedTableListingUnauthorized
         || shape == CatalogShape::VanishedChildListingSecondPage || shape == CatalogShape::VanishedTableListingSecondPage
         || shape == CatalogShape::ChildListingEndpointNotFound || shape == CatalogShape::TableListingEndpointNotFound
-        || shape == CatalogShape::TableListingWrongErrorType || shape == CatalogShape::TableListingUnparseableBody;
+        || shape == CatalogShape::TableListingWrongErrorType || shape == CatalogShape::TableListingUnparseableBody
+        || shape == CatalogShape::TableListingServerErrorWithNamespaceBody;
 }
 
 /// Requests the fake catalog served, so a test can assert the tolerant branch was really reached
@@ -290,6 +295,8 @@ public:
                 writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, WRONG_TYPE_BODY);
             else if (shape == CatalogShape::TableListingUnparseableBody)
                 writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, PROXY_HTML_BODY, "text/html");
+            else if (shape == CatalogShape::TableListingServerErrorWithNamespaceBody)
+                writeError(response, Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR, NO_SUCH_NAMESPACE_BODY);
             else if (shape == CatalogShape::VanishedTableListingUnauthorized)
                 writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, NOT_AUTHORIZED_BODY);
             else if (shape == CatalogShape::VanishedTableListingSecondPage)
@@ -788,6 +795,23 @@ TEST(RestCatalog, TableListingNotFoundTypedAsAnotherErrorStillThrows)
     RequestCounters counters;
     RestCatalogTestServer server(
         CatalogShape::TableListingWrongErrorType, /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS, &counters);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    auto catalog = makeRestCatalog(server, context);
+
+    EXPECT_THROW(catalog->getTables(), DB::HTTPException);
+    EXPECT_GE(counters.doomed_table_listing.load(), 1u);
+}
+
+TEST(RestCatalog, TableListingServerErrorNamingNamespaceStillThrows)
+{
+    /// A namespace-not-found body arriving with a 500 is the catalog contradicting itself, and a
+    /// server error is never a race: the tolerance is keyed on the status as well as on the type.
+    RequestCounters counters;
+    RestCatalogTestServer server(
+        CatalogShape::TableListingServerErrorWithNamespaceBody,
+        /* token_expires_in_seconds */ DEFAULT_TOKEN_EXPIRES_IN_SECONDS,
+        &counters);
     auto context = DB::Context::createCopy(getContext().context);
     context->makeQueryContext();
     auto catalog = makeRestCatalog(server, context);
