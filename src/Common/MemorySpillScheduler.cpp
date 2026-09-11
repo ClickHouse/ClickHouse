@@ -15,7 +15,7 @@ size_t MemorySpillScheduler::checkAndSpill(ISpillable * processor)
     auto * selected_processor = selectSpilledProcessor(processor, stats);
 
     if (processor == selected_processor)
-        return processor->spill(stats.spillable_memory_bytes);
+        return processor->spill(/*at_least_bytes=*/ 1);
 
     return 0;
 }
