@@ -59,6 +59,7 @@
 #include <Common/getMappedArea.h>
 #include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
+#include <Common/SeccompFilter.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Config/ConfigHelper.h>
@@ -77,6 +78,7 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
+#include <Core/SettingsEnums.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
@@ -474,6 +476,7 @@ namespace ServerSetting
     extern const ServerSettingsBool remap_executable;
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
+    extern const ServerSettingsSeccompMode seccomp;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsBool listen_try;
@@ -1218,6 +1221,25 @@ try
                 ReadableSize(physical_server_memory), ReadableSize(min_physical_server_memory_to_mlock));
         }
     }
+
+    /// Restrict the server to the system calls it is known to use, as early in the startup as the
+    /// configuration allows. A filter cannot be removed or relaxed afterwards, and `TSYNC` extends
+    /// it to the threads that already exist, so everything that runs from here on - including the
+    /// processes the server forks later, which inherit it - is covered.
+    const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
+    if (size_t allowed_syscalls = installSeccompFilter(seccomp_mode); allowed_syscalls != 0)
+        LOG_INFO(
+            log,
+            "Applied a seccomp policy to this process, allowing {} system calls. A system call outside the policy will "
+            "be handled according to the `seccomp` server setting, which is set to `{}`",
+            allowed_syscalls,
+            SettingFieldSeccompMode(seccomp_mode).toString());
+    else if (seccomp_mode != SeccompMode::Disabled)
+        LOG_WARNING(
+            log,
+            "The `seccomp` server setting is set to `{}`, but the seccomp policy is not implemented for this architecture, "
+            "so the server is running without one",
+            SettingFieldSeccompMode(seccomp_mode).toString());
 #endif
 
     // If the startup_level is set in the config, we override the root logger level.
