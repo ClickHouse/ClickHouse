@@ -119,8 +119,11 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
-        UInt64 getHash() const;
-        void updateHash(SipHash & hash_state) const;
+        UInt64 getHash(bool skip_aliases) const;
+        void updateHash(SipHash & hash_state, bool skip_aliases) const;
+
+    private:
+        void updateOwnHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -170,6 +173,7 @@ public:
     static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context, size_t max_type_complexity = 0);
 
     static Node createAlias(const Node & child, std::string alias);
+    static const Node & resolveAliases(const Node & node);
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);

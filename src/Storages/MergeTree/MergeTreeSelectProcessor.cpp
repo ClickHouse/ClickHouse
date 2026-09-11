@@ -22,7 +22,6 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
@@ -420,34 +419,22 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     && !task->appliesMutationsBeforePrewhere()
                     && !row_level_filter
                     /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
-                    && task->getInfo().data_part_info->getDataPart())
+                    && task->getInfo().data_part_info->getDataPart()
+                    && reader_settings.query_condition_cache_prewhere_condition)
                 {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
-                    {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
+                    auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+                    const auto & data_part_info = task->getInfo().data_part_info;
 
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            const auto & data_part_info = task->getInfo().data_part_info;
-
-                            String part_name = data_part_info->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName())
-                                : data_part_info->getPartName();
-                            query_condition_cache->write(
-                                /// QueryConditionCache is a coordinator feature; concrete part present here.
-                                data_part_info->getDataPart()->storage.getStorageID().uuid,
-                                part_name,
-                                output->getHash(),
-                                prewhere_info->prewhere_actions.getNames()[0],
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part_info->getIndexGranularity().getMarksCount(),
-                                data_part_info->getIndexGranularity().hasFinalMark());
-
-                            break;
-                        }
-                    }
+                    const auto part_name = QueryConditionCache::makePartNameFromDataPartInfoForReader(*data_part_info);
+                    query_condition_cache->write(
+                        /// QueryConditionCache is a coordinator feature; concrete part present here.
+                        data_part_info->getDataPart()->storage.getStorageID().uuid,
+                        part_name,
+                        reader_settings.query_condition_cache_prewhere_condition->hash,
+                        reader_settings.query_condition_cache_prewhere_condition->condition,
+                        task->getPrewhereUnmatchedMarks(),
+                        data_part_info->getIndexGranularity().getMarksCount(),
+                        data_part_info->getIndexGranularity().hasFinalMark());
                 }
 
                 task = algorithm->getNewTask(*pool, task.get());

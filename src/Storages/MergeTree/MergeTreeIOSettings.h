@@ -28,6 +28,12 @@ enum class CompactPartsReadMethod : uint8_t
     MultiBuffer,
 };
 
+struct QueryConditionCachePrewhereCondition
+{
+    String condition;
+    UInt64 hash = 0;
+};
+
 struct MergeTreeReaderSettings
 {
     /// Common read settings.
@@ -63,6 +69,9 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// Holds the `PREWHERE` query condition cache condition string and hash value
+    /// already salted with TopK plan hash if necessary.
+    std::optional<QueryConditionCachePrewhereCondition> query_condition_cache_prewhere_condition;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;

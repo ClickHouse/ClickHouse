@@ -138,13 +138,13 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
         if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
         {
             if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash);
+                lhs.getNode()->updateHash(hash, false /* skip_aliases */);
             if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash);
+                rhs.getNode()->updateHash(hash, false /* skip_aliases */);
             if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash);
+                lhs.getNode()->updateHash(hash, false /* skip_aliases */);
             if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash);
+                rhs.getNode()->updateHash(hash, false /* skip_aliases */);
         }
     }
 

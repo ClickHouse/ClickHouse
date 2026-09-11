@@ -534,7 +534,8 @@ std::optional<String> optimizeUseNormalProjections(
     /// the projection's sample block doesn't necessarily match the original table's layout.
     projection_query_info.row_level_filter = nullptr;
     if (query.dag && query.filter_node)
-        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
+        projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(
+            ActionsDAG::cloneSubDAG({query.filter_node}, false /* remove_aliases */));
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
     {

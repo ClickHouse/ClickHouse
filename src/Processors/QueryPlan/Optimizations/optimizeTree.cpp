@@ -784,8 +784,11 @@ void optimizeTreeSecondPass(
     }
 
     /// The merges above rebuild `FilterStep`s and drop the QCC key, so re-walk to set it again
-    if (optimization_settings.use_query_condition_cache
-        && (join_runtime_filters_were_added || predicates_were_propagated || lazy_materialization_applied))
+    const bool need_rebuild_query_condition_cache = join_runtime_filters_were_added
+        || predicates_were_propagated
+        || lazy_materialization_applied
+        || !applied_projection_names.empty();
+    if (optimization_settings.use_query_condition_cache && need_rebuild_query_condition_cache)
     {
         Stack qcc_stack;
         qcc_stack.push_back({.node = &root});
