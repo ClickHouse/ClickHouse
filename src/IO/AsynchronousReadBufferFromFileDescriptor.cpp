@@ -140,8 +140,15 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 
     /// The local read throttler exists to keep the load on the block device within the configured
     /// budget, so the data that was copied from the OS page cache must not consume its tokens.
-    if (throttler && !result.from_os_page_cache)
-        throttler->throttle(result.size);
+    /// The other throttlers that can be combined here (for backups, merges and mutations) limit
+    /// the amount of work regardless of where the data came from, and still account it.
+    if (throttler)
+    {
+        if (result.from_os_page_cache)
+            throttler->throttleOSPageCacheRead(result.size);
+        else
+            throttler->throttle(result.size);
+    }
 
     if (bytes_read)
     {

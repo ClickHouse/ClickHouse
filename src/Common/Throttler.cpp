@@ -121,6 +121,17 @@ bool Throttler::throttle(size_t amount, size_t max_block_ns)
     return block || parent_block;
 }
 
+bool Throttler::throttleOSPageCacheRead(size_t amount, size_t max_block_ns)
+{
+    if (!limits_block_device_bandwidth)
+        return throttle(amount, max_block_ns);
+
+    /// This throttler does not account the read, but a parent still can.
+    if (parent)
+        return parent->throttleOSPageCacheRead(amount, max_block_ns);
+    return false;
+}
+
 void Throttler::throttleImpl(size_t amount, size_t & count_value, double & tokens_value)
 {
     size_t max_speed_value = 0;
