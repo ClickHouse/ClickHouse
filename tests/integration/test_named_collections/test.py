@@ -10,6 +10,12 @@ import uuid
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.database_disk import (
+    get_database_disk_name,
+    move_file,
+    read_metadata,
+    write_metadata,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(
@@ -1116,6 +1122,19 @@ DATABASE_COLLECTIONS_CONFIG = (
     "/etc/clickhouse-server/config.d/named_collections_for_databases.xml"
 )
 
+# Every database whose definition file the tests below plant by hand. Listed by name because the
+# disk interface removes one path at a time and expands no glob.
+PLANTED_DATABASES = (
+    "db_extra_strict",
+    "db_extra_bogus",
+    "db_extra_badargs",
+    "db_extra_s3",
+    "db_extra_remote",
+    "db_extra_remote_secure",
+    "db_extra_mysql",
+    "db_extra_postgres",
+)
+
 
 @pytest.fixture
 def node_with_database_collections(cluster):
@@ -1130,11 +1149,8 @@ def node_with_database_collections(cluster):
         ],
         user="root",
     )
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/lib/clickhouse/metadata/db_extra_*.sql"],
-        user="root",
-        nothrow=True,
-    )
+    for planted in PLANTED_DATABASES:
+        remove_database_metadata(node, planted)
     # A SQL-created collection outlives hiding the config file, so a test that leaves one behind
     # makes every later arm find the collection it needs missing.
     node.exec_in_container(
@@ -1162,18 +1178,31 @@ def restore_database_collections(node):
     )
 
 
+# A database definition file. Reached through clickhouse-disks rather than the container
+# filesystem, because under the "db disk" config the database disk is remote and nothing below
+# /var/lib/clickhouse/metadata exists.
+def database_metadata_path(name):
+    return f"metadata/{name}.sql"
+
+
 def write_database_metadata(node, name, statement):
+    write_metadata(node, database_metadata_path(name), statement)
+
+
+def read_database_metadata(node, name):
+    return read_metadata(node, database_metadata_path(name))
+
+
+def remove_database_metadata(node, name):
+    db_disk_name = get_database_disk_name(node)
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"cat > /var/lib/clickhouse/metadata/{name}.sql <<'SQL'\n{statement}\nSQL",
+            f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml "
+            f"--disk {db_disk_name} --save-logs "
+            f"--query 'remove {database_metadata_path(name)}'",
         ],
-        user="root",
-    )
-    node.exec_in_container(
-        ["bash", "-c", f"chown clickhouse:clickhouse /var/lib/clickhouse/metadata/{name}.sql"],
-        user="root",
         nothrow=True,
     )
 
@@ -1200,10 +1229,11 @@ def test_startup_skips_database_with_missing_collection(node_with_database_colle
     assert node.contains_in_log("Skipping database db_over_s3")
     assert node.contains_in_log("Skipping database db_over_remote_secure")
 
-    for name in ("db_over_s3", "db_over_remote_secure"):
-        assert "1" == node.exec_in_container(
-            ["bash", "-c", f"test -f /var/lib/clickhouse/metadata/{name}.sql && echo 1 || echo 0"]
-        ).strip()
+    for name, engine in (
+        ("db_over_s3", "S3(db_collection_s3)"),
+        ("db_over_remote_secure", "RemoteSecure(db_collection_remote)"),
+    ):
+        assert engine in read_database_metadata(node, name)
 
     node.stop_clickhouse()
     restore_database_collections(node)
@@ -1287,10 +1317,7 @@ def test_startup_still_fails_for_database_owning_local_metadata(
     assert node.contains_in_log("Caught exception while loading metadata: Code: 669")
     assert not node.contains_in_log("Skipping database db_extra_strict")
 
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/lib/clickhouse/metadata/db_extra_strict.sql"],
-        user="root",
-    )
+    remove_database_metadata(node, "db_extra_strict")
     node.start_clickhouse()
 
 
@@ -1307,10 +1334,7 @@ def test_startup_still_fails_for_unrelated_metadata_error(node_with_database_col
         "Caught exception while loading metadata: Code: 336"
     )
 
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/lib/clickhouse/metadata/db_extra_bogus.sql"],
-        user="root",
-    )
+    remove_database_metadata(node, "db_extra_bogus")
     node.start_clickhouse()
 
 
@@ -1333,10 +1357,7 @@ def test_startup_still_fails_for_non_669_error_from_skippable_engine(
     assert node.contains_in_log("Caught exception while loading metadata: Code: 42")
     assert not node.contains_in_log("Skipping database db_extra_badargs")
 
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/lib/clickhouse/metadata/db_extra_badargs.sql"],
-        user="root",
-    )
+    remove_database_metadata(node, "db_extra_badargs")
     node.start_clickhouse()
 
 
@@ -1368,9 +1389,7 @@ def test_startup_skips_each_skippable_engine(
         f"SELECT count() FROM system.databases WHERE name = '{db_name}'"
     ).strip()
     assert node.contains_in_log(f"Skipping database {db_name}")
-    assert "1" == node.exec_in_container(
-        ["bash", "-c", f"test -f /var/lib/clickhouse/metadata/{db_name}.sql && echo 1 || echo 0"]
-    ).strip()
+    assert engine in read_database_metadata(node, db_name)
 
 
 def test_startup_still_fails_when_default_database_misses_its_collection(
@@ -1379,14 +1398,9 @@ def test_startup_still_fails_when_default_database_misses_its_collection(
     node = node_with_database_collections
 
     node.stop_clickhouse()
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "cp /var/lib/clickhouse/metadata/default.sql /var/lib/clickhouse/metadata/default.sql.orig",
-        ],
-        user="root",
-    )
+    # Moved, not copied, so the restore below is byte-exact. A ".orig" extension is not
+    # loaded as a database: only ".sql" entries are.
+    move_file(node, database_metadata_path("default"), "metadata/default.sql.orig")
     # A SQL-created collection would survive hiding the config file and make the server boot.
     node.exec_in_container(
         ["bash", "-c", "rm -f /var/lib/clickhouse/named_collections/*.sql"],
@@ -1406,13 +1420,7 @@ def test_startup_still_fails_when_default_database_misses_its_collection(
         assert node.contains_in_log("Caught exception while loading metadata: Code: 669")
         assert not node.contains_in_log("Skipping database default")
     finally:
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "mv /var/lib/clickhouse/metadata/default.sql.orig /var/lib/clickhouse/metadata/default.sql",
-            ],
-            user="root",
-        )
+        remove_database_metadata(node, "default")
+        move_file(node, "metadata/default.sql.orig", database_metadata_path("default"))
         restore_database_collections(node)
         node.start_clickhouse()
