@@ -37,6 +37,15 @@ SELECT replaceRegexpAll(materialize('[[a'), '[[]|a$', 'Z');
 SELECT replaceRegexpAll(materialize('[[a'), '[[]|a$', 'Z') SETTINGS optimize_rewrite_regexp_functions = 0;
 SELECT countMatches(materialize('[[a'), '[[]|a$');
 
+SELECT 'a POSIX named class is a part of the enclosing class, not a literal [';
+SELECT match(materialize('ab'), '[[:alpha:]]b'), match(materialize('1b'), '[[:alpha:]]b');
+SELECT match(materialize('ab'), '[[:^digit:]]b'), match(materialize('1b'), '[[:^digit:]]b');
+SELECT match(materialize('zabcdefg'), 'z[[:alpha:]]bcdefg'), match(materialize('z]bcdefg'), 'z[[:alpha:]]bcdefg');
+-- Without a closing `:]` there is no named class, and the `[` is a literal member again.
+SELECT match(materialize('a]b'), '[[:alpha]]b'), match(materialize('ab'), '[[:alpha]]b');
+SELECT count() FROM t_regexp_class WHERE match(s, '[[:alpha:]]b');
+SELECT countIf(match(s, '[[:alpha:]]b')) FROM t_regexp_class;
+
 SELECT 'ordinary classes still prefilter the same way';
 SELECT count() FROM t_regexp_class WHERE match(s, '[az]b');
 SELECT countIf(match(s, '[az]b')) FROM t_regexp_class;
