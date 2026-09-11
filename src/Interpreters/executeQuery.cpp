@@ -2969,10 +2969,9 @@ static BlockIO executeQueryImpl(
                 ProfileEvents::increment(ProfileEvents::InsertQuery);
 
                 /// Report buffered data size so X-ClickHouse-Summary is not all-zero (issue #57768).
+                /// Not via QueryStatus::updateProgressIn: it may block on `priority` after the data is already queued.
                 Progress accepted_progress;
                 accepted_progress.accepted_bytes = result.accepted_bytes;
-                if (auto process_list_elem = context->getProcessListElement())
-                    process_list_elem->updateProgressIn(accepted_progress);
                 if (auto progress_callback = context->getProgressCallback())
                     progress_callback(accepted_progress);
 

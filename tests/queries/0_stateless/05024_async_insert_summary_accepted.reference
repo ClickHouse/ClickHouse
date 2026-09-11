@@ -10,4 +10,7 @@ zero-row query still reports its final memory_usage progress header:
 1
 empty fire-and-forget must not emit a counterless progress header:
 0
-total_rows	12
+low-priority fire-and-forget still reports accepted_bytes and is not preempted after enqueue:
+1
+QueryPreempted: 0
+total_rows	14
