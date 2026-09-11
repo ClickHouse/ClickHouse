@@ -122,7 +122,6 @@ bool canBeExecutedByEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_alg
                     return true;
                 break;
             case JoinAlgorithm::PARTIAL_MERGE:
-            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
                 if (MergeJoin::isSupported(kind, strictness))
                     return true;
                 break;
@@ -138,6 +137,10 @@ bool canBeExecutedByEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_alg
             case JoinAlgorithm::PARALLEL_HASH:
             case JoinAlgorithm::GRACE_HASH:
                 /// The hash-based algorithms implement every kind and strictness.
+                return true;
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE:
+                /// `prefer_partial_merge` means `partial_merge` with a hash fallback for everything
+                /// `MergeJoin` cannot execute, so it can execute every kind and strictness as well.
                 return true;
         }
     }
