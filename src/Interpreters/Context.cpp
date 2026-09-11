@@ -7446,8 +7446,11 @@ DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock *
         constexpr auto config_name = "storage_configuration.disks";
         const auto & config = getConfigRef();
         auto disk_selector = std::make_shared<DiskSelector>();
+        /// Disks of a selector whose build fails never become active: drop what they recorded.
+        Ext4CorruptionKernelBugWarningBatch ext4_warnings;
         disk_selector->initialize(config, config_name, shared_from_this());
         shared->merge_tree_disk_selector = disk_selector;
+        ext4_warnings.commit();
     }
 
     return shared->merge_tree_disk_selector;
@@ -7472,8 +7475,13 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         std::lock_guard lock(shared->storage_policies_mutex);
         Strings disks_to_reinit;
         if (shared->merge_tree_disk_selector)
+        {
+            /// Disks of a reload that throws never become active: drop what they recorded.
+            Ext4CorruptionKernelBugWarningBatch ext4_warnings;
             shared->merge_tree_disk_selector
                 = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
+            ext4_warnings.commit();
+        }
 
         if (shared->merge_tree_storage_policy_selector)
         {
@@ -7510,7 +7518,11 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
 
     /// Disks and caches built by the reload above only recorded their probe; publish it here, where
     /// none of the locks taken above is held, so a reload logs it instead of waiting for a reader.
-    flushExt4CorruptionKernelBugWarning(*this);
+    size_t published = flushExt4CorruptionKernelBugWarning(*this);
+    LOG_TEST(
+        shared->log,
+        "Reloaded the storage configuration and published {} recorded ext4 corruption kernel bug warnings",
+        published);
 }
 
 

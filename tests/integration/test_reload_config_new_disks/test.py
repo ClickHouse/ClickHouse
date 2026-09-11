@@ -1,4 +1,5 @@
 import os
+import time
 
 import pytest
 
@@ -36,6 +37,10 @@ DISKS_CONFIG = """
 
 ADDED_DISKS_QUERY = "SELECT count() FROM system.disks WHERE name IN ('local_{suffix}', 'blob_{suffix}', 'cache_{suffix}')"
 
+# Logged by Context::updateStorageConfiguration() right after it publishes; reading `system.warnings`
+# would drain the recorded warnings itself, so publication is observed here instead.
+PUBLISHED_LOG_LINE = "recorded ext4 corruption kernel bug warnings"
+
 
 @pytest.fixture(scope="module", autouse=True)
 def started_cluster():
@@ -53,17 +58,31 @@ def add_disks(suffix):
         f.write(DISKS_CONFIG.format(suffix=suffix))
 
 
+def count_published():
+    return int(node.count_in_log(PUBLISHED_LOG_LINE))
+
+
+def wait_for_publish(published_before):
+    # The disks become visible before the reload publishes, so give the log line a moment.
+    for _ in range(30):
+        if count_published() > published_before:
+            return
+        time.sleep(1)
+    raise AssertionError("the reload did not publish the recorded ext4 warnings")
+
+
 def test_system_reload_config_adds_disks():
+    published_before = count_published()
     add_disks("reloaded")
     # A publish left under one of the reload's locks deadlocks here instead of returning.
     node.query("SYSTEM RELOAD CONFIG", timeout=60)
 
     assert node.query(ADDED_DISKS_QUERY.format(suffix="reloaded"), timeout=60) == "3\n"
-    warnings = node.query("SELECT count() FROM system.warnings", timeout=60)
-    assert warnings.strip().isdigit()
+    wait_for_publish(published_before)
 
 
 def test_background_config_reloader_adds_disks():
+    published_before = count_published()
     add_disks("polled")
 
     assert_eq_with_retry(
@@ -74,5 +93,4 @@ def test_background_config_reloader_adds_disks():
         sleep_time=1,
         timeout=60,
     )
-    warnings = node.query("SELECT count() FROM system.warnings", timeout=60)
-    assert warnings.strip().isdigit()
+    wait_for_publish(published_before)

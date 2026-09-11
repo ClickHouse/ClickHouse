@@ -7,7 +7,9 @@
 
 #include <atomic>
 #include <filesystem>
+#include <iterator>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -23,15 +25,49 @@ namespace
     std::mutex pending_warnings_mutex;
     std::vector<PreformattedMessage> pending_warnings;
 
+    /// The batch the current thread stages into while one is open on it.
+    thread_local std::vector<PreformattedMessage> * staging = nullptr;
+
     /// Only reached on Linux; the probe below is compiled out elsewhere.
     [[maybe_unused]] void recordWarning(PreformattedMessage message)
     {
+        if (staging)
+        {
+            staging->push_back(std::move(message));
+            return;
+        }
         std::lock_guard lock(pending_warnings_mutex);
         pending_warnings.push_back(std::move(message));
     }
 }
 
-void flushExt4CorruptionKernelBugWarning(const Context & context)
+Ext4CorruptionKernelBugWarningBatch::Ext4CorruptionKernelBugWarningBatch()
+    : outer(std::exchange(staging, &staged))
+{
+}
+
+Ext4CorruptionKernelBugWarningBatch::~Ext4CorruptionKernelBugWarningBatch()
+{
+    staging = outer;
+}
+
+void Ext4CorruptionKernelBugWarningBatch::commit()
+{
+    auto begin = std::make_move_iterator(staged.begin());
+    auto end = std::make_move_iterator(staged.end());
+    if (outer)
+    {
+        outer->insert(outer->end(), begin, end);
+    }
+    else
+    {
+        std::lock_guard lock(pending_warnings_mutex);
+        pending_warnings.insert(pending_warnings.end(), begin, end);
+    }
+    staged.clear();
+}
+
+size_t flushExt4CorruptionKernelBugWarning(const Context & context)
 {
     std::vector<PreformattedMessage> messages;
     {
@@ -41,6 +77,7 @@ void flushExt4CorruptionKernelBugWarning(const Context & context)
     /// Published in probe order, so the last unsuppressed one wins exactly as with direct publication.
     for (const auto & message : messages)
         context.addOrUpdateWarningMessage(Context::WarningType::LINUX_KERNEL_EXT4_CORRUPTION_BUG, message);
+    return messages.size();
 }
 
 void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & directory, [[maybe_unused]] const String & description)
