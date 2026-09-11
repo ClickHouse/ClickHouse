@@ -172,32 +172,37 @@ void registerDeltaTableInCatalog(
     }
     catch (...)
     {
-        /// A concurrent creator may have registered this table between the pre-CREATE existence check and
-        /// now. For `IF NOT EXISTS`, treat an existing catalog entry as success (a no-op) rather than
-        /// surfacing the registration conflict.
-        bool already_registered = false;
+        /// For `IF NOT EXISTS`, treat a concurrently-registered entry as a no-op only when it points at the same location; a racing create at a different path is a real conflict (reporting success would orphan our `_delta_log`).
         if (if_not_exists)
         {
             try
             {
-                already_registered = catalog->existsTable(namespace_name, table_name);
+                auto strip_trailing_slash = [](std::string s)
+                {
+                    while (!s.empty() && s.back() == '/')
+                        s.pop_back();
+                    return s;
+                };
+                DataLake::TableMetadata existing;
+                existing.withLocation();
+                if (catalog->tryGetTableMetadata(namespace_name, table_name, existing)
+                    && strip_trailing_slash(existing.getLocation()) == strip_trailing_slash(location))
+                {
+                    LOG_DEBUG(
+                        getLogger("DeltaLakeCatalogRegistration"),
+                        "Table {}.{} is already registered at the same location; treating IF NOT EXISTS create as a no-op",
+                        namespace_name, table_name);
+                    return;
+                }
             }
             catch (...)
             {
-                /// The original create error is the important one; a failed existence probe must not mask it.
+                /// The original create error is the important one; a failed probe must not mask it.
                 LOG_DEBUG(
                     getLogger("DeltaLakeCatalogRegistration"),
-                    "Could not probe catalog existence for {}.{} while handling IF NOT EXISTS; surfacing the original create error",
+                    "Could not confirm an existing catalog entry for {}.{} while handling IF NOT EXISTS; surfacing the original create error",
                     namespace_name, table_name);
             }
-        }
-        if (already_registered)
-        {
-            LOG_DEBUG(
-                getLogger("DeltaLakeCatalogRegistration"),
-                "Table {}.{} is already registered in the catalog; treating IF NOT EXISTS create as a no-op",
-                namespace_name, table_name);
-            return;
         }
         throw;
     }

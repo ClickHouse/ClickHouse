@@ -827,6 +827,13 @@ void DeltaLakeMetadataDeltaKernel::createInitial(
                     ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot create DeltaLake table with column `{}` because it is reserved for a virtual column",
                     column.name);
+
+        /// A catalog-backed table is rebuilt from the registered Delta schema, which cannot carry a DEFAULT expression; reject rather than silently drop it. Plain tables keep it in their own metadata.
+        if (register_with_catalog && columns->hasDefaults())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DeltaLake CREATE TABLE in a catalog database does not support columns with a DEFAULT "
+                "expression (it is not preserved in the catalog schema)");
     }
 
     /// With explicit columns, `createTable` writes commit 0 (fresh) or attaches (existing). Without columns
