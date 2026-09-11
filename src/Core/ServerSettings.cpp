@@ -439,7 +439,7 @@ A value of `0` (default) preserves the legacy behaviour: implicit `operator new`
 Note, to avoid side effects it is recommended to set value greater then `max_untracked_memory`.
 )", 0) \
     DECLARE(UInt64, min_allocation_size_to_log_stack_trace, 0, R"(
-Minimum size, in bytes, of a single allocation charged to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Error` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
+Minimum size, in bytes, of a single allocation charged to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
 
 This is a diagnostic for a global tracked total that has grown far beyond the process's real memory usage. In that state the server refuses every allocation, down to zero-byte ones, while using a fraction of its limit, and ordinary telemetry cannot attribute the step: allocations charged under a `MemoryTrackerBlockerInThread` are neither limit-checked nor traced, and the `system.trace_log` inserts that would carry the rest fail once the server is wedged. The server log keeps being written, so the stack trace reaches it.
 

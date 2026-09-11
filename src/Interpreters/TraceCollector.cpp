@@ -257,7 +257,7 @@ void TraceCollector::run()
             /// and that is exactly the state this trace type exists to diagnose.
             if (trace_type == TraceType::MemoryLargeAllocation)
             {
-                LOG_ERROR(
+                LOG_WARNING(
                     getLogger("MemoryTracker"),
                     "Single allocation of {} charged to the global memory tracker on thread {} "
                     "(blocked context: {}). Global tracked total when logged: {}. Stack trace:\n{}",
