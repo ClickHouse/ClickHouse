@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS json_bf_timezone;
 CREATE TABLE json_bf_timezone (id UInt64, j JSON, INDEX bf j TYPE jsonbf_v1(false_positive_rate = 0.0001) GRANULARITY 1)
-ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
 -- Preserve the UTC runtime types independently of the session timezone.
 INSERT INTO json_bf_timezone
