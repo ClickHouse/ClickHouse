@@ -722,6 +722,7 @@ protected:
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
+    QueryPlanProfilerPtr query_plan_profiler;
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -883,6 +884,9 @@ public:
     void setUserFilesPath(const String & path);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
+
+    void enablePlanProfiler();
+    QueryPlanProfilerPtr getPlanProfiler() const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);

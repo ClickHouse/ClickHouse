@@ -102,12 +102,13 @@ bool ExecutionThreadContext::executeTask()
     {
         /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
         /// and are not attributed to any query plan step, so there is no clock for them.
-        if (const auto * step = node->processor()->getQueryPlanStep())
+        const auto & step_uniq_id = node->processor()->getStepUniqID();
+        if (!step_uniq_id.empty())
         {
             auto & cached_clock = node->processor()->query_plan_step_wall_clock_ptr;
             /// We will search in the registry only initially or when the group of the processor changed
             if (!cached_clock)
-                cached_clock = step_to_wall_clock_registry->find(step, group);
+                cached_clock = step_to_wall_clock_registry->find(step_uniq_id, group);
 
             clock = cached_clock;
             chassert(clock);

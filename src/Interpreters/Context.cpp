@@ -19,6 +19,7 @@
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Interpreters/QueryPlanProfiler.h>
 #include <base/getMemoryAmount.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
@@ -360,6 +361,7 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsUInt64 prefetch_buffer_size;
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
     extern const SettingsUInt64 page_cache_block_size;
@@ -9066,6 +9068,29 @@ StorageSnapshotPtr Context::getPinnedStorageSnapshot(const UUID & table_uuid) co
 const ServerSettings & Context::getServerSettings() const
 {
     return shared->server_settings;
+}
+
+void Context::enablePlanProfiler()
+{
+    query_plan_profiler = std::make_shared<QueryPlanProfiler>(
+        getSettingsRef()[Setting::query_plan_max_step_description_length]);
+
+    /// Not separable from enabling the profiler, and so not left to the caller to remember. Every
+    /// join reads the analyze mode off the context while the planner builds it and bakes it into
+    /// its TableJoin -- HashJoin only allocates the counters at all if the mode is on at
+    /// construction -- so a plan captured without it carries a join's I/O and timings but none of
+    /// the join's own metrics, which is what EXPLAIN ANALYZE shows by default.
+    ///
+    /// `Derived` rather than `Exact`: it is the mode EXPLAIN ANALYZE uses unless asked for matched
+    /// rows, and it counts per probed block instead of per row.
+    setJoinAnalyzeMode(JoinAnalyzeMode::Derived);
+}
+
+QueryPlanProfilerPtr Context::getPlanProfiler() const
+{
+    if (!hasQueryContext())
+        return nullptr;
+    return getQueryContext()->query_plan_profiler;
 }
 
 ServerSettings Context::getServerSettingsCopy() const

@@ -2341,6 +2341,24 @@ See also:
 - [`system.processors_profile_log`](/reference/system-tables/processors_profile_log)
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
 )", 0) \
+    DECLARE(Bool, log_query_plans, false, R"(
+Write the query plan that was executed, together with its per-step runtime statistics, to the `query_plan` column of [`system.query_log`](/reference/system-tables/query_log). The column has the `JSON` type, so the statistics are stored as numbers and can be aggregated by a query rather than only read.
+
+The plan carries the same information [`EXPLAIN ANALYZE`](/reference/statements/explain#explain-analyze) shows — the tree of steps, what each step does, and per-step rows, bytes, wall-clock time and parallelism — but taken from an execution that already happened, rather than from running the query a second time.
+
+Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured, and only where the row itself is written, so [`log_queries`](/reference/settings/session-settings/log#log_queries) must also be enabled. A query that failed during execution is captured with the plan it was running but without statistics, which are collected when the pipeline is finalized — a point a failing query never reaches. The column is empty on `QueryStart` rows, because no plan exists yet when they are written.
+
+Enabling this setting makes the captured query collect per-processor timings, which is the same instrumentation [`log_processors_profiles`](/reference/settings/session-settings/log#log_processors_profiles) uses, so it is not free. Queries that are not captured are unaffected.
+
+That cost is decided before the query runs, so a captured query pays it even where its row is dropped afterwards by [`log_queries_min_type`](/reference/settings/session-settings/log#log_queries_min_type) or [`log_queries_min_query_duration_ms`](/reference/settings/session-settings/log#log_queries_min_query_duration_ms) — neither is knowable that early. A query answered from the [query cache](/reference/statements/select#query-cache) executes no plan and so has none to store.
+
+It also causes step descriptions produced by plan optimizations (for example merged expressions) to be retained rather than discarded, which makes them visible in `system.processors_profile_log.plan_step_description` as well.
+
+See also:
+
+- [`system.query_log`](/reference/system-tables/query_log)
+- [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
+)", BETA) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 
@@ -2831,7 +2849,7 @@ Set to `false` to restore the pre-26.8 one-record-per-line output, or set `compa
 )", 0) \
     \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
-Maximum length of step description in EXPLAIN PLAN.
+Maximum length, in bytes, of a query plan step description. Longer descriptions are truncated to this length wherever they are exposed, not only in `EXPLAIN PLAN`.
 )", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(

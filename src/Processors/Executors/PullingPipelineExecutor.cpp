@@ -4,6 +4,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <Processors/Sources/NullSource.h>
 
 namespace DB
@@ -49,7 +50,7 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
 {
     if (!executor)
     {
-        executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
     }
 

@@ -121,6 +121,10 @@ struct QueryLogElement
 
     QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
 
+    /// The executed query plan as JSON text, parsed into the `JSON` column when the row is appended.
+    /// Only filled when `log_query_plans` is enabled.
+    String query_plan;
+
     static std::string name() { return "QueryLog"; }
 
     static ColumnsDescription getColumnsDescription();
