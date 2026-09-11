@@ -24,7 +24,7 @@ check() # $1 - table, $2 - inserted JSON-string expression, $3 - subcolumn read 
     $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE $1 FINAL"
 
     $CLICKHOUSE_CLIENT -q "SELECT $3 FROM $1 FORMAT Null SETTINGS log_comment = '$4'"
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
     # Mean uncompressed size of the blocks the read touched: the bug fragmented shared data into ~200-1700 B
     # blocks, the fix keeps them at min_compress_block_size scale (tens of KB).
