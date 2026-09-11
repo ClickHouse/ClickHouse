@@ -1,7 +1,6 @@
 #include <Analyzer/Passes/SubcolumnPushdownPass.h>
 
 #include <unordered_map>
-#include <unordered_set>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -12,11 +11,17 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
 
+#include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Storages/IStorage.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool optimize_push_subcolumns_into_subqueries;
+}
 
 namespace
 {
@@ -37,7 +42,7 @@ struct SubcolumnAccess
 /// Returns nullptr if optimization is not possible.
 QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     const ColumnNode * proj_column,
-    const String & full_subcolumn_name,
+    const String & subcolumn_name,
     DataTypePtr subcolumn_type,
     ContextPtr context)
 {
@@ -60,18 +65,19 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
         if (table_node && !table_node->getStorage()->supportsOptimizationToSubcolumns())
             return nullptr;
 
-        NameAndTypePair subcolumn_name_and_type{full_subcolumn_name, subcolumn_type};
+        /// The name has to be built from the name of the column in the table, which is not necessarily
+        /// the name the subquery exposes it under (`SELECT v AS u FROM t` has to read `v.a`, not `u.a`).
+        NameAndTypePair subcolumn_name_and_type{proj_column->getColumnName() + "." + subcolumn_name, subcolumn_type};
         return std::make_shared<ColumnNode>(subcolumn_name_and_type, proj_source);
     }
     /// Case 2: Projection column comes from a nested subquery or union.
     /// We need to create a getSubcolumn function call to push the access down recursively.
     else if (proj_source_type == QueryTreeNodeType::QUERY || proj_source_type == QueryTreeNodeType::UNION)
     {
-        const String subcolumn_part = full_subcolumn_name.substr(proj_column->getColumnName().size() + 1);
         auto get_subcolumn_func = std::make_shared<FunctionNode>("getSubcolumn");
         auto & func_args = get_subcolumn_func->getArguments().getNodes();
         func_args.push_back(proj_column->clone());
-        func_args.push_back(std::make_shared<ConstantNode>(subcolumn_part));
+        func_args.push_back(std::make_shared<ConstantNode>(subcolumn_name));
 
         auto func = FunctionFactory::instance().get("getSubcolumn", context);
         get_subcolumn_func->resolveAsFunction(func->build(get_subcolumn_func->getArgumentColumns()));
@@ -79,6 +85,26 @@ QueryTreeNodePtr tryCreateSubcolumnProjectionNode(
     }
 
     return nullptr;
+}
+
+/// Check that rewriting the projection of `source_query` cannot change the rows it produces.
+/// `DISTINCT`, `GROUP BY`, `LIMIT BY` and window functions all key off the projected expressions,
+/// so replacing a column with one of its subcolumns there would silently change the result
+/// (`SELECT DISTINCT tup` and `SELECT DISTINCT tup.a` are not the same query), or leave the
+/// subcolumn outside of the grouping keys, which is not a valid query at all.
+bool isSourceQuerySafeToRewrite(const QueryNode & source_query)
+{
+    return !source_query.isDistinct()
+        && !source_query.hasGroupBy()
+        && !source_query.isGroupByAll()
+        && !source_query.isGroupByWithTotals()
+        && !source_query.isGroupByWithRollup()
+        && !source_query.isGroupByWithCube()
+        && !source_query.isGroupByWithGroupingSets()
+        && !source_query.hasLimitBy()
+        && !source_query.isLimitByAll()
+        && !source_query.hasWindow()
+        && !source_query.hasQualify();
 }
 
 /// Collect all getSubcolumn calls that can be optimized, plus all columns referencing each source.
@@ -138,6 +164,10 @@ public:
         if (!query_source)
             return;
 
+        /// Rewriting the projection must not change which rows the source query produces.
+        if (!isSourceQuerySafeToRewrite(*query_source))
+            return;
+
         const String & base_column_name = column_node->getColumnName();
         const String subcolumn_name = subcolumn_name_node->getValue().safeGet<String>();
         const String full_subcolumn_name = base_column_name + "." + subcolumn_name;
@@ -148,18 +178,32 @@ public:
         if (!subcolumn_type)
             return;
 
-        /// Find the matching projection column in the source query
-        auto & projection_nodes = query_source->getProjection().getNodes();
-        for (size_t i = 0; i < projection_nodes.size(); ++i)
-        {
-            auto * proj_column = projection_nodes[i]->as<ColumnNode>();
+        const auto & source_projection_columns = query_source->getProjectionColumns();
 
-            /// The projection node must be a column with matching name
-            if (!proj_column || proj_column->getColumnName() != base_column_name)
+        /// Adding a projection column under a name the source query already exposes would shadow it.
+        for (const auto & source_projection_column : source_projection_columns)
+        {
+            if (source_projection_column.name == full_subcolumn_name)
+                return;
+        }
+
+        /// Find the matching projection column in the source query. The match has to be done on the
+        /// name the source query exposes the column under, which is what the outer query refers to -
+        /// it is not necessarily the name of the underlying column (`SELECT v AS u FROM t`).
+        auto & projection_nodes = query_source->getProjection().getNodes();
+        for (size_t i = 0; i < projection_nodes.size() && i < source_projection_columns.size(); ++i)
+        {
+            if (source_projection_columns[i].name != base_column_name)
                 continue;
 
+            auto * proj_column = projection_nodes[i]->as<ColumnNode>();
+
+            /// Only a plain column reference can be turned into a subcolumn reference
+            if (!proj_column)
+                return;
+
             /// Verify this can actually be optimized before recording
-            auto new_proj_node = tryCreateSubcolumnProjectionNode(proj_column, full_subcolumn_name, subcolumn_type, context);
+            auto new_proj_node = tryCreateSubcolumnProjectionNode(proj_column, subcolumn_name, subcolumn_type, context);
 
             /// Skip if we can't create the optimized projection node
             if (!new_proj_node)
@@ -198,7 +242,7 @@ private:
 /// Try to clone the target QueryNode if it IS the join_tree root.
 /// We must clone to avoid modifying shared nodes (e.g., CTEs referenced multiple times).
 /// Returns nullptr if cloning is not possible or not needed.
-QueryTreeNodePtr tryCloneTopLevelQueryNode(QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & target)
+TableExpressionNodePtr tryCloneTopLevelQueryNode(QueryTreeNodePtr & join_tree, const TableExpressionNodePtr & target)
 {
     /// join_tree must exist
     if (!join_tree)
@@ -213,7 +257,7 @@ QueryTreeNodePtr tryCloneTopLevelQueryNode(QueryTreeNodePtr & join_tree, const Q
     if (join_tree->as<JoinNode>())
         return nullptr;
 
-    auto clone = join_tree->clone();
+    auto clone = static_pointer_cast<ITableExpressionNode>(join_tree->clone());
     join_tree = clone;
     return clone;
 }
@@ -226,6 +270,9 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
 
     /// This pass only works on query nodes (SELECT statements)
     if (!root_query_node)
+        return;
+
+    if (!context->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries])
         return;
 
     /// Collect all subcolumn accesses and all columns grouped by source
@@ -254,7 +301,7 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
             continue;
 
         /// Clone the source to avoid modifying shared nodes
-        auto & join_tree = root_query_node->getJoinTree();
+        auto & join_tree = root_query_node->getJoinTreeNode();
         auto cloned_source = tryCloneTopLevelQueryNode(join_tree, column_source);
 
         /// Skip if cloning failed (e.g., source is inside a JOIN)
@@ -283,8 +330,19 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
         for (auto & access : accesses)
             unique_subcolumns.try_emplace(access.full_subcolumn_name, &access);
 
-        /// Track which projection indices we're optimizing (to remove unused base columns later)
-        std::unordered_set<size_t> optimized_projection_indices;
+        /// Count how many times each base column of this source is referenced anywhere in the query.
+        /// A base column may only be dropped from the projection once every one of its references has
+        /// been rewritten into a subcolumn reference - otherwise the outer query would still ask for a
+        /// column that the source no longer produces (`SELECT tup, tup.a FROM (SELECT tup FROM t)`).
+        std::unordered_map<String, size_t> total_references_by_base_column;
+        if (it != all_columns_by_source.end())
+        {
+            for (const auto * col : it->second)
+                ++total_references_by_base_column[col->getColumnName()];
+        }
+
+        /// Candidate base columns to drop, mapped to their index in the source projection.
+        std::unordered_map<String, size_t> removal_candidates;
 
         /// Add new subcolumn projections
         auto & cloned_projection_nodes = cloned_query_source->getProjection().getNodes();
@@ -309,7 +367,7 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
 
             /// Create the subcolumn projection node
             auto new_proj_node = tryCreateSubcolumnProjectionNode(
-                proj_column, access.full_subcolumn_name, access.subcolumn_type, context);
+                proj_column, access.subcolumn_name, access.subcolumn_type, context);
 
             /// Skip if we couldn't create the projection node
             if (!new_proj_node)
@@ -321,10 +379,11 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
             projection_columns.push_back(NameAndTypePair{access.full_subcolumn_name, access.subcolumn_type});
 
             subcolumn_to_new_index[full_subcolumn_name] = new_index;
-            optimized_projection_indices.insert(access.projection_index);
+            removal_candidates.emplace(access.base_column_name, access.projection_index);
         }
 
         /// Replace all getSubcolumn calls with direct column references to the new projection columns
+        std::unordered_map<String, size_t> rewritten_references_by_base_column;
         for (auto & access : accesses)
         {
             auto subcolumn_it = subcolumn_to_new_index.find(access.full_subcolumn_name);
@@ -339,11 +398,19 @@ void SubcolumnPushdownPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr c
             /// Replace the getSubcolumn call with a direct column reference
             NameAndTypePair new_column_name_and_type{access.full_subcolumn_name, access.subcolumn_type};
             *access.node_to_replace = std::make_shared<ColumnNode>(new_column_name_and_type, cloned_source);
+            ++rewritten_references_by_base_column[access.base_column_name];
         }
 
-        /// Remove unused base columns from projection (those that were only accessed via subcolumns).
+        /// Remove the base columns that are now completely unused, i.e. every reference to them was
+        /// rewritten above. A base column that is still read directly stays in the projection.
+        std::vector<size_t> indices_to_remove;
+        for (const auto & [base_column_name, projection_index] : removal_candidates)
+        {
+            if (total_references_by_base_column[base_column_name] == rewritten_references_by_base_column[base_column_name])
+                indices_to_remove.push_back(projection_index);
+        }
+
         /// We need to remove from highest index to lowest to avoid invalidating indices.
-        std::vector<size_t> indices_to_remove(optimized_projection_indices.begin(), optimized_projection_indices.end());
         std::sort(indices_to_remove.begin(), indices_to_remove.end(), std::greater<>());
 
         for (size_t idx : indices_to_remove)

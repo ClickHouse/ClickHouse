@@ -1,4 +1,4 @@
--- Requires new analyzer - SubcolumnPushdownPass is part of the new analyzer infrastructure
+-- The `SubcolumnPushdownPass` is part of the analyzer infrastructure
 SET enable_analyzer = 1;
 
 -- Test subcolumn pruning works through CTEs and subqueries

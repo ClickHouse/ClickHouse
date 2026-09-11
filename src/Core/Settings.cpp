@@ -5281,6 +5281,17 @@ Possible values:
 
 - true, false
 )", 0)                                                                                                                                           \
+    DECLARE(Bool, optimize_push_subcolumns_into_subqueries, true, R"(
+Push a subcolumn read through a subquery or a CTE, so that the subquery projects the subcolumn itself instead of the whole column.
+
+For example, `WITH foo AS (SELECT * FROM t) SELECT tup.a FROM foo` reads only the `tup.a` subcolumn instead of the whole `tup` column.
+
+The optimization is not applied when it would change the rows the subquery produces, for example when the subquery uses `DISTINCT`, `GROUP BY`, `LIMIT BY` or window functions.
+
+Possible values:
+
+- true, false
+)", 0)                                                                                                                                            \
     DECLARE(Bool, optimize_substitute_columns, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) for column substitution. The default is `false`.
 

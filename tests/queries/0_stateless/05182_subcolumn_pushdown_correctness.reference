@@ -1,0 +1,61 @@
+base column read directly and through a subcolumn
+('x',1)	x
+('x',5)	x
+('y',1)	y
+('x',1)	x
+('x',5)	x
+('y',1)	y
+distinct in the subquery
+x
+x
+y
+x
+x
+y
+group by in the subquery
+x
+x
+y
+x
+x
+y
+limit by in the subquery
+x
+y
+x
+y
+the subquery exposes the column under an alias
+p
+q
+r
+p
+q
+r
+the alias reads a column of the same name
+x
+x
+y
+x
+x
+y
+the same subcolumn is read twice
+x	x
+x	x
+y	y
+x	x
+x	x
+y	y
+the cte is referenced from a correlated-free scalar subquery as well
+5	x
+5	x
+5	y
+5	x
+5	x
+5	y
+the optimization is still applied where it is safe
+1
+1
+and it reads the underlying column when the subquery renames it
+1
+the setting turns it off
+1
