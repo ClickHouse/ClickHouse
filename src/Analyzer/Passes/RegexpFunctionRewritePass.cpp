@@ -62,6 +62,31 @@ private:
         return backslash_count % 2 == 0;
     }
 
+    /// Whether the pattern turns the `m` (multiline) flag on with an inline group, `(?m)` or
+    /// `(?im:...)`. The scope of such a group is not tracked - any occurrence is enough to decline.
+    bool enablesMultiline(const std::string & regexp)
+    {
+        for (size_t i = 0; i + 2 < regexp.size(); ++i)
+        {
+            if (regexp[i] != '(' || regexp[i + 1] != '?' || !isUnescaped(regexp, i))
+                continue;
+
+            /// re2 flags are `i`, `m`, `s` and `U`, and everything after a `-` is turned off.
+            bool negated = false;
+            for (size_t j = i + 2; j < regexp.size(); ++j)
+            {
+                const char flag = regexp[j];
+                if (flag == '-')
+                    negated = true;
+                else if (flag == 'm' && !negated)
+                    return true;
+                else if (flag != 'i' && flag != 's' && flag != 'U' && flag != 'm')
+                    break; /// Not a flag group, or its flag list has ended.
+            }
+        }
+        return false;
+    }
+
     /// Whether a `\Q` quoted section reaches the end of the pattern. re2 treats everything after
     /// `\Q` as literal text, up to a closing `\E` or the end of the pattern, so trailing `.*$` or
     /// `$` bytes inside such a section are ordinary characters and not regexp syntax: they neither
@@ -151,6 +176,13 @@ private:
             && !endsInsideQuotedLiteral(regexp);
 
         if (!starts_with_caret && !ends_with_unescaped_dollar)
+            return false;
+
+        /// An inline `m` flag makes `^` and `$` match at every line boundary rather than only at the
+        /// ends of the subject, so the pattern can match once per line and neither anchor proves a
+        /// single match: `replaceRegexpAll` over `(?m)a$` replaces every line's `a`, while
+        /// `replaceRegexpOne` replaces only the first line's.
+        if (enablesMultiline(regexp))
             return false;
 
         /// Analyze the regular expression to detect presence of alternatives (e.g., 'a|b'). If any alternatives are
