@@ -116,14 +116,10 @@ inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 }
 };
 
-/// GCS spells these headers with an `x-goog-` prefix and silently ignores the `x-amz-` one, so a
-/// header left untranslated loses its meaning without any error. The list is closed: everything
-/// outside it has no GCS counterpart, or one of a different shape that a rename cannot produce.
+/// Replace the significant `x-amz-` headers with their `x-goog-` analogue; GCS ignores the
+/// `x-amz-` spelling silently.
 Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers);
 
-/// Applied to the built request, where the SDK has merged both header carriers: the ones the request
-/// object generates and the `extra_headers` attached through `SetAdditionalCustomHeaderValue`. Doing
-/// it per request type would miss the second.
 void translateHeadersToGCS(Aws::Http::HttpRequest & request);
 
 /// The `x-amz-` spelling of a header GCS answered with, or nullopt if we do not translate it. Mirror
