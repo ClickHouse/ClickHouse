@@ -57,6 +57,21 @@ SchemaConverter::SchemaConverter(
             }
         }
     }
+
+    /// Fails open for other producers on purpose: pyarrow, Spark and the rest encode a null group at
+    /// the group's own definition level, so a marker only ClickHouse writes must not exclude them.
+    if (std::string_view(file_metadata.created_by).starts_with("ClickHouse version "))
+    {
+        nullable_group_levels_trusted = false;
+        for (const auto & kv : file_metadata.key_value_metadata)
+        {
+            if (kv.key == "clickhouse.nullable_group_def_levels")
+            {
+                nullable_group_levels_trusted = true;
+                break;
+            }
+        }
+    }
 }
 
 void SchemaConverter::checkHasColumns()
@@ -677,8 +692,10 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     const bool group_is_optional = node.element->repetition_type == parq::FieldRepetitionType::OPTIONAL;
     const UInt8 group_def = levels.back().def;
     bool nullable_group = false;
+    DataTypePtr nullable_group_type_hint;
     if (node.type_hint && node.type_hint->isNullable())
     {
+        nullable_group_type_hint = node.type_hint;
         if (group_is_optional)
         {
             node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
@@ -900,15 +917,31 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         /// null, so a level below the group on it can only mean the group. Any other leaf is only as
         /// trustworthy as the writer's encoding of the group's own level, so prefer a clean one; the
         /// requested element order is the user's, so the first leaf is an arbitrary choice.
+        /// Decided from the leaves the recursion above actually produced, never from a second walk of
+        /// the schema, which could disagree with the materialized leaf set.
         output.nullable_group_source = primitive_start;
+        bool source_is_clean = false;
         for (size_t i = primitive_start; i < primitive_columns.size(); ++i)
         {
             if (primitive_columns[i].levels.back().def == group_def)
             {
                 output.nullable_group_source = i;
+                source_is_clean = true;
                 break;
             }
         }
+
+        /// Nothing can recover the group's null map from a file that recorded a null group as a
+        /// present group with a null element, and reading it as a present group would silently
+        /// replace the user's NULL with a tuple of element defaults. Refuse instead, as the narrower
+        /// gate this replaces did. Throwing here is safe: the converter publishes nothing until the
+        /// whole traversal finishes, so the leaf state built above is discarded with it.
+        if (!source_is_clean && !nullable_group_levels_trusted)
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}. "
+                "The file was written by a ClickHouse version that encoded the null map of this group ambiguously; "
+                "read an element whose path under the group is non-nullable and non-repeated, or rewrite the file",
+                node.getNameForLogging(), nullable_group_type_hint->getName());
     }
 }
 

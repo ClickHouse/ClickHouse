@@ -41,6 +41,14 @@ struct SchemaConverter
     /// per group from that leaf's definition levels.
     std::vector<UInt8> nullable_group_defs;
 
+    /// Whether a null Nullable(Tuple(...)) group in this file can be trusted to be encoded at the
+    /// group's own definition level. True for any producer other than ClickHouse, and for ClickHouse
+    /// files carrying the `clickhouse.nullable_group_def_levels` key. False for older ClickHouse
+    /// files, whose leaves with a nullable or repeated path under the group recorded a null group as
+    /// a present group with a null element; such a group is only readable through a leaf whose path
+    /// under it adds no definition level, and is refused when none is read.
+    bool nullable_group_levels_trusted = true;
+
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
 
