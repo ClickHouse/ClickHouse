@@ -199,23 +199,11 @@ public:
             /// AVX2 vector contains only four values and the SIMD helper is out of line.
             constexpr size_t simd_min_bytes = std::is_same_v<Initial, UInt64> ? 256 : 64;
             constexpr size_t simd_min_size = simd_min_bytes / sizeof(Initial);
-            if (array_size >= simd_min_size)
+            if (array_size >= simd_min_size) [[unlikely]]
             {
-                /// Check one vector scalarly so a hit at the beginning does not pay SIMD setup costs.
-                constexpr size_t scalar_prefix_size = 32 / sizeof(Initial);
-                for (size_t j = 0; j < scalar_prefix_size; ++j)
-                {
-                    if (data[current_offset + j] == target)
-                    {
-                        ConcreteAction::apply(current, j);
-                        return current;
-                    }
-                }
-
-                const auto found
-                    = ArrayIndexImpl::findUInt(data.data() + current_offset + scalar_prefix_size, array_size - scalar_prefix_size, target);
+                const auto found = ArrayIndexImpl::findUInt(data.data() + current_offset, array_size, target);
                 if (found != static_cast<size_t>(-1))
-                    ConcreteAction::apply(current, found + scalar_prefix_size);
+                    ConcreteAction::apply(current, found);
                 return current;
             }
         }
