@@ -110,7 +110,7 @@ S3TablesCatalog::S3TablesCatalog(
         /* opt_disk_name = */ {},
         /* request_throttler = */ {});
 
-    Aws::Auth::AWSCredentials credentials(catalog_settings_.aws_access_key_id, Aws::SensitiveString(catalog_settings_.aws_secret_access_key.view()), Aws::String());
+    Aws::Auth::AWSCredentials credentials(catalog_settings_.aws_access_key_id, catalog_settings_.aws_secret_access_key, Aws::String());
     credentials_provider = DB::S3::getCredentialsProvider(poco_config, credentials, creds_config);
 
     signer = std::make_unique<Aws::Client::AWSAuthV4Signer>(

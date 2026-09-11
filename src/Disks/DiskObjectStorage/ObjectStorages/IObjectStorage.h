@@ -56,7 +56,7 @@ public:
         Azure::Core::Credentials::TokenRequestContext const &,
         Azure::Core::Context const &) const override
     {
-        return Azure::Core::Credentials::AccessToken { .Token = String(token.view()), .ExpiresOn = expires_on };
+        return Azure::Core::Credentials::AccessToken { .Token = String(token), .ExpiresOn = expires_on };
     }
 
 private:
@@ -81,7 +81,7 @@ public:
         Azure::Core::Context const &) const override
     {
         auto [token, expires_on] = provider();
-        return Azure::Core::Credentials::AccessToken { .Token = String(token.view()), .ExpiresOn = expires_on };
+        return Azure::Core::Credentials::AccessToken { .Token = String(token), .ExpiresOn = expires_on };
     }
 
 private:

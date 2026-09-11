@@ -258,7 +258,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::RestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseDataLakeSetting::catalog_credential].value.view(),
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
@@ -273,7 +273,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::DeltaSharingCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseDataLakeSetting::catalog_credential].value.view(),
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
@@ -289,7 +289,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::HorizonCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseDataLakeSetting::catalog_credential].value.view(),
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
                 settings[DatabaseDataLakeSetting::auth_scope].value,
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
@@ -309,9 +309,9 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_id].value,
-                settings[DatabaseDataLakeSetting::onelake_client_secret].value.view(),
-                settings[DatabaseDataLakeSetting::onelake_bearer_token].value.view(),
-                settings[DatabaseDataLakeSetting::onelake_refresh_token].value.view(),
+                settings[DatabaseDataLakeSetting::onelake_client_secret].value,
+                settings[DatabaseDataLakeSetting::onelake_bearer_token].value,
+                settings[DatabaseDataLakeSetting::onelake_refresh_token].value,
                 onelake_auth_scope,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
@@ -324,8 +324,8 @@ void DatabaseDataLake::initialize() const
             std::string google_service_account = settings[DatabaseDataLakeSetting::google_service_account].value;
             std::string google_metadata_service = settings[DatabaseDataLakeSetting::google_metadata_service].value;
             std::string google_adc_client_id = settings[DatabaseDataLakeSetting::google_adc_client_id].value;
-            std::string_view google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value.view();
-            std::string_view google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value.view();
+            std::string_view google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
+            std::string_view google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
             std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
@@ -354,7 +354,7 @@ void DatabaseDataLake::initialize() const
             catalog_impl = std::make_shared<DataLake::UnityCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseDataLakeSetting::catalog_credential].value.view(),
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -397,7 +397,7 @@ void DatabaseDataLake::initialize() const
                 catalog_impl = std::make_shared<DataLake::PaimonRestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::catalog_credential].value.view()),
+                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::catalog_credential].value),
                 settings[DatabaseDataLakeSetting::region].value,
                 Context::getGlobalContextInstance());
             }
@@ -408,7 +408,7 @@ void DatabaseDataLake::initialize() const
                 catalog_impl = std::make_shared<DataLake::PaimonRestCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::dlf_access_key_id].value, settings[DatabaseDataLakeSetting::dlf_access_key_secret].value.view()),
+                DataLake::PaimonToken(settings[DatabaseDataLakeSetting::dlf_access_key_id].value, settings[DatabaseDataLakeSetting::dlf_access_key_secret].value),
                 settings[DatabaseDataLakeSetting::region].value,
                 Context::getGlobalContextInstance());
             }
@@ -872,9 +872,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             access_token_provider = [onelake_catalog = rest_catalog] { return onelake_catalog->getCurrentAccessToken(); };
         azure_configuration->setInitializationAsOneLake(
             auth->client_id,
-            auth->client_secret.view(),
+            auth->client_secret,
             auth->tenant_id,
-            auth->bearer_token.view(),
+            auth->bearer_token,
             std::move(access_token_provider),
             settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );

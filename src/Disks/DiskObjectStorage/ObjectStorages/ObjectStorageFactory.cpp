@@ -106,7 +106,7 @@ S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::st
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, true, uri_style);
+    S3::URI uri((fs::path(endpoint) / endpoint_subpath).string(), false, true, uri_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))

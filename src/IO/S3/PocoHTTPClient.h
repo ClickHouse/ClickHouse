@@ -34,8 +34,6 @@ class StandardHttpResponse;
 namespace DB
 {
 class Context;
-
-using SensitiveHTTPHeaderEntries = std::vector<std::pair<String, SensitiveString>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 }
 
 namespace Poco::Net
@@ -79,7 +77,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     std::optional<std::string> opt_disk_name;
     HTTPRequestThrottler request_throttler;
 
-    SensitiveHTTPHeaderEntries extra_headers;
+    HTTPHeaderEntries extra_headers;
     String http_client;
     String service_account;
     String metadata_service;
@@ -104,7 +102,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 private:
     PocoHTTPClientConfiguration(
         std::function<ProxyConfiguration()> per_request_configuration_,
-        const String & force_region_,
+        std::string_view force_region_,
         const RemoteHostFilter & remote_host_filter_,
         unsigned int s3_max_redirects_,
         RetryStrategy retry_strategy_,
@@ -240,7 +238,7 @@ protected:
 
     HTTPRequestThrottler request_throttler;
 
-    const SensitiveHTTPHeaderEntries extra_headers;
+    const HTTPHeaderEntries extra_headers;
 };
 
 class PocoHTTPClientGCPOAuth : public PocoHTTPClient

@@ -486,7 +486,7 @@ void SettingFieldString::readBinary(ReadBuffer & in)
 
 void SettingFieldSensitiveString::writeBinary(WriteBuffer & out) const
 {
-    writeStringBinary(value.view(), out);
+    writeStringBinary(value, out);
 }
 
 void SettingFieldSensitiveString::readBinary(ReadBuffer & in)

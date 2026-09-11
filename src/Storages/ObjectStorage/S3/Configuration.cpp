@@ -222,7 +222,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         url = S3::URI(
-            std::filesystem::path(collection_url) / filename,
+            (std::filesystem::path(collection_url) / filename).string(),
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);

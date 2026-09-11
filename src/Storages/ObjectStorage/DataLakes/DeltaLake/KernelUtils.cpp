@@ -28,7 +28,7 @@ std::string generateWritePath(const std::string & prefix, const std::string & fo
     return std::filesystem::path(prefix) / (DB::toString(DB::UUIDHelpers::generateV4()) + "." + Poco::toLower(format_str));
 }
 
-ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
+ffi::KernelStringSlice KernelUtils::toDeltaString(std::string_view string)
 {
     return ffi::KernelStringSlice{ .ptr = string.data(), .len = string.size() };
 }

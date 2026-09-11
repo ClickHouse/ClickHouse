@@ -7,6 +7,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/AwsFormat.h>
 #include <IO/S3/Requests.h>
 
 #include <algorithm>
@@ -113,7 +114,7 @@ bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMess
 
 PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     std::function<ProxyConfiguration()> per_request_configuration_,
-    const String & force_region_,
+    std::string_view force_region_,
     const RemoteHostFilter & remote_host_filter_,
     unsigned int s3_max_redirects_,
     RetryStrategy retry_strategy_,
@@ -175,7 +176,7 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
     {
         static const RE2 region_pattern(R"(^s3[.\-]([a-z0-9\-]+)\.amazonaws\.)");
         static const RE2 s3express_region_pattern(R"(^s3express(?:-[a-z0-9\-]+)?(?:\.dualstack)?\.([a-z0-9\-]+)\.amazonaws\.)");
-        Poco::URI uri(endpointOverride);
+        Poco::URI uri(endpointOverride.c_str());
         if (uri.getScheme() == "http")
             scheme = Aws::Http::Scheme::HTTP;
 
@@ -533,7 +534,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
         response->SetClientErrorType(code);
         auto with_stacktrace = code != Aws::Client::CoreErrors::NETWORK_CONNECTION;
-        response->SetClientErrorMessage(getCurrentExceptionMessage(with_stacktrace));
+        response->SetClientErrorMessage(Aws::String(getCurrentExceptionMessage(with_stacktrace)));
     };
 
     try
@@ -544,7 +545,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
         for (size_t attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
-            Poco::URI target_uri(uri);
+            Poco::URI target_uri(uri.c_str());
 
             if (enable_s3_requests_logging && !proxy_configuration.isEmpty())
                 LOG_TEST(log, "Due to reverse proxy host name ({}) won't be resolved on ClickHouse side", uri);
@@ -562,7 +563,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 &connect_time);
 
             /// In case of error this address will be written to logs
-            request.SetResolvedRemoteHost(session->getResolvedAddress());
+            request.SetResolvedRemoteHost(Aws::String(session->getResolvedAddress()));
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -597,17 +598,21 @@ void PocoHTTPClient::makeRequestInternalImpl(
 
             /// Headers coming from SDK are lower-cased.
             for (const auto & [header_name, header_value] : request.GetHeaders())
-                poco_request.set(boost::algorithm::to_lower_copy(header_name), header_value);
-            for (const auto & [header_name, header_value] : extra_headers)
+            {
+                std::string lower_name(header_name);
+                boost::algorithm::to_lower(lower_name);
+                poco_request.set(lower_name, std::string(header_value));
+            }
+            for (const auto & header : extra_headers)
             {
                 // AWS S3 canonical headers must include `Host`, `Content-Type` and any `x-amz-*`.
                 // These headers will be signed. Custom S3 headers specified in ClickHouse storage conf are added in `extra_headers`.
                 // At this point in the stack trace, request has already been signed and any `x-amz-*` extra headers was already added
                 // to the canonical headers list. Therefore, we should not add them again to the request.
                 // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
-                if (!header_name.starts_with("x-amz-"))
+                if (!header.name.starts_with("x-amz-"))
                 {
-                    poco_request.set(boost::algorithm::to_lower_copy(header_name), String(header_value.view()));
+                    poco_request.set(boost::algorithm::to_lower_copy(header.name), String(header.value));
                 }
             }
 
@@ -692,14 +697,15 @@ void PocoHTTPClient::makeRequestInternalImpl(
             }
 
             response->SetResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code));
-            response->SetContentType(poco_response.getContentType());
+            response->SetContentType(Aws::String(poco_response.getContentType()));
 
             if (enable_s3_requests_logging)
             {
                 WriteBufferFromOwnString headers_ss;
                 for (const auto & [header_name, header_value] : poco_response)
                 {
-                    response->AddHeader(header_name, header_value);
+                    Aws::String value(header_value);
+                    response->AddHeader(Aws::String(header_name), value);
                     headers_ss << header_name << ": " << header_value << "; ";
                 }
                 LOG_TEST(log, "Received headers: {}", headers_ss.str());
@@ -707,7 +713,10 @@ void PocoHTTPClient::makeRequestInternalImpl(
             else
             {
                 for (const auto & [header_name, header_value] : poco_response)
-                    response->AddHeader(header_name, header_value);
+                {
+                    Aws::String value(header_value);
+                    response->AddHeader(Aws::String(header_name), value);
+                }
             }
 
             /// Request is successful but for some special requests we can have actual error message in body
@@ -860,7 +869,7 @@ void PocoHTTPClientGCPOAuth::makeRequestInternal(
         if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
             bearer_token = requestBearerToken();
 
-        request.SetHeaderValue("Authorization", fmt::format("Bearer {}", bearer_token->token.view()));
+        request.SetHeaderValue("Authorization", awsFormat("Bearer {}", bearer_token->token));
     }
 
     PocoHTTPClient::makeRequestInternal(request, response, readLimiter, writeLimiter);
@@ -872,7 +881,7 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
     if (!bearer_token || std::chrono::system_clock::now() > bearer_token->is_valid_to)
         bearer_token = requestBearerToken();
 
-    return String(bearer_token->token.view());
+    return String(bearer_token->token);
 }
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
@@ -935,7 +944,7 @@ PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerTokenFr
 {
     auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
     auto result = fetchGCPOAuthToken(
-        google_adc_client_id, google_adc_client_secret.view(), google_adc_refresh_token.view(), getCredentialAcquisitionTimeouts(timeouts), group);
+        google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, getCredentialAcquisitionTimeouts(timeouts), group);
     return
     {
         .token = std::move(result.access_token),

@@ -428,7 +428,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         for (const auto & header : extra_headers)
         {
             if (!header.value.empty())  // Skip empty headers
-                poco_request.set(header.name, header.value);
+                poco_request.set(header.name, String(header.value));
         }
 
         /// Some SDK clients (e.g. Key Vault) do not set the `Content-Length` header themselves

@@ -39,7 +39,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
         request.set("Content-Encoding", content_encoding);
 
     for (const auto & header: additional_headers)
-        request.add(header.name, header.value);
+        request.add(header.name, String(header.value));
 
     if (!content_type.empty() && !request.has("Content-Type"))
     {

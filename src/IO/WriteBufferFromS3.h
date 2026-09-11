@@ -107,7 +107,7 @@ private:
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
     DequeWithMemoryTracking<String> multipart_tags;
-    DequeWithMemoryTracking<String> multipart_checksums; // if enabled
+    DequeWithMemoryTracking<Aws::String> multipart_checksums; // if enabled
     bool multipart_upload_finished = false;
 
     /// Track that prefinalize() is called only once

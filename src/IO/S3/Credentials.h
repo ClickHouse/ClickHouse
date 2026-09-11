@@ -72,7 +72,7 @@ public:
     friend String getRunningAvailabilityZone(AZFacilities az_facility);
 
 private:
-    std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
+    std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const Aws::String & user_agent_string) const;
     // static String getAvailabilityZoneOrException(bool is_zone_id = false);
     static String getAWSZoneID();
     static String getAWSZoneName();
@@ -142,11 +142,11 @@ class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWS
 
 public:
     static std::shared_ptr<Aws::Auth::AWSCredentialsProvider>
-    create(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, String role_arn_ = "");
+    create(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, std::string_view role_arn_ = {});
 
     /// True when a role ARN or `web_identity_token_file` is set (environment, profile, or non-empty `role_arn_` override).
     /// Used to decide whether to add web identity to the credentials chain so partial misconfiguration still surfaces `create` warnings.
-    static bool isWebIdentityConfigured(const String & role_arn_ = {});
+    static bool isWebIdentityConfigured(std::string_view role_arn_ = {});
 
     explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
         DB::S3::PocoHTTPClientConfiguration & aws_client_configuration,
@@ -251,7 +251,7 @@ public:
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
 {
 public:
-    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_);
+    AssumeRoleRequest(Aws::String role_arn_, Aws::String role_session_name_, Aws::String external_id_);
 
     Aws::Http::HeaderValueCollection GetHeaders() const override;
 
@@ -262,9 +262,9 @@ public:
     void AddQueryStringParameters(Aws::Http::URI & uri) const override;
 
 private:
-    std::string role_arn;
-    std::string role_session_name;
-    std::string external_id;
+    Aws::String role_arn;
+    Aws::String role_session_name;
+    Aws::String external_id;
 };
 class AssumeRoleResult
 {
@@ -272,18 +272,18 @@ public:
     /// NOLINTNEXTLINE
     AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result);
 
-    const std::string & getAccessKeyID() const { return access_key_id; }
+    const Aws::String & getAccessKeyID() const { return access_key_id; }
 
-    const std::string & getSecretAccessKey() const { return secret_access_key; }
+    const Aws::String & getSecretAccessKey() const { return secret_access_key; }
 
-    const std::string & getSessionToken() const { return session_token; }
+    const Aws::String & getSessionToken() const { return session_token; }
 
     const Aws::Utils::DateTime & getExpiration() const { return expiration; }
 
 private:
-    std::string access_key_id;
-    std::string secret_access_key;
-    std::string session_token;
+    Aws::String access_key_id;
+    Aws::String secret_access_key;
+    Aws::String session_token;
     Aws::Utils::DateTime expiration;
 
     LoggerPtr log{getLogger("AssumeRoleResult")};
@@ -297,7 +297,7 @@ public:
     AWSAssumeRoleClient(
         const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
         const Aws::Client::ClientConfiguration & client_configuration,
-        const std::string & sts_endpoint_override = "");
+        std::string_view sts_endpoint_override = "");
 
     AssumeRoleOutcome assumeRole(const AssumeRoleRequest & request) const;
 
@@ -311,18 +311,18 @@ class AwsAuthSTSAssumeRoleCredentialsProvider : public Aws::Auth::AWSCredentials
 {
 public:
     static std::shared_ptr<Aws::Auth::AWSCredentialsProvider> create(
-            std::string role_arn_,
-            std::string session_name_,
-            std::string external_id_,
+            std::string_view role_arn_,
+            std::string_view session_name_,
+            std::string_view external_id_,
             uint64_t expiration_window_seconds_,
             std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider,
             const DB::S3::PocoHTTPClientConfiguration & client_configuration,
-            const std::string & sts_endpoint_override = "");
+            std::string_view sts_endpoint_override = {});
 
     AwsAuthSTSAssumeRoleCredentialsProvider(
-            std::string role_arn_,
-            std::string session_name_,
-            std::string external_id_,
+            Aws::String role_arn_,
+            Aws::String session_name_,
+            Aws::String external_id_,
             uint64_t expiration_window_seconds_,
             std::shared_ptr<AWSAssumeRoleClient> client_);
 
@@ -330,10 +330,10 @@ public:
 
     struct CacheKey
     {
-        std::string role_arn;
-        std::string session_name;
-        std::string external_id;
-        std::string endpoint;
+        Aws::String role_arn;
+        Aws::String session_name;
+        Aws::String external_id;
+        Aws::String endpoint;
         Aws::Auth::AWSCredentials credentials;
 
         bool operator==(const CacheKey & rhs) const = default;
@@ -344,9 +344,9 @@ public:
 protected:
     void Reload() override;
 private:
-    std::string role_arn;
-    std::string session_name;
-    std::string external_id;
+    Aws::String role_arn;
+    Aws::String session_name;
+    Aws::String external_id;
     uint64_t expiration_window_seconds;
     std::shared_ptr<AWSAssumeRoleClient> client;
     Aws::Auth::AWSCredentials credentials;

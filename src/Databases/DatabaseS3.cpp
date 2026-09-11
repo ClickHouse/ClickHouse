@@ -112,7 +112,7 @@ StoragePtr DatabaseS3::getTableImpl(const String & name, ContextPtr context_) co
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
     {
         function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.access_key_id.value()));
-        function->arguments->children.push_back(make_intrusive<ASTLiteral>(config.secret_access_key->view()));
+        function->arguments->children.push_back(make_intrusive<ASTLiteral>(String(*config.secret_access_key)));
     }
     else if (config.use_environment_credentials)
     {
@@ -184,7 +184,7 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
     if (config.no_sign_request)
         creation_args += ", 'NOSIGN'";
     else if (config.access_key_id.has_value() && config.secret_access_key.has_value())
-        creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), config.secret_access_key->view());
+        creation_args += fmt::format(", '{}', '{}'", config.access_key_id.value(), *config.secret_access_key);
     else if (config.use_environment_credentials)
         creation_args += ", use_environment_credentials = 1";
 

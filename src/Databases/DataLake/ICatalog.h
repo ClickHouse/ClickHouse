@@ -68,7 +68,7 @@ public:
     bool hasStorageCredentials() const;
     bool hasDataLakeSpecificProperties() const;
 
-    void setLocation(const std::string & location_);
+    void setLocation(std::string_view location_);
     std::string getLocation() const;
     std::string getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style = DB::S3UriStyle::AUTO) const;
     std::string getMetadataLocation(const std::string & iceberg_metadata_file_location) const;

@@ -102,7 +102,7 @@ void ReadWriteBufferFromHTTP::prepareRequest(Poco::Net::HTTPRequest & request, s
         request.setContentLength(0);    /// No callback - no body
 
     for (const auto & [header, value] : http_header_entries)
-        request.set(header, value);
+        request.set(header, String(value));
 
     if (range)
     {

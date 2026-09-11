@@ -80,7 +80,7 @@ namespace
             {
                 ASTs equals_args;
                 equals_args.emplace_back(make_intrusive<ASTLiteral>(header_name));
-                equals_args.emplace_back(make_intrusive<ASTLiteral>(header_value));
+                equals_args.emplace_back(make_intrusive<ASTLiteral>(String(header_value)));
                 header_equals.emplace_back(makeASTOperator("equals", std::move(equals_args)));
             }
 

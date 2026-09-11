@@ -131,7 +131,7 @@ std::pair<SensitiveString, Int64> BigQueryTokenProvider::fetchTokenWithExpiratio
         }
         case BigQueryConfiguration::CredentialsKind::ServiceAccountKey:
         {
-            auto [assertion, token_endpoint] = makeServiceAccountAssertion(configuration.service_account_key.view(), configuration.token_url);
+            auto [assertion, token_endpoint] = makeServiceAccountAssertion(configuration.service_account_key, configuration.token_url);
             /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
             context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
             auto token = fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, timeouts);
@@ -144,7 +144,7 @@ std::pair<SensitiveString, Int64> BigQueryTokenProvider::fetchTokenWithExpiratio
             const String token_endpoint = configuration.token_url.empty() ? GOOGLE_OAUTH2_TOKEN_ENDPOINT : configuration.token_url;
             context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
             auto token = fetchGCPOAuthToken(
-                configuration.client_id, configuration.client_secret.view(), configuration.refresh_token.view(),
+                configuration.client_id, configuration.client_secret, configuration.refresh_token,
                 timeouts, HTTPConnectionGroupType::HTTP, token_endpoint);
             return {std::move(token.access_token), token.expires_in};
         }
@@ -215,7 +215,7 @@ Poco::JSON::Object::Ptr BigQueryClient::requestJSON(
     auto do_request = [&](bool force_new_token)
     {
         HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", fmt::format("Bearer {}", token_provider->getToken(context, force_new_token).view()));
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", token_provider->getToken(context, force_new_token)));
         if (!configuration.billing_project.empty())
             headers.emplace_back("X-Goog-User-Project", configuration.billing_project);
 

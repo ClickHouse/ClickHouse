@@ -38,11 +38,11 @@ struct URI
 
     URI() = default;
     explicit URI(
-        const std::string & uri_,
+        std::string_view uri_,
         bool allow_archive_path_syntax = false,
         bool keep_presigned_query_parameters = true,
         S3UriStyle uri_style = S3UriStyle::AUTO);
-    void addRegionToURI(const std::string & region);
+    void addRegionToURI(std::string_view region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);

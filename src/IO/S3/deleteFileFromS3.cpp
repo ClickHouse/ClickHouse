@@ -117,7 +117,7 @@ void deleteFilesFromS3(
 
         while (current_position < keys.size())
         {
-            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            Aws::Vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
             String comma_separated_keys;
             size_t first_position = current_position;
             for (; current_position < keys.size() && current_chunk.size() < batch_size; ++current_position)

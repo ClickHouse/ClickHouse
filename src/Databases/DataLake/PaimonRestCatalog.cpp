@@ -144,14 +144,14 @@ std::string_view PaimonRestCatalog::createAuthHeaders(
     {
         /// The bearer token is applied by `create` (it fills the `Authorization` header), so it is
         /// returned rather than spliced into `current_headers` here.
-        return token->bearer_token.view();
+        return token->bearer_token;
     }
     else if (token->token_provider == "dlf")
     {
         std::unordered_map<String, String> headers_map;
         for (const auto & entry : current_headers)
         {
-            headers_map.emplace(entry.name, entry.value);
+            headers_map.emplace(entry.name, String(entry.value));
         }
         auto get_or_default = [](const std::unordered_map<String, String> & map, const String & key_, const String & value_)
         {
@@ -228,7 +228,7 @@ std::string_view PaimonRestCatalog::createAuthHeaders(
                  bytesToHex(DB::encodeSHA256(canonical_request))},
                 DLF_NEW_LINE));
 
-            String key_secret = fmt::format("aliyun_v4{}", token->dlf_access_key_secret.view());
+            String key_secret = fmt::format("aliyun_v4{}", token->dlf_access_key_secret);
             std::vector<uint8_t> key_secret_byte(key_secret.data(), key_secret.data() + key_secret.length());
             auto date_key = DB::hmacSHA256(key_secret_byte, date);
             auto date_region_key = DB::hmacSHA256(date_key, region);
@@ -290,7 +290,7 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
         headers_string << "{";
         for (const auto & entry : request_headers)
         {
-            headers_string << entry.name << ": " << entry.value;
+            headers_string << entry.name << ": " << std::string_view(entry.value);
         }
         headers_string << "}";
         LOG_TRACE(log, "Request headers: {}", headers_string.str());

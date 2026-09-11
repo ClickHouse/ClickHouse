@@ -163,6 +163,7 @@ public:
     }
 
     template <typename Transform = void, typename T>
+    requires (!std::is_convertible_v<const T &, std::string_view>)
     ALWAYS_INLINE void update(const T & x)
     {
         if constexpr (std::endian::native == std::endian::big)

@@ -113,7 +113,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         }
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-            auth_settings[S3AuthSetting::region],
+            auth_settings[S3AuthSetting::region].value,
             RemoteHostFilter(),
             s3_max_redirects,
             S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
@@ -139,9 +139,9 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
         auto client = S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
-            auth_settings[S3AuthSetting::access_key_id],
-            auth_settings[S3AuthSetting::secret_access_key].value.view(),
-            auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value.view(),
+            auth_settings[S3AuthSetting::access_key_id].value,
+            auth_settings[S3AuthSetting::secret_access_key].value,
+            auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value,
             auth_settings.server_side_encryption_kms_config,
             std::move(headers),
             S3::CredentialsConfiguration
@@ -158,7 +158,7 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 /// Keeper snapshot upload is a server-internal operation; it uses the server's own credentials.
                 /*forbid_implicit_credentials=*/false
             },
-            auth_settings[S3AuthSetting::session_token].value.view(),
+            auth_settings[S3AuthSetting::session_token].value,
             shared_cache);
 
         auto new_client = std::make_shared<KeeperSnapshotManagerS3::S3Configuration>(std::move(new_uri), std::move(auth_settings), std::move(client));

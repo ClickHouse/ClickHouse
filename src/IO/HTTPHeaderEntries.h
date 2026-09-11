@@ -3,16 +3,19 @@
 #include <string>
 #include <vector>
 
+#include <base/types.h>
+#include <Common/SensitiveString.h>
+
 namespace DB
 {
 
 struct HTTPHeaderEntry
 {
-    std::string name;
-    std::string value;
+    String name;
+    SensitiveString value;
 
-    HTTPHeaderEntry(const std::string & name_, const std::string & value_) : name(name_), value(value_) {}
-    bool operator==(const HTTPHeaderEntry & other) const { return name == other.name && value == other.value; }
+    HTTPHeaderEntry(std::string_view name_, std::string_view value_) : name(name_), value(value_) {}
+    bool operator==(const HTTPHeaderEntry & other) const = default;
 };
 
 using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>; // STYLE_CHECK_ALLOW_STD_CONTAINERS

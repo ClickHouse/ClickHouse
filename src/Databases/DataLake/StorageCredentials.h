@@ -26,7 +26,7 @@ class S3Credentials final : public IStorageCredentials
 {
 public:
     S3Credentials(
-        const std::string & access_key_id_,
+        std::string_view access_key_id_,
         std::string_view secret_access_key_,
         std::string_view session_token_)
         : access_key_id(access_key_id_)
@@ -42,9 +42,9 @@ public:
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Storage credentials specified in AST already");
 
         engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(access_key_id));
-        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(secret_access_key.view()));
+        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(String(secret_access_key)));
         if (!session_token.empty())
-            engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(session_token.view()));
+            engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(String(session_token)));
     }
 
     const String & getAccessKeyId() const
@@ -54,12 +54,12 @@ public:
 
     std::string_view getSecretAccessKey() const
     {
-        return secret_access_key.view();
+        return secret_access_key;
     }
 
     std::string_view getSessionToken() const
     {
-        return session_token.view();
+        return session_token;
     }
 
 private:
@@ -88,10 +88,10 @@ public:
             DB::makeASTFunction("headers",
                 DB::makeASTFunction("equals",
                     DB::make_intrusive<DB::ASTLiteral>("Authorization"),
-                    DB::make_intrusive<DB::ASTLiteral>(fmt::format("Bearer {}", oauth_token.view())))));
+                    DB::make_intrusive<DB::ASTLiteral>(fmt::format("Bearer {}", oauth_token)))));
     }
 
-    std::string_view getToken() const { return oauth_token.view(); }
+    std::string_view getToken() const { return oauth_token; }
 
 private:
     DB::SensitiveString oauth_token;
@@ -110,7 +110,7 @@ public:
         if (engine_args.size() != 1)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Storage credentials specified in AST already");
 
-        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(sas_token.view()));
+        engine_args.push_back(DB::make_intrusive<DB::ASTLiteral>(String(sas_token)));
     }
 
 private:

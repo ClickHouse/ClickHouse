@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3/ReadBufferFromGetObjectResult.h>
+#include <IO/S3Common.h>
 #include <Common/HistogramMetrics.h>
 
 namespace HistogramMetrics
@@ -20,7 +21,7 @@ ReadBufferFromGetObjectResult::ReadBufferFromGetObjectResult(Aws::S3::Model::Get
     metadata.size_bytes = result->GetContentLength();
     metadata.last_modified = Poco::Timestamp::fromEpochTime(result->GetLastModified().Seconds());
     metadata.etag = result->GetETag();
-    metadata.attributes = result->GetMetadata();
+    metadata.attributes = objectAttributesFromAwsMap(result->GetMetadata());
 }
 
 ReadBufferFromGetObjectResult::~ReadBufferFromGetObjectResult()

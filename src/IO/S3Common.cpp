@@ -50,6 +50,21 @@ bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
         || error.GetExceptionName() == "InvalidPartOrder";
 }
 
+namespace S3
+{
+
+Aws::Map<Aws::String, Aws::String> objectAttributesToAwsMap(const ObjectAttributes & attributes)
+{
+    return {attributes.begin(), attributes.end()};
+}
+
+ObjectAttributes objectAttributesFromAwsMap(const Aws::Map<Aws::String, Aws::String> & map)
+{
+    return {map.begin(), map.end()};
+}
+
+}
+
 }
 
 #endif

@@ -85,13 +85,13 @@ private:
 class BucketMemStore
 {
 public:
-    using Key = std::string;
+    using Key = Aws::String;
     using Data = std::string;
     using ETag = std::string;
-    using MPU_ID = std::string;
+    using MPU_ID = Aws::String;
     using MPUPartsInProgress = std::map<ETag, Data>;
     using MPUParts = std::vector<Data>;
-    using Metadata = std::map<std::string, std::string>;
+    using Metadata = std::map<Aws::String, Aws::String>;
 
 
     std::map<Key, Data> objects;
@@ -113,7 +113,7 @@ public:
         return id;
     }
 
-    std::string UploadPart(const std::string & upload_id, const std::string & part)
+    std::string UploadPart(const MPU_ID & upload_id, const std::string & part)
     {
         auto etag = sequencer.next_id();
         auto & parts = multiPartUploads.at(upload_id);
@@ -121,13 +121,13 @@ public:
         return etag;
     }
 
-    void PutObject(const std::string & key, const std::string & data, const Metadata & metadata = {})
+    void PutObject(const Key & key, const std::string & data, const Metadata & metadata = {})
     {
         objects[key] = data;
         object_metadata[key] = metadata;
     }
 
-    void CompleteMPU(const std::string & key, const std::string & upload_id, const std::vector<std::string> & etags)
+    void CompleteMPU(const Key & key, const MPU_ID & upload_id, const std::vector<std::string> & etags)
     {
         MPUParts completedParts;
         completedParts.reserve(etags.size());
@@ -150,7 +150,7 @@ public:
         multiPartUploadMetadata.erase(upload_id);
     }
 
-    void AbortMPU(const std::string & upload_id)
+    void AbortMPU(const MPU_ID & upload_id)
     {
         multiPartUploads.erase(upload_id);
         multiPartUploadMetadata.erase(upload_id);
@@ -183,8 +183,8 @@ public:
         buckets.emplace(bucket, BucketMemStore{});
     }
 
-    BucketMemStore& GetBucketStore(const std::string & bucket) {
-        return buckets.at(bucket);
+    BucketMemStore& GetBucketStore(std::string_view bucket) {
+        return buckets.at(String(bucket));
     }
 
 private:
@@ -227,7 +227,7 @@ inline std::string readRequestBody(const std::shared_ptr<Aws::IOStream> & body, 
 }
 
 /// A CopyObject / UploadPartCopy `CopySource` has the form "bucket/key".
-inline std::pair<std::string, std::string> splitCopySource(const std::string & copy_source)
+inline std::pair<Aws::String, Aws::String> splitCopySource(const Aws::String & copy_source)
 {
     auto slash = copy_source.find('/');
     chassert(slash != std::string::npos);
@@ -339,7 +339,7 @@ struct Client : DB::S3::Client
         size_t begin = 0;
         size_t end = data.size() - 1;
 
-        const String & range = request.GetRange();
+        const auto & range = request.GetRange();
         const String prefix = "bytes=";
         if (range.starts_with(prefix))
         {
@@ -445,7 +445,7 @@ struct Client : DB::S3::Client
 
         std::vector<std::string> etags;
         for (const auto & x: request.GetMultipartUpload().GetParts()) {
-            etags.push_back(x.GetETag());
+            etags.emplace_back(x.GetETag());
         }
         bStore.CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
 
@@ -497,7 +497,7 @@ struct Client : DB::S3::Client
 
         size_t begin = 0;
         size_t end = src_data.size() - 1;
-        const String & range = request.GetCopySourceRange();
+        const auto & range = request.GetCopySourceRange();
         if (const String prefix = "bytes="; range.starts_with(prefix))
         {
             int ret = sscanf(range.c_str(), "bytes=%zu-%zu", &begin, &end); /// NOLINT
@@ -645,7 +645,7 @@ struct PutObjectPreconditionFailedInjection : InjectionModel
         for (const auto & [name, value] : request.GetMetadata())
             metadata[name] = value;
         seen_metadata.push_back(metadata);
-        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        seen_if_none_match.emplace_back(request.GetIfNoneMatch());
         return makePreconditionFailedError();
     }
 
@@ -688,7 +688,7 @@ struct CompleteMPULostResponseThenPreconditionFailed : InjectionModel
 
         std::vector<std::string> etags;
         for (const auto & part : request.GetMultipartUpload().GetParts())
-            etags.push_back(part.GetETag());
+            etags.emplace_back(part.GetETag());
         store->GetBucketStore(request.GetBucket()).CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
 
         return Aws::Client::AWSError<Aws::S3::S3Errors>(
@@ -734,13 +734,13 @@ struct CompleteMPUNoSuchUploadInjection : InjectionModel
     std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(
         const Aws::S3::Model::CompleteMultipartUploadRequest & request) override
     {
-        seen_if_none_match.push_back(request.GetIfNoneMatch());
+        seen_if_none_match.emplace_back(request.GetIfNoneMatch());
 
         if (complete_first_attempt && calls == 0)
         {
             std::vector<std::string> etags;
             for (const auto & part : request.GetMultipartUpload().GetParts())
-                etags.push_back(part.GetETag());
+                etags.emplace_back(part.GetETag());
             store->GetBucketStore(request.GetBucket()).CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
         }
         ++calls;
@@ -1607,7 +1607,7 @@ protected:
         data.reserve(size);
         for (size_t i = 0; i < size; ++i)
             data += static_cast<char>('0' + (i % 10));
-        client->store->GetBucketStore(bucket).PutObject(key, data);
+        client->store->GetBucketStore(bucket).PutObject(MockS3::BucketMemStore::Key(key), data);
         return data;
     }
 
@@ -1623,7 +1623,7 @@ protected:
     {
         return [this, src_key]() -> std::unique_ptr<SeekableReadBuffer>
         {
-            return std::make_unique<ReadBufferFromOwnString>(client->store->GetBucketStore(bucket).objects[src_key]);
+            return std::make_unique<ReadBufferFromOwnString>(client->store->GetBucketStore(bucket).objects[MockS3::BucketMemStore::Key(src_key)]);
         };
     }
 

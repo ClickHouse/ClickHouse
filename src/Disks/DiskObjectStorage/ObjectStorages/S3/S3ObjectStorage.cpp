@@ -198,13 +198,13 @@ private:
                 ObjectMetadata metadata{
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    .etag = object.GetETag(),
+                    .etag = String(object.GetETag()),
                     .tags = {},
                     .attributes = {},
                 };
                 if (with_tags)
                     metadata.tags = S3::getObjectTags(*client, request->GetBucket(), object.GetKey());
-                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
+                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(String(object.GetKey()), std::move(metadata)));
             }
 
             /// It returns false when all objects were returned
@@ -407,11 +407,11 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
         /// would silently drop every object after it.
         for (const auto & object : objects)
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
-                object.GetKey(),
+                String(object.GetKey()),
                 ObjectMetadata{
                     .size_bytes = static_cast<uint64_t>(object.GetSize()),
                     .last_modified = Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    .etag = object.GetETag(),
+                    .etag = String(object.GetETag()),
                     .tags = {},
                     .attributes = {},
                 }));
@@ -511,7 +511,7 @@ static void putObjectsTagOnS3(
                 existing_tag_set.end(),
                 [&] (const Aws::S3::Model::Tag& tag)
                 {
-                    return tag.GetKey() == tag_key && tag.GetValue() == tag_value;
+                    return std::string_view(tag.GetKey()) == tag_key && std::string_view(tag.GetValue()) == tag_value;
                 })
             != existing_tag_set.end());
         if (present)

@@ -131,7 +131,7 @@ private:
         const S3Settings & settings,
         const ContextPtr & context)
     {
-        Aws::Auth::AWSCredentials credentials(access_key_id, Aws::SensitiveString(secret_access_key), Aws::String());
+        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, Aws::String());
         HTTPHeaderEntries headers;
         SensitiveString session_token = settings.auth_settings[S3AuthSetting::session_token];
         SensitiveString sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
@@ -140,7 +140,7 @@ private:
         const bool base_keys_supplied_by_query = !access_key_id.empty();
         if (access_key_id.empty())
         {
-            credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id], Aws::SensitiveString(settings.auth_settings[S3AuthSetting::secret_access_key].value.view()), Aws::String());
+            credentials = Aws::Auth::AWSCredentials(settings.auth_settings[S3AuthSetting::access_key_id].value, settings.auth_settings[S3AuthSetting::secret_access_key].value, Aws::String());
             headers = settings.auth_settings.headers;
         }
 
@@ -201,7 +201,7 @@ private:
 
 
         S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-            settings.auth_settings[S3AuthSetting::region],
+            settings.auth_settings[S3AuthSetting::region].value,
             context->getRemoteHostFilter(),
             static_cast<unsigned>(server_settings[ServerSetting::s3_max_redirects]),
             S3::PocoHTTPClientConfiguration::RetryStrategy{
@@ -287,11 +287,11 @@ private:
             client_settings,
             credentials.GetAWSAccessKeyId(),
             credentials.GetAWSSecretKey(),
-            sse_customer_key.view(),
+            sse_customer_key,
             sse_kms_config,
             std::move(headers),
             std::move(credentials_configuration),
-            session_token.view(),
+            session_token,
             shared_cache);
     }
 

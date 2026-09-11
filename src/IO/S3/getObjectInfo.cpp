@@ -40,8 +40,8 @@ namespace
 
     Aws::S3::Model::GetObjectTaggingOutcome getObjectTagging(
         const S3::Client & client,
-        const String & bucket,
-        const String & key,
+        std::string_view bucket,
+        std::string_view key,
         const String & version_id)
     {
         ProfileEvents::increment(ProfileEvents::S3GetObjectTagging);
@@ -78,7 +78,7 @@ namespace
         object_info.etag = result.GetETag();
 
         if (with_metadata)
-            object_info.metadata = result.GetMetadata();
+            object_info.metadata = objectAttributesFromAwsMap(result.GetMetadata());
 
         if (with_tags && result.GetTagCount() > 0)
             object_info.tags = getObjectTags(client, bucket, key, version_id);
@@ -109,8 +109,8 @@ static String getAuthenticationErrorHint(Aws::S3::S3Errors error)
 
 ObjectAttributes getObjectTags(
     const S3::Client & client,
-    const String & bucket,
-    const String & key,
+    std::string_view bucket,
+    std::string_view key,
     const String & version_id)
 {
     ObjectAttributes tags;
@@ -127,7 +127,7 @@ ObjectAttributes getObjectTags(
     }
 
     for (const auto & tag : tag_outcome.GetResult().GetTagSet())
-        tags[tag.GetKey()] = tag.GetValue();
+        tags[String(tag.GetKey())] = tag.GetValue();
 
     return tags;
 }

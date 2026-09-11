@@ -25,6 +25,6 @@ bool hasSupported7zExtension(std::string_view path);
 
 bool hasSupportedArchiveExtension(std::string_view path);
 
-std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source);
+std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(std::string_view source);
 
 }

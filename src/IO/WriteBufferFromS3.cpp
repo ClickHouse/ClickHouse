@@ -422,12 +422,12 @@ void WriteBufferFromS3::createMultipartUpload()
 
     /// Metadata set here lands on the completed object, so a HEAD after completion sees the token.
     if (auto metadata = metadataWithWriteToken())
-        req.SetMetadata(*metadata);
+        req.SetMetadata(S3::objectAttributesToAwsMap(*metadata));
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(Aws::String(request_settings[S3RequestSetting::storage_class_name].value)));
 
     client_ptr->setKMSHeaders(req);
 
@@ -525,7 +525,7 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     {
         auto checksum = S3::RequestChecksum::calculateChecksum(req);
         S3::RequestChecksum::setRequestChecksum(req, checksum);
-        multipart_checksums.push_back(std::move(checksum));
+        multipart_checksums.emplace_back(std::move(checksum));
     }
 
     return req;
@@ -739,9 +739,9 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
     if (auto metadata = metadataWithWriteToken())
-        req.SetMetadata(*metadata);
+        req.SetMetadata(S3::objectAttributesToAwsMap(*metadata));
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(Aws::String(request_settings[S3RequestSetting::storage_class_name].value)));
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);

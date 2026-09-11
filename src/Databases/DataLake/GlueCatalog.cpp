@@ -101,7 +101,7 @@ bool isReadableGlueTable(const Aws::Glue::Model::Table & table)
 {
     const auto & parameters = table.GetParameters();
     auto it = parameters.find("table_type");
-    const std::string table_type = it != parameters.end() ? it->second : "";
+    const auto & table_type = it != parameters.end() ? it->second : "";
     return Poco::toUpper(table_type) == "ICEBERG";
 }
 
@@ -169,12 +169,12 @@ GlueCatalog::GlueCatalog(
     client_configuration.region = region;
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
-    Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, Aws::SensitiveString(settings_.aws_secret_access_key.view()), Aws::String());
+    Aws::Auth::AWSCredentials credentials(settings_.aws_access_key_id, settings_.aws_secret_access_key, Aws::String());
     /// Only for testing when we are mocking glue
     if (!endpoint.empty())
     {
         client_configuration.endpointOverride = endpoint;
-        endpoint_provider->OverrideEndpoint(endpoint);
+        endpoint_provider->OverrideEndpoint(Aws::String(endpoint));
 
         if (credentials.IsEmpty() && !creds_config.forbid_implicit_credentials)
         {
@@ -216,14 +216,14 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
         if (outcome.IsSuccess())
         {
             const auto & databases_result = outcome.GetResult();
-            const std::vector<Aws::Glue::Model::Database> & dbs = databases_result.GetDatabaseList();
+            const auto & dbs = databases_result.GetDatabaseList();
             LOG_TEST(log, "Success getting databases for prefix '{}', total dbs {}", prefix, dbs.size());
             for (const auto & db : dbs)
             {
                 const auto & db_name = db.GetName();
                 if (!db_name.starts_with(prefix))
                     continue;
-                result.push_back(db_name);
+                result.emplace_back(db_name);
                 if (limit != 0 && result.size() >= limit)
                     break;
             }
@@ -265,7 +265,7 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
         if (outcome.IsSuccess())
         {
             const auto & tables_result = outcome.GetResult();
-            const std::vector<Aws::Glue::Model::Table> & tables = tables_result.GetTableList();
+            const auto & tables = tables_result.GetTableList();
             LOG_TEST(log, "Success getting table for database '{}', total tables {}", db_name, tables.size());
             for (const auto & table : tables)
             {
@@ -278,7 +278,7 @@ CatalogTables GlueCatalog::getTablesForDatabase(const std::string & db_name, siz
                 if (limit != 0 && result.size() >= limit)
                     break;
                 result.push_back(CatalogTable{
-                    .name = db_name + "." + table.GetName(),
+                    .name = fmt::format("{}.{}", db_name, table.GetName()),
                     .is_readable = isReadableGlueTable(table),
                 });
             }
@@ -371,11 +371,11 @@ bool GlueCatalog::tryGetTableMetadata(
             const auto & table_params = table_outcome.GetParameters();
             if (table_params.contains("metadata_location"))
             {
-                result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = table_params.at("metadata_location")});
+                result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = String(table_params.at("metadata_location"))});
             }
             else if (const auto & location = table_outcome.GetStorageDescriptor().GetLocation(); !location.empty())
             {
-                String location_with_slash = location;
+                String location_with_slash(location);
                 if (!location_with_slash.ends_with('/'))
                     location_with_slash += '/';
 
@@ -417,7 +417,7 @@ bool GlueCatalog::tryGetTableMetadata(
                 if (column_params.contains("iceberg.field.current") && column_params.at("iceberg.field.current") == "false")
                     continue;
 
-                String column_type = column.GetType();
+                String column_type(column.GetType());
                 if (column_type == "timestamp" || column_type == "timestamp_nano")
                 {
                     if (!result.requiresDataLakeSpecificProperties())
@@ -425,7 +425,7 @@ bool GlueCatalog::tryGetTableMetadata(
                     column_type = getActualTimestampType(column.GetName(), result, column_type);
                 }
 
-                schema.push_back({column.GetName(), getType(column_type, can_be_nullable)});
+                schema.push_back({String(column.GetName()), getType(column_type, can_be_nullable)});
             }
             result.setSchema(schema);
         }
@@ -507,7 +507,7 @@ bool GlueCatalog::empty() const
     return true;
 }
 
-String GlueCatalog::getActualTimestampType(const String & column_name, const TableMetadata & table_metadata, const String & glue_column_type) const
+String GlueCatalog::getActualTimestampType(std::string_view column_name, const TableMetadata & table_metadata, const String & glue_column_type) const
 {
     auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
     if (!table_specific_properties.has_value())
@@ -530,7 +530,7 @@ String GlueCatalog::getActualTimestampType(const String & column_name, const Tab
 
 String GlueCatalog::resolveTimestampTypeFromMetadata(
     const Poco::JSON::Object::Ptr & metadata_object,
-    const String & column_name,
+    std::string_view column_name,
     const String & glue_column_type)
 {
     auto current_schema_id = metadata_object->getValue<Int64>("current-schema-id");

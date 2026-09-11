@@ -24,7 +24,7 @@ namespace KernelUtils
 {
     /// Conversions functions to convert DeltaKernel string
     /// to std::string and vica versa.
-    ffi::KernelStringSlice toDeltaString(const std::string & string);
+    ffi::KernelStringSlice toDeltaString(std::string_view string);
     std::string fromDeltaString(ffi::KernelStringSlice slice);
 
     /// Allocation helpers, passed to DeltaKernel.

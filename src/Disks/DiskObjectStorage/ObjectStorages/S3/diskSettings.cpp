@@ -154,7 +154,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
     retry_strategy.max_delay_ms = static_cast<unsigned int>(request_settings[S3RequestSetting::retry_max_delay_ms]);
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        auth_settings[S3AuthSetting::region],
+        auth_settings[S3AuthSetting::region].value,
         context->getRemoteHostFilter(),
         s3_max_redirects,
         retry_strategy,
@@ -299,12 +299,12 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         client_configuration,
         client_settings,
         access_key_id,
-        secret_access_key.view(),
-        server_side_encryption_customer_key_base64.view(),
+        secret_access_key,
+        server_side_encryption_customer_key_base64,
         server_side_encryption_kms_config,
         headers,
         credentials_configuration,
-        session_token.view(),
+        session_token,
         shared_cache);
 }
 

@@ -141,7 +141,7 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
     static constexpr unsigned s3_retry_attempts = 10;
 
     S3::PocoHTTPClientConfiguration client_configuration = S3::ClientFactory::instance().createClientConfiguration(
-        auth_settings[S3AuthSetting::region],
+        auth_settings[S3AuthSetting::region].value,
         context->getRemoteHostFilter(),
         s3_max_redirects,
         S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
@@ -164,9 +164,9 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
     auto client = S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
-        auth_settings[S3AuthSetting::access_key_id],
-        auth_settings[S3AuthSetting::secret_access_key].value.view(),
-        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value.view(),
+        auth_settings[S3AuthSetting::access_key_id].value,
+        auth_settings[S3AuthSetting::secret_access_key].value,
+        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64].value,
         auth_settings.server_side_encryption_kms_config,
         auth_settings.headers,
         S3::CredentialsConfiguration{
@@ -178,7 +178,7 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
             .role_session_name = auth_settings[S3AuthSetting::role_session_name],
             .external_id = auth_settings[S3AuthSetting::external_id],
         },
-        auth_settings[S3AuthSetting::session_token].value.view());
+        auth_settings[S3AuthSetting::session_token].value);
 
     return std::make_unique<ReadBufferFromS3>(
         std::move(client), uri.bucket, uri.key, uri.version_id, S3::S3RequestSettings{}, context->getReadSettings());

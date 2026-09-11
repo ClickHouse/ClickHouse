@@ -6,6 +6,10 @@
 
 #include <Common/SensitiveString.h>
 
+#if USE_AWS_S3
+#include <aws/core/utils/memory/stl/AWSString.h>
+#endif
+
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -38,9 +42,25 @@ TEST(NoDumpArenas, SensitiveStringIsExcludedFromCoreDump)
 {
     std::string secret(1 << 20, 's');
     DB::SensitiveString sensitive(secret);
-    EXPECT_EQ(sensitive.view(), secret);
-    EXPECT_TRUE(isExcludedFromCoreDump(sensitive.view().data()));
+    EXPECT_EQ(std::string_view(sensitive), secret);
+    EXPECT_TRUE(isExcludedFromCoreDump(std::string_view(sensitive).data()));
     EXPECT_FALSE(isExcludedFromCoreDump(secret.data()));
 }
+
+TEST(NoDumpArenas, SmallSensitiveStringIsExcludedFromCoreDump)
+{
+    DB::SensitiveString sensitive(std::string(3, 's'));
+    EXPECT_TRUE(isExcludedFromCoreDump(std::string_view(sensitive).data()));
+}
+
+#if USE_AWS_S3
+
+TEST(NoDumpArenas, AwsStringIsExcludedFromCoreDump)
+{
+    Aws::String s(1 << 20, 's');
+    EXPECT_TRUE(isExcludedFromCoreDump(s.data()));
+}
+
+#endif
 
 #endif

@@ -18,6 +18,7 @@
 #include <cppkafka/kafka_handle_base.h>
 #include <librdkafka/rdkafka.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/AwsFormat.h>
 #include <IO/S3/Credentials.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -73,7 +74,7 @@ namespace
     {
         try
         {
-            String service_host = "kafka." + region + ".amazonaws.com";
+            Aws::String service_host = DB::S3::awsFormat("kafka.{}.amazonaws.com", region);
 
             Aws::Http::URI uri;
             uri.SetScheme(Aws::Http::Scheme::HTTPS);
@@ -89,7 +90,7 @@ namespace
             Aws::Client::AWSAuthV4Signer signer(
                 std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials),
                 "kafka-cluster",
-                region,
+                Aws::String(region),
                 Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
                 true);
 
@@ -98,7 +99,7 @@ namespace
                 throw Exception(ErrorCodes::AWS_ERROR, "Failed to presign AWS MSK IAM request");
             }
 
-            String presigned_url = request->GetURIString();
+            String presigned_url(request->GetURIString());
 
             presigned_url += "&User-Agent=clickhouse-msk-iam";
 

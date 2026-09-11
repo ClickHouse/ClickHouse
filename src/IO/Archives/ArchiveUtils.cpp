@@ -47,13 +47,13 @@ bool hasSupportedArchiveExtension(std::string_view path)
     return hasSupportedTarExtension(path) || hasSupportedZipExtension(path) || hasSupported7zExtension(path);
 }
 
-std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source)
+std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(std::string_view source)
 {
     size_t pos = source.find("::");
-    if (pos == std::string::npos)
-        return {source, std::nullopt};
+    if (pos == std::string_view::npos)
+        return {std::string{source}, std::nullopt};
 
-    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
+    std::string_view path_to_archive_view = source.substr(0, pos);
     bool contains_spaces_around_operator = false;
     while (path_to_archive_view.ends_with(' '))
     {
@@ -61,7 +61,7 @@ std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const
         path_to_archive_view.remove_suffix(1);
     }
 
-    std::string_view archive_pattern_view = std::string_view{source}.substr(pos + 2);
+    std::string_view archive_pattern_view = source.substr(pos + 2);
     while (archive_pattern_view.starts_with(' '))
     {
         contains_spaces_around_operator = true;
@@ -75,7 +75,7 @@ std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const
     if (archive_pattern_view.empty() || path_to_archive_view.empty()
         || (!contains_spaces_around_operator && !hasSupportedArchiveExtension(path_to_archive_view)
             && path_to_archive_view.find_first_of("*?{") == std::string_view::npos))
-        return {source, std::nullopt};
+        return {std::string{source}, std::nullopt};
 
     return std::pair{std::string{path_to_archive_view}, std::string{archive_pattern_view}};
 }

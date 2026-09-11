@@ -1,4 +1,5 @@
 #include <IO/S3/Requests.h>
+#include <IO/S3/AwsFormat.h>
 
 #if USE_AWS_S3
 
@@ -21,7 +22,7 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
 
     /// GCS supports same headers as S3 but with a prefix x-goog instead of x-amz
     /// we have to replace all the prefixes client set internally
-    const auto replace_with_gcs_header = [&](const std::string & amz_header, const std::string & gcs_header)
+    const auto replace_with_gcs_header = [&](const Aws::String & amz_header, const Aws::String & gcs_header)
     {
         if (const auto it = headers.find(amz_header); it != headers.end())
         {
@@ -36,7 +37,7 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     replace_with_gcs_header("x-amz-storage-class", "x-goog-storage-class");
 
     /// replace all x-amz-meta- headers
-    VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
+    VectorWithMemoryTracking<std::pair<Aws::String, Aws::String>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
         if (it->first.starts_with("x-amz-meta-"))
@@ -168,7 +169,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(Strings component_names_)
+void ComposeObjectRequest::SetComponentNames(Aws::Vector<Aws::String> component_names_)
 {
     component_names = std::move(component_names_);
 }
@@ -198,7 +199,7 @@ static size_t getAttemptFromInfo(const Aws::String & request_info)
     auto value = request_info.substr(val_begin, val_end - val_begin);
     try
     {
-        return std::stol(value, nullptr, 10);
+        return std::stol(String(value), nullptr, 10);
     }
     catch (const std::exception &)
     {
@@ -206,7 +207,7 @@ static size_t getAttemptFromInfo(const Aws::String & request_info)
     }
 }
 
-static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+static Aws::String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const Aws::String & key)
 {
     auto it = map.find(key);
     if (it == map.end())
@@ -216,7 +217,7 @@ static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const Str
 
 void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
 {
-    request.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+    request.SetAdditionalCustomHeaderValue("clickhouse-request", awsFormat("attempt={}", attempt));
 }
 
 size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)

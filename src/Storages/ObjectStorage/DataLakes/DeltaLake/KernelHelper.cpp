@@ -48,7 +48,7 @@ namespace
 /// `MD5(...)` bytes) is rejected with a clear `BAD_ARGUMENTS` naming the option, instead of the
 /// opaque `DELTA_KERNEL_ERROR` the FFI would otherwise return. The FFI also propagates the error
 /// (rather than aborting), so `unwrapResult` still guards keys and any future decode failure.
-void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, const std::string & value)
+void setBuilderOption(ffi::EngineBuilder * builder, const std::string & name, std::string_view value)
 {
     if (!DB::UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
         throw DB::Exception(
@@ -119,9 +119,9 @@ public:
         const auto & credentials = object_storage->getS3StorageClient()->getCredentials();
 
         SipHash hash;
-        hash.update(credentials.GetAWSAccessKeyId());
+        hash.update(std::string_view(credentials.GetAWSAccessKeyId()));
         hash.update(std::string_view(credentials.GetAWSSecretKey()));
-        hash.update(credentials.GetSessionToken());
+        hash.update(std::string_view(credentials.GetSessionToken()));
         auto fp = hash.get128();
         /// Simulates a credentials rotation between consecutive reads of the same cached
         /// snapshot. Deterministic XOR keeps the perturbed value stable while the failpoint
@@ -147,7 +147,7 @@ public:
             "get_engine_builder");
         BuilderGuard guard(builder);
 
-        auto set_option = [&](const std::string & name, const std::string & value)
+        auto set_option = [&](const std::string & name, std::string_view value)
         {
             setBuilderOption(builder, name, value);
         };
@@ -162,8 +162,11 @@ public:
         /// https://github.com/apache/arrow-rs-object-store/blob/main/src/aws/builder.rs#L446
         if (!access_key_id.empty())
             set_option("aws_access_key_id", access_key_id);
+        /// TODO(mstetsyuk): the kernel copies the value into an owned Rust `String` that `object_store`
+        /// keeps for the engine's lifetime, so the secret is dumpable here. Needs a credential callback
+        /// in the delta-kernel-rs FFI (`AmazonS3Builder::with_credentials`) to keep only per-request copies.
         if (!secret_access_key.empty())
-            set_option("aws_secret_access_key", String(secret_access_key));
+            set_option("aws_secret_access_key", secret_access_key);
 
         /// Set even if token is empty to prevent delta-kernel
         /// from trying to access token api.

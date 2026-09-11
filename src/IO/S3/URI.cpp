@@ -33,7 +33,7 @@ namespace ErrorCodes
 namespace S3
 {
 
-URI::URI(const std::string & uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
+URI::URI(std::string_view uri_, bool allow_archive_path_syntax, bool keep_presigned_query_parameters, S3UriStyle uri_style)
 {
     /// Case when AWS Private Link Interface is being used
     /// E.g. (bucket.vpce-07a1cd78f1bd55c5f-j3a3vg6w.s3.us-east-1.vpce.amazonaws.com/bucket-name/key)
@@ -215,10 +215,10 @@ bool URI::tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bo
     return true;
 }
 
-void URI::addRegionToURI(const std::string &region)
+void URI::addRegionToURI(std::string_view region)
 {
     if (auto pos = endpoint.find(".amazonaws.com"); pos != std::string::npos)
-        endpoint = endpoint.substr(0, pos) + "." + region + endpoint.substr(pos);
+        endpoint = fmt::format("{}.{}{}", std::string_view(endpoint).substr(0, pos), region, std::string_view(endpoint).substr(pos));
 }
 
 void URI::validateBucket(const String & bucket, const Poco::URI & uri)
@@ -272,7 +272,7 @@ std::string expandRegionToAmazonPath(const std::string & region)
     if (outcome.IsSuccess())
     {
         auto uri = outcome.GetResult().GetURI();
-        return uri.GetURIString();
+        return String(uri.GetURIString());
     }
     return "https://s3." + region + ".amazonaws.com";
 }

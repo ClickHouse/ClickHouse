@@ -321,12 +321,12 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
         auto current = access_token.get();
         if (!current || update_token)
         {
-            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken(catalog_state.client_id, catalog_state.client_secret.view())));
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken(catalog_state.client_id, catalog_state.client_secret)));
             current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", fmt::format("Bearer {}", current->token.view()));
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", current->token));
         return headers;
     }
     return {};
@@ -491,13 +491,13 @@ void RestCatalog::applySettingsChangesToState(
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected setting `{}` after validation", change.name);
     }
 
-    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret.view() != old_state.client_secret.view()))
+    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret))
     {
         /// Eagerly fetch a token with the not-yet-published credentials: wrong credentials
         /// fail the ALTER right here, and the config reload authenticates with that token
         /// instead of the cached one.
-        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret.view()));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token.view())}};
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token)}};
     }
 }
 
@@ -507,7 +507,7 @@ DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(const CatalogState & catalo
     if (!catalog_state.refresh_token.empty())
     {
         const auto token = getValidAccessToken(catalog_state, update_token);
-        headers.emplace_back("Authorization", fmt::format("Bearer {}", token.token.view()));
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", token.token));
     }
     else
     {
@@ -572,7 +572,7 @@ void OneLakeCatalog::applySettingsChangesToState(
     std::optional<DB::HTTPHeaderEntries> & new_auth_headers,
     std::unique_ptr<AccessToken> & new_access_token)
 {
-    const auto auth_mode = getAuthMode(old_state.bearer_token.view(), old_state.refresh_token.view());
+    const auto auth_mode = getAuthMode(old_state.bearer_token, old_state.refresh_token);
 
     validateSettingsChanges(changes, auth_mode);
 
@@ -594,7 +594,7 @@ void OneLakeCatalog::applySettingsChangesToState(
 
     if (auth_mode == AuthMode::BearerToken)
     {
-        new_state.auth_header = DB::HTTPHeaderEntry("Authorization", fmt::format("Bearer {}", new_state.bearer_token.view()));
+        new_state.auth_header = DB::HTTPHeaderEntry("Authorization", fmt::format("Bearer {}", new_state.bearer_token));
         validateAuthHeaders(new_state.auth_header.value());
     }
     else if (auth_mode == AuthMode::RefreshToken)
@@ -603,15 +603,15 @@ void OneLakeCatalog::applySettingsChangesToState(
         /// fails the ALTER right here, and the config reload authenticates with the fresh
         /// access token instead of the cached one.
         new_access_token = std::make_unique<AccessToken>(retrieveAccessTokenViaRefreshToken(new_state));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token.view())}};
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token)}};
     }
-    else if (new_state.client_id != old_state.client_id || new_state.client_secret.view() != old_state.client_secret.view())
+    else if (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret)
     {
         /// Eagerly fetch a token with the not-yet-published credentials: wrong credentials
         /// fail the ALTER right here, and the config reload authenticates with that token
         /// instead of the cached one.
-        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret.view()));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token.view())}};
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token)}};
     }
 }
 
@@ -689,10 +689,10 @@ void HorizonCatalog::applySettingsChangesToState(
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected setting `{}` after validation", change.name);
     }
 
-    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret.view() != old_state.client_secret.view()))
+    if (credential_mode && (new_state.client_id != old_state.client_id || new_state.client_secret != old_state.client_secret))
     {
-        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret.view()));
-        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token.view())}};
+        new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
+        new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", fmt::format("Bearer {}", new_access_token->token)}};
     }
 }
 
@@ -719,8 +719,8 @@ namespace
         [](const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)
         {
             const auto auth_mode = OneLakeCatalog::getAuthMode(
-                current_settings[DB::DatabaseDataLakeSetting::onelake_bearer_token].value.view(),
-                current_settings[DB::DatabaseDataLakeSetting::onelake_refresh_token].value.view());
+                current_settings[DB::DatabaseDataLakeSetting::onelake_bearer_token].value,
+                current_settings[DB::DatabaseDataLakeSetting::onelake_refresh_token].value);
             OneLakeCatalog::validateSettingsChanges(changes, auth_mode);
         });
     return true;
@@ -880,8 +880,8 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
     String encoded_refresh_token;
     Poco::URI::encode(auth_scope, auth_scope, encoded_auth_scope);
     Poco::URI::encode(catalog_state.client_id, catalog_state.client_id, encoded_client_id);
-    Poco::URI::encode(catalog_state.client_secret.view(), catalog_state.client_secret.view(), encoded_client_secret);
-    Poco::URI::encode(catalog_state.refresh_token.view(), catalog_state.refresh_token.view(), encoded_refresh_token);
+    Poco::URI::encode(catalog_state.client_secret, catalog_state.client_secret, encoded_client_secret);
+    Poco::URI::encode(catalog_state.refresh_token, catalog_state.refresh_token, encoded_refresh_token);
 
     String body = fmt::format(
         "grant_type=refresh_token&scope={}&client_id={}&refresh_token={}",
@@ -1013,7 +1013,7 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalo
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", fmt::format("Bearer {}", current->token.view()));
+        headers.emplace_back("Authorization", fmt::format("Bearer {}", current->token));
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -1041,7 +1041,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
 
     const auto & context = getContext();
     auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret.view(), google_adc_refresh_token.view(), timeouts);
+    auto result = fetchGCPOAuthToken(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token, timeouts);
 
     AccessToken token;
     token.token = std::move(result.access_token);

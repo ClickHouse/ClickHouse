@@ -348,9 +348,9 @@ struct SettingFieldSensitiveString final
     void setChanged(bool changed_) { changed = changed_; }
 
     operator const SensitiveString &() const { return value; } /// NOLINT
-    explicit operator Field() const { return String(value.view()); }
+    explicit operator Field() const { return String(value); }
 
-    String toString() const { return String(value.view()); }
+    String toString() const { return String(value); }
     void parseFromString(const String & str) { *this = str; }
 
     void writeBinary(WriteBuffer & out) const;

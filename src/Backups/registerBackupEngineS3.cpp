@@ -341,7 +341,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auto reader = std::make_shared<BackupReaderS3>(
                 S3::URI{s3_uri},
                 access_key_id,
-                secret_access_key.view(),
+                secret_access_key,
                 role_arn,
                 role_session_name,
                 external_id,
@@ -362,7 +362,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auto reader = std::make_shared<BackupReaderS3>(
                 S3::URI{s3_uri},
                 access_key_id,
-                secret_access_key.view(),
+                secret_access_key,
                 role_arn,
                 role_session_name,
                 external_id,
@@ -383,7 +383,7 @@ void registerBackupEngineS3(BackupFactory & factory)
                 return std::make_shared<BackupReaderS3>(
                     uri_for_lightweight,
                     access_key_id,
-                    secret_access_key.view(),
+                    secret_access_key,
                     role_arn,
                     role_session_name,
                     external_id,
@@ -402,7 +402,7 @@ void registerBackupEngineS3(BackupFactory & factory)
             auto writer = std::make_shared<BackupWriterS3>(
                 S3::URI{s3_uri},
                 access_key_id,
-                secret_access_key.view(),
+                secret_access_key,
                 std::move(role_arn),
                 std::move(role_session_name),
                 std::move(external_id),

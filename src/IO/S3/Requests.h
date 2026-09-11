@@ -37,17 +37,17 @@ namespace Model = Aws::S3::Model;
 /// Used only for S3Express
 namespace RequestChecksum
 {
-inline void setPartChecksum(Model::CompletedPart & part, const std::string & checksum)
+inline void setPartChecksum(Model::CompletedPart & part, std::string_view checksum)
 {
     part.SetChecksumCRC32(checksum);
 }
 
-inline void setRequestChecksum(Model::UploadPartRequest & req, const std::string & checksum)
+inline void setRequestChecksum(Model::UploadPartRequest & req, std::string_view checksum)
 {
     req.SetChecksumCRC32(checksum);
 }
 
-inline std::string calculateChecksum(Model::UploadPartRequest & req)
+inline Aws::String calculateChecksum(Model::UploadPartRequest & req)
 {
     chassert(req.GetChecksumAlgorithm() == Aws::S3::Model::ChecksumAlgorithm::CRC32);
     return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::HashingUtils::CalculateCRC32(*(req.GetBody())));
@@ -75,7 +75,7 @@ public:
         {
             static const Aws::String AWS_S3_FORCE_PATH_STYLE = "ForcePathStyle";
             params.emplace_back(AWS_S3_FORCE_PATH_STYLE, !uri_override->is_virtual_hosted_style);
-            params.emplace_back("Endpoint", uri_override->endpoint);
+            params.emplace_back("Endpoint", uri_override->endpoint.c_str());
         }
 
         return params;
@@ -100,14 +100,14 @@ public:
         return false;
     }
 
-    std::string getRegionOverride() const
+    const Aws::String & getRegionOverride() const
     {
         return region_override;
     }
 
-    void overrideRegion(std::string region) const
+    void overrideRegion(std::string_view region) const
     {
-        region_override = std::move(region);
+        region_override = region;
     }
 
     void overrideURI(S3::URI uri) const
@@ -135,7 +135,7 @@ public:
     }
 
 protected:
-    mutable std::string region_override;
+    mutable Aws::String region_override;
     mutable std::optional<S3::URI> uri_override;
     mutable ApiMode api_mode{ApiMode::AWS};
     mutable bool checksum = true;
@@ -224,13 +224,13 @@ public:
     void SetKey(Aws::String && value);
     void SetKey(const char * value);
 
-    void SetComponentNames(Strings component_names_);
+    void SetComponentNames(Aws::Vector<Aws::String> component_names_);
 
     void SetContentType(Aws::String value);
 private:
     Aws::String bucket;
     Aws::String key;
-    Strings component_names;
+    Aws::Vector<Aws::String> component_names;
     Aws::String content_type;
 };
 

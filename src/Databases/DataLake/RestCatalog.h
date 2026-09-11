@@ -329,8 +329,8 @@ public:
     DB::HTTPHeaderEntries getAuthHeaders(const CatalogState & catalog_state, bool update_token) const override;
 
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
-    std::string_view getGoogleADCClientSecret() const { return google_adc_client_secret.view(); }
-    std::string_view getGoogleADCRefreshToken() const { return google_adc_refresh_token.view(); }
+    std::string_view getGoogleADCClientSecret() const { return google_adc_client_secret; }
+    std::string_view getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).

@@ -140,11 +140,11 @@ namespace
             request.SetContentType("binary/octet-stream");
 
             if (object_metadata.has_value())
-                request.SetMetadata(object_metadata.value());
+                request.SetMetadata(S3::objectAttributesToAwsMap(object_metadata.value()));
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(Aws::String(storage_class_name.value)));
 
             client_ptr->setKMSHeaders(request);
         }
@@ -229,7 +229,7 @@ namespace
                 if (isTransientCompleteMultipartUploadError(outcome.GetError()) && (retries < max_retries))
                 {
                     const auto & error = outcome.GetError();
-                    const String details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
+                    const auto details = error.GetExceptionName().empty() ? error.GetMessage() : error.GetExceptionName();
                     LOG_INFO(log, "Multipart upload failed with a transient error ({}) for Bucket: {}, Key: {}, Upload_id: {}, Parts: {}, will retry", details, dest_bucket, dest_key, multipart_upload_id, multipart_tags.size());
                     continue; /// will retry
                 }
@@ -477,11 +477,11 @@ namespace
             request.SetBody(createS3UploadBody(create_read_buffer, offset, size));
 
             if (object_metadata.has_value())
-                request.SetMetadata(object_metadata.value());
+                request.SetMetadata(S3::objectAttributesToAwsMap(object_metadata.value()));
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(Aws::String(storage_class_name.value)));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -603,7 +603,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return outcome.GetResult().GetETag();
+            return String(outcome.GetResult().GetETag());
         }
     };
 
@@ -706,13 +706,13 @@ namespace
 
             if (object_metadata.has_value())
             {
-                request.SetMetadata(object_metadata.value());
+                request.SetMetadata(S3::objectAttributesToAwsMap(object_metadata.value()));
                 request.SetMetadataDirective(Aws::S3::Model::MetadataDirective::REPLACE);
             }
 
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
-                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
+                request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(Aws::String(storage_class_name.value)));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -842,7 +842,7 @@ namespace
                 throw S3Exception(outcome.GetError().GetMessage(), outcome.GetError().GetErrorType());
             }
 
-            return outcome.GetResult().GetCopyPartResult().GetETag();
+            return String(outcome.GetResult().GetCopyPartResult().GetETag());
         }
     };
 }

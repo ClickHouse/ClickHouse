@@ -31,7 +31,7 @@ std::shared_ptr<IStorageCredentials> tryGetStaticStorageCredentials(
 
     if (auto credentials = tryMakeStaticS3Credentials(
             settings[DB::DatabaseDataLakeSetting::aws_access_key_id].value,
-            settings[DB::DatabaseDataLakeSetting::aws_secret_access_key].value.view()))
+            settings[DB::DatabaseDataLakeSetting::aws_secret_access_key].value))
     {
         return credentials;
     }
@@ -39,7 +39,7 @@ std::shared_ptr<IStorageCredentials> tryGetStaticStorageCredentials(
     /// Keep backward compatibility with storage_* names, but do not mix the two setting namespaces.
     return tryMakeStaticS3Credentials(
         settings[DB::DatabaseDataLakeSetting::storage_aws_access_key_id].value,
-        settings[DB::DatabaseDataLakeSetting::storage_aws_secret_access_key].value.view());
+        settings[DB::DatabaseDataLakeSetting::storage_aws_secret_access_key].value);
 }
 
 }
