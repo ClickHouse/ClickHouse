@@ -293,7 +293,50 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
     }, Documentation{
-        .description = "A read-only database that exposes files in a directory on the local filesystem as tables, queryable by their path.",
+        .description = R"DOCS_MD(
+The `Filesystem` database engine exposes files in a local directory as read-only tables. A table name is resolved as a path relative to the database directory and is read using the [`file`](/reference/functions/table-functions/file) table function.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE files
+ENGINE = Filesystem([path]);
+```
+
+`path` is the directory that contains the files. If it is omitted, ClickHouse uses the current directory in `clickhouse-local` and the `user_files` directory in ClickHouse server.
+
+## Usage {#usage}
+
+For example, with `data.csv` in the selected directory:
+
+```sql
+CREATE DATABASE files ENGINE = Filesystem('imports');
+
+SELECT * FROM files.`data.csv`;
+```
+
+The table name can include a relative path beneath the database directory. The table schema and format are inferred in the same way as for the `file` table function.
+
+The database owns no table definitions: tables are created when their files are first resolved and are only cached for subsequent access. `CREATE TABLE`, `INSERT`, and other writes through this database are not supported.
+
+## Access control {#access-control}
+
+On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. `clickhouse-local` is not restricted to `user_files_path`.
+
+Creating this database requires `READ` and `WRITE` source grants on `FILE`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Grant them with, for example:
+
+```sql
+GRANT READ, WRITE ON FILE TO user_name;
+```
+
+See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`file` table function](/reference/functions/table-functions/file)
+- [S3 database engine](/reference/engines/database-engines/s3)
+- [HDFS database engine](/reference/engines/database-engines/hdfs)
+)DOCS_MD",
         .syntax = "ENGINE = Filesystem([path])",
         .related = {"S3", "HDFS"}});
 }

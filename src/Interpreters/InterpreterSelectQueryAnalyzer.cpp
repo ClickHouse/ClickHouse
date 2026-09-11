@@ -13,6 +13,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/stripQuerySettings.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -39,6 +40,9 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+
+#include <array>
+#include <string_view>
 
 namespace ProfileEvents
 {
@@ -205,6 +209,19 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     ctx->setSetting("automatic_parallel_replicas_mode", Field{0});
     // We don't want to analyze primaty key at all, see `query_plan_optimize_primary_key` below.
     ctx->setSetting("force_primary_key", false);
+    /// Setting them on the context is not enough: the nested interpreter re-applies the query's own
+    /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
+    /// which would put `automatic_parallel_replicas_mode` back and make `buildContext` clear
+    /// `enable_parallel_replicas` for the nested build. The nested plan would then contain no read from
+    /// the other replicas and the optimization would give up. Settings written after `FORMAT` land on
+    /// `ASTQueryWithOutput` and are not re-applied, which is why the very same query used to be
+    /// optimized or not depending on where its `SETTINGS` clause was written. Drop the overridden
+    /// settings from the (cloned) AST so that the overrides above actually hold.
+    static constexpr std::array settings_overridden_for_this_plan{
+        std::string_view{"automatic_parallel_replicas_mode"},
+        std::string_view{"force_primary_key"},
+    };
+    removeSettingsFromQuery(ast, settings_overridden_for_this_plan);
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);

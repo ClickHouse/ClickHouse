@@ -1758,6 +1758,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
+                "./ci/jobs/scripts/docker_server",
                 "./docker/server",
                 "./docker/keeper",
             ],
@@ -1774,6 +1775,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
+                "./ci/jobs/scripts/docker_server",
                 "./docker/server",
                 "./docker/keeper",
             ],

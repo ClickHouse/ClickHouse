@@ -5,6 +5,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
+#include <Functions/Regexps.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
@@ -847,6 +848,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         out.bloom_filter = std::make_unique<BloomFilter>(params);
 
         auto & value = const_value.safeGet<String>();
+        /// Validate the regexp before using its required substring to build
+        /// the skip-index condition.
+        Regexps::createRegexp</*like=*/ false, /*no_capture=*/ true, /*case_insensitive=*/ false>(value);
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
         if (result.required_substring.empty() && result.alternatives.empty())

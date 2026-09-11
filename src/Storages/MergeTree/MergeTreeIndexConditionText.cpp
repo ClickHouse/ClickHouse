@@ -61,6 +61,7 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
+    extern const SettingsBool use_index_for_in_with_subqueries;
 }
 
 TextSearchQuery::TextSearchQuery(
@@ -1691,6 +1692,56 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     return false;
 }
 
+/// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path
+/// makes the predicate false. That evaluation runs `FunctionIn`, which needs every `IN` set in the
+/// sub-DAG to exist, so build them here - but only sets index analysis is allowed to consult at all.
+static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, const ContextPtr & context)
+{
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        /// The decision is made once, at analysis time, so a set that keeps changing under the query
+        /// cannot be trusted: a concurrent `INSERT` of the default value would make the predicate true
+        /// for a missing key after those rows' granules were pruned.
+        if (future_set->isMutableDuringQuery())
+            return false;
+
+        /// `use_index_for_in_with_subqueries = 0` forbids using an index for a subquery set at all.
+        /// The ordered build enforces that by refusing to build, but refusing to build is not the same
+        /// as refusing to use: `ReadFromMergeTree::applyFilters` builds PREWHERE sets unordered when the
+        /// setting is off, and a read step analyzed after that finds the set ready. Ask the setting.
+        ///
+        /// This does not reach a `make_distributed_plan` worker task, where the set arrives as shipped
+        /// values (`SetSerializationKind::TupleValues`) and is rebuilt as a `FutureSetFromTuple`, losing
+        /// the fact that it came from a subquery. That gap is older and wider than this check: every
+        /// index consumer takes the same set through `buildOrderedSetInplace`, which never consults the
+        /// setting for a tuple carrier, so a worker also uses the primary key index for `pk IN (SELECT ...)`
+        /// with the setting off. Closing it means carrying the origin through set serialization.
+        if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries]
+            && typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+            return false;
+
+        /// Only the existence of the set matters: the evaluation needs `FunctionIn` to find a ready set,
+        /// but never reads its elements. Requiring `hasExplicitSetElements` on top of that gave up on a
+        /// set that exceeded `use_index_for_in_with_subqueries_max_values`.
+        future_set->buildOrderedSetInplace(context);
+        if (!future_set->get())
+            return false;
+    }
+
+    return true;
+}
+
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
@@ -1776,25 +1827,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
-    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
-    /// The Set may not be ready yet because it is built later during query execution.
-    for (const auto & node : subdag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-        if (!column_set)
-            continue;
-
-        auto future_set = column_set->getData();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-    }
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return false;
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
@@ -1873,25 +1907,8 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     if (!json_info)
         return false;
 
-    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
-    /// The Set may not be ready yet because it is built later during query execution.
-    for (const auto & node : subdag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-        if (!column_set)
-            continue;
-
-        auto future_set = column_set->getData();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-    }
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return false;
 
     /// Evaluate the function on a default column value.
     /// If the function returns true for the default value (what we'd get when the path is missing),

@@ -43,7 +43,7 @@ SELECT '-- whole-metric selector: results and the emitted id range';
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range, plan LIKE '%IN subquery%' AS keeps_id_set
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo', 0, 1000)));
 
 SELECT '-- partial selector: results, no id range';
 
@@ -51,7 +51,7 @@ SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 100
 SELECT timestamp, value FROM timeSeriesSelector(ts_lc, 'foo{env!=""}', 0, 1000) ORDER BY value, timestamp;
 
 SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%' AS has_id_range
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)));
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector(ts_lc, 'foo{env="prod"}', 0, 1000)));
 
 SELECT '-- prometheus query evaluation over the dictionary-encoded ids';
 
