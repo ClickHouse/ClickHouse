@@ -3,6 +3,9 @@
 
 SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';
+-- Splitting a read range by primary key makes both layers read the granule that holds the split
+-- boundary, so its rows are counted twice in every exact read_rows assertion below.
+SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 
 DROP TABLE IF EXISTS t_lwu_rr_wide SYNC;
 DROP TABLE IF EXISTS t_lwu_rr_compact SYNC;
