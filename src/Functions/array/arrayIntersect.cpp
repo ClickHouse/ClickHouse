@@ -835,6 +835,14 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     /// the array (the pass over the arguments does not put it into the map either).
                     continue;
                 }
+
+                /// An element whose value did not fit the type of the result is not in the intersection -
+                /// the pass over the arguments above skipped it too. Its value truncated to the type of the
+                /// result can coincide with a value that is really there, so looking it up here would emit
+                /// that value in the place of the overflowed element and suppress its real occurrence.
+                if (arg.overflow_mask && (*arg.overflow_mask)[i] != 0)
+                    continue;
+
                 if constexpr (is_numeric_column)
                     pair = map.find(columns[0]->getElement(i));
                 else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
