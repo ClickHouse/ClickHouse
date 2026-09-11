@@ -166,7 +166,8 @@ public:
 
         /// Timestamps are kept at the precision of the argument, but the durations in the `(?t...)` conditions of
         /// the pattern are always seconds, so that the same pattern keeps its meaning when a column changes from
-        /// `DateTime` to `DateTime64` (or between two `DateTime64` scales). Convert them to the argument's ticks.
+        /// `DateTime` to `DateTime64` (or between two `DateTime64` scales). Remember how many ticks of the
+        /// argument one second is, to scale the durations when they are compared - see `timeConditionSatisfied`.
         if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(arguments.front().get()))
             time_scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(date_time64_type->getScale());
 
