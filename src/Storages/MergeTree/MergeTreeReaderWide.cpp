@@ -277,13 +277,12 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
-MergeTreeReaderWide::FileStreams::StreamPtr
-MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
+MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
 {
     {
         std::lock_guard lock(mutex);
         if (auto it = streams.find(stream_name); it != streams.end())
-            return it->second;
+            return it->second.get();
     }
 
     auto stream = factory();
@@ -291,19 +290,19 @@ MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const 
     std::lock_guard lock(mutex);
     auto [it, inserted] = streams.try_emplace(stream_name, std::move(stream));
     chassert(inserted);
-    return it->second;
+    return it->second.get();
 }
 
-MergeTreeReaderWide::FileStreams::StreamPtr MergeTreeReaderWide::FileStreams::find(const String & stream_name) const
+MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::find(const String & stream_name) const
 {
     std::lock_guard lock(mutex);
     auto it = streams.find(stream_name);
-    return it == streams.end() ? nullptr : it->second;
+    return it == streams.end() ? nullptr : it->second.get();
 }
 
 void MergeTreeReaderWide::FileStreams::release(const String & stream_name)
 {
-    StreamPtr stream;
+    std::unique_ptr<MergeTreeReaderStream> stream;
     {
         std::lock_guard lock(mutex);
         if (auto it = streams.find(stream_name); it != streams.end())
@@ -339,9 +338,9 @@ void MergeTreeReaderWide::FileStreams::clearPrefetched()
     prefetched.clear();
 }
 
-MergeTreeReaderWide::FileStreams::StreamPtr MergeTreeReaderWide::getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
+MergeTreeReaderStream * MergeTreeReaderWide::getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
 {
-    return streams.getOrCreate(stream_name, [&]() -> FileStreams::StreamPtr
+    return streams.getOrCreate(stream_name, [&]() -> std::unique_ptr<MergeTreeReaderStream>
     {
         auto context = data_part_info_for_read->getContext();
         auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
@@ -366,7 +365,7 @@ MergeTreeReaderWide::FileStreams::StreamPtr MergeTreeReaderWide::getOrAddStream(
 
         auto create_stream = [&]<typename Stream>()
         {
-            return std::make_shared<Stream>(
+            return std::make_unique<Stream>(
                 data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
                 num_marks_in_part, all_mark_ranges, stream_settings,
                 uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
@@ -416,7 +415,7 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     /// If we didn't create requested stream, but file with this path exists, create a stream for it.
     /// It may happen during reading of columns with dynamic subcolumns, because all streams are known
     /// only after deserializing of binary bulk prefix.
-    auto stream = getOrAddStream(substream_path, *stream_name);
+    auto * stream = getOrAddStream(substream_path, *stream_name);
     stream->adjustRightMark(last_mark_to_read);
 
     if (seek_to_start)
@@ -465,7 +464,7 @@ void MergeTreeReaderWide::deserializePrefix(
             if (from_mark != 0)
                 streams.unmarkPrefetched(*stream_name);
 
-            auto stream = getOrAddStream(substream_path, *stream_name);
+            auto * stream = getOrAddStream(substream_path, *stream_name);
             stream->adjustRightMark(last_mark_to_read);
             stream->seekToStart();
         };
@@ -519,7 +518,7 @@ void MergeTreeReaderWide::deserializePrefix(
             if (!stream_name)
                 return false;
 
-            auto stream = streams.find(*stream_name);
+            auto * stream = streams.find(*stream_name);
             if (!stream)
                 return false;
 
@@ -682,7 +681,7 @@ void MergeTreeReaderWide::readData(
         if (!stream_name)
             return;
 
-        auto stream = streams.find(*stream_name);
+        auto * stream = streams.find(*stream_name);
         if (!stream)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} is not found", *stream_name, name_and_type.name);
 
@@ -703,7 +702,7 @@ void MergeTreeReaderWide::readData(
         if (!stream_name)
             return;
 
-        if (auto stream = streams.find(*stream_name))
+        if (auto * stream = streams.find(*stream_name))
             stream->seekToMark(from_mark);
     };
 
