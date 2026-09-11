@@ -18,7 +18,7 @@ SYSTEM FLUSH LOGS text_log, query_log;
 SET max_rows_to_read = 0; -- system.text_log can be really big
 SELECT count() > 0 FROM system.text_log
 WHERE yesterday() <= event_date AND event_time >= now() - 600
-      AND query_id in (select query_id from system.query_log where current_database=currentDatabase() AND log_comment='0_f621c4f2-4da7-4a7c-bb6d-052c442d0f7f')
+      AND query_id in (select query_id from system.query_log where current_database=currentDatabase() AND is_initial_query AND log_comment='0_f621c4f2-4da7-4a7c-bb6d-052c442d0f7f')
       AND level = 'Information'
       AND message_format_string ILIKE '%Disabling ''use_hedged_requests'' in favor of ''enable_parallel_replicas''%'
 SETTINGS enable_parallel_replicas=0;
@@ -31,7 +31,7 @@ SYSTEM FLUSH LOGS text_log, query_log;
 SET enable_parallel_replicas=0;
 SELECT count() > 0 FROM system.text_log
 WHERE yesterday() <= event_date AND event_time >= now() - 600
-      AND query_id in (select query_id from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND log_comment = '1_f621c4f2-4da7-4a7c-bb6d-052c442d0f7f')
+      AND query_id in (select query_id from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND is_initial_query AND log_comment = '1_f621c4f2-4da7-4a7c-bb6d-052c442d0f7f')
       AND level = 'Information'
       AND message_format_string ILIKE '%Disabling ''use_hedged_requests'' in favor of ''enable_parallel_replicas''%'
 SETTINGS enable_parallel_replicas=0;

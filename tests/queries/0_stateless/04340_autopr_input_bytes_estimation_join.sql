@@ -88,7 +88,7 @@ FROM (
         ProfileEvents['ReadCompressedBytes'] AS compressed_bytes
     FROM system.query_log
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-      AND (current_database = currentDatabase()) AND (log_comment LIKE '04340_join_%') AND (type = 'QueryFinish')
+      AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment LIKE '04340_join_%') AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 )
 WHERE input_bytes = 0
