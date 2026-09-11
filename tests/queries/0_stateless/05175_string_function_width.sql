@@ -1,5 +1,6 @@
 -- `concat(materialize(repeat('x', 1000)), s)` changes string length: discard the input width.
 -- `identity(s)` keeps strings unchanged: keep the input width.
+-- `assumeNotNull(s)` removes Nullable without changing the string bytes: keep the input width.
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -48,6 +49,23 @@ SELECT concat(extract(explain, 'ShuffleExchange[^,]+'), ')') FROM
     SELECT k, sum(v), any(s)
     FROM fact AS f
     JOIN (SELECT g, identity(s) AS s FROM dim) AS d ON f.g = d.g
+    GROUP BY k
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1,
+             distributed_plan_force_shuffle_aggregation = 1, enable_join_runtime_filters = 0
+)
+WHERE explain LIKE '%ShuffleExchange%';
+
+ALTER TABLE dim MODIFY COLUMN s Nullable(String);
+
+-- `assumeNotNull(s)` retains the 10-byte string width after removing Nullable.
+-- Before the fix, the 64-byte default caused a shuffle of 10M rows; expect the 5M-row shuffle instead.
+SELECT 'width: assumeNotNull(s)';
+SELECT concat(extract(explain, 'ShuffleExchange[^,]+'), ')') FROM
+(
+    EXPLAIN estimates = 1
+    SELECT k, sum(v), any(s)
+    FROM fact AS f
+    JOIN (SELECT g, assumeNotNull(s) AS s FROM dim) AS d ON f.g = d.g
     GROUP BY k
     SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1,
              distributed_plan_force_shuffle_aggregation = 1, enable_join_runtime_filters = 0

@@ -652,6 +652,7 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
                                      ->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type))
         && (kind == ActionsDAGLineageKind::ValuePreserving || function_name == "_CAST" || function_name == "CAST"
+            || function_name == "assumeNotNull"
             || removeLowCardinalityAndNullable(node.result_type)->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion());
     return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width, source_child_index};
 }
