@@ -141,6 +141,24 @@ const char * skipUnsupportedEscape(const char * pos, const char * end)
     return pos;
 }
 
+/// Recognizes a POSIX named class such as `[:alpha:]` or `[:^digit:]` written inside a character
+/// class, and returns the position right after its closing `:]`. `pos` points at the `[`.
+/// When this is not a named class, re2 reads the `[` as a literal member of the enclosing class,
+/// and the returned position is just the next character.
+const char * skipPosixNamedClass(const char * pos, const char * end)
+{
+    if (end - pos <= 2 || pos[1] != ':')
+        return pos + 1;
+
+    /// re2 looks for the closing `:]` in the whole rest of the regexp, not only up to the `]` that
+    /// ends the enclosing class, and reads the `[` as a literal when there is none.
+    for (const char * name_end = pos + 2; name_end <= end - 2; ++name_end)
+        if (name_end[0] == ':' && name_end[1] == ']')
+            return name_end + 2;
+
+    return pos + 1;
+}
+
 /// re2 resolves `\<non-alphanumeric>` to that character itself, unlike a sequence such as `\d` or `\x41`.
 bool isEscapedLiteral(char c)
 {
@@ -454,9 +472,11 @@ const char * analyzeImpl(
                 /// class, so it neither opens a class nor nests. Taking it as another class left the
                 /// tracker one level deep after the class had closed, and a top-level `|` after
                 /// `[[]` was then not seen as an alternative at all.
+                /// The one exception is a POSIX named class such as `[[:alpha:]]`, whose inner
+                /// `[:...:]` belongs to the enclosing class and has to be consumed as a whole.
                 if (in_square_braces)
                 {
-                    ++pos;
+                    pos = skipPosixNamedClass(pos, end);
                     break;
                 }
 
