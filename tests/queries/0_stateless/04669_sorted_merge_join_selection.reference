@@ -1,0 +1,14 @@
+sorted_selected_merge	1
+sorted_not_resorted	1
+unsorted_falls_through	1
+read_in_order_off_falls_through	1
+priority_order_respected	1
+alone_on_sorted	1	1
+inner	1
+left	1
+right	1
+full	1
+any_left	1
+full_use_nulls	1
+legacy_falls_through	1
+legacy_result	1

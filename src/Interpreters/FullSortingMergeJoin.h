@@ -22,11 +22,11 @@ class FullSortingMergeJoin : public IJoin
 {
 public:
     explicit FullSortingMergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_,
-                                  int null_direction_ = 1, bool is_parallel_ = false)
+                                  int null_direction_ = 1, JoinAlgorithm selected_algorithm_ = JoinAlgorithm::FULL_SORTING_MERGE)
         : table_join(table_join_)
         , right_sample_block(right_sample_block_)
         , null_direction(null_direction_)
-        , is_parallel(is_parallel_)
+        , selected_algorithm(selected_algorithm_)
     {
         LOG_TRACE(getLogger("FullSortingMergeJoin"), "Will use full sorting merge join");
     }
@@ -44,17 +44,30 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_) const override
     {
-        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction, is_parallel);
+        return std::make_shared<FullSortingMergeJoin>(table_join_, right_sample_block_, null_direction, selected_algorithm);
     }
 
     int getNullDirection() const { return null_direction; }
 
-    /// True when `parallel_full_sorting_merge` was the algorithm selected from the `join_algorithm` priority
-    /// list, rather than plain `full_sorting_merge`. Both build this same object, so this cannot be recovered
-    /// from list membership alone (`full_sorting_merge,parallel_full_sorting_merge` selects the former and
-    /// never reaches the latter). `optimizeParallelFullSortingMergeJoin` shards the join only when this is
-    /// set, so listing the parallel variant as a fallback does not silently change behavior.
-    bool isParallel() const { return is_parallel; }
+    /// The algorithm actually selected from the `join_algorithm` priority list: `full_sorting_merge`,
+    /// `parallel_full_sorting_merge`, `sorted_merge` or `parallel_sorted_merge`. All four build this same
+    /// object, so this cannot be recovered from list membership alone (`full_sorting_merge,
+    /// parallel_full_sorting_merge` selects the former and never reaches the latter). The optimizer passes
+    /// gate their rewrites on this, so listing a variant as a fallback does not silently change behavior.
+    JoinAlgorithm getSelectedAlgorithm() const { return selected_algorithm; }
+
+    /// True when `parallel_full_sorting_merge` was the algorithm selected: only then may
+    /// `optimizeParallelFullSortingMergeJoin` shard the join by the hash of the join keys. The
+    /// `parallel_sorted_merge` algorithm is parallelized differently - by primary-key ranges
+    /// (`optimizeJoinByShards`), which keeps the in-order reads intact.
+    bool isParallel() const { return selected_algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE; }
+
+    /// True when the join was selected as `sorted_merge` or `parallel_sorted_merge`: the algorithms that are
+    /// available only when both inputs can be efficiently read in the order of the join keys.
+    bool isSortedMerge() const
+    {
+        return selected_algorithm == JoinAlgorithm::SORTED_MERGE || selected_algorithm == JoinAlgorithm::PARALLEL_SORTED_MERGE;
+    }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
@@ -176,7 +189,7 @@ private:
     SharedHeader right_sample_block;
     Block totals;
     int null_direction;
-    bool is_parallel;
+    JoinAlgorithm selected_algorithm;
 };
 
 }

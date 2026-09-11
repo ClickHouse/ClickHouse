@@ -1,0 +1,31 @@
+chain_of_3_all_merge	1	1	1
+chain_of_3_all_sorts_prefixed	1	1
+chain_of_4_all_merge	1	1	1
+inner_right_key_sorted	1	1
+left_left_key_sorted	1	1
+left_right_key_falls_through	1	1
+right_right_key_sorted	1	1
+right_left_key_falls_through	1	1
+full_falls_through	1	1
+computed_key_falls_through	1	1
+other_side_unsorted_falls_through	1	1
+hash_below_falls_through	1
+full_sorting_merge_no_resort	1	1
+alone_on_chain	1
+parallel_chain_sharded	1
+parallel_chain_no_resort	1	1	1
+parallel_chain_partially_sharded	1
+inner_chain	1
+inner_chain_of_4	1
+inner_right_key	1
+left_then_inner	1
+left_then_left	1
+right_then_inner	1
+inner_then_right	1
+inner_chain_use_nulls	1
+parallel_inner_chain	1
+parallel_left_chain	1
+parallel_partially_sharded	1
+filter_between_joins_merge	1	1
+filter_between_joins	1
+parallel_replicas_chain	1
