@@ -59,5 +59,33 @@ SELECT count() FROM t_qualifier_other AS t_qualifier_alias WHERE EXISTS (
     SELECT 1 FROM t_qualifier_alias AS c WHERE c.val > t_qualifier_alias.val)
 SETTINGS analyzer_alias_hides_table_name = 1;
 
+SELECT 'a subquery in the FROM clause keeps the qualifier, in either order of the enclosing FROM';
+-- Nothing in a FROM-clause subquery can read a column of its siblings, so there is no correlated reading
+-- to choose there and the qualifier keeps addressing the aliased table expression. Both spellings below
+-- must agree: the enclosing table expressions are registered one at a time, so a rule that looked at the
+-- half-filled name set would answer differently depending on which side the subquery is written on.
+SELECT x.c FROM t_qualifier_other, (SELECT count() AS c FROM t_qualifier_alias AS c WHERE t_qualifier_alias.grp = 1) AS x
+SETTINGS analyzer_alias_hides_table_name = 1;
+SELECT x.c FROM (SELECT count() AS c FROM t_qualifier_alias AS c WHERE t_qualifier_alias.grp = 1) AS x, t_qualifier_other
+SETTINGS analyzer_alias_hides_table_name = 1;
+-- The same for a name carried by the enclosing FROM itself.
+SELECT x.c FROM t_qualifier_alias, (SELECT count() AS c FROM t_qualifier_alias AS c WHERE t_qualifier_alias.grp = 1) AS x
+SETTINGS analyzer_alias_hides_table_name = 1;
+SELECT x.c FROM (SELECT count() AS c FROM t_qualifier_alias AS c WHERE t_qualifier_alias.grp = 1) AS x, t_qualifier_alias
+SETTINGS analyzer_alias_hides_table_name = 1;
+-- And for a JOIN, whose sides are resolved left to right in the same way.
+SELECT x.c FROM t_qualifier_alias AS o
+    JOIN (SELECT 1 AS id, count() AS c FROM t_qualifier_alias AS c WHERE t_qualifier_alias.grp = 1) AS x USING (id)
+SETTINGS analyzer_alias_hides_table_name = 1;
+SELECT x.c FROM (SELECT 1 AS id, count() AS c FROM t_qualifier_alias AS c WHERE t_qualifier_alias.grp = 1) AS x
+    JOIN t_qualifier_alias AS o USING (id)
+SETTINGS analyzer_alias_hides_table_name = 1;
+-- It also holds transitively: a self-contained EXISTS two scopes down is not affected by a sibling of the
+-- enclosing FROM clause, which it could not read either.
+SELECT x.c FROM t_qualifier_alias, (
+    SELECT count() AS c FROM t_qualifier_other WHERE EXISTS (
+        SELECT 1 FROM t_qualifier_alias AS c1 WHERE t_qualifier_alias.grp = c1.grp)) AS x
+SETTINGS analyzer_alias_hides_table_name = 1;
+
 DROP TABLE t_qualifier_alias;
 DROP TABLE t_qualifier_other;

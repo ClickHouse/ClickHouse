@@ -8420,7 +8420,7 @@ SELECT count() FROM t WHERE EXISTS (SELECT 1 FROM t AS c WHERE c.grp = t.grp AND
 
 By default `t.grp` and `t.val` refer to the aliased `t AS c`, which turns the predicate into a comparison of the inner row with itself, so the query answers 0. Enable to have them refer to the outer table, which makes the subquery correlated as SQL requires. Off by default, because the previous resolution is what several documented behaviours rely on, notably the `distributed_product_mode = 'local'` rewrite of an `IN` subquery over a `Distributed` table.
 
-The table's own name works as a qualifier either way whenever no enclosing query carries it.
+The table's own name works as a qualifier either way whenever no enclosing query carries it, and also inside a subquery that sits in a `FROM` or `JOIN` of the enclosing query, which cannot read a column of its siblings at all.
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.

@@ -14,3 +14,17 @@ the name of an aliased table still qualifies it where nothing else carries it
 3
 1
 1
+a subquery in the FROM clause keeps the qualifier, in either order of the enclosing FROM
+3
+3
+3
+3
+3
+3
+3
+3
+3
+3
+1
+1
+1

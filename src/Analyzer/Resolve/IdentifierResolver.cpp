@@ -635,6 +635,14 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
   *
   * Either way the name is only hidden when an enclosing scope carries it: a qualifier that means nothing
   * outside the subquery keeps resolving to the aliased table expression.
+  *
+  * An enclosing scope counts only while it is not resolving its own join tree. A subquery that sits in a
+  * `FROM` or `JOIN` of that query cannot read a column of its siblings - `validateFromClause` rejects such
+  * a correlated column with `Lateral joins are not supported` - so there is no second reading to choose
+  * from there, and the qualifier keeps addressing the aliased table expression. This also keeps the
+  * decision independent of the order of the enclosing `FROM`: `table_expression_node_to_data` is filled
+  * one sibling at a time, so a query whose join tree is still being resolved carries only the part of the
+  * name set that happens to precede the subquery.
   */
 bool IdentifierResolver::tableNameIsHiddenByAlias(
     const IdentifierLookup & identifier_lookup,
@@ -655,6 +663,13 @@ bool IdentifierResolver::tableNameIsHiddenByAlias(
 
     for (const auto * outer_scope = scope.parent_scope; outer_scope; outer_scope = outer_scope->parent_scope)
     {
+        /** The join tree of this query is still being resolved, so we are inside one of its table
+          * expressions and cannot read a column of the others. Its name set is also only half filled at
+          * this point, which is what would make the answer depend on the order of the `FROM`.
+          */
+        if (!outer_scope->table_expressions_in_resolve_process.empty())
+            continue;
+
         for (const auto & [outer_table_expression_node, outer_table_expression_data] : outer_scope->table_expression_node_to_data)
         {
             if (identifier_column_qualifier_parts == 2)
