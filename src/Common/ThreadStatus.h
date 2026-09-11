@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemoryThreadState.h>
 #include <Common/ProfileEvents.h>
@@ -99,6 +100,9 @@ public:
     MemorySpillSchedulerPtr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
+
+    /// This query's memory-pressure monitor; its parent is repointed to the user monitor at query start.
+    MemoryPressureMonitor memory_pressure_monitor{memory_tracker, getGlobalMemoryPressureMonitor()};
 
     struct SharedData
     {
