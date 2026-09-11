@@ -161,7 +161,3 @@ SELECT toTypeName(1 = 1), arrayStringConcat(ARRAY['x', 'y'], '/');
 SELECT '-- switching back';
 SET dialect = 'clickhouse';
 SELECT length('héllo');
-
-SELECT '-- the regression aggregates are native, including as window functions';
-SELECT regr_slope(y, x), regr_intercept(y, x), regr_r2(y, x) FROM (VALUES (1, 2), (2, 4), (3, 6)) AS t(x, y);
-SELECT regr_slope(y, x) OVER (ORDER BY x) FROM (VALUES (1, 2), (2, 4), (3, 6)) AS t(x, y);

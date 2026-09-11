@@ -52,4 +52,9 @@ nan
 NULL rows do not reach the sums either
 2	3
 2
+the Trino dialect reaches the native aggregates, including as window functions
+2	0	1
+nan
+2
+2
 wrong argument types are rejected

@@ -166,6 +166,15 @@ FROM VALUES('x Nullable(Float64), y Nullable(Float64)', (1, 2), (NULL, 5), (2, 4
 SELECT regr_slopeIf(y, x, x IS NULL OR isFinite(x))
 FROM VALUES('x Nullable(Float64), y Nullable(Float64)', (1, 2), (NULL, 5), (2, 4), (3, 6));
 
+SELECT 'the Trino dialect reaches the native aggregates, including as window functions';
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino';
+
+SELECT regr_slope(y, x), regr_intercept(y, x), regr_r2(y, x) FROM (VALUES (1, 2), (2, 4), (3, 6)) AS t(x, y);
+SELECT regr_slope(y, x) OVER (ORDER BY x) FROM (VALUES (1, 2), (2, 4), (3, 6)) AS t(x, y);
+
+SET dialect = 'clickhouse';
+
 SELECT 'wrong argument types are rejected';
 SELECT regr_slope('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT regr_slope(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
