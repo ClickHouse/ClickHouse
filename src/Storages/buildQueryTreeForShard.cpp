@@ -79,7 +79,7 @@ namespace
 {
 
 /// Return a clone of the defining expression of an inlineable `ALIAS` column node, or nullptr otherwise.
-/// A JOIN / CROSS_JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
+/// A JOIN / ARRAY_JOIN source puts a `ListNode` of the joined sides in the expression child,
 /// which is not an alias body. The expression is cloned so each occurrence gets its own copy: that lets
 /// one occurrence be aliased (a projection output) without mutating another (a reference in ORDER BY).
 QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & node)
@@ -90,7 +90,6 @@ QueryTreeNodePtr getInlineableAliasColumnExpression(const QueryTreeNodePtr & nod
 
     const auto & column_source = column_node->getColumnSourceOrNull();
     if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                       || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
                        || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
         return nullptr;
 
@@ -801,11 +800,6 @@ bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
         {
             nodes_to_process.push_back(join_node->getLeftTableExpressionNode());
             nodes_to_process.push_back(join_node->getRightTableExpressionNode());
-        }
-        else if (const auto * cross_join_node = current->as<CrossJoinNode>())
-        {
-            for (const auto & table_expression : cross_join_node->getTableExpressions())
-                nodes_to_process.push_back(table_expression);
         }
         else if (const auto * array_join_node = current->as<ArrayJoinNode>())
         {

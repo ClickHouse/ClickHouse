@@ -132,7 +132,11 @@ struct JoinOperatorBuildContext
         , left_header(left_header_)
         , right_header(right_header_)
         , expression_actions(*left_header, *right_header)
-        , join_operator(join_node.getKind(), join_node.getStrictness(), join_node.getLocality())
+        , join_operator(
+            join_node.getKind(),
+            /// A cross join has no strictness of its own; `All` keeps it eligible for join reordering.
+            isCrossOrComma(join_node.getKind()) ? JoinStrictness::All : join_node.getStrictness(),
+            join_node.getLocality())
     {
     }
 

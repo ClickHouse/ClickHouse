@@ -15,7 +15,6 @@
 #include <Storages/IStorage.h>
 
 #include <memory>
-#include <ranges>
 
 namespace DB
 {
@@ -652,13 +651,6 @@ void validateFromClause(const QueryTreeNodePtr & node)
             {
                 auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
                 nodes_to_process.push_back(array_join_node.getTableExpressionNode());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & join_node = node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : std::ranges::reverse_view(join_node.getTableExpressions()))
-                    nodes_to_process.push_back(expr);
                 break;
             }
             case QueryTreeNodeType::JOIN:

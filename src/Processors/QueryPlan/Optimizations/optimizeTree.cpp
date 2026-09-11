@@ -107,6 +107,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
         optimization_settings.enable_lazy_columns_replication,
+        optimization_settings.merge_filter_into_join_condition,
+        optimization_settings.cross_to_inner_join_rewrite,
     };
 
     while (!stack.empty())
@@ -319,6 +321,8 @@ void optimizeTreeSecondPass(
     /// Join steps avoid this for exactly the same reason by computing their key before the filter is
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
+
+    normalizeCommaJoins(root, optimization_settings);
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,

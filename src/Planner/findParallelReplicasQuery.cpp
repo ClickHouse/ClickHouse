@@ -144,11 +144,6 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                 query_tree_node = array_join_node.getTableExpressionNode().get();
                 break;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                /// TODO: We can parallelize one table
-                return {};
-            }
             case QueryTreeNodeType::JOIN:
             {
                 const auto & join_node = query_tree_node->as<JoinNode &>();
@@ -461,11 +456,6 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
                 const auto & array_join_node = query_tree_node->as<ArrayJoinNode &>();
                 query_tree_node = array_join_node.getTableExpressionNode().get();
                 break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                /// TODO: We can parallelize one table
-                return nullptr;
             }
             case QueryTreeNodeType::JOIN:
             {

@@ -403,14 +403,6 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             {
                 return true;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr);
-
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
@@ -473,14 +465,6 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             {
                 const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
                 join_tree_nodes_to_process.push_back(array_join_node.getTableExpressionNode().get());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                const auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr.get());
-
                 break;
             }
             case QueryTreeNodeType::JOIN:

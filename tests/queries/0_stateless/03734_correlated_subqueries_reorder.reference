@@ -15,12 +15,13 @@ Positions: 1
     Actions: INPUT :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 0
     Positions: 0
       Filter (WHERE)
-      Filter column: less(__table1.l_quantity, __table3) (removed)
+      Filter column: and(equals(__table2.p_partkey, __table1.l_partkey), less(__table1.l_quantity, __table3)) (removed)
       Actions: INPUT :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 0
                INPUT : 1 -> __table1.l_quantity Decimal(15, 2) : 1
                INPUT : 2 -> __table3 Nullable(Float64) : 2
                FUNCTION less(__table1.l_quantity :: 1, __table3 :: 2) -> less(__table1.l_quantity, __table3) Nullable(UInt8) : 3
-      Positions: 3 0
+               ALIAS less(__table1.l_quantity, __table3) :: 3 -> and(equals(__table2.p_partkey, __table1.l_partkey), less(__table1.l_quantity, __table3)) Nullable(UInt8) : 2
+      Positions: 2 0
         JoinLogical (JOIN to generate result stream)
         ResultRows: unknown
         Type: INNER
@@ -58,11 +59,11 @@ Positions: 1
                   Function: avg(Decimal(15, 2)) → Float64
                   Arguments: __table4.l_quantity
             Skip merging: 0
-              Expression ((Before GROUP BY + ))
+              Expression (Before GROUP BY)
               Actions: INPUT :: 0 -> __table4.l_quantity Decimal(15, 2) : 0
-                       INPUT :: 1 -> __table4.l_partkey Int32 : 1
-                       INPUT :: 2 -> __table2.p_partkey Int32 : 2
-              Positions: 0 1 2
+                       INPUT :: 1 -> __table2.p_partkey Int32 : 1
+                       INPUT :: 2 -> __table4.l_partkey Int32 : 2
+              Positions: 0 2 1
                 JoinLogical
                 Join: lineitem[100] ⋈ R1
                 ResultRows: unknown
@@ -93,46 +94,52 @@ Positions: 1
                   Distinct
                   Columns: __table2.p_partkey
                     ReadFromCommonBuffer
-          SaveSubqueryResultToBuffer
-            JoinLogical
-            Join: part[10000] ⋈ lineitem[100]
-            ResultRows: 100
-            Type: INNER
-            Strictness: ALL
-            Locality: UNSPECIFIED
-            Expression: equals(__table2.p_partkey, __table1.l_partkey)
-            Expression:
-            Actions: INPUT :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 0
-                     INPUT : 1 -> __table1.l_partkey Int32 : 1
-                     INPUT :: 2 -> __table1.l_quantity Decimal(15, 2) : 2
-                     INPUT : 3 -> __table2.p_partkey Int32 : 3
-                     FUNCTION equals(__table2.p_partkey : 3, __table1.l_partkey :: 1) -> equals(__table2.p_partkey, __table1.l_partkey) UInt8 : 4
-            Positions: 0 2 3
-            Expression Sources:
-            __table1.l_extendedprice: {1}
-            __table1.l_partkey: {1}
-            __table1.l_quantity: {1}
-            __table2.p_partkey: {0}
-              Expression (Change column names to column identifiers)
-              Actions: INPUT : 0 -> p_partkey Int32 : 0
-                       ALIAS p_partkey :: 0 -> __table2.p_partkey Int32 : 1
-              Positions: 1
-                ReadFromMergeTree (default.part)
-                ReadType: Default
-                Parts: 1
-                Granules: 1
-              Expression (Change column names to column identifiers)
-              Actions: INPUT : 0 -> l_extendedprice Decimal(15, 2) : 0
-                       INPUT : 1 -> l_partkey Int32 : 1
-                       INPUT : 2 -> l_quantity Decimal(15, 2) : 2
-                       ALIAS l_extendedprice :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 3
-                       ALIAS l_partkey :: 1 -> __table1.l_partkey Int32 : 0
-                       ALIAS l_quantity :: 2 -> __table1.l_quantity Decimal(15, 2) : 1
-              Positions: 3 0 1
-                ReadFromMergeTree (default.lineitem)
-                ReadType: Default
-                Parts: 1
-                Granules: 1
+          Expression (WHERE)
+          Actions: INPUT :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 0
+                   INPUT :: 1 -> __table1.l_partkey Int32 : 1
+                   INPUT :: 2 -> __table1.l_quantity Decimal(15, 2) : 2
+                   INPUT :: 3 -> __table2.p_partkey Int32 : 3
+          Positions: 0 2 3
+            SaveSubqueryResultToBuffer
+              JoinLogical
+              Join: part[10000] ⋈ lineitem[100]
+              ResultRows: 100
+              Type: INNER
+              Strictness: ALL
+              Locality: UNSPECIFIED
+              Expression: equals(__table2.p_partkey, __table1.l_partkey)
+              Expression:
+              Actions: INPUT :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 0
+                       INPUT : 1 -> __table1.l_partkey Int32 : 1
+                       INPUT :: 2 -> __table1.l_quantity Decimal(15, 2) : 2
+                       INPUT : 3 -> __table2.p_partkey Int32 : 3
+                       FUNCTION equals(__table2.p_partkey : 3, __table1.l_partkey : 1) -> equals(__table2.p_partkey, __table1.l_partkey) UInt8 : 4
+              Positions: 0 1 2 3
+              Expression Sources:
+              __table1.l_extendedprice: {1}
+              __table1.l_partkey: {1}
+              __table1.l_quantity: {1}
+              __table2.p_partkey: {0}
+                Expression (Change column names to column identifiers)
+                Actions: INPUT : 0 -> p_partkey Int32 : 0
+                         ALIAS p_partkey :: 0 -> __table2.p_partkey Int32 : 1
+                Positions: 1
+                  ReadFromMergeTree (default.part)
+                  ReadType: Default
+                  Parts: 1
+                  Granules: 1
+                Expression (Change column names to column identifiers)
+                Actions: INPUT : 0 -> l_extendedprice Decimal(15, 2) : 0
+                         INPUT : 1 -> l_partkey Int32 : 1
+                         INPUT : 2 -> l_quantity Decimal(15, 2) : 2
+                         ALIAS l_extendedprice :: 0 -> __table1.l_extendedprice Decimal(15, 2) : 3
+                         ALIAS l_partkey :: 1 -> __table1.l_partkey Int32 : 0
+                         ALIAS l_quantity :: 2 -> __table1.l_quantity Decimal(15, 2) : 1
+                Positions: 3 0 1
+                  ReadFromMergeTree (default.lineitem)
+                  ReadType: Default
+                  Parts: 1
+                  Granules: 1
         JoinLogical (JOIN to generate result stream)
         Type: INNER
                 JoinLogical

@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsBool query_plan_merge_expressions;
     extern const SettingsBool query_plan_merge_expression_into_join;
     extern const SettingsBool query_plan_merge_filter_into_join_condition;
+    extern const SettingsUInt64 cross_to_inner_join_rewrite;
     extern const SettingsBool query_plan_merge_filters;
     extern const SettingsBool query_plan_optimize_lazy_final;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
@@ -208,6 +209,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
+    cross_to_inner_join_rewrite = from[Setting::query_plan_enable_optimizations] && from[Setting::cross_to_inner_join_rewrite] != 0;
+    run_merge_filter_into_join_condition = merge_filter_into_join_condition || cross_to_inner_join_rewrite;
+    force_comma_join_rewrite = from[Setting::cross_to_inner_join_rewrite] >= 2;
     merge_expression_into_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_expression_into_join];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
     try_use_top_k_optimization = from[Setting::use_skip_indexes_for_top_k] || from[Setting::use_top_k_dynamic_filtering];
