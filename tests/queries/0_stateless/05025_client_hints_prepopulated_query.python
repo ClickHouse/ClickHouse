@@ -22,6 +22,19 @@ TIMEOUT_SECONDS = 60
 # How long to keep reading after the last keystroke while waiting for the expected output.
 FINAL_WAIT_SECONDS = 30
 
+# How long an explicit `wait_for` of a keystroke may take. It is generous because it covers the
+# wait for the next `:) ` prompt after a committed query, and a query does not have to be fast for
+# this test to mean anything: in an MSan build a trivial `SELECT` that fails to resolve an
+# identifier has been seen taking 36 seconds.
+STEP_WAIT_SECONDS = 120
+
+# Idle window after a keystroke that has no explicit `wait_for`, long enough for `replxx` to
+# repaint the line.
+DRAIN_IDLE_SECONDS = 0.4
+
+# Extra slack for the supervisor on top of everything the worker itself may legitimately wait for.
+SUPERVISOR_SLACK_SECONDS = 15
+
 # `clickhouse-test` dumps this file into the failure report, but only under the name it derives
 # from the testcase (the `.sh` wrapper), so take the path from there.
 DEBUG_LOG = os.environ["CLICKHOUSE_TEST_DEBUG_LOG"]
@@ -102,13 +115,16 @@ def make_history_file():
 
 
 def read_until(master, debug_log_fd, predicate, timeout):
+    """Read until the predicate holds, the deadline passes, or the client is gone. Returns whether
+    the predicate matched along with what was read: a deadline is not a match, and treating it as
+    one lets a case go on from a state it never reached."""
     output = ""
     deadline = time.time() + timeout
     while time.time() < deadline:
         r, _, _ = select.select([master], [], [], 0.3)
         if not r:
             if predicate(output):
-                return output
+                return True, output
             continue
         try:
             chunk = os.read(master, 4096)
@@ -118,8 +134,8 @@ def read_until(master, debug_log_fd, predicate, timeout):
         debug_log_fd.flush()
         output += chunk.decode(errors="replace")
         if predicate(output):
-            return output
-    return output
+            return True, output
+    return predicate(output), output
 
 
 def drain(master, debug_log_fd, idle):
@@ -171,36 +187,76 @@ def run_case(program, argv, name, keystrokes, check, state=None, check_from=0):
 
     debug_log_fd = open(DEBUG_LOG, "a")
     try:
-        read_until(master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS)
+        matched, transcript = read_until(
+            master, debug_log_fd, lambda o: ":)" in o, TIMEOUT_SECONDS
+        )
+        if not matched:
+            print(f"{name}: FAIL")
+            report_failure(name, shell_pid, transcript, debug_log_fd)
+            state.value = 1
+            return
 
+        # Everything the terminal showed, for the failure transcript - `output` holds only what
+        # the check is allowed to look at.
         output = ""
         for index, (keys, wait_for) in enumerate(keystrokes):
             os.write(master, keys)
             if wait_for is not None:
-                segment = read_until(master, debug_log_fd, wait_for, TIMEOUT_SECONDS)
+                matched, segment = read_until(
+                    master, debug_log_fd, wait_for, STEP_WAIT_SECONDS
+                )
             else:
-                segment = drain(master, debug_log_fd, 0.4)
+                matched, segment = True, drain(master, debug_log_fd, DRAIN_IDLE_SECONDS)
+            transcript += segment
             if index >= check_from:
                 output += segment
+            # A `wait_for` that expired means the state the next keystroke assumes was never
+            # reached: the hint that arms the stale cache never appeared, or the prompt never came
+            # back and the next line would be typed into a still running query, where the terminal
+            # driver echoes the bytes instead of `replxx` interpreting them. Either way the case
+            # would prove nothing while still being able to pass, so end it here with its
+            # transcript.
+            if not matched:
+                print(f"{name}: FAIL")
+                report_failure(name, shell_pid, transcript, debug_log_fd)
+                state.value = 1
+                return
 
         # The prepopulated line only appears after the (faked) generation round trip, which can
         # outlast the inter-keystroke drain on slow builds.
         if not check(output):
-            output += read_until(
+            _, extra = read_until(
                 master,
                 debug_log_fd,
-                lambda extra: check(output + extra),
+                lambda more: check(output + more),
                 FINAL_WAIT_SECONDS,
             )
+            output += extra
+            transcript += extra
 
         ok = check(output)
         print(f"{name}: {'OK' if ok else 'FAIL'}")
         if not ok:
-            report_failure(name, shell_pid, output, debug_log_fd)
+            report_failure(name, shell_pid, transcript, debug_log_fd)
         state.value = 0 if ok else 1
     finally:
         os.close(master)
         debug_log_fd.close()
+
+
+def worker_budget(keystrokes):
+    """Everything `run_case` may legitimately spend: the wait for the first prompt, every explicit
+    `wait_for`, the idle window after every other keystroke, and the final wait for the expected
+    output. The supervisor must not expire before that, or ordinary slowness looks like a
+    failure."""
+    waits = sum(1 for _, wait_for in keystrokes if wait_for is not None)
+    return (
+        TIMEOUT_SECONDS
+        + STEP_WAIT_SECONDS * waits
+        + DRAIN_IDLE_SECONDS * (len(keystrokes) - waits)
+        + FINAL_WAIT_SECONDS
+        + SUPERVISOR_SLACK_SECONDS
+    )
 
 
 def run_with_timeout(program, argv, name, keystrokes, check, check_from=0):
@@ -212,7 +268,7 @@ def run_with_timeout(program, argv, name, keystrokes, check, check_from=0):
             kwargs={"state": state, "check_from": check_from},
         )
         process.start()
-        process.join(TIMEOUT_SECONDS * (1 + len(keystrokes)) + FINAL_WAIT_SECONDS)
+        process.join(worker_budget(keystrokes))
         if process.is_alive():
             process.terminate()
         if state.value in (0, 1):
