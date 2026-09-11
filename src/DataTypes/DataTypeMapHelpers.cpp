@@ -453,7 +453,7 @@ constexpr std::string_view map_key_marker = ".key_";
 
 bool looksLikeMapSubcolumnName(const String & column_name)
 {
-    return column_name.find(map_key_marker) != String::npos;
+    return column_name.contains(map_key_marker);
 }
 
 std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
