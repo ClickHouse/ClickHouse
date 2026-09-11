@@ -162,13 +162,12 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
-        /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
-        /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
-        /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
-        /// map. We keep that null map (instead of throwing CANNOT_INSERT_NULL) and fill defaults at
-        /// the null rows; the group null map is later used to wrap the assembled ColumnTuple in
-        /// ColumnNullable. See OutputColumnInfo::nullable_group.
-        bool group_nullable = false;
+        /// Definition levels of the enclosing Tuple groups that are read as Nullable(Tuple(...)),
+        /// outermost first. Each gets its own null map, derived from this leaf's definition levels
+        /// at that level (`def[i] < group_def`). A group's nullness lives at the group's own
+        /// definition level, while this leaf's null map lives at max_def, so the two are different
+        /// questions about the same levels. See OutputColumnInfo::nullable_group_def.
+        std::vector<UInt8> nullable_group_defs;
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
@@ -236,12 +235,13 @@ struct Reader
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
 
-        /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
-        /// null map reconstructed from the leaves' definition levels. Used to read a physically
-        /// nullable parquet struct (OPTIONAL group) as Nullable(Tuple(...)). Only set when the group
-        /// has no optional/nullable ancestor and an all-REQUIRED, non-array subtree, so every leaf's
-        /// null map equals the group null map. `needs_cast` (if any) is applied after wrapping.
-        bool nullable_group = false;
+        /// If nonzero, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the
+        /// null map derived at this definition level, which reads a physically nullable parquet
+        /// struct (OPTIONAL group) as Nullable(Tuple(...)). The value identifies the group among the
+        /// nullable groups enclosing its leaves, so nesting works at any depth. Zero is never a
+        /// nullable group's level: the root level is level 0 and is always defined.
+        /// `needs_cast` (if any) is applied after wrapping.
+        UInt8 nullable_group_def = 0;
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
@@ -337,6 +337,7 @@ struct Reader
         bool use_dictionary_filter = false;
         bool use_column_index = false;
         bool need_null_map = false;
+        bool need_group_null_map = false;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
@@ -402,13 +403,12 @@ struct Reader
 
         MutableColumnPtr null_map;
 
-        /// For a leaf of a physically-nullable struct read as Nullable(Tuple(...)) (see
-        /// PrimitiveColumnInfo::group_nullable): the group's definition-level null map, moved here
-        /// in decodePrimitiveColumn before any leaf-level Nullable wrapping can consume `null_map`.
-        /// formOutputColumn reads it from the group's first leaf to wrap the assembled ColumnTuple
-        /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
-        /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
-        MutableColumnPtr group_null_map;
+        /// Null map of each enclosing Tuple group read as Nullable(Tuple(...)), parallel to
+        /// PrimitiveColumnInfo::nullable_group_defs. Derived from this leaf's definition levels,
+        /// one entry per instance of that group, so it is independent of `null_map` (which answers
+        /// the leaf's own nullness) and survives the leaf being materialized as Nullable(...).
+        /// formOutputColumn takes a group's map from the group's first leaf.
+        MutableColumns group_null_maps;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.

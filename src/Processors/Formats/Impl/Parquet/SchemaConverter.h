@@ -35,11 +35,11 @@ struct SchemaConverter
     /// Actual recursion depth of processSubtree. Tracked unconditionally because the def-level
     /// counter only advances for OPTIONAL/REPEATED nodes, so REQUIRED-group nesting would bypass it.
     size_t recursion_depth = 0;
-    /// >0 while recursing inside a physically-nullable Tuple group (OPTIONAL group requested as
-    /// Nullable(Tuple(...)) and eligible for lossless reading). Leaves under it get
-    /// PrimitiveColumnInfo::group_nullable set: their definition-level null map equals the group
-    /// null map, so we keep it and later wrap the assembled ColumnTuple in ColumnNullable.
-    size_t nullable_tuple_group_depth = 0;
+    /// Definition levels of the Tuple groups currently being recursed into that are read as
+    /// Nullable(Tuple(...)), outermost first. Copied onto every leaf below
+    /// (PrimitiveColumnInfo::nullable_group_defs), which is what lets the reader derive one null map
+    /// per group from that leaf's definition levels.
+    std::vector<UInt8> nullable_group_defs;
 
     /// The key is the parquet column name, without ColumnMapper.
     std::unordered_map<String, GeoColumnMetadata> geo_columns;
