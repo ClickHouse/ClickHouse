@@ -223,6 +223,10 @@ void WriteTransaction::create(const DB::Names & partition_columns)
             storage_type_str);
     }
 
+    /// Keep a trailing slash so `add.path` (the sink path minus this prefix) stays table-root-relative.
+    if (!path_prefix.empty() && !path_prefix.ends_with('/'))
+        path_prefix += '/';
+
     LOG_TEST(
         log, "Write path: {}, data prefix: {} schema: {}",
         write_path, path_prefix, write_schema.toString());
