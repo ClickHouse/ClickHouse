@@ -257,16 +257,16 @@ INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hob
 대부분의 입력 형식에서는 스키마 추론을 위해 일부 데이터를 읽어 구조를 파악하며, 이 과정에는 다소 시간이 걸릴 수 있습니다.
 ClickHouse가 동일한 파일에서 데이터를 읽을 때마다 같은 스키마를 반복해서 추론하지 않도록, 추론된 스키마는 캐시에 저장됩니다. 이후 동일한 파일에 다시 접근하면 ClickHouse는 캐시에 저장된 스키마를 사용합니다.
 
-이 캐시를 제어하는 전용 SETTING이 있습니다:
+이 캐시를 제어하는 전용 설정이 있습니다:
 
-* `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - 해당 테이블 함수에 대해 캐시할 수 있는 스키마의 최대 개수입니다. 기본값은 `4096`입니다. 이 SETTING은 서버 구성 파일에서 지정해야 합니다.
-* `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - 스키마 추론 시 캐시 사용 여부를 켜거나 끌 수 있습니다. 이 SETTING은 쿼리에서 사용할 수 있습니다.
+* `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - 해당 테이블 함수에 대해 캐시할 수 있는 스키마의 최대 개수입니다. 기본값은 `4096`입니다. 이 설정은 서버 구성 파일에서 지정해야 합니다.
+* `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - 스키마 추론 시 캐시 사용 여부를 켜거나 끌 수 있습니다. 이 설정은 쿼리에서 사용할 수 있습니다.
 
-파일의 스키마는 데이터를 수정하거나 포맷 SETTING을 변경하면 달라질 수 있습니다.
-따라서 스키마 추론 캐시는 파일 소스, 포맷 이름, 사용된 포맷 SETTING, 파일의 마지막 수정 시간을 기준으로 스키마를 식별합니다.
+파일의 스키마는 데이터를 수정하거나 포맷 설정을 변경하면 달라질 수 있습니다.
+따라서 스키마 추론 캐시는 파일 소스, 포맷 이름, 사용된 포맷 설정, 파일의 마지막 수정 시간을 기준으로 스키마를 식별합니다.
 
-참고: `url` 테이블 함수에서 URL을 통해 접근하는 일부 파일에는 마지막 수정 시간 정보가 없을 수 있습니다. 이러한 경우를 위한 전용 SETTING
-`schema_inference_cache_require_modification_time_for_url`가 있습니다. 이 SETTING을 비활성화하면 이러한 파일에 대해 마지막 수정 시간이 없어도 캐시의 스키마를 사용할 수 있습니다.
+참고: `url` 테이블 함수에서 URL을 통해 접근하는 일부 파일에는 마지막 수정 시간 정보가 없을 수 있습니다. 이러한 경우를 위한 전용 설정
+`schema_inference_cache_require_modification_time_for_url`가 있습니다. 이 설정을 비활성화하면 이러한 파일에 대해 마지막 수정 시간이 없어도 캐시의 스키마를 사용할 수 있습니다.
 
 또한 현재 캐시에 있는 모든 스키마를 보여주는 시스템 테이블(system table) [schema&#95;inference&#95;cache](/ko/reference/system-tables/schema_inference_cache)와, 모든 소스 또는 특정 소스에 대한 스키마 캐시를 정리할 수 있는 시스템 쿼리(system query) `SYSTEM CLEAR SCHEMA CACHE [FOR File/S3/URL/HDFS]`
 도 있습니다.
@@ -276,7 +276,7 @@ ClickHouse가 동일한 파일에서 데이터를 읽을 때마다 같은 스키
 S3의 샘플 데이터셋 `github-2022.ndjson.gz`에서 구조를 추론해 보고, 스키마 추론 캐시가 어떻게 동작하는지 살펴보겠습니다:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 
 ```response
@@ -318,7 +318,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 ```
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 ```
 
 ```response
@@ -365,7 +365,7 @@ DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/git
 이제 추론된 스키마에 영향을 줄 수 있는 몇 가지 설정을 변경해 보겠습니다:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz', NOSIGN)
 SETTINGS input_format_json_try_infer_named_tuples_from_objects=0, input_format_json_read_objects_as_strings = 1
 
 ┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
