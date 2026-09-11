@@ -261,10 +261,12 @@ ASTPtr makeToDecimal(ASTPtr argument)
     if (const auto * function = argument->as<ASTFunction>(); function && function->name == "CAST")
         return argument;
 
+    /// The wrappers `Nullable` and `LowCardinality` do not change the value space, so a wrapped
+    /// integer or boolean converts exactly at scale 0 as well.
     auto is_exact = makeASTFunction(
         "match",
         makeASTFunction("toTypeName", argument),
-        makeLiteral(Field(String("^(U?Int(8|16|32|64|128|256)|Bool)$"))));
+        makeLiteral(Field(String("^(Nullable\\(|LowCardinality\\()*(U?Int(8|16|32|64|128|256)|Bool)\\)*$"))));
     auto guard = makeASTFunction(
         "throwIf",
         makeASTFunction("not", std::move(is_exact)),
@@ -311,8 +313,13 @@ ASTPtr makeToDate(ASTPtr argument)
         "fromUnixTimestamp64Milli",
         makeASTFunction("toInt64", makeASTFunction("toFloat64OrZero", makeASTFunction("toString", argument->clone()))),
         makeLiteral(Field(String("UTC"))));
+    /// `Nullable` and `LowCardinality` wrappers of a numeric type are numeric as well - the type
+    /// name of an ordinary column such as `Nullable(Int64)` must not fall through to the branch
+    /// that reads a number as seconds.
     auto is_a_number = makeASTFunction(
-        "match", makeASTFunction("toTypeName", argument->clone()), makeLiteral(Field(String("^(U?Int|Float|Decimal)"))));
+        "match",
+        makeASTFunction("toTypeName", argument->clone()),
+        makeLiteral(Field(String("^(Nullable\\(|LowCardinality\\()*(U?Int|Float|Decimal)"))));
     return makeASTFunction("if", std::move(is_a_number), std::move(milliseconds), parsed(argument->clone()));
 }
 
