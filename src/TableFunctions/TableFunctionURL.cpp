@@ -609,7 +609,7 @@ Brace and numeric templates are expanded locally and do not require `allow_exper
 
 The final combination of host/query shards, archive-path unions, and failover options is limited by [glob_expansion_max_elements](/reference/settings/session-settings/other#glob_expansion_max_elements).
 
-The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. While it is enabled, a URL containing `::` that matches the archive-path syntax is interpreted as an archive and member path. To use `::` literally in a URL, disable `allow_archive_path_syntax` for the query.
+The [`allow_archive_path_syntax`](/operations/settings/settings#allow_archive_path_syntax) setting is enabled by default. A `::` in a URL query string or fragment is treated as an archive separator only when the URL path itself looks like a supported archive path. For example, `api?x=::1` remains literal URL content, while `archive.zip?token=x::member.csv` reads `member.csv` from the archive without requiring spaces around `::`. A path such as `data.zip::v1` is inherently ambiguous and is interpreted as archive syntax while this setting is enabled; to use it as a literal URL path, disable `allow_archive_path_syntax` for the query.
 
 Archive access is read-only. The server must report the archive size so ClickHouse can issue range requests.
 

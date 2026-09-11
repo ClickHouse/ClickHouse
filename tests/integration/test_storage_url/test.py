@@ -665,6 +665,19 @@ def test_url_query_with_literal_double_colon():
         ).strip() == "3"
 
 
+def test_url_path_with_literal_double_colon_requires_archive_syntax_off():
+    literal_url = "http://resolver:8087/data/data.zip::v1"
+    table_functions = [
+        f"url('{literal_url}', 'TSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{literal_url}', 'TSV', 'x UInt64')",
+    ]
+    for table_function in table_functions:
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function}",
+            settings={"allow_archive_path_syntax": 0},
+        ).strip() == "7"
+
+
 def test_url_writes_to_archive_paths():
     archive_url = "http://resolver:8087/data/simple_archive.zip :: eod.csv"
     for archive_path_syntax, expected_error in [

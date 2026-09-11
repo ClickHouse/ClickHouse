@@ -71,6 +71,7 @@ DATA_PARTS = {
     "/data/apache_sort/subdir/part1.tsv": "7\n",
     "/data/apache_sort/subdir/part2.tsv": "11\n",
     "/data/api": "5\n",
+    "/data/data.zip::v1": "7\n",
 }
 
 SIMPLE_ENTRIES = [
