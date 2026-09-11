@@ -1858,9 +1858,8 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
         {
             ignore_max_size = max_source_parts_size == (*data_settings)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
 
-            /// A TTL drop merge writes an empty part: every source part is expired at entry.create_time, so
-            /// MergeFromLogEntryTask estimates 0 bytes and reserves only the floor all reservations are clamped to.
-            /// Size it by that floor, so the check covers what it really takes from the disk, not its source parts.
+            /// A TTL drop estimates 0 bytes (all sources expired at entry.create_time) but reserves the clamp floor;
+            /// size it by that floor so the check covers what it really takes.
             if (entry.merge_type == MergeType::TTLDrop)
                 sum_parts_size_in_bytes = std::min<size_t>(
                     sum_parts_size_in_bytes, MergeTreeData::RESERVATION_MIN_ESTIMATION_SIZE);
