@@ -11,7 +11,11 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/StorageView.h>
 
 
 namespace DB
@@ -26,6 +30,35 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// `RENAME DATABASE` does not rewrite the stored definitions of the tables it moves, so the dependencies
+/// of the ordinary views of the renamed database are recomputed from those definitions against the new
+/// database name: a source written without a database follows the view into the new database, a qualified
+/// one keeps naming the database written in the definition. This is the resolution the metadata loading
+/// path uses, so the graphs stay equal to what a reload would rebuild.
+void recomputeOrdinaryViewDependencies(IDatabase & database, const String & new_database_name, const ContextPtr & context)
+{
+    for (auto it = database.getTablesIterator(context); it->isValid(); it->next())
+    {
+        if (!dynamic_cast<const StorageView *>(it->table().get()))
+            continue;
+
+        auto ast = database.getCreateTableQuery(it->name(), context);
+        auto table_id = it->table()->getStorageID();
+        auto dependencies = getDependenciesFromCreateQuery(
+            context->getGlobalContext(), table_id.getQualifiedName(), ast, new_database_name,
+            /*can_throw*/ false, /*validate_current_database*/ false);
+        auto loading_dependencies = getLoadingDependenciesFromCreateQuery(context->getGlobalContext(), table_id.getQualifiedName(), ast);
+
+        DatabaseCatalog::instance().updateDependencies(
+            table_id, dependencies.dependencies, loading_dependencies, {}, dependencies.plain_view_dependencies);
+    }
+}
+
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -254,6 +287,7 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+        recomputeOrdinaryViewDependencies(*db, new_name, getContext());
     }
 
     return {};

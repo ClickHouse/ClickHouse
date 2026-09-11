@@ -43,6 +43,14 @@ FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND name = 'r
 SELECT 'same-named table elsewhere', dependencies_table
 FROM system.tables WHERE database = currentDatabase() AND name = 'rename_db_unqualified_src';
 
+-- The referential dependency is resolved the same way, so the source in the new database stays
+-- protected from `DROP` while the renamed view reads it.
+SET check_referential_table_dependencies = 1;
+SET send_logs_level = 'fatal'; -- the expected error below must not be sent to the client
+DROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.rename_db_unqualified_src; -- { serverError HAVE_DEPENDENT_OBJECTS }
+SET send_logs_level = 'error';
+SET check_referential_table_dependencies = 0;
+
 -- An unqualified source is resolved against the current database, so read the view from its own database:
 -- the row it returns comes from the table the re-keyed edge points at.
 DROP TEMPORARY TABLE rename_db_unqualified_src;

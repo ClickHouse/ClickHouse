@@ -892,21 +892,17 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
             view_dependencies.addDependency(StorageID{new_name, table_name}, view);
         }
 
-        /// `plain_view_dependencies` is rewired in both directions as well: the renamed table may be the
-        /// plain view itself (incoming edges from its sources) and/or a source of plain views (outgoing
-        /// edges to the views reading it).
+        /// `plain_view_dependencies` is re-keyed on the view side only: the renamed table may be a plain
+        /// view, and it moves into the new database. The source side must stay where it is: a source is
+        /// written in the definition of a view either qualified, and then it keeps naming the old
+        /// database, or without a database, and then it is resolved against the database of the view.
+        /// `InterpreterRenameQuery` recomputes the dependencies of the views of the renamed database from
+        /// their definitions once the rename is done, which is what moves the unqualified ones.
         auto plain_view_sources = plain_view_dependencies.getDependents(StorageID{old_name, table_name});
         for (const auto & source : plain_view_sources)
         {
             plain_view_dependencies.removeDependency(source, StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
             plain_view_dependencies.addDependency(source, StorageID{new_name, table_name});
-        }
-
-        auto plain_views_from = plain_view_dependencies.getDependencies(StorageID{old_name, table_name});
-        for (const auto & view : plain_views_from)
-        {
-            plain_view_dependencies.removeDependency(StorageID{old_name, table_name}, view, /* remove_isolated_tables= */ true);
-            plain_view_dependencies.addDependency(StorageID{new_name, table_name}, view);
         }
     }
 }
