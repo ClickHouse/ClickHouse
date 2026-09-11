@@ -5,8 +5,23 @@
 #include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#if defined(OS_WINDOWS)
+#include <Poco/UnWindows.h>
+#include <winsock2.h> /// `timeval`
+
+/// Windows has no `getrusage`. Only these four fields are read from it here, and
+/// `GetThreadTimes` supplies the two that matter - see `RUsageCounters::current`.
+struct rusage
+{
+    timeval ru_utime;  /// User CPU time consumed by this thread.
+    timeval ru_stime;  /// System CPU time consumed by this thread.
+    long ru_minflt;    /// Soft page faults.
+    long ru_majflt;    /// Hard page faults.
+};
+#else
 #include <sys/time.h>
 #include <sys/resource.h>
+#endif
 #include <pthread.h>
 #include <boost/noncopyable.hpp>
 
@@ -111,6 +126,29 @@ struct RUsageCounters
         rusage.ru_utime.tv_usec = last_user_time.microseconds;
         rusage.ru_stime.tv_sec = last_system_time.seconds;
         rusage.ru_stime.tv_usec = last_system_time.microseconds;
+#elif defined(OS_WINDOWS)
+        /// `GetThreadTimes` reports the calling thread's accumulated kernel and user time as
+        /// `FILETIME`, which here is a duration in 100-nanosecond units rather than a date.
+        /// Page-fault counts have no per-thread equivalent on Windows - `GetProcessMemoryInfo`
+        /// is process-wide - so they stay zero, which reads as "none observed" and yields zero
+        /// deltas rather than a wrong number.
+        FILETIME creation_time{};
+        FILETIME exit_time{};
+        FILETIME kernel_time{};
+        FILETIME user_time{};
+        if (GetThreadTimes(GetCurrentThread(), &creation_time, &exit_time, &kernel_time, &user_time))
+        {
+            const auto to_timeval = [](const FILETIME & time)
+            {
+                const UInt64 hundred_ns = (static_cast<UInt64>(time.dwHighDateTime) << 32) | time.dwLowDateTime;
+                timeval result{};
+                result.tv_sec = static_cast<long>(hundred_ns / 10'000'000);
+                result.tv_usec = static_cast<long>((hundred_ns % 10'000'000) / 10);
+                return result;
+            };
+            rusage.ru_utime = to_timeval(user_time);
+            rusage.ru_stime = to_timeval(kernel_time);
+        }
 #elif defined(OS_SUNOS)
         ::getrusage(RUSAGE_LWP, &rusage);
 #else

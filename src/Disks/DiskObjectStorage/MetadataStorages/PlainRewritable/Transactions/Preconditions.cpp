@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/Preconditions.h>
 
 #include <Common/Exception.h>
@@ -19,7 +20,7 @@ namespace
 
 void validateDirectoryPresent(const std::shared_ptr<const FsSnapshot> & fs_tree, const std::filesystem::path & path, const std::string & expected_remote_path)
 {
-    const auto remote_info = fs_tree->getDirectoryRemoteInfo(path);
+    const auto remote_info = fs_tree->getDirectoryRemoteInfo(pathToGenericString(path));
 
     if (!remote_info)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' was removed concurrently, cannot reuse its remote path '{}'", path.string(), expected_remote_path);
@@ -30,7 +31,7 @@ void validateDirectoryPresent(const std::shared_ptr<const FsSnapshot> & fs_tree,
 
 void validateDirectoryMissing(const std::shared_ptr<const FsSnapshot> & fs_tree, const std::filesystem::path & path)
 {
-    const auto remote_info = fs_tree->getDirectoryRemoteInfo(path);
+    const auto remote_info = fs_tree->getDirectoryRemoteInfo(pathToGenericString(path));
 
     if (remote_info)
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory '{}' was created concurrently with remote path '{}'", path.string(), remote_info->remote_path);

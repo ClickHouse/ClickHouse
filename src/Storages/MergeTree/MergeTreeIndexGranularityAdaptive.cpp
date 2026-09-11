@@ -120,7 +120,7 @@ size_t MergeTreeIndexGranularityAdaptive::countRowsForRows(size_t from_mark, siz
     auto it = std::upper_bound(marks_rows_partial_sums.begin(), marks_rows_partial_sums.end(), last_row_pos);
     size_t to_mark = it - marks_rows_partial_sums.begin();
 
-    return getRowsCountInRange(from_mark, std::max(1UL, to_mark)) - offset_in_rows;
+    return getRowsCountInRange(from_mark, std::max(1uz, to_mark)) - offset_in_rows;
 }
 
 uint64_t MergeTreeIndexGranularityAdaptive::getBytesSize() const

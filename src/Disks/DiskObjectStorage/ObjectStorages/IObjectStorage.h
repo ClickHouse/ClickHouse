@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <base/pathToString.h>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -190,7 +191,7 @@ struct RelativePathWithMetadata
     std::string getFileName() const
     {
         if (!derive_file_name_from_url_path)
-            return std::filesystem::path(relative_path).filename();
+            return pathToString(std::filesystem::path(relative_path).filename());
 
         /// Web index listings can carry a URL query/fragment in `relative_path` (for example,
         /// "data.tsv.gz?download=1"). They are not part of the file name and would defeat
@@ -198,7 +199,7 @@ struct RelativePathWithMetadata
         /// with how direct `url` reads use the URL path component.
         const auto pos = relative_path.find_first_of("?#");
         const std::string path_without_query = pos == std::string::npos ? relative_path : relative_path.substr(0, pos);
-        return std::filesystem::path(path_without_query).filename();
+        return pathToString(std::filesystem::path(path_without_query).filename());
     }
     std::string getPath() const { return relative_path; }
     std::string getPathForGlobMatching() const { return path_for_glob_matching.value_or(relative_path); }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/pathToString.h>
 #include <config.h>
 
 #include <optional>
@@ -101,9 +102,9 @@ protected:
         {
             copied_path_from.pop_back();
         }
-        String plain_filename = fs::path(copied_path_from).filename();
+        String plain_filename = pathToGenericString(pathFromString(copied_path_from).filename());
 
-        return fs::path{path_to} / plain_filename;
+        return pathToGenericString(pathFromString(path_to) / pathFromString(plain_filename));
     }
 
 

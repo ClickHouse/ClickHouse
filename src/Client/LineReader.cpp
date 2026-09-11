@@ -2,11 +2,18 @@
 
 #include <iostream>
 #include <string_view>
+#include <vector>
 #include <algorithm>
 
 #include <cstring>
+
+#if defined(OS_WINDOWS)
+#include <io.h>
+#include <Poco/UnWindows.h>
+#else
 #include <unistd.h>
 #include <poll.h>
+#endif
 
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -56,8 +63,57 @@ namespace DB
 /// Allows delaying the start of query execution until the entirety of query is inserted.
 bool LineReader::hasInputData() const
 {
+#if defined(OS_WINDOWS)
+    /// Windows has no `poll` for anything but a socket, and what is readable has to be asked of
+    /// each kind of handle in its own way.
+    auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(in_fd));
+    if (handle == INVALID_HANDLE_VALUE)
+        return false;
+
+    switch (GetFileType(handle))
+    {
+        case FILE_TYPE_CHAR:
+        {
+            /// A console. Its input queue holds records rather than bytes, and most of them carry
+            /// no character - key releases, focus changes, window resizes, mouse movement - so
+            /// counting them would report input that a read cannot produce. Peek instead and look
+            /// for an actual key press. The queue is short (Windows caps it at a few hundred
+            /// records), so peeking all of it is cheap.
+            DWORD pending = 0;
+            if (!GetNumberOfConsoleInputEvents(handle, &pending) || pending == 0)
+                return false;
+
+            std::vector<INPUT_RECORD> records(pending);
+            DWORD peeked = 0;
+            if (!PeekConsoleInputW(handle, records.data(), pending, &peeked))
+                return false;
+
+            for (DWORD i = 0; i < peeked; ++i)
+                if (records[i].EventType == KEY_EVENT && records[i].Event.KeyEvent.bKeyDown
+                    && records[i].Event.KeyEvent.uChar.UnicodeChar != 0)
+                    return true;
+
+            return false;
+        }
+        case FILE_TYPE_PIPE:
+        {
+            DWORD available = 0;
+            /// Fails once the writing end has closed, which is not "more input is waiting".
+            return PeekNamedPipe(handle, nullptr, 0, nullptr, &available, nullptr) && available > 0;
+        }
+        default:
+            /// A regular file: a read will not block, and there is more unless we are at the end.
+            LARGE_INTEGER size{};
+            LARGE_INTEGER position{};
+            const LARGE_INTEGER zero{};
+            if (!GetFileSizeEx(handle, &size) || !SetFilePointerEx(handle, zero, &position, FILE_CURRENT))
+                return false;
+            return position.QuadPart < size.QuadPart;
+    }
+#else
     pollfd pfd{.fd = in_fd, .events = POLLIN, .revents = 0};
     return poll(&pfd, 1, 0) == 1 && (pfd.revents & POLLIN);
+#endif
 }
 
 LineReader::Suggest::Words LineReader::Suggest::getMatchingWords(

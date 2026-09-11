@@ -47,7 +47,9 @@ namespace
 }
 
 
-#if   defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#include "Process_WIN32U.cpp"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #include "Process_UNIX.cpp"
 #endif
 

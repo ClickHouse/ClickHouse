@@ -140,6 +140,13 @@ public:
     /// Since the timestamp has microsecond resolution,
     /// the returned value is always 1000000.
 
+#if defined(_WIN32)
+    static Timestamp fromFileTimeNP(UInt32 fileTimeLow, UInt32 fileTimeHigh);
+    void toFileTimeNP(UInt32 & fileTimeLow, UInt32 & fileTimeHigh) const;
+    /// Conversions to and from the Windows NT `FILETIME` epoch (100-nanosecond intervals
+    /// since 1601-01-01), which is what the Win32 file APIs report. Used by
+    /// `File_WIN32U.cpp`.
+#endif
 
 private:
     TimeVal _ts;

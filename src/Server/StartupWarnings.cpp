@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <base/getAvailableMemoryAmount.h>
+#include <base/pathToString.h>
 
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
@@ -325,7 +326,7 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
 
     try
     {
-        if (getAvailableMemoryAmount() < (2l << 30))
+        if (getAvailableMemoryAmount() < (2ull << 30))
             context->addOrUpdateWarningMessage(
                 Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
                 PreformattedMessage::create("Available memory at startup is too low (2GiB)."));
@@ -349,11 +350,11 @@ void addEnvironmentWarnings(ContextPtr context, const Poco::Logger & logger, con
     {
         if (!logs_path.empty() && fs::is_regular_file(logs_path))
         {
-            auto logs_parent = fs::path(logs_path).parent_path();
+            auto logs_parent = pathToGenericString(fs::path(logs_path).parent_path());
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
                 context->addOrUpdateWarningMessage(
                     Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
-                    PreformattedMessage::create("Available disk space for logs at startup is too low (1GiB): {}", String(logs_parent)));
+                    PreformattedMessage::create("Available disk space for logs at startup is too low (1GiB): {}", logs_parent));
         }
     }
     catch (const std::exception &) // NOLINT(bugprone-empty-catch)

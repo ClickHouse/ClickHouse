@@ -1278,8 +1278,8 @@ double Dictionary::getAverageValueSize() const
     switch (mode)
     {
         case Mode::FixedSize: return static_cast<double>(value_size);
-        case Mode::StringPlain: return std::max(0., double(data.size()) / static_cast<double>(std::max(offsets.size(), 1ul)) - 4);
-        case Mode::Column: return double(col->byteSize()) / static_cast<double>(std::max(col->size(), 1ul));
+        case Mode::StringPlain: return std::max(0., double(data.size()) / static_cast<double>(std::max(offsets.size(), 1uz)) - 4);
+        case Mode::Column: return double(col->byteSize()) / static_cast<double>(std::max(col->size(), 1uz));
         case Mode::Uninitialized: break;
     }
     chassert(false);

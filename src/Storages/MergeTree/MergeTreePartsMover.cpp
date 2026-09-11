@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <set>
 #include <Disks/IVolume.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
@@ -241,7 +242,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
         /// Try zero-copy replication and fallback to default copy if it's not possible
-        String path_to_clone = fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "";
+        String path_to_clone = pathToGenericString(fs::path(data->getRelativeDataPath()) / MergeTreeData::MOVING_DIR_NAME / "");
         String relative_path = part->getDataPartStorage().getPartDirectory();
         if (disk->existsFile(path_to_clone + relative_path))
         {
@@ -254,13 +255,13 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
             LOG_DEBUG(log, "Path {} already exists. Will remove it and clone again",
                 fullPath(disk, path_to_clone + relative_path));
-            disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
+            disk->removeRecursive(pathToGenericString(fs::path(path_to_clone) / relative_path / ""));
         }
 
         disk->createDirectories(path_to_clone);
 
         /// TODO: Make it possible to fetch only zero-copy part without fallback to fetching a full-copy one
-        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, fs::path(path_to_clone) / part->name);
+        auto zero_copy_part = data->tryToFetchIfShared(*part, disk, pathToGenericString(fs::path(path_to_clone) / part->name));
 
         if (zero_copy_part)
         {

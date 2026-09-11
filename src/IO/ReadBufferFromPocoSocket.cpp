@@ -9,7 +9,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/AsyncTaskExecutor.h>
+#include <Common/AsyncCallback.h>
+#include <Common/Socket.h>
 #include <Common/checkSSLReturnCode.h>
 
 namespace ProfileEvents
@@ -67,9 +68,9 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
             {
                 /// In case of ERR_SSL_WANT_WRITE we should wait for socket to be ready for writing, otherwise - for reading.
                 if (secure && checkSSLWantWrite(bytes_read))
-                    async_callback(socket.impl()->sockfd(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncTaskExecutor::Event::WRITE | AsyncTaskExecutor::Event::ERROR);
+                    async_callback(Socket(socket.impl()->sockfd()).toDescriptor(), socket.getSendTimeout(), AsyncEventTimeoutType::SEND, socket_description, AsyncEvent::WRITE | AsyncEvent::ERROR);
                 else
-                    async_callback(socket.impl()->sockfd(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+                    async_callback(Socket(socket.impl()->sockfd()).toDescriptor(), socket.getReceiveTimeout(), AsyncEventTimeoutType::RECEIVE, socket_description, AsyncEvent::READ | AsyncEvent::ERROR);
 
                 /// Try to read again.
                 bytes_read = socket.impl()->receiveBytes(ptr, static_cast<int>(size));

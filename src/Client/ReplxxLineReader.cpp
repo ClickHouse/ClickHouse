@@ -1,8 +1,10 @@
+#include <IO/PlatformFileIO.h>
 #include <Client/ClientBaseHelpers.h>
 #include <Client/ClientSlashCommands.h>
 #include <Client/ReplxxLineReader.h>
 #include <Parsers/Lexer.h>
 #include <base/errnoToString.h>
+#include <base/pathToString.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -15,13 +17,15 @@
 #include <chrono>
 #include <cerrno>
 #include <cstring>
-#include <unistd.h>
 #include <functional>
-#include <sys/file.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <csignal>
+#include <sys/types.h>
+#if !defined(OS_WINDOWS)
+#include <unistd.h>
+#include <sys/file.h>
+#include <sys/wait.h>
 #include <dlfcn.h>
+#endif
 #include <fcntl.h>
 #include <fstream>
 #include <filesystem>
@@ -91,6 +95,12 @@ std::string getEditor()
 /// (for the vfork via dlsym())
 int executeCommand(char * const argv[])
 {
+#if defined(OS_WINDOWS)
+    /// Spawning a child is `vfork` plus `execvp` plus `waitpid` here, none of which Windows has -
+    /// it has `CreateProcess`, which is a different shape. This is only reached by the features
+    /// that hand the buffer to another program: `EDITOR` and the interactive history search.
+    throw std::runtime_error(fmt::format("Running '{}' is not implemented on Windows", argv[0]));
+#else
 #if !defined(USE_MUSL)
     /** Here it is written that with a normal call `vfork`, there is a chance of deadlock in multithreaded programs,
       *  because of the resolving of symbols in the shared library
@@ -143,6 +153,7 @@ int executeCommand(char * const argv[])
         throw std::runtime_error(fmt::format("Child process was stopped by signal {}", WSTOPSIG(status)));
 
     throw std::runtime_error("Child process was not exited normally by unknown reason");
+#endif
 }
 
 void writeRetry(int fd, const std::string & data)
@@ -153,7 +164,7 @@ void writeRetry(int fd, const std::string & data)
 
     while (bytes_written != offset)
     {
-        ssize_t res = ::write(fd, begin + bytes_written, offset - bytes_written);
+        Int64 res = DB::platformWrite(fd, begin + bytes_written, offset - bytes_written);
         if ((-1 == res || 0 == res) && errno != EINTR)
             throw std::runtime_error(fmt::format("Cannot write to {}: {}", fd, errnoToString()));
         bytes_written += res;
@@ -179,14 +190,23 @@ public:
     explicit TemporaryFile(const char * pattern)
         : path(pattern)
     {
+#if defined(OS_WINDOWS)
+        /// The Windows CRT has neither `mkstemp` nor `mkstemps`; `_mktemp_s` only produces a name.
+        /// Only the features that hand the buffer to another program need a temporary file, and
+        /// those cannot start one on Windows anyway - see `executeCommand`.
+        throw std::runtime_error("Creating a temporary file for an external editor is not implemented on Windows");
+#else
         size_t dot_pos = path.rfind('.');
         if (dot_pos != std::string::npos)
             fd = ::mkstemps(path.data(), static_cast<int>(path.size() - dot_pos));
         else
             fd = ::mkstemp(path.data());
+#endif
 
+#if !defined(OS_WINDOWS)
         if (-1 == fd)
             throw std::runtime_error(fmt::format("Cannot create temporary file {}: {}", path, errnoToString()));
+#endif
     }
     ~TemporaryFile()
     {
@@ -268,9 +288,13 @@ std::string replxx_now_ms_str()
 /// will take lots of time (getline() + tons of reallocations).
 ///
 /// NOTE: this code uses std::ifstream/std::ofstream like original replxx code.
+///
+/// The streams are opened by `std::filesystem::path` rather than by the string: the path is
+/// UTF-8, and on Windows a narrow string given to a stream constructor is interpreted through
+/// the active code page, so a profile directory outside it would silently lose its history.
 void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 {
-    std::ifstream in(path);
+    std::ifstream in(pathFromString(path));
     if (!in)
     {
         rx.print("Cannot open %s reading (for conversion): %s\n",
@@ -307,7 +331,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
     rx.print("The history file (%s) is in old format. %zu lines, %zu unique lines.\n",
         path.c_str(), lines_size, lines.size());
 
-    std::ofstream out(path);
+    std::ofstream out(pathFromString(path));
     if (!out)
     {
         rx.print("Cannot open %s for writing (for conversion): %s\n",
@@ -359,7 +383,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
 
     if (!history_file_path.empty())
     {
-        history_file_fd = open(history_file_path.c_str(), O_RDWR);
+        history_file_fd = DB::platformOpenReadWrite(history_file_path);
         if (history_file_fd < 0)
         {
             rx.print("Open of history file failed: %s\n", errnoToString().c_str());
@@ -368,18 +392,30 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         {
             convertHistoryFile(history_file_path, rx);
 
-            if (flock(history_file_fd, LOCK_SH))
+            if (DB::platformLockFileShared(history_file_fd, /*blocking*/ true))
             {
                 rx.print("Shared lock of history file failed: %s\n", errnoToString().c_str());
             }
             else
             {
+#if defined(OS_WINDOWS)
+                /// replxx's `history_load(std::string)` opens the file by the narrow path, which
+                /// the CRT interprets through the active code page; the path is UTF-8. Open the
+                /// stream by `std::filesystem::path` - wide on Windows - and hand replxx the
+                /// stream instead.
+                std::ifstream history_in(pathFromString(history_file_path));
+                if (history_in)
+                    rx.history_load(history_in);
+                else
+                    rx.print("Loading history failed: %s\n", errnoToString().c_str());
+#else
                 if (!rx.history_load(history_file_path))
                 {
                     rx.print("Loading history failed: %s\n", errnoToString().c_str());
                 }
+#endif
 
-                if (flock(history_file_fd, LOCK_UN))
+                if (DB::platformUnlockFile(history_file_fd))
                 {
                     rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
                 }
@@ -816,10 +852,25 @@ void ReplxxLineReader::addToHistory(const String & line)
     // but replxx::Replxx::history_load() does not
     // and that is why flock() is added here.
     bool locked = false;
-    if (history_file_fd >= 0 && flock(history_file_fd, LOCK_EX))
+    if (history_file_fd >= 0 && DB::platformLockFileExclusive(history_file_fd, /*blocking*/ true))
         rx.print("Lock of history file failed: %s\n", errnoToString().c_str());
     else
         locked = true;
+
+#if defined(OS_WINDOWS)
+    /// replxx's `history_save(std::string)` opens the file by the narrow path, which the CRT
+    /// interprets through the active code page; the path is UTF-8. Reproduce what that overload
+    /// does - merge the file's current contents (another client may have appended; every entry
+    /// of this session is already there from the previous save), then write everything back -
+    /// with streams opened by `std::filesystem::path`, which is wide on Windows. We hold the
+    /// exclusive lock across both halves.
+    if (history_file_fd >= 0)
+    {
+        std::ifstream history_in(pathFromString(history_file_path));
+        if (history_in)
+            rx.history_load(history_in);
+    }
+#endif
 
     rx.history_add(line);
 
@@ -828,10 +879,24 @@ void ReplxxLineReader::addToHistory(const String & line)
     suggest.addUsedWords(extractIdentifiers(line.c_str()));
 
     // flush changes to the disk
+#if defined(OS_WINDOWS)
+    if (history_file_fd >= 0)
+    {
+        std::ofstream history_out(pathFromString(history_file_path));
+        if (history_out)
+        {
+            rx.history_save(history_out);
+            history_out.flush();
+        }
+        if (!history_out)
+            rx.print("Saving history failed: %s\n", errnoToString().c_str());
+    }
+#else
     if (history_file_fd >= 0 && !rx.history_save(history_file_path))
         rx.print("Saving history failed: %s\n", errnoToString().c_str());
+#endif
 
-    if (history_file_fd >= 0 && locked && 0 != flock(history_file_fd, LOCK_UN))
+    if (history_file_fd >= 0 && locked && 0 != DB::platformUnlockFile(history_file_fd))
         rx.print("Unlock of history file failed: %s\n", errnoToString().c_str());
 }
 

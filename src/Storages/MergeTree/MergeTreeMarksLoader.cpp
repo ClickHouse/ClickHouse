@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -157,7 +158,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     size_t expected_uncompressed_size = mark_size * marks_count;
     size_t total_marks = marks_count * num_columns_in_mark;
 
-    auto full_mark_path = std::string(fs::path(data_part_storage->getFullPath()) / mrk_path);
+    auto full_mark_path = pathToGenericString(fs::path(data_part_storage->getFullPath()) / mrk_path);
 
     if (file_size == 0)
     {

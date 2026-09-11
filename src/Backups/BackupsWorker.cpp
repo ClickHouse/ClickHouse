@@ -724,7 +724,7 @@ void BackupsWorker::doBackup(
     if (backup_settings.experimental_lightweight_snapshot)
     {
         auto zookeeper = context->getGlobalContext()->getZooKeeper();
-        if (zookeeper->exists(fs::path(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH) / backup_id))
+        if (zookeeper->exists(zkutil::joinZooKeeperPath(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH, backup_id)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup ID {} has existed. Please unlock this backup or change another name", backup_id);
     }
 #endif
@@ -813,7 +813,7 @@ void BackupsWorker::doBackup(
     if (backup_settings.experimental_lightweight_snapshot && !is_internal_backup)
     {
         auto zookeeper = context->getGlobalContext()->getZooKeeper();
-        zookeeper->create(fs::path(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH) / backup_id, "", zkutil::CreateMode::Persistent);
+        zookeeper->create(zkutil::joinZooKeeperPath(LIGHTWEIGHT_SNAPSHOT_COMMIT_PATH, backup_id), "", zkutil::CreateMode::Persistent);
         LOG_INFO(log, "Snapshot {} has been created", backup_id);
     }
 #endif

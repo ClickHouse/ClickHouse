@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
@@ -143,7 +144,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     std::vector<std::string> entry_paths;
     entry_paths.reserve(entries_count);
     for (auto it = beg; it != end; ++it)
-        entry_paths.emplace_back(fs::path(zookeeper_path_log) / *it);
+        entry_paths.emplace_back(zkutil::joinZooKeeperPath(zookeeper_path_log, *it));
 
     auto entries = TSA_READ_ONE_THREAD(zookeeper)->get(entry_paths);
     std::vector<std::pair<TIDHash, CSNEntry>> loaded;

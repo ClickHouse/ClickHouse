@@ -1,4 +1,6 @@
+#if !defined(OS_WINDOWS)
 #include <sys/mman.h>
+#endif
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>

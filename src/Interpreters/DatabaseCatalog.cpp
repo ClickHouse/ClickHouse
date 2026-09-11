@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/CurrentThread.h>
 
@@ -831,8 +832,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         {
             /// Old ClickHouse versions did not store database.sql files
             /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-            default_db_disk->removeDirectoryIfExists(getMetadataDirPath(database_name));
-            default_db_disk->removeFileIfExists(getMetadataFilePath(database_name));
+            default_db_disk->removeDirectoryIfExists(pathToGenericString(getMetadataDirPath(database_name)));
+            default_db_disk->removeFileIfExists(pathToGenericString(getMetadataFilePath(database_name)));
         }
 
         if (db_uuid != UUIDHelpers::Nil)
@@ -914,18 +915,18 @@ void DatabaseCatalog::updateMetadataFile(const String & database_name, const AST
 
     writeMetadataFile(
         default_db_disk,
-        /*file_path=*/metadata_tmp_file_path,
+        pathToGenericString(metadata_tmp_file_path),
         /*content=*/statement,
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     try
     {
         /// rename atomically replaces the old file with the new one.
-        default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
+        default_db_disk->replaceFile(pathToGenericString(metadata_tmp_file_path), pathToGenericString(metadata_file_path));
     }
     catch (...)
     {
-        default_db_disk->removeFileIfExists(metadata_tmp_file_path);
+        default_db_disk->removeFileIfExists(pathToGenericString(metadata_tmp_file_path));
         throw;
     }
 }
@@ -1347,7 +1348,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     // Because some DBs might have a `disk` setting defining the disk to store the table metadata files,
     // we need to check the dropped metadata on these disks, not just the default database disk.
     std::map<String, std::pair<StorageID, DiskPtr>> dropped_metadata;
-    String path = fs::path("metadata_dropped") / "";
+    String path = pathToGenericString(fs::path("metadata_dropped") / "");
 
     auto db_map = getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
     std::set<DiskPtr> metadata_disk_list;
@@ -1422,12 +1423,12 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return fs::path("metadata_dropped")
+    return pathToGenericString(fs::path("metadata_dropped")
         / fmt::format(
                "{}.{}.{}.sql",
                escapeForFileName(table_id.getDatabaseName()),
                escapeForFileName(table_id.getTableName()),
-               toString(table_id.uuid));
+               toString(table_id.uuid)));
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1473,7 +1474,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
         if (create)
         {
-            String data_path = getStoreDirPath(table_id.uuid);
+            String data_path = pathToGenericString(getStoreDirPath(table_id.uuid));
             create->setDatabase(table_id.database_name);
             create->setTable(table_id.table_name);
             try
@@ -1818,7 +1819,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     /// Even if table is not loaded, try remove its data from disks.
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
-        String data_path = getStoreDirPath(table.table_id.uuid);
+        String data_path = pathToGenericString(getStoreDirPath(table.table_id.uuid));
         auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table.table);
         if (!is_disk_eligible_for_search(disk, table_merge_tree) || !disk->existsDirectory(data_path))
             continue;
@@ -1828,7 +1829,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
-    db_disk->removeFileIfExists(fs::path(table.metadata_path));
+    db_disk->removeFileIfExists(pathToGenericString(fs::path(table.metadata_path)));
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
@@ -2215,12 +2216,16 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
     {
         struct stat st = disk->stat(unused_dir);
 
+        /// Windows has no uid: `_stat` reports `st_uid` as 0 for everything, and ownership there is
+        /// an ACL rather than a number to compare, so there is nothing to check.
+#if !defined(OS_WINDOWS)
         if (st.st_uid != geteuid())
         {
             /// Directory is not owned by clickhouse, it's weird, let's ignore it (chmod will likely fail anyway).
             LOG_WARNING(log, "Found directory {} with unexpected owner (uid={}) on disk {}", unused_dir, st.st_uid, disk_name);
             return false;
         }
+#endif
 
         time_t max_modification_time = std::max({st.st_atime, st.st_mtime, st.st_ctime});
         time_t current_time = time(nullptr);

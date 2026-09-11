@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnArray.h>
@@ -284,16 +285,16 @@ bool SystemRemoteDataPathsSource::nextFile()
             const auto & disk = disks[current_disk].second;
 
             /// Stop if current path is a file
-            if (disk->existsFile(current_path))
+            if (disk->existsFile(pathToGenericString(current_path)))
                 return true;
 
             /// Files or directories can disappear due to concurrent operations
-            if (!disk->existsFileOrDirectory(current_path))
+            if (!disk->existsFileOrDirectory(pathToGenericString(current_path)))
                 continue;
 
             /// If current path is a directory list its contents and step into it
             std::vector<std::string> children;
-            disk->listFiles(current_path, children);
+            disk->listFiles(pathToGenericString(current_path), children);
 
             /// Use current predicate for all children
             const auto & skip_predicate = getCurrentSkipPredicate();
@@ -373,7 +374,7 @@ Chunk SystemRemoteDataPathsSource::generate()
         auto local_path = getCurrentPath();
 
         const auto & skip_predicate = getCurrentSkipPredicate();
-        if (skip_predicate && skip_predicate(local_path))
+        if (skip_predicate && skip_predicate(pathToGenericString(local_path)))
             continue;
 
         FileCachePtr cache;
@@ -384,7 +385,7 @@ Chunk SystemRemoteDataPathsSource::generate()
         StoredObjects storage_objects;
         try
         {
-            storage_objects = disk->getMetadataStorage()->getStorageObjects(local_path);
+            storage_objects = disk->getMetadataStorage()->getStorageObjects(pathToGenericString(local_path));
         }
         catch (Exception & e)
         {

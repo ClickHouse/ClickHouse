@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <IO/OpenedFile.h>
+#include <IO/PlatformFileIO.h>
 
 
 namespace ProfileEvents
@@ -28,7 +29,7 @@ void OpenedFile::open() const
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
 
-    fd = ::open(file_name.c_str(), (flags == -1 ? 0 : flags) | O_RDONLY | O_CLOEXEC);
+    fd = platformOpenFile(file_name, (flags == -1 ? 0 : flags) | O_RDONLY | O_CLOEXEC);
 
     if (-1 == fd)
         DB::ErrnoException::throwFromPath(

@@ -31,7 +31,7 @@ public:
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
-        const std::filesystem::path & zk_path_,
+        const std::string & zk_path_,
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 

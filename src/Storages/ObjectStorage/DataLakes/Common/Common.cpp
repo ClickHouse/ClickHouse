@@ -1,7 +1,9 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/Exception.h>
+#include <Common/ObjectStorageKey.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
@@ -36,7 +38,8 @@ std::vector<String> listFiles(
     const String & prefix,
     const std::function<bool(const RelativePathWithMetadata &)> & check_need)
 {
-    auto key = std::filesystem::path(path) / prefix;
+    /// An object storage key, not a filesystem path, so it is joined in key string space.
+    const auto key = appendObjectStorageKeySegment(path, prefix);
     RelativePathsWithMetadata files_with_metadata;
     object_storage.listObjects(key, files_with_metadata, 0);
     Strings res;
@@ -51,8 +54,12 @@ std::vector<String> listFiles(
 
 String resolvePathInsideTable(const String & table_path, const String & relative_path)
 {
-    auto base = std::filesystem::path(table_path);
-    auto combined = base / relative_path;
+    /// The containment test is what defines "inside" here, and it is `std::filesystem`'s notion of
+    /// it, so the two keys are converted into paths explicitly rather than through the narrow
+    /// constructor. The result is read back generically: `path::string()` would hand back the `\`
+    /// that `operator/` appends on Windows, where it is an ordinary character in a key.
+    const auto base = pathFromString(table_path);
+    const auto combined = base / pathFromString(relative_path);
 
     if (!pathStartsWith(combined, base))
         throw Exception(
@@ -61,6 +68,6 @@ String resolvePathInsideTable(const String & table_path, const String & relative
             relative_path,
             table_path);
 
-    return combined.string();
+    return pathToGenericString(combined);
 }
 }

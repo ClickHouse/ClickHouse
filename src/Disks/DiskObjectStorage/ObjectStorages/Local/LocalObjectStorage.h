@@ -3,6 +3,8 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
+#include <filesystem>
+
 
 namespace Poco
 {
@@ -103,12 +105,12 @@ private:
     void removeObjects(const StoredObjects &  objects) const;
 
     void throwIfReadonly() const;
-    String resolvePathRelativelyToKeyPrefix(const String & path) const;
+    std::filesystem::path resolvePathRelativelyToKeyPrefix(const String & path) const;
 
     LocalObjectStorageSettings settings;
     LoggerPtr log;
     std::string description;
 };
 
-String resolvePathRelativelyToBase(const String & path, const String & base_path);
+std::filesystem::path resolvePathRelativelyToBase(const String & path, const String & base_path);
 }

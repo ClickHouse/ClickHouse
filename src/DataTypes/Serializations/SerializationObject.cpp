@@ -618,7 +618,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             return settings.has_uniform_marks_callback(path, max_transitions);
         };
 
-        size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths->size() / num_tasks, 1ul);
+        size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths->size() / num_tasks, 1uz);
 
         /// Ensure all already-scheduled tasks are drained on any exit path (including exceptions),
         /// so pool threads do not dereference dangling references to stack locals.

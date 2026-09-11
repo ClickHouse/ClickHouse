@@ -1,3 +1,51 @@
+/// The reader half of the sampling profiler's self-pipe: `TraceSender` writes stack traces from a
+/// signal handler and this thread drains them into `system.trace_log`. Both are POSIX signals and
+/// a pipe, so on Windows there is nothing to read and nothing writing. The class stays declared
+/// because `Context` holds one by value; only the server ever constructs it, and the server is
+/// not built for Windows.
+#if defined(OS_WINDOWS)
+
+#include <Interpreters/TraceCollector.h>
+
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+TraceCollector::TraceCollector()
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The trace collector is not implemented on Windows");
+}
+
+TraceCollector::~TraceCollector() = default;
+
+void TraceCollector::initialize(std::shared_ptr<TraceLog>)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The trace collector is not implemented on Windows");
+}
+
+std::shared_ptr<TraceLog> TraceCollector::getTraceLog()
+{
+    return nullptr;
+}
+
+void TraceCollector::tryClosePipe()
+{
+}
+
+void TraceCollector::run()
+{
+}
+
+}
+
+#else
+
 #include <memory>
 #include <thread>
 #include <Interpreters/TraceCollector.h>
@@ -253,3 +301,5 @@ void TraceCollector::run()
 }
 
 }
+
+#endif

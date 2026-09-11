@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
@@ -40,7 +41,7 @@ void calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from, UIn
     else
     {
         for (auto it = disk->iterateDirectory(from); it->isValid(); it->next())
-            calculateTotalSizeOnDiskImpl(disk, fs::path(from) / it->name(), total_size);
+            calculateTotalSizeOnDiskImpl(disk, pathToGenericString(fs::path(from) / it->name()), total_size);
     }
 }
 
@@ -166,7 +167,7 @@ private:
             auto & part = detached_parts[p_id];
             auto part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / part.dir_name;
             auto relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
-            worker_state.tasks.push_back({part.disk, relative_path, &parts_sizes.at(p_id - begin)});
+            worker_state.tasks.push_back({part.disk, pathToGenericString(relative_path), &parts_sizes.at(p_id - begin)});
         }
 
         auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
@@ -236,7 +237,7 @@ private:
                 Poco::Timestamp modification_time{};
                 try
                 {
-                    modification_time = p.disk->getLastModified(fs::path(current_info.data->getRelativeDataPath()) / MergeTreeData::DETACHED_DIR_NAME / p.dir_name);
+                    modification_time = p.disk->getLastModified(pathToGenericString(fs::path(current_info.data->getRelativeDataPath()) / MergeTreeData::DETACHED_DIR_NAME / p.dir_name));
                 }
                 catch (const fs::filesystem_error &)
                 {

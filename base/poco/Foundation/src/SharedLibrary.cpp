@@ -16,7 +16,9 @@
 #include "Poco/Exception.h"
 
 
-#if defined(hpux) || defined(_hpux)
+#if defined(POCO_OS_FAMILY_WINDOWS)
+#include "SharedLibrary_WIN32U.cpp"
+#elif defined(hpux) || defined(_hpux)
 #include "SharedLibrary_HPUX.cpp"
 #elif defined(POCO_OS_FAMILY_UNIX)
 #include "SharedLibrary_UNIX.cpp"

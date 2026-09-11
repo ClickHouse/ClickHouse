@@ -23,6 +23,9 @@
 #include "Poco/NumberFormatter.h"
 #include "Poco/Logger.h"
 #include "Poco/String.h"
+#if defined(POCO_OS_FAMILY_WINDOWS)
+#include <Poco/UnWindows.h>
+#endif
 #if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
 #include "Poco/TemporaryFile.h"
 #include <stdlib.h>
@@ -260,6 +263,79 @@ void ServerApplication::handlePidFile(const std::string& name, const std::string
 	else
 		throw Poco::CreateFileException("Cannot write PID to file", value);
 	Poco::TemporaryFile::registerForDeletion(value);
+}
+
+
+#elif defined(POCO_OS_FAMILY_WINDOWS)
+
+
+//
+// Windows specific code
+//
+// Upstream Poco can also install the application as a Windows service here, through `WinService`
+// and `WinRegistryKey`. That layer was removed from this fork along with the rest of the Windows
+// code, and nothing in ClickHouse runs as a service, so this is the plain console-application
+// path: run as an ordinary program, and treat Ctrl+C or Ctrl+Break as the termination request that
+// a signal would be on Unix.
+//
+
+namespace
+{
+    Poco::Event & terminationEvent()
+    {
+        static Poco::Event event;
+        return event;
+    }
+
+    BOOL WINAPI consoleCtrlHandler(DWORD)
+    {
+        terminationEvent().set();
+        return 1;
+    }
+}
+
+
+void ServerApplication::waitForTerminationRequest()
+{
+    SetConsoleCtrlHandler(consoleCtrlHandler, 1);
+    terminationEvent().wait();
+    SetConsoleCtrlHandler(consoleCtrlHandler, 0);
+}
+
+
+int ServerApplication::run(int argc, char** argv)
+{
+    try
+    {
+        init(argc, argv);
+    }
+    catch (Exception& exc)
+    {
+        logger().log(exc);
+        return EXIT_CONFIG;
+    }
+    return run();
+}
+
+
+int ServerApplication::run(const std::vector<std::string>& args)
+{
+    try
+    {
+        init(args);
+    }
+    catch (Exception& exc)
+    {
+        logger().log(exc);
+        return EXIT_CONFIG;
+    }
+    return run();
+}
+
+
+void ServerApplication::defineOptions(OptionSet& options)
+{
+    Application::defineOptions(options);
 }
 
 

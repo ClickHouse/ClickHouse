@@ -583,7 +583,7 @@ ReturnType deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const 
         throw DB::Exception(
             ErrorCodes::CANNOT_READ_ALL_DATA,
             "Error while parsing Nullable: got an unquoted string {} instead of a number",
-            String(buf.position(), std::min(10ul, buf.available())));
+            String(buf.position(), std::min(10uz, buf.available())));
     };
 
     return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested_with_check, is_null);

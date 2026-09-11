@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Interpreters/FileCache/Metadata.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileSegment.h>
@@ -252,7 +253,7 @@ String CacheMetadata::getFileSegmentPath(
     const OriginInfo & origin,
     std::optional<size_t> size) const
 {
-    return fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size);
+    return pathToGenericString(pathFromString(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size));
 }
 
 String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -264,10 +265,10 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
         /// The id is a single path component: every carrier of a non-internal id rejects a NUL and
         /// a '/' up front via `DistributedCache::getClientIDRejectionReason`.
         chassert(!origin.user_id.contains('\0') && !origin.user_id.contains('/'));
-        return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
+        return pathToGenericString(pathFromString(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str);
     }
 
-    return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
+    return pathToGenericString(pathFromString(path) / key_type_prefix / key_str.substr(0, 3) / key_str);
 }
 
 CacheMetadataGuard::Lock CacheMetadata::MetadataBucket::lock() const
@@ -679,7 +680,7 @@ CacheMetadata::removeEmptyKey(
 
     LOG_TEST(log, "Key {} is removed from metadata", key);
 
-    const fs::path key_directory = getKeyPath(key, *locked_key.getKeyMetadata()->origin);
+    const fs::path key_directory = pathFromString(getKeyPath(key, *locked_key.getKeyMetadata()->origin));
     const fs::path key_prefix_directory = key_directory.parent_path();
 
     try

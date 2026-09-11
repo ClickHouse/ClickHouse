@@ -178,6 +178,30 @@ TEST_F(MetadataPlainRewritableDiskTest, JustWorking)
     EXPECT_EQ(readObject(object_storage, createMetadataObjectPath(metadata, "A/B/C")), "A/B/C/");
 }
 
+TEST_F(MetadataPlainRewritableDiskTest, DirectoryPathsAreGenericUtf8)
+{
+    auto metadata = getMetadataStorage("DirectoryPathsAreGenericUtf8");
+    auto object_storage = getObjectStorage("DirectoryPathsAreGenericUtf8");
+    const String directory = "A/\xD0\xBA\xD0\xB0\xD1\x82\xD0\xB0\xD0\xBB\xD0\xBE\xD0\xB3";
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory(directory);
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_EQ(readObject(object_storage, createMetadataObjectPath(metadata, directory)), directory + "/");
+
+    metadata = restartMetadataStorage("DirectoryPathsAreGenericUtf8");
+    EXPECT_TRUE(metadata->existsDirectory(directory));
+
+    /// The check that a directory is not moved inside itself compares the generic (`/`-separated)
+    /// forms of both paths, and it rejects the move right away rather than at commit time.
+    auto tx = metadata->createTransaction();
+    EXPECT_THROW(tx->moveDirectory("A", "A/B"), Exception);
+}
+
 TEST_F(MetadataPlainRewritableDiskTest, Ls)
 {
     auto metadata = getMetadataStorage("Ls");

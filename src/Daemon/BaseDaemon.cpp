@@ -1,5 +1,7 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
+#include <base/time.h>
+#include <base/pathToString.h>
 #include <base/defines.h>
 #include <base/errnoToString.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -9,8 +11,10 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#if !defined(OS_WINDOWS)
 #include <sys/wait.h>
 #include <sys/resource.h>
+#endif
 
 #if defined(OS_LINUX)
 #include <sys/prctl.h>
@@ -61,7 +65,9 @@
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
+#if !defined(OS_WINDOWS)
 #include <ucontext.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -78,7 +84,7 @@ namespace DB
 using namespace DB;
 
 
-static bool getenvBool(const char * name)
+[[maybe_unused]] static bool getenvBool(const char * name)
 {
     bool res = false;
     const char * env_var = getenv(name); // NOLINT(concurrency-mt-unsafe)
@@ -94,7 +100,7 @@ static std::string createDirectory(const std::string & file)
     if (path.empty())
         return "";
     fs::create_directories(path);
-    return path;
+    return pathToGenericString(path);
 }
 
 
@@ -123,14 +129,14 @@ void BaseDaemon::loadConfiguration()
       */
     config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
-    ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+    ConfigProcessor::setConfigPath(pathToGenericString(fs::path(config_path).parent_path()));
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
     config().add(loaded_config.configuration.duplicate(), "default", PRIO_DEFAULT, false);
 }
 
 
 BaseDaemon::BaseDaemon()
-    : original_working_directory(fs::current_path())
+    : original_working_directory(pathToGenericString(fs::current_path()))
 {
 }
 
@@ -139,8 +145,10 @@ BaseDaemon::~BaseDaemon()
 {
     try
     {
+#if !defined(OS_WINDOWS)
         stopSignalListener();
         HandledSignals::instance().reset();
+#endif
     }
     catch (...)
     {
@@ -163,7 +171,12 @@ void BaseDaemon::kill()
     pid_file.reset();
     /// Exit with the same code as it is usually set by shell when process is terminated by SIGKILL.
     /// It's better than doing 'raise' or 'kill', because they have no effect for 'init' process (with pid = 0, usually in Docker).
+#if defined(OS_WINDOWS)
+    /// There is no `SIGKILL` on Windows; 9 is the number it has everywhere else.
+    _exit(128 + 9);
+#else
     _exit(128 + SIGKILL);
+#endif
 }
 
 std::string BaseDaemon::getDefaultCorePath() const
@@ -176,8 +189,18 @@ std::string BaseDaemon::getDefaultConfigFileName() const
     return "config.xml";
 }
 
+/// `BaseDaemon` is the harness for `clickhouse-server` and `clickhouse-keeper`, neither of which
+/// is built for Windows: the parts below are POSIX process and signal management with no Windows
+/// counterpart - a `fork`-based watchdog, a signal-handler pipe, a walk of `/proc/self/fd`. The
+/// class itself still has to exist, because `SystemLog` and `AsynchronousMetrics` ask
+/// `BaseDaemon::tryGetInstance` whether they are running inside a daemon (on Windows they never
+/// are). So these report that they were not ported rather than pretending to have run.
 void BaseDaemon::closeFDs()
 {
+#if defined(OS_WINDOWS)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "closeFDs is not implemented on Windows");
+#else
+
 #if !defined(USE_XRAY)
     /// NOTE: may benefit from close_range() (linux 5.9+)
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
@@ -229,6 +252,7 @@ void BaseDaemon::closeFDs()
         }
     }
 #endif
+#endif
 }
 
 
@@ -245,7 +269,7 @@ void BaseDaemon::initialize(Application & self)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
-        std::string path = fs::path(config().getString("application.path")).replace_filename("");
+        std::string path = pathToGenericString(fs::path(config().getString("application.path")).replace_filename(""));
         if (0 != chdir(path.c_str()))
             throw Poco::Exception("Cannot change directory to " + path);
     }
@@ -262,6 +286,9 @@ void BaseDaemon::initialize(Application & self)
 #endif
 
     /// This must be done before creation of any files (including logs).
+#if !defined(OS_WINDOWS)
+    /// Windows has no umask: permissions on a created file come from the parent directory's ACL,
+    /// and there is no process-wide mask to subtract from them.
     mode_t umask_num = 0027;
     if (config().has("umask"))
     {
@@ -271,6 +298,7 @@ void BaseDaemon::initialize(Application & self)
         stream >> std::oct >> umask_num;
     }
     umask(umask_num);
+#endif
 
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
 #if USE_SSL
@@ -321,7 +349,7 @@ void BaseDaemon::initialize(Application & self)
 
     std::string log_path = config().getString("logger.log", "");
     if (!log_path.empty())
-        log_path = fs::path(log_path).replace_filename("");
+        log_path = pathToGenericString(fs::path(log_path).replace_filename(""));
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,
@@ -447,6 +475,10 @@ extern const char * GIT_HASH;
 
 void BaseDaemon::initializeTerminationAndSignalProcessing()
 {
+#if defined(OS_WINDOWS)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Signal handling is not implemented on Windows");
+#else
+
     CrashWriter::initialize(config());
     if (config().getBool("send_crash_reports.enabled", false)
         && config().getBool("send_crash_reports.send_logical_errors", false)
@@ -496,6 +528,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
     if (!executable_path.empty())
         stored_binary_hash = Elf(executable_path).getStoredBinaryHash();
+#endif
 #endif
 }
 
@@ -603,6 +636,10 @@ void BaseDaemon::shouldSetupWatchdog(char * argv0_)
 
 void BaseDaemon::setupWatchdog()
 {
+#if defined(OS_WINDOWS)
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The watchdog is not implemented on Windows");
+#else
+
     /// Initialize in advance to avoid double initialization in forked processes.
     DateLUT::serverTimezoneInstance();
 
@@ -811,6 +848,7 @@ void BaseDaemon::setupWatchdog()
         else
             _exit(exit_code);
     }
+#endif
 }
 
 

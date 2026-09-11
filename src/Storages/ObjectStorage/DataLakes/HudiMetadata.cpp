@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
@@ -58,7 +59,7 @@ Strings HudiMetadata::getDataFilesImpl() const
     {
         auto key_file = std::filesystem::path(key);
         Strings file_parts;
-        const String stem = key_file.stem();
+        const String stem = pathToGenericString(key_file.stem());
         splitInto<'_'>(file_parts, stem);
         if (file_parts.size() != 3)
             throw Exception(
@@ -70,7 +71,7 @@ Strings HudiMetadata::getDataFilesImpl() const
         const auto & file_id = file_parts[0];
         const auto timestamp = parse<UInt64>(file_parts[2]);
 
-        auto & file_info = files[partition][file_id];
+        auto & file_info = files[pathToGenericString(partition)][file_id];
         if (file_info.timestamp == 0 || file_info.timestamp < timestamp)
         {
             file_info.key = key;

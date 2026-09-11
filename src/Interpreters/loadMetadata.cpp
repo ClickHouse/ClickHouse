@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
@@ -112,10 +113,10 @@ static void loadDatabase(
     String database_attach_query;
 
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-    if (default_db_disk->existsFile(metadata_file_path))
+    if (default_db_disk->existsFile(pathToGenericString(metadata_file_path)))
     {
         /// There is .sql file with database creation statement.
-        database_attach_query = readMetadataFile(default_db_disk, metadata_file_path);
+        database_attach_query = readMetadataFile(default_db_disk, pathToGenericString(metadata_file_path));
     }
     else
     {
@@ -126,7 +127,7 @@ static void loadDatabase(
 
     try
     {
-        executeCreateQuery(database_attach_query, context, database, metadata_file_path, /* create */ true, force_restore_data);
+        executeCreateQuery(database_attach_query, context, database, pathToGenericString(metadata_file_path), /* create */ true, force_restore_data);
     }
     catch (Exception & e)
     {
@@ -140,7 +141,7 @@ static void checkUnsupportedVersion(ContextMutablePtr, const String & database_n
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     /// Produce better exception message
     auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath(database_name);
-    if (default_db_disk->existsDirectory(metadata_dir_path))
+    if (default_db_disk->existsDirectory(pathToGenericString(metadata_dir_path)))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Data directory for {} database exists, but metadata file does not. "
                                                      "Probably you are trying to upgrade from version older than 20.7. "
                                                      "If so, you should upgrade through intermediate version.", database_name);
@@ -236,13 +237,13 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     /// Some databases don't have an .sql metadata file.
     std::map<String, fs::path> orphan_directories_and_symlinks;
 
-    for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
+    for (const auto it = default_db_disk->iterateDirectory(pathToGenericString(metadata_dir_path)); it->isValid(); it->next())
     {
         auto sub_path = fs::path(it->path());
         if (sub_path.filename().empty())
             sub_path = sub_path.parent_path();
 
-        if (default_db_disk->isSymlinkSupported() && default_db_disk->isSymlink(sub_path))
+        if (default_db_disk->isSymlinkSupported() && default_db_disk->isSymlink(pathToGenericString(sub_path)))
         {
             String db_name = sub_path.filename().string();
             if (!isSystemOrInformationSchema(db_name))
@@ -250,12 +251,12 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
             continue;
         }
 
-        if (default_db_disk->existsDirectory(sub_path))
+        if (default_db_disk->existsDirectory(pathToGenericString(sub_path)))
             continue;
 
         if (sub_path.extension() == ".sql")
         {
-            String db_name = sub_path.stem();
+            String db_name = pathToGenericString(sub_path.stem());
             orphan_directories_and_symlinks.erase(unescapeForFileName(db_name));
             if (!isSystemOrInformationSchema(db_name))
                 databases.emplace(unescapeForFileName(db_name), sub_path);
@@ -267,7 +268,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
             LOG_WARNING(log, "Removing temporary file {}", sub_path.string());
             try
             {
-                default_db_disk->removeFileIfExists(sub_path);
+                default_db_disk->removeFileIfExists(pathToGenericString(sub_path));
             }
             catch (...)
             {
@@ -348,14 +349,14 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
     auto default_db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     auto metadata_file = DatabaseCatalog::getMetadataFilePath(database_name);
     auto metadata_tmp_file = DatabaseCatalog::getMetadataTmpFilePath(database_name);
-    default_db_disk->removeFileIfExists(metadata_tmp_file);
+    default_db_disk->removeFileIfExists(pathToGenericString(metadata_tmp_file));
 
     LOG_TEST(
         getLogger("loadSystemDatabase"),
         "metadata_file_path {}, existsFile {}",
         metadata_file,
-        default_db_disk->existsFile(metadata_file));
-    if (default_db_disk->existsFile(metadata_file))
+        default_db_disk->existsFile(pathToGenericString(metadata_file)));
+    if (default_db_disk->existsFile(pathToGenericString(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
         loadDatabase(context, database_name, metadata_file, true);

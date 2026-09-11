@@ -1,13 +1,12 @@
 #include <Backups/getBackupDataFileName.h>
 
+#include <Backups/BackupPathUtils.h>
+
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
-#include <filesystem>
 #include <base/defines.h>
 #include <base/hex.h>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -36,7 +35,7 @@ getBackupDataFileName(const BackupFileInfo & file_info, BackupDataFileNameGenera
 
             const std::string_view prefix = {checksum_hex.data(), prefix_length};
             const std::string_view suffix = {checksum_hex.data() + prefix_length, checksum_hex.size() - prefix_length};
-            return (fs::path(prefix) / suffix).string();
+            return joinBackupPath(prefix, suffix);
         }
     }
     UNREACHABLE();

@@ -1,3 +1,24 @@
+/// Compares the process's effective user against the owner of the data directory, to warn about a
+/// server started as the wrong user.
+#if defined(OS_WINDOWS)
+
+#include <Common/assertProcessUserMatchesDataOwner.h>
+
+namespace DB
+{
+
+void assertProcessUserMatchesDataOwner(const std::string &, std::function<void(const PreformattedMessage &)>)
+{
+    /// Windows has no uid: `_stat` reports `st_uid` as 0 for everything, and ownership there is a
+    /// SID in an ACL rather than a number to compare against `geteuid`. Making the same check would
+    /// mean `GetSecurityInfo` on the directory and `GetTokenInformation` on the process, which is a
+    /// different piece of work; until then there is nothing to warn about.
+}
+
+}
+
+#else
+
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
@@ -61,3 +82,5 @@ void assertProcessUserMatchesDataOwner(const std::string & path, std::function<v
 }
 
 }
+
+#endif

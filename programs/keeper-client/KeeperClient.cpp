@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <KeeperClient.h>
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
@@ -9,6 +10,7 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/getUserHomePath.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ErrnoException.h>
 #include <Parsers/TokenIterator.h>
@@ -402,17 +404,14 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     suggest.setCompletionsCallback(
         [&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
 
-    String home_path;
-    const char * home_path_cstr = getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
-    if (home_path_cstr)
-        home_path = home_path_cstr;
+    const String home_path = getUserHomePath();
 
     if (config().has("history-file"))
         history_file = config().getString("history-file");
     else
         history_file = home_path + "/.keeper-client-history";
 
-    if (!history_file.empty() && !fs::exists(history_file))
+    if (!history_file.empty() && !fs::exists(pathFromString(history_file)))
     {
         try
         {
@@ -573,7 +572,7 @@ void KeeperClient::runInteractiveReplxx()
         if (waiting_confirmation)
             prompt = "[y/n] ";
         else
-            prompt = cwd.string() + " :) ";
+            prompt = cwd + " :) ";
 
         auto input = lr.readLine(prompt, ":-] ");
         if (input.empty())

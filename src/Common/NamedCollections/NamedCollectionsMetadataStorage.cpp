@@ -1,3 +1,5 @@
+#include <Common/timespanFromSeconds.h>
+#include <base/pathToString.h>
 #include <filesystem>
 #include <Core/Settings.h>
 #include <IO/FileEncryptionCommon.h>
@@ -18,6 +20,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #if CLICKHOUSE_CLOUD
@@ -81,12 +84,12 @@ public:
 class NamedCollectionsMetadataStorage::LocalStorage : public INamedCollectionsStorage, protected WithContext
 {
 protected:
-    std::string root_path;
+    fs::path root_path;
 
 public:
     LocalStorage(ContextPtr context_, const std::string & path_)
         : WithContext(context_)
-        , root_path(path_)
+        , root_path(pathFromString(path_))
     {
         if (fs::exists(root_path))
             cleanup();
@@ -107,14 +110,14 @@ public:
             const auto & current_path = it->path();
             if (current_path.extension() == ".sql")
             {
-                elements.push_back(it->path());
+                elements.push_back(pathToGenericString(it->path()));
             }
             else
             {
                 LOG_WARNING(
                     getLogger("LocalStorage"),
                     "Unexpected file {} in named collections directory",
-                    current_path.filename().string());
+                    pathToString(current_path.filename()));
             }
         }
         return elements;
@@ -127,7 +130,7 @@ public:
 
     std::string read(const std::string & file_name) const override
     {
-        ReadBufferFromFile in(getPath(file_name));
+        ReadBufferFromFile in(pathToString(getPath(file_name)));
         std::string data;
         readStringUntilEOF(data, in);
         return readHook(data);
@@ -140,7 +143,7 @@ public:
 
     void write(const std::string & file_name, const std::string & data, bool replace) override
     {
-        if (!replace && fs::exists(file_name))
+        if (!replace && fs::exists(getPath(file_name)))
         {
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_ALREADY_EXISTS,
@@ -152,7 +155,7 @@ public:
 
         auto tmp_path = getPath(file_name + ".tmp");
         auto write_data = writeHook(data);
-        WriteBufferFromFile out(tmp_path, write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
+        WriteBufferFromFile out(pathToString(tmp_path), write_data.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(write_data, out);
 
         out.next();
@@ -184,13 +187,13 @@ public:
     }
 
 protected:
-    std::string getPath(const std::string & file_name) const
+    fs::path getPath(const std::string & file_name) const
     {
-        const auto file_name_as_path = fs::path(file_name);
+        const auto file_name_as_path = pathFromString(file_name);
         if (file_name_as_path.is_absolute())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
 
-        return fs::path(root_path) / file_name_as_path;
+        return root_path / file_name_as_path;
     }
 
 private:
@@ -203,10 +206,10 @@ private:
         {
             const auto & current_path = it->path();
             if (current_path.extension() == ".tmp")
-                files_to_remove.push_back(current_path);
+                files_to_remove.push_back(pathToGenericString(current_path));
         }
         for (const auto & file : files_to_remove)
-            fs::remove(file);
+            fs::remove(pathFromString(file));
     }
 };
 
@@ -254,7 +257,7 @@ public:
             return true;
         }
 
-        if (wait_event->tryWait(timeout))
+        if (wait_event->tryWait(toPocoMilliseconds(timeout)))
         {
             /// Children changed before timeout.
             return true;
@@ -361,11 +364,13 @@ private:
 
     std::string getPath(const std::string & file_name) const
     {
-        const auto file_name_as_path = fs::path(file_name);
-        if (file_name_as_path.is_absolute())
+        /// A znode path, not a filesystem path, so it is joined in Keeper string space. `absolute`
+        /// here means a leading `/`, which is also what `std::filesystem` would not have called
+        /// absolute on Windows, where it wants a drive.
+        if (file_name.starts_with('/'))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Filename {} cannot be an absolute path", file_name);
 
-        return fs::path(root_path) / file_name_as_path;
+        return zkutil::joinZooKeeperPath(root_path, file_name);
     }
 };
 
@@ -535,7 +540,7 @@ std::vector<std::string> NamedCollectionsMetadataStorage::listCollections() cons
     std::vector<std::string> collections;
     collections.reserve(paths.size());
     for (const auto & path : paths)
-        collections.push_back(unescapeForFileName(std::filesystem::path(path).stem()));
+        collections.push_back(unescapeForFileName(pathToGenericString(std::filesystem::path(path).stem())));
     return collections;
 }
 
@@ -581,7 +586,7 @@ std::unique_ptr<NamedCollectionsMetadataStorage> NamedCollectionsMetadataStorage
     {
         const auto path = config.getString(
             named_collections_storage_config_path + ".path",
-            std::filesystem::path(context_->getPath()) / "named_collections");
+            pathToGenericString(pathFromString(context_->getPath()) / "named_collections"));
 
         LOG_TRACE(getLogger("NamedCollectionsMetadataStorage"),
                   "Using local storage for named collections at path: {}", path);

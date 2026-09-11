@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #endif
 
+using DB::Socket;
 using DB::SocketState;
 using DB::getSocketState;
 using DB::isSocketPeerClosed;
@@ -46,10 +47,10 @@ struct SocketPair
 TEST(SocketPeerClosed, AliveNoData)
 {
     SocketPair p;
-    EXPECT_EQ(SocketState::Idle, getSocketState(p.fds[0]));
-    EXPECT_EQ(SocketState::Idle, getSocketState(p.fds[1]));
-    EXPECT_FALSE(isSocketPeerClosed(p.fds[0]));
-    EXPECT_FALSE(isSocketPeerClosed(p.fds[1]));
+    EXPECT_EQ(SocketState::Idle, getSocketState(Socket{p.fds[0]}));
+    EXPECT_EQ(SocketState::Idle, getSocketState(Socket{p.fds[1]}));
+    EXPECT_FALSE(isSocketPeerClosed(Socket{p.fds[0]}));
+    EXPECT_FALSE(isSocketPeerClosed(Socket{p.fds[1]}));
 }
 
 TEST(SocketPeerClosed, DataPending)
@@ -59,8 +60,8 @@ TEST(SocketPeerClosed, DataPending)
     ASSERT_EQ(1, ::send(p.fds[1], &payload, 1, 0));
     /// Bytes are waiting on fds[0]: the connection is alive, not closed, but not idle either -
     /// a connection pool must not reuse it.
-    EXPECT_EQ(SocketState::DataPending, getSocketState(p.fds[0]));
-    EXPECT_FALSE(isSocketPeerClosed(p.fds[0]));
+    EXPECT_EQ(SocketState::DataPending, getSocketState(Socket{p.fds[0]}));
+    EXPECT_FALSE(isSocketPeerClosed(Socket{p.fds[0]}));
 }
 
 TEST(SocketPeerClosed, PeerClosed)
@@ -68,8 +69,8 @@ TEST(SocketPeerClosed, PeerClosed)
     SocketPair p;
     ::close(p.fds[1]);
     p.fds[1] = -1;
-    EXPECT_EQ(SocketState::Closed, getSocketState(p.fds[0]));
-    EXPECT_TRUE(isSocketPeerClosed(p.fds[0]));
+    EXPECT_EQ(SocketState::Closed, getSocketState(Socket{p.fds[0]}));
+    EXPECT_TRUE(isSocketPeerClosed(Socket{p.fds[0]}));
 }
 
 TEST(SocketPeerClosed, ClosedWithPendingDataThenDrain)
@@ -81,19 +82,22 @@ TEST(SocketPeerClosed, ClosedWithPendingDataThenDrain)
     p.fds[1] = -1;
     /// Data is still buffered: a read would return it, not EOF, so the peer does not read as
     /// closed yet - but the pending data alone disqualifies the connection from reuse.
-    EXPECT_EQ(SocketState::DataPending, getSocketState(p.fds[0]));
-    EXPECT_FALSE(isSocketPeerClosed(p.fds[0]));
+    EXPECT_EQ(SocketState::DataPending, getSocketState(Socket{p.fds[0]}));
+    EXPECT_FALSE(isSocketPeerClosed(Socket{p.fds[0]}));
     char tmp = 0;
     ASSERT_EQ(1, ::recv(p.fds[0], &tmp, 1, 0));
     /// Buffer drained, only the FIN remains, so report closed.
-    EXPECT_EQ(SocketState::Closed, getSocketState(p.fds[0]));
-    EXPECT_TRUE(isSocketPeerClosed(p.fds[0]));
+    EXPECT_EQ(SocketState::Closed, getSocketState(Socket{p.fds[0]}));
+    EXPECT_TRUE(isSocketPeerClosed(Socket{p.fds[0]}));
 }
 
 TEST(SocketPeerClosed, InvalidFd)
 {
-    EXPECT_EQ(SocketState::Closed, getSocketState(-1));
-    EXPECT_TRUE(isSocketPeerClosed(-1));
+    /// `Socket{}` is the default-constructed, invalid handle - `-1` on POSIX and
+    /// `INVALID_SOCKET` on Windows, which is the same bit pattern.
+    EXPECT_EQ(SocketState::Closed, getSocketState(Socket{}));
+    EXPECT_TRUE(isSocketPeerClosed(Socket{}));
+    EXPECT_FALSE(Socket{}.isValid());
 }
 
 
@@ -247,8 +251,8 @@ TEST(SocketPeerClosed, SecureCloseNotifyIsClosed)
     SSL_shutdown(p.server);   /// Sends `close_notify`.
 
     /// The raw file-descriptor check misfires here (the alert looks like unread data), ...
-    EXPECT_EQ(SocketState::DataPending, getSocketState(p.fds[1]));
-    EXPECT_FALSE(isSocketPeerClosed(p.fds[1]));
+    EXPECT_EQ(SocketState::DataPending, getSocketState(Socket{p.fds[1]}));
+    EXPECT_FALSE(isSocketPeerClosed(Socket{p.fds[1]}));
     /// ... while the TLS-aware check correctly reports the connection as closed.
     EXPECT_EQ(SocketState::Closed, getSSLSocketState(p.client));
     EXPECT_TRUE(isSSLPeerClosed(p.client));

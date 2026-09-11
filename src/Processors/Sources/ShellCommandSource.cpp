@@ -1,3 +1,43 @@
+/// Reads a child process's stdout and stderr and writes its stdin, multiplexing the three with
+/// `poll`. Windows has no `poll` for pipes - the nearest thing is `WaitForMultipleObjects` on
+/// handles - and, more to the point, `ShellCommand` cannot start a child there at all, so nothing
+/// can reach this. The two out-of-line members are defined so that the executable table function
+/// and dictionaries, which do get built, still link.
+#if defined(OS_WINDOWS)
+
+#include <Processors/Sources/ShellCommandSource.h>
+
+#include <Common/Exception.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration & configuration_)
+    : configuration(configuration_)
+{
+}
+
+Pipe ShellCommandSourceCoordinator::createPipe(
+    const std::string & command,
+    const VectorWithMemoryTracking<std::string> & arguments,
+    std::vector<Pipe> && input_pipes,
+    Block sample_block,
+    ContextPtr context,
+    const ShellCommandSourceConfiguration & source_configuration)
+{
+    UNUSED(arguments, input_pipes, sample_block, context, source_configuration);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Running external commands is not implemented on Windows (command: {})", command);
+}
+
+}
+
+#else
+
 #include <Processors/Sources/ShellCommandSource.h>
 
 #include <poll.h>
@@ -1002,3 +1042,5 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 }
 
 }
+
+#endif

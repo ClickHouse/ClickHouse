@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <memory>
 #include <optional>
 #include <unordered_set>
@@ -79,7 +80,6 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 
 
-namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event EngineFileLikeReadFiles;
@@ -766,7 +766,7 @@ Chunk StorageObjectStorageSource::generate()
             const auto reading_path = configuration->getPathForRead().path;
 
             if (!full_path.starts_with(reading_path) && !trySplitFullyQualifiedObjectPath(full_path))
-                full_path = fs::path(reading_path) / object_info->getPath();
+                full_path = joinPathUnderPrefix(reading_path, object_info->getPath());
 
             auto object_metadata = object_info->getObjectMetadata();
 

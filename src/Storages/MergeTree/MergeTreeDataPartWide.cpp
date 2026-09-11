@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
@@ -260,7 +261,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
     if (!data_part_storage_.existsFile(marks_file_path))
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART, "Marks file '{}' doesn't exist",
-            std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
+            pathToGenericString(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
 
     size_t marks_file_size = data_part_storage_.getFileSize(marks_file_path);
     size_t fixed_granularity = index_granularity_info_.fixed_index_granularity;
@@ -522,7 +523,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: {} is empty.",
                             getDataPartStorage().getFullPath(),
-                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+                            pathToGenericString(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
                     if (!marks_size)
                         marks_size = file_size;
@@ -561,7 +562,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: {} is empty.",
                             getDataPartStorage().getFullPath(),
-                            std::string(fs::path(getDataPartStorage().getFullPath()) / file_path));
+                            pathToGenericString(fs::path(getDataPartStorage().getFullPath()) / file_path));
 
                     if (!marks_size)
                         marks_size = file_size;

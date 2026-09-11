@@ -1,3 +1,5 @@
+#if !defined(OS_WINDOWS)
+
 #include <Common/AsyncTaskExecutor.h>
 #include <base/scope_guard.h>
 #include <fmt/format.h>
@@ -137,3 +139,4 @@ String getSocketTimeoutExceededMessageByTimeoutType(AsyncEventTimeoutType type, 
 
 }
 
+#endif

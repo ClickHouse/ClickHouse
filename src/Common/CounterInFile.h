@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fcntl.h>
-#include <sys/file.h>
 
 #include <string>
 #include <mutex>
@@ -9,6 +8,7 @@
 
 #include <Poco/Exception.h>
 
+#include <IO/PlatformFileIO.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
@@ -72,7 +72,7 @@ public:
 
         try
         {
-            int flock_ret = flock(fd, LOCK_EX);
+            int flock_ret = DB::platformLockFileExclusive(fd, /*blocking*/ true);
             if (-1 == flock_ret)
                 DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot lock file {}", path);
 

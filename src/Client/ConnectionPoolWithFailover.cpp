@@ -269,7 +269,7 @@ ConnectionPoolWithFailover::tryGetEntry(
                 0,
                 AsyncEventTimeoutType::NONE,
                 "Connection establisher file descriptor",
-                AsyncTaskExecutor::Event::READ | AsyncTaskExecutor::Event::ERROR);
+                AsyncEvent::READ | AsyncEvent::ERROR);
         }
 
         fail_message = connection_establisher_async.getFailMessage();

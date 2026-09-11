@@ -19,6 +19,8 @@
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include <Client/sanitizeUntrustedServerString.h>
+#include <Common/Socket.h>
+#include <Common/AsyncTaskExecutor.h>
 #include <Common/logger_useful.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
@@ -261,7 +263,7 @@ void Connection::connectToAnyAddress(const ConnectionTimeouts & timeouts)
                 socket->connectNB(*it);
                 while (!socket->poll(0, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR))
                 {
-                    async_callback(socket->impl()->sockfd(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncTaskExecutor::READ | AsyncTaskExecutor::WRITE | AsyncTaskExecutor::ERROR);
+                    async_callback(Socket(socket->impl()->sockfd()).toDescriptor(), connection_timeout, AsyncEventTimeoutType::CONNECT, description, AsyncEvent::READ | AsyncEvent::WRITE | AsyncEvent::ERROR);
                     if (address_connect_timeout_expired)
                         throw Poco::TimeoutException("Connection timeout expired for address: " + it->toString());
                 }

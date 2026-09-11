@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/StorageTimeSeries.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -16,6 +17,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Backups/BackupPathUtils.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
@@ -30,7 +32,6 @@
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
-#include <filesystem>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
@@ -57,8 +58,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_TABLE_ENGINE;
     extern const int UNKNOWN_TABLE;
 }
-
-namespace fs = std::filesystem;
 
 
 namespace
@@ -675,7 +674,7 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
             auto table = getTargetTable(target_kind, backup_entries_collector.getContext());
             String kind_str{magic_enum::enum_name(target_kind)};
             boost::algorithm::to_lower(kind_str);
-            table->backupData(backup_entries_collector, fs::path{data_path_in_backup} / kind_str, {});
+            table->backupData(backup_entries_collector, joinBackupPath(data_path_in_backup, kind_str), {});
         }
     }
 }
@@ -695,10 +694,10 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
             auto table = getTargetTable(target_kind, restorer.getContext());
             String kind_str{magic_enum::enum_name(target_kind)};
             boost::algorithm::to_lower(kind_str);
-            String target_data_path = fs::path{data_path_in_backup} / kind_str;
+            String target_data_path = joinBackupPath(data_path_in_backup, kind_str);
             /// Support legacy backups where the samples folder was named "data" instead of "samples".
             if (target_kind == ViewTarget::Samples && !restorer.getBackup()->hasFiles(target_data_path))
-                target_data_path = fs::path{data_path_in_backup} / "data";
+                target_data_path = joinBackupPath(data_path_in_backup, "data");
             table->restoreDataFromBackup(restorer, target_data_path, {});
         }
     }

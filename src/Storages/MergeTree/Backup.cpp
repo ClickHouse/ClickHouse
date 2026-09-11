@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/Backup.h>
 
 #include <Common/Exception.h>
@@ -61,16 +62,16 @@ void BackupImpl(
             if (copy_instead_of_hardlinks || files_to_copy_instead_of_hardlinks.contains(it->name()))
             {
                 if (transaction)
-                    transaction->copyFile(source, destination, read_settings, write_settings);
+                    transaction->copyFile(source, pathToGenericString(destination), read_settings, write_settings);
                 else
-                    src_disk->copyFile(source, *dst_disk, destination, read_settings, write_settings);
+                    src_disk->copyFile(source, *dst_disk, pathToGenericString(destination), read_settings, write_settings);
             }
             else
             {
                 if (transaction)
-                    transaction->createHardLink(source, destination);
+                    transaction->createHardLink(source, pathToGenericString(destination));
                 else
-                    src_disk->createHardLink(source, destination);
+                    src_disk->createHardLink(source, pathToGenericString(destination));
             }
         }
         else
@@ -80,7 +81,7 @@ void BackupImpl(
                 dst_disk,
                 transaction,
                 source,
-                destination,
+                pathToGenericString(destination),
                 read_settings,
                 write_settings,
                 make_source_readonly,

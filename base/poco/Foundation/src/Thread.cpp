@@ -20,7 +20,11 @@
 #include <sstream>
 
 
+#if defined(POCO_OS_FAMILY_WINDOWS)
+#include "Thread_WIN32.cpp"
+#else
 #include "Thread_POSIX.cpp"
+#endif
 
 
 namespace Poco {

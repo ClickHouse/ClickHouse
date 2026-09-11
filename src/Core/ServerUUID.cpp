@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/ServerUUID.h>
 #include <Core/UUID.h>
 #include <Interpreters/Context.h>
@@ -42,7 +43,7 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
         try
         {
             UUID uuid;
-            ReadBufferFromFile in(server_uuid_file);
+            ReadBufferFromFile in(pathToGenericString(server_uuid_file));
             readUUIDText(uuid, in);
             assertEOF(in);
             return uuid;
@@ -59,7 +60,7 @@ UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log)
     {
         UUID new_uuid = UUIDHelpers::generateV4();
         auto uuid_str = toString(new_uuid);
-        WriteBufferFromFile out(server_uuid_file);
+        WriteBufferFromFile out(pathToGenericString(server_uuid_file));
         out.write(uuid_str.data(), uuid_str.size());
         out.sync();
         out.finalize();

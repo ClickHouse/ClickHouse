@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
@@ -891,15 +892,25 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
 }
 
 
+/// The longest a single path component may be. `NAME_MAX` where the system defines one; Windows
+/// does not, because there the limit belongs to the filesystem rather than to the system - and it
+/// is 255 on every filesystem it can put this directory on (NTFS, ReFS, exFAT), which is the value
+/// `NAME_MAX` has on Linux anyway. See also `computeMaxTableNameLength`.
+#if defined(NAME_MAX)
+static constexpr size_t max_path_component_length = NAME_MAX;
+#else
+static constexpr size_t max_path_component_length = 255;
+#endif
+
 void DistributedSink::checkDirectoryNameLengths(const Cluster::ShardInfo & shard_info, const std::vector<std::string> & dir_names) const
 {
     /// The name embeds `user:password@host:port`, hence it is not reported
     /// (see `maskDataPath` in StorageSystemDistributionQueue.cpp).
     for (const auto & dir_name : dir_names)
-        if (dir_name.size() > NAME_MAX)
+        if (dir_name.size() > max_path_component_length)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                 "The max length of a directory name for async distributed INSERT into table {} (cluster {}, shard {}) is {}, current length is {}",
-                storage.getStorageID().getFullNameNotQuoted(), storage.getClusterName(), shard_info.shard_num, NAME_MAX, dir_name.size());
+                storage.getStorageID().getFullNameNotQuoted(), storage.getClusterName(), shard_info.shard_num, max_path_component_length, dir_name.size());
 }
 
 
@@ -1078,7 +1089,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     /// Make hardlinks
     for (; it != dir_names.end(); ++it)
     {
-        const std::string path(fs::path(disk_path) / (data_path + *it));
+        const std::string path(pathToGenericString(fs::path(disk_path) / (data_path + *it)));
         fs::create_directory(path);
 
         auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();

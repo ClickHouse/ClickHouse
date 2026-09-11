@@ -1,3 +1,5 @@
+#include <Common/timespanFromSeconds.h>
+#include <base/pathToString.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
@@ -231,15 +233,15 @@ size_t ReplicatedMergeTreeSink::checkQuorumPrecondition(const ZooKeeperWithFault
             if (storage.is_readonly && storage.shutdown_prepared_called)
                 throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to shutdown: replica_path={}", storage.replica_path);
 
-            quorum_info.status_path = fs::path(storage.zookeeper_path) / "quorum" / "status";
+            quorum_info.status_path = zkutil::joinZooKeeperPath(storage.zookeeper_path, "quorum", "status");
 
-            Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
+            Strings replicas = zookeeper->getChildren(zkutil::joinZooKeeperPath(storage.zookeeper_path, "replicas"));
 
             Strings exists_paths;
             exists_paths.reserve(replicas.size());
             for (const auto & replica : replicas)
                 if (replica != storage.replica_name)
-                    exists_paths.emplace_back(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active");
+                    exists_paths.emplace_back(zkutil::joinZooKeeperPath(storage.zookeeper_path, "replicas", replica, "is_active"));
 
             auto exists_result = zookeeper->exists(exists_paths);
             auto get_results = zookeeper->get(Strings{storage.replica_path + "/is_active", storage.replica_path + "/host"});
@@ -662,7 +664,7 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
             {
                 /// Part came from ATTACH PART - rename back to detached/ (remove attaching_ prefix)
                 fs::path new_relative_path = fs::path("detached") / part->getNewName(part->info);
-                part->renameTo(new_relative_path, false);
+                part->renameTo(pathToGenericString(new_relative_path), false);
             }
             else if (part_dir.starts_with("tmp_restore_" + part->name))
             {
@@ -806,9 +808,9 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                 *  which indicates that the quorum has been reached.
                 */
 
-            quorum_info.status_path = fs::path(storage.zookeeper_path) / "quorum" / "status";
+            quorum_info.status_path = zkutil::joinZooKeeperPath(storage.zookeeper_path, "quorum", "status");
             if (quorum_parallel)
-                quorum_info.status_path = fs::path(storage.zookeeper_path) / "quorum" / "parallel" / retry_context.actual_part_name;
+                quorum_info.status_path = zkutil::joinZooKeeperPath(storage.zookeeper_path, "quorum", "parallel", retry_context.actual_part_name);
 
             ops.emplace_back(
                     zkutil::makeCreateRequest(
@@ -1075,9 +1077,9 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                 fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault, { zookeeper->forceFailureBeforeOperation(); });
                 FailPointInjection::pauseFailPoint(FailPoints::replicated_merge_tree_insert_retry_pause);
                 zookeeper->setKeeper(storage.getZooKeeper());
-                node_exists = zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name);
+                node_exists = zookeeper->exists(zkutil::joinZooKeeperPath(storage.replica_path, "parts", part->name));
                 if (isQuorumEnabled())
-                    quorum_fail_exists = zookeeper->exists(fs::path(storage.zookeeper_path) / "quorum" / "failed_parts" / part->name);
+                    quorum_fail_exists = zookeeper->exists(zkutil::joinZooKeeperPath(storage.zookeeper_path, "quorum", "failed_parts", part->name));
             });
 
             /// if it has quorum fail node, the restarting thread will clean the garbage.
@@ -1335,7 +1337,7 @@ void ReplicatedMergeTreeSink::waitForQuorum(
             if (elapsed_ms >= quorum_timeout_ms)
                 break;
 
-            if (event->tryWait(std::min<UInt64>(quorum_wait_step_ms, quorum_timeout_ms - elapsed_ms)))
+            if (event->tryWait(toPocoMilliseconds(std::min<UInt64>(quorum_wait_step_ms, quorum_timeout_ms - elapsed_ms))))
             {
                 quorum_updated = true;
                 break;
@@ -1411,9 +1413,9 @@ void ReplicatedMergeTreeSink::resolveQuorum(const ZooKeeperWithFaultInjectionPtr
     ProfileEvents::increment(ProfileEvents::QuorumParts);
     ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::QuorumWaitMicroseconds);
 
-    quorum_info.status_path = fs::path(storage.zookeeper_path) / "quorum" / "status";
+    quorum_info.status_path = zkutil::joinZooKeeperPath(storage.zookeeper_path, "quorum", "status");
     if (quorum_parallel)
-        quorum_info.status_path = fs::path(storage.zookeeper_path) / "quorum" / "parallel" / actual_part_name;
+        quorum_info.status_path = zkutil::joinZooKeeperPath(storage.zookeeper_path, "quorum", "parallel", actual_part_name);
 
     const auto & settings = context->getSettingsRef();
     ZooKeeperRetriesControl quorum_retries_ctl(

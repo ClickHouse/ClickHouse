@@ -6,7 +6,20 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#if defined(OS_WINDOWS)
+/// Windows has no `statvfs`. Only these five fields are read anywhere in the codebase, and
+/// `GetDiskFreeSpaceEx` supplies the four that describe blocks; see `getStatVFS`.
+struct statvfs
+{
+    unsigned long long f_frsize;  /// Fragment size, i.e. the unit `f_blocks`/`f_bavail` count in.
+    unsigned long long f_blocks;  /// Total number of fragments.
+    unsigned long long f_bavail;  /// Fragments available to an unprivileged process.
+    unsigned long long f_files;   /// Total number of inodes.
+    unsigned long long f_favail;  /// Inodes available to an unprivileged process.
+};
+#else
 #include <sys/statvfs.h>
+#endif
 #include <Poco/TemporaryFile.h>
 
 namespace fs = std::filesystem;
@@ -61,6 +74,10 @@ bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::p
 
 /// Returns true if path starts with prefix path
 bool pathStartsWith(const String & path, const String & prefix_path);
+
+/// Same as pathStartsWith, but without canonization, i.e. allowed to check symlinks.
+/// (Path is made absolute and normalized.)
+bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path);
 
 /// Same as pathStartsWith, but without canonization, i.e. allowed to check symlinks.
 /// (Path is made absolute and normalized.)

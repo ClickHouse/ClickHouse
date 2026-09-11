@@ -83,9 +83,9 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     if (!policy.empty())
         pending.updatePolicy(policy);
 
-    pool->setMaxThreads(std::max(1UL, threads_count));
-    pool->setMaxFreeThreads(std::max(1UL, threads_count));
-    pool->setQueueSize(std::max(1UL, threads_count));
+    pool->setMaxThreads(std::max(1uz, threads_count));
+    pool->setMaxFreeThreads(std::max(1uz, threads_count));
+    pool->setQueueSize(std::max(1uz, threads_count));
 
     for (size_t number = 0; number < threads_count; ++number)
         pool->scheduleOrThrowOnError([this] { threadFunction(); });
@@ -135,9 +135,9 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     pending.setCapacity(new_max_tasks_count);
     active.set_capacity(new_max_tasks_count);
 
-    pool->setMaxThreads(std::max(1UL, new_threads_count));
-    pool->setMaxFreeThreads(std::max(1UL, new_threads_count));
-    pool->setQueueSize(std::max(1UL, new_threads_count));
+    pool->setMaxThreads(std::max(1uz, new_threads_count));
+    pool->setMaxFreeThreads(std::max(1uz, new_threads_count));
+    pool->setQueueSize(std::max(1uz, new_threads_count));
 
     for (size_t number = threads_count; number < new_threads_count; ++number)
         pool->scheduleOrThrowOnError([this] { threadFunction(); });

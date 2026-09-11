@@ -1,5 +1,6 @@
 #include <Common/AlignedBuffer.h>
 
+#include <base/alignedAlloc.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
@@ -17,11 +18,11 @@ namespace ErrorCodes
 void AlignedBuffer::alloc(size_t size, size_t alignment)
 {
     void * new_buf = nullptr;
-    int res = ::posix_memalign(&new_buf, std::max(alignment, sizeof(void*)), size);
+    int res = alignedPosixMemalign(&new_buf, std::max(alignment, sizeof(void*)), size);
     if (0 != res)
         throw ErrnoException(
             ErrorCodes::CANNOT_ALLOCATE_MEMORY,
-            "Cannot allocate memory (posix_memalign), size: {}, alignment: {}.",
+            "Cannot allocate memory (aligned allocation), size: {}, alignment: {}.",
             ReadableSize(size),
             ReadableSize(alignment));
     buf = new_buf;
@@ -30,7 +31,7 @@ void AlignedBuffer::alloc(size_t size, size_t alignment)
 void AlignedBuffer::dealloc()
 {
     if (buf)
-        ::free(buf);
+        alignedFree(buf);
 }
 
 void AlignedBuffer::reset(size_t size, size_t alignment)

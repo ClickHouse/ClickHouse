@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DistributedQueryStatusSource.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/DatabaseReplicated.h>
@@ -81,7 +82,7 @@ NameSet DistributedQueryStatusSource::getOfflineHosts(const NameSet & hosts_to_w
     for (const auto & host : hosts_to_wait)
     {
         hosts_array.push_back(host);
-        paths.push_back(fs::path(replicas_path) / host / "active");
+        paths.push_back(zkutil::joinZooKeeperPath(replicas_path, host, "active"));
     }
 
     NameSet offline;
@@ -135,7 +136,7 @@ Strings DistributedQueryStatusSource::getNewAndUpdate(const Strings & current_fi
 }
 
 
-ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const fs::path & status_path, bool * node_exists)
+ExecutionStatus DistributedQueryStatusSource::getExecutionStatus(const String & status_path, bool * node_exists)
 {
     ExecutionStatus status(-1, "Cannot obtain error message");
 

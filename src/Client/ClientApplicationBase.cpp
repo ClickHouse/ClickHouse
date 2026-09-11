@@ -12,6 +12,11 @@
 #include <Common/config_version.h>
 #include "config.h"
 
+#if defined(OS_WINDOWS)
+#include <csignal>
+#include <Poco/UnWindows.h>
+#endif
+
 #include <unordered_set>
 #include <string>
 #include <boost/algorithm/string/case_conv.hpp>
@@ -46,6 +51,33 @@ static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown query kind {}", query_kind);
 }
 
+#if defined(OS_WINDOWS)
+
+/// The console-control counterpart of `interruptSignalHandler` below: Windows reports Ctrl+C to a
+/// console program by calling this handler on a thread of its own making rather than by
+/// interrupting an existing one. Returning TRUE suppresses the default action, which is to end
+/// the process; like the POSIX handler, a repeated Ctrl+C while a stop is already requested exits.
+static BOOL WINAPI consoleControlHandler(DWORD control_type)
+{
+    /// Ctrl+Break as well: it is the other way to interrupt a console program, and unlike Ctrl+C
+    /// it can never be turned into ordinary input, so leaving it alone would end the process.
+    /// (`Poco/UnWindows.h` undefines `TRUE` and `FALSE`, hence the bare 0 and 1.)
+    if (control_type != CTRL_C_EVENT && control_type != CTRL_BREAK_EVENT)
+        return 0;
+
+    /// The handler might be called even before the setup is fully finished
+    /// and client application started to process the query.
+    /// Because of that we have to manually check it.
+    if (auto * instance = ClientApplicationBase::instanceRawPtr(); instance)
+        if (auto * base = dynamic_cast<ClientApplicationBase *>(instance); base)
+            if (base->tryStopQuery())
+                safeExit(128 + SIGINT);
+
+    return 1;
+}
+
+#else
+
 /// This signal handler is set only for SIGINT and SIGQUIT.
 void interruptSignalHandler(int signum)
 {
@@ -60,15 +92,19 @@ void interruptSignalHandler(int signum)
                 safeExit(128 + signum, LeakCheck::SkipQuietly);
 }
 
+#endif
+
 ClientApplicationBase::~ClientApplicationBase()
 {
     try
     {
+#if !defined(OS_WINDOWS)
 #if defined(OS_HAS_SIGNAL_HANDLERS)
         writeSignalIDtoSignalPipe(SignalListener::StopThread);
         signal_listener_thread.join();
 #endif
         HandledSignals::instance().reset();
+#endif
     }
     catch (...)
     {
@@ -90,6 +126,15 @@ bool ClientApplicationBase::isEmbeeddedClient() const
 
 void ClientApplicationBase::setupSignalHandler()
 {
+#if defined(OS_WINDOWS)
+    /// The POSIX branch below installs a `SIGINT` handler so that Ctrl+C cancels the running query
+    /// instead of ending the process. Windows reports Ctrl+C through a console control handler,
+    /// not a signal.
+    if (!SetConsoleCtrlHandler(consoleControlHandler, 1))
+        throw Exception(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER,
+            "Cannot install the console control handler, error code: {}", GetLastError());
+#else
+
     ClientApplicationBase::getInstance().stopQuery();
 
     struct sigaction new_act{};
@@ -113,6 +158,7 @@ void ClientApplicationBase::setupSignalHandler()
 
     if (sigaction(SIGQUIT, &new_act, nullptr))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
+#endif
 }
 
 void ClientApplicationBase::addMultiquery(std::string_view query, Arguments & common_arguments) const
@@ -254,11 +300,13 @@ void ClientApplicationBase::init(int argc, char ** argv)
         total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
     }
 
+#if !defined(OS_WINDOWS)
     /// Print stacktrace in case of crash
     HandledSignals::instance().setupTerminateHandler();
     HandledSignals::instance().setupCommonDeadlySignalHandlers();
     /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
     /// have an option for client to shutdown gracefully.
+#endif
 
     fatal_channel_ptr = new Poco::SplitterChannel;
     fatal_console_channel_ptr = new Poco::ConsoleChannel;
@@ -276,7 +324,10 @@ void ClientApplicationBase::init(int argc, char ** argv)
     fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
 #if defined(OS_HAS_SIGNAL_HANDLERS)
     /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
-    /// for - and the blocking read of that pipe is all the listener thread does.
+    /// for - and the blocking read of that pipe is all the listener thread does. On Windows in
+    /// particular, a fault is reported through Structured Exception Handling rather than a
+    /// signal; a crash there loses the stack trace that this thread would have printed, and
+    /// `AddVectoredExceptionHandler` is what would restore it.
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
 #endif

@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <filesystem>
 #include <Formats/FormatSchemaInfo.h>
 
@@ -75,7 +76,7 @@ FormatSchemaInfo::FormatSchemaInfo(
 
     auto default_schema_directory = [&format_schema_path]()
     {
-        static const String str = fs::canonical(format_schema_path) / "";
+        static const String str = pathToGenericString(fs::canonical(pathFromString(format_schema_path)) / "");
         return str;
     };
 
@@ -156,14 +157,14 @@ void FormatSchemaInfo::verifySchemaFileName(const String & format_schema, bool r
         if (message_name.empty())
             message_name = format_schema_message_name;
 
-        path = fs::path(format_schema_file_name);
-        String filename = path.has_filename() ? path.filename() : path.parent_path().filename();
+        path = pathFromString(format_schema_file_name);
+        String filename = pathToGenericString(path.has_filename() ? path.filename() : path.parent_path().filename());
         if (filename.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid file name in 'format_schema' setting");
     }
     else
     {
-        path = fs::path(format_schema_file_name);
+        path = pathFromString(format_schema_file_name);
         if (!path.has_filename())
             path = path.parent_path() / "";
     }
@@ -173,8 +174,8 @@ void FormatSchemaInfo::handleSchemaContent(const String & content, const String 
 {
     String default_file_extension = getFormatSchemaDefaultFileExtension(format);
     auto file_name = generateSchemaFileName(content, default_file_extension);
-    auto cached_file_path = fs::path(CACHE_DIR_NAME) / file_name;
-    auto file_path = fs::path(format_schema_path) / cached_file_path;
+    auto cached_file_path = pathFromString(CACHE_DIR_NAME) / pathFromString(file_name);
+    auto file_path = pathFromString(format_schema_path) / cached_file_path;
     if (fs::exists(file_path))
     {
         LOG_DEBUG(log, "Cached file exists '{}', skip storing schema file", file_path.string());
@@ -207,8 +208,8 @@ void FormatSchemaInfo::handleSchemaSourceQuery(
     /// The query is access-checked only when it is actually executed, so an entry cached for one user
     /// must not be served to another one.
     auto file_name = generateSchemaFileName(format_schema, default_file_extension, toString(*user_id));
-    auto cached_file_path = fs::path(CACHE_DIR_NAME) / file_name;
-    auto file_path = fs::path(format_schema_path) / cached_file_path;
+    auto cached_file_path = pathFromString(CACHE_DIR_NAME) / pathFromString(file_name);
+    auto file_path = pathFromString(format_schema_path) / cached_file_path;
     if (fs::exists(file_path))
     {
         LOG_DEBUG(log, "Cached file exists '{}' for query '{}', skip querying schema", file_path.string(), format_schema);
@@ -291,20 +292,21 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
 
     /// The final file name is a hash of the schema source, so every writer of one schema targets
     /// the same path; a shared temporary name would let them overwrite and delete each other's files.
-    auto temp_path = fs::path(file_path.string() + "." + getRandomASCIIString(8) + ".tmp");
+    auto temp_path = file_path;
+    temp_path += "." + getRandomASCIIString(8) + ".tmp";
 
     try
     {
-        WriteBufferFromFile out(temp_path, content.size(), O_WRONLY | O_CREAT | O_EXCL);
+        WriteBufferFromFile out(pathToGenericString(temp_path), content.size(), O_WRONLY | O_CREAT | O_EXCL);
         writeString(content, out);
         out.next();
         out.sync();
         out.close();
 
         if (fs::exists(file_path))
-            DB::renameExchange(temp_path, file_path);
+            DB::renameExchange(pathToGenericString(temp_path), pathToGenericString(file_path));
         else
-            DB::renameNoReplace(temp_path, file_path);
+            DB::renameNoReplace(pathToGenericString(temp_path), pathToGenericString(file_path));
 
         fs::remove(temp_path);
     }
@@ -321,15 +323,19 @@ void FormatSchemaInfo::processSchemaFile(
     fs::path path, const String & default_file_extension, bool is_server, const String & format_schema_path)
 {
     if (!path.has_extension() && !default_file_extension.empty())
-        path = path.parent_path() / (path.stem().string() + '.' + default_file_extension);
+    {
+        path = path.parent_path() / path.stem();
+        path += '.';
+        path += default_file_extension;
+    }
 
-    fs::path default_schema_directory_path(format_schema_path);
+    auto default_schema_directory_path = pathFromString(format_schema_path);
     if (path.is_absolute())
     {
         if (is_server)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Absolute path in the 'format_schema' setting is prohibited: {}", path.string());
-        schema_path = path.filename();
-        schema_directory = path.parent_path() / "";
+        schema_path = pathToGenericString(path.filename());
+        schema_directory = pathToGenericString(path.parent_path() / "");
     }
     else if (
         path.has_parent_path()
@@ -343,12 +349,12 @@ void FormatSchemaInfo::processSchemaFile(
                 path.string(),
                 format_schema_path);
         path = default_schema_directory_path / path;
-        schema_path = path.filename();
-        schema_directory = path.parent_path() / "";
+        schema_path = pathToGenericString(path.filename());
+        schema_directory = pathToGenericString(path.parent_path() / "");
     }
     else
     {
-        schema_path = path;
+        schema_path = pathToGenericString(path);
         schema_directory = format_schema_path;
     }
 }
@@ -389,12 +395,12 @@ MaybeAutogeneratedFormatSchemaInfo<SchemaGenerator>::MaybeAutogeneratedFormatSch
     }
 
     String schema_path;
-    fs::path default_schema_directory_path(fs::canonical(settings.schema.format_schema_path) / "");
+    auto default_schema_directory_path = fs::canonical(pathFromString(settings.schema.format_schema_path)) / "";
     fs::path path;
     if (!settings.schema.output_format_schema.empty())
     {
         schema_path = settings.schema.output_format_schema;
-        path = schema_path;
+        path = pathFromString(schema_path);
         if (path.is_absolute())
         {
             if (settings.schema.is_server)
@@ -420,8 +426,8 @@ MaybeAutogeneratedFormatSchemaInfo<SchemaGenerator>::MaybeAutogeneratedFormatSch
     {
         if (settings.schema.is_server)
         {
-            tmp_file_path = Poco::TemporaryFile::tempName(default_schema_directory_path.string()) + '.' + getFormatSchemaDefaultFileExtension(format);
-            schema_path = fs::path(tmp_file_path).filename();
+            tmp_file_path = Poco::TemporaryFile::tempName(pathToGenericString(default_schema_directory_path)) + '.' + getFormatSchemaDefaultFileExtension(format);
+            schema_path = pathToGenericString(pathFromString(tmp_file_path).filename());
         }
         else
         {
@@ -429,10 +435,10 @@ MaybeAutogeneratedFormatSchemaInfo<SchemaGenerator>::MaybeAutogeneratedFormatSch
             schema_path = tmp_file_path;
         }
 
-        path = tmp_file_path;
+        path = pathFromString(tmp_file_path);
     }
 
-    WriteBufferFromFile buf(path.string());
+    WriteBufferFromFile buf(pathToGenericString(path));
     SchemaGenerator::writeSchema(buf, "Message", header.getNamesAndTypesList(), with_envelope);
     buf.finalize();
 

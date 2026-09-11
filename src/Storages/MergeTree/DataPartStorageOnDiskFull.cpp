@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Disks/IDiskTransaction.h>
@@ -41,27 +42,27 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::st
     /// Not arena-scoped: most callers use this only as a short-lived filesystem handle (CHECK TABLE,
     /// mutation hardlink/copy, existence probes). The part-lifetime projection storage is created via
     /// `getProjectionPartBuilder`, which scopes the arena itself.
-    return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
+    return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, pathToGenericString(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
 }
 
 DataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name) const
 {
-    return std::make_shared<DataPartStorageOnDiskFull>(volume, std::string(fs::path(root_path) / part_dir), name);
+    return std::make_shared<DataPartStorageOnDiskFull>(volume, pathToGenericString(fs::path(root_path) / part_dir), name);
 }
 
 bool DataPartStorageOnDiskFull::exists() const
 {
-    return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir);
+    return volume->getDisk()->existsDirectory(pathToGenericString(fs::path(root_path) / part_dir));
 }
 
 bool DataPartStorageOnDiskFull::existsFileImpl(const std::string & name) const
 {
-    return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
+    return volume->getDisk()->existsFile(pathToGenericString(fs::path(root_path) / part_dir / name));
 }
 
 bool DataPartStorageOnDiskFull::existsDirectory(const std::string & name) const
 {
-    return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir / name);
+    return volume->getDisk()->existsDirectory(pathToGenericString(fs::path(root_path) / part_dir / name));
 }
 
 class DataPartStorageIteratorOnDisk final : public IDataPartStorageIterator
@@ -87,17 +88,17 @@ DataPartStorageIteratorPtr DataPartStorageOnDiskFull::iterate() const
 {
     return std::make_unique<DataPartStorageIteratorOnDisk>(
         volume->getDisk(),
-        volume->getDisk()->iterateDirectory(fs::path(root_path) / part_dir));
+        volume->getDisk()->iterateDirectory(pathToGenericString(fs::path(root_path) / part_dir)));
 }
 
 Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & file_name) const
 {
-    return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir / file_name);
+    return volume->getDisk()->getLastModified(pathToGenericString(fs::path(root_path) / part_dir / file_name));
 }
 
 size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) const
 {
-    return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
+    return volume->getDisk()->getFileSize(pathToGenericString(fs::path(root_path) / part_dir / file_name));
 }
 
 std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
@@ -110,12 +111,12 @@ std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(c
 
 UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const
 {
-    return volume->getDisk()->getRefCount(fs::path(root_path) / part_dir / file_name);
+    return volume->getDisk()->getRefCount(pathToGenericString(fs::path(root_path) / part_dir / file_name));
 }
 
 std::vector<std::string> DataPartStorageOnDiskFull::getRemotePaths(const std::string & file_name) const
 {
-    const std::string path = fs::path(root_path) / part_dir / file_name;
+    const std::string path = pathToGenericString(fs::path(root_path) / part_dir / file_name);
     auto objects = volume->getDisk()->getStorageObjects(path);
 
     std::vector<std::string> remote_paths;
@@ -133,7 +134,7 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     if (!disk->supportZeroCopyReplication())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Disk {} doesn't support zero-copy replication", disk->getName());
 
-    return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
+    return disk->getUniqueId(pathToGenericString(fs::path(getRelativePath()) / "checksums.txt"));
 }
 
 void DataPartStorageOnDiskFull::prepareReadImpl(
@@ -142,7 +143,7 @@ void DataPartStorageOnDiskFull::prepareReadImpl(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
+    volume->getDisk()->prepareRead(pathToGenericString(fs::path(root_path) / part_dir / name), settings, read_hint, pipeline);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExistsImpl(
@@ -150,7 +151,7 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExi
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
+    return volume->getDisk()->readFileIfExists(pathToGenericString(fs::path(root_path) / part_dir / name), settings, read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
@@ -160,13 +161,13 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
     const WriteSettings & settings)
 {
     if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+        return transaction->writeFile(pathToGenericString(fs::path(root_path) / part_dir / name), buf_size, mode, settings);
+    return volume->getDisk()->writeFile(pathToGenericString(fs::path(root_path) / part_dir / name), buf_size, mode, settings);
 }
 
 void DataPartStorageOnDiskFull::createFile(const String & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.createFile(fs::path(root_path) / part_dir / name); });
+    executeWriteOperation([&](auto & disk) { disk.createFile(pathToGenericString(fs::path(root_path) / part_dir / name)); });
 }
 
 void DataPartStorageOnDiskFull::moveFile(const String & from_name, const String & to_name)
@@ -174,7 +175,7 @@ void DataPartStorageOnDiskFull::moveFile(const String & from_name, const String 
     executeWriteOperation([&](auto & disk)
     {
         auto relative_path = fs::path(root_path) / part_dir;
-        disk.moveFile(relative_path / from_name, relative_path / to_name);
+        disk.moveFile(pathToGenericString(relative_path / from_name), pathToGenericString(relative_path / to_name));
     });
 }
 
@@ -183,18 +184,18 @@ void DataPartStorageOnDiskFull::replaceFile(const String & from_name, const Stri
     executeWriteOperation([&](auto & disk)
     {
         auto relative_path = fs::path(root_path) / part_dir;
-        disk.replaceFile(relative_path / from_name, relative_path / to_name);
+        disk.replaceFile(pathToGenericString(relative_path / from_name), pathToGenericString(relative_path / to_name));
     });
 }
 
 void DataPartStorageOnDiskFull::removeFile(const String & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.removeFile(fs::path(root_path) / part_dir / name); });
+    executeWriteOperation([&](auto & disk) { disk.removeFile(pathToGenericString(fs::path(root_path) / part_dir / name)); });
 }
 
 void DataPartStorageOnDiskFull::removeFileIfExists(const String & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.removeFileIfExists(fs::path(root_path) / part_dir / name); });
+    executeWriteOperation([&](auto & disk) { disk.removeFileIfExists(pathToGenericString(fs::path(root_path) / part_dir / name)); });
 }
 
 void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
@@ -209,8 +210,8 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
     executeWriteOperation([&](auto & disk)
     {
         disk.createHardLink(
-            fs::path(source_on_disk->getRelativePath()) / from,
-            fs::path(root_path) / part_dir / to);
+            pathToGenericString(fs::path(source_on_disk->getRelativePath()) / from),
+            pathToGenericString(fs::path(root_path) / part_dir / to));
     });
 }
 
@@ -226,15 +227,15 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
     /// Copying files between different disks is
     /// not supported in disk transactions.
     source_on_disk->getDisk()->copyFile(
-        fs::path(source_on_disk->getRelativePath()) / from,
+        pathToGenericString(fs::path(source_on_disk->getRelativePath()) / from),
         *volume->getDisk(),
-        fs::path(root_path) / part_dir / to,
+        pathToGenericString(fs::path(root_path) / part_dir / to),
         getReadSettings());
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)
 {
-    executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });
+    executeWriteOperation([&](auto & disk) { disk.createDirectory(pathToGenericString(fs::path(root_path) / part_dir / name)); });
 }
 
 void DataPartStorageOnDiskFull::beginTransaction()

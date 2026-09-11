@@ -168,7 +168,7 @@ private:
     const size_t max_attempts_after_bad_version;
 
     /// Paths in ZooKeeper.
-    const std::filesystem::path zookeeper_path;
+    const String zookeeper_path;
     const String root_zookeeper_path;
     const String operation_zookeeper_path;
     const String operation_node_name;

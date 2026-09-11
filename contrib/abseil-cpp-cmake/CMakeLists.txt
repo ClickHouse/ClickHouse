@@ -3417,6 +3417,8 @@ absl_cc_library(
     "${DIR}/internal/cctz/src/time_zone_libc.cc"
     "${DIR}/internal/cctz/src/time_zone_libc.h"
     "${DIR}/internal/cctz/src/time_zone_lookup.cc"
+    # `time_zone_lookup.cc` asks the registry for the local zone on Windows, through this.
+    $<$<BOOL:${OS_WINDOWS}>:${DIR}/internal/cctz/src/time_zone_name_win.cc>
     "${DIR}/internal/cctz/src/time_zone_posix.cc"
     "${DIR}/internal/cctz/src/time_zone_posix.h"
     "${DIR}/internal/cctz/src/tzfile.h"

@@ -244,7 +244,7 @@ void MergeSortingTransform::consume(Chunk chunk)
             {
                 auto avg_row_bytes = sum_bytes_in_blocks / sum_rows_in_blocks;
                 /// max_merged_block_size >= 128
-                max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
+                max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128uz);
             }
             merge_sorter = std::make_unique<MergeSorter>(shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
             auto sink = std::make_shared<BufferingToFileSink>(shared_header_without_constants, std::move(tmp_stream), log);
