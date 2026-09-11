@@ -90,7 +90,7 @@ FROM
     FROM (
       SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] output_bytes
       FROM system.query_log
-      WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
+      WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment LIKE 'query_%') AND (type = 'QueryFinish')
       ORDER BY event_time_microseconds
     )
 )
