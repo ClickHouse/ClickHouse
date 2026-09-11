@@ -1374,7 +1374,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistributedPlanHostsUsed, "Number of distinct hosts that were assigned at least one task when executing a query with make_distributed_plan.", ValueType::Number) \
     M(StreamingExchangeSendBytes, "Bytes written to the sockets of the streaming exchanges of a distributed query plan. `NetworkSendBytes` does not count them.", ValueType::Bytes) \
     M(StreamingExchangeReceiveBytes, "Bytes read from the sockets of the streaming exchanges of a distributed query plan. `NetworkReceiveBytes` does not count them.", ValueType::Bytes) \
-    M(StreamingExchangePacketsSent, "Data packets written to streaming exchanges, one per chunk plus one end-of-stream packet per stream.", ValueType::Number) \
+    M(StreamingExchangePacketsSent, "Data packets written whole to the sockets of streaming exchanges, one per chunk plus one end-of-stream packet per stream. Packets dropped because the receiver needed no more data are not counted.", ValueType::Number) \
     M(StreamingExchangePacketsReceived, "Data packets read from streaming exchanges, one per chunk plus one end-of-stream packet per stream.", ValueType::Number) \
     M(StreamingExchangeSerializedBytes, "Bytes of the Native blocks in streaming exchange packets before compression. Against `StreamingExchangeSendBytes` this gives the compression ratio.", ValueType::Bytes) \
     M(StreamingExchangeSerializeMicroseconds, "Time spent serializing and compressing chunks into streaming exchange packets.", ValueType::Microseconds) \
