@@ -245,42 +245,63 @@ time_t MergeTreeDataPartTTLInfos::getMinimalMaxRecompressionTTL() const
     return max;
 }
 
-bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedColumnTTLs() const
+namespace
 {
-    for (const auto & [name, info] : columns_ttl)
+
+bool hasAnyNonFinishedTTLInMap(const TTLInfoMap & map)
+{
+    for (const auto & [name, info] : map)
         if (info.initialized() && !info.finished())
             return true;
 
     return false;
 }
 
-bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
+}
+
+bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowTTLs() const
 {
-    auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool
-    {
-        for (const auto & [name, info] : map)
-            if (info.initialized() && !info.finished())
-                return true;
-
-        return false;
-    };
-
     if (table_ttl.initialized() && !table_ttl.finished())
         return true;
 
-    if (has_non_finished_ttl(columns_ttl))
+    return hasAnyNonFinishedTTLInMap(rows_where_ttl) || hasAnyNonFinishedTTLInMap(group_by_ttl);
+}
+
+bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedColumnTTLs() const
+{
+    return hasAnyNonFinishedTTLInMap(columns_ttl);
+}
+
+time_t MergeTreeDataPartTTLInfos::getMinimalNonFinishedColumnTTL() const
+{
+    time_t min_ttl = 0;
+
+    for (const auto & [name, info] : columns_ttl)
+        if (info.initialized() && !info.finished())
+            if (info.min && (!min_ttl || info.min < min_ttl))
+                min_ttl = info.min;
+
+    return min_ttl;
+}
+
+bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
+{
+    if (table_ttl.initialized() && !table_ttl.finished())
         return true;
 
-    if (has_non_finished_ttl(rows_where_ttl))
+    if (hasAnyNonFinishedTTLInMap(columns_ttl))
         return true;
 
-    if (has_non_finished_ttl(moves_ttl))
+    if (hasAnyNonFinishedTTLInMap(rows_where_ttl))
         return true;
 
-    if (has_non_finished_ttl(recompression_ttl))
+    if (hasAnyNonFinishedTTLInMap(moves_ttl))
         return true;
 
-    if (has_non_finished_ttl(group_by_ttl))
+    if (hasAnyNonFinishedTTLInMap(recompression_ttl))
+        return true;
+
+    if (hasAnyNonFinishedTTLInMap(group_by_ttl))
         return true;
 
     return false;

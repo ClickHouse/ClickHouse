@@ -2,3 +2,6 @@ ttl_only_drop_parts = 0
 1	keep		not_expired
 ttl_only_drop_parts = 1
 1	keep		not_expired
+mixed row and column TTL
+1	keep	not_expired
+0

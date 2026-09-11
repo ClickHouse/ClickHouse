@@ -84,24 +84,28 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     }
 
     /// Delete rows - 2 priority
-    ///
-    /// `ttl_only_drop_parts` trades the merges that delete expired rows for dropping whole parts once
-    /// every row in them has expired. A column TTL has no such alternative - the only way to clear an
-    /// expired column is to rewrite the part - so the setting must not suppress those merges. When it
-    /// is on and the table has column TTLs, keep running this selector but restrict it to the parts
-    /// that have an unfinished column TTL.
-    const bool only_drop_parts = ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts];
-    const bool only_column_ttls = only_drop_parts && ctx.metadata_snapshot.hasAnyColumnTTL();
-
-    if (!ctx.merge_constraints.empty() && (!only_drop_parts || only_column_ttls))
+    if (!ctx.merge_constraints.empty() && !ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts])
     {
-        TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time, only_column_ttls);
+        TTLRowDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
         if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
-    /// Recompression - 3 priority
+    /// Delete columns - 3 priority
+    ///
+    /// `ttl_only_drop_parts` trades the merges that delete expired rows for dropping whole parts once
+    /// every row in them has expired. A column TTL has no such alternative - the only way to clear an
+    /// expired column is to rewrite the part - so this selector runs regardless of that setting.
+    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyColumnTTL())
+    {
+        TTLColumnDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+
+        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
+    }
+
+    /// Recompression - 4 priority
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);

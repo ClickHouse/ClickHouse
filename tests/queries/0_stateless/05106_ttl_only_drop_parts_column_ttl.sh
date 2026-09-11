@@ -8,6 +8,23 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # column TTL can only be honoured by rewriting the part. The setting must therefore not suppress the
 # merges that clear an expired column, and it must not clear a column whose TTL has not expired yet.
 
+# A table with a row TTL that has already expired and a column TTL that is not due yet: the merge
+# that clears columns must not start here, otherwise `ttl_only_drop_parts` silently loses its meaning
+# and the expired rows are deleted by a rewrite.
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS ttl_col_mixed;
+    CREATE TABLE ttl_col_mixed
+    (
+        d Date,
+        keep String,
+        not_expired String TTL d + INTERVAL 100 YEAR
+    )
+    ENGINE = MergeTree ORDER BY d
+    TTL d + INTERVAL 1 DAY
+    SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0, min_bytes_for_wide_part = 0;
+
+    INSERT INTO ttl_col_mixed VALUES ('2020-01-01', 'keep', 'not_expired');"
+
 for only_drop in 0 1
 do
     $CLICKHOUSE_CLIENT --query "
@@ -44,7 +61,18 @@ do
         SELECT count(), keep, expired, not_expired FROM ttl_col_${only_drop} GROUP BY keep, expired, not_expired;"
 done
 
-for only_drop in 0 1
-do
-    $CLICKHOUSE_CLIENT --query "DROP TABLE ttl_col_${only_drop};"
-done
+# By now the selector has assigned the TTL merges of the tables above, so it has also had its chance
+# on `ttl_col_mixed`. Nothing must have been merged there and the expired rows must still be present.
+echo "mixed row and column TTL"
+$CLICKHOUSE_CLIENT --query "
+    SELECT count(), keep, not_expired FROM ttl_col_mixed GROUP BY keep, not_expired;"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS part_log"
+$CLICKHOUSE_CLIENT --query "
+    SELECT count() FROM system.part_log
+    WHERE database = currentDatabase() AND table = 'ttl_col_mixed' AND event_type = 'MergeParts';"
+
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE ttl_col_0;
+    DROP TABLE ttl_col_1;
+    DROP TABLE ttl_col_mixed;"
