@@ -350,8 +350,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             if (metric_loaded != CurrentMetrics::end())
                 CurrentMetrics::add(metric_loaded, size);
 
-            /// This branch returns below without reaching commitAllocation, so it is the only place
-            /// that can report an allocation charged here.
+            /// This branch returns below without reaching commitAllocation, so an allocation charged here would otherwise go unreported.
             const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_acquire);
             if (unlikely(trace_threshold && static_cast<UInt64>(size) >= trace_threshold))
                 traceLargeAllocation(size);
