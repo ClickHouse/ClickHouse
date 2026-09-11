@@ -6,13 +6,13 @@ keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'FAQ']
 doc_type: 'reference'
 ---
 
-<div id="faq">
-  ## 常见问题
-</div>
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="what-data-leaves-my-environment">
-  ### 哪些数据会离开我的环境？
-</div>
+<PrivatePreviewBadge />
+
+## 常见问题 {#faq}
+
+### 哪些数据会离开我的环境？ {#what-data-leaves-my-environment}
 
 有两种途径会向外发送数据，二者均通过连接器自行建立的出站连接：持续传输运行元数据的抓取路径，以及由您启用并返回诊断信息的支持会话。
 
@@ -20,9 +20,7 @@ doc_type: 'reference'
 
 在活跃的[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)期间，故障排查工具还会返回命令输出；其范围仅限于允许列表中的 ClickHouse 表和只读 Kubernetes 视图 (包括 pod (容器组) 日志) ，并会在发送前经过脱敏处理 (使用针对 IP 地址、凭据、标记和密钥的内置模式，以及您自定义的模式) 。您的表数据、备份和查询历史 (`system.query_log`、`system.text_log`) 始终保留在您的环境中。文档中说明的例外情况包括：每次抓取都会传输允许列表中指标历史表 (`system.metric_log`、`system.asynchronous_metric_log`) 的行；除非您将其从允许列表中移除，否则可在会话中通过 `system.processes` 查看实时查询文本；以及在 Kubernetes 支持会话期间读取的 pod (容器组) 日志会在脱敏后离开环境。完整的出站连接列表请参阅[权限模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)页面。
 
-<div id="how-do-i-revoke-access">
-  ### 如何撤销 ClickHouse 的访问权限？
-</div>
+### 如何撤销 ClickHouse 的访问权限？ {#how-do-i-revoke-access}
 
 按措施强度递增的顺序：
 
@@ -32,21 +30,15 @@ doc_type: 'reference'
 4. **撤销凭据。** 删除 `pcm_scraper` 和 `pcm_troubleshooter` 这两个 ClickHouse 用户，并删除连接器的 Secrets (Kubernetes) 或 `/etc/clicklink` 下的文件 (VM) 。
 5. **完全移除连接器。** 请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。
 
-<div id="air-gapped-and-mirrors">
-  ### 我可以在隔离网络环境中运行，或使用自己的镜像吗？
-</div>
+### 我可以在隔离网络环境中运行，或使用自己的镜像吗？ {#air-gapped-and-mirrors}
 
 可以。所有安装时所需的制品都可以来自安全边界内部：从 `releases.clicklink.clickhouse.com` 和公网 registry 镜像 命令行客户端 tarball 和容器镜像，将 `image.repository` 指向你的镜像仓库，并通过 `--chart` 传入 `oci://` 引用、URL 或本地归档文件 (同时指定 `--chart-version`；默认使用命令行客户端自身的版本) 。如果你的 连接器 API 端点位于安全边界内部，并使用私有 CA 提供服务，`--api-private-ca` (Kubernetes) 或 `api.tls.ca_file` (VM) 会根据注册包中的证书链对其进行验证。对于无法直接连接时的注册，`init --handoff` 会使用通过带外方式获取的包；`--no-auto-sign` 配合 `init --signed-cert` 可通过带外方式完成证书签名。请参阅[私有镜像](/zh/products/bring-your-own-cloud/connector/configuration)和[onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)中的隔离网络部分。请注意，连接器 在运行时仍需要一条通往你的 org 的 连接器 API 端点的路由；否则，ClickHouse Cloud 将不会收到任何 遥测数据。
 
-<div id="connector-down">
-  ### 如果连接器宕机，会发生什么？
-</div>
+### 如果连接器宕机，会发生什么？ {#connector-down}
 
 您的 ClickHouse 服务不会受到影响：连接器仅从中读取数据，不位于任何数据路径上。影响在于可观测性丢失，因此 ClickHouse Cloud 将停止接收遥测数据，支持会话也会在其恢复前不可用。在 VM 上，只要 API 端点不可达，抓取器就会将抓取的数据暂存到 `/var/lib/clicklink/buffer` (默认最多保留 168 小时或 1024 MB) ，并在重新连接后发送，因此端点中断不会导致遥测数据丢失；崩溃的守护进程会由 systemd 重启，在 Kubernetes 上则由 kubelet 节点代理重启。要进行诊断，请检查每个组件的 `/livez` 端点 (以 JSON `status` 字段为准，而非 HTTP 状态码) ，并运行 `clicklink clctl preflight` (在 VM 主机上使用 `sudo`) 。该命令会一次性检查配置、连接性、ClickHouse 可达性、访问权限和磁盘。请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)；如果连接器持续处于不健康状态，请联系 ClickHouse 支持团队。
 
-<div id="support-session-auditing">
-  ### 如何审计支持会话？
-</div>
+### 如何审计支持会话？ {#support-session-auditing}
 
 每次网关调用和每条故障排查命令，无论获准还是被阻止，都会以以换行分隔的 JSON 格式追加写入 `/var/log/clicklink/troubleshoot-audit.log` 审计日志，并逐条记录归属信息：网关调用记录由令牌验证的操作员邮箱地址 (绝不采用自行申报的姓名) ；VM 本地会话变更记录发起调用的主机用户；会话期间执行的命令则记录已通过身份验证的通道中的 org 身份。会话本身设有时限 (默认 4 小时，最长 24 小时) ，每次启用都会记录启用者、到期时间及可选原因，`clicklink clctl troubleshoot session status` 会显示这些信息。
 

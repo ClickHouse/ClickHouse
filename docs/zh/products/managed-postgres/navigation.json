@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "开始使用",
       "pages": [
         "zh/products/managed-postgres/overview",
         "zh/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Features",
+      "group": "功能",
       "pages": [
         "zh/products/managed-postgres/connection",
         "zh/products/managed-postgres/settings",
@@ -43,20 +43,20 @@
       ]
     },
     {
-      "group": "Pricing",
+      "group": "定价",
       "pages": [
         "zh/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "ClickHouse Integration",
+      "group": "ClickHouse 集成",
       "pages": [
         "zh/products/managed-postgres/sync-to-clickhouse/clickpipes",
         "zh/products/managed-postgres/sync-to-clickhouse/walshadow"
       ]
     },
     {
-      "group": "Migrations",
+      "group": "迁移",
       "pages": [
         "zh/products/managed-postgres/migrations/overview",
         "zh/products/managed-postgres/migrations/clickpipes",
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "group": "Monitoring",
+      "group": "监控",
       "pages": [
         "zh/products/managed-postgres/monitoring/overview",
         "zh/products/managed-postgres/monitoring/dashboard",
@@ -80,7 +80,7 @@
       ]
     },
     {
-      "group": "FAQ",
+      "group": "常见问题",
       "pages": [
         "zh/products/managed-postgres/faq"
       ]

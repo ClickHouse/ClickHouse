@@ -6,17 +6,17 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration'
 doc_type: 'reference'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 이 페이지에서는 필요할 수 있는 모든 구성 키의 기본값과 의미를 설명합니다. 먼저 VM 설정 파일을, 이어서 Helm 차트 values를 다룹니다. 작업별 안내는 [구성 가이드](/ko/products/bring-your-own-cloud/connector/configuration)를 참조하십시오.
 
-<div id="vm-configuration-file">
-  ## VM 설정 파일
-</div>
+## VM 설정 파일 {#vm-configuration-file}
 
 Linux VM에서 커넥터는 `clicklink clctl init`이 작성한 `/etc/clicklink/config.yaml`을 읽습니다. `--force`를 지정하지 않으면 다시 실행해도 이 파일은 유지됩니다. 파일에서 생략된 키는 아래에 있는 컴파일된 기본값으로 폴백됩니다. 자격 증명은 이 파일에 저장되지 않습니다.
 
-<div id="vm-top-level">
-  ### 최상위 키
-</div>
+### 최상위 키 {#vm-top-level}
 
 | 키                | 기본값         | 의미                                                                                 |
 | ---------------- | ----------- | ---------------------------------------------------------------------------------- |
@@ -29,9 +29,7 @@ Linux VM에서 커넥터는 `clicklink clctl init`이 작성한 `/etc/clicklink/
 | `troubleshooter` |             | 문제 해결 도구 데몬 블록입니다. [troubleshooter](#vm-troubleshooter)를 참조하십시오.                   |
 | `observability`  |             | 공유 로깅 및 포트 블록입니다. [observability](#vm-observability)를 참조하십시오.                      |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#vm-api}
 
 | 키                         | 기본값                                      | 의미                                                                |
 | ------------------------- | ---------------------------------------- | ----------------------------------------------------------------- |
@@ -47,9 +45,7 @@ Linux VM에서 커넥터는 `clicklink clctl init`이 작성한 `/etc/clicklink/
 | `api.retry.max_delay`     | `30s`                                    | 백오프 최대 지연 시간.                                                     |
 | `api.retry.jitter_factor` | `0.25`                                   | 백오프 지연 시간에 적용되는 무작위 지터.                                           |
 
-<div id="vm-instances">
-  ### instances
-</div>
+### instances {#vm-instances}
 
 `instances.<name>` 아래의 각 항목은 ClickHouse 네이티브 프로토콜 대상 하나를 설명합니다.
 
@@ -64,9 +60,7 @@ Linux VM에서 커넥터는 `clicklink clctl init`이 작성한 `/etc/clicklink/
 | `namespace`      |           | 인스턴스의 Kubernetes 네임스페이스이며, troubleshooter의 Kubernetes 읽기 범위를 지정하는 데 사용됩니다. |
 | `cluster`        | `default` | 분산 쿼리에 사용할 ClickHouse 클러스터 이름입니다.                                          |
 
-<div id="vm-scraper">
-  ### scraper
-</div>
+### scraper {#vm-scraper}
 
 | 키                                    | 기본값                             | 의미                                                                                                                                                                           |
 | ------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,9 +79,7 @@ Linux VM에서 커넥터는 `clicklink clctl init`이 작성한 `/etc/clicklink/
 | `scraper.observability.metrics_port` | `9092`                          | scraper 메트릭 포트입니다.                                                                                                                                                           |
 | `scraper.access_directory`           | `/etc/clicklink/access/scraper` | scraper의 인스턴스별 액세스 번들 루트 디렉터리입니다.                                                                                                                                            |
 
-<div id="vm-troubleshooter">
-  ### troubleshooter
-</div>
+### troubleshooter {#vm-troubleshooter}
 
 | 키                                                  | 기본값                                                  | 의미                                                                                     |
 | -------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -122,9 +114,7 @@ Linux VM에서 커넥터는 `clicklink clctl init`이 작성한 `/etc/clicklink/
 | `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`          | Gateway 제공용 키입니다.                                                                      |
 | `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init`가 호스트를 미리 채움)                            | 인증서가 없을 때 데몬이 자체 생성하는 자체 서명 인증서의 SAN입니다. IP 주소로 파싱되는 항목은 IP SAN이 됩니다.                  |
 
-<div id="vm-observability">
-  ### 관측성
-</div>
+### 관측성 {#vm-observability}
 
 | 키                            | 기본값    | 의미                        |
 | ---------------------------- | ------ | ------------------------- |
@@ -135,9 +125,7 @@ Linux VM에서 커넥터는 `clicklink clctl init`이 작성한 `/etc/clicklink/
 
 구성 요소별 `observability` 블록은 이 기본 설정을 덮어씁니다. scraper는 `8082`/`9092`를 사용하고, troubleshooter는 `8084`/`9094`를 사용하며, gateway는 활성화된 경우 `8443`에서 수신합니다.
 
-<div id="default-table-allowlist">
-  ### 기본 테이블 허용 목록
-</div>
+### 기본 테이블 허용 목록 {#default-table-allowlist}
 
 troubleshooter의 기본 `allowed_tables` Set은 차트의 기본 `troubleshooter.allowedTables`와 같습니다:
 
@@ -155,15 +143,11 @@ system.functions        system.formats        system.table_engines
 system.users            system.roles          system.grants
 ```
 
-<div id="helm-chart-values">
-  ## Helm 차트 값
-</div>
+## Helm 차트 값 {#helm-chart-values}
 
 Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 구성됩니다. `clicklink clctl init`는 아래의 모든 항목이 채워진 `clicklink-values.yaml` 오버레이를 준비하며, `--force`를 지정하지 않는 한 다시 실행해도 이를 유지합니다. 표에는 차트의 기본값이 나열됩니다. 표준 워크로드 설정(`resources`, `nodeSelector`, `tolerations`, `affinity`, `serviceAccount.annotations`, `env`, `imagePullSecrets`)은 각 컴포넌트에 빈 기본값으로 제공되므로 표마다 반복해서 표시하지 않습니다.
 
-<div id="helm-cluster">
-  ### cluster
-</div>
+### cluster {#helm-cluster}
 
 | 키                      | 기본값                | 의미                                                            |
 | ---------------------- | ------------------ | ------------------------------------------------------------- |
@@ -171,9 +155,7 @@ Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 �
 | `cluster.region`       | `""` (`init`에서 채움) | 리전 레이블입니다. 필수입니다.                                         |
 | `cluster.cloud`        | `""` (`init`에서 채움) | 클라우드 제공업체 레이블입니다. 필수입니다.                                      |
 
-<div id="helm-image">
-  ### image
-</div>
+### image {#helm-image}
 
 | 키                  | 기본값                                                  | 의미                                                                                                                                                 |
 | ------------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -181,9 +163,7 @@ Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 �
 | `image.tag`        | `""` (차트의 `appVersion`을 따르며, `init`은 CLI 버전을 고정함) | 이미지 태그입니다.                                                                                                                                         |
 | `image.pullPolicy` | `IfNotPresent`                                       | Kubernetes 이미지 가져오기 정책입니다.                                                                                                                         |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#helm-api}
 
 | 키                 | 기본값               | 의미                                                                                                                                                 |
 | ----------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -191,9 +171,7 @@ Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 �
 | `api.tls.enabled` | `true`            | API 연결 시 mTLS 클라이언트 인증서를 제시합니다.                                                                                                                    |
 | `api.tls.caFile`  | `""` (시스템 루트)     | 서버 검증을 위해 시스템 루트에 추가할 CA입니다. 엔드포인트가 private CA 인증서를 제공하는 경우 `/etc/clicklink/secrets/mtls/ca.crt`로 설정하거나 `--api-private-ca` 옵션으로 `init`을 다시 실행하십시오. |
 
-<div id="helm-secrets">
-  ### 시크릿
-</div>
+### 시크릿 {#helm-secrets}
 
 차트는 사전에 생성된 시크릿을 사용하며, `init`는 설치 전에 이를 생성합니다.
 
@@ -203,9 +181,7 @@ Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 �
 | `secrets.hmacSecretName` | `clicklink-hmac` | 요청 서명용 `access-key` 및 `secret-key`를 담는 Opaque 시크릿입니다.                                                                                                      |
 | `secrets.mtlsWriteback`  | `true`           | 데몬이 자동 갱신된 mTLS 리프를 mTLS 시크릿에 다시 기록하도록 합니다. 정확한 이름으로 지정된 이 시크릿 하나에 대해서만 구성 요소 ServiceAccount에 `update` 권한을 부여합니다. 이를 설정하지 않으면 갱신된 인증서를 영구적으로 저장할 위치가 없습니다. |
 
-<div id="vm-scraper">
-  ### scraper
-</div>
+### scraper {#helm-scraper}
 
 | 키                                                                        | 기본값                          | 의미                                                                                                                                                                                                     |
 | ------------------------------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -221,9 +197,7 @@ Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 �
 | `scraper.rbac.extraSecretNames`                                          | `[]`                         | scraper ServiceAccount가 `get`할 수 있는 추가 시크릿 이름입니다. 정확한 이름만 지정할 수 있습니다.                                                                                                                                  |
 | `scraper.accessBundles`                                                  | `{}`                         | 인스턴스 이름을 키로 하는 인스턴스별 액세스 번들입니다. 각 번들은 `secretName`과 `serviceAccountName`을 포함합니다. `/etc/clicklink/access/scraper/<instance>/`에 마운트되며, `clicklink clctl scraper access provision --target helm`으로 생성됩니다. |
 
-<div id="vm-troubleshooter">
-  ### troubleshooter
-</div>
+### troubleshooter {#helm-troubleshooter}
 
 | 키                                               | 기본값                                         | 의미                                                                                                                                                       |
 | ----------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -246,9 +220,7 @@ Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 �
 | `troubleshooter.rbac.extraSecretNames`          | `[]`                                        | troubleshooter ServiceAccount가 `get`할 수 있는 추가 시크릿 이름입니다. 정확한 이름만 지정할 수 있습니다.                                                                             |
 | `troubleshooter.accessBundles`                  | `{}`                                        | `scraper.accessBundles`와 동일한 구조의 인스턴스별 액세스 번들이며, `/etc/clicklink/access/troubleshooter/<instance>/`에 마운트됩니다.                                             |
 
-<div id="helm-persistence">
-  ### 영속성
-</div>
+### 영속성 {#helm-persistence}
 
 | 키                          | 기본값               | 의미                                                                                     |
 | -------------------------- | ----------------- | -------------------------------------------------------------------------------------- |
@@ -257,9 +229,7 @@ Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 �
 | `persistence.size`         | `5Gi`             | 클레임 크기입니다.                                                                             |
 | `persistence.accessModes`  | `[ReadWriteOnce]` | 클레임 액세스 모드입니다.                                                                         |
 
-<div id="helm-clctl-gateway">
-  ### clctl.gateway
-</div>
+### clctl.gateway {#helm-clctl-gateway}
 
 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 위한 세션 gateway입니다.
 
@@ -279,9 +249,7 @@ Kubernetes에서 커넥터는 `clicklink-connector` 차트의 values를 통해 �
 | `clctl.gateway.ingress.enabled`                                  | `false`                | gateway용 인그레스를 렌더링합니다. 비활성화하면 연산자는 `kubectl port-forward`로 gateway에 연결합니다. ingress controller나 cert-manager는 필요하지 않습니다.         |
 | `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | 표준 Ingress 필드입니다. `tls`는 `kubernetes.io/tls` 시크릿을 참조합니다.                                                                             |
 
-<div id="helm-networkpolicy">
-  ### networkPolicy
-</div>
+### networkPolicy {#helm-networkpolicy}
 
 | 키                                     | 기본값     | 의미                                                                                                                                |
 | ------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |

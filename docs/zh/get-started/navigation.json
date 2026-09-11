@@ -1,21 +1,21 @@
 {
   "icon": "/images/icons/icon-get-started.svg",
-  "item": "Get started",
+  "item": "开始使用",
   "pages": [
     {
-      "group": "Get started",
+      "group": "开始使用",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "zh/get-started/index",
         {
           "expandable": true,
           "expanded": false,
-          "group": "Quickstarts",
+          "group": "快速入门",
           "pages": [
             "zh/get-started/quickstarts/home",
             {
               "expanded": false,
-              "group": "All use cases",
+              "group": "所有用例",
               "pages": [
                 "zh/get-started/setup/cloud",
                 "zh/get-started/quickstarts/obtain-your-cloud-connection-details",
@@ -27,7 +27,7 @@
             },
             {
               "expanded": false,
-              "group": "Real-time analytics",
+              "group": "实时分析",
               "pages": [
                 "zh/get-started/quickstarts/create-your-first-materialized-view",
                 "zh/get-started/quickstarts/create-your-first-projection",
@@ -36,7 +36,7 @@
             },
             {
               "expanded": false,
-              "group": "Data warehousing",
+              "group": "数据仓库",
               "pages": [
                 "zh/get-started/quickstarts/connect-your-iceberg-catalog",
                 "zh/get-started/quickstarts/mutations"
@@ -44,7 +44,7 @@
             },
             {
               "expanded": false,
-              "group": "Observability",
+              "group": "可观测性",
               "pages": [
                 "zh/get-started/quickstarts/working-with-the-map-type"
               ]
@@ -54,7 +54,7 @@
         {
           "expandable": true,
           "expanded": true,
-          "group": "Introduction",
+          "group": "简介",
           "pages": [
             "zh/get-started/about/intro",
             "zh/get-started/about/why-clickhouse-is-so-fast",
@@ -63,7 +63,7 @@
         },
         {
           "expanded": true,
-          "group": "Use cases",
+          "group": "用例",
           "pages": [
             "zh/get-started/use-cases/overview",
             "zh/get-started/use-cases/choosing-a-service",
@@ -78,18 +78,18 @@
     },
     {
       "expanded": true,
-      "group": "Setup",
+      "group": "设置",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
         "zh/get-started/setup/install",
         "zh/get-started/setup/cloud",
         {
           "expanded": true,
-          "group": "Self-managed",
+          "group": "自托管",
           "pages": [
             "zh/get-started/setup/self-managed/overview",
             {
-              "group": "Local development",
+              "group": "本地开发",
               "pages": [
                 "zh/get-started/setup/self-managed/quick-install",
                 "zh/get-started/setup/self-managed/clickhousectl",
@@ -98,7 +98,7 @@
               ]
             },
             {
-              "group": "Production server",
+              "group": "生产环境服务器",
               "pages": [
                 "zh/get-started/setup/self-managed/debian-ubuntu",
                 "zh/get-started/setup/self-managed/redhat",
@@ -112,13 +112,13 @@
     },
     {
       "expanded": true,
-      "group": "Sample datasets",
+      "group": "示例数据集",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
         "zh/get-started/sample-datasets/index",
         "zh/get-started/sample-datasets/playground",
         {
-          "group": "Benchmarks",
+          "group": "基准测试",
           "pages": [
             "zh/get-started/sample-datasets/amplab-benchmark",
             "zh/get-started/sample-datasets/brown-benchmark",
@@ -130,7 +130,7 @@
           ]
         },
         {
-          "group": "Vector search & embeddings",
+          "group": "向量搜索和嵌入",
           "pages": [
             "zh/get-started/sample-datasets/dbpedia",
             "zh/get-started/sample-datasets/hacker-news-vector-search",
@@ -139,7 +139,7 @@
           ]
         },
         {
-          "group": "Web & social analytics",
+          "group": "Web 和社交分析",
           "pages": [
             "zh/get-started/sample-datasets/amazon-reviews",
             "zh/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -151,7 +151,7 @@
           ]
         },
         {
-          "group": "Geo & location",
+          "group": "地理空间和位置",
           "pages": [
             "zh/get-started/sample-datasets/cell-towers",
             "zh/get-started/sample-datasets/foursquare-os-places",
@@ -159,7 +159,7 @@
           ]
         },
         {
-          "group": "Time series & sensors",
+          "group": "时间序列和传感器",
           "pages": [
             "zh/get-started/sample-datasets/environmental-sensors",
             "zh/get-started/sample-datasets/noaa",
@@ -168,7 +168,7 @@
           ]
         },
         {
-          "group": "Public records & open data",
+          "group": "公共记录和开放数据",
           "pages": [
             "zh/get-started/sample-datasets/covid19",
             "zh/get-started/sample-datasets/menus",
@@ -181,7 +181,7 @@
     },
     {
       "expanded": true,
-      "group": "Migrate",
+      "group": "迁移",
       "icon": "/images/caret-double-right.svg",
       "pages": [
         "zh/get-started/migrate/overview",
@@ -190,7 +190,7 @@
           "pages": [
             "zh/get-started/migrate/postgres/overview",
             {
-              "group": "Migration guide",
+              "group": "迁移指南",
               "pages": [
                 "zh/get-started/migrate/postgres/migration-guide/migration-guide-part1",
                 "zh/get-started/migrate/postgres/migration-guide/migration-guide-part2",
@@ -231,14 +231,14 @@
           ]
         },
         {
-          "group": "OSS to Cloud",
+          "group": "从 OSS 迁移到 Cloud",
           "pages": [
             "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
             "zh/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
-          "group": "Other methods",
+          "group": "其他方法",
           "pages": [
             "zh/get-started/migrate/other-methods/clickhouse-local-etl",
             "zh/get-started/migrate/other-methods/etl-tool-to-clickhouse",

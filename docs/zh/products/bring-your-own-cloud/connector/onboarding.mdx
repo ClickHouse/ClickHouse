@@ -6,13 +6,14 @@ keywords: ['BYOC', 'cloud', '自备 Cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/zh/components/Image.jsx";
+
+<PrivatePreviewBadge />
 
 本页将指导您使用注册标记完成连接器的部署与验证。连接器可安装到以下两种目标之一：Kubernetes 集群 (Helm) 或 Linux VM (systemd) 。标记注册是标准流程；如果您的环境无法直接访问 ClickHouse 端点，请参阅[隔离网络和镜像安装](#air-gapped-and-mirrored-installs)。
 
-<div id="prerequisites">
-  ## 前置条件
-</div>
+## 前置条件 {#prerequisites}
 
 所有安装方式均需满足：
 
@@ -40,9 +41,7 @@ Linux VM (systemd) 安装还需满足：
   `--skip-provision` 是绕过 Kubernetes 要求的唯一方式，但仅用于暂存：它会跳过 ClickHouse 用户预配；在 VM 上，还会跳过单元启用和验证，因此单独使用不会生成正在运行的连接器。
 </Note>
 
-<div id="install-and-enroll">
-  ## 安装并注册
-</div>
+## 安装并注册 {#install-and-enroll}
 
 <Steps>
   <Step title="获取 connector 端点和注册令牌" id="get-endpoint-and-token">
@@ -153,9 +152,7 @@ Linux VM (systemd) 安装还需满足：
   </Step>
 </Steps>
 
-<div id="air-gapped-and-mirrored-installs">
-  ## 隔离网络和镜像安装
-</div>
+## 隔离网络和镜像安装 {#air-gapped-and-mirrored-installs}
 
 根据您的环境可访问的资源，有两个独立部分可通过带外方式完成。
 
@@ -167,9 +164,7 @@ Linux VM (systemd) 安装还需满足：
 
 安装程序也可通过镜像运行：在您自己的镜像站点上托管发行制品和 `install.sh`，并通过 `CLICKLINK_MIRROR_URL` 指向该镜像站点。
 
-<div id="manual-download-and-verification">
-  ### 手动下载和验证
-</div>
+### 手动下载和验证 {#manual-download-and-verification}
 
 如果不想通过管道运行安装程序，可以自行下载并验证发布版本。该代码块会检测你的平台和架构；可直接在 macOS 或 Linux、amd64 或 arm64 上原样运行：
 
@@ -207,9 +202,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 在 VM 上，解压 tarball，然后在解压后的目录中运行 `sudo ./install.sh`；该脚本会在发行制品所在目录旁执行与 `--host` 相同的主机安装。
 
-<div id="if-something-fails">
-  ## 如果出现故障
-</div>
+## 如果出现故障 {#if-something-fails}
 
 请重新运行相同的命令。`init` 具有幂等性：重复运行会收敛到相同状态，保留现有配置和暂存文件，并跳过已完成的工作。如果某个步骤中途失败，命令行客户端会输出针对当前情况的准确恢复命令，且这些命令可安全地重复执行。
 

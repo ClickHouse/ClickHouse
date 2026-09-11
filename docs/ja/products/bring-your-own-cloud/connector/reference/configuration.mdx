@@ -6,17 +6,17 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'コネクタ', '設定', '�
 doc_type: 'reference'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 このページでは、必要に応じて変更できるすべての設定キーについて、デフォルト値と意味を一覧で説明します。まず VM の設定ファイル、次に Helm チャートの値を説明します。タスク別の手順については、[設定ガイド](/ja/products/bring-your-own-cloud/connector/configuration)を参照してください。
 
-<div id="vm-configuration-file">
-  ## VM 設定ファイル
-</div>
+## VM 設定ファイル {#vm-configuration-file}
 
 Linux VM では、コネクタは `clicklink clctl init` によって書き込まれた `/etc/clicklink/config.yaml` を読み取ります。`--force` を指定しない限り、このファイルは再実行後も保持されます。ファイルで省略されたオプションには、以下のコンパイル時のデフォルト値が適用されます。認証情報がこのファイルに保存されることはありません。
 
-<div id="vm-top-level">
-  ### トップレベルキー
-</div>
+### トップレベルキー {#vm-top-level}
 
 | キー               | デフォルト        | 意味                                                                                    |
 | ---------------- | ------------ | ------------------------------------------------------------------------------------- |
@@ -29,9 +29,7 @@ Linux VM では、コネクタは `clicklink clctl init` によって書き込�
 | `troubleshooter` |              | トラブルシューターデーモンブロック。[troubleshooter](#vm-troubleshooter) を参照してください。                     |
 | `observability`  |              | 共有のロギングおよびポートブロック。[observability](#vm-observability) を参照してください。                       |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#vm-api}
 
 | キー                        | デフォルト                                       | 意味                                                                 |
 | ------------------------- | ------------------------------------------- | ------------------------------------------------------------------ |
@@ -47,9 +45,7 @@ Linux VM では、コネクタは `clicklink clctl init` によって書き込�
 | `api.retry.max_delay`     | `30s`                                       | バックオフの上限。                                                          |
 | `api.retry.jitter_factor` | `0.25`                                      | バックオフ遅延に適用するランダムジッター。                                              |
 
-<div id="vm-instances">
-  ### instances
-</div>
+### instances {#vm-instances}
 
 `instances.<name>` 配下の各エントリは、1 つの ClickHouse ネイティブプロトコルの接続先を指定します。
 
@@ -64,9 +60,7 @@ Linux VM では、コネクタは `clicklink clctl init` によって書き込�
 | `namespace`      |           | インスタンスの Kubernetes ネームスペース。トラブルシューターによる Kubernetes リソースの読み取り範囲を限定するために使用します。 |
 | `cluster`        | `default` | 分散クエリに使用する ClickHouse クラスター名。                                                |
 
-<div id="vm-scraper">
-  ### scraper
-</div>
+### scraper {#vm-scraper}
 
 | キー                                   | デフォルト                                 | 意味                                                                                                                                                                          |
 | ------------------------------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -85,9 +79,7 @@ Linux VM では、コネクタは `clicklink clctl init` によって書き込�
 | `scraper.observability.metrics_port` | `9092`                                | scraper のメトリクスポート。                                                                                                                                                          |
 | `scraper.access_directory`           | `/etc/clicklink/access/scraper`       | scraper のインスタンスごとのアクセスバンドルのルートディレクトリ。                                                                                                                                       |
 
-<div id="vm-troubleshooter">
-  ### troubleshooter
-</div>
+### troubleshooter {#vm-troubleshooter}
 
 | キー                                                 | デフォルト                                                  | 意味                                                                              |
 | -------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
@@ -122,9 +114,7 @@ Linux VM では、コネクタは `clicklink clctl init` によって書き込�
 | `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`            | ゲートウェイが使用する秘密鍵。                                                                 |
 | `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` がホストを事前設定)                                | 証明書が存在しない場合にデーモン自身が生成する自己署名証明書の SAN。IP アドレスとして解析されるエントリは IP SAN になります。          |
 
-<div id="vm-observability">
-  ### オブザーバビリティ
-</div>
+### オブザーバビリティ {#vm-observability}
 
 | キー                           | デフォルト  | 意味                        |
 | ---------------------------- | ------ | ------------------------- |
@@ -135,9 +125,7 @@ Linux VM では、コネクタは `clicklink clctl init` によって書き込�
 
 コンポーネントごとの `observability` ブロックは、このベース設定をオーバーライドします。scraper は `8082`/`9092`、troubleshooter は `8084`/`9094` を使用し、ゲートウェイは有効な場合に `8443` でリッスンします。
 
-<div id="default-table-allowlist">
-  ### デフォルトのテーブル許可リスト
-</div>
+### デフォルトのテーブル許可リスト {#default-table-allowlist}
 
 troubleshooter のデフォルトの `allowed_tables` セットです。chart のデフォルト設定 `troubleshooter.allowedTables` と同じです。
 
@@ -155,15 +143,11 @@ system.functions        system.formats        system.table_engines
 system.users            system.roles          system.grants
 ```
 
-<div id="helm-chart-values">
-  ## Helm チャートの値
-</div>
+## Helm チャートの値 {#helm-chart-values}
 
 Kubernetes では、コネクタは `clicklink-connector` チャートの値を使用して設定します。`clicklink clctl init` は、以下の項目がすべて設定された `clicklink-values.yaml` オーバーレイを用意し、`--force` を指定しない限り、再実行しても保持します。表にはチャートのデフォルト値を示します。標準的なワークロード設定 (`resources`、`nodeSelector`、`tolerations`、`affinity`、`serviceAccount.annotations`、`env`、`imagePullSecrets`) は各コンポーネントに空のデフォルト値で用意されているため、各表では繰り返し記載していません。
 
-<div id="helm-cluster">
-  ### クラスター
-</div>
+### クラスター {#helm-cluster}
 
 | キー                     | デフォルト                | 意味                                                        |
 | ---------------------- | -------------------- | --------------------------------------------------------- |
@@ -171,9 +155,7 @@ Kubernetes では、コネクタは `clicklink-connector` チャートの値を�
 | `cluster.region`       | `""` (`init` により設定)  | Region ラベル。必須です。                                          |
 | `cluster.cloud`        | `""` (`init` により設定)  | クラウドプロバイダーのラベル。必須です。                                      |
 
-<div id="helm-image">
-  ### イメージ
-</div>
+### イメージ {#helm-image}
 
 | キー                 | デフォルト                                                | 意味                                                                                                                                     |
 | ------------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -181,9 +163,7 @@ Kubernetes では、コネクタは `clicklink-connector` チャートの値を�
 | `image.tag`        | `""` (チャートの `appVersion` を追跡。`init` は CLI バージョンを固定)  | イメージタグ。                                                                                                                                |
 | `image.pullPolicy` | `IfNotPresent`                                       | Kubernetes のイメージプルポリシー。                                                                                                                |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#helm-api}
 
 | キー                | デフォルト                 | 意味                                                                                                                                            |
 | ----------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -191,9 +171,7 @@ Kubernetes では、コネクタは `clicklink-connector` チャートの値を�
 | `api.tls.enabled` | `true`                | API 接続時に mTLS クライアント証明書を提示します。                                                                                                                |
 | `api.tls.caFile`  | `""` (システムルート)        | サーバー検証用にシステムルートへ追加する CA。エンドポイントがプライベート CA 証明書を使用する場合は、`/etc/clicklink/secrets/mtls/ca.crt` に設定するか、`--api-private-ca` を指定して `init` を再実行してください。 |
 
-<div id="helm-secrets">
-  ### secrets
-</div>
+### secrets {#helm-secrets}
 
 chart は、事前に作成された Secrets を使用します。`init` はインストール前にこれらを作成します。
 
@@ -203,9 +181,7 @@ chart は、事前に作成された Secrets を使用します。`init` はイ�
 | `secrets.hmacSecretName` | `clicklink-hmac` | リクエスト署名に使用する `access-key` と `secret-key` を格納する Opaque Secret。                                                                                                         |
 | `secrets.mtlsWriteback`  | `true`           | デーモンが自動更新された mTLS リーフ証明書を mTLS Secret に書き戻すことを許可します。コンポーネントの ServiceAccounts に、名前が完全に一致するこの 1 つの Secret に対する `update` 権限を付与します。これを有効にしない場合、更新された証明書を永続的に保存する場所がありません。 |
 
-<div id="vm-scraper">
-  ### scraper
-</div>
+### scraper {#helm-scraper}
 
 | キー                                                                       | デフォルト                            | 意味                                                                                                                                                                                                         |
 | ------------------------------------------------------------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -221,9 +197,7 @@ chart は、事前に作成された Secrets を使用します。`init` はイ�
 | `scraper.rbac.extraSecretNames`                                          | `[]`                             | scraper の ServiceAccount が `get` できる追加の Secret 名。完全一致する名前のみ指定できます。                                                                                                                                         |
 | `scraper.accessBundles`                                                  | `{}`                             | インスタンス名をキーとするインスタンスごとのアクセスバンドル。各バンドルには `secretName` と `serviceAccountName` が含まれます。`/etc/clicklink/access/scraper/<instance>/` にマウントされ、`clicklink clctl scraper access provision --target helm` によって作成されます。 |
 
-<div id="vm-troubleshooter">
-  ### troubleshooter
-</div>
+### troubleshooter {#helm-troubleshooter}
 
 | キー                                              | デフォルト                                       | 意味                                                                                                                                                              |
 | ----------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -246,9 +220,7 @@ chart は、事前に作成された Secrets を使用します。`init` はイ�
 | `troubleshooter.rbac.extraSecretNames`          | `[]`                                        | troubleshooter の ServiceAccount が `get` できる追加の Secret 名。完全一致する名前のみ指定できます。                                                                                       |
 | `troubleshooter.accessBundles`                  | `{}`                                        | インスタンスごとのアクセスバンドル。`scraper.accessBundles` と同じ構造で、`/etc/clicklink/access/troubleshooter/<instance>/` にマウントされます。                                                  |
 
-<div id="helm-persistence">
-  ### 永続化
-</div>
+### 永続化 {#helm-persistence}
 
 | キー                         | デフォルト               | 意味                                                                                       |
 | -------------------------- | ------------------- | ---------------------------------------------------------------------------------------- |
@@ -257,9 +229,7 @@ chart は、事前に作成された Secrets を使用します。`init` はイ�
 | `persistence.size`         | `5Gi`               | claim のサイズ。                                                                              |
 | `persistence.accessModes`  | `[ReadWriteOnce]`   | claim のアクセスモード。                                                                          |
 
-<div id="helm-clctl-gateway">
-  ### clctl.gateway
-</div>
+### clctl.gateway {#helm-clctl-gateway}
 
 [サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)用のセッションゲートウェイ。
 
@@ -279,9 +249,7 @@ chart は、事前に作成された Secrets を使用します。`init` はイ�
 | `clctl.gateway.ingress.enabled`                                  | `false`                | ゲートウェイ用の Ingress をレンダリングします。無効の場合、operator は `kubectl port-forward` を使用してゲートウェイに接続します。ingress controller や cert-manager は不要です。 |
 | `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | 標準の Ingress フィールド。`tls` は `kubernetes.io/tls` Secrets を参照します。                                                                  |
 
-<div id="helm-networkpolicy">
-  ### networkPolicy
-</div>
+### networkPolicy {#helm-networkpolicy}
 
 | キー                                    | デフォルト   | 意味                                                                                                                                    |
 | ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |

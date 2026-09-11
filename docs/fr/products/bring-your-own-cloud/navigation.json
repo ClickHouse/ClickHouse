@@ -2,7 +2,7 @@
   "group": "Bring Your Own Cloud",
   "pages": [
     {
-      "group": "Overview",
+      "group": "Présentation",
       "pages": [
         "fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "fr/products/bring-your-own-cloud/overview/architecture"
@@ -17,18 +17,18 @@
       ]
     },
     {
-      "group": "Onboarding",
+      "group": "Prise en main",
       "pages": [
         "fr/products/bring-your-own-cloud/onboarding/standard",
         {
-          "group": "Customization",
+          "group": "Personnalisation",
           "pages": [
             "fr/products/bring-your-own-cloud/onboarding/customization-aws",
             "fr/products/bring-your-own-cloud/onboarding/customization-gcp"
           ]
         },
         {
-          "group": "Network",
+          "group": "Réseau",
           "pages": [
             "fr/products/bring-your-own-cloud/onboarding/network",
             "fr/products/bring-your-own-cloud/onboarding/network-aws",
@@ -40,27 +40,7 @@
       ]
     },
     {
-      "group": "Connector",
-      "pages": [
-        "fr/products/bring-your-own-cloud/connector/overview",
-        "fr/products/bring-your-own-cloud/connector/onboarding",
-        "fr/products/bring-your-own-cloud/connector/architecture",
-        "fr/products/bring-your-own-cloud/connector/support-sessions",
-        "fr/products/bring-your-own-cloud/connector/configuration",
-        "fr/products/bring-your-own-cloud/connector/operations",
-        {
-          "group": "Reference",
-          "pages": [
-            "fr/products/bring-your-own-cloud/connector/reference/cli",
-            "fr/products/bring-your-own-cloud/connector/reference/configuration",
-            "fr/products/bring-your-own-cloud/connector/reference/faq",
-            "fr/products/bring-your-own-cloud/connector/reference/privilege-model"
-          ]
-        }
-      ]
-    },
-    {
-      "group": "Reference",
+      "group": "Référence",
       "pages": [
         "fr/products/bring-your-own-cloud/reference/network-security",
         "fr/products/bring-your-own-cloud/reference/privilege",
@@ -70,7 +50,23 @@
         "fr/products/bring-your-own-cloud/reference/cost-model-aws",
         "fr/products/bring-your-own-cloud/reference/aws-service-limits",
         "fr/products/bring-your-own-cloud/reference/security-shared-responsibility",
-        "fr/products/bring-your-own-cloud/reference/faq"
+        "fr/products/bring-your-own-cloud/reference/faq",
+        {
+          "group": "Mode connecteur",
+          "pages": [
+            "fr/products/bring-your-own-cloud/connector/overview",
+            "fr/products/bring-your-own-cloud/connector/onboarding",
+            "fr/products/bring-your-own-cloud/connector/architecture",
+            "fr/products/bring-your-own-cloud/connector/support-sessions",
+            "fr/products/bring-your-own-cloud/connector/configuration",
+            "fr/products/bring-your-own-cloud/connector/operations",
+            "fr/products/bring-your-own-cloud/connector/reference/cli",
+            "fr/products/bring-your-own-cloud/connector/reference/configuration",
+            "fr/products/bring-your-own-cloud/connector/reference/faq",
+            "fr/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ],
+          "tag": "Preview"
+        }
       ]
     }
   ]

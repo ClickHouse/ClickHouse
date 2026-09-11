@@ -6,15 +6,15 @@ keywords: ['BYOC', 'cloud', 'إحضار سحابتك الخاصة', 'الموص�
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 تغطي هذه الصفحة عمليات ما بعد النشر لـ ClickHouse Connector على كلا هدفي التثبيت. للتثبيت والإعداد الأولي، راجع [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding).
 
-<div id="upgrades">
-  ## الترقيات
-</div>
+## الترقيات {#upgrades}
 
-<div id="upgrades-kubernetes">
-  ### Kubernetes
-</div>
+### Kubernetes {#upgrades-kubernetes}
 
 <Note>
   تستخدم عمليات Kubernetes بعد النشر واجهة سطر الأوامر `helm` على محطة عملك. لا يتضمن عميل Helm مدمجًا سوى `init`، لذا ثبّت `helm` قبل أول ترقية.
@@ -35,9 +35,7 @@ helm upgrade --install clicklink-connector clicklink-connector \
 
 لا يتوفر لعملية التثبيت من مرجع Chart مباشر (`oci://` أو URL أو أرشيف أو دليل محلي) repository يمكن الرجوع إليه لحل المرجع؛ لذا أعد تشغيل `helm upgrade clicklink-connector <same-chart-reference>` بالإصدار الجديد بدلاً من ذلك. كما أن إعادة تشغيل `init` باستخدام واجهة سطر الأوامر أحدث توصل إلى الحالة المطلوبة، لكن `init` يحتاج دائماً إلى إحدى نقاط الدخول الخاصة به: `--handoff` إذا احتفظت بـ bundle، أو رمز تسجيل جديد مع `--force` بعد التنظيف الموثّق؛ ويُعد `helm upgrade` المذكور أعلاه المسار المعتاد (راجع [إعادة التشغيل والتعافي](#re-runs-and-recovery)).
 
-<div id="upgrades-linux-vm">
-  ### Linux VM
-</div>
+### Linux VM {#upgrades-linux-vm}
 
 أعِد تشغيل برنامج التثبيت على المضيف؛ إذ سيُنزّل الإصدار الأحدث ويتحقق منه بالطريقة نفسها المتبعة أثناء [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding)، وسيُنشئ نسخة احتياطية من الملف التنفيذي السابق، مع الاحتفاظ بأنماط الإخفاء وملف البيئة النشطين لديك. ثم أعد تشغيل الخدمات:
 
@@ -48,9 +46,7 @@ sudo systemctl restart clicklink-scraper clicklink-troubleshooter
 
 للترقية إلى إصدار محدد بدلًا من أحدث إصدار، أضف `--version vX.Y.Z` إلى أمر التثبيت.
 
-<div id="health">
-  ## الحالة الصحية
-</div>
+## الحالة الصحية {#health}
 
 توفّر كل عملية خفية نقطة نهاية `/livez` على منفذ الحالة الصحية الخاص بها. يُعد حقل JSON ‏`status` في جسم الاستجابة مؤشر الحالة الصحية، وليس رمز حالة HTTP، لذا تحقّق من الجسم بدلًا من الاعتماد على رمز `200`. تُوفَّر مقاييس Prometheus على منفذ المقاييس الخاص بكل مكوّن. المنافذ الافتراضية لكلا الهدفين:
 
@@ -70,9 +66,7 @@ sudo clicklink clctl preflight
 
 يتحقق من الإعدادات والملفات وتعارضات المنافذ وإمكانية الوصول عبر الشبكة (نقطة نهاية واجهة برمجة التطبيقات وكل مثيل من ClickHouse) والاتصال بـ ClickHouse وحالة وحدة systemd ووصول كل مكوّن والقرص وأنماط الإخفاء، وينهي التنفيذ بالرمز `2` إذا فشل أي فحص.
 
-<div id="certificates">
-  ## الشهادات
-</div>
+## الشهادات {#certificates}
 
 يجدد الموصل شهادة العميل الخاصة به تلقائياً: يتحقق كل برنامج خفي من الشهادة الطرفية كل 12 ساعة ويجددها عند تبقي 10 أيام على انتهاء صلاحيتها، ويتلقى شهادة طرفية جديدة صالحة لمدة 30 يوماً عبر قناة mTLS الحالية الموثقة باستخدام HMAC. لا يلزم اتخاذ أي إجراء من قِبل المشغّل. في Kubernetes، تُكتب الشهادة الطرفية المجددة مجدداً في Secret `clicklink-mtls`؛ وعلى جهاز افتراضي، تُكتب ضمن `/etc/clicklink/tls/`.
 
@@ -88,13 +82,9 @@ kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.dat
   | base64 -d | openssl x509 -noout -enddate
 ```
 
-<div id="credential-rotation">
-  ## تدوير بيانات الاعتماد
-</div>
+## تدوير بيانات الاعتماد {#credential-rotation}
 
-<div id="rotate-api-credentials">
-  ### بيانات اعتماد واجهة برمجة التطبيقات (HMAC)
-</div>
+### بيانات اعتماد واجهة برمجة التطبيقات (HMAC) {#rotate-api-credentials}
 
 اطلب رمز تسجيل جديدًا من فريق حساب ClickHouse، ثم أعد تشغيل أمر `init` الأصلي مع `--enroll` و`--force`. احتفظ بجميع الرايات الخاصة بالهدف المستخدمة في التثبيت الأول (`--target-namespace` و`--values` وأي رايات mirror مثل `--chart` أو `--chart-repo` أو `--chart-version`)، لأن `--force` يعيد إعداد التكوين المحفوظ. في تثبيت default:
 
@@ -115,9 +105,7 @@ sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --forc
   ```
 </Note>
 
-<div id="rotate-clickhouse-users">
-  ### مستخدمو ClickHouse
-</div>
+### مستخدمو ClickHouse {#rotate-clickhouse-users}
 
 أعِد توفير مستخدمي الموصل ذوي صلاحية القراءة فقط لكل مثيل. في Kubernetes، نفِّذ الأمر من محطة عملك؛ إذ يعيد `--apply-ch-grants` تطبيق الامتيازات المُنشأة مجددًا داخل الـ pod، بحيث تصل بيانات الاعتماد الجديدة إلى ClickHouse (إذا كانت كلمة مرور المستخدم الإداري معيّنة، فأضف `--ch-admin-password-stdin` ومرّرها عبر pipe):
 
@@ -148,15 +136,11 @@ sudo clicklink clctl troubleshoot access provision --provider local \
 
 بالنسبة إلى المثيلات التي يديرها المشغّل، أضف `--ch-user-via cr` وخيارات اختيار الـpod إلى أيٍّ من الصيغتين؛ راجع [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli).
 
-<div id="rotate-client-certificate">
-  ### شهادة العميل
-</div>
+### شهادة العميل {#rotate-client-certificate}
 
 يُجدَّد تلقائيًا (راجع [الشهادات](#certificates)). لاستبدال شهادة سارية فورًا، أعد تشغيل `init` باستخدام الخيار `--force`.
 
-<div id="re-runs-and-recovery">
-  ## إعادة التشغيل والاسترداد
-</div>
+## إعادة التشغيل والاسترداد {#re-runs-and-recovery}
 
 تتقارب عمليات إعادة تشغيل `init`، لذا تكون إعادة تنفيذ الأمر نفسه دائمًا هي الخطوة الأولى. من دون `--force`، يُحتفَظ بملف `/etc/clicklink/config.yaml` الموجود (VM) أو تراكب `clicklink-values.yaml` (Kubernetes)، ويُعاد استخدام مفتاح العميل الموجود، بينما تُستبدل بيانات الاعتماد وسلسلة CA بصورة ذرية. ويمكن تكرار أوامر الاسترداد التي تطبعها CLI بعد فشل جزئي بأمان.
 
@@ -170,13 +154,9 @@ sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
 
 هذا هو الشكل الخاص بالآلة الافتراضية (يعيد المستخدم الجذر كتابة `/etc/clicklink` ويدير الخدمات). في Kubernetes، تطبع واجهة سطر الأوامر الصيغة الكاملة، بما في ذلك `--target helm` و`--target-namespace` و`--values`؛ استخدم الأمر المطبوع كما هو.
 
-<div id="uninstall">
-  ## إلغاء التثبيت
-</div>
+## إلغاء التثبيت {#uninstall}
 
-<div id="upgrades-linux-vm">
-  ### Linux VM
-</div>
+### Linux VM {#uninstall-linux-vm}
 
 يتوفر `uninstall.sh` ضمن أرشيف tar الخاص بالإصدار. إذا لم يتبقَّ على المضيف أي أرشيف tar مستخرج، فاجلب أرشيفًا واستخرجه كما هو موضح في [التنزيل والتحقق اليدويين](/ar/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification)، ثم شغّله من الدليل المستخرج:
 
@@ -190,9 +170,7 @@ sudo ./uninstall.sh
 sudo ./uninstall.sh --purge
 ```
 
-<div id="upgrades-kubernetes">
-  ### Kubernetes
-</div>
+### Kubernetes {#uninstall-kubernetes}
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -215,9 +193,7 @@ for ns in <clickhouse-namespace-1> <clickhouse-namespace-2>; do
 done
 ```
 
-<div id="rotate-clickhouse-users">
-  ### مستخدمو ClickHouse
-</div>
+### مستخدمو ClickHouse {#uninstall-clickhouse-users}
 
 لا تؤدي إزالة التثبيت من أيٍّ من الهدفين إلى حذف مستخدمي القراءة فقط الذين تم توفيرهم. احذفهم بصفتك Admin على كل مثيل (وأضف `--ch-user-suffix` إلى الأسماء إذا كنت قد عيّنت لاحقةً):
 

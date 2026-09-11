@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "البدء",
       "pages": [
         "ar/products/managed-postgres/overview",
         "ar/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Features",
+      "group": "الميزات",
       "pages": [
         "ar/products/managed-postgres/connection",
         "ar/products/managed-postgres/settings",
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "group": "Pricing",
+      "group": "التسعير",
       "pages": [
         "ar/products/managed-postgres/pricing"
       ]
@@ -56,7 +56,7 @@
       ]
     },
     {
-      "group": "Migrations",
+      "group": "عمليات الترحيل",
       "pages": [
         "ar/products/managed-postgres/migrations/overview",
         "ar/products/managed-postgres/migrations/clickpipes",
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "group": "Monitoring",
+      "group": "المراقبة",
       "pages": [
         "ar/products/managed-postgres/monitoring/overview",
         "ar/products/managed-postgres/monitoring/dashboard",
@@ -80,7 +80,7 @@
       ]
     },
     {
-      "group": "FAQ",
+      "group": "الأسئلة الشائعة",
       "pages": [
         "ar/products/managed-postgres/faq"
       ]

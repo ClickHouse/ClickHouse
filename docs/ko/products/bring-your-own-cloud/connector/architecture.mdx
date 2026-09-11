@@ -6,11 +6,12 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-<div id="components">
-  ## 구성 요소
-</div>
+<PrivatePreviewBadge />
+
+## 구성 요소 {#components}
 
 ClickHouse Connector는 `clicklink` 바이너리에 내장된 두 개의 데몬을 실행합니다.
 
@@ -21,9 +22,7 @@ Kubernetes에서는 선택한 네임스페이스(기본값: `clicklink`)에서 `
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector 아키텍처" />
 
-<div id="connections">
-  ## 연결
-</div>
+## 연결 {#connections}
 
 커넥터에서 이루어지는 모든 연결은 아웃바운드입니다. 전체 목록은 다음과 같습니다.
 
@@ -40,9 +39,7 @@ Kubernetes에서는 선택한 네임스페이스(기본값: `clicklink`)에서 `
 
 인바운드 연결에서 커넥터는 로컬 상태 점검 및 메트릭 포트와 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions) 페이지에 설명된 선택적 세션 게이트웨이만 노출합니다. ClickHouse의 컨트롤 플레인은 이들 중 어느 곳에도 연결하지 않습니다.
 
-<div id="certificate-lifecycle">
-  ## 인증서 수명 주기
-</div>
+## 인증서 수명 주기 {#certificate-lifecycle}
 
 커넥터는 자체적으로 발급받아 관리하는 클라이언트 인증서로 엔드포인트를 인증합니다.
 
@@ -52,32 +49,24 @@ Kubernetes에서는 선택한 네임스페이스(기본값: `clicklink`)에서 `
 
 커넥터는 system trust store를 기준으로 엔드포인트의 server certificate를 검증합니다. 엔드포인트가 사설 CA를 사용하는 경우에는 등록 시 제공되는 CA bundle을 사용합니다.
 
-<div id="data-flow">
-  ## 데이터 흐름
-</div>
+## 데이터 흐름 {#data-flow}
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse Connector 데이터 흐름" />
 
-<div id="what-leaves">
-  ### 환경 외부로 전송되는 항목
-</div>
+### 환경 외부로 전송되는 항목 {#what-leaves}
 
 * **허용 목록에 포함된 시스템 테이블의 메트릭.** 스크레이퍼의 기본 대상은 `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`입니다. 허용 목록은 명시적으로 구성되며, 스크레이퍼는 목록에 없는 항목을 읽지 않습니다.
 * **인프라 메타데이터.** API를 통해 동기화되는 인스턴스, 인프라 및 백업 인벤토리입니다.
 * **상태 및 자체 메트릭.** 구성 요소 상태와 커넥터 자체의 운영 메트릭입니다.
 * **지원 세션 출력.** 활성화한 세션 중 실행된 읽기 전용 진단 결과이며, 마스킹 후 제공됩니다.
 
-<div id="what-never-leaves">
-  ### 기본적으로 외부로 나가지 않는 항목
-</div>
+### 기본적으로 외부로 나가지 않는 항목 {#what-never-leaves}
 
 * **스크레이프 경로의 원본 쿼리 텍스트.** `system.query_log`는 쿼리 컬럼에 리터럴 값, PII 또는 시크릿이 포함될 수 있으므로 기본 스크레이프 대상에서 의도적으로 제외됩니다. 이를 다시 추가하는 것은 이러한 점을 인지한 상태에서 수행하는 배포별 재정의입니다. 지원 세션 중에는 기본 테이블 허용 목록에 실행 중인 쿼리 텍스트를 표시하는 `system.processes`가 포함됩니다. 이를 트리밍하는 방법은 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
 * **자격 증명.** 설정 파일에는 자격 증명이 포함되지 않으며, ClickHouse는 커넥터 사용자의 비밀번호에 대한 bcrypt 해시만 저장합니다. 시크릿은 Kubernetes 시크릿 또는 호스트에서 root만 읽을 수 있는 파일에 유지됩니다. 스크레이프나 동기화 경로를 통해 전송되는 자격 증명은 없습니다.
 * **마스킹되지 않은 문제 해결 도구 출력.** 문제 해결 도구가 반환하는 모든 항목은 외부로 나가기 전에 내장 패턴과 자체 패턴을 포함한 마스킹 패턴을 거칩니다. [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
 
-<div id="trust-boundaries">
-  ## 신뢰 경계
-</div>
+## 신뢰 경계 {#trust-boundaries}
 
 * **환경이 경계입니다.** ClickHouse Cloud는 스크레이퍼가 전송하는 정보와 활성 지원 세션이 반환하는 정보만 수신합니다. 내부로 연결을 시작하지 않습니다.
 * **세션 게이트웨이는 사용자 환경에 있습니다.** 인그레스(Ingress)를 통해 노출하도록 선택하지 않는 한, Kubernetes에서는 `kubectl port-forward`를 통해, VM에서는 로컬에서만 환경 내부에서 접근할 수 있습니다. ClickHouse의 컨트롤 플레인은 여기에 연결하지 않습니다.

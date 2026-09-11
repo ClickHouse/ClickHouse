@@ -6,11 +6,13 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration'
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 이 페이지에서는 ClickHouse Connector 설치 후 가장 자주 변경하는 구성 항목을 다룹니다. 각 키의 기본값과 의미는 [구성 참고](/ko/products/bring-your-own-cloud/connector/reference/configuration)를, 명령 플래그는 [CLI 참고](/ko/products/bring-your-own-cloud/connector/reference/cli)를 참조하십시오.
 
-<div id="configuration-surfaces">
-  ## 구성 방식
-</div>
+## 구성 방식 {#configuration-surfaces}
 
 커넥터는 설치 대상마다 하나의 구성 방식을 제공합니다.
 
@@ -56,9 +58,7 @@ doc_type: 'guide'
   </Tab>
 </Tabs>
 
-<div id="clickhouse-instances">
-  ## ClickHouse 인스턴스 추가 또는 변경
-</div>
+## ClickHouse 인스턴스 추가 또는 변경 {#clickhouse-instances}
 
 `instances` 아래의 각 항목은 커넥터가 데이터를 읽어 오는 ClickHouse 네이티브 프로토콜 엔드포인트의 이름을 지정합니다. `host`, `port`, `database`, `secure`와 Kubernetes의 `namespace`, `cluster`를 포함합니다. 자격 증명은 구성에 저장되지 않습니다. 각 구성 요소는 프로비저닝에서 생성한 액세스 번들을 통해 읽기 전용 ClickHouse 사용자를 확인합니다.
 
@@ -153,9 +153,7 @@ doc_type: 'guide'
   동일한 `access provision` 명령어에 `--force`를 함께 사용하면 인스턴스의 ClickHouse 자격 증명을 교체할 수 있습니다. [운영](/ko/products/bring-your-own-cloud/connector/operations)을 참조하십시오.
 </Tip>
 
-<div id="operator-allowlist">
-  ## 연산자 허용 목록
-</div>
+## 연산자 허용 목록 {#operator-allowlist}
 
 Gateway 관리 세션은 연산자 이메일 주소 허용 목록에 따라 접근이 제한됩니다. 세션 Gateway로 전송되는 모든 요청에는 목록에 포함된 이메일 주소가 확인된 단기 유효 OIDC ID 토큰이 있어야 합니다. 허용 목록이 비어 있으면 Gateway가 차단되므로 누구도 이를 통해 세션을 열 수 없습니다. VM에서는 호스트의 root 사용자가 로컬 세션 파일을 통해 세션을 직접 관리할 수도 있으며, 허용 목록은 Gateway를 통한 경로에만 적용됩니다. 전체 신뢰 모델은 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
 
@@ -185,9 +183,7 @@ Gateway 관리 세션은 연산자 이메일 주소 허용 목록에 따라 접�
   </Tab>
 </Tabs>
 
-<div id="network-policy">
-  ## 네트워크 정책 및 egress
-</div>
+## 네트워크 정책 및 egress {#network-policy}
 
 Kubernetes에서 차트는 egress allowlist(`networkPolicy.enabled: true`)가 적용된 기본 거부 NetworkPolicy를 제공합니다. NetworkPolicy 객체는 CNI가 이를 적용할 때만 효력이 있습니다. CNI가 정책을 적용하는 환경에서는 `allowEgressCIDRs`에 커넥터 API endpoint에 해당하는 CIDR을 지정하기 전까지 커넥터의 egress가 완전히 차단됩니다.
 
@@ -227,9 +223,7 @@ clctl:
 
 추가 인그레스 설정으로, `metricsScrapeSelector`는 레이블을 기준으로 메트릭 스크레이프 인그레스를 특정 Prometheus 네임스페이스로 제한하며, `kubeletProbeCIDRs`는 기본 거부 정책이 엄격한 환경에서 큐블릿 상태 프로브를 명시적으로 허용합니다. 전체 키 목록은 [구성 참고](/ko/products/bring-your-own-cloud/connector/reference/configuration)를 참조하십시오.
 
-<div id="redaction-patterns">
-  ## 민감 정보 마스킹 패턴
-</div>
+## 민감 정보 마스킹 패턴 {#redaction-patterns}
 
 Troubleshooter 출력은 사용자 환경을 벗어나기 전에 민감 정보가 마스킹됩니다. 기본 제공 패턴은 `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key`, `connection-string-credentials`를 처리합니다. YAML 파일에서 사용자 지정 패턴을 추가할 수 있습니다. 사용자 지정 패턴은 파일에 정의된 순서대로 먼저 실행되고, 이후 기본 제공 패턴이 실행됩니다. 기본 제공 패턴의 `name`을 재사용하는 항목은 해당 기본 제공 패턴을 대체합니다.
 
@@ -254,9 +248,7 @@ VM에서는 파일 경로가 `/etc/clicklink/redaction-patterns.yaml`입니다. 
   패턴 파일이 존재하지만 유효하지 않으면 troubleshooter가 시작되지 않으며, 문제가 된 항목이 로그에 기록됩니다. `clicklink clctl preflight`로 파일을 검증할 수 있으므로 데몬을 다시 시작하기 전에 실행하십시오.
 </Warning>
 
-<div id="private-mirrors">
-  ## 프라이빗 미러 및 경계 내 엔드포인트
-</div>
+## 프라이빗 미러 및 경계 내 엔드포인트 {#private-mirrors}
 
 배포된 차트는 `image.repository`를 공개 멀티 아키텍처 cosign 서명 커넥터 이미지로 미리 설정하므로 일반 설치에는 이미지 values가 필요하지 않습니다. 배포된 기본값을 확인하려면 다음을 실행하십시오.
 
@@ -283,9 +275,7 @@ clicklink clctl init --handoff handoff.yaml --target helm \
 
 커넥터 API endpoint가 내부 경계의 사설 CA 뒤에 있는 경우 `init`에 `--api-private-ca`를 전달하십시오. 그러면 `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`가 구성되어 시스템 루트 대신 등록 번들의 CA 체인을 사용해 endpoint를 검증합니다. VM에서는 `/etc/clicklink/config.yaml`의 `api.tls.ca_file`이 이에 해당합니다. `init`은 번들 체인을 `/etc/clicklink/tls/ca.crt`에 설치하고, 검증에 사용하도록 시스템 루트에 추가합니다. 완전히 air-gapped된 환경에서 등록 및 certificate 서명을 수행하는 방법은 [onboarding](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오.
 
-<div id="storage">
-  ## 스토리지
-</div>
+## 스토리지 {#storage}
 
 <Tabs>
   <Tab title="Kubernetes">

@@ -34,23 +34,23 @@ ClickHouse Keeper 既可作为 ZooKeeper 的独立替代方案使用，也可作
 
 主要的 ClickHouse Keeper 配置标签为 `<keeper_server>`，包含以下参数：
 
-| Parameter                           | Description                                                                                                                            | Default                                                                                                      |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `tcp_port`                          | 客户端连接使用的端口。                                                                                                                            | `2181`                                                                                                       |
-| `tcp_port_secure`                   | 用于客户端与 keeper-server 之间建立 SSL 连接的安全端口。                                                                                                 | -                                                                                                            |
-| `server_id`                         | 唯一的服务器 ID，ClickHouse Keeper 集群中的每个参与者都必须具有唯一编号 (1、2、3……) 。                                                                             | -                                                                                                            |
-| `log_storage_path`                  | 协调日志的存储路径。与 ZooKeeper 类似，最佳做法是将日志存储在负载较低的节点上。                                                                                          | -                                                                                                            |
-| `snapshot_storage_path`             | 协调快照的存储路径。                                                                                                                             | -                                                                                                            |
-| `enable_reconfiguration`            | 通过 [`reconfig`](#reconfiguration) 启用集群动态重配置。                                                                                           | `False`                                                                                                      |
-| `max_memory_usage_soft_limit`       | keeper 最大内存使用量的软限制，单位为字节。                                                                                                              | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                               |
-| `max_memory_usage_soft_limit_ratio` | 如果未设置 `max_memory_usage_soft_limit` 或将其设置为零，则使用该值来定义默认软限制。                                                                             | `0.9`                                                                                                        |
-| `cgroups_memory_observer_wait_time` | 如果未设置 `max_memory_usage_soft_limit` 或其值为 `0`，则使用该时间间隔来监测物理内存总量。一旦内存总量发生变化，就会根据 `max_memory_usage_soft_limit_ratio` 重新计算 Keeper 的内存软限制。 | `15`                                                                                                         |
-| `http_control`                      | [HTTP 控制](#http-control) 接口的配置。                                                                                                   | -                                                                                                            |
-| `digest_enabled`                    | 启用实时数据一致性检查。                                                                                                                           | `True`                                                                                                       |
-| `create_snapshot_on_exit`           | 在关闭时创建快照。                                                                                                                              | -                                                                                                            |
-| `hostname_checks_enabled`           | 为集群配置启用主机名合理性检查 (例如，在远程端点中使用 localhost 时) 。                                                                                            | `True`                                                                                                       |
-| `four_letter_word_white_list`       | 4lw 命令白名单。                                                                                                                             | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, ydld` |
-| `enable_ipv6`                       | 启用 IPv6。                                                                                                                               | `True`                                                                                                       |
+| Parameter                           | Description                                                                                                                            | Default                                                                                                                                                                                              |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tcp_port`                          | 客户端连接使用的端口。                                                                                                                            | `2181`                                                                                                                                                                                               |
+| `tcp_port_secure`                   | 用于客户端与 keeper-server 之间建立 SSL 连接的安全端口。                                                                                                 | -                                                                                                                                                                                                    |
+| `server_id`                         | 唯一的服务器 ID，ClickHouse Keeper 集群中的每个参与者都必须具有唯一编号 (1、2、3……) 。                                                                             | -                                                                                                                                                                                                    |
+| `log_storage_path`                  | 协调日志的存储路径。与 ZooKeeper 类似，最佳做法是将日志存储在负载较低的节点上。                                                                                          | -                                                                                                                                                                                                    |
+| `snapshot_storage_path`             | 协调快照的存储路径。                                                                                                                             | -                                                                                                                                                                                                    |
+| `enable_reconfiguration`            | 通过 [`reconfig`](#reconfiguration) 启用集群动态重配置。                                                                                           | `False`                                                                                                                                                                                              |
+| `max_memory_usage_soft_limit`       | keeper 最大内存使用量的软限制，单位为字节。                                                                                                              | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                                                                                                                       |
+| `max_memory_usage_soft_limit_ratio` | 如果未设置 `max_memory_usage_soft_limit` 或将其设置为零，则使用该值来定义默认软限制。                                                                             | `0.9`                                                                                                                                                                                                |
+| `cgroups_memory_observer_wait_time` | 如果未设置 `max_memory_usage_soft_limit` 或其值为 `0`，则使用该时间间隔来监测物理内存总量。一旦内存总量发生变化，就会根据 `max_memory_usage_soft_limit_ratio` 重新计算 Keeper 的内存软限制。 | `15`                                                                                                                                                                                                 |
+| `http_control`                      | [HTTP 控制](#http-control) 接口的配置。                                                                                                        | -                                                                                                                                                                                                    |
+| `digest_enabled`                    | 启用实时数据一致性检查。                                                                                                                           | `True`                                                                                                                                                                                               |
+| `create_snapshot_on_exit`           | 在关闭时创建快照。                                                                                                                              | -                                                                                                                                                                                                    |
+| `hostname_checks_enabled`           | 为集群配置启用主机名合理性检查 (例如，在远程端点中使用 localhost 时) 。                                                                                            | `True`                                                                                                                                                                                               |
+| `four_letter_word_white_list`       | 4lw 命令白名单。                                                                                                                             | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, bpon, bpof, pfev, lgrq`，在使用 jemalloc 的构建中还包括 `jmst, jmfp, jmep, jmdp` |
+| `enable_ipv6`                       | 启用 IPv6。                                                                                                                               | `True`                                                                                                                                                                                               |
 
 其他常用参数继承自 ClickHouse server 配置 (`listen_host`、`logger` 等) 。
 
@@ -58,48 +58,50 @@ ClickHouse Keeper 既可作为 ZooKeeper 的独立替代方案使用，也可作
 
 内部协调设置位于 `<keeper_server>.<coordination_settings>` 部分，包含以下参数：
 
-| 参数                                        | 说明                                                                                                                             | 默认值              |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| `operation_timeout_ms`                    | 单个客户端操作的超时时间 (毫秒)                                                                                                              | `10000`          |
-| `min_session_timeout_ms`                  | 客户端会话的最小超时时间 (毫秒)                                                                                                              | `10000`          |
-| `session_timeout_ms`                      | 客户端会话的最大超时时间 (毫秒)                                                                                                              | `100000`         |
-| `dead_session_check_period_ms`            | ClickHouse Keeper 检查失效会话并将其移除的频率 (毫秒)                                                                                          | `500`            |
-| `heart_beat_interval_ms`                  | ClickHouse Keeper 的 leader 向跟随者发送心跳的频率 (毫秒)                                                                                    | `500`            |
-| `election_timeout_lower_bound_ms`         | 如果跟随者在此时间间隔内未收到 leader 的心跳，则可以发起 leader 选举。该值必须小于或等于 `election_timeout_upper_bound_ms`。理想情况下，两者不应相等。                           | `1000`           |
-| `election_timeout_upper_bound_ms`         | 如果跟随者在此时间间隔内未收到 leader 的心跳，则必须发起 leader 选举。                                                                                    | `2000`           |
-| `rotate_log_storage_interval`             | 单个文件中存储的日志记录数。                                                                                                                 | `100000`         |
-| `reserved_log_items`                      | 执行合并整理前保留的协调日志记录数。                                                                                                             | `100000`         |
-| `snapshot_distance`                       | ClickHouse Keeper 创建新快照的频率 (按日志记录数计算) 。                                                                                        | `100000`         |
-| `snapshots_to_keep`                       | 保留的快照数量。                                                                                                                       | `3`              |
-| `compress_snapshots_with_zstd_format`     | 以 ZSTD 格式写入快照，而不是使用 ClickHouse 自定义的 LZ4 块格式。                                                                                   | `true`           |
-| `snapshot_zstd_compression_level`         | 快照的 ZSTD 压缩级别。级别越低占用的 CPU 越少，但生成的快照更大。负值会选择 ZSTD 的 fast 级别。仅在启用 `compress_snapshots_with_zstd_format` 时生效。                     | `3`              |
-| `stale_log_gap`                           | 当 leader 认为跟随者已过时，并向其发送快照而不是日志时使用的阈值。                                                                                          | `10000`          |
-| `fresh_log_gap`                           | 节点变为最新状态时的阈值。                                                                                                                  | `200`            |
-| `max_requests_batch_size`                 | 请求发送到 RAFT 前，按请求数计算的批次最大大小。                                                                                                    | `100`            |
-| `force_sync`                              | 每次写入协调日志时都调用 `fsync`。                                                                                                          | `true`           |
-| `quorum_reads`                            | 通过整个 RAFT 共识流程执行读取请求，将其按写入方式处理，速度相近。                                                                                           | `false`          |
-| `raft_logs_level`                         | 协调相关的文本日志级别 (trace、debug 等) 。                                                                                                  | `system default` |
-| `auto_forwarding`                         | 允许将写入请求从跟随者转发给 leader。                                                                                                         | `true`           |
-| `shutdown_timeout`                        | 等待内部连接完成并关闭的时间 (毫秒) 。                                                                                                          | `5000`           |
-| `startup_timeout`                         | 如果服务器未在指定超时时间内连接到其他 quorum 参与者，则会终止 (毫秒) 。                                                                                     | `30000`          |
-| `async_replication`                       | 启用异步复制。在提升性能的同时保留所有读写保证。此设置默认禁用，以避免破坏向后兼容性。                                                                                    | `false`          |
-| `latest_logs_cache_entry_count_threshold` | 最新日志条目的内存缓存中条目的最大数量                                                                                                            | `200000`         |
-| `latest_logs_cache_size_threshold`        | 最新日志条目的内存缓存所占用的最大内存，包含每个条目的分配开销                                                                                                | `1GiB`           |
-| `commit_logs_cache_size_threshold`        | 已弃用。如果未设置 `log_readahead_commit_window_bytes`，则使用此设置。                                                                          | -                |
-| `commit_logs_cache_entry_count_threshold` | 已弃用，无任何作用。请改用 `log_readahead_commit_window_bytes`。                                                                             | -                |
-| `log_readahead_enabled`                   | 为更新日志追赶读取 (跟随者复制) 启用按 peer 解码的预读。                                                                                              | `false`          |
-| `log_readahead_window_bytes`              | 每个 peer reader 缓冲的已解码条目的最大字节数。应至少与典型的 append-entries 批次一样大。                                                                    | `64MiB`          |
-| `log_readahead_max_peer_readers`          | 并发的每 peer 预读 reader 的最大数量。                                                                                                     | `8`              |
-| `log_readahead_eviction_timeout_ms`       | 非活动的每 peer 预读 reader 或 commit reader 被逐出前的空闲超时时间 (后续未命中会重新创建它) 。                                                               | `30000`          |
-| `log_readahead_pool_threads`              | 专用预读线程池中的线程数。`0` 会从 `log_readahead_max_peer_readers` 推导该值。                                                                     | `0`              |
-| `log_readahead_serve_wait_timeout_ms`     | 回退到直接读取前，等待后台预读填充的最长时间。                                                                                                        | `200`            |
-| `log_readahead_chunk_size`                | 预读填充任务中每个块解码的日志条目数。                                                                                                            | `16`             |
-| `log_readahead_commit_window_bytes`       | 提交线程前预先缓冲的已解码日志条目的最大总大小。`0` 会禁用提交预读 (提交操作会逐个从磁盘读取条目) 。                                                                         | `500MiB`         |
-| `log_startup_read_max_streams`            | Keeper 启动期间并发读取的更新日志文件最大数量。`0` = 自动使用 CPU 核心数。`1` = 使用串行 (并行化前) 的启动读取。有效并行度受需读取的更新日志文件数量限制；对于寻道受限的存储 (HDD、IOPS 受限的卷) ，请考虑降低此值。 | `0`              |
-| `log_startup_read_buffer_size`            | Keeper 启动时读取更新日志所使用的每流读取缓冲区大小 (字节) 。必须大于 `0`。缓冲区还会被限制为不超过文件大小。                                                                 | `8MiB`           |
-| `disk_move_retries_wait_ms`               | 文件在磁盘之间移动时发生失败后，两次重试之间的等待时间。                                                                                                   | `1000`           |
-| `disk_move_retries_during_init`           | 初始化期间，文件在磁盘之间移动时发生失败后的重试次数。                                                                                                    | `100`            |
-| `experimental_use_rocksdb`                | 使用 RocksDB 作为后端存储。                                                                                                             | `0`              |
+| 参数                                                     | 说明                                                                                                                                                                                                                                                                            | 默认值              |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`                                 | 单个客户端操作的超时时间 (毫秒)                                                                                                                                                                                                                                                             | `10000`          |
+| `min_session_timeout_ms`                               | 客户端会话的最小超时时间 (毫秒)                                                                                                                                                                                                                                                             | `10000`          |
+| `session_timeout_ms`                                   | 客户端会话的最大超时时间 (毫秒)                                                                                                                                                                                                                                                             | `100000`         |
+| `dead_session_check_period_ms`                         | ClickHouse Keeper 检查失效会话并将其移除的频率 (毫秒)                                                                                                                                                                                                                                         | `500`            |
+| `heart_beat_interval_ms`                               | ClickHouse Keeper 的 leader 向跟随者发送心跳的频率 (毫秒)                                                                                                                                                                                                                                   | `500`            |
+| `election_timeout_lower_bound_ms`                      | 如果跟随者在此时间间隔内未收到 leader 的心跳，则可以发起 leader 选举。该值必须小于或等于 `election_timeout_upper_bound_ms`。理想情况下，两者不应相等。                                                                                                                                                                          | `1000`           |
+| `election_timeout_upper_bound_ms`                      | 如果跟随者在此时间间隔内未收到 leader 的心跳，则必须发起 leader 选举。                                                                                                                                                                                                                                   | `2000`           |
+| `rotate_log_storage_interval`                          | 单个文件中存储的日志记录数。                                                                                                                                                                                                                                                                | `100000`         |
+| `reserved_log_items`                                   | 执行合并整理前保留的协调日志记录数。                                                                                                                                                                                                                                                            | `100000`         |
+| `snapshot_distance`                                    | ClickHouse Keeper 创建新快照的频率 (按日志记录数计算) 。                                                                                                                                                                                                                                       | `100000`         |
+| `snapshots_to_keep`                                    | 保留的快照数量。                                                                                                                                                                                                                                                                      | `3`              |
+| `compress_snapshots_with_zstd_format`                  | 以 ZSTD 格式写入快照，而不是使用 ClickHouse 自定义的 LZ4 块格式。                                                                                                                                                                                                                                  | `true`           |
+| `snapshot_zstd_compression_level`                      | 快照的 ZSTD 压缩级别。级别越低占用的 CPU 越少，但生成的快照更大。负值会选择 ZSTD 的 fast 级别。仅在启用 `compress_snapshots_with_zstd_format` 时生效。                                                                                                                                                                    | `3`              |
+| `stale_log_gap`                                        | 当 leader 认为跟随者已过时，并向其发送快照而不是日志时使用的阈值。                                                                                                                                                                                                                                         | `10000`          |
+| `fresh_log_gap`                                        | 节点变为最新状态时的阈值。                                                                                                                                                                                                                                                                 | `200`            |
+| `max_requests_batch_size`                              | 请求发送到 RAFT 前，按请求数计算的批次最大大小。                                                                                                                                                                                                                                                   | `100`            |
+| `force_sync`                                           | 每次写入协调日志时都调用 `fsync`。                                                                                                                                                                                                                                                         | `true`           |
+| `quorum_reads`                                         | 通过整个 RAFT 共识流程执行读取请求，将其按写入方式处理，速度相近。                                                                                                                                                                                                                                          | `false`          |
+| `raft_logs_level`                                      | 协调相关的文本日志级别 (trace、debug 等) 。                                                                                                                                                                                                                                                 | `system default` |
+| `auto_forwarding`                                      | 允许将写入请求从跟随者转发给 leader。                                                                                                                                                                                                                                                        | `true`           |
+| `shutdown_timeout`                                     | 等待内部连接完成并关闭的时间 (毫秒) 。                                                                                                                                                                                                                                                         | `5000`           |
+| `startup_timeout`                                      | 如果服务器未在指定超时时间内连接到其他 quorum 参与者，则会终止 (毫秒) 。                                                                                                                                                                                                                                    | `30000`          |
+| `async_replication`                                    | 启用异步复制。在提升性能的同时保留所有读写保证。此设置默认禁用，以避免破坏向后兼容性。                                                                                                                                                                                                                                   | `false`          |
+| `latest_logs_cache_entry_count_threshold`              | 最新日志条目的内存缓存中条目的最大数量                                                                                                                                                                                                                                                           | `200000`         |
+| `latest_logs_cache_size_threshold`                     | 最新日志条目的内存缓存所占用的最大内存，包含每个条目的分配开销                                                                                                                                                                                                                                               | `1GiB`           |
+| `commit_logs_cache_size_threshold`                     | 已弃用。如果未设置 `log_readahead_commit_window_bytes`，则使用此设置。                                                                                                                                                                                                                         | -                |
+| `commit_logs_cache_entry_count_threshold`              | 已弃用，无任何作用。请改用 `log_readahead_commit_window_bytes`。                                                                                                                                                                                                                            | -                |
+| `log_readahead_enabled`                                | 为更新日志追赶读取 (跟随者复制) 启用按 peer 解码的预读。                                                                                                                                                                                                                                             | `false`          |
+| `log_readahead_window_bytes`                           | 每个 peer reader 缓冲的已解码条目的最大字节数。应至少与典型的 append-entries 批次一样大。                                                                                                                                                                                                                   | `64MiB`          |
+| `log_readahead_max_peer_readers`                       | 并发的每 peer 预读 reader 的最大数量。                                                                                                                                                                                                                                                    | `8`              |
+| `log_readahead_eviction_timeout_ms`                    | 非活动的每 peer 预读 reader 或 commit reader 被逐出前的空闲超时时间 (后续未命中会重新创建它) 。                                                                                                                                                                                                              | `30000`          |
+| `log_readahead_pool_threads`                           | 专用预读线程池中的线程数。`0` 会从 `log_readahead_max_peer_readers` 推导该值。                                                                                                                                                                                                                    | `0`              |
+| `log_readahead_serve_wait_timeout_ms`                  | 回退到直接读取前，等待后台预读填充的最长时间。                                                                                                                                                                                                                                                       | `200`            |
+| `log_readahead_chunk_size`                             | 预读填充任务中每个块解码的日志条目数。                                                                                                                                                                                                                                                           | `16`             |
+| `log_readahead_commit_window_bytes`                    | 提交线程前预先缓冲的已解码日志条目的最大总大小。`0` 会禁用提交预读 (提交操作会逐个从磁盘读取条目) 。                                                                                                                                                                                                                        | `500MiB`         |
+| `log_startup_read_max_streams`                         | Keeper 启动期间并发读取的更新日志文件最大数量。`0` = 自动使用 CPU 核心数。`1` = 使用串行 (并行化前) 的启动读取。有效并行度受需读取的更新日志文件数量限制；对于寻道受限的存储 (HDD、IOPS 受限的卷) ，请考虑降低此值。                                                                                                                                                | `0`              |
+| `log_startup_read_buffer_size`                         | Keeper 启动时读取更新日志所使用的每流读取缓冲区大小 (字节) 。必须大于 `0`。缓冲区还会被限制为不超过文件大小。                                                                                                                                                                                                                | `8MiB`           |
+| `disk_move_retries_wait_ms`                            | 文件在磁盘之间移动时发生失败后，两次重试之间的等待时间。                                                                                                                                                                                                                                                  | `1000`           |
+| `disk_move_retries_during_init`                        | 初始化期间，文件在磁盘之间移动时发生失败后的重试次数。                                                                                                                                                                                                                                                   | `100`            |
+| `experimental_use_rocksdb`                             | 使用 RocksDB 作为后端存储。                                                                                                                                                                                                                                                            | `0`              |
+| `slow_member_backpressure_no_progress_timeout_ms`      | 当通过 [`bpon`](#four-letter-word-commands) 开启背压后，leader 在放弃某个完全没有任何进展的副本之前，会等待多长时间。进展指的是收到已接受的响应——即取走了日志条目，或保存了快照对象——因此仅仅是速度较慢的副本会不断重置该计时，只有真正卡住的副本才会不再被等待。默认值为五分钟，而且它有意设置得这么大：正在应用大快照的副本可能会沉默数分钟，而这恰恰是值得等待的副本。对于 leader 完全无法访问的副本，会立即被丢弃，而不会等待该超时。`0` 表示 leader 对可访问的副本永不停止等待。 | `300000`         |
+| `slow_member_backpressure_max_uncommitted_log_entries` | 通过 [`bpon`](#four-letter-word-commands) 开启慢成员背压时，`nuraft_max_uncommitted_log_entries` 所采用的值。压住提交索引并不会阻止 leader 继续追加，因此若没有更严格的限制，日志会越跑越前，副本也会越落越远，而不是追赶上来。收紧该限制会让 leader 以可重试的错误拒绝新请求，直到副本缩小差距。`0` 表示保持限制不变。                                                                   | `0`              |
 
 quorum 的配置位于 `<keeper_server>.<raft_configuration>` 部分，其中包含服务器描述。
 
@@ -175,7 +177,7 @@ clickhouse keeper --config /etc/your_path_to_config/config.xml
 
 ClickHouse Keeper 也提供 4lw 命令，其用法与 ZooKeeper 基本相同。每个命令都由四个字母组成，例如 `mntr`、`stat` 等。还有一些比较常用的命令：`stat` 提供有关服务器和已连接客户端的常规信息，`srvr` 提供服务器的扩展信息，`cons` 提供连接的扩展信息。
 
-4lw 命令有一个白名单配置项 `four_letter_word_white_list`，其默认值为 `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`。
+4lw 命令有一个白名单配置项 `four_letter_word_white_list`，其默认值为 `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,bpon,bpof,pfev,lgrq`；在启用 jemalloc 的构建中还会额外加入 `jmst,jmfp,jmep,jmdp`。该列表仅在启动时读取一次，因此修改后需要重启才能生效。
 
 你可以通过 telnet 或 nc 在客户端端口向 ClickHouse Keeper 发送这些命令。
 
@@ -185,7 +187,7 @@ echo mntr | nc localhost 9181
 
 以下是 4lw 命令的详细说明：
 
-* `ruok`：测试服务器是否正在运行且未处于 error 状态。如果服务器正在运行，会返回 `imok`；否则将完全没有响应。返回 `imok` 并不一定表示服务器已加入 quorum，它只说明服务器进程处于活动状态，并已绑定到指定的客户端端口。要查看与 quorum 相关的状态以及客户端连接信息，请使用 `stat`。
+* `ruok`：测试服务器是否正在运行且未处于 error 状态。如果服务器正在运行，会返回 `imok`；否则将完全没有响应。返回 `imok` 并不一定表示服务器已加入 quorum，它只说明服务器进程处于活动状态，并已绑定到指定的客户端端口。要查看与 quorum 相关的状态以及客户端连接信息，请使用 &quot;stat&quot;。
 
 ```response
 imok
@@ -203,6 +205,7 @@ zk_packets_sent 68
 zk_num_alive_connections        1
 zk_outstanding_requests 0
 zk_server_state leader
+zk_slow_member_backpressure      0
 zk_znode_count  4
 zk_watch_count  1
 zk_ephemerals_count     0
@@ -402,13 +405,38 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld`：请求让出 leader 身份并转为 follower。如果接收该请求的服务器是 leader，它会先暂停写操作，等待继任者 (当前 leader 不会成为继任者) 追赶至最新日志，然后辞去 leader 身份。继任者将自动选出。请求已发送时返回 `Sent yield leadership request to leader.`，未发送时返回 `Failed to send yield leadership request to leader.`。如果该节点已是 follower，结果与发送该请求时相同。
+* `bpon`：要求 leader 等待跟不上进度的副本。开启后，leader 不会把提交索引推进到超出任何它能访问到的副本，这样已经落后的副本就有机会追平，而不会一直落后到需要快照的地步。此时写入的提交速度取决于最慢的可访问投票副本，因此请有意识地开启它，观察副本追赶完成后，再用 `bpof` 关闭。
+
+  这里没有落后阈值：leader 能访问到的每个投票副本都会被等待，无论落后多远，包括正在接收快照的副本。`can_become_leader` 设为 `false` 的副本不参与投票，也永远不会被等待，因此它仍可能一路落后到需要快照的地步——该背压机制并不保护它。如果你只是不希望某个副本成为 leader，请改为将其 `priority` 设为 `0`：这样它仍参与投票，因此仍会被等待，而 `can_become_leader` 为 `false` 则会将其完全排除在 quorum 之外。只有在等待也无济于事时，副本才会被排除在外——它的上一个请求失败、在 `slow_member_backpressure_no_progress_timeout_ms` 内没有任何进展、在新建立的 connection 上尚未做出任何响应且也没有快照正在发往它 (这让 leader 完全无法判断它的状态) ，或者它已超出 leader 的日志范围，以致日志和快照都无法使其恢复——因为等待这样的副本只会白白冻结提交索引。
+
+  同时请设置 `slow_member_backpressure_max_uncommitted_log_entries`。阻止提交索引推进并不会阻止 leader 继续追加日志，因此若不设置该参数，在等待副本期间日志会持续增长。
+
+  该命令可以发送到任意节点：follower 会将其转发给 current leader，而不会在本地切换任何设置，因此只有 leader 会持有该设置。可在 leader 上通过 `mntr` 中的 `zk_slow_member_backpressure` 进行检查，而 leader 由 `zk_server_state` 标识。该设置仅在一届 leader 任期内有效——节点成为 leader 时和不再担任 leader 时都会将其关闭——并且不会被 persisted，因此重启后的节点启动时该设置为关闭状态。
+
+  只有 leader 能对该设置作出应答，因此只有 leader 的回复才能确认它。follower 只会报告它已转发该请求，仅此而已：如果请求在 leader 卸任之后才到达，leader 会拒绝它。
+
+```bash
+$ echo bpon | nc localhost 9181   # sent to the leader
+Slow member backpressure is ON. Writes now commit at the speed of the slowest reachable voting replica; replicas with `can_become_leader` off are not waited for. A new leader switches it off, so send this again after a leader change.
+
+$ echo bpon | nc localhost 9181   # sent to a follower
+Sent slow member backpressure ON request to leader. Check `zk_slow_member_backpressure` in `mntr` on the leader, which `zk_server_state` identifies, to see whether it took effect.
+```
+
+* `bpof`：要求 leader 停止等待跟不上的副本。该命令可发送到任意节点，并以与 `bpon` 相同的方式到达 leader。
+
+```bash
+$ echo bpof | nc localhost 9181
+Sent slow member backpressure OFF request to leader.
+```
+
+* `ydld`：请求让出 leader 身份并转为 follower。如果接收到该请求的 server 是 leader，它会先暂停写操作，等待继任者 (current leader 永远不会成为继任者) 完成最新日志的 catch-up，然后卸任。继任者会自动选出。请求发送成功时返回 `Sent yield leadership request to leader.`，发送失败时返回 `Failed to send yield leadership request to leader.`。如果该节点本身已是 follower，其结果与请求发送成功时相同。
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev`：返回所有已收集事件的值。对于每个事件，返回事件名称、事件值和事件描述。
+* `pfev`: 返回所有已收集事件的值。对于每个事件，返回事件名称、事件值以及该事件的描述。
 
 ```response
 FileOpen        62      Number of files opened.

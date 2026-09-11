@@ -6,13 +6,13 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'FAQ']
 doc_type: 'reference'
 ---
 
-<div id="faq">
-  ## FAQ
-</div>
+import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="what-data-leaves-my-environment">
-  ### Quelles données quittent mon environnement ?
-</div>
+<PrivatePreviewBadge />
+
+## FAQ {#faq}
+
+### Quelles données quittent mon environnement ? {#what-data-leaves-my-environment}
 
 Deux composants envoient des données vers l’extérieur, tous deux via des connexions sortantes ouvertes par le connecteur lui-même : le chemin de collecte, qui transmet en continu des métadonnées opérationnelles, et les sessions d’assistance que vous activez, qui renvoient des diagnostics.
 
@@ -20,9 +20,7 @@ Le collecteur envoie les résultats d’un ensemble fixe de tables système (`me
 
 Lors d’une [session d’assistance](/fr/products/bring-your-own-cloud/connector/support-sessions) active, l’outil de dépannage renvoie également la sortie des commandes, limitée aux tables ClickHouse figurant dans la liste d’autorisation et aux vues Kubernetes en lecture seule, y compris les logs des pods, et soumise à la suppression des informations sensibles (patterns intégrés pour les adresses IP, les identifiants, les tokens et les clés, ainsi que les vôtres) avant son envoi. Vos données de table, sauvegardes et historique des requêtes (`system.query_log`, `system.text_log`) restent systématiquement dans votre environnement. Les exceptions documentées sont les suivantes : les lignes des tables d’historique des métriques figurant dans la liste d’autorisation (`system.metric_log`, `system.asynchronous_metric_log`) sont envoyées à chaque collecte, le texte des requêtes en cours est visible pendant la session via `system.processes` sauf si vous le retirez de la liste d’autorisation, et les logs des pods lus lors d’une session d’assistance Kubernetes quittent votre environnement après suppression des informations sensibles. La liste complète des connexions sortantes figure sur la page du [modèle de privilèges](/fr/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-<div id="how-do-i-revoke-access">
-  ### Comment révoquer l&#39;accès de ClickHouse ?
-</div>
+### Comment révoquer l&#39;accès de ClickHouse ? {#how-do-i-revoke-access}
 
 Par ordre croissant de radicalité :
 
@@ -32,21 +30,15 @@ Par ordre croissant de radicalité :
 4. **Révoquer les identifiants d&#39;accès.** Supprimez les utilisateurs ClickHouse `pcm_scraper` et `pcm_troubleshooter`, puis supprimez les Secrets du connecteur (Kubernetes) ou les fichiers sous `/etc/clicklink` (VM).
 5. **Supprimer entièrement le connecteur.** Consultez les [opérations](/fr/products/bring-your-own-cloud/connector/operations).
 
-<div id="air-gapped-and-mirrors">
-  ### Puis-je exécuter cette solution dans un environnement isolé du réseau ou via mes propres miroirs ?
-</div>
+### Puis-je exécuter cette solution dans un environnement isolé du réseau ou via mes propres miroirs ? {#air-gapped-and-mirrors}
 
 Oui. Chaque artefact requis lors de l&#39;installation peut provenir de votre périmètre : mettez en miroir l&#39;archive tar de la CLI et l&#39;image de conteneur depuis `releases.clicklink.clickhouse.com` et le registre public, pointez `image.repository` vers votre miroir et transmettez `--chart` avec une référence `oci://`, une URL ou une archive locale (avec `--chart-version` ; par défaut, il utilise la version de la CLI). Si le point de terminaison de l’API de votre connecteur est exposé au sein de votre périmètre derrière une CA privée, `--api-private-ca` (Kubernetes) ou `api.tls.ca_file` (VM) le vérifie par rapport à la chaîne du bundle d&#39;inscription. Pour l&#39;inscription sans connectivité directe, `init --handoff` utilise un bundle obtenu hors bande, tandis que `--no-auto-sign` associé à `init --signed-cert` permet d&#39;effectuer la signature du certificat hors bande. Consultez les [miroirs privés](/fr/products/bring-your-own-cloud/connector/configuration) et la section sur les environnements isolés du réseau de l&#39;[onboarding](/fr/products/bring-your-own-cloud/connector/onboarding). Notez que le connecteur doit tout de même disposer, à l&#39;exécution, d&#39;une route vers le point de terminaison de l’API du connecteur de votre organisation ; sans cela, ClickHouse Cloud ne reçoit aucune télémétrie.
 
-<div id="connector-down">
-  ### Que se passe-t-il si le connecteur tombe en panne ?
-</div>
+### Que se passe-t-il si le connecteur tombe en panne ? {#connector-down}
 
 Vos services ClickHouse ne sont pas affectés : le connecteur se contente d’y lire des données et ne se trouve sur aucun chemin de données. Cela entraîne une perte de visibilité : ClickHouse Cloud cesse de recevoir de la télémétrie et les sessions d’assistance deviennent indisponibles jusqu’à son rétablissement. Sur une VM, le collecteur met en mémoire tampon les données récupérées dans `/var/lib/clicklink/buffer` (jusqu’à 168 heures ou 1 024 Mo par défaut) lorsque le point de terminaison de l’API est inaccessible, puis les transmet lors de la reconnexion. Une indisponibilité du point de terminaison n’entraîne donc aucune perte de télémétrie. Un démon qui se bloque est redémarré par systemd et, sur Kubernetes, par le kubelet. Pour diagnostiquer le problème, vérifiez le point de terminaison `/livez` de chaque composant (le champ JSON `status` fait foi, pas le code HTTP) et exécutez `clicklink clctl preflight` (avec `sudo` sur l’hôte VM), qui vérifie en une seule passe la configuration, la connectivité, l’accessibilité de ClickHouse, les accès et le disque. Consultez les [opérations](/fr/products/bring-your-own-cloud/connector/operations) ; si le connecteur reste défaillant, contactez ClickHouse Support.
 
-<div id="support-session-auditing">
-  ### Comment les sessions d’assistance sont-elles auditées ?
-</div>
+### Comment les sessions d’assistance sont-elles auditées ? {#support-session-auditing}
 
 Chaque appel de passerelle et chaque commande de dépannage, qu&#39;ils soient acceptés ou bloqués, sont ajoutés à un journal d&#39;audit au format JSON délimité par des sauts de ligne dans `/var/log/clicklink/troubleshoot-audit.log`, avec une attribution par entrée : les appels de passerelle incluent l&#39;adresse e-mail de l&#39;opérateur attestée par le jeton (jamais un nom déclaré par l&#39;utilisateur), les modifications des sessions locales de VM enregistrent l&#39;utilisateur hôte à l&#39;origine de l&#39;appel, et les commandes exécutées durant une session enregistrent l&#39;identité de l&#39;org sur le canal authentifié. Les sessions elles-mêmes sont limitées dans le temps (4 heures par défaut, 24 heures au maximum) et chaque activation enregistre la personne qui l&#39;a activée, sa date d&#39;expiration et un motif facultatif, informations affichées par `clicklink clctl troubleshoot session status`.
 

@@ -1,11 +1,11 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "Concepts",
+  "item": "Conceitos",
   "pages": [
     "pt-BR/concepts/index",
     {
       "expanded": true,
-      "group": "Fundamentals",
+      "group": "Fundamentos",
       "pages": [
         "pt-BR/concepts/core-concepts/index",
         "pt-BR/concepts/core-concepts/glossary",
@@ -19,11 +19,11 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouse concepts",
+      "group": "Conceitos do ClickHouse",
       "pages": [
         "pt-BR/concepts/features/index",
         {
-          "group": "Materialized views",
+          "group": "Visões materializadas",
           "pages": [
             "pt-BR/concepts/features/materialized-views/index",
             "pt-BR/concepts/features/materialized-views/incremental-materialized-view",
@@ -32,21 +32,21 @@
           ]
         },
         {
-          "group": "Dictionaries",
+          "group": "Dicionários",
           "pages": [
             "pt-BR/concepts/features/dictionaries/index",
             "pt-BR/concepts/features/dictionaries/best-practices"
           ]
         },
         {
-          "group": "Projections",
+          "group": "Projeções",
           "pages": [
             "pt-BR/concepts/features/projections/projections",
             "pt-BR/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "Performance",
+          "group": "Desempenho",
           "pages": [
             "pt-BR/concepts/features/performance/index",
             "pt-BR/concepts/features/performance/prewhere",
@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "Skipping-indexes",
+              "group": "Índices de salto",
               "pages": [
                 "pt-BR/concepts/features/performance/skip-indexes/skipping-indexes",
                 "pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -70,7 +70,7 @@
             },
             "pt-BR/concepts/features/performance/lazy-materialization",
             {
-              "group": "Troubleshooting",
+              "group": "Solução de problemas",
               "pages": [
                 "pt-BR/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "pt-BR/concepts/features/performance/troubleshoot/oom-canary",
@@ -81,11 +81,11 @@
           ]
         },
         {
-          "group": "Operations",
+          "group": "Operações",
           "pages": [
             "pt-BR/concepts/features/operations/background-queries",
             {
-              "group": "Insert",
+              "group": "Inserir",
               "pages": [
                 "pt-BR/concepts/features/operations/insert/inserting-data",
                 "pt-BR/concepts/features/operations/insert/asyncinserts",
@@ -96,13 +96,13 @@
               ]
             },
             {
-              "group": "Select",
+              "group": "Selecionar",
               "pages": [
                 "pt-BR/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Update",
+              "group": "Atualizar",
               "pages": [
                 "pt-BR/concepts/features/operations/update/index",
                 "pt-BR/concepts/features/operations/update/overview",
@@ -110,7 +110,7 @@
               ]
             },
             {
-              "group": "Delete",
+              "group": "Excluir",
               "pages": [
                 "pt-BR/concepts/features/operations/delete/index",
                 "pt-BR/concepts/features/operations/delete/overview",
@@ -123,10 +123,10 @@
           ]
         },
         {
-          "group": "Configuration",
+          "group": "Configuração",
           "pages": [
             {
-              "group": "Settings",
+              "group": "Configurações",
               "pages": [
                 "pt-BR/concepts/features/configuration/settings/overview",
                 "pt-BR/concepts/features/configuration/settings/settings-query-level",
@@ -142,7 +142,7 @@
               ]
             },
             {
-              "group": "Server config",
+              "group": "Configuração do servidor",
               "pages": [
                 "pt-BR/concepts/features/configuration/server-config/configuration-files",
                 "pt-BR/concepts/features/configuration/server-config/storing-data",
@@ -157,7 +157,7 @@
           ]
         },
         {
-          "group": "Security and auth",
+          "group": "Segurança e autenticação",
           "pages": [
             "pt-BR/concepts/features/security/index",
             "pt-BR/concepts/features/security/access-rights",
@@ -171,7 +171,7 @@
               ]
             },
             {
-              "group": "External authenticators",
+              "group": "Autenticadores externos",
               "pages": [
                 "pt-BR/concepts/features/security/external-authenticators/index",
                 {
@@ -196,7 +196,7 @@
           ]
         },
         {
-          "group": "Backup and restore",
+          "group": "Backup e restauração",
           "pages": [
             "pt-BR/concepts/features/backup-restore/overview",
             "pt-BR/concepts/features/backup-restore/restore-settings",
@@ -215,7 +215,7 @@
             "pt-BR/concepts/features/interfaces/client",
             "pt-BR/concepts/features/interfaces/mcp",
             {
-              "group": "Drivers and interfaces",
+              "group": "Drivers e interfaces",
               "pages": [
                 "pt-BR/concepts/features/interfaces/overview",
                 "pt-BR/concepts/features/interfaces/http",
@@ -244,7 +244,7 @@
             "pt-BR/concepts/features/interfaces/web-ui-result-shaping",
             "pt-BR/concepts/features/interfaces/web-terminal",
             {
-              "group": "Third-party clients",
+              "group": "Clientes de terceiros",
               "pages": [
                 "pt-BR/concepts/features/interfaces/third-party/index"
               ]
@@ -252,7 +252,7 @@
           ]
         },
         {
-          "group": "Tools and utilities",
+          "group": "Ferramentas e utilitários",
           "pages": [
             "pt-BR/concepts/features/tools-and-utilities/index",
             "pt-BR/concepts/features/tools-and-utilities/backupview",
@@ -272,7 +272,7 @@
     },
     {
       "expanded": true,
-      "group": "Best practices",
+      "group": "Práticas recomendadas",
       "pages": [
         "pt-BR/concepts/best-practices/index",
         "pt-BR/concepts/best-practices/choosing-a-primary-key",

@@ -1,16 +1,18 @@
 ---
 title: 'Configuration'
 sidebarTitle: 'Configuration'
-description: 'Configurez ClickHouse Connector : instances ClickHouse, listes d’autorisation d’opérateurs, politique réseau, masquage, miroirs privés et stockage'
+description: 'Configurez ClickHouse Connector : instances ClickHouse, listes d’autorisation d’opérateurs, politique réseau, masquage, miroirs privés et stockage'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration']
 doc_type: 'guide'
 ---
 
-Cette page présente les modifications de configuration les plus courantes après l’installation de ClickHouse Connector. Pour chaque clé, sa valeur par défaut et sa signification, consultez la [référence de configuration](/fr/products/bring-your-own-cloud/connector/reference/configuration) ; pour les options de ligne de commande, consultez la [référence CLI](/fr/products/bring-your-own-cloud/connector/reference/cli).
+import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="configuration-surfaces">
-  ## Points de configuration
-</div>
+<PrivatePreviewBadge />
+
+Cette page présente les modifications de configuration les plus courantes après l’installation de ClickHouse Connector. Pour chaque clé, sa valeur par défaut et sa signification, consultez la [référence de configuration](/fr/products/bring-your-own-cloud/connector/reference/configuration) ; pour les options de ligne de commande, consultez la [référence CLI](/fr/products/bring-your-own-cloud/connector/reference/cli).
+
+## Points de configuration {#configuration-surfaces}
 
 Le connecteur dispose d&#39;un point de configuration pour chaque cible d&#39;installation.
 
@@ -56,9 +58,7 @@ Le connecteur dispose d&#39;un point de configuration pour chaque cible d&#39;in
   </Tab>
 </Tabs>
 
-<div id="clickhouse-instances">
-  ## Ajout ou modification d&#39;instances ClickHouse
-</div>
+## Ajout ou modification d&#39;instances ClickHouse {#clickhouse-instances}
 
 Chaque entrée sous `instances` désigne un point de terminaison du protocole natif ClickHouse à partir duquel le connecteur lit les données : `host`, `port`, `database`, `secure`, ainsi que `namespace` et `cluster` sur Kubernetes. Les identifiants ne figurent jamais dans la configuration ; chaque composant récupère son utilisateur ClickHouse en lecture seule depuis le bundle d&#39;accès créé lors du provisionnement.
 
@@ -153,9 +153,7 @@ Chaque entrée sous `instances` désigne un point de terminaison du protocole na
   Les mêmes commandes `access provision`, avec `--force`, renouvellent les identifiants ClickHouse d&#39;une instance. Consultez la page [opérations](/fr/products/bring-your-own-cloud/connector/operations).
 </Tip>
 
-<div id="operator-allowlist">
-  ## Liste d&#39;autorisation des opérateurs
-</div>
+## Liste d&#39;autorisation des opérateurs {#operator-allowlist}
 
 Les sessions gérées par la passerelle sont soumises à une liste d&#39;autorisation d&#39;adresses e-mail d&#39;opérateurs : chaque requête envoyée à la passerelle de sessions doit inclure un jeton d&#39;identité OIDC à courte durée de vie dont l&#39;adresse e-mail attestée figure dans cette liste. Une liste d&#39;autorisation vide ferme la passerelle : personne ne peut alors ouvrir de session via celle-ci. Sur une VM, root sur l&#39;hôte peut également gérer les sessions directement via le fichier de sessions local ; la liste d&#39;autorisation ne régit que le chemin passant par la passerelle. Consultez les [sessions de support](/fr/products/bring-your-own-cloud/connector/support-sessions) pour connaître le modèle de confiance complet.
 
@@ -185,9 +183,7 @@ Les sessions gérées par la passerelle sont soumises à une liste d&#39;autoris
   </Tab>
 </Tabs>
 
-<div id="network-policy">
-  ## Politique réseau et trafic sortant
-</div>
+## Politique réseau et trafic sortant {#network-policy}
 
 Sur Kubernetes, le chart fournit une ressource NetworkPolicy qui bloque le trafic par défaut, avec une liste d’autorisation pour le trafic sortant (`networkPolicy.enabled: true`). Les objets NetworkPolicy ne prennent effet que si votre CNI les applique. Avec un CNI qui les applique, le connecteur ne dispose d’aucun trafic sortant tant que `allowEgressCIDRs` ne spécifie pas les CIDR correspondant au point de terminaison de l’API de votre connecteur.
 
@@ -227,9 +223,7 @@ La plage `private.googleapis.com` couvre un fournisseur d’identité Google acc
 
 Deux autres paramètres d’Ingress : `metricsScrapeSelector` restreint l’Ingress de collecte des métriques à un espace de noms Prometheus spécifique via un label, et `kubeletProbeCIDRs` autorise explicitement les sondes de santé du kubelet dans les environnements où le refus par défaut est strict. Consultez la [référence de configuration](/fr/products/bring-your-own-cloud/connector/reference/configuration) pour obtenir la liste complète des clés.
 
-<div id="redaction-patterns">
-  ## Motifs de masquage
-</div>
+## Motifs de masquage {#redaction-patterns}
 
 La sortie de Troubleshooter est masquée avant de quitter votre périmètre. Les motifs intégrés couvrent `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key` et `connection-string-credentials`. Vous pouvez ajouter vos propres motifs dans un fichier YAML ; ils sont appliqués en premier, dans l’ordre du fichier, suivis des motifs intégrés. Une entrée qui réutilise le `name` d’un motif intégré remplace ce dernier.
 
@@ -254,9 +248,7 @@ Sur une VM, le fichier est `/etc/clicklink/redaction-patterns.yaml` ; l’insta
   L’outil de dépannage refuse de démarrer lorsqu’un fichier de patterns est présent mais non valide, et consigne l’entrée en cause. `clicklink clctl preflight` valide le fichier ; exécutez-le avant de redémarrer le démon.
 </Warning>
 
-<div id="private-mirrors">
-  ## Miroirs privés et endpoints internes au périmètre
-</div>
+## Miroirs privés et endpoints internes au périmètre {#private-mirrors}
 
 Le chart publié définit par défaut `image.repository` sur l’image publique multi-architecture du connecteur, signée avec cosign ; les installations standard ne nécessitent donc aucune valeur d’image. Pour consulter les valeurs par défaut publiées :
 
@@ -283,9 +275,7 @@ clicklink clctl init --handoff handoff.yaml --target helm \
 
 Lorsque le point de terminaison de l’API de votre connector se trouve derrière une CA privée au sein de votre périmètre, transmettez `--api-private-ca` à `init` : cette option configure `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, afin que le point de terminaison de l’API soit vérifié par rapport à la chaîne de CA de votre bundle d’onboarding plutôt qu’aux racines système. Sur une VM, l’équivalent est `api.tls.ca_file` dans `/etc/clicklink/config.yaml` ; `init` installe la chaîne du bundle dans `/etc/clicklink/tls/ca.crt` et l’ajoute aux racines système pour la vérification. Pour un onboarding entièrement air-gapped et la signature de certificats, consultez [l’onboarding](/fr/products/bring-your-own-cloud/connector/onboarding).
 
-<div id="storage">
-  ## Stockage
-</div>
+## Stockage {#storage}
 
 <Tabs>
   <Tab title="Kubernetes">
