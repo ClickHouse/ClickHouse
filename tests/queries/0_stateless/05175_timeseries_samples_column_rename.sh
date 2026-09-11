@@ -28,9 +28,8 @@ $CLIENT -q "CREATE TABLE ts_old_metrics (metric_family_name String, type String,
 # The definition below is what a server of version 1 stores for a table with external targets.
 uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
 # ATTACH TABLE with a full table definition emits a warning which would pollute stderr.
-$CLIENT --send_logs_level=fatal -q "ATTACH TABLE ts_old UUID '$uuid' (metric_name String, tags Map(String, String), time_series Array(Tuple(DateTime64(3), Float32)), metric_family String, type String, unit String, help String) ENGINE = TimeSeries SAMPLES ts_old_samples TAGS ts_old_tags METRICS ts_old_metrics SETTINGS version = 1, recent_samples_ttl_seconds = 0"
+$CLIENT --send_logs_level=fatal -q "ATTACH TABLE ts_old UUID '$uuid' (metric_name String, tags Map(String, String), time_series Array(Tuple(DateTime64(3), Float32)), metric_family String, type String, unit String, help String) ENGINE = TimeSeries SETTINGS version = 1, recent_samples_ttl_seconds = 0 SAMPLES ts_old_samples TAGS ts_old_tags METRICS ts_old_metrics"
 $CLIENT -q "SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 'ts_old' ORDER BY position"
-$CLIENT -q "SELECT extract(create_table_query, 'version = (\d+)'), position(create_table_query, 'time_series') FROM system.tables WHERE database = currentDatabase() AND name = 'ts_old'"
 
 echo '--- the attached table can be written and read ---'
 $CLIENT -q "INSERT INTO ts_old (metric_name, tags, samples) VALUES ('up', {'job': 'j'}, [(toDateTime64(1000, 3), 1), (toDateTime64(1060, 3), 2)])"

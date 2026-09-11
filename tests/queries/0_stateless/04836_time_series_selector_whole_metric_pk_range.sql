@@ -165,10 +165,10 @@ CREATE TABLE ts_prune ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, U
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
     SETTINGS max_bytes_to_merge_at_max_space_in_pool = 1;
 
-INSERT INTO ts_prune (metric_name, tags, time_series) VALUES
+INSERT INTO ts_prune (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(100, 3), 2.)]);
-INSERT INTO ts_prune (metric_name, tags, time_series) VALUES
+INSERT INTO ts_prune (metric_name, tags, samples) VALUES
     ('bar', map('env', 'prod'), [(toDateTime64(100, 3), 4.)]);
 
 SELECT sum(value), count() FROM timeSeriesSelector(ts_prune, 'foo', 0, 1000);
