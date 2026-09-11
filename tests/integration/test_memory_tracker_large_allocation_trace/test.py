@@ -1,4 +1,5 @@
 import re
+import time
 
 import pytest
 
@@ -39,7 +40,13 @@ def started_cluster():
 def stack_of_first_record(instance):
     """The frame lines of the first logged trace, and only those: the lines after the marker up to
     the next log record. Slicing to one record keeps unrelated log content out of the assertions."""
-    lines = instance.grep_in_log(LOG_MARKER, after=40).splitlines()
+    # The record is produced by the collector thread, not by the query, so wait for it rather
+    # than racing it. One log record is written in a single call, so the marker being visible
+    # means the frame lines below it are too.
+    instance.wait_for_log_line(LOG_MARKER, timeout=60)
+    # only_latest: the wait tees into a sibling log file, and a multi-file zgrep prefixes every
+    # line with its filename, which the frame patterns below would then not match.
+    lines = instance.grep_in_log(LOG_MARKER, after=40, only_latest=True).splitlines()
     assert any(LOG_MARKER in line for line in lines), lines
     start = next(i for i, line in enumerate(lines) if LOG_MARKER in line)
 
@@ -75,15 +82,21 @@ def test_large_allocation_reaches_the_server_log_and_trace_log():
         FRAME_WITH_ADDRESS.match(frame) and not TRACER_FRAME.search(frame) for frame in frames
     ), frames
 
-    node.query("SYSTEM FLUSH LOGS trace_log")
-    count, memory_context, max_size, without_stack = (
-        node.query(
-            "SELECT count(), any(memory_context), max(size), countIf(length(trace) = 0) "
-            "FROM system.trace_log WHERE trace_type = 'MemoryLargeAllocation'"
+    deadline = time.monotonic() + 60
+    while True:
+        node.query("SYSTEM FLUSH LOGS trace_log")
+        count, memory_context, max_size, without_stack = (
+            node.query(
+                "SELECT count(), any(memory_context), max(size), countIf(length(trace) = 0) "
+                "FROM system.trace_log WHERE trace_type = 'MemoryLargeAllocation'"
+            )
+            .strip()
+            .split("\t")
         )
-        .strip()
-        .split("\t")
-    )
+        if int(count) > 0 or time.monotonic() > deadline:
+            break
+        time.sleep(1)
+
     assert int(count) > 0
     assert memory_context == "Global"
     assert int(max_size) >= THRESHOLD
