@@ -35,6 +35,7 @@ class _Environment(MetaClasses.Serializable):
     USER_LOGIN: str
     FORK_NAME: str
     COMMIT_MESSAGE: str = ""
+    RUN_ATTEMPT: int = 0
     EVENT_ACTION: str = ""
     # `created_at` of this workflow run, resolved once by the config job (see
     # native_jobs._config_workflow) and inherited by every other job with this
@@ -223,6 +224,7 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TIME=EVENT_TIME,
             PR_NUMBER=PR_NUMBER,
             RUN_ID=RUN_ID,
+            RUN_ATTEMPT=int(os.getenv("GITHUB_RUN_ATTEMPT", "0")),
             CHANGE_URL=CHANGE_URL,
             COMMIT_URL=COMMIT_URL,
             RUN_URL=RUN_URL,
@@ -261,6 +263,10 @@ class _Environment(MetaClasses.Serializable):
         # CI engine environments serialised by `_build_ci_environment` are not wiped.
         JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "") or obj.get("JOB_OUTPUT_STREAM", "")
         obj["JOB_OUTPUT_STREAM"] = JOB_OUTPUT_STREAM
+        # A failed-job rerun inherits the config job's previous environment.
+        # Capture the current attempt on the host before serializing for Docker.
+        if "GITHUB_RUN_ATTEMPT" in os.environ:
+            obj["RUN_ATTEMPT"] = int(os.environ["GITHUB_RUN_ATTEMPT"])
         if "PARAMETER" in obj:
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
         # Filter out unexpected arguments - only keep fields defined in the dataclass
