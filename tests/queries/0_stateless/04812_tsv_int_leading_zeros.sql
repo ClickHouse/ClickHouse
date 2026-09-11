@@ -199,10 +199,11 @@ SELECT toInt64('007'), toInt64('+7');
 SELECT count() FROM cmp_04812 WHERE v = '0abc'; -- { serverError TYPE_MISMATCH }
 -- The same conversion runs during planning, so the predicate now reaches the primary key and a skip index
 -- instead of failing analysis. Only the naming lines are asserted: the part and granule counts beside them
--- move with the granularity the runner randomizes.
+-- move with the granularity the runner randomizes. Index analysis is rendered only for a local read, so
+-- parallel replicas are off here: with them these two rows sit under the remote step, or are absent.
 SELECT 'group 14: index analysis accepts the same literal';
-SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE id = '007') WHERE explain ILIKE '%Condition:%';
-SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE v = '007') WHERE explain ILIKE '%Name:%';
+SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE id = '007' SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Condition:%';
+SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE v = '007' SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Name:%';
 
 -- 15. A '+' with no digit after it is refused by the reader itself, so these two carriers now report the
 -- reader's code where an integer target used to reach their own. Neither carrier normalizes reader codes:
