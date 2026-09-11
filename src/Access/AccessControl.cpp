@@ -638,15 +638,23 @@ bool AccessControl::insertImpl(
     return inserted;
 }
 
-void AccessControl::checkNameCollisionInOtherStorage(IAccessStorage & storage, const AccessEntityPtr & entity) const
+bool AccessControl::checkNameCollisionInOtherStorage(
+    IAccessStorage & storage, const AccessEntityPtr & entity, bool throw_if_exists, UUID * conflicting_id) const
 {
     for (const auto & other_storage : getStorages())
     {
         if (other_storage.get() == &storage)
             continue;
-        if (other_storage->find(entity->getType(), entity->getName()))
-            throwNameCollisionCannotInsert(entity->getType(), entity->getName(), other_storage->getStorageName());
+        if (auto existing_id = other_storage->find(entity->getType(), entity->getName()))
+        {
+            if (conflicting_id)
+                *conflicting_id = *existing_id;
+            if (throw_if_exists)
+                throwNameCollisionCannotInsert(entity->getType(), entity->getName(), other_storage->getStorageName());
+            return true;
+        }
     }
+    return false;
 }
 
 bool AccessControl::insertImplUnlocked(
@@ -657,8 +665,9 @@ bool AccessControl::insertImplUnlocked(
     bool throw_if_exists,
     UUID * conflicting_id)
 {
-    if (storage)
-        checkNameCollisionInOtherStorage(*storage, entity);
+    if (storage && !replace_if_exists
+        && checkNameCollisionInOtherStorage(*storage, entity, throw_if_exists, conflicting_id))
+        return false;
 
     StoragePtr selected_storage;
     if (!storage)
@@ -722,6 +731,8 @@ bool AccessControl::updateImpl(const UUID & id, const UpdateFunc & update_func, 
             auto old_entity = tryRead(id);
             if (old_entity)
             {
+                /// Replicated storage retries can already invoke `update_func` more than once, and this
+                /// preliminary validation adds another invocation. It must be a pure transformation.
                 auto new_entity = update_func(old_entity, id);
                 feature_tier_checker = prepareFeatureTierAccessEntityChecker(
                     *this, PendingAccessEntities{{id, new_entity}}, PendingAccessEntities{{id, old_entity}});
@@ -771,7 +782,7 @@ std::vector<UUID> AccessControl::insertInto(
         /// Check all cross-storage collisions before inserting anything. An exception must not leave
         /// a prefix of a multi-entity `CREATE` statement in the destination storage.
         for (const auto & entity : entities)
-            checkNameCollisionInOtherStorage(*storage, entity);
+            checkNameCollisionInOtherStorage(*storage, entity, /* throw_if_exists= */ true, /* conflicting_id= */ nullptr);
 
         for (const auto & entity : entities)
         {

@@ -690,7 +690,7 @@ FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
             return {};
     }
 
-    bool changes_only_users = changesOnlyUsers(access_control, pending, current);
+    bool changes_only_users = !force && changesOnlyUsers(access_control, pending, current);
     auto graph = std::make_shared<AccessGraph>(access_control, !changes_only_users, pending, current);
     return [&access_control, graph](const PendingAccessEntities & pending_, const PendingAccessEntities & current_)
     {

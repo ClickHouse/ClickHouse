@@ -1439,9 +1439,9 @@ This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `PRI
 What is rejected is a change of the value in effect, not a statement that mentions the setting. A statement
 on a user, a role or a settings profile is rejected when it moves such a setting for some user, even when it
 names no setting: granting or revoking a role that carries one, assigning a settings profile, dropping a role
-or a profile, or dropping an override by omission. Restating the value a user already has changes nothing and
-is allowed. Settings that the server itself puts in effect, through the configuration file or `compatibility`,
-are never rejected.
+or a profile, or dropping an override by omission. Restating a value the entity itself already holds changes
+nothing and is allowed. Settings that the server itself puts in effect, through the configuration file or
+`compatibility`, are never rejected.
 
 <Note>
 A value of `0` means that all settings can be changed.

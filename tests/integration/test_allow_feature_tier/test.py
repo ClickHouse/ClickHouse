@@ -1726,6 +1726,35 @@ def test_restore_access_entities_checks_feature_tier(start_cluster):
         drop_entities(instance, users=[user])
 
 
+def test_restore_replaces_user_from_readonly_storage(start_cluster):
+    user = "tier_config_user"
+    backup_name = f"tier_restore_collision_{uuid.uuid4().hex}"
+    backup = f"Disk('backups', '{backup_name}')"
+    drop_entities(instance, users=[user], storage="local_directory")
+
+    try:
+        instance.query(
+            f"CREATE USER IF NOT EXISTS {user} IDENTIFIED WITH no_password "
+            f"SETTINGS {EXPERIMENTAL_SETTING} = 1"
+        )
+        instance.query(f"BACKUP TABLE system.users TO {backup}")
+        drop_entities(instance, users=[user], storage="local_directory")
+
+        instance.query(
+            f"RESTORE TABLE system.users FROM {backup} "
+            "SETTINGS create_access = 'replace'"
+        )
+        assert (
+            instance.query(
+                f"SELECT storage FROM system.users WHERE name = '{user}' ORDER BY storage"
+            ).splitlines()
+            == ["local_directory", "users_xml"]
+        )
+        assert read_experimental_setting(instance, user) == "1"
+    finally:
+        drop_entities(instance, users=[user], storage="local_directory")
+
+
 def test_replicated_update_reapplies_after_version_conflict(start_cluster):
     user = "tier_replicated_cas_user"
     grant_thread = None
