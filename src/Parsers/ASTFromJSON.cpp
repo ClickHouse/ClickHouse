@@ -24,6 +24,7 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTTupleDataType.h>
+#include <Parsers/ASTTupleElementCodecOperation.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDictionary.h>
@@ -186,6 +187,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"DataType", [] { return make_intrusive<ASTDataType>(); }},
         {"EnumDataType", [] { return make_intrusive<ASTEnumDataType>(); }},
         {"TupleDataType", [] { return make_intrusive<ASTTupleDataType>(); }},
+        {"TupleElementCodecOperation", [] { return make_intrusive<ASTTupleElementCodecOperation>(); }},
         {"FunctionWithKeyValueArguments", [] { return make_intrusive<ASTFunctionWithKeyValueArguments>(); }},
         {"Pair", [] { return make_intrusive<ASTPair>(); }},
         {"TTLElement", [] { return make_intrusive<ASTTTLElement>(); }},
