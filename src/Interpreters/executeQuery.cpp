@@ -3090,6 +3090,13 @@ static BlockIO executeQueryImpl(
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
+                        /// A cache hit builds no plan and runs no pipeline, so there is nothing to
+                        /// capture. Said here because the query never reaches canEnableProfiler,
+                        /// which is below this branch, and would otherwise leave `query_plan` empty
+                        /// with nothing to explain it.
+                        QueryPlanProfiler::declineCapture(
+                            context, "the result came from the query result cache, so no plan was executed");
+
                         return true;
                     }
                 }

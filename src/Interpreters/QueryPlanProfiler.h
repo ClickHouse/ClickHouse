@@ -22,6 +22,9 @@ public:
     /// not merely those that asked for one.
     static bool canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal);
 
+    /// Reports why a query that asked for its plan is not going to get one.
+    static void declineCapture(const ContextPtr & context, const char * reason);
+
     /// Takes ownership of the plan and returns it, so that the caller can go on building the
     /// pipeline from the copy the profiler will render -- the two must be the same object, because
     /// the pretty names built here are keyed by plan pointer.

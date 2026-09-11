@@ -76,6 +76,18 @@ QueryPlan & QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
     return *query_plan;
 }
 
+void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * reason)
+{
+    if (!context->getSettingsRef()[Setting::log_query_plans])
+        return;
+
+    LOG_TRACE(
+        getLogger("QueryPlanProfiler"),
+        "Not storing the query plan in 'system.query_log' even though setting `log_query_plans`"
+        " is true, because {}.",
+        reason);
+}
+
 bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTPtr & ast, bool internal)
 {
     if (internal)
@@ -90,13 +102,9 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
     /// `query_plan` column empty with nothing on the surface to explain it. Say why. The reasons
     /// below are the ones a user can act on; the two above are not, and the secondary-query case is
     /// by design -- the initial query logs the plan for all of them -- so none of those speak.
-    const auto declined = [](const char * reason)
+    const auto declined = [&](const char * reason)
     {
-        LOG_TRACE(
-            getLogger("QueryPlanProfiler"),
-            "Not storing the query plan in 'system.query_log' even though setting `log_query_plans`"
-            " is true, because {}.",
-            reason);
+        declineCapture(context, reason);
         return false;
     };
 
