@@ -19,26 +19,27 @@ namespace DB
 /// values a consumer can render.
 class StepStatsStorage
 {
-    /// Everything collected from the pipeline is keyed by the step's unique id
-    using StepAndGroup = std::pair<String, size_t>;
+    /// Everything collected from the pipeline is keyed by the step it belongs to. A raw pointer is
+    /// safe here: the storage is built and consumed while the plan and its pipeline are alive, and
+    /// analyzeStep needs a live step anyway.
+    using StepAndGroup = std::pair<const IQueryPlanStep *, size_t>;
 
     /// Per-processor elapsed times collected per (step, group) to compute the distribution.
     /// A multiset keeps the values sorted and preserves duplicates so the median stays correct.
     using ElapsedTimes = std::multiset<UInt64>;
     using ElapsedTimesPerStepGroup = std::unordered_map<StepAndGroup, ElapsedTimes, boost::hash<StepAndGroup>>;
 
-    using StatsByStep = std::unordered_map<String, StepIOStats>;
+    using StatsByStep = std::unordered_map<const IQueryPlanStep *, StepIOStats>;
     using StatsByStepAndGroup = std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>>;
-    using ProcessorsByStep = std::unordered_map<String, std::vector<IProcessor *>>;
-    using ReportsByStep = std::unordered_map<String, StepAnalysisReport>;
+    using ProcessorsByStep = std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>>;
+    using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
     StepStatsStorage(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
-    /// Unlike collecting, this needs a live step: getAnalysisReport reads state that only the step
-    /// object holds, and getStepGroups and the analyzer dispatch have no id-based equivalent. It
-    /// must therefore run while the pipeline is still alive, because the processors handed to
-    /// getAnalysisReport belong to it. What it returns is a plain value that outlives both.
+    /// Must run while the pipeline is still alive: getAnalysisReport reads state only the step
+    /// object holds, and the processors handed to it belong to the pipeline. What it returns is a
+    /// plain value that outlives both, which is what a renderer is given.
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
 
     /// How long the query executed.
