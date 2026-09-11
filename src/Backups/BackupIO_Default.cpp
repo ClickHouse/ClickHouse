@@ -35,7 +35,7 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
 {
     LOG_TRACE(log, "Copying file {} to disk {} through buffers", path_in_backup, destination_disk->getName());
 
-    auto read_buffer = readFile(path_in_backup);
+    auto read_buffer = readFile(path_in_backup, file_size);
 
     std::unique_ptr<WriteBuffer> write_buffer;
     auto buf_size = std::min(file_size, write_buffer_size);
@@ -48,13 +48,13 @@ void BackupReaderDefault::copyFileToDisk(const String & path_in_backup, size_t f
     write_buffer->finalize();
 }
 
-void BackupReaderDefault::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t /* file_size */,
+void BackupReaderDefault::copyFileRangeToDisk(const String & path_in_backup, size_t offset, size_t size, size_t file_size,
                                               bool encrypted_in_backup, DiskPtr destination_disk, const String & destination_path,
                                               WriteMode write_mode)
 {
     LOG_TRACE(log, "Copying a range of file {} to disk {} through buffers", path_in_backup, destination_disk->getName());
 
-    auto read_buffer = readFile(path_in_backup);
+    auto read_buffer = readFile(path_in_backup, file_size);
     read_buffer->seek(offset, SEEK_SET);
 
     std::unique_ptr<WriteBuffer> write_buffer;

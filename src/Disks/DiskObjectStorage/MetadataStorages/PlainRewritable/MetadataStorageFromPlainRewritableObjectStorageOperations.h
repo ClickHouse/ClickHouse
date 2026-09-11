@@ -224,7 +224,13 @@ private:
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
-    bool copy_attempted = false;
+    /// Set between the copy and everything that follows it: the blob is at the destination from
+    /// that point on, whatever happens next, so `undo` has to take it back out.
+    bool copied_to_destination = false;
+    /// The generation the copy wrote, so that the delete in `undo` is pinned to it and cannot take
+    /// away a generation another writer has put at the same key since.
+    StoredObject destination;
+    bool destination_generation_is_named = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCopyFileOperation(

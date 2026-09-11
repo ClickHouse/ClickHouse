@@ -551,23 +551,70 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     const auto directory_remote_path_to = fs_tree->getDirectoryRemoteInfo(normalized_path_to.parent_path())->remote_path;
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
 
-    copy_attempted = true;
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+
+    /// The destination blob is there from now on, so `undo` has to take it back out - and only it:
+    /// the generation that was just written is named here, so that the delete in `undo` is pinned
+    /// to it and cannot take away a generation another writer has put at the same key since. A copy
+    /// that threw before writing anything leaves nothing for `undo` to remove, which is why the
+    /// flag is set here rather than before the copy.
+    copied_to_destination = true;
+    if (auto named = nameTheGenerationThatWasJustWritten(*object_storage, remote_path_to))
+    {
+        destination = std::move(*named);
+        destination_generation_is_named = true;
+    }
+
     fs_tree->recordFile(path_to, fs_tree->getFileRemoteInfo(path_from).value());
 }
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
 {
-    if (!copy_attempted)
+    if (!copied_to_destination)
         return;
 
+    auto log = getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation");
+
+    if (!destination_generation_is_named)
+    {
+        /// The generation the copy wrote was never named, so the only delete available here is one
+        /// by path, and that is exactly what would take away a generation somebody else has put at
+        /// the key since. The blob stays and its path is logged instead.
+        LOG_WARNING(
+            log,
+            "Not removing the blob at {} that the copy of '{}' to '{}' wrote: the generation it "
+            "holds was never named, so it cannot be deleted without the risk of taking away a "
+            "generation written by somebody else. Remove it by hand if it is not wanted",
+            remote_path_to.string(),
+            path_from,
+            path_to);
+        return;
+    }
+
     LOG_WARNING(
-        getLogger("MetadataStorageFromPlainObjectStorageCopyFileOperation"),
+        log,
         "Removing file '{}' that was copied from '{}",
         path_to,
         path_from);
 
-    object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    /// `destination` names the generation this copy wrote, so a blob that another writer has put at
+    /// the same key since is refused with `FILE_CHANGED_DURING_READ` and stays.
+    try
+    {
+        object_storage->removeObjectIfExists(destination);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::FILE_CHANGED_DURING_READ)
+            throw;
+
+        LOG_WARNING(
+            log,
+            "Not removing the blob at {} that the copy of '{}' wrote: another writer has replaced "
+            "that generation since, and it was never seen here",
+            remote_path_to.string(),
+            path_to);
+    }
 }
 
 MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlainObjectStorageMoveFileOperation(

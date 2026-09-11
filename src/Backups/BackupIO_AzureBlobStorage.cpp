@@ -167,10 +167,17 @@ UInt64 BackupReaderAzureBlobStorage::getFileSize(const String & file_name)
     return object_metadata.size_bytes;
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(const String & file_name, std::optional<size_t> expected_file_size)
 {
     String key = fs::path(blob_path) / file_name;
     ObjectMetadata metadata = headBackupBlob(*object_storage, key);
+    /// Every restore path that reads through this buffer - the buffered fallback of
+    /// `copyFileToDisk`, and `BackupImpl::copyFileToDisk` with `sync` - copies exactly the number of
+    /// bytes the backup metadata records, so a blob that has been replaced by a longer one since the
+    /// backup was made would be restored as its first bytes and pass unnoticed. It is refused here,
+    /// before a single byte is read, the same way the native copy refuses it.
+    if (expected_file_size)
+        checkBackupBlobSize(key, metadata, *expected_file_size);
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client, key, read_settings, settings->max_single_read_retries,
         settings->max_single_download_retries,

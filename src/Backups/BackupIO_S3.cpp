@@ -433,7 +433,7 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
     return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name, std::optional<size_t> /*expected_file_size*/)
 {
     return std::make_unique<ReadBufferFromS3>(
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
@@ -476,7 +476,7 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
             const auto src_key = fs::path(s3_uri.key) / path_in_backup;
             auto dest_client = destination_disk->getS3StorageClient();
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
-            auto create_read_buffer = [&, this] { return readFile(path_in_backup); };
+            auto create_read_buffer = [&, this] { return readFile(path_in_backup, /*expected_file_size=*/ std::nullopt); };
 
             if (is_range)
                 copyS3FileRange(

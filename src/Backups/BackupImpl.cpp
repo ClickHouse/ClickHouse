@@ -331,7 +331,13 @@ void BackupImpl::openArchive()
         if (!reader->fileExists(archive_name))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
         size_t archive_size = reader->getFileSize(archive_name);
-        archive_reader = createArchiveReader(archive_name, [my_reader = reader, archive_name]{ return my_reader->readFile(archive_name); }, archive_size);
+        /// The archive is reopened through this factory as many times as it is read, and every one
+        /// of those reads is bounded by the size taken here, so a blob replaced under an open backup
+        /// is refused rather than read as a mix of two archives.
+        archive_reader = createArchiveReader(
+            archive_name,
+            [my_reader = reader, archive_name, archive_size] { return my_reader->readFile(archive_name, archive_size); },
+            archive_size);
         archive_reader->setPassword(archive_params.password);
     }
     else
@@ -669,7 +675,7 @@ void BackupImpl::readBackupMetadata()
     {
         if (!reader->fileExists(".backup"))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
-        in = reader->readFile(".backup");
+        in = reader->readFile(".backup", /*expected_file_size=*/ std::nullopt);
     }
 
     String str;
@@ -1209,7 +1215,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileByObjectKey(const Ba
     if (info.object_key.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Object key of {} is empty string", info.data_file_name);
 
-    return lightweight_snapshot_reader->readFile(info.object_key);
+    return lightweight_snapshot_reader->readFile(info.object_key, /*expected_file_size=*/ std::nullopt);
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -1262,7 +1268,7 @@ BackupImpl::readFileImpl(const String & file_name, const SizeAndChecksum & size_
         if (use_archive)
             read_buffer = archive_reader->readFile(info.data_file_name, /*throw_on_not_found=*/true);
         else
-            read_buffer = reader->readFile(info.data_file_name);
+            read_buffer = reader->readFile(info.data_file_name, /*expected_file_size=*/ info.size - info.base_size);
     }
 
     if (info.base_size)

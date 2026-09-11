@@ -28,7 +28,12 @@ public:
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
 
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
+    /// `expected_file_size` is the size the backup metadata recorded for the file, when the caller
+    /// knows it. A reader whose object storage can have the blob replaced under it (Azure) refuses
+    /// to read a blob of another size, because such a blob is not the one the backup wrote; the
+    /// others ignore it. Nothing is passed for a read whose size is not recorded anywhere, such as
+    /// the `.backup` metadata file itself.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, std::optional<size_t> expected_file_size) = 0;
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).

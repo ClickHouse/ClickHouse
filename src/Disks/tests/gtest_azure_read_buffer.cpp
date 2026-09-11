@@ -948,6 +948,50 @@ PlainRewritableMoveOutcome movePlainRewritableFile(
         .error_code = error_code};
 }
 
+/// Drives the sequence a `plain_rewritable` metadata operation performs when it makes a hard link
+/// (`createHardLink`, a copy of the blob of the source to the key of the target) and the
+/// transaction it belongs to is then rolled back: copy, name the generation the copy wrote
+/// (`nameTheGenerationThatWasJustWritten`, the production helper), and delete exactly that
+/// generation. With `recreate_between_copy_and_rollback`, somebody else replaces the blob at the
+/// key of the target before the rollback runs. With `pin` disabled, the delete addresses the blob
+/// by path alone, the way `undo` did before it was pinned.
+PlainRewritableMoveOutcome rollBackPlainRewritableHardLink(bool recreate_between_copy_and_rollback, bool pin = true)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport);
+
+    std::optional<int> error_code;
+    try
+    {
+        object_storage->copyObject(DB::StoredObject("blob"), DB::StoredObject("linked/blob"), DB::ReadSettings{}, DB::WriteSettings{});
+
+        DB::StoredObject destination("linked/blob");
+        if (pin)
+        {
+            const auto named = DB::nameTheGenerationThatWasJustWritten(*object_storage, "linked/blob");
+            if (!named)
+                throw DB::Exception(DB::ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "The generation the copy wrote cannot be named");
+            destination = *named;
+        }
+
+        if (recreate_between_copy_and_rollback)
+            transport->overwriteObject(ETagBehaviour::second_generation);
+
+        object_storage->removeObjectIfExists(destination);
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    return PlainRewritableMoveOutcome{
+        .copied = transport->uploadedData(),
+        .deleted_generations = transport->deletedGenerations(),
+        .error_code = error_code};
+}
+
 }
 
 /// The endpoint returns more data than was requested: the copy must be capped at the size of
@@ -2163,7 +2207,7 @@ TEST(AzureBackupReader, ReadPinnedToBlobGeneration)
         ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = false});
     auto reader = backupReaderOver(transport);
 
-    auto buffer = reader->readFile("file");
+    auto buffer = reader->readFile("file", /*expected_file_size=*/ std::nullopt);
     std::string data;
     try
     {
@@ -2184,7 +2228,48 @@ TEST(AzureBackupReader, ReadBoundedBySizeOfHead)
         /* max_response_size */ 40, /* served_size */ 200, /* blob_size */ 100, /* send_etag */ true);
     auto reader = backupReaderOver(transport);
 
-    auto buffer = reader->readFile("file");
+    auto buffer = reader->readFile("file", /*expected_file_size=*/ std::nullopt);
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
+/// The blob at the key of a backup file has been replaced by a longer one since the backup was
+/// made. Every buffered restore path - the fallback of `copyFileToDisk` for a destination that is
+/// not Azure, and `BackupImpl::copyFileToDisk` with `sync` - copies exactly the number of bytes the
+/// backup metadata records, so such a blob would be restored as its first bytes and pass unnoticed.
+/// It is refused before a single byte is read.
+TEST(AzureBackupReader, ReadOfBlobOfAnotherSizeIsRefused)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 40, /* served_size */ 150, /* blob_size */ 150, /* send_etag */ true);
+    auto reader = backupReaderOver(transport);
+
+    std::optional<int> error_code;
+    try
+    {
+        reader->readFile("file", /*expected_file_size=*/ 100);
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    ASSERT_TRUE(error_code.has_value());
+    ASSERT_EQ(*error_code, DB::ErrorCodes::BACKUP_DAMAGED);
+}
+
+/// The same read when the blob is still the size the backup recorded: it goes through whole. This
+/// keeps the test above from passing for the wrong reason - by refusing every sized read.
+TEST(AzureBackupReader, ReadOfBlobOfTheRecordedSizeIsAllowed)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 40, /* served_size */ 100, /* blob_size */ 100, /* send_etag */ true, /* reported_length */ std::nullopt,
+        /* ignore_range */ false, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto reader = backupReaderOver(transport);
+
+    auto buffer = reader->readFile("file", /*expected_file_size=*/ 100);
     std::string data;
     ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
@@ -2199,7 +2284,7 @@ TEST(AzureBackupReader, ReadUnchangedBlob)
         /* ignore_range */ false, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
     auto reader = backupReaderOver(transport);
 
-    auto buffer = reader->readFile("file");
+    auto buffer = reader->readFile("file", /*expected_file_size=*/ std::nullopt);
     std::string data;
     ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
     ASSERT_EQ(data.size(), static_cast<size_t>(100));
@@ -2310,7 +2395,7 @@ TEST(AzureBackupReader, EndpointWithoutETagIsRefused)
 
     try
     {
-        reader->readFile("file");
+        reader->readFile("file", /*expected_file_size=*/ std::nullopt);
         FAIL() << "Expected an exception on a backup blob whose generation the endpoint does not report";
     }
     catch (const DB::Exception & e)
@@ -2946,6 +3031,40 @@ TEST(AzurePlainRewritableRollback, ADestinationThatIsNotThereIsNotNamed)
     auto object_storage = objectStorageOver(transport);
 
     ASSERT_FALSE(DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob").has_value());
+}
+
+/// Rolling back a transaction that made a hard link has to take the blob the copy wrote back out,
+/// because the directory of a `plain_rewritable` metadata storage is rebuilt from the blobs that
+/// are in the bucket. That delete is pinned to the generation the copy wrote, so a generation
+/// another writer has put at the same key since is refused and stays where it is.
+TEST(AzurePlainRewritableHardLinkRollback, TheDestinationDeleteIsPinnedToWhatTheCopyWrote)
+{
+    const auto outcome = rollBackPlainRewritableHardLink(/* recreate_between_copy_and_rollback */ true);
+
+    ASSERT_TRUE(outcome.error_code.has_value());
+    ASSERT_EQ(*outcome.error_code, DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    ASSERT_TRUE(outcome.deleted_generations.empty());
+}
+
+/// The same rollback when nobody touched the key: the blob the hard link wrote is the blob that is
+/// removed. This keeps the test above from passing by refusing every rollback delete.
+TEST(AzurePlainRewritableHardLinkRollback, AnUntouchedDestinationIsRemoved)
+{
+    const auto outcome = rollBackPlainRewritableHardLink(/* recreate_between_copy_and_rollback */ false);
+
+    ASSERT_FALSE(outcome.error_code.has_value());
+    ASSERT_EQ(outcome.deleted_generations, std::vector<std::string>{ETagBehaviour::first_generation});
+}
+
+/// The same rollback of a delete that addresses the destination by path alone, as `undo` of the
+/// hard link did before it was pinned: it takes away the generation another writer has just put
+/// there. That is the loss the pinning prevents, and it keeps the first test honest.
+TEST(AzurePlainRewritableHardLinkRollback, AnUnpinnedDestinationDeleteTakesAwayTheNewGeneration)
+{
+    const auto outcome = rollBackPlainRewritableHardLink(/* recreate_between_copy_and_rollback */ true, /* pin */ false);
+
+    ASSERT_FALSE(outcome.error_code.has_value());
+    ASSERT_EQ(outcome.deleted_generations, std::vector<std::string>{ETagBehaviour::second_generation});
 }
 
 /// The blob of a file the metadata says exists is not there when the generation is named. Returning
