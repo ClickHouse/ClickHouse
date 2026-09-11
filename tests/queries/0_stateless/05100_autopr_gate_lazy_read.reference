@@ -1,2 +1,5 @@
 1
 1
+log_comment	stats_collected
+05100_lazy_large_scan	1
+05100_lazy_small_scan	0

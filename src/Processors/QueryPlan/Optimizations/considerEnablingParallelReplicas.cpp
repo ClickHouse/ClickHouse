@@ -9,7 +9,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -356,18 +355,14 @@ void considerEnablingParallelReplicas(
                 if (found_read_worth_parallelizing)
                     return;
 
-                /// A lazy read takes the rows the sort above it picked, so which rows it reads is
-                /// decided at execution and cannot be estimated here. Nor is it small: those rows are
-                /// spread over the whole table, so it typically touches almost every granule of the
-                /// columns it was left to read - the very columns lazy materialization took out of
-                /// the read this loop does measure. Count it as qualifying, like any read whose size
-                /// is unknown.
-                if (typeid_cast<const LazilyReadFromMergeTree *>(frame_node.step.get()))
-                {
-                    found_read_worth_parallelizing = true;
-                    return;
-                }
-
+                /// Only `ReadFromMergeTree`, deliberately. Lazy materialization splits one read in
+                /// two - this step keeps the sorting column, and a `LazilyReadFromMergeTree` reads the
+                /// columns taken out of it - and the lazy half is far the larger: its rows are spread
+                /// over the whole table, so it touches almost every granule of them. It is still not
+                /// what to size the plan by. `findReadingStep` descends into the first child of
+                /// `JoinLazyColumnsStep`, so the read this loop measures is the one the optimization
+                /// goes on to instrument and cost, and the only one it would parallelize. Sizing the
+                /// plan by the lazy half instead would admit plans whose parallelizable read is tiny.
                 const auto * reading = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get());
                 if (!reading)
                     return;
