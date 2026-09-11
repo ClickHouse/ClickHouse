@@ -389,10 +389,10 @@ Typical use cases for the postprocessor argument include:
    Example: `stem(str, 'en')`
 4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/reference/functions/regular-functions/string-functions#lower), [lowerUTF8](/reference/functions/regular-functions/string-functions#lowerUTF8).
    For lower-and upper casing, we recommend a preprocessor instead of a postprocessor.
-5. **Excluding overly long tokens**. Free-text fields sometimes contain tokens with no search value but significant size, such as SHA-256 hashes or base64-encoded blobs. Indexing them wastes space without ever being useful search terms.
+5. **Excluding overly long tokens**. Free-text fields sometimes contain tokens with no search value but significant size, such as SHA-256 or other long hex hashes. Indexing them wastes space without ever being useful search terms.
    The postprocessor is applied per token for every tokenizer, so the usual `splitByNonAlpha` tokenization can be kept for the rest of the text: only tokens above a length threshold are converted to empty tokens.
    Example: `if(length(str) > 32, '', str)` (`length` counts bytes; use `lengthUTF8` to count characters)
-   Note that this filters *tokens*, not whole values. `splitByNonAlpha` splits on punctuation, so a value that is only long when its punctuation is included — e.g. the UUID `550e8400-e29b-41d4-a716-446655440000`, which becomes the tokens `550e8400`, `e29b`, `41d4`, `a716`, `446655440000` — has no long token to drop.
+   Note that this filters *tokens*, not whole values. `splitByNonAlpha` splits on punctuation, so a value that is only long when its punctuation is included has no long token to drop: the UUID `550e8400-e29b-41d4-a716-446655440000` becomes the tokens `550e8400`, `e29b`, `41d4`, `a716`, `446655440000`, and a base64 blob is split at every `+`, `/`, and `=` into fragments that may each stay below the threshold.
    To exclude such values, strip them with a preprocessor before tokenization, which leaves the rest of the text tokenized as usual (see the example below).
 
 The postprocessor expression transforms tokens of type [String](/reference/data-types/string) to tokens of the same type.
@@ -508,7 +508,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 - Exclude overly long tokens using a postprocessor expression:
 
 ```sql
--- Long tokens such as SHA-256 hashes or base64 blobs carry no search value but
+-- Long tokens such as SHA-256 or other hex hashes carry no search value but
 -- still consume index space. The postprocessor runs per token for any tokenizer,
 -- so splitByNonAlpha tokenization is preserved for the rest of the text:
 -- 'error:failed' is still indexed as the tokens 'error' and 'failed'.
@@ -527,9 +527,10 @@ ORDER BY tuple();
 - Exclude values that only become long tokens once punctuation is included:
 
 ```sql
--- splitByNonAlpha splits a hyphenated UUID into five short tokens, so a length
--- filter alone never sees it. The preprocessor removes the whole UUID before
--- tokenization; everything else is still tokenized by splitByNonAlpha.
+-- splitByNonAlpha splits a hyphenated UUID into five short tokens (and a base64
+-- blob at every '+', '/' and '='), so a length filter alone never sees the whole
+-- value. The preprocessor removes the whole UUID before tokenization; everything
+-- else is still tokenized by splitByNonAlpha.
 CREATE TABLE table
 (
     str String,
