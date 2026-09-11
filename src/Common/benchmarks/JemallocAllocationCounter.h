@@ -147,9 +147,9 @@ private:
     uint64_t requests_before = 0;
     bool thread_cache_enabled = false;
     uint64_t allocated_bytes_before = 0;
+    bool started = false;
 #endif
     bool available = false;
-    bool started = false;
 };
 
 template <typename Callback>
