@@ -1057,9 +1057,10 @@ void KeeperServer::waitForLocalLogsPreprocessing()
     SCOPE_EXIT(threads_waiting_for_local_logs_preprocessing.fetch_sub(1));
     CurrentMetrics::Increment waiting_metric_increment{CurrentMetrics::KeeperRaftThreadsWaitingForLogsPreprocessing};
 
-    const auto & coordination_settings = keeper_context->getCoordinationSettings();
-    const uint64_t wait_timeout_ms = coordination_settings[CoordinationSetting::heart_beat_interval_ms].totalMilliseconds()
-        * coordination_settings[CoordinationSetting::raft_limits_response_limit];
+    /// Read the values the instance is running with rather than the settings they came from:
+    /// both are bounded where they enter NuRaft, so the product cannot overflow here.
+    const uint64_t wait_timeout_ms = static_cast<uint64_t>(raft_instance->get_current_params().heart_beat_interval_)
+        * nuraft::raft_server::get_raft_limits().response_limit_;
 
     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
     bool preprocessed = keeper_context->waitLocalLogsPreprocessedOrShutdown(wait_timeout_ms);
