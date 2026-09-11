@@ -44,6 +44,7 @@ class KeeperTCPHandler : public Poco::Net::TCPServerConnection
 public:
     static void registerConnection(KeeperTCPHandler * conn);
     static void unregisterConnection(KeeperTCPHandler * conn);
+    static void closeAllConnections();
     /// dump all connections statistics
     static void dumpConnections(WriteBufferFromOwnString & buf, bool brief);
     static void resetConnsStats();
@@ -93,9 +94,8 @@ private:
     std::optional<CompressedReadBuffer> compressed_in;
     std::optional<CompressedWriteBuffer> compressed_out;
 
-    size_t max_request_size = 0;
-
     std::atomic<bool> connected{false};
+    std::atomic<bool> closing_for_shutdown{false};
 
     void runImpl();
 

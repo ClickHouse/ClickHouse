@@ -8,6 +8,7 @@
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <IO/WriteBufferFromString.h>
 #include <base/defines.h>
 #include <set>
@@ -21,7 +22,7 @@ namespace DB
         extern const int INCORRECT_DATA;
     }
 
-    class ExecutableFunctionRunningConcurrency : public IExecutableFunction
+    class ExecutableFunctionRunningConcurrency final : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -55,7 +56,7 @@ namespace DB
             typename ColVecConc::MutablePtr col_concurrency = ColVecConc::create(input_rows_count);
             typename ColVecConc::Container & vec_concurrency = col_concurrency->getData();
 
-            std::multiset<typename ArgDataType::FieldType> ongoing_until;
+            MultiSetWithMemoryTracking<typename ArgDataType::FieldType> ongoing_until;
             auto begin_serializaion = arguments[0].type->getDefaultSerialization();
             auto end_serialization = arguments[1].type->getDefaultSerialization();
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -101,7 +102,7 @@ namespace DB
         }
     };
 
-    class FunctionBaseRunningConcurrency : public IFunctionBase
+    class FunctionBaseRunningConcurrency final : public IFunctionBase
     {
     public:
         explicit FunctionBaseRunningConcurrency(DataTypes argument_types_, DataTypePtr return_type_)
@@ -133,14 +134,26 @@ namespace DB
             return true;
         }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        /// The result for a row depends on the rows processed before it, so it is not
+        /// predictable from a single evaluation, even within one query.
+        bool isDeterministic() const override
+        {
+            return false;
+        }
+
+        bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
+        }
+
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     private:
         DataTypes argument_types;
         DataTypePtr return_type;
     };
 
-    class RunningConcurrencyOverloadResolver : public IFunctionOverloadResolver
+    class RunningConcurrencyOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = "runningConcurrency";
@@ -196,6 +209,16 @@ namespace DB
             return true;
         }
 
+        bool isDeterministic() const override
+        {
+            return false;
+        }
+
+        bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
+        }
+
         bool useDefaultImplementationForNulls() const override
         {
             return false;
@@ -211,16 +234,16 @@ The start time is included in the event, while the end time is excluded.
 Columns with a start time and an end time must be of the same data type.
 The function calculates the total number of active (concurrent) events for each event start time.
 
-:::tip Requirements
+<Tip title="Requirements">
 Events must be ordered by the start time in ascending order.
 If this requirement is violated the function raises an exception.
 Every data block is processed separately.
 If events from different data blocks overlap then they can not be processed correctly.
-:::
+</Tip>
 
-:::warning Deprecated
-It is advised to use [window functions](/sql-reference/window-functions) instead.
-:::
+<Warning title="Deprecated">
+It is advised to use [window functions](/reference/functions/window-functions) instead.
+</Warning>
 )";
         FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";
         FunctionDocumentation::Arguments arguments = {
@@ -232,6 +255,9 @@ It is advised to use [window functions](/sql-reference/window-functions) instead
         {
             "Usage example",
             R"(
+CREATE TABLE example_table (start Date, end Date) ENGINE = Memory;
+INSERT INTO example_table VALUES ('2025-03-03', '2025-03-11'), ('2025-03-06', '2025-03-08'), ('2025-03-07', '2025-03-09'), ('2025-03-11', '2025-03-12');
+
 SELECT start, runningConcurrency(start, end) FROM example_table;
             )",
             R"(
@@ -239,7 +265,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 │ 2025-03-03 │                              1 │
 │ 2025-03-06 │                              2 │
 │ 2025-03-07 │                              3 │
-│ 2025-03-11 │                              2 │
+│ 2025-03-11 │                              1 │
 └────────────┴────────────────────────────────┘
             )"
         }

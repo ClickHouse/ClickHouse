@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-msan
-# Float same-kind coercions in ROW_DIRECT and BUFFERED_V1 RowBinary.
-# Float32 → Float32 and Float64 → Float64 must work (same WASM kind).
+# Float coercions in ROW_DIRECT and BUFFERED_V1 RowBinary.
+# Float32 → Float32, Float64 → Float64 (same kind) and Float32 → Float64 (widening) must work.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -59,6 +59,10 @@ SELECT wasm_rb_f32(toFloat32(0.0));
 SELECT wasm_rb_f64(toFloat64(1.5));
 SELECT wasm_rb_f64(toFloat64(-2.5));
 SELECT wasm_rb_f64(toFloat64(0.0));
+
+-- Float32 → Float64 widening: both ROW_DIRECT and BUFFERED_V1.
+SELECT wasm_raw_f64(toFloat32(1.5));
+SELECT wasm_rb_f64(toFloat32(1.5));
 
 -- Multiple rows.
 SELECT wasm_rb_f64(toFloat64(number)) FROM numbers(4);

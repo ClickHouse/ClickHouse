@@ -1,0 +1,45 @@
+---
+sidebarTitle: '支払いしきい値'
+slug: /cloud/billing/payment-thresholds
+title: '支払いしきい値'
+description: 'ClickHouse Cloud の支払いしきい値と自動請求。'
+keywords: ['課金', '支払いしきい値', '自動請求', '請求書']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="threshholds">
+  ## 支払いしきい値
+</div>
+
+従量課金制をご利用のお客様で、ClickHouse Cloud の請求期間中の請求額が 1,000 米ドルまたはその相当額に達した場合、組織に設定されている支払い方法に自動で請求されます。
+
+<Tip>
+  最初の請求書の支払いが正常に完了すると、しきい値は $5,000 USD に引き上げられます。2 回目の請求書の支払いが正常に完了すると、しきい値は $10,000 USD に引き上げられます。支払いしきい値の金額を調整したい場合は、[サポートに連絡](mailto:support@clickhouse.com)してください。
+</Tip>
+
+請求が失敗した場合、14 日間の猶予期間後にサービスは停止されます。
+請求期間内に複数の請求書を受け取った場合は、いずれも受領後すぐに支払期限となり、ClickHouse Cloud 組織の[コンプライアンス](/ja/products/cloud/reference/billing/billing-compliance)を維持するために支払う必要があります。
+
+自動支払いで請求が失敗した場合、設定されているクレジットカードに問題があるか、クレジットカードで e-mandate を設定していないか、またはそのクレジットカードが継続的なオンライン取引における e-mandate の処理に関するインド準備銀行 (RBI) の枠組みに準拠していない可能性があります。
+お使いのクレジットカードが RBI に準拠していない場合は、RBI に準拠した新しい支払い方法を追加するか、カードで e-mandate を設定できるようになるまで手動での支払いを続ける必要があります。
+
+以下の例では、Cloud Console の Billing UI を示しています。
+
+<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="UI で Billing を確認する場所" />
+
+<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="請求書" />
+
+上の例からわかるように、2 月 28 日から 3 月 31 日までの請求期間中にしきい値請求書が送信され、その後、同じ請求期間中に 1,000 米ドルを超えた残りの利用額に対して別の請求書が送信されています。
+
+<div id="threshholds-notifications">
+  ## 支払いしきい値に関する通知
+</div>
+
+組織の支払いしきい値の 90% に達し、請求期間の途中でそのしきい値を超える見込みがある場合は、その組織に関連付けられた請求担当者のメールアドレス宛てに通知メールが送信されます。
+また、支払いしきい値を超過すると、通知メールに加えて請求書も送信されます。
+
+<Note>
+  支払いしきい値に関する通知は現在、後払い (PAYG) で請求される組織でのみサポートされています
+</Note>

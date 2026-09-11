@@ -1,18 +1,18 @@
 services:
   kafka_zookeeper:
-    image: zookeeper:3.4.9
+    image: zookeeper:${KAFKA_ZOOKEEPER_IMAGE_TAG:-3.4.9}
     hostname: kafka_zookeeper
     ports:
       - 2181
     environment:
       ZOO_MY_ID: 1
       ZOO_PORT: 2181
-      ZOO_SERVERS: server.1=kafka_zookeeper:2888:3888
+      ZOO_SERVERS: ${KAFKA_ZOOKEEPER_SERVERS:-server.1=kafka_zookeeper:2888:3888}
     security_opt:
       - label:disable
     stop_grace_period: 5s
   kafka1:
-    image: confluentinc/cp-kafka:5.2.0
+    image: confluentinc/cp-kafka:${KAFKA_IMAGE_TAG:-5.2.0}
     hostname: kafka1
     ports:
       - ${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}
@@ -33,7 +33,7 @@ services:
       net.ipv4.ip_local_port_range: '55000 65535'
     stop_grace_period: 5s
   schema-registry:
-    image: confluentinc/cp-schema-registry:5.2.0
+    image: confluentinc/cp-schema-registry:${KAFKA_SCHEMA_REGISTRY_IMAGE_TAG:-5.2.0}
     hostname: schema-registry
     ports:
       - ${SCHEMA_REGISTRY_EXTERNAL_PORT}:${SCHEMA_REGISTRY_EXTERNAL_PORT}
@@ -50,7 +50,7 @@ services:
       - label:disable
     stop_grace_period: 5s
   schema-registry-auth:
-    image: confluentinc/cp-schema-registry:5.2.0
+    image: confluentinc/cp-schema-registry:${KAFKA_SCHEMA_REGISTRY_IMAGE_TAG:-5.2.0}
     hostname: schema-registry-auth
     ports:
       - ${SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT}:${SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT}

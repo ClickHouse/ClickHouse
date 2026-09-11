@@ -29,13 +29,11 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/NullsAction.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Core/Settings.h>
-#include <Common/CurrentThread.h>
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -54,89 +52,17 @@ namespace Setting
 extern const SettingsUInt64 input_format_binary_max_type_complexity;
 }
 
+static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity);
+
 namespace
 {
 /// Max array size that is allowed for any nested elements during data type decoding.
 /// It prevents from allocating too large arrays if the data is corrupted.
 constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
-/// MAX_ARRAY_SIZE prevents wide types (single Tuple with 10M elements) before allocation. getMaxTypeDecodingComplexity() prevents
-/// large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000) that does not trigger stack overflow or MAX_ARRAY_SIZE check.
-inline ALWAYS_INLINE size_t getMaxTypeDecodingComplexity()
-{
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        return query_context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
-    return 1000; /// Default value that matches the default input_format_binary_max_type_complexity setting
-}
-
-enum class BinaryTypeIndex : uint8_t
-{
-    Nothing = 0x00,
-    UInt8 = 0x01,
-    UInt16 = 0x02,
-    UInt32 = 0x03,
-    UInt64 = 0x04,
-    UInt128 = 0x05,
-    UInt256 = 0x06,
-    Int8 = 0x07,
-    Int16 = 0x08,
-    Int32 = 0x09,
-    Int64 = 0x0A,
-    Int128 = 0x0B,
-    Int256 = 0x0C,
-    Float32 = 0x0D,
-    Float64 = 0x0E,
-    Date = 0x0F,
-    Date32 = 0x10,
-    DateTimeUTC = 0x11,
-    DateTimeWithTimezone = 0x12,
-    DateTime64UTC = 0x13,
-    DateTime64WithTimezone = 0x14,
-    String = 0x15,
-    FixedString = 0x16,
-    Enum8 = 0x17,
-    Enum16 = 0x18,
-    Decimal32 = 0x19,
-    Decimal64 = 0x1A,
-    Decimal128 = 0x1B,
-    Decimal256 = 0x1C,
-    UUID = 0x1D,
-    Array = 0x1E,
-    UnnamedTuple = 0x1F,
-    NamedTuple = 0x20,
-    Set = 0x21,
-    Interval = 0x22,
-    Nullable = 0x23,
-    Function = 0x24,
-    AggregateFunction = 0x25,
-    LowCardinality = 0x26,
-    Map = 0x27,
-    IPv4 = 0x28,
-    IPv6 = 0x29,
-    Variant = 0x2A,
-    Dynamic = 0x2B,
-    Custom = 0x2C,
-    Bool = 0x2D,
-    SimpleAggregateFunction = 0x2E,
-    Nested = 0x2F,
-    JSON = 0x30,
-    BFloat16 = 0x31,
-    Time = 0x32,
-    /* The reason behind putting Time64 to 0x34 instead of 0x33 is following:
-    Originally, there were Time and Time64 with (and without) timezones, which were making the following indexing:
-    TimeUTC = 0x32
-    TimeWithTimezone = 0x33
-    Time64UTC = 0x34
-    Time64WithTimezone = 0x35
-
-    After that timezones became forbidden for Time[64] types, so we removed those types from here.
-    But we need to make the indexing consistent to ensure backwards compatibility.
-
-    Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
-    Time64 = 0x34,
-    /// reserved = 0x35
-    QBit = 0x36
-};
+/// MAX_ARRAY_SIZE prevents wide types (single Tuple with 10M elements) before allocation. The max_complexity
+/// argument threaded into decodeDataTypeImpl prevents large width × depth (e.g. Tuple(Tuple(...) x 999999) x 10000)
+/// that does not trigger stack overflow or the MAX_ARRAY_SIZE check. max_complexity == 0 means unlimited.
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
@@ -241,7 +167,11 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::UnnamedTuple;
         }
         case TypeIndex::QBit:
-            return BinaryTypeIndex::QBit;
+        {
+            /// Keep non-strided QBit on the original index so its encoding stays byte-identical (backward/forward compatible).
+            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
+            return qbit_type.getStride() == qbit_type.getDimension() ? BinaryTypeIndex::QBit : BinaryTypeIndex::QBitWithStride;
+        }
         case TypeIndex::Set:
             return BinaryTypeIndex::Set;
         case TypeIndex::Interval:
@@ -277,6 +207,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             }
         }
     }
+
+    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Type {} is not supported for binary encoding", type->getName());
 }
 
 template <typename T>
@@ -296,7 +228,7 @@ template <typename T>
 DataTypePtr decodeEnum(ReadBuffer & buf)
 {
     typename DataTypeEnum<T>::Values values;
-    size_t size;
+    size_t size = 0;
     readVarUInt(size, buf);
     if (size > MAX_ARRAY_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Too many enum elements during Enum type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
@@ -325,9 +257,9 @@ void encodeDecimal(const DataTypePtr & type, WriteBuffer & buf)
 template <typename T>
 DataTypePtr decodeDecimal(ReadBuffer & buf)
 {
-    UInt8 precision;
+    UInt8 precision = 0;
     readBinary(precision, buf);
-    UInt8 scale;
+    UInt8 scale = 0;
     readBinary(scale, buf);
     return std::make_shared<DataTypeDecimal<T>>(precision, scale);
 }
@@ -348,11 +280,11 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
 }
 
-std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf)
+std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
 {
     String function_name;
     readStringBinary(function_name, buf);
-    size_t num_parameters;
+    size_t num_parameters = 0;
     readVarUInt(num_parameters, buf);
     if (num_parameters > MAX_ARRAY_SIZE)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Too many parameters during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
@@ -361,15 +293,15 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     parameters.reserve(num_parameters);
     for (size_t i = 0; i != num_parameters; ++i)
         parameters.push_back(decodeField(buf));
-    size_t num_arguments;
+    size_t num_arguments = 0;
     readVarUInt(num_arguments, buf);
     if (num_arguments > MAX_ARRAY_SIZE)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_parameters, MAX_ARRAY_SIZE);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during AggregateFunction type decoding: {}. Maximum: {}", num_arguments, MAX_ARRAY_SIZE);
 
     DataTypes arguments_types;
     arguments_types.reserve(num_arguments);
     for (size_t i = 0; i != num_arguments; ++i)
-        arguments_types.push_back(decodeDataType(buf));
+        arguments_types.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
     auto function = AggregateFunctionFactory::instance().get(function_name, action, arguments_types, parameters, properties);
@@ -481,6 +413,14 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
             encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
             writeVarUInt(qbit_type.getDimension(), buf);
+            break;
+        }
+        case BinaryTypeIndex::QBitWithStride:
+        {
+            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
+            encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
+            writeVarUInt(qbit_type.getDimension(), buf);
+            writeVarUInt(qbit_type.getStride(), buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -624,57 +564,44 @@ String encodeDataType(const DataTypePtr & type)
     return buf.str();
 }
 
-DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
+static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, size_t max_complexity)
 {
     ++complexity;
-    size_t max_complexity = getMaxTypeDecodingComplexity();
     if (max_complexity > 0 && complexity > max_complexity)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
     if (complexity % 128 == 0)
         checkStackSize();
 
-    UInt8 type;
+    UInt8 type = 0;
     readBinary(type, buf);
-    switch (BinaryTypeIndex(type))
+    auto binary_type_index = static_cast<BinaryTypeIndex>(type);
+
+    switch (binary_type_index)
     {
         case BinaryTypeIndex::Nothing:
-            return getDataTypesCache().getType("Nothing");
         case BinaryTypeIndex::UInt8:
-            return getDataTypesCache().getType("UInt8");
         case BinaryTypeIndex::Bool:
-            return getDataTypesCache().getType("Bool");
         case BinaryTypeIndex::UInt16:
-            return getDataTypesCache().getType("UInt16");
         case BinaryTypeIndex::UInt32:
-            return getDataTypesCache().getType("UInt32");
         case BinaryTypeIndex::UInt64:
-            return getDataTypesCache().getType("UInt64");
         case BinaryTypeIndex::UInt128:
-            return getDataTypesCache().getType("UInt128");
         case BinaryTypeIndex::UInt256:
-            return getDataTypesCache().getType("UInt256");
         case BinaryTypeIndex::Int8:
-            return getDataTypesCache().getType("Int8");
         case BinaryTypeIndex::Int16:
-            return getDataTypesCache().getType("Int16");
         case BinaryTypeIndex::Int32:
-            return getDataTypesCache().getType("Int32");
         case BinaryTypeIndex::Int64:
-            return getDataTypesCache().getType("Int64");
         case BinaryTypeIndex::Int128:
-            return getDataTypesCache().getType("Int128");
         case BinaryTypeIndex::Int256:
-            return getDataTypesCache().getType("Int256");
         case BinaryTypeIndex::BFloat16:
-            return getDataTypesCache().getType("BFloat16");
         case BinaryTypeIndex::Float32:
-            return getDataTypesCache().getType("Float32");
         case BinaryTypeIndex::Float64:
-            return getDataTypesCache().getType("Float64");
         case BinaryTypeIndex::Date:
-            return getDataTypesCache().getType("Date");
         case BinaryTypeIndex::Date32:
-            return getDataTypesCache().getType("Date32");
+        case BinaryTypeIndex::String:
+        case BinaryTypeIndex::UUID:
+        case BinaryTypeIndex::IPv4:
+        case BinaryTypeIndex::IPv6:
+            return getSimpleDataTypesCache().getType(binary_type_index);
         case BinaryTypeIndex::DateTimeUTC:
             return std::make_shared<DataTypeDateTime>();
         case BinaryTypeIndex::DateTimeWithTimezone:
@@ -685,13 +612,13 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
         }
         case BinaryTypeIndex::DateTime64UTC:
         {
-            UInt8 scale;
+            UInt8 scale = 0;
             readBinary(scale, buf);
             return std::make_shared<DataTypeDateTime64>(scale);
         }
         case BinaryTypeIndex::DateTime64WithTimezone:
         {
-            UInt8 scale;
+            UInt8 scale = 0;
             readBinary(scale, buf);
             String time_zone;
             readStringBinary(time_zone, buf);
@@ -701,15 +628,13 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             return std::make_shared<DataTypeTime>();
         case BinaryTypeIndex::Time64:
         {
-            UInt8 scale;
+            UInt8 scale = 0;
             readBinary(scale, buf);
             return std::make_shared<DataTypeTime64>(scale);
         }
-        case BinaryTypeIndex::String:
-            return getDataTypesCache().getType("String");
         case BinaryTypeIndex::FixedString:
         {
-            UInt64 size;
+            UInt64 size = 0;
             readVarUInt(size, buf);
             return std::make_shared<DataTypeFixedString>(size);
         }
@@ -725,13 +650,11 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             return decodeDecimal<Decimal128>(buf);
         case BinaryTypeIndex::Decimal256:
             return decodeDecimal<Decimal256>(buf);
-        case BinaryTypeIndex::UUID:
-            return getDataTypesCache().getType("UUID");
         case BinaryTypeIndex::Array:
-            return std::make_shared<DataTypeArray>(decodeDataType(buf, complexity));
+            return std::make_shared<DataTypeArray>(decodeDataTypeImpl(buf, complexity, max_complexity));
         case BinaryTypeIndex::NamedTuple:
         {
-            size_t size;
+            size_t size = 0;
             readVarUInt(size, buf);
             if (size > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many tuple elements during Tuple type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
@@ -744,14 +667,14 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             {
                 names.emplace_back();
                 readStringBinary(names.back(), buf);
-                elements.push_back(decodeDataType(buf, complexity));
+                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
             }
 
             return std::make_shared<DataTypeTuple>(elements, names);
         }
         case BinaryTypeIndex::UnnamedTuple:
         {
-            size_t size;
+            size_t size = 0;
             readVarUInt(size, buf);
             if (size > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many tuple elements during Tuple type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
@@ -759,29 +682,56 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             DataTypes elements;
             elements.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                elements.push_back(decodeDataType(buf, complexity));
+                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
             return std::make_shared<DataTypeTuple>(elements);
         }
         case BinaryTypeIndex::QBit:
         {
-            auto element_type = decodeDataType(buf, complexity);
-            size_t dimension;
+            auto element_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            size_t dimension = 0;
             readVarUInt(dimension, buf);
-            return std::make_shared<DataTypeQBit>(element_type, dimension);
+            /// Non-strided QBit: the stride defaults to the dimension.
+            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
+        }
+        case BinaryTypeIndex::QBitWithStride:
+        {
+            auto element_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            size_t dimension = 0;
+            readVarUInt(dimension, buf);
+            size_t stride = 0;
+            readVarUInt(stride, buf);
+            /// A strided QBit expands a tiny header into `element_size * (dimension / stride)` hidden FixedString
+            /// streams, which the DataTypeQBit constructor materializes eagerly (it builds the nested Tuple via
+            /// getDefaultSerialization). Charge those hidden streams to the complexity budget *before* constructing the
+            /// type, so a small header cannot force the wide nested type to be materialized under the default budget.
+            /// Only a well-formed strided header with a supported element type and at most MAX_STRIDE_GROUPS groups
+            /// reaches that materialization (this also keeps `element_size * num_strides` well within size_t); every
+            /// other header is rejected by the constructor before it allocates the wide type, so fall through to it for
+            /// the precise validation error in those cases.
+            if (DataTypeQBit::isSupportedElementType(element_type) && stride != 0 && dimension % stride == 0
+                && dimension / stride <= DataTypeQBit::MAX_STRIDE_GROUPS)
+            {
+                complexity += 8 * element_type->getSizeOfValueInMemory() * (dimension / stride);
+                if (max_complexity > 0 && complexity > max_complexity)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
+            }
+            return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();
         case BinaryTypeIndex::Interval:
         {
-            UInt8 kind;
+            UInt8 kind = 0;
             readBinary(kind, buf);
+            if (kind > static_cast<UInt8>(IntervalKind::Kind::Year))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown IntervalKind during Interval type decoding: {0:#04x}", UInt64(kind));
             return std::make_shared<DataTypeInterval>(IntervalKind(IntervalKind::Kind(kind)));
         }
         case BinaryTypeIndex::Nullable:
-            return std::make_shared<DataTypeNullable>(decodeDataType(buf, complexity));
+            return std::make_shared<DataTypeNullable>(decodeDataTypeImpl(buf, complexity, max_complexity));
         case BinaryTypeIndex::Function:
         {
-            size_t arguments_size;
+            size_t arguments_size = 0;
             readVarUInt(arguments_size, buf);
             if (arguments_size > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many function arguments during Function type decoding: {}. Maximum: {}", arguments_size, MAX_ARRAY_SIZE);
@@ -789,25 +739,21 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             DataTypes arguments;
             arguments.reserve(arguments_size);
             for (size_t i = 0; i != arguments_size; ++i)
-                arguments.push_back(decodeDataType(buf, complexity));
-            auto return_type = decodeDataType(buf, complexity);
+                arguments.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
+            auto return_type = decodeDataTypeImpl(buf, complexity, max_complexity);
             return std::make_shared<DataTypeFunction>(arguments, return_type);
         }
         case BinaryTypeIndex::LowCardinality:
-            return std::make_shared<DataTypeLowCardinality>(decodeDataType(buf, complexity));
+            return std::make_shared<DataTypeLowCardinality>(decodeDataTypeImpl(buf, complexity, max_complexity));
         case BinaryTypeIndex::Map:
         {
-            auto key_type = decodeDataType(buf, complexity);
-            auto value_type = decodeDataType(buf, complexity);
+            auto key_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            auto value_type = decodeDataTypeImpl(buf, complexity, max_complexity);
             return std::make_shared<DataTypeMap>(key_type, value_type);
         }
-        case BinaryTypeIndex::IPv4:
-            return getDataTypesCache().getType("IPv4");
-        case BinaryTypeIndex::IPv6:
-            return getDataTypesCache().getType("IPv6");
         case BinaryTypeIndex::Variant:
         {
-            size_t size;
+            size_t size = 0;
             readVarUInt(size, buf);
             if (size > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many variants during Variant type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
@@ -815,30 +761,30 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             DataTypes variants;
             variants.reserve(size);
             for (size_t i = 0; i != size; ++i)
-                variants.push_back(decodeDataType(buf, complexity));
+                variants.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
             return std::make_shared<DataTypeVariant>(variants);
         }
         case BinaryTypeIndex::Dynamic:
         {
-            UInt8 max_dynamic_types;
+            UInt8 max_dynamic_types = 0;
             readBinary(max_dynamic_types, buf);
             return std::make_shared<DataTypeDynamic>(max_dynamic_types);
         }
         case BinaryTypeIndex::AggregateFunction:
         {
-            size_t version;
+            size_t version = 0;
             readVarUInt(version, buf);
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
             return std::make_shared<DataTypeAggregateFunction>(function, arguments_types, parameters, version);
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
         {
-            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf);
+            const auto & [function, parameters, arguments_types] = decodeAggregateFunction(buf, complexity, max_complexity);
             return createSimpleAggregateFunctionType(function, arguments_types, parameters);
         }
         case BinaryTypeIndex::Nested:
         {
-            size_t size;
+            size_t size = 0;
             readVarUInt(size, buf);
             if (size > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many elements during Nested type decoding: {}. Maximum: {}", size, MAX_ARRAY_SIZE);
@@ -851,7 +797,7 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             {
                 names.emplace_back();
                 readStringBinary(names.back(), buf);
-                elements.push_back(decodeDataType(buf, complexity));
+                elements.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
             }
 
             return createNested(elements, names);
@@ -864,21 +810,21 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
         }
         case BinaryTypeIndex::JSON:
         {
-            UInt8 serialization_version;
+            UInt8 serialization_version = 0;
             readBinary(serialization_version, buf);
             if (serialization_version > TYPE_JSON_SERIALIZATION_VERSION)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected version of JSON type binary encoding");
-            size_t max_dynamic_paths;
+            size_t max_dynamic_paths = 0;
             readVarUInt(max_dynamic_paths, buf);
             if (max_dynamic_paths > DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "'max_dynamic_paths' for JSON type is too large: {}. The maximum is {}", max_dynamic_paths, DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT);
 
-            UInt8 max_dynamic_types;
+            UInt8 max_dynamic_types = 0;
             readBinary(max_dynamic_types, buf);
             if (max_dynamic_types > ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "'max_dynamic_types' for JSON type is too large: {}. The maximum is {}", UInt32(max_dynamic_types), ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT);
 
-            size_t typed_paths_size;
+            size_t typed_paths_size = 0;
             readVarUInt(typed_paths_size, buf);
             if (typed_paths_size > DataTypeObject::MAX_TYPED_PATHS)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many typed paths during JSON type decoding: {}. Maximum: {}", typed_paths_size, DataTypeObject::MAX_TYPED_PATHS);
@@ -888,9 +834,9 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             {
                 String path;
                 readStringBinary(path, buf);
-                typed_paths[path] = decodeDataType(buf, complexity);
+                typed_paths[path] = decodeDataTypeImpl(buf, complexity, max_complexity);
             }
-            size_t paths_to_skip_size;
+            size_t paths_to_skip_size = 0;
             readVarUInt(paths_to_skip_size, buf);
             if (paths_to_skip_size > MAX_ARRAY_SIZE)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many paths to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
@@ -904,10 +850,10 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
                 paths_to_skip.insert(path);
             }
 
-            size_t path_regexps_to_skip_size;
+            size_t path_regexps_to_skip_size = 0;
             readVarUInt(path_regexps_to_skip_size, buf);
             if (path_regexps_to_skip_size > MAX_ARRAY_SIZE)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", paths_to_skip_size, MAX_ARRAY_SIZE);
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many path regexps to skip during JSON type decoding: {}. Maximum: {}", path_regexps_to_skip_size, MAX_ARRAY_SIZE);
 
             std::vector<String> path_regexps_to_skip;
             path_regexps_to_skip.reserve(path_regexps_to_skip_size);
@@ -930,22 +876,15 @@ DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
     throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type code: {0:#04x}", UInt64(type));
 }
 
-DataTypePtr decodeDataType(ReadBuffer & buf)
+DataTypePtr decodeDataType(ReadBuffer & buf, size_t max_complexity)
 {
     size_t complexity = 0;
-    return decodeDataType(buf, complexity);
+    return decodeDataTypeImpl(buf, complexity, max_complexity);
 }
 
-DataTypePtr decodeDataType(const String & data)
+size_t getBinaryTypeDecodingComplexityLimit(const ContextPtr & context)
 {
-    ReadBufferFromString buf(data);
-    return decodeDataType(buf);
-}
-
-DataTypePtr decodeDataType(std::string_view data)
-{
-    ReadBufferFromString buf(data);
-    return decodeDataType(buf);
+    return context->getSettingsRef()[Setting::input_format_binary_max_type_complexity];
 }
 
 }

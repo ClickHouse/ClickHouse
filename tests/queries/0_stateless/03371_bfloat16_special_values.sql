@@ -31,7 +31,7 @@ SELECT toFloat32(5.5) % toFloat32(Inf),     toBFloat16(5.5) % toBFloat16(Inf);
 
 -- Test for Bug 77087
 DROP TABLE IF EXISTS tab;
-CREATE TABLE tab (c0 Tuple(BFloat16)) ENGINE = SummingMergeTree() ORDER BY (c0) SETTINGS ratio_of_defaults_for_sparse_serialization = 1.0; -- Disable sparse serialization, otherwise the test becomes flaky
+CREATE TABLE tab (c0 Tuple(BFloat16)) ENGINE = SummingMergeTree() ORDER BY (c0) SETTINGS allow_tuple_element_aggregation = false, ratio_of_defaults_for_sparse_serialization = 1.0; -- Disable sparse serialization, otherwise the test becomes flaky
 INSERT INTO TABLE tab (c0) VALUES ((-0.0, )), ((nan, )), ((0.0, ));
 SELECT c0 FROM tab FINAL;
 DROP TABLE tab;

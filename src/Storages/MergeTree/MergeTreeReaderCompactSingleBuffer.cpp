@@ -9,9 +9,9 @@ namespace DB
 {
 
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
-    size_t from_mark, size_t current_task_last_mark,
+    size_t from_mark,
     bool continue_reading, size_t max_rows_to_read,
-    size_t rows_offset, Columns & res_columns)
+    MutableColumns & res_columns)
 try
 {
     init();
@@ -28,14 +28,6 @@ try
     while (read_rows < max_rows_to_read)
     {
         size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
-
-        if (rows_to_read <= rows_offset)
-        {
-            rows_offset -= rows_to_read;
-            ++from_mark;
-            continue;
-        }
-        rows_to_read -= rows_offset;
 
         deserialize_binary_bulk_state_map.clear();
         deserialize_binary_bulk_state_map_for_subcolumns.clear();
@@ -62,20 +54,20 @@ try
             if (columns_to_read[pos].isSubcolumn() && has_substream_marks)
                 continue;
 
-            stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
+            stream->adjustRightMark(last_mark_to_read); /// Must go before seek.
             stream->seekToMarkAndColumn(from_mark, has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
 
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
             auto & deserialize_states_cache = deserialize_states_caches[columns_to_read[pos].getNameInStorage()];
             readPrefix(pos, from_mark, *stream, &deserialize_states_cache);
-            readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, res_columns[pos]->size(), *stream, columns_cache, cache_for_subcolumns, nullptr);
+            readData(pos, *res_columns[pos], rows_to_read, from_mark, res_columns[pos]->size(), *stream, columns_cache, cache_for_subcolumns, nullptr);
         }
 
         /// If we have subcolumns and substreams marks, we read subcolumns separately, because we want to
         /// use deserialization prefixes cache and substreams cache during deserialization of subcolumns of the same column.
         if (has_substream_marks && has_subcolumns)
         {
-            readSubcolumnsPrefixes(from_mark, current_task_last_mark);
+            readSubcolumnsPrefixes(from_mark);
             initSubcolumnsDeserializationOrder();
             /// Deserialize all subcolumns according to subcolumns_deserialization_order.
             for (const auto & [column, subcolumns_order] : subcolumns_deserialization_order)
@@ -87,14 +79,13 @@ try
                     if (!res_columns[pos])
                         continue;
 
-                    readData(pos, res_columns[pos], rows_to_read, rows_offset, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
+                    readData(pos, *res_columns[pos], rows_to_read, from_mark, subcolumns_size_before_reading, *stream, columns_cache, &columns_cache_for_subcolumns, &substreams_cache);
                 }
             }
         }
 
         ++from_mark;
         read_rows += rows_to_read;
-        rows_offset = 0;
     }
 
     next_mark = from_mark;
@@ -112,7 +103,7 @@ catch (...)
     }
     catch (Exception & e)
     {
-        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset));
+        e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
     }
 
     throw;
@@ -124,13 +115,10 @@ try
     if (initialized)
         return;
 
-    auto stream_settings = settings;
-    stream_settings.allow_different_codecs = true;
-
     stream = std::make_unique<MergeTreeReaderStreamAllOfMultipleColumns>(
         data_part_info_for_read->getDataPartStorage(), MergeTreeDataPartCompact::DATA_FILE_NAME,
         MergeTreeDataPartCompact::DATA_FILE_EXTENSION, data_part_info_for_read->getMarksCount(),
-        all_mark_ranges, stream_settings,uncompressed_cache,
+        all_mark_ranges, settings, uncompressed_cache,
         data_part_info_for_read->getFileSizeOrZero(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION),
         marks_loader, profile_callback, clock_type);
 

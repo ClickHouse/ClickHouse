@@ -1,8 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/IPartitionStrategy.h>
@@ -14,10 +17,14 @@ namespace DB
 class Block;
 class Chunk;
 class NamesAndTypesList;
+class ColumnsDescription;
 
 class ExpressionActions;
 class IMergeTreeDataPart;
 using DataPartsVector = std::vector<std::shared_ptr<const IMergeTreeDataPart>>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 namespace VirtualColumnUtils
 {
@@ -43,7 +50,15 @@ ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context);
 void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & block);
 
 /// Builds sets used by ActionsDAG inplace.
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+/// Returns false if some set could not be built and is still not ready. Executing the DAG then throws
+/// "Not-ready Set is passed as the second argument", so a caller that executes the DAG right away must
+/// check the result.
+bool buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+
+/// Builds sets used by ActionsDAG inplace, but skips sets that are arguments to
+/// GLOBAL IN functions (globalIn, globalNotIn, globalNullIn, globalNotNullIn).
+/// Those sets need external tables set up by ReadFromRemote before they can be built.
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context);
 
 /// Builds ordered sets used by ActionsDAG inplace.
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
@@ -98,12 +113,17 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(
 /// Extracts constant values expected for `_path` input from the query filter DAG.
 std::optional<Strings> extractPathValuesFromFilter(const ActionsDAG * filter_dag, ContextPtr context, size_t limit);
 
+/// `file_names`, if provided, must be parallel to `paths` and supplies the `_file` value for each path.
+/// Otherwise `_file` is derived from the path as the substring after the last '/'. It is needed when
+/// the user-visible `_file` differs from the path suffix, e.g. web paths with a query/fragment part.
 ColumnPtr getFilterByPathAndFileIndexes(
     const std::vector<String> & paths,
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::vector<String> * file_names = nullptr);
 
 template <typename T>
 void filterByPathOrFile(
@@ -112,9 +132,11 @@ void filterByPathOrFile(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
+    const std::vector<String> * file_names = nullptr)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context, format_settings, file_names);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -129,6 +151,7 @@ void filterByPathOrFile(
 struct VirtualsForFileLikeStorage
 {
     const String & path;
+    const StorageID & storage_id;
     std::optional<size_t> size { std::nullopt };
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
@@ -138,16 +161,26 @@ struct VirtualsForFileLikeStorage
     /// Original file path as stored in Iceberg metadata (before resolution to storage path).
     /// Used by Iceberg position deletes to reference data files in the metadata path format.
     const String * iceberg_metadata_file_path { nullptr };
+    std::optional<UInt64> last_updated_sequence_number = std::nullopt;
+    std::optional<UInt64> first_row_id = std::nullopt;
+    ColumnPtr materialized_row_ids = {};
+    ColumnPtr materialized_last_updated_sequence_numbers = {};
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
-    VirtualsForFileLikeStorage virtual_values, ContextPtr context);
+    VirtualsForFileLikeStorage virtual_values, ContextPtr context,
+    const std::optional<FormatSettings> & format_settings = std::nullopt);
 
 /// Returns true if the requested virtual columns contain columns that depend on
 /// per-row information (e.g. _row_number). Such columns are incompatible with
 /// the "need only count" optimization that skips actual row parsing.
 bool hasRowDependentVirtualColumns(const NamesAndTypesList & requested_virtual_columns);
+
+/// Append virtual columns to a physical columns list for expression analysis.
+/// Virtual columns that already exist in the list are skipped.
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const ColumnsDescription & columns, const VirtualColumnsDescription & virtual_columns);
+NamesAndTypesList getColumnsWithVirtualsForAnalysis(const NamesAndTypesList & columns, const NamesAndTypesList & virtual_columns);
 
 /// Find hive partitioning part inside path
 /// /a/b/c/d=e/f=g/h.i => d=e/f=g
@@ -158,6 +191,17 @@ std::string_view findHivePartitioningInPath(const String & path);
 DataPartsVector filterDataPartsWithExpression(
     const DataPartsVector & data_parts,
     const std::shared_ptr<ExpressionActions> & virtual_columns_filter);
+
+/// Filter out common virtual column names (marked with is_common) from the given list.
+Names filterVirtualColumns(
+    const Names & column_names,
+    const StorageMetadataPtr & metadata_snapshot,
+    const VirtualsKind & kind_to_filter,
+    const VirtualsMaterializationPlace & place_to_filter);
+
+/// Splits requested column names into physical and virtual.
+/// Returns {physical_names, virtual_names}. Always includes at least one physical column.
+std::pair<Names, Names> splitPhysicalAndVirtualColumnNames(const Names & column_names, const StorageSnapshotPtr & storage_snapshot);
 
 }
 

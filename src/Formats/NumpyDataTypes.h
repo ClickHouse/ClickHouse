@@ -41,7 +41,7 @@ public:
         BIG = '>',
         NONE = '|',
     };
-    NumpyDataTypeIndex type_index;
+    NumpyDataTypeIndex type_index{};
 
     explicit NumpyDataType(Endianness endianness_) : endianness(endianness_) {}
     virtual ~NumpyDataType() = default;

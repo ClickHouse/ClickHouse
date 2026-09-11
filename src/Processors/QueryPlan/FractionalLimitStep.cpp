@@ -7,8 +7,10 @@
 #include <Processors/LimitTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/FractionalLimitStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
@@ -52,11 +54,15 @@ void FractionalLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         pipeline.getSharedHeader(), limit_fraction, offset_fraction, offset, pipeline.getNumStreams(), with_ties, description);
 
     pipeline.addTransform(std::move(transform));
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void FractionalLimitStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Fractional Limit " << limit_fraction << '\n';
     settings.out << prefix << "Fractional Offset " << offset_fraction << '\n';
 
@@ -89,13 +95,13 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
     bool with_ties = bool(flags & 1);
 
-    Float64 limit_fraction;
-    Float64 offset_fraction;
-    UInt64 offset;
+    Float64 limit_fraction = 0;
+    Float64 offset_fraction = 0;
+    UInt64 offset = 0;
 
     readFloatBinary(limit_fraction, ctx.in);
     readFloatBinary(offset_fraction, ctx.in);
@@ -109,6 +115,7 @@ QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), limit_fraction, offset_fraction, offset, with_ties, std::move(description));
 }
 
+void registerFractionalLimitStep(QueryPlanStepRegistry & registry);
 void registerFractionalLimitStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("FractionalLimit", FractionalLimitStep::deserialize);

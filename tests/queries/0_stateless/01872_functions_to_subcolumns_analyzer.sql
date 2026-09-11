@@ -3,8 +3,15 @@ DROP TABLE IF EXISTS t_func_to_subcolumns;
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 
+-- Pin Map serialization to `basic` so `m.keys`/`m.values` subcolumns return keys in
+-- insertion order. CI randomizes `map_serialization_version_for_zero_level_parts` and
+-- `map_serialization_version` between `basic` and `with_buckets`; the latter stores keys
+-- in hash-bucket order, which reorders `mapKeys(m)`/`mapValues(m)` output. The test
+-- verifies the `optimize_functions_to_subcolumns` rewrite (see EXPLAIN QUERY TREE
+-- assertions below), which is orthogonal to storage format.
 CREATE TABLE t_func_to_subcolumns (id UInt64, arr Array(UInt64), n Nullable(String), m Map(String, UInt64))
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
 
 INSERT INTO t_func_to_subcolumns VALUES (1, [1, 2, 3], 'abc', map('foo', 1, 'bar', 2)) (2, [], NULL, map());
 
@@ -34,10 +41,10 @@ DROP TABLE t_func_to_subcolumns;
 
 DROP TABLE IF EXISTS t_tuple_null;
 
-CREATE TABLE t_tuple_null (t Tuple(null UInt32)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_tuple_null (t Tuple(n UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO t_tuple_null VALUES ((10)), ((20));
 
-SELECT t IS NULL, t.null FROM t_tuple_null;
+SELECT t IS NULL, t.n FROM t_tuple_null;
 
 DROP TABLE t_tuple_null;

@@ -8,26 +8,31 @@ import requests
 
 from ci.praktika.info import Info
 from ci.praktika.settings import Settings
+from ci.settings.settings import SECRET_CI_DB_CONNECTION
 
 
 class CIDBCluster:
-    URL_SECRET = Settings.SECRET_CI_DB_URL
-    PASSWD_SECRET = Settings.SECRET_CI_DB_PASSWORD
-    USER_SECRET = Settings.SECRET_CI_DB_USER
+    # Single JSON connection secret: {"url": ..., "user": ..., "password": ...}
+    CONNECTION_SECRET = SECRET_CI_DB_CONNECTION
+
+    @staticmethod
+    def _get_secret_or_raise(info, secret_name):
+        try:
+            return info.get_secret(secret_name)
+        except Exception as ex:
+            raise RuntimeError(
+                f"Failed to resolve CIDB secret [{secret_name}]"
+            ) from ex
 
     def __init__(self, url=None, user=None, pwd=None):
         info = Info()
         if url and user is not None and pwd is not None:
-            self.url_secret = None
-            self.user_secret = None
-            self.pwd_secret = None
+            self.conn_secret = None
             self.url = url
             self.user = user
             self.pwd = pwd
         else:
-            self.user_secret = info.get_secret(self.USER_SECRET)
-            self.url_secret = info.get_secret(self.URL_SECRET)
-            self.pwd_secret = info.get_secret(self.PASSWD_SECRET)
+            self.conn_secret = self._get_secret_or_raise(info, self.CONNECTION_SECRET)
             self.user = None
             self.url = None
             self.pwd = None
@@ -39,15 +44,20 @@ class CIDBCluster:
             self._session.close()
             self._session = None
 
+    @staticmethod
+    def _prepare_request_body(data):
+        if isinstance(data, str):
+            return data.encode("utf-8")
+        return data
+
     def is_ready(self):
         if not self.url:
-            self.url, self.user, self.pwd = (
-                self.url_secret.join_with(self.user_secret)
-                .join_with(self.pwd_secret)
-                .get_value()
-            )
+            conn = json.loads(self.conn_secret.get_value())
+            self.url = conn.get("url")
+            self.user = conn.get("user")
+            self.pwd = conn.get("password")
             if not self.url:
-                print("ERROR: failed to retrieve password for LogCluster")
+                print("ERROR: failed to retrieve url for LogCluster")
                 return False
             if not self.pwd:
                 print("ERROR: failed to retrieve password for LogCluster")
@@ -58,7 +68,7 @@ class CIDBCluster:
                 "X-ClickHouse-Key": self.pwd,
             }
         params = {
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
         try:
             response = requests.post(
@@ -140,7 +150,7 @@ class CIDBCluster:
                 response = self._session.post(
                     url=self.url,
                     params=params,
-                    data=data,
+                    data=self._prepare_request_body(data),
                     headers=self._auth,
                     timeout=timeout,
                 )
@@ -163,7 +173,7 @@ class CIDBCluster:
                 print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()
                 break
-        print(f"ERROR: Failed to query CIDB")
+        print("ERROR: Failed to query CIDB")
         return False
 
     def insert_json(self, table, json_str):
@@ -207,7 +217,7 @@ class CIDBCluster:
                 response = requests.post(
                     url=self.url,
                     params=insert_params,
-                    data=body,
+                    data=self._prepare_request_body(body),
                     headers=self._auth,
                     timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )

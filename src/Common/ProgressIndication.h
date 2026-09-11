@@ -23,6 +23,7 @@ struct ThreadEventData
     UInt64 user_ms      = 0;
     UInt64 system_ms    = 0;
     UInt64 memory_usage = 0;
+    UInt64 temp_data_on_disk_usage = 0;
 
     // -1 used as flag 'is not shown for old servers'
     Int64 peak_memory_usage = -1;
@@ -72,6 +73,13 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return static_cast<double>(getElapsedNanoseconds()) / 1e9; }
 
+    /// How much seconds passed since query execution start, measured by the client's own clock.
+    /// Unlike `elapsedSeconds`, this never uses the server-reported time, which only advances when a
+    /// `Progress` packet arrives. The server does not send a final `Progress` packet when a query
+    /// fails, so after an error the server-reported time is the one from the last periodic packet and
+    /// can be arbitrarily older than the real duration of the query.
+    double clientElapsedSeconds() const { return watch.elapsedSeconds(); }
+
     struct MemoryUsage
     {
         UInt64 total = 0;
@@ -80,6 +88,15 @@ public:
     };
 
     MemoryUsage getMemoryUsage() const;
+
+    struct TempDataOnDiskUsage
+    {
+        UInt64 total = 0;
+        UInt64 max = 0;
+    };
+
+    /// Total amount of temporary data on disk used by the query across all hosts and the maximum per host (in bytes).
+    TempDataOnDiskUsage getTempDataOnDiskUsage() const;
 
     void updateThreadEventData(HostToTimesMap & new_hosts_data);
 

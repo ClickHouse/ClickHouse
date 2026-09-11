@@ -3,8 +3,13 @@
 -- expression merging is disabled, which prevents tryMergeExpressions
 -- from composing filter and expression steps.
 -- Regression test for issue #98822.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
+-- Disable statistics-based part pruning so that randomly injected
+-- `auto_statistics_types` in CI does not add a Statistics section
+-- to the EXPLAIN output and break the reference file.
+SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS test_alias_skip_idx;
 

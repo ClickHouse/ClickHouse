@@ -1,0 +1,96 @@
+# Source files for LLVM X86 target (combined Info, Desc, and CodeGen)
+
+# X86 Info sources
+set(LLVMX86INFO_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/TargetInfo/X86TargetInfo.cpp
+)
+
+# X86 Desc sources
+set(LLVMX86DESC_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86AsmBackend.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86ATTInstPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86ELFObjectWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86EncodingOptimization.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86InstComments.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86InstPrinterCommon.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86IntelInstPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MachObjectWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCAsmInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MnemonicTables.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86ShuffleDecode.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86WinCOFFObjectWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86WinCOFFStreamer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86WinCOFFTargetStreamer.cpp
+)
+
+# X86 CodeGen sources
+set(LLVMX86CODEGEN_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/GISel/X86CallLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/GISel/X86InstructionSelector.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/GISel/X86LegalizerInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/GISel/X86PreLegalizerCombiner.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/GISel/X86RegisterBankInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86ArgumentStackSlotRebase.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86AsmPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86AvoidStoreForwardingBlocks.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86AvoidTrailingCall.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CallFrameOptimization.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CallingConv.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CmovConversion.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CodeGenPassBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86CompressEVEX.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86DomainReassignment.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86DynAllocaExpander.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86ExpandPseudo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FastISel.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FastPreTileConfig.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FastTileConfig.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FixupBWInsts.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FixupInstTuning.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FixupLEAs.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FixupSetCC.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FixupVectorConstants.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FlagsCopyLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FloatingPoint.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86FrameLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86IndirectBranchTracking.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86IndirectThunks.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InsertWait.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InstCombineIntrinsic.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InstrFMA3Info.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InstrFoldTables.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InstrInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86InterleavedAccess.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86ISelDAGToDAG.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86ISelLoweringCall.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86ISelLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86LoadValueInjectionLoadHardening.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86LoadValueInjectionRetHardening.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86LowerAMXIntrinsics.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86LowerAMXType.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86LowerTileCopy.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86MachineFunctionInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86MacroFusion.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86MCInstLower.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86OptimizeLEAs.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86PadShortFunction.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86PartialReduction.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86PreTileConfig.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86RegisterInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86ReturnThunks.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86SelectionDAGInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86ShuffleDecodeConstantPool.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86SpeculativeExecutionSideEffectSuppression.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86SpeculativeLoadHardening.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86Subtarget.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86SuppressAPXForReloc.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86TargetMachine.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86TargetObjectFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86TargetTransformInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86TileConfig.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86VZeroUpper.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86WinEHState.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/X86WinEHUnwindV2.cpp
+)

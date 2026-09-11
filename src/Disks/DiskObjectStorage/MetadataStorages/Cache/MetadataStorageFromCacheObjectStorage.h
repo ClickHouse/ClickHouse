@@ -1,6 +1,9 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/InMemoryRemovalQueue.h>
+
+#include <base/defines.h>
 
 namespace DB
 {
@@ -23,7 +26,10 @@ public:
     std::string getZooKeeperPath() const override;
 
     bool supportsEmptyFilesWithoutBlobs() const override;
+    bool supportsInlineData() const override;
+    bool appliesOperationsEagerly() const override;
     bool areBlobPathsRandom() const override;
+    ObjectStorageKeyGeneratorPtr getKeyGenerator() const override;
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -67,6 +73,8 @@ public:
 
     BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsRemoved(const StoredObjects & blobs) override;
+    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override;
+    int64_t getDeadBlobsQueueEstimate() override;
 
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override;
     int64_t recordAsReplicated(const BlobsToReplicate & blobs) override;
@@ -82,8 +90,8 @@ public:
 private:
     const MetadataStoragePtr underlying;
 
-    std::mutex removed_objects_mutex;
-    StoredObjectSet objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
+    mutable std::mutex removed_objects_mutex;
+    InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);
 };
 
 class MetadataStorageFromCacheObjectStorageTransaction : public IMetadataTransaction
@@ -124,6 +132,10 @@ public:
     void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
     void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
     void truncateFile(const std::string & path, size_t size) override;
+
+    void incrementBlobRefCount(const std::string & blob) override;
+    void decrementBlobRefCount(const std::string & blob) override;
+    void submitBlobForRemoval(const std::string & remote_path) override;
 
 private:
     const MetadataTransactionPtr underlying;

@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
+# Tags: no-random-merge-tree-settings, no-parallel-replicas
+# no-parallel-replicas - because explain produced different plan
 # add_minmax_index_for_numeric_columns=0: Changes the plan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# materialize_statistics_on_insert is randomized in CI; pin it off so auto-statistics are not
+# built on INSERT and do not add a Statistics step to the EXPLAIN index analysis.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy --materialize_statistics_on_insert=0"
 for i in $(seq 0 1)
 do
     # Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-    CH_CLIENT="$CLICKHOUSE_CLIENT --optimize_move_to_prewhere=1 --optimize_move_to_prewhere_if_final=0 --convert_query_to_cnf=0 --optimize_read_in_order=1 --read_in_order_use_virtual_row=1 --use_skip_indexes_on_data_read=1 --query_plan_optimize_prewhere=1 --enable_analyzer=$i"
+    CH_CLIENT="$CLICKHOUSE_CLIENT --optimize_move_to_prewhere=1 --optimize_move_to_prewhere_if_final=0 --convert_query_to_cnf=0 --optimize_read_in_order=1 --read_in_order_use_virtual_row=1 --use_skip_indexes_on_data_read=1 --query_plan_optimize_prewhere=1 --use_partition_pruning=1 --enable_analyzer=$i"
 
     $CH_CLIENT -q "drop table if exists test_index"
     $CH_CLIENT -q "drop table if exists idx"

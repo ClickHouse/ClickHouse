@@ -2,6 +2,8 @@
 
 #if USE_JEMALLOC
 
+#    include <cmath>
+#    include <limits>
 #    include <list>
 #    include <mutex>
 #    include <ranges>
@@ -64,30 +66,82 @@ std::optional<UInt64> parseHexAddress(std::string_view & src)
     return address;
 }
 
-/// Parse stack addresses from a jemalloc profile line starting with '@'.
-/// Returns empty vector if the line doesn't start with '@'.
-/// The first address is kept as-is; subsequent ones are decremented by 1
-/// (they are return addresses, so we subtract 1 to point inside the call instruction).
-std::vector<UInt64> parseStackAddresses(std::string_view line)
+}
+
+std::vector<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
 {
     std::vector<UInt64> result;
-    if (line.empty() || line[0] != '@')
-        return result;
-
-    std::string_view sv(line.data() + 1, line.size() - 1);
-    bool first = true;
-    while (!sv.empty())
+    std::string_view sv = line;
+    if (!sv.empty() && sv[0] == '@')
     {
-        trimLeft(sv);
-        if (sv.empty())
-            break;
-        auto address = parseHexAddress(sv);
-        if (!address.has_value())
-            break;
-        result.push_back(first ? *address : *address - 1);
-        first = false;
+        sv.remove_prefix(1);
+        bool first = true;
+        while (!sv.empty())
+        {
+            trimLeft(sv);
+            if (sv.empty())
+                break;
+            auto address = parseHexAddress(sv);
+            if (!address.has_value())
+                break;
+            result.push_back(first ? *address : *address - 1);
+            first = false;
+        }
     }
+    if (fully_parsed)
+        *fully_parsed = sv.empty();
     return result;
+}
+
+UInt64 parseJemallocSamplingInterval(std::string_view header)
+{
+    static constexpr std::string_view prefix = "heap_v2/";
+    if (!header.starts_with(prefix))
+        return 0;
+    header.remove_prefix(prefix.size());
+    trim(header);
+    if (header.empty())
+        return 0;
+    UInt64 result = 0;
+    ReadBufferFromMemory buf(header.data(), header.size());
+    if (!tryReadIntText(result, buf) || !buf.eof())
+        return 0;
+    return result;
+}
+
+namespace
+{
+
+/// Apply Poisson sampling correction as jeprof does for heap_v2 profiles.
+/// Each allocation is sampled with probability 1-exp(-size/interval), so the correction
+/// factor is 1/(1-exp(-mean_size/interval)).
+/// Uses std::expm1 to avoid catastrophic cancellation for small ratios where
+/// 1-exp(-x) loses precision, and guards against non-finite results to prevent
+/// undefined behavior in std::llround.
+/// Returns the scaled metric value.
+UInt64 applySamplingCorrection(UInt64 count, UInt64 bytes, UInt64 sampling_interval, bool use_count)
+{
+    if (sampling_interval == 0 || count == 0)
+        return use_count ? count : bytes;
+
+    if (bytes == 0)
+        return use_count ? count : 0;
+
+    double mean_size = static_cast<double>(bytes) / static_cast<double>(count);
+    double ratio = mean_size / static_cast<double>(sampling_interval);
+    double denom = -std::expm1(-ratio); /// accurate even for tiny ratio
+
+    if (denom <= 0.0) /// defensive: shouldn't happen after expm1, but clamp
+        return use_count ? count : bytes;
+
+    double scale = 1.0 / denom;
+    double metric = use_count ? static_cast<double>(count) : static_cast<double>(bytes);
+    double corrected = metric * scale;
+
+    if (!std::isfinite(corrected) || corrected < 0.0 || corrected > static_cast<double>(std::numeric_limits<Int64>::max()))
+        return use_count ? count : bytes;
+
+    return static_cast<UInt64>(std::llround(corrected));
 }
 
 /// Simple LRU cache: evicts the least-recently-used entry when the capacity is exceeded.
@@ -410,7 +464,7 @@ void JemallocProfileSource::collectAddresses()
         readStringUntilNewlineInto(line, in);
         in.tryIgnore(1);
 
-        for (UInt64 addr : parseStackAddresses(line))
+        for (UInt64 addr : parseJemallocStackAddresses(line))
             unique_addresses.insert(addr);
     }
 
@@ -430,6 +484,7 @@ Chunk JemallocProfileSource::generateCollapsed()
         ReadBufferFromFile in(filename);
         std::string line;
         std::vector<UInt64> current_stack;
+        UInt64 sampling_interval = 0;
 
         while (!in.eof())
         {
@@ -446,9 +501,23 @@ Chunk JemallocProfileSource::generateCollapsed()
             if (line.empty())
                 continue;
 
+            /// Parse sampling interval from heap_v2/N header (first non-empty line)
+            if (sampling_interval == 0 && line.starts_with("heap_v2/"))
+            {
+                sampling_interval = parseJemallocSamplingInterval(line);
+                continue;
+            }
+
+            /// Fragmentation profiling records are not allocation counters;
+            /// skip them without touching the pending stack.
+            std::string_view trimmed(line);
+            trimLeft(trimmed);
+            if (trimmed.starts_with("f:") || trimmed.starts_with("frag_util:"))
+                continue;
+
             if (line[0] == '@')
             {
-                current_stack = parseStackAddresses(line);
+                current_stack = parseJemallocStackAddresses(line);
             }
             else if (!current_stack.empty() && line.contains(':'))
             {
@@ -460,30 +529,28 @@ Chunk JemallocProfileSource::generateCollapsed()
                 ///
                 /// The record has the form `<thread>: <live_count>: <live_bytes> [<alloc_count>: <alloc_bytes>]`,
                 /// where the bracketed pair holds the cumulative (total) counts since profiling started.
-                /// We extract either <live_bytes> (between the 2nd and 3rd colon) or <live_count>
-                /// (between the 1st and 2nd colon) depending on the `collapsed_use_count` setting.
+                /// We extract both <live_count> and <live_bytes> to apply Poisson sampling correction,
+                /// then report the requested metric (bytes or count).
 
                 size_t first_colon = line.find(':');
                 size_t second_colon = line.find(':', first_colon + 1);
 
                 if (second_colon != std::string::npos)
                 {
-                    std::string_view metric_str;
-                    if (collapsed_use_count)
-                    {
-                        /// <live_count>: between 1st and 2nd colon
-                        metric_str = std::string_view(line.data() + first_colon + 1, second_colon - first_colon - 1);
-                    }
-                    else
-                    {
-                        /// <live_bytes>: between 2nd colon and opening bracket (or end of line)
-                        size_t bracket_pos = line.find('[', second_colon);
-                        size_t end_pos = (bracket_pos != std::string::npos) ? bracket_pos : line.size();
-                        metric_str = std::string_view(line.data() + second_colon + 1, end_pos - second_colon - 1);
-                    }
-                    trim(metric_str);
+                    /// <live_count>: between 1st and 2nd colon
+                    std::string_view count_str(line.data() + first_colon + 1, second_colon - first_colon - 1);
+                    trim(count_str);
+                    UInt64 live_count = parseInt<UInt64>(count_str);
 
-                    UInt64 metric = parseInt<UInt64>(metric_str);
+                    /// <live_bytes>: between 2nd colon and opening bracket (or end of line)
+                    size_t bracket_pos = line.find('[', second_colon);
+                    size_t end_pos = (bracket_pos != std::string::npos) ? bracket_pos : line.size();
+                    std::string_view bytes_str(line.data() + second_colon + 1, end_pos - second_colon - 1);
+                    trim(bytes_str);
+                    UInt64 live_bytes = parseInt<UInt64>(bytes_str);
+
+                    /// Apply Poisson sampling correction (same algorithm as jeprof's AdjustSamples).
+                    UInt64 metric = applySamplingCorrection(live_count, live_bytes, sampling_interval, collapsed_use_count);
 
                     if (metric > 0)
                     {
@@ -555,11 +622,14 @@ Chunk JemallocProfileSource::generateCollapsed()
     return Chunk(std::move(columns), num_rows);
 }
 
-void symbolizeJemallocHeapProfile(
+namespace
+{
+
+void pullProfileLines(
     const std::string & input_filename,
-    const std::string & output_filename,
     JemallocProfileFormat format,
-    bool symbolize_with_inline)
+    bool symbolize_with_inline,
+    WriteBuffer & out)
 {
     Block header;
     header.insert({ColumnString::create(), std::make_shared<DataTypeString>(), "line"});
@@ -572,7 +642,6 @@ void symbolizeJemallocHeapProfile(
 
     QueryPipeline pipeline(std::move(source));
     PullingPipelineExecutor executor(pipeline);
-    WriteBufferFromFile out(output_filename);
     Block block;
     while (executor.pull(block))
     {
@@ -584,7 +653,29 @@ void symbolizeJemallocHeapProfile(
             writeChar('\n', out);
         }
     }
+}
+
+}
+
+void symbolizeJemallocHeapProfile(
+    const std::string & input_filename,
+    const std::string & output_filename,
+    JemallocProfileFormat format,
+    bool symbolize_with_inline)
+{
+    WriteBufferFromFile out(output_filename);
+    pullProfileLines(input_filename, format, symbolize_with_inline, out);
     out.finalize();
+}
+
+std::string symbolizeJemallocHeapProfileToString(
+    const std::string & input_filename,
+    JemallocProfileFormat format,
+    bool symbolize_with_inline)
+{
+    WriteBufferFromOwnString out;
+    pullProfileLines(input_filename, format, symbolize_with_inline, out);
+    return std::move(out.str());
 }
 
 }

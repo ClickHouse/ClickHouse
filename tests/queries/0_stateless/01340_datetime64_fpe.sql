@@ -1,3 +1,5 @@
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
+
 WITH toDateTime64('2019-09-16 19:20:12.3456789102019-09-16 19:20:12.345678910', 0) AS dt64 SELECT dt64; -- { serverError CANNOT_PARSE_TEXT }
 
 SELECT toDateTime64('2011-11-11 11:11:11.1234567890123456789', 0);

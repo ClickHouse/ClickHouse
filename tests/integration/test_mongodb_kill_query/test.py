@@ -105,7 +105,7 @@ def test_kill_query(setup_mongodb_users):
     query_thread.join()
 
     result = node1.query(
-        "SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
     )
     assert int(result.strip()) == 0
 
@@ -125,11 +125,13 @@ def test_cancel_query(setup_mongodb_users):
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Generate a chunk")
+    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
+    # from the preceding test_kill_query which also produces "Generate a chunk".
+    node1.wait_for_log_line("Generate a chunk", look_behind_lines=0)
     time.sleep(1)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()

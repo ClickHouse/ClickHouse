@@ -1,8 +1,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <IO/WriteBufferFromString.h>
 #include <Poco/JSON/Object.h>
 #include <Common/Exception.h>
 
@@ -197,6 +202,118 @@ TEST(SerializationInfoJSON, FromJSONOverwritesExistingData)
     EXPECT_EQ(info.getKindStack(), expected);
     EXPECT_EQ(info.getData().num_rows, 2000);
     EXPECT_EQ(info.getData().num_defaults, 1999);
+}
+
+TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
+{
+    SerializationInfoSettings settings;
+    settings.ratio_of_defaults_for_sparse = 0.5;
+    settings.choose_kind = true;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+    settings.propagate_types_serialization_versions_to_nested_types = true;
+
+    auto string_type = std::make_shared<DataTypeString>();
+    NamesAndTypesList columns
+    {
+        {"string\"with\\escapes", string_type},
+        {"tuple", std::make_shared<DataTypeTuple>(DataTypes{string_type, string_type}, Strings{"a", "b"})},
+    };
+
+    SerializationInfoByName infos(columns, settings);
+
+    WriteBufferFromOwnString out;
+    infos.writeJSON(out);
+    auto json = out.str();
+
+    EXPECT_THAT(json, testing::HasSubstr(R"("name":"string\"with\\escapes")"));
+    EXPECT_THAT(json, testing::HasSubstr(R"("subcolumns")"));
+    EXPECT_THAT(json, testing::HasSubstr(R"("types_serialization_versions")"));
+
+    auto restored = SerializationInfoByName::readJSONFromString(columns, json);
+    EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_TYPES);
+    EXPECT_EQ(restored.getSettings().string_serialization_version, MergeTreeStringSerializationVersion::WITH_SIZE_STREAM);
+    EXPECT_TRUE(restored.getSettings().propagate_types_serialization_versions_to_nested_types);
+    EXPECT_NE(restored.tryGet("string\"with\\escapes"), nullptr);
+    EXPECT_NE(restored.tryGet("tuple"), nullptr);
+}
+
+TEST(SerializationInfoByNameJSON, MissingColumnsDoNotDowngradeConfiguredVersion)
+{
+    SerializationInfoSettings settings;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
+
+    SerializationInfoByName infos(settings);
+    infos.setMissingColumns({
+        {.name = "z", .type_name = "String"},
+        {.name = "a", .type_name = "UInt64"},
+    });
+
+    WriteBufferFromOwnString out;
+    infos.writeJSON(out);
+    const auto json = out.str();
+    auto restored = SerializationInfoByName::readJSONFromString({}, json);
+
+    EXPECT_LT(json.find(R"("name":"a")"), json.find(R"("name":"z")"));
+    EXPECT_EQ(infos.getVersion(), settings.version);
+    EXPECT_EQ(restored.getVersion(), settings.version);
+    ASSERT_EQ(restored.getMissingColumns().size(), 2);
+    EXPECT_EQ(restored.getMissingColumns()[0].name, "a");
+    EXPECT_EQ(restored.getMissingColumns()[0].type_name, "UInt64");
+    EXPECT_EQ(restored.getMissingColumns()[1].name, "z");
+    EXPECT_EQ(restored.getMissingColumns()[1].type_name, "String");
+    ASSERT_NE(restored.getMissingColumnInfo("a"), nullptr);
+    EXPECT_EQ(restored.getMissingColumnInfo("a")->type_name, "UInt64");
+}
+
+TEST(SerializationInfoByNameJSON, RejectsMissingColumnsBeforeTheirFormatVersion)
+{
+    constexpr auto * json = R"({"columns":[],"missing_columns":[{"name":"value","type":"UInt64"}],"version":1})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, RejectsDuplicateMissingColumns)
+{
+    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64"},{"name":"value","type":"String"}],"version":2})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, RejectsUnknownMissingColumnField)
+{
+    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64","expression":"1"}],"version":2})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, RejectsPhysicalMissingColumnConflict)
+{
+    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"UInt64"}],"version":2})";
+    NamesAndTypesList columns{{"value", std::make_shared<DataTypeUInt64>()}};
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString(columns, json), DB::Exception);
+}
+
+TEST(SerializationInfoByNameJSON, RejectsInvalidMissingColumnType)
+{
+    constexpr auto * json = R"({"columns":[],"types_serialization_versions":{"string":0},"missing_columns":[{"name":"value","type":"NotAType"}],"version":2})";
+    EXPECT_THROW(SerializationInfoByName::readJSONFromString({}, json), DB::Exception);
+}
+
+TEST(SerializationInfoSettings, OnlyWithTypesCanDowngradeToBasic)
+{
+    SerializationInfoSettings with_types;
+    with_types.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    with_types.tryDowngradeToBasic();
+    EXPECT_EQ(with_types.version, MergeTreeSerializationInfoVersion::BASIC);
+
+    SerializationInfoSettings with_nested_propagation;
+    with_nested_propagation.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    with_nested_propagation.propagate_types_serialization_versions_to_nested_types = true;
+    with_nested_propagation.tryDowngradeToBasic();
+    EXPECT_EQ(with_nested_propagation.version, MergeTreeSerializationInfoVersion::WITH_TYPES);
+
+    SerializationInfoSettings with_missing;
+    with_missing.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
+    with_missing.tryDowngradeToBasic();
+    EXPECT_EQ(with_missing.version, MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
 }
 
 /// Malformed kind tests.

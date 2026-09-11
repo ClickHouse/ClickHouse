@@ -88,7 +88,7 @@ public:
                 if (err)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
 
-                res = cellAreaRads2(index);
+                cellAreaRads2(index, &res);
             }
             dst_data[row] = res;
         }
@@ -118,7 +118,7 @@ Returns the exact area of a specific cell in square radians corresponding to the
             "SELECT h3CellAreaRads2(579205133326352383) AS area",
             R"(
 ┌────────────────area─┐
-│ 0.10116268528089567 │
+│ 0.10116268528089563 │
 └─────────────────────┘
             )"
         }

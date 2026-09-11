@@ -1,0 +1,346 @@
+---
+title: 'DataStore logging'
+sidebarTitle: 'Logging'
+slug: /chdb/debugging/logging
+description: 'Configure DataStore logging for debugging and monitoring'
+keywords: ['chdb', 'datastore', 'logging', 'debug', 'log', 'level']
+doc_type: 'reference'
+---
+
+DataStore uses Python's standard logging module. This guide shows how to configure logging for debugging.
+
+## Quick Start {#quick-start}
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Enable debug logging
+config.enable_debug()
+
+# Now all operations will log details
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).to_df()
+```
+
+## Log Levels {#levels}
+
+| Level | Value | Description |
+|-------|-------|-------------|
+| `DEBUG` | 10 | Detailed information for debugging |
+| `INFO` | 20 | General operational information |
+| `WARNING` | 30 | Warning messages (default) |
+| `ERROR` | 40 | Error messages |
+| `CRITICAL` | 50 | Critical failures |
+
+## Setting Log Level {#setting-level}
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# Using standard logging levels
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # Default
+config.set_log_level(logging.ERROR)
+
+# Using quick preset
+config.enable_debug()  # Sets DEBUG level + verbose format
+```
+
+## Log Format {#format}
+
+### Simple Format (Default) {#simple}
+
+```python title="Query"
+config.set_log_format("simple")
+```
+
+```text title="Response"
+DEBUG - Executing SQL query
+DEBUG - Cache miss for key abc123
+```
+
+### Verbose Format {#verbose}
+
+```python title="Query"
+config.set_log_format("verbose")
+```
+
+```text title="Response"
+2024-01-15 10:30:45.123 DEBUG datastore.core - Executing SQL query
+2024-01-15 10:30:45.456 DEBUG datastore.cache - Cache miss for key abc123
+```
+
+---
+
+## What Gets Logged {#what-logged}
+
+### DEBUG Level {#debug-logged}
+
+- SQL queries generated
+- Execution engine selection
+- Cache operations (hits/misses)
+- Operation timings
+- Data source information
+
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - SQL: SELECT * FROM file('data.csv', 'CSVWithNames') WHERE age > 25
+DEBUG - Using engine: chdb
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+### INFO Level {#info-logged}
+
+- Major operation completions
+- Configuration changes
+- Data source connections
+
+```text
+INFO - Loaded 1,000,000 rows from data.csv
+INFO - Execution engine set to: chdb
+INFO - Connected to MySQL: localhost:3306/mydb
+```
+
+### WARNING Level {#warning-logged}
+
+- Deprecated feature usage
+- Performance warnings
+- Non-critical issues
+
+```text
+WARNING - Large result set (>1M rows) may cause memory issues
+WARNING - Cache TTL exceeded, re-executing query
+WARNING - Column 'date' has mixed types, using string
+```
+
+### ERROR Level {#error-logged}
+
+- Query execution failures
+- Connection errors
+- Data conversion errors
+
+```text
+ERROR - Failed to execute SQL: syntax error near 'FORM'
+ERROR - Connection to MySQL failed: timeout
+ERROR - Cannot convert column 'price' to float
+```
+
+---
+
+## Custom Logging Configuration {#custom}
+
+### Using Python Logging {#python-logging}
+
+```python
+import logging
+
+# Configure root logger
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('datastore.log'),
+        logging.StreamHandler()
+    ]
+)
+
+# Get DataStore logger
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.setLevel(logging.DEBUG)
+```
+
+### Log to File {#log-file}
+
+```python
+import logging
+
+# Create file handler
+file_handler = logging.FileHandler('datastore_debug.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+
+# Add to DataStore logger
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.addHandler(file_handler)
+```
+
+### Suppress Logging {#suppress}
+
+```python
+import logging
+
+# Suppress all DataStore logs
+logging.getLogger('chdb.datastore').setLevel(logging.CRITICAL)
+
+# Or using config
+config.set_log_level(logging.CRITICAL)
+```
+
+---
+
+## Debugging Scenarios {#scenarios}
+
+### Debug SQL Generation {#debug-sql}
+
+```python
+config.enable_debug()
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').sum()
+```
+
+Log output:
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - Building filter: age > 25
+DEBUG - Building groupby: city
+DEBUG - Building aggregation: sum
+DEBUG - Generated SQL:
+        SELECT city, SUM(*) 
+        FROM file('data.csv', 'CSVWithNames')
+        WHERE age > 25
+        GROUP BY city
+```
+
+### Debug Engine Selection {#debug-engine}
+
+```python
+config.enable_debug()
+
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+```
+
+Log output:
+```text
+DEBUG - filter: selecting engine (eligible: chdb, pandas)
+DEBUG - filter: using chdb (SQL-compatible)
+DEBUG - apply: selecting engine (eligible: pandas)
+DEBUG - apply: using pandas (custom function)
+```
+
+### Debug Cache Operations {#debug-cache}
+
+```python
+config.enable_debug()
+
+# First execution
+result1 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - Cache miss for query hash abc123
+# DEBUG - Executing query...
+# DEBUG - Caching result (key: abc123, size: 1.2MB)
+
+# Second execution (same query)
+result2 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - Cache hit for query hash abc123
+# DEBUG - Returning cached result
+```
+
+### Debug Performance Issues {#debug-performance}
+
+```python
+config.enable_debug()
+config.enable_profiling()
+
+# Logs will show timing for each operation
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .to_df()
+)
+```
+
+Log output:
+```text
+DEBUG - filter: 0.002ms
+DEBUG - groupby: 0.001ms
+DEBUG - agg: 0.003ms
+DEBUG - SQL generation: 0.012ms
+DEBUG - SQL execution: 89.456ms  <- Main time spent here
+DEBUG - Result conversion: 2.345ms
+```
+
+---
+
+## Production Configuration {#production}
+
+### Recommended Settings {#recommended}
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# Production: minimal logging
+config.set_log_level(logging.WARNING)
+config.set_log_format("simple")
+config.set_profiling_enabled(False)
+```
+
+### Log Rotation {#rotation}
+
+```python
+import logging
+from logging.handlers import RotatingFileHandler
+
+# Create rotating file handler
+handler = RotatingFileHandler(
+    'datastore.log',
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
+)
+handler.setLevel(logging.WARNING)
+
+# Add to DataStore logger
+logging.getLogger('chdb.datastore').addHandler(handler)
+```
+
+---
+
+## Environment Variables {#env-vars}
+
+You can also configure logging via environment variables:
+
+```bash
+# Set log level
+export CHDB_LOG_LEVEL=DEBUG
+
+# Set log format
+export CHDB_LOG_FORMAT=verbose
+```
+
+```python
+import os
+import logging
+
+# Read from environment
+log_level = os.environ.get('CHDB_LOG_LEVEL', 'WARNING')
+config.set_log_level(getattr(logging, log_level))
+```
+
+---
+
+## Summary {#summary}
+
+| Task | Command |
+|------|---------|
+| Enable debug | `config.enable_debug()` |
+| Set level | `config.set_log_level(logging.DEBUG)` |
+| Set format | `config.set_log_format("verbose")` |
+| Log to file | Use Python logging handlers |
+| Suppress logs | `config.set_log_level(logging.CRITICAL)` |

@@ -1,6 +1,5 @@
 -- The FRACTION parameter in the HAVING clause is 0.0001 / SF (spec section 2.4.11.3).
--- Current value 0.0001 is for SF = 1. For other scale factors, adjust accordingly,
--- e.g. 0.00001 for SF = 10, 0.000001 for SF = 100.
+-- Current value 0.0001 is for SF = 1. See query_11_sf10.sql for the SF = 10 variant.
 
 SELECT
     ps_partkey,

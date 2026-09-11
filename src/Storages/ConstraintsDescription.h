@@ -29,8 +29,10 @@ public:
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);
 
-    ConstraintsDescription(ConstraintsDescription && other) noexcept;
-    ConstraintsDescription & operator=(ConstraintsDescription && other) noexcept;
+    /// Not noexcept: the move operations rebuild the derived data via update(), which allocates
+    /// (make_unique, CNF construction) and can throw, e.g. MEMORY_LIMIT_EXCEEDED.
+    ConstraintsDescription(ConstraintsDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
+    ConstraintsDescription & operator=(ConstraintsDescription && other); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
 
     bool empty() const { return constraints.empty(); }
     String toString() const;
@@ -55,6 +57,11 @@ public:
     const ComparisonGraph<ASTPtr> & getGraph() const;
 
     ConstraintsExpressions getExpressions(ContextPtr context, const NamesAndTypesList & source_columns_) const;
+
+    /// Rejects a `CHECK` constraint whose expression changes the number of rows. Only for fresh DDL:
+    /// rejecting while loading stored metadata would fail the whole load rather than the one table.
+    static void assertConstraintPreservesRowCount(const ASTPtr & constraint);
+    void assertPreserveRowCount() const;
 
     struct AtomId
     {
@@ -84,7 +91,7 @@ public:
         friend ConstraintsDescription;
     };
 
-    QueryTreeData getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const;
+    QueryTreeData getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const;
 
 private:
     std::vector<std::vector<CNFQueryAtomicFormula>> buildConstraintData() const;

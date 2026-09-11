@@ -287,7 +287,7 @@ YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & 
     }
 
     auto columns_array = schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
-    std::unordered_map<String, DataTypePtr> yt_columns;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> yt_columns;
 
     for (const auto& yt_column : *columns_array) {
         const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();
@@ -332,7 +332,7 @@ size_t YTsaurusClient::getTableNumberOfRows(const String & table_path)
     String lock_metadata_path = fmt::format("{}/@row_count", table_path);
     YTsaurusQueryPtr get_query(new YTsaurusGetQuery(lock_metadata_path));
     auto read_buff = executeQuery(get_query);
-    size_t row_count;
+    size_t row_count = 0;
     DB::readIntText(row_count, *read_buff);
     return row_count;
 }

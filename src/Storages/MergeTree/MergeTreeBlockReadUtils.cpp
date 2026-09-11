@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -26,6 +27,11 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool share_nested_offsets;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -45,10 +51,10 @@ bool hasMaterializedTextIndex(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const String & virtual_column_name)
 {
-    if (!storage_snapshot->virtual_columns)
+    if (storage_snapshot->metadata->virtuals.empty())
         return false;
 
-    const auto * virtual_column = storage_snapshot->virtual_columns->tryGetDescription(virtual_column_name);
+    const auto * virtual_column = storage_snapshot->metadata->virtuals.tryGetDescription(virtual_column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader);
     if (!virtual_column)
         return false;
 
@@ -74,8 +80,7 @@ bool injectRequiredColumnsRecursively(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const GetColumnsOptions & options,
     Names & columns,
-    NameSet & required_columns,
-    NameSet & injected_columns)
+    NameSet & required_columns)
 {
     /// This is needed to prevent stack overflow in case of cyclic defaults or
     /// huge AST which for some reason was not validated on parsing/interpreter
@@ -89,7 +94,6 @@ bool injectRequiredColumnsRecursively(
         {
             columns.emplace_back(name);
             required_columns.emplace(name);
-            injected_columns.emplace(name);
         }
     };
 
@@ -97,22 +101,37 @@ bool injectRequiredColumnsRecursively(
     if (column_in_storage)
     {
         auto column_name_in_part = column_in_storage->getNameInStorage();
-        if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part))
+        /// The condition has to match IMergeTreeReader::getStorageAndSubcolumnNameInPart, which decides
+        /// the name the column is actually read under.
+        if (alter_conversions && alter_conversions->isColumnRenamed(column_name_in_part,
+                [&](const auto & name) { return data_part_info_for_reader.getColumns().contains(name); }))
+        {
             column_name_in_part = alter_conversions->getColumnOldName(column_name_in_part);
+        }
 
         auto column_in_part = data_part_info_for_reader.getColumns().tryGetByName(column_name_in_part);
+
+        bool share_nested = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+            share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
         if (column_in_part
             /// If the column was dropped by a pending mutation that hasn't been applied yet,
             /// the data in this part is stale. Treat it as missing so that the default value is used.
             /// This can happen if the column was dropped and then re-added with the same name.
-            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part)))
+            && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
         {
             if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
             {
                 add_column(column_name);
                 return true;
             }
+
+            /// Parent is present but the part's (older) type lacks the requested subcolumn (metadata-only
+            /// `ALTER MODIFY COLUMN T -> Nullable(T)`). Read the parent so it can be converted and the
+            /// subcolumn extracted from it, instead of being filled from the storage-type default.
+            add_column(column_in_storage->getNameInStorage());
+            return true;
         }
         else if (isTextIndexVirtualColumn(column_name_in_part) && hasMaterializedTextIndex(storage_snapshot, data_part_info_for_reader, column_name_in_part))
         {
@@ -122,9 +141,16 @@ bool injectRequiredColumnsRecursively(
         }
     }
 
-    /// Column doesn't have default value and don't exist in part
-    /// don't need to add to required set.
-    const auto column_default = storage_snapshot->getDefault(column_name);
+    /// The column is not in the part, so it will be filled from its default. Whatever that default
+    /// expression reads has to be added to `columns` as well; with no default there is nothing to add.
+    auto column_default = storage_snapshot->getDefault(column_name);
+
+    /// A subcolumn does not have its own default expression: it is extracted from the evaluated
+    /// default of the column in storage (see IMergeTreeReader::evaluateMissingDefaults),
+    /// so the columns required by that expression must be read as well.
+    if (!column_default && column_in_storage && column_in_storage->isSubcolumn())
+        column_default = storage_snapshot->getDefault(column_in_storage->getNameInStorage());
+
     ASTPtr default_expression = column_default.has_value() ? column_default->expression : nullptr;
     if (!default_expression)
         return false;
@@ -137,26 +163,25 @@ bool injectRequiredColumnsRecursively(
     for (const auto & identifier : identifiers)
         result |= injectRequiredColumnsRecursively(
             identifier, storage_snapshot, alter_conversions, data_part_info_for_reader,
-            options, columns, required_columns, injected_columns);
+            options, columns, required_columns);
 
     return result;
-}
-
 }
 
 /** If some of the requested columns are not in the part,
   * then find out which columns may need to be read further,
   * so that you can calculate the DEFAULT expression for these columns.
   * Adds them to the `columns`.
+  * Throws when the part holds data that neither the table structure nor a pending conversion
+  * accounts for, since such a part must not be read as rows of defaults.
   */
-NameSet injectRequiredColumns(
+void injectRequiredColumns(
     const IMergeTreeDataPartInfoForReader & data_part_info_for_reader,
     const StorageSnapshotPtr & storage_snapshot,
     bool with_subcolumns,
     Names & columns)
 {
     NameSet required_columns{std::begin(columns), std::end(columns)};
-    NameSet injected_columns;
 
     bool have_at_least_one_physical_column = false;
     AlterConversionsPtr alter_conversions;
@@ -164,7 +189,7 @@ NameSet injectRequiredColumns(
         alter_conversions = data_part_info_for_reader.getAlterConversions();
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withVirtuals()
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
     for (size_t i = 0; i < columns.size(); ++i)
@@ -173,39 +198,60 @@ NameSet injectRequiredColumns(
         if (!storage_snapshot->tryGetColumn(options, columns[i]))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column or subcolumn {} in table", columns[i]);
 
+        /// Copy columns[i] to avoid a dangling reference: injectRequiredColumnsRecursively may call
+        /// columns.emplace_back, which can reallocate the vector and invalidate any reference into it.
+        String column_name = columns[i];
         have_at_least_one_physical_column |= injectRequiredColumnsRecursively(
-            columns[i], storage_snapshot, alter_conversions,
-            data_part_info_for_reader, options, columns, required_columns, injected_columns);
+            column_name,
+            storage_snapshot,
+            alter_conversions,
+            data_part_info_for_reader,
+            options,
+            columns,
+            required_columns);
     }
 
-    /** Add a column of the minimum size.
-        * Used in case when no column is needed or files are missing, but at least you need to know number of rows.
-        * Adds to the columns.
-        */
+    /// No requested column has a file in this part, possibly because none was requested. Nothing is
+    /// injected in their place: a read of no columns still reports the right number of rows, taken
+    /// from the index granularity. What the part is checked for instead is data that neither the
+    /// table structure nor a pending conversion accounts for.
     if (!have_at_least_one_physical_column)
     {
-        /// Use the intersection of part columns and metadata columns to find the minimum size column.
-        /// The column must exist both physically in the part (to be readable) and in the current metadata
-        /// (to be resolvable by the StorageSnapshot). This handles cases where the table schema has changed
-        /// since the part was created: columns may have been added (not in the part) or dropped (not in metadata).
-        const auto & part_columns = data_part_info_for_reader.getColumns();
-        NamesAndTypesList available_columns;
-        for (const auto & column : part_columns)
+        bool share_nested = true;
+        if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage_snapshot->storage))
+            share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+
+        /// Reading the part as rows of defaults is correct only when the structure and the pending
+        /// conversions account for everything it holds: then each requested column is legitimately
+        /// absent. A part column that is neither in the structure nor being dropped is unexplained
+        /// data -- a part attached after the schema moved on, say -- and defaults for it would hide
+        /// rows that exist on disk (issue #79110).
+        for (const auto & column : data_part_info_for_reader.getColumns())
         {
-            if (storage_snapshot->tryGetColumn(options, column.name))
-                available_columns.push_back(column);
+            /// A pending rename has not reached the part's files yet, so the structure knows such a
+            /// column under the name the rename gives it. Mapped forward, unlike everywhere else in
+            /// this file, because here it is the part's name that is in hand.
+            auto name_in_metadata = column.name;
+            if (alter_conversions && alter_conversions->columnHasNewName(name_in_metadata))
+                name_in_metadata = alter_conversions->getColumnNewName(name_in_metadata);
+
+            if (storage_snapshot->tryGetColumn(options, name_in_metadata))
+                continue;
+
+            /// A drop that followed a rename is recorded under the column's name in the part,
+            /// `addMutationCommand` having resolved it through the rename and erased that mapping,
+            /// so the part-side name is the only one to ask about.
+            if (alter_conversions && alter_conversions->isColumnDropped(column.name, share_nested))
+                continue;
+
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "Part {} of table {} holds column {}, which is not part of the table structure and "
+                "is not being dropped, so the part cannot be read",
+                data_part_info_for_reader.getPartName(), data_part_info_for_reader.getTableName(), column.name);
         }
-
-        if (available_columns.empty())
-            available_columns = part_columns;
-
-        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
-        columns.push_back(minimum_size_column_name);
-        /// correctly report added column
-        injected_columns.insert(columns.back());
     }
+}
 
-    return injected_columns;
 }
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
@@ -251,9 +297,10 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             ColumnInfo info;
             info.name = column_name;
+            info.is_subcolumn = column_from_part && column_from_part->isSubcolumn();
             /// If column isn't fixed and doesn't have checksum, than take first
             ColumnSize column_size;
-            if (column_from_part && column_from_part->isSubcolumn() && allow_subcolumns_sizes_calculation)
+            if (info.is_subcolumn && allow_subcolumns_sizes_calculation)
                 column_size = data_part->getSubcolumnSize(column_name);
             else
                 column_size = data_part->getColumnSize(column_from_part ? column_from_part->getNameInStorage() : column_name);
@@ -325,6 +372,13 @@ void MergeTreeBlockSizePredictor::update(const Block & sample_block, const Colum
         double local_bytes_per_row = static_cast<double>(diff_size) / static_cast<double>(diff_rows);
         info.bytes_per_row = alpha * info.bytes_per_row + (1. - alpha) * local_bytes_per_row;
 
+        /// For subcolumns, the output column size can be much smaller than what was
+        /// actually read from disk (e.g. a Map subcolumn reads the entire Map but
+        /// only extracts one key's values). Prevent the estimate from dropping below
+        /// the global average so that chunk sizes stay appropriate for the real I/O cost.
+        if (info.is_subcolumn)
+            info.bytes_per_row = std::max(info.bytes_per_row, info.bytes_per_row_global);
+
         info.size_bytes = new_size;
         block_size_bytes += new_size;
         bytes_per_row_current += info.bytes_per_row;
@@ -343,6 +397,7 @@ PrewhereExprStepPtr createLightweightDeleteStep(bool remove_filter_column)
         .remove_filter_column = remove_filter_column,
         .need_filter = true,
         .perform_alter_conversions = true,
+        .columns_overwritten_by_chain = {},
         .mutation_version = std::nullopt,
     };
 
@@ -360,7 +415,7 @@ void addPatchPartsColumns(
     if (patch_parts.empty())
         return;
 
-    NameSet required_virtuals;
+    NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
 
     for (size_t i = 0; i < patch_parts.size(); ++i)
@@ -391,9 +446,9 @@ void addPatchPartsColumns(
             patch_columns_to_read_set.insert(RowExistsColumn::name);
         }
 
-        auto patch_system_columns = getVirtualsRequiredForPatch(patch_parts[i]);
-        patch_columns_to_read_set.insert(patch_system_columns.begin(), patch_system_columns.end());
-        required_virtuals.insert(patch_system_columns.begin(), patch_system_columns.end());
+        auto patch_key_columns = getKeyColumnsRequiredForPatch(patch_parts[i]);
+        patch_columns_to_read_set.insert(patch_key_columns.begin(), patch_key_columns.end());
+        required_key_columns.insert(patch_key_columns.begin(), patch_key_columns.end());
 
         Names patch_columns_to_read_names(patch_columns_to_read_set.begin(), patch_columns_to_read_set.end());
 
@@ -413,11 +468,11 @@ void addPatchPartsColumns(
     auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();
     auto first_step_columns_set = first_step_columns.getNameSet();
 
-    for (const auto & virtual_name : required_virtuals)
+    for (const auto & key_column_name : required_key_columns)
     {
-        if (!first_step_columns_set.contains(virtual_name))
+        if (!first_step_columns_set.contains(key_column_name))
         {
-            auto column = storage_snapshot->getColumn(options, virtual_name);
+            auto column = storage_snapshot->getColumn(options, key_column_name);
             first_step_columns.push_back(std::move(column));
         }
     }
@@ -443,7 +498,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     injectRequiredColumns(data_part_info_for_reader, storage_snapshot, with_subcolumns, column_to_read_after_prewhere);
 
     auto options = GetColumnsOptions(GetColumnsOptions::All)
-        .withVirtuals()
+        .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
     auto add_step = [&](const PrewhereExprStep & step)
@@ -469,11 +524,11 @@ MergeTreeReadTaskColumns getReadTaskColumns(
                 step_column_names.push_back(name);
         }
 
-        const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
-
-        /// If part has non-adaptive granularity we always have to read at least one column
-        /// because we cannot determine the correct size of the last granule without reading data.
-        if (!step_column_names.empty() || !has_adaptive_granularity)
+        /// A step that needs no column of its own used to read one anyway when the granularity was
+        /// not adaptive, the last granule being assumed full. `fixFromRowsCount` corrects it at part
+        /// load and at write finalize, so the row count no longer costs a column read, and the call
+        /// above has already checked this part for data the structure does not account for.
+        if (!step_column_names.empty())
         {
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot,
@@ -509,7 +564,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             index_read_tasks,
             actions_settings,
             reader_settings.enable_multiple_prewhere_read_steps,
-            reader_settings.force_short_circuit_execution);
+            reader_settings.force_short_circuit_execution,
+            &storage_snapshot->metadata->getColumns());
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);

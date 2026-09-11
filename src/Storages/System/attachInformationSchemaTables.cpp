@@ -10,9 +10,6 @@ namespace DB
 {
 
 /// Include views in information_schema.
-///
-/// Note: CMake doesn't recognize changes in #embed-ed files. If you change any of these files, you will need to make a
-/// scratch build.
 
 constexpr unsigned char schemata[] = {
 #embed "information_schema/schemata.sql"
@@ -60,7 +57,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
 {
     try
     {
-        assert(database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA ||
+        chassert(database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA ||
                database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         if (database.getEngineName() != "Memory")
             return;
@@ -77,7 +74,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
                                 DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
-        assert(view_name == ast_create.getTable());
+        chassert(view_name == ast_create.getTable());
         ast_create.attach = false;
         ast_create.setDatabase(database.getDatabaseName());
 

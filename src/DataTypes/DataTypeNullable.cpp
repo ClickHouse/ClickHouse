@@ -7,8 +7,8 @@
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Common/typeid_cast.h>
@@ -71,7 +71,7 @@ void DataTypeNullable::updateHashImpl(SipHash & hash) const
     nested_data_type->updateHash(hash);
 }
 
-ColumnPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) const
+MutableColumnConstPtr DataTypeNullable::createColumnConst(size_t size, const Field & field) const
 {
     if (onlyNull())
     {
@@ -109,7 +109,7 @@ void DataTypeNullable::forEachChild(const ChildCallback & callback) const
 }
 
 
-std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
     const auto & nullable_serialization = assert_cast<const SerializationNullable &>(*removeNamedSerialization(data.serialization));
@@ -117,16 +117,21 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubco
     nested_data.type = nested_type;
     nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;
 
-    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, nested_data, initial_array_level, throw_if_null);
-    if (!nested_subcolumn_data)
+    auto nested_subcolumn_info = DB::IDataType::getSubcolumnInfo(subcolumn_name, nested_data, initial_array_level, throw_if_null);
+    if (!nested_subcolumn_info)
         return nullptr;
 
     auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
-    auto res = std::make_unique<ISerialization::SubstreamData>();
-    res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
-    res->type = creator.create(nested_subcolumn_data->type);
+    auto res = std::make_unique<SubcolumnInfo>();
+    res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
+    res->data.type = creator.create(nested_subcolumn_info->data.type);
     if (data.column)
-        res->column = creator.create(nested_subcolumn_data->column);
+        res->data.column = creator.create(nested_subcolumn_info->data.column);
+
+    /// Reached through the nullable elements, exactly as the static enumeration would reach it.
+    res->substreams_path.emplace_back(ISerialization::Substream::NullableElements);
+    res->substreams_path.insert(
+        res->substreams_path.end(), nested_subcolumn_info->substreams_path.begin(), nested_subcolumn_info->substreams_path.end());
 
     return res;
 }
@@ -144,7 +149,81 @@ static DataTypePtr create(const ASTPtr & arguments)
 
 void registerDataTypeNullable(DataTypeFactory & factory)
 {
-    factory.registerDataType("Nullable", create);
+    factory.registerDataType("Nullable", create, DataTypeFactory::Case::Sensitive, Documentation{
+            .description = R"DOCS_MD(
+Allows to store special marker ([NULL](/reference/syntax)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
+
+`T` can't be any of the following composite data types:
+- [Array](/reference/data-types/array) — Not supported
+- [Map](/reference/data-types/map) — Not supported
+- [Tuple](/reference/data-types/tuple) — Beta support available*
+
+However, composite data types **can contain** `Nullable` type values, e.g. `Array(Nullable(Int8))` or `Tuple(Nullable(String), Nullable(Int64))`.
+
+<Note title="Beta: Nullable Tuples">
+* [Nullable(Tuple(...))](/reference/data-types/tuple#nullable-tuple) is supported when `enable_nullable_tuple_type = 1` is enabled.
+</Note>
+
+A `Nullable` type field can't be included in table indexes.
+
+`NULL` is the default value for any `Nullable` type, unless specified otherwise in the ClickHouse server configuration.
+
+## Storage Features {#storage-features}
+
+To store `Nullable` type values in a table column, ClickHouse uses a separate file with `NULL` masks in addition to normal file with values. Entries in masks file allow ClickHouse to distinguish between `NULL` and a default value of corresponding data type for each table row. Because of an additional file, `Nullable` column consumes additional storage space compared to a similar normal one.
+
+<Note>
+Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
+</Note>
+
+## Finding NULL {#finding-null}
+
+It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns `1` if the corresponding value is `NULL` and `0` otherwise.
+
+**Example**
+
+```sql title="Query"
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+```text title="Response"
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
+## Usage Example {#usage-example}
+
+```sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
+```
+
+```sql
+INSERT INTO t_null VALUES (1, NULL), (2, 3)
+```
+
+```sql
+SELECT x + y FROM t_null
+```
+
+```text
+┌─plus(x, y)─┐
+│       ᴺᵁᴸᴸ │
+│          5 │
+└────────────┘
+```
+)DOCS_MD",
+            .syntax = "Nullable(T)",
+            .examples = {},
+            .related = {},
+        });
 }
 
 

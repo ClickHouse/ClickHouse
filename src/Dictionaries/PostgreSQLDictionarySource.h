@@ -3,6 +3,7 @@
 #include "config.h"
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/InvalidateQueryResponse.h>
 
 #if USE_LIBPQXX
 #include <Dictionaries/ExternalQueryBuilder.h>
@@ -65,7 +66,7 @@ private:
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     std::chrono::time_point<std::chrono::system_clock> update_time;
-    mutable std::string invalidate_query_response;
+    mutable InvalidateQueryResponse invalidate_query_response;
 
 };
 

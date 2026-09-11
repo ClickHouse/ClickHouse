@@ -41,3 +41,5 @@ SELECT ngrams(materialize(toFixedString('😁😈😁😈', 16)), 2);
 SELECT ngrams(materialize(toFixedString('😁😈😁😈', 16)), 3);
 SELECT ngrams(materialize(toFixedString('😁😈😁😈', 16)), 4);
 SELECT ngrams(materialize(toFixedString('😁😈😁😈', 16)), 5);
+
+SELECT ngrams('Test', 0) -- { serverError BAD_ARGUMENTS }

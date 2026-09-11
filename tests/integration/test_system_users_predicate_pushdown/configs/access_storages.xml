@@ -1,0 +1,15 @@
+<clickhouse>
+    <!-- Two separate access storages that both define the same user name `dup_user`.
+         The default `users.xml` storage (configured via <users_config>) still provides
+         the `default` admin user, so this only adds the two extra storages. -->
+    <user_directories replace="replace">
+        <users_xml>
+            <name>storage_a</name>
+            <path>extra_conf.d/users_a.xml</path>
+        </users_xml>
+        <users_xml>
+            <name>storage_b</name>
+            <path>extra_conf.d/users_b.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>

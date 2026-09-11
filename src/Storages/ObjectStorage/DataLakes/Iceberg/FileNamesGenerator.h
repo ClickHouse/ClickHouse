@@ -12,11 +12,18 @@ namespace DB
 
 #if USE_AVRO
 
+/// Codec suffix used inside Iceberg metadata file names: `v{N}.<suffix>.metadata.json`.
+/// The Iceberg spec (org.apache.iceberg.TableMetadataParser.Codec) defines the gzip
+/// extension as "gz", not the HTTP Content-Encoding token "gzip" returned by
+/// toContentEncodingName(). Using the wrong token makes Spark / Hadoop-catalog readers
+/// unable to locate the metadata file.
+std::string toIcebergMetadataCompressionExtension(CompressionMethod method);
+
 struct GeneratedMetadataFileWithInfo
 {
     Iceberg::IcebergPathFromMetadata path;
-    Int32 version;
-    CompressionMethod compression_method;
+    Int32 version = 0;
+    CompressionMethod compression_method = CompressionMethod::None;
 };
 
 /// Generates Iceberg metadata paths (IcebergPathFromMetadata) for new files.
@@ -51,9 +58,17 @@ public:
     void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
     void setCompressionMethod(CompressionMethod compression_method_) { compression_method = compression_method_; }
 
+    void setDataLocation(String data_location_)
+    {
+        data_location = std::move(data_location_);
+        if (!data_location.empty() && data_location.back() == '/')
+            data_location.pop_back();
+    }
+
 private:
     Poco::UUIDGenerator uuid_generator;
     String table_location;
+    String data_location; /// Optional override from `write.data.path` table property
     bool use_uuid_in_metadata = false;
     CompressionMethod compression_method = CompressionMethod::None;
     String format_name;

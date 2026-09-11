@@ -1,0 +1,52 @@
+-- 1. WITH TOTALS with cascades on but make_distributed_plan off: must be a plain single-node query
+0	99500
+1	99700
+2	99900
+3	100100
+4	100300
+
+0	499500
+-- 2. Plain aggregation, same settings
+0	99500
+1	99700
+2	99900
+3	100100
+4	100300
+-- 3. With both settings on, WITH TOTALS is rejected (fail-close)
+-- 4. LOCAL JOIN is rejected (fail-close)
+2000
+-- 5. force_aggregation_in_order is rejected (in-order aggregation is not serializable)
+-- 6. Trivial count works under Cascades
+1000
+-- 7. A read without clone support is rejected (fail-close)
+-- 8. A forced projection is ignored (still correct)
+0	99500
+1	99700
+2	99900
+3	100100
+4	100300
+-- 9. A read from remote shards is rejected (fail-close), localhost shards work
+1000
+-- 10. WITH FILL is rejected (fail-close)
+0
+1
+2
+3
+4
+-- 11. Subquery WITH TOTALS under an outer top-N is rejected (fail-close)
+-- 12. optimize_aggregation_in_order works via hash aggregation, force_ is rejected (fail-close)
+0	99500
+1	99700
+2	99900
+3	100100
+4	100300
+-- 13. Exchange-free plan with a window falls back to local execution
+499500
+-- 14. ANY join with join_any_take_last_row is not swapped (must return the last row)
+1001
+-- 15. A subplan with an ANY join is broadcast, not recomputed per node
+0	1
+-- 16. A join with no hash-family algorithm allowed stays single-node
+0	1
+-- 17. A subplan with a non-deterministic function is broadcast, not recomputed per node
+0	1
