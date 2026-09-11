@@ -12,12 +12,23 @@ from ci.defs.defs import BASE_BRANCH, SECRETS, RunnerLabels
 
 workflow = Workflow.Config(
     name="NightlyChangelog",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[
         Job.Config(
             name="Prepare changelog",
             command="python3 ./ci/jobs/changelog_nightly.py",
+            runs_on=RunnerLabels.ARM_TINY,
+            enable_gh_auth=True,
+        ),
+        # Label issues opened by external (non-ClickHouse-org) contributors,
+        # complementing the pull-request labeling done by the can_be_tested
+        # pre-hook. Scans the last few days of new issues; run manually with
+        # --all to backfill the whole history.
+        Job.Config(
+            name="Label external issues",
+            command="python3 ./ci/jobs/label_external_issues.py",
             runs_on=RunnerLabels.ARM_TINY,
             enable_gh_auth=True,
         ),
