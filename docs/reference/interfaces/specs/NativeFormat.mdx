@@ -931,7 +931,7 @@ Element 1 stream (2 strings, 5 bytes total):
 
 Type string: `Map(KeyType, ValueType)`. Examples: `Map(String, UInt32)`, `Map(String, Array(UInt32))`, `Map(UInt8, Tuple(Int32, String))`, `Map(Array(String), Int8)`. The wire format places no restriction on either type — both `K` and `V` may be any supported type, including composites. (ClickHouse's SQL-level rules around accepted key types have varied across releases; consult the SQL documentation for the targeted server version.)
 
-`Native` uses the `basic` map serialization. The bucket-count and statistics streams used by `MergeTree` bucketed maps, including maps nested in `advanced` JSON shared data, are not part of the `Native` wire format.
+`Native` uses the `basic` map serialization. The bucket-count and statistics streams used by `MergeTree` bucketed maps, including maps nested in `advanced` JSON shared data, are not part of the `Native` wire format. In those on-disk streams, disabled statistics omit both the presence flag and the statistics payload.
 
 The wire layout is byte-identical to `Array(Tuple(K, V))`, so it begins with the inner [prefix phase](#composite-types) (empty unless `K` or `V` is versioned):
 

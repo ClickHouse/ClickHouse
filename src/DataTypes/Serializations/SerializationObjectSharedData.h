@@ -257,10 +257,6 @@ private:
         std::unordered_map<String, PathInfo> path_to_info;
     };
 
-    static void deserializePathsSubstreamsMetadata(
-        PathsInfos & paths_infos, const StructureGranule & structure_granule, DeserializeBinaryBulkSettings & settings);
-    static void deserializePathSubstreams(PathInfo & path_info, DeserializeBinaryBulkSettings & settings);
-
     using PathsInfosGranules = std::vector<PathsInfos>;
 
     /// We deserialize paths infos only once and then put it in the cache.

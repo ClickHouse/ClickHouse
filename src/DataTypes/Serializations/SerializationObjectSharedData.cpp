@@ -48,73 +48,6 @@ void reserveOrThrowTooMany(Container & container, size_t count, const char * wha
     container.reserve(std::min(count, DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS));
 }
 
-
-}
-
-void SerializationObjectSharedData::deserializePathsSubstreamsMetadata(
-    PathsInfos & paths_infos, const StructureGranule & structure_granule, DeserializeBinaryBulkSettings & settings)
-{
-    auto & path_to_info = paths_infos.path_to_info;
-    /// Read metadata about paths subcolumns.
-    settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
-    auto * paths_substreams_metadata_stream = settings.getter(settings.path);
-
-    if (!paths_substreams_metadata_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams metadata");
-
-    /// We don't read data from marks stream continuously, so we need to seek to the start of this granule.
-    settings.seek_stream_to_mark_callback(settings.path, structure_granule.paths_substreams_metadata_stream_mark);
-    for (size_t i = 0; i != structure_granule.num_paths; ++i)
-    {
-        auto path_it = structure_granule.position_to_requested_path.find(i);
-        /// Skip metadata of not requested paths.
-        if (path_it == structure_granule.position_to_requested_path.end())
-        {
-            paths_substreams_metadata_stream->ignore(4 * sizeof(UInt64));
-        }
-        else
-        {
-            auto & path_info = path_to_info[path_it->second];
-            readBinaryLittleEndian(path_info.substreams_mark.offset_in_compressed_file, *paths_substreams_metadata_stream);
-            readBinaryLittleEndian(path_info.substreams_mark.offset_in_decompressed_block, *paths_substreams_metadata_stream);
-            readBinaryLittleEndian(path_info.substreams_marks_mark.offset_in_compressed_file, *paths_substreams_metadata_stream);
-            readBinaryLittleEndian(path_info.substreams_marks_mark.offset_in_decompressed_block, *paths_substreams_metadata_stream);
-        }
-    }
-
-    settings.path.pop_back();
-}
-
-void SerializationObjectSharedData::deserializePathSubstreams(PathInfo & path_info, DeserializeBinaryBulkSettings & settings)
-{
-    settings.path.push_back(Substream::ObjectSharedDataSubstreams);
-    auto * substreams_stream = settings.getter(settings.path);
-    if (!substreams_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams");
-    settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_mark);
-    size_t num_substreams = 0;
-    readVarUInt(num_substreams, *substreams_stream);
-    reserveOrThrowTooMany(path_info.substreams, num_substreams, "substreams for a path");
-    for (size_t i = 0; i != num_substreams; ++i)
-    {
-        path_info.substreams.emplace_back();
-        readStringBinary(path_info.substreams.back(), *substreams_stream);
-    }
-    settings.path.pop_back();
-
-    settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
-    auto * marks_stream = settings.getter(settings.path);
-    if (!marks_stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams marks");
-    settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_marks_mark);
-    for (const auto & substream : path_info.substreams)
-    {
-        MarkInCompressedFile mark{};
-        readBinaryLittleEndian(mark.offset_in_compressed_file, *marks_stream);
-        readBinaryLittleEndian(mark.offset_in_decompressed_block, *marks_stream);
-        path_info.substream_to_mark[substream] = mark;
-    }
-    settings.path.pop_back();
 }
 
 SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
@@ -935,12 +868,87 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
 
         if (need_subcolumns_info)
         {
-            deserializePathsSubstreamsMetadata(paths_infos_granules->back(), structure_granule, settings);
+            /// Read metadata about paths subcolumns.
+            settings.path.push_back(Substream::ObjectSharedDataPathsSubstreamsMetadata);
+            auto * paths_substreams_metadata_stream = settings.getter(settings.path);
+
+            if (!paths_substreams_metadata_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams metadata");
+
+            /// We don't read data from marks stream continuously, so we need to seek to the start of this granule.
+            settings.seek_stream_to_mark_callback(settings.path, structure_granule.paths_substreams_metadata_stream_mark);
+            for (size_t i = 0; i != structure_granule.num_paths; ++i)
+            {
+                auto path_it = structure_granule.position_to_requested_path.find(i);
+                /// Skip metadata of not requested paths.
+                if (path_it == structure_granule.position_to_requested_path.end())
+                {
+                    paths_substreams_metadata_stream->ignore(4 * sizeof(UInt64));
+                }
+                else
+                {
+                    auto & path_info = path_to_info[path_it->second];
+                    readBinaryLittleEndian(path_info.substreams_mark.offset_in_compressed_file, *paths_substreams_metadata_stream);
+                    readBinaryLittleEndian(path_info.substreams_mark.offset_in_decompressed_block, *paths_substreams_metadata_stream);
+                    readBinaryLittleEndian(path_info.substreams_marks_mark.offset_in_compressed_file, *paths_substreams_metadata_stream);
+                    readBinaryLittleEndian(path_info.substreams_marks_mark.offset_in_decompressed_block, *paths_substreams_metadata_stream);
+                }
+            }
+
+            settings.path.pop_back();
+
+            /// Read list of substreams for each path with requested subcolumns.
+            settings.path.push_back(Substream::ObjectSharedDataSubstreams);
+            auto * paths_substreams_stream = settings.getter(settings.path);
+
+            if (!paths_substreams_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams");
+
             for (const auto & [_, requested_path] : structure_granule.position_to_requested_path)
             {
-                if (structure_state.requested_paths_subcolumns.contains(requested_path))
-                    deserializePathSubstreams(path_to_info[requested_path], settings);
+                if (!structure_state.requested_paths_subcolumns.contains(requested_path))
+                    continue;
+
+                auto & path_info = path_to_info[requested_path];
+                /// Seek to the start of the substreams list for this path.
+                settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_mark);
+                size_t num_substreams = 0;
+                readVarUInt(num_substreams, *paths_substreams_stream);
+                reserveOrThrowTooMany(path_info.substreams, num_substreams, "substreams for a path");
+                for (size_t i = 0; i != num_substreams; ++i)
+                {
+                    path_info.substreams.emplace_back();
+                    readStringBinary(path_info.substreams.back(), *paths_substreams_stream);
+                }
             }
+
+            settings.path.pop_back();
+
+            /// Read mark in the data stream for each substream of each path with requested subcolumns.
+            settings.path.push_back(Substream::ObjectSharedDataSubstreamsMarks);
+            auto * paths_substreams_marks_stream = settings.getter(settings.path);
+
+            if (!paths_substreams_marks_stream)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for shared data paths substreams marks");
+
+            for (const auto & [_, requested_path] : structure_granule.position_to_requested_path)
+            {
+                if (!structure_state.requested_paths_subcolumns.contains(requested_path))
+                    continue;
+
+                auto & path_info = path_to_info[requested_path];
+                /// Seek to the start of the substreams marks for this path.
+                settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_marks_mark);
+                for (size_t i = 0; i != path_info.substreams.size(); ++i)
+                {
+                    MarkInCompressedFile substream_mark{};
+                    readBinaryLittleEndian(substream_mark.offset_in_compressed_file, *paths_substreams_marks_stream);
+                    readBinaryLittleEndian(substream_mark.offset_in_decompressed_block, *paths_substreams_marks_stream);
+                    path_info.substream_to_mark[path_info.substreams[i]] = substream_mark;
+                }
+            }
+
+            settings.path.pop_back();
         }
     }
 
@@ -999,7 +1007,6 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
         if (!structure_granule.limit || path_to_info.empty())
             continue;
 
-        PathsInfos whole_paths_substreams;
         for (const auto & [_, requested_path] : structure_granule.position_to_requested_path)
         {
             auto path_info_it = path_to_info.find(requested_path);
@@ -1011,16 +1018,6 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
             deserialization_settings.seek_stream_to_current_mark_callback = {};
             deserialization_settings.getter = {};
 
-            const PathInfo * substreams_info = &path_info;
-            auto seek_substream = [&](const SubstreamPath & substream_path)
-            {
-                auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings);
-                auto it = substreams_info->substream_to_mark.find(stream_name);
-                if (it == substreams_info->substream_to_mark.end())
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Substream {} for path {} is requested but not found in substreams list", stream_name, requested_path);
-                settings.seek_stream_to_mark_callback(settings.path, it->second);
-            };
-
             /// If we have only subcolumns requested for this path, read all subcolumns.
             auto paths_subcolumns_it = structure_state.requested_paths_subcolumns.find(requested_path);
             if (paths_subcolumns_it != structure_state.requested_paths_subcolumns.end())
@@ -1031,7 +1028,17 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 for (const auto & subcolumn_info : subcolumns_infos)
                     subcolumns_substream_data.push_back(SubstreamData(subcolumn_info.serialization).withType(subcolumn_info.type));
 
-                deserialization_settings.seek_stream_to_current_mark_callback = seek_substream;
+                deserialization_settings.seek_stream_to_current_mark_callback = [&](const SubstreamPath & substream_path)
+                {
+                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings);
+
+                    auto it = path_info.substream_to_mark.find(stream_name);
+                    if (it == path_info.substream_to_mark.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Substream {} for path {} is requested but not found in substreams list", stream_name, requested_path);
+
+                    /// Seek to the requested substream in the data stream.
+                    settings.seek_stream_to_mark_callback(settings.path, it->second);
+                };
 
                 deserialization_settings.getter = [&](const SubstreamPath & substream_path) -> ReadBuffer *
                 {
@@ -1071,28 +1078,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
             /// Otherwise read the whole path data.
             else
             {
-                deserialization_settings.getter = [&](const SubstreamPath & substream_path) -> ReadBuffer *
-                {
-                    /// Scalar paths stay sequential. Bucketed maps need substream seeks because legacy
-                    /// prefixes omit the statistics flag. Nested shared data also needs seeks to skip
-                    /// its flattened copy without parsing legacy maps inside it.
-                    if (!deserialization_settings.seek_stream_to_current_mark_callback
-                        && (substream_path.back().type == Substream::MapBucketsInfo
-                            || substream_path.back().type == Substream::ObjectSharedDataStructurePrefix))
-                    {
-                        settings.path.pop_back();
-                        if (whole_paths_substreams.path_to_info.empty())
-                            deserializePathsSubstreamsMetadata(whole_paths_substreams, structure_granule, settings);
-                        auto & whole_path_substreams = whole_paths_substreams.path_to_info.at(requested_path);
-                        deserializePathSubstreams(whole_path_substreams, settings);
-                        settings.path.push_back(Substream::ObjectSharedDataData);
-                        substreams_info = &whole_path_substreams;
-                        deserialization_settings.seek_stream_to_current_mark_callback = seek_substream;
-                    }
-                    if (deserialization_settings.seek_stream_to_current_mark_callback)
-                        seek_substream(substream_path);
-                    return data_stream;
-                };
+                deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
                 DeserializeBinaryBulkStatePtr path_state;
                 auto dynamic_column = dynamic_type->createColumn();

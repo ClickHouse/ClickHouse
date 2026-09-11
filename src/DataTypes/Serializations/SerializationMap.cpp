@@ -791,11 +791,10 @@ void SerializationMap::serializeBinaryBulkStatePrefix(
         writeBinaryLittleEndian(statistics->avg, *stream);
         writeBinaryLittleEndian(statistics->count, *stream);
     }
-    /// Write a false flag when statistics are empty or disabled.
+    /// Write a false flag as a placeholder without actual statistics.
     /// Used in Compact parts where the prefix is written for each granule,
     /// but statistics are only needed from the first granule during merge.
-    else if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::PREFIX_EMPTY
-        || settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::NONE)
+    else if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::PREFIX_EMPTY)
     {
         writeBinary(false, *stream);
     }
