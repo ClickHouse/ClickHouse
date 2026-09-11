@@ -6,7 +6,10 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge />
 
 This page takes you from an enrollment token to a healthy, verified connector. The connector installs on either of two targets: a Kubernetes cluster (Helm) or a Linux VM (systemd). Token enrollment is the standard flow; if your environment cannot reach ClickHouse endpoints directly, see [air-gapped and mirrored installs](#air-gapped-and-mirrored-installs).
 

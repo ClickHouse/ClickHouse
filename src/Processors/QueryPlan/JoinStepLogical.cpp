@@ -12,6 +12,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Joins.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -316,7 +317,6 @@ void JoinStepLogical::swapInputs()
     expression_actions.swapExpressionSources();
 
     std::swap(left_relation, right_relation);
-    std::swap(not_null_filters_derived_left, not_null_filters_derived_right);
 }
 
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
@@ -337,6 +337,17 @@ std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties()
     description.emplace_back("Locality", toString(join_operator.locality));
     description.emplace_back("Expression", formatJoinCondition(join_operator.expression));
     return description;
+}
+
+JoinEstimation JoinStepLogical::getEstimation() const
+{
+    return JoinEstimation{
+        .output_rows = result_rows_estimation,
+        .left_rows = left_relation.estimated_rows,
+        .right_rows = right_relation.estimated_rows,
+        .cost = estimated_cost,
+        .selectivity = estimated_selectivity,
+    };
 }
 
 void JoinStepLogical::describeActions(FormatSettings & settings) const
@@ -725,7 +736,7 @@ static void predicateOperandsToCommonType(
     JoinActionRef & right_node,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors,
     bool allow_conversion_to_subtype)
 {
     const auto & left_type = left_node.getType();
@@ -809,8 +820,11 @@ static void predicateOperandsToCommonType(
         right_node = JoinActionRef::transform({right_node}, cast_transform);
         for (auto & descriptor : shared_runtime_filter_descriptors)
         {
-            if (descriptor.second == name_before_cast)
-                descriptor.second = right_node.getColumnName();
+            if (descriptor.build_key_name == name_before_cast)
+            {
+                descriptor.build_key_name = right_node.getColumnName();
+                descriptor.common_type = common_type;
+            }
         }
     };
 
@@ -841,7 +855,7 @@ static void predicateOperandsToCommonType(
 
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
 {
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
@@ -1099,7 +1113,7 @@ static bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
-    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors,
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors,
     bool throw_on_error)
 {
     if (join_expressions.size() != 1)
@@ -1912,8 +1926,9 @@ void JoinStepLogical::buildPhysicalJoin(
 
     LogicalJoinInfo logical_join_info{
         .readable_relation_name = join_step->getReadableRelationName(),
-        .result_rows_estimation = join_step->result_rows_estimation,
-        .locality = join_step->join_operator.locality
+        .estimation = join_step->getEstimation(),
+        .locality = join_step->join_operator.locality,
+        .cluster_id = join_step->getClusterId()
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -2222,6 +2237,22 @@ void JoinStepLogical::serialize(Serialization & ctx) const
 
     join_operator.serialize(ctx.out, actions_dag.get());
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
+
+    /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
+    /// that the receiver does not take them again. Both bits stand for a decision that reads a row
+    /// estimate, and estimates are deliberately not part of the plan format, so a receiver that
+    /// decided for itself would decide from an empty estimate and could decide differently. The byte
+    /// is left out of a plan cache key because it differs between the single-node and the
+    /// parallel-replicas plan build, and those two builds have to hash alike.
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS && !ctx.for_cache_key)
+    {
+        UInt8 optimizer_flags = 0;
+        if (optimized)
+            optimizer_flags |= 1;
+        if (runtime_filter_declined_small_probe)
+            optimizer_flags |= 2;
+        writeIntBinary(optimizer_flags, ctx.out);
+    }
 }
 
 static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
@@ -2274,7 +2305,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
 
-    return std::make_unique<JoinStepLogical>(
+    auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
         std::move(right_header),
         std::move(join_operator),
@@ -2282,6 +2313,17 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS)
+    {
+        UInt8 optimizer_flags = 0;
+        readIntBinary(optimizer_flags, ctx.in);
+
+        step->optimized = bool(optimizer_flags & 1);
+        step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
+    }
+
+    return step;
 }
 
 QueryPlanStepPtr JoinStepLogical::clone() const
@@ -2323,7 +2365,11 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// join sides and schedule the buffer reader before the writers, failing with the logical error
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
+    result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
     result_step->result_rows_estimation = result_rows_estimation;
+    result_step->estimated_cost = estimated_cost;
+    result_step->estimated_selectivity = estimated_selectivity;
+    result_step->cluster_id = cluster_id;
     result_step->imprecise_estimate = imprecise_estimate;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
@@ -2332,8 +2378,6 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_relation = right_relation;
     result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
-    result_step->not_null_filters_derived_left = not_null_filters_derived_left;
-    result_step->not_null_filters_derived_right = not_null_filters_derived_right;
 
     return result_step;
 }

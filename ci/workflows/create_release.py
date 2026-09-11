@@ -41,13 +41,6 @@ workflow = Workflow.Config(
             default_value="",
         ),
         Workflow.Config.InputConfig(
-            name="type",
-            description="Release type - new for a new release branch, patch for a patch release",
-            is_required=True,
-            default_value="patch",
-            options=["patch", "new"],
-        ),
-        Workflow.Config.InputConfig(
             name="skip-repo",
             description="Skip repo updates (package export/test); for recovery/rerun",
             is_required=False,
