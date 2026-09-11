@@ -423,7 +423,22 @@ static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr con
 
     for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
     {
-        auto id = iterator->table()->getStorageID();
+        auto table = iterator->table();
+        auto id = table->getStorageID();
+        if (table->storesDataOnDisk())
+        {
+            auto table_data_path = fs::path(context->getPath()) / database->getTableDataPath(id.table_name);
+            if (!fs::exists(table_data_path))
+            {
+                LOG_INFO(
+                    log,
+                    "Creating missing data directory {} for table {} before converting database to Atomic",
+                    table_data_path,
+                    id.getNameForLogs());
+                fs::create_directories(table_data_path);
+            }
+        }
+
         if (inner_mv_tables.contains(id.table_name))
         {
             LOG_DEBUG(log, "Do not rename {}, because it will be renamed together with MV", id.getNameForLogs());
