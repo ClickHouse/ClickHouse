@@ -537,7 +537,7 @@ The type appears as `DateTime64(s)` (implicit server-default timezone) or `DateT
 
 A clock duration rather than a point in time. `Time` is a signed second count, 4 bytes little-endian Int32; `Time64(scale)` is a signed tick count at the given decimal scale (0–9), 8 bytes little-endian Int64 — the same wire shape as `DateTime64`.
 
-The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders at the cap with a zeroed fraction (`999:59:59.000`). `CAST` clamps the stored value to this range as well, though arithmetic can produce out-of-range values that are clamped only on display. None of this affects the wire bytes, which are the plain signed integer.
+The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders with the seconds at the cap and the stored fraction kept as-is, so a tick count of `3700000.25` renders as `999:59:59.250000`. `CAST` saturates the stored value to the largest representable tick at the target scale (`999:59:59.999999` for `Time64(6)`), not to the whole second, whereas arithmetic can still leave an out-of-range tick count in the column that is capped only on display. None of this affects the wire bytes, which are the plain signed integer.
 
 `Time` value `45296` (`12:34:56`):
 
@@ -1398,7 +1398,7 @@ The total framed size is `16 + compressed_size` = `16 + 9 + body_size` = `25 + b
 
 ### Method byte values {#method-byte-values}
 
-These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output uses the server's default codec (`ZSTD(3)`), and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
 
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
@@ -1448,7 +1448,7 @@ On the native TCP protocol, the packet envelope — the packet-type VarUInt and 
 
 On the native TCP protocol, compression is per-query, not per-connection. The Query packet's `compression: bool` field requests it for that single query. The server honours the request and emits compressed `Data`/`Totals`/`Extremes`/`Log`/`ProfileEvents` bodies for the lifetime of the query (`Log`/`ProfileEvents` only at v54481+). It also expects the client's *outgoing* Data blocks — external tables, the empty end-of-data marker, and INSERT rows — to be framed the same way. Subsequent queries on the same connection may differ.
 
-Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`LZ4`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
+Over HTTP there is no Query packet: the `compress=1` query parameter selects framed output for that request, and `decompress=1` declares that the request body is framed. The `compress=1` output is written with the server's default codec (`ZSTD(3)`) rather than `network_compression_method`; the `decompress=1` reader takes the codec from each frame's method byte, so any codec is accepted on input.
 
 <Note>
 With compression on, the server may also route columns through the parallel block-marshalling / `ColumnBLOB` path (`PARALLEL_BLOCK_MARSHALLING`, v54478) for blocks with more than one row. An implementation that compresses INSERT data must be prepared to handle (or explicitly opt out of) that path to avoid a desynchronized stream.
