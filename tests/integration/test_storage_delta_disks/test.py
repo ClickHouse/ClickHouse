@@ -447,11 +447,11 @@ def test_writes_azure_disk_with_endpoint_prefix(started_cluster, partitioned):
     """
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = f"test_writes_endpoint_prefix_{get_uuid_str()}"
+    table_name = f"test_writes_endpoint_prefix_{get_uuid_str()}"
 
     # Create the initial Delta table locally and upload it under the endpoint prefix.
     # No column mapping: written tables must keep physical column names.
-    local_path = f"/var/lib/clickhouse/user_files/{TABLE_NAME}"
+    local_path = f"/var/lib/clickhouse/user_files/{table_name}"
     writer = (
         generate_data(spark, 0, 10)
         .write.mode("overwrite")
@@ -465,17 +465,17 @@ def test_writes_azure_disk_with_endpoint_prefix(started_cluster, partitioned):
         started_cluster.blob_service_client,
         started_cluster.azure_container_name,
         use_relpath=True,
-    ).upload_directory(local_path, f"{AZURE_ENDPOINT_PREFIX}/{TABLE_NAME}")
+    ).upload_directory(local_path, f"{AZURE_ENDPOINT_PREFIX}/{table_name}")
 
     instance.query(
         f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME}
-        ENGINE=DeltaLake('{TABLE_NAME}')
+        DROP TABLE IF EXISTS {table_name};
+        CREATE TABLE {table_name}
+        ENGINE=DeltaLake('{table_name}')
         SETTINGS disk = 'disk_azure_prefixed'
         """
     )
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+    assert int(instance.query(f"SELECT count() FROM {table_name}")) == 10
 
     container_client = started_cluster.blob_service_client.get_container_client(
         started_cluster.azure_container_name
@@ -487,10 +487,10 @@ def test_writes_azure_disk_with_endpoint_prefix(started_cluster, partitioned):
             for blob in container_client.list_blobs(name_starts_with=path_prefix)
         ]
 
-    initial_files = set(list_blobs(f"{AZURE_ENDPOINT_PREFIX}/{TABLE_NAME}/"))
+    initial_files = set(list_blobs(f"{AZURE_ENDPOINT_PREFIX}/{table_name}/"))
 
     instance.query(
-        f"INSERT INTO {TABLE_NAME} SELECT number AS a, toString(number + 1) AS b FROM numbers(10, 10)",
+        f"INSERT INTO {table_name} SELECT number AS a, toString(number + 1) AS b FROM numbers(10, 10)",
         settings={"allow_experimental_delta_lake_writes": 1},
     )
 
@@ -498,25 +498,25 @@ def test_writes_azure_disk_with_endpoint_prefix(started_cluster, partitioned):
     # which external readers resolve `add.path` against.
     written_files = [
         name
-        for name in list_blobs(f"{AZURE_ENDPOINT_PREFIX}/{TABLE_NAME}/")
+        for name in list_blobs(f"{AZURE_ENDPOINT_PREFIX}/{table_name}/")
         if name not in initial_files and name.endswith(".parquet")
     ]
     expected_files = 10 if partitioned else 1
     assert len(written_files) == expected_files, f"Written files: {written_files}"
     if partitioned:
         assert all(
-            name.startswith(f"{AZURE_ENDPOINT_PREFIX}/{TABLE_NAME}/a=")
+            name.startswith(f"{AZURE_ENDPOINT_PREFIX}/{table_name}/a=")
             for name in written_files
         ), f"Written files: {written_files}"
 
     # Nothing may be written with the prefix doubled or dropped.
     assert not list_blobs(f"{AZURE_ENDPOINT_PREFIX}/{AZURE_ENDPOINT_PREFIX}/")
-    assert not list_blobs(f"{TABLE_NAME}/")
+    assert not list_blobs(f"{table_name}/")
     assert not list_blobs(f"/{AZURE_ENDPOINT_PREFIX}/")
 
     expected = "\n".join(f"{i}\t{i + 1}" for i in range(20))
     assert (
-        instance.query(f"SELECT a, b FROM {TABLE_NAME} ORDER BY a").strip() == expected
+        instance.query(f"SELECT a, b FROM {table_name} ORDER BY a").strip() == expected
     )
 
-    instance.query(f"DROP TABLE {TABLE_NAME}")
+    instance.query(f"DROP TABLE {table_name}")
