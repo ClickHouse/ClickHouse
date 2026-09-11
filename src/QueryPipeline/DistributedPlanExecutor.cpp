@@ -528,10 +528,9 @@ private:
             return getPort().getHeader().empty() ? std::chrono::milliseconds(1) : std::chrono::milliseconds(10);
         }
 
-        /// An aggregate state's representation (Aggregation vs Window) survives in neither header, and
-        /// the producer's header is built independently of this source's, so the two can disagree on
-        /// it. A consumer building destination columns from what this source announces would then read
-        /// one state layout as the other, so bring the columns to the announced representation.
+        /// An aggregate state's representation (Aggregation vs Window) survives in neither header, and the
+        /// producer's header is built independently of this source's, so the two can disagree on it. Bring
+        /// the columns to the representation this source announces, or a consumer reads one layout as the other.
         void convertAggregateStateVariants(Chunk & chunk)
         {
             if (!positions_to_convert)

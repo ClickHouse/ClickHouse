@@ -25,11 +25,14 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
     distributed_plan_optimize_exchanges = 1, max_threads = 8, max_rows_to_group_by = 0;
 
 -- The states must cross the exchange below a SORTED gather: that is the shape which puts a
--- MergingSortedTransform, built from the consumer's header, over what the exchange delivers. Assert it,
--- otherwise a plan change would leave this file passing while covering nothing. The checking query runs
+-- MergingSortedTransform, built from the consumer's header, over what the exchange delivers. Assert that
+-- both plan nodes are present and that the gather is above the window; a bare position comparison would
+-- pass with the gather missing, because minIf returns 0 when nothing matches. The checking query runs
 -- non-distributed, because an aggregating query over EXPLAIN would itself be distributed.
 SELECT 'sorted gather above the window step: ',
-    minIf(n, explain LIKE '%GatherExchange (sorted by%') < minIf(n, explain LIKE '%Window (Window step%')
+    countIf(explain LIKE '%GatherExchange (sorted by%') > 0
+    AND countIf(explain LIKE '%Window (Window step%') > 0
+    AND minIf(n, explain LIKE '%GatherExchange (sorted by%') < minIf(n, explain LIKE '%Window (Window step%')
 FROM
 (
     SELECT explain, rowNumberInAllBlocks() AS n
