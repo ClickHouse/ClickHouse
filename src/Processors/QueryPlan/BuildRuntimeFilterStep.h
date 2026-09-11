@@ -25,6 +25,8 @@ public:
         UInt64 blocks_to_skip_before_reenabling,
         Float64 max_ratio_of_set_bits_in_bloom_filter,
         bool allow_to_use_not_exact_filter_,
+        bool can_use_minmax_filter_,
+        bool use_only_minmax_filter_,
         bool track_key_range_,
         std::optional<UInt64> distinct_keys_hint_ = std::nullopt,
         bool distinct_keys_hint_matches_filter_key_ = false);
@@ -70,6 +72,9 @@ private:
     Float64 max_ratio_of_set_bits_in_bloom_filter;
 
     bool allow_to_use_not_exact_filter;
+    bool can_use_minmax_filter;
+    /// The planner determined that membership filtering would be saturated, but numeric range filtering is still useful.
+    bool use_only_minmax_filter;
     /// Record the key values/range for left-side index analysis; off avoids an extra build-side scan.
     bool track_key_range;
 

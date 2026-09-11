@@ -93,6 +93,7 @@ public:
     const RuntimeFilterStats & getStats() const { return stats; }
     const RuntimeFilterConfig & getConfig() const { return config; }
     void markKeySetDropped() { key_set_dropped = true; }
+    bool isKeySetDropped() const { return key_set_dropped.load(); }
 
     /// Checks if a block should bypass the filter because its key set was dropped or evaluation is temporarily throttled.
     bool shouldSkip(size_t next_block_rows) const;
@@ -181,6 +182,7 @@ public:
     /// Sets `rows_passed` to the number of rows that passed the filter: the bloom probe counts the
     /// matches while filling the mask, so the caller must not rescan the mask to collect stats.
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
+    bool contains(const IColumn & values, size_t row) const;
     void mergeFrom(const ApproximateSetRuntimeFilter & source);
     bool isWorthUsing(Float64 max_ratio_of_set_bits_in_bloom_filter) const;
 
@@ -190,10 +192,45 @@ private:
     BloomFilter bloom_filter;
 };
 
+/// Numeric range filter used independently from exact and approximate set membership filters.
+/// It can remain active when the membership filter is dropped and can reject values before a Bloom lookup.
+class NumericMinMaxRuntimeFilter
+{
+public:
+    static bool isDataTypeSupported(const DataTypePtr & data_type);
+
+    explicit NumericMinMaxRuntimeFilter(const DataTypePtr & data_type);
+    ~NumericMinMaxRuntimeFilter();
+
+    NumericMinMaxRuntimeFilter(NumericMinMaxRuntimeFilter &&) noexcept;
+    NumericMinMaxRuntimeFilter & operator=(NumericMinMaxRuntimeFilter &&) noexcept;
+    NumericMinMaxRuntimeFilter(const NumericMinMaxRuntimeFilter &) = delete;
+    NumericMinMaxRuntimeFilter & operator=(const NumericMinMaxRuntimeFilter &) = delete;
+
+    void insert(const IColumn & values);
+    void mergeFrom(const NumericMinMaxRuntimeFilter & source);
+    ColumnPtr find(
+        const ColumnWithTypeAndName & values,
+        const ApproximateSetRuntimeFilter * approximate_filter,
+        std::optional<size_t> & rows_passed) const;
+    String describe() const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+};
+
 /// Starts with an exact set and switches to an approximate set once the exact set becomes too large.
 class AdaptiveSetRuntimeFilter
 {
 public:
+    enum class Mode : uint8_t
+    {
+        Exact,
+        Approximate,
+        Dropped,
+    };
+
     static constexpr bool is_prebuilt = false;
 
     static bool isDataTypeSupported(const DataTypePtr & data_type);
@@ -205,15 +242,20 @@ public:
         UInt64 bloom_filter_hash_functions_,
         Float64 max_ratio_of_set_bits_in_bloom_filter_,
         std::optional<UInt64> distinct_keys_hint_,
-        bool distinct_keys_hint_matches_filter_key_);
+        bool distinct_keys_hint_matches_filter_key_,
+        bool start_with_dropped_key_set_ = false);
 
     void insert(ColumnPtr values);
-    void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
+    void finishInsert(RuntimeFilterEvaluationState & evaluation_state, bool keep_numeric_minmax_filter);
     /// Forwards `rows_passed` to the underlying exact/approximate filter (see their docs).
-    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
+    ColumnPtr find(
+        const ColumnWithTypeAndName & values,
+        const NumericMinMaxRuntimeFilter * numeric_minmax_filter,
+        std::optional<size_t> & rows_passed) const;
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
     ColumnPtr getRecordedKeyValues() const;
     DataTypePtr getTargetType() const { return filter_column_target_type; }
+    Mode getMode() const;
 
 private:
     using ExactFilter = ExactSetRuntimeFilter<false>;
@@ -225,10 +267,6 @@ private:
     void insert(ColumnPtr values, Filter & filter);
     void dropKeySet(Filter & filter);
     ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
-
-    /// Disables approximate filter if it is likely to have bad selectivity.
-    void checkApproximateFilterWorthiness(
-        RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter) const;
 
     const DataTypePtr filter_column_target_type;
     const UInt64 bloom_filter_hash_functions;
@@ -290,19 +328,26 @@ private:
     {
         detail::RuntimeFilterBuildState build_state;
         Filter filter;
+        std::optional<NumericMinMaxRuntimeFilter> numeric_minmax_filter{};
         bool index_analysis_enabled = false;
         bool has_range = false;
         Field range_min{};
         Field range_max{};
+        UInt64 build_rows = 0;
     };
 
     template <typename FilterImpl>
-    static Data makeData(size_t filters_to_merge, FilterImpl && filter)
+    static Data makeData(size_t filters_to_merge, FilterImpl && filter, bool use_numeric_minmax_filter)
     {
         using FilterType = std::decay_t<FilterImpl>;
         Data result{
             detail::RuntimeFilterBuildState(FilterType::is_prebuilt ? 0 : filters_to_merge, FilterType::is_prebuilt),
             Filter(std::forward<FilterImpl>(filter))};
+        if constexpr (std::is_same_v<FilterType, Adaptive>)
+        {
+            if (use_numeric_minmax_filter)
+                result.numeric_minmax_filter.emplace(std::get<Adaptive>(result.filter).getTargetType());
+        }
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
             result.index_analysis_enabled = true;
@@ -320,8 +365,8 @@ private:
 
 public:
     template <typename FilterImpl>
-    RuntimeFilter(size_t filters_to_merge_, RuntimeFilterConfig config_, FilterImpl && filter_)
-        : RuntimeFilter(std::move(config_), makeData(filters_to_merge_, std::forward<FilterImpl>(filter_)))
+    RuntimeFilter(size_t filters_to_merge_, RuntimeFilterConfig config_, FilterImpl && filter_, bool use_numeric_minmax_filter_ = false)
+        : RuntimeFilter(std::move(config_), makeData(filters_to_merge_, std::forward<FilterImpl>(filter_), use_numeric_minmax_filter_))
     {
     }
 
@@ -353,6 +398,10 @@ public:
     /// Usage statistics
     const RuntimeFilterStats & getStats() const { return evaluation_state.getStats(); }
     const RuntimeFilterConfig & getConfig() const { return evaluation_state.getConfig(); }
+    UInt64 getBuildRows() const;
+    bool isFullyDisabled() const { return evaluation_state.isKeySetDropped(); }
+    String getModeForLogs() const;
+    String getExtraInfoForLogs() const;
 
 private:
     const DataTypePtr filter_column_target_type;
@@ -405,5 +454,4 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
     const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
     ActionsDAG & dag,
     const ContextPtr & context);
-
 }

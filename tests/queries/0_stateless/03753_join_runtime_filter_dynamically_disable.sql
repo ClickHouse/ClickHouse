@@ -100,11 +100,12 @@ WHERE
 SETTINGS join_runtime_filter_exact_values_limit=1, join_runtime_bloom_filter_bytes=100, max_block_size=10, max_threads=1, log_comment='Q4';
 
 
--- Check all blocks were skipped
+-- Check that most of the blocks were skipped. A numeric minmax sidecar remains active after Bloom saturation,
+-- so adaptive evaluation periodically probes a block before disabling itself again for a skip interval.
 SYSTEM FLUSH LOGS query_log;
 SELECT
     log_comment,
-    ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 AND ProfileEvents['RuntimeFilterBlocksProcessed'] = 0 AS Passed,
+    ProfileEvents['RuntimeFilterBlocksSkipped'] > 10 * ProfileEvents['RuntimeFilterBlocksProcessed'] AS Passed,
     if (Passed, 'Ok', query_id || ' : ' || ProfileEvents::String)
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND

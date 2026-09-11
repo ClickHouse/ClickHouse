@@ -29,6 +29,8 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     UInt64 blocks_to_skip_before_reenabling_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
+    bool can_use_minmax_filter_,
+    bool use_only_minmax_filter_,
     bool track_key_range_,
     std::optional<UInt64> distinct_keys_hint_,
     bool distinct_keys_hint_matches_filter_key_,
@@ -64,7 +66,9 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                     bloom_filter_hash_functions_,
                     max_ratio_of_set_bits_in_bloom_filter_,
                     distinct_keys_hint_,
-                    distinct_keys_hint_matches_filter_key_));
+                    distinct_keys_hint_matches_filter_key_,
+                    use_only_minmax_filter_),
+                can_use_minmax_filter_ && NumericMinMaxRuntimeFilter::isDataTypeSupported(filter_column_target_type));
         }
         else
         {

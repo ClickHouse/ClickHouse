@@ -1,6 +1,6 @@
+#include <cmath>
 #include <memory>
 #include <Columns/ColumnConst.h>
-#include <Common/assert_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -17,12 +17,15 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -150,6 +153,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     const DataTypePtr & common_type,
     const QueryPlanOptimizationSettings & optimization_settings,
     bool check_left_does_not_contain,
+    bool use_only_minmax_filter,
     std::optional<UInt64> distinct_keys_hint,
     bool distinct_keys_hint_matches_filter_key)
 {
@@ -162,6 +166,9 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
 
     /// Add filter lookup to the probe subtree.
     const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
+
+    const bool can_use_minmax_filter = !check_left_does_not_contain && optimization_settings.join_runtime_filter_use_minmax
+        && NumericMinMaxRuntimeFilter::isDataTypeSupported(common_type);
 
     /// Add building filter to the build subtree of join.
     QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
@@ -178,10 +185,13 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
         optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
         optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
         /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
+        can_use_minmax_filter,
+        use_only_minmax_filter,
         /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
         distinct_keys_hint,
         distinct_keys_hint_matches_filter_key);
-    new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
+    new_build_filter_node->step->setStepDescription(
+        fmt::format("Build {}runtime join filter on {}", use_only_minmax_filter ? "minmax-only " : "", join_key_build_side.name), 200);
     new_build_filter_node->children = {build_filter_node};
     build_filter_node = new_build_filter_node;
 
@@ -264,6 +274,34 @@ static std::optional<UInt64> getBuildSideDistinctKeys(const JoinStepLogical & jo
     if (!hint || hint->ht_size == 0)
         return std::nullopt;
     return hint->ht_size;
+}
+
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+
+static Float64 estimateBloomFilterSetBitsRatio(UInt64 distinct_keys, UInt64 bloom_filter_bytes, UInt64 hash_functions)
+{
+    static constexpr UInt64 default_runtime_bloom_filter_bytes = 512 * 1024;
+    static constexpr UInt64 default_runtime_bloom_filter_hash_functions = 3;
+
+    const UInt64 effective_bytes = bloom_filter_bytes ? bloom_filter_bytes : default_runtime_bloom_filter_bytes;
+    const UInt64 effective_hash_functions = hash_functions ? hash_functions : default_runtime_bloom_filter_hash_functions;
+    return 1.0
+        - std::exp(
+               -static_cast<double>(effective_hash_functions) * static_cast<double>(distinct_keys)
+               / (static_cast<double>(effective_bytes) * 8.0));
+}
+
+static bool subtreeContainsFilterStep(const QueryPlan::Node & node)
+{
+    if (typeid_cast<const FilterStep *>(node.step.get()))
+        return true;
+
+    for (const auto * child : node.children)
+    {
+        if (subtreeContainsFilterStep(*child))
+            return true;
+    }
+    return false;
 }
 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -489,6 +527,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     }
 
     const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
+    const RelationStats build_side_stats = estimateReadRowsCount(*build_filter_node);
+    const bool build_side_has_filter_steps = subtreeContainsFilterStep(*build_filter_node);
 
     /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
     /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
@@ -536,6 +576,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
                 /*allow_to_use_not_exact_filter_=*/false,
+                /*can_use_minmax_filter_=*/false,
+                /*use_only_minmax_filter_=*/false,
                 /*track_key_range_=*/optimization_settings.enable_join_runtime_filters_index_analysis,
                 distinct_keys_hint,
                 /*distinct_keys_hint_matches_filter_key_=*/true);
@@ -577,6 +619,53 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             const auto & join_key_probe_side = join_keys_probe_side[i];
             const auto & common_type = common_types[i];
 
+            std::optional<UInt64> estimated_distinct_keys = build_side_stats.estimated_rows;
+            bool has_key_ndv_stats = false;
+            if (auto key_stats = build_side_stats.column_stats.find(join_key_build_side.name);
+                key_stats != build_side_stats.column_stats.end() && key_stats->second.num_distinct_values > 0)
+            {
+                has_key_ndv_stats = true;
+                estimated_distinct_keys = std::min(
+                    estimated_distinct_keys.value_or(key_stats->second.num_distinct_values), key_stats->second.num_distinct_values);
+            }
+
+            const bool exact_path_expected
+                = estimated_distinct_keys && *estimated_distinct_keys <= optimization_settings.join_runtime_filter_exact_values_limit;
+            const bool saturation_check_enabled = optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits < 1.0;
+            const Float64 estimated_set_bits_ratio = estimated_distinct_keys
+                ? estimateBloomFilterSetBitsRatio(
+                      *estimated_distinct_keys,
+                      optimization_settings.join_runtime_bloom_filter_bytes,
+                      optimization_settings.join_runtime_bloom_filter_hash_functions)
+                : 0.0;
+            const bool planner_should_skip_membership = !check_left_does_not_contain
+                && AdaptiveSetRuntimeFilter::isDataTypeSupported(common_type) && !exact_path_expected && saturation_check_enabled
+                && has_key_ndv_stats && !build_side_has_filter_steps
+                && estimated_set_bits_ratio > optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits;
+            const bool can_use_minmax_filter = !check_left_does_not_contain && optimization_settings.join_runtime_filter_use_minmax
+                && NumericMinMaxRuntimeFilter::isDataTypeSupported(common_type);
+
+            if (planner_should_skip_membership)
+            {
+                if (!can_use_minmax_filter)
+                {
+                    LOG_TRACE(
+                        getLogger("joinRuntimeFilter"),
+                        "Runtime filter '{}' was not planned because its estimated Bloom set-bit ratio {} exceeds {}",
+                        id.name,
+                        estimated_set_bits_ratio,
+                        optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits);
+                    continue;
+                }
+
+                LOG_TRACE(
+                    getLogger("joinRuntimeFilter"),
+                    "Runtime filter '{}' will use only numeric minmax because its estimated Bloom set-bit ratio {} exceeds {}",
+                    id.name,
+                    estimated_set_bits_ratio,
+                    optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits);
+            }
+
             const auto & filter_condition = addJoinKeyRuntimeFilter(
                 filter_dag,
                 build_filter_node,
@@ -588,6 +677,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 common_type,
                 optimization_settings,
                 check_left_does_not_contain,
+                /*use_only_minmax_filter=*/planner_should_skip_membership,
                 distinct_keys_hint,
                 /*distinct_keys_hint_matches_filter_key=*/join_keys_build_side.size() == 1);
             all_filter_conditions.push_back(
@@ -609,6 +699,9 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             filter_column_name = combined_filter_condition.result_name;
         }
     }
+
+    if (filter_column_name.empty())
+        return false;
 
     QueryPlan::Node * new_apply_filter_node = &nodes.emplace_back();
     new_apply_filter_node->step = std::make_unique<FilterStep>(

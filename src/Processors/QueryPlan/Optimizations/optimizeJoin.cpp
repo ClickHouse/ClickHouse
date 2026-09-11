@@ -436,6 +436,18 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
         auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+
+        /// A pushed-down filter can be stacked on top of an existing `FilterStep`. Both the
+        /// incoming filter and this step's predicate are applied. They can belong to different
+        /// DAGs, so use the smaller independent estimate as an upper bound for their conjunction.
+        if (filter)
+        {
+            auto incoming_filter_stats = estimateReadRowsCount(*node.children.front(), filter);
+            if (incoming_filter_stats.estimated_rows
+                && (!stats.estimated_rows || *incoming_filter_stats.estimated_rows < *stats.estimated_rows))
+                stats = std::move(incoming_filter_stats);
+        }
+
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
