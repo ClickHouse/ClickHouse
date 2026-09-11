@@ -125,7 +125,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
     size_t codecs_byte_pos = 1;
     for (size_t idx = 0; idx < chain.size(); ++idx, ++codecs_byte_pos)
     {
-        const auto codec = chain[idx];
+        const auto & codec = chain[idx];
         dest[codecs_byte_pos] = codec->getMethodByte();
         compressed_buf.resize(getCheckedReserveSize(codec, source_size, idx, chain.size()));
 
