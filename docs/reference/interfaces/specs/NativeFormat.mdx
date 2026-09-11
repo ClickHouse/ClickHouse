@@ -537,7 +537,7 @@ The type appears as `DateTime64(s)` (implicit server-default timezone) or `DateT
 
 A clock duration rather than a point in time. `Time` is a signed second count, 4 bytes little-endian Int32; `Time64(scale)` is a signed tick count at the given decimal scale (0–9), 8 bytes little-endian Int64 — the same wire shape as `DateTime64`.
 
-The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders at the cap with a zeroed fraction (`999:59:59.000`). `CAST` clamps the stored value to this range as well, though arithmetic can produce out-of-range values that are clamped only on display. None of this affects the wire bytes, which are the plain signed integer.
+The textual form is `[-]HH:MM:SS[.fraction]`, but unlike `DateTime` the hour field is **not** wrapped to a 24-hour day: it is the total hour count and may exceed 23. The displayed magnitude is capped at `999:59:59` (`3599999` seconds); a larger magnitude renders with the seconds at the cap and the stored fraction kept as-is, so a tick count of `3700000.25` renders as `999:59:59.250000`. `CAST` saturates the stored value to the largest representable tick at the target scale (`999:59:59.999999` for `Time64(6)`), not to the whole second, whereas arithmetic can still leave an out-of-range tick count in the column that is capped only on display. None of this affects the wire bytes, which are the plain signed integer.
 
 `Time` value `45296` (`12:34:56`):
 
