@@ -2,7 +2,7 @@
 #include <functional>
 #include <iterator>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -1190,26 +1190,14 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// We should remember it to not include this column in the result.
             bool is_smallest_column_requested = false;
 
-            const auto & database_name = std::get<0>(table);
-            const auto & table_name = std::get<3>(table);
-            auto row_policy_filter_ptr = modified_context->getRowPolicyFilter(
-                database_name,
-                table_name,
-                RowPolicyFilterType::SELECT_FILTER);
-            /// `Merge` reads matched tables directly, so include the target policy when a matched table is an `Alias`.
-            if (const auto * alias = storage->as<StorageAlias>())
+            auto row_policy_filter_ptr = getEffectiveRowPolicyFilter(*storage, modified_context);
+            if (row_policy_filter_ptr)
             {
-                const auto target_storage_id = alias->getTargetTable()->getStorageID();
-                auto target_row_policy_filter = modified_context->getRowPolicyFilter(
-                    target_storage_id.getDatabaseName(),
-                    target_storage_id.getTableName(),
-                    RowPolicyFilterType::SELECT_FILTER);
-                row_policy_filter_ptr = combineRowPolicyFilters(
-                    std::move(row_policy_filter_ptr), std::move(target_row_policy_filter));
-            }
+                /// The outer planner only sees this `Merge`, so a child's policy is recorded here or nowhere.
+                if (modified_context->hasQueryContext())
+                    for (const auto & row_policy : row_policy_filter_ptr->policies)
+                        modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
-            if (row_policy_filter_ptr && !row_policy_filter_ptr->isAlwaysTrue())
-            {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
             }
@@ -2549,7 +2537,12 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
 {
     /// Here we actually need storage snapshot of all nested tables.
     /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
-    return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
+    /// A child's row policy is only applied when its rows are actually read, so counting one from
+    /// metadata would return rows the policy hides.
+    return traverseTablesUntil([&](const auto & table)
+    {
+        return !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
+    }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const

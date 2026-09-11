@@ -17,7 +17,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -416,10 +416,7 @@ void StorageMergeTreeIndex::readImpl(
     context->checkAccess(AccessType::SELECT, source_storage_id, columns_from_storage);
 
     /// We cannot apply a row policy to granules, but the index leaks keys of the rows it hides
-    auto row_policy_filter = context->getRowPolicyFilter(
-        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    if (getEffectiveRowPolicyFilter(*source_table, context))
         throw Exception(ErrorCodes::ACCESS_DENIED,
             "Cannot read from `mergeTreeIndex` because a row policy is applied on table {}. "
             "Reading the index could violate the row policy",

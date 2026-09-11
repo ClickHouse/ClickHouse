@@ -24,7 +24,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 namespace DB
@@ -443,9 +443,9 @@ void StorageMergeTreeTextIndex::readImpl(
     context->checkAccess(AccessType::SELECT, source_storage_id, required_columns);
     /// If the row policy filter references any column required for building the index,
     /// reading from the text index would expose tokens derived from those columnsand violate the row policy.
-    auto row_policy_filter = context->getRowPolicyFilter(source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*source_table, context);
 
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    if (row_policy_filter)
     {
         RequiredSourceColumnsVisitor::Data columns_context;
         RequiredSourceColumnsVisitor(columns_context).visit(row_policy_filter->expression);

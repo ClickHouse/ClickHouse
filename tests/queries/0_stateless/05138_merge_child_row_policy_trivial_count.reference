@@ -1,0 +1,8 @@
+rows visible through Merge	[1,4,5,6]
+count, trivial count disabled	4
+count, trivial count enabled	4
+count, sparsity filter enabled	4
+count, old analyzer, trivial count disabled	4
+count, old analyzer, trivial count enabled	4
+single-child Merge, analyzer	1
+single-child Merge, old analyzer	1
