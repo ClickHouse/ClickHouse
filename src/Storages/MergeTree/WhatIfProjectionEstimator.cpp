@@ -46,6 +46,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool optimize_use_projections;
     extern const SettingsBool use_primary_key;
+    extern const SettingsBool use_constant_folding_in_index_analysis;
 }
 
 namespace MergeTreeSetting
@@ -286,8 +287,10 @@ MarkRanges pruneSyntheticProjectionPart(
     ProjectionPartData & data,
     const ProjectionDescription & projection,
     const MergeTreeData & merge_tree,
-    const DataPartPtr & parent_part,
+    const RangesInDataPart & parent_ranges,
     const KeyCondition * key_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & part_offset_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
     const MergeTreeSettings & mt_settings,
     const Settings & query_settings,
     MergeTreeIndexGranularityPtr & granularity_out,
@@ -304,7 +307,7 @@ MarkRanges pruneSyntheticProjectionPart(
     stableGetPermutation(data.key_block, sort_description, data.order);
 
     const auto part_type
-        = merge_tree.choosePartFormat(data.bytes, data.rows, parent_part->info.level, &projection).part_type;
+        = merge_tree.choosePartFormat(data.bytes, data.rows, parent_ranges.data_part->info.level, &projection).part_type;
 
     /// The writer picks one granule size per block it stores, from that block's average row size.
     /// An insert stores the projection of one whole inserted block, so its granules come out even and
@@ -318,7 +321,7 @@ MarkRanges pruneSyntheticProjectionPart(
     const bool granularity_varies_per_block = part_type == MergeTreeDataPartType::Compact
         || !mt_settings[MergeTreeSetting::use_const_adaptive_granularity];
     const bool granules_follow_row_width
-        = data.row_bytes.size() == data.rows && parent_part->info.level > 0 && granularity_varies_per_block;
+        = data.row_bytes.size() == data.rows && parent_ranges.data_part->info.level > 0 && granularity_varies_per_block;
 
     std::vector<size_t> mark_rows;
     if (granules_follow_row_width)
@@ -357,7 +360,7 @@ MarkRanges pruneSyntheticProjectionPart(
             mt_settings[MergeTreeSetting::index_granularity_bytes],
             mt_settings[MergeTreeSetting::index_granularity],
             /* blocks_are_granules */ false,
-            parent_part->index_granularity_info.mark_type.adaptive);
+            parent_ranges.data_part->index_granularity_info.mark_type.adaptive);
 
         const size_t num = (data.rows + granule_rows - 1) / granule_rows;
         mark_rows.assign(num, granule_rows);
@@ -400,7 +403,7 @@ MarkRanges pruneSyntheticProjectionPart(
     }
 
     /// the builder only reads the parent, it does not mutate it
-    auto synthetic_part = const_cast<IMergeTreeDataPart &>(*parent_part)
+    auto synthetic_part = const_cast<IMergeTreeDataPart &>(*parent_ranges.data_part)
                               .getProjectionPartBuilder(
                                   projection.name, &projection, PartDirIntent::CreateFresh, /* is_temp_projection */ true)
                               .withPartType(MergeTreeDataPartType::Compact)
@@ -409,17 +412,28 @@ MarkRanges pruneSyntheticProjectionPart(
     synthetic_part->index_granularity = granularity_out;
     synthetic_part->setIndex(std::move(index_columns));
 
-    RangesInDataPart synthetic_ranges(synthetic_part);
+    RangesInDataPart synthetic_ranges(
+        synthetic_part, parent_ranges.data_part, parent_ranges.part_index_in_query, parent_ranges.part_starting_offset_in_query);
     synthetic_ranges.ranges = MarkRanges{{0, num_marks}};
 
     return MergeTreeDataSelectExecutor::markRangesFromPKRange(
-        synthetic_ranges, projection.metadata, *key_condition, nullptr, nullptr, nullptr, nullptr, query_settings, log);
+        synthetic_ranges,
+        projection.metadata,
+        *key_condition,
+        part_offset_condition ? &part_offset_condition->generateForPart(synthetic_part) : nullptr,
+        total_offset_condition ? &total_offset_condition->generateForPart(synthetic_part) : nullptr,
+        nullptr,
+        nullptr,
+        query_settings,
+        log);
 }
 
 bool tryEstimateProjection(
     WhatIfCandidateResult & result,
     const ProjectionDescription & projection,
     const KeyCondition * key_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & part_offset_condition,
+    const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
     SortOrderHelp sort_help,
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
@@ -496,9 +510,18 @@ bool tryEstimateProjection(
             continue;
 
         MergeTreeIndexGranularityPtr granularity;
-        MarkRanges pruned
-            = pruneSyntheticProjectionPart(
-                part_data, projection, data, part, key_condition, mt_settings, query_settings, granularity, log);
+        MarkRanges pruned = pruneSyntheticProjectionPart(
+            part_data,
+            projection,
+            data,
+            part_with_ranges,
+            key_condition,
+            part_offset_condition,
+            total_offset_condition,
+            mt_settings,
+            query_settings,
+            granularity,
+            log);
 
         projection_marks += pruned.getNumberOfMarks();
         projection_rows += granularity->getRowsCountInRanges(pruned);
@@ -726,14 +749,32 @@ WhatIfCandidateResult evaluateProjection(
 
     /// PK-range condition over the projection key, from the query predicate
     const auto & filter_dag = read_step->getFilterActionsDAG();
-    std::optional<ActionsDAGWithInversionPushDown> predicate_dag;
+    std::shared_ptr<ActionsDAGWithInversionPushDown> predicate_dag;
     std::optional<KeyCondition> key_condition;
+    ConditionTemplate<KeyCondition>::Ptr part_offset_condition;
+    ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
     if (filter_dag)
     {
-        predicate_dag.emplace(filter_dag->getOutputs().front(), context, /* boolean_context */ true);
+        predicate_dag = std::make_shared<ActionsDAGWithInversionPushDown>(
+            filter_dag->getOutputs().front(), context, /* boolean_context */ true);
         key_condition.emplace(
             *predicate_dag, context, proj_key, /* single_point */ false, !context->getSettingsRef()[Setting::use_primary_key]);
-        if (key_condition->alwaysUnknownOrTrue())
+
+        /// an offset predicate prunes a real projection read too, so build the same conditions
+        /// `ReadFromMergeTree::buildIndexes` does, over the projection the read would go through.
+        /// a projection that stores parent offsets is the exception: `optimizeUseNormalProjections`
+        /// rewrites the predicate to `_parent_part_offset` first, which leaves nothing to prune by
+        const bool skip_folding = !context->getSettingsRef()[Setting::use_constant_folding_in_index_analysis];
+        const auto & proj_columns = projection->metadata->getColumns();
+        const bool offsets_are_the_parent_s = projection->with_parent_part_offset;
+        if (!offsets_are_the_parent_s && !proj_columns.has("_part_offset") && !proj_columns.has("_part"))
+            part_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
+                predicate_dag, projection->metadata, skip_folding, context);
+        if (!offsets_are_the_parent_s && !proj_columns.has("_part_offset") && !proj_columns.has("_part_starting_offset"))
+            total_offset_condition = MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
+                predicate_dag, projection->metadata, skip_folding, context);
+
+        if (key_condition->alwaysUnknownOrTrue() && !part_offset_condition && !total_offset_condition)
             key_condition.reset();
     }
 
@@ -751,8 +792,8 @@ WhatIfCandidateResult evaluateProjection(
     if (settings.empirical)
     {
         if (tryEstimateProjection(
-                result, *projection, key_condition ? &*key_condition : nullptr, sort_help, read_step, baseline_parts,
-                analysis.selected_marks, context))
+                result, *projection, key_condition ? &*key_condition : nullptr, part_offset_condition, total_offset_condition,
+                sort_help, read_step, baseline_parts, analysis.selected_marks, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }
