@@ -315,6 +315,26 @@ private:
 
         /// A flag used by request batching to detect dependencies between reads and writes.
         size_t reordering_version = 0;
+
+        /// The bookkeeping dispatchThread does when a request of this session goes into batch
+        /// `batch_idx`. `is_write_request` is about the request itself, before the `quorum_reads`
+        /// override: a read that `quorum_reads` pushed through raft is in the batch, but it is not a
+        /// write, so reads ordered after it are not waiting for one.
+        void noteRequestBatched(size_t batch_idx, bool is_write_request)
+        {
+            last_batch_idx = batch_idx;
+            if (is_write_request)
+                last_write_batch_idx = batch_idx;
+        }
+
+        /// `keeper_read_wait_for_write_time_milliseconds` measures how long a read waited for the
+        /// write it depends on, so parking a read that attaches to batch `last_batch` is only a
+        /// sample of it if that batch holds a write of this very session. Without `quorum_reads`
+        /// that is implied by `last_batch_idx`, which only writes advance. With `quorum_reads` the
+        /// read is force-attached to the batch it happened to land in, and what it ends up ordered
+        /// behind can be another read pushed through raft, so the session's last *write* batch is
+        /// what has to match.
+        bool readWaitsForWrite(size_t last_batch) const { return last_write_batch_idx == last_batch; }
     };
 
     KeeperServer * server;

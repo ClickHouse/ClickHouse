@@ -904,15 +904,10 @@ void KeeperRequestDispatcher::dispatchThread()
 
                         size_t last_batch = session->last_batch_idx;
 
-                        /// `keeper_read_wait_for_write_time_milliseconds` measures how long a read
-                        /// waited for the write it depends on, so parking the read is only a sample
-                        /// of it if the batch it attaches to holds a write of this very session.
-                        /// Without `quorum_reads` that is implied by `last_batch_idx`, which only
-                        /// writes advance. With `quorum_reads` the read was force-attached to the
-                        /// batch it happened to land in just above, and what it ends up ordered
-                        /// behind can be another read pushed through raft, so the session's last
-                        /// *write* batch is what has to match.
-                        const bool waits_for_write = session->last_write_batch_idx == last_batch;
+                        /// Whether this read is waiting for a write of its own session, which is
+                        /// what `keeper_read_wait_for_write_time_milliseconds` measures. See
+                        /// `Session::readWaitsForWrite`.
+                        const bool waits_for_write = session->readWaitsForWrite(last_batch);
 
                         if (last_batch == batch_idx)
                         {
@@ -950,13 +945,7 @@ void KeeperRequestDispatcher::dispatchThread()
                         if ((session && session->reordering_version == current_reordering_version) || !optimize_read_order)
                             flush_to_intermediate_reads();
                         if (session)
-                        {
-                            session->last_batch_idx = batch_idx;
-                            /// A read that `quorum_reads` pushed through raft is in the batch, but
-                            /// it is not a write, so reads ordered after it are not waiting for one.
-                            if (is_write_request)
-                                session->last_write_batch_idx = batch_idx;
-                        }
+                            session->noteRequestBatched(batch_idx, is_write_request);
 
                         batch_subrequests += getSubrequestCount(*request.request);
                         batch_bytes += getRequestBytesCost(*request.request);

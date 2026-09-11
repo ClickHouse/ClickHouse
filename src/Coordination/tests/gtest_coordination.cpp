@@ -1532,6 +1532,10 @@ public:
     {
         dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].late_reads.markWritesCommitted();
     }
+
+    /// The per-session batch bookkeeping dispatchThread keeps, so the classification of a parked
+    /// read can be tested without a running dispatchThread.
+    using Session = KeeperRequestDispatcher::Session;
 };
 
 class KeeperRequestDispatcherOldTestAccessor
@@ -2192,6 +2196,67 @@ TEST(KeeperDispatcher, ReadWaitForWriteSuppressionIsVisibleToTheParkingThread)
     }
 
     RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
+}
+
+/// The regression this pull request fixes is that the new dispatcher never observed the histogram
+/// at all, and the observation lives in `onCommit` - not in the span helpers a test could call
+/// itself. So drive the real thing: park a read behind a seeded batch, commit that batch through
+/// `KeeperRequestDispatcher::onCommit`, and require a sample to appear. If the finalization is ever
+/// dropped from that path again, this goes red.
+TEST(KeeperDispatcher, ReadWaitForWriteIsObservedWhenTheBatchCommitsThroughOnCommit)
+{
+    DispatcherFixture fixture;
+    auto & dispatcher = *fixture.dispatcher;
+
+    /// Unlike the tests above, this one lets `onCommit` run all the way into `executeReads`, which
+    /// goes to the state machine's storage. The fixture never starts raft, so create it by hand.
+    fixture.server->getKeeperStateMachine()->init();
+
+    size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+        dispatcher, makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 29));
+
+    /// (`addLateRead` moves the request out, so keep our own pointer to it.)
+    auto read = makeReadRequest(/*session_id=*/ 17, "/waiting-for-the-commit");
+    auto read_request = read.request;
+    ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read, /*waits_for_write=*/ true));
+    ASSERT_TRUE(read_request->spans.isStarted(DB::KeeperSpan::ReadWaitForWrite));
+
+    UInt64 before = histogramSampleCount("keeper_read_wait_for_write_time_milliseconds");
+
+    /// The batch holds exactly this one request, so its commit completes the batch and takes the
+    /// drain path that has to finalize the parked read's span.
+    dispatcher.onCommit(makeSessionIDRequest(/*server_id=*/ 1, /*internal_id=*/ 29));
+
+    EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1) << "the committed batch was not popped";
+    EXPECT_EQ(histogramSampleCount("keeper_read_wait_for_write_time_milliseconds"), before + 1)
+        << "onCommit did not record the parked read's wait in keeper_read_wait_for_write_time_milliseconds";
+}
+
+/// The other half of the seam is the classification dispatchThread computes before parking a read.
+/// It cannot be reached through the dispatcher without a running raft instance, so it lives on
+/// `Session` as `readWaitsForWrite` / `noteRequestBatched` and is pinned here directly: with
+/// `quorum_reads`, a read is pushed through raft and lands in a batch just like a write does, and
+/// the reads ordered behind it are then waiting for a read, not for a write.
+TEST(KeeperDispatcher, ReadWaitsForWriteOnlyWhenTheBatchHoldsAWriteOfTheSession)
+{
+    RequestDispatcherAccessor::Session session;
+
+    /// A session that has not written anything yet. `last_batch_idx` starts at 0, so anything
+    /// comparing against it alone would call this a wait for a write.
+    EXPECT_FALSE(session.readWaitsForWrite(0)) << "a session that never wrote was said to be waiting for its write";
+
+    /// `quorum_reads`: a read goes into a batch, but it is not a write.
+    session.noteRequestBatched(/*batch_idx=*/ 3, /*is_write_request=*/ false);
+    EXPECT_FALSE(session.readWaitsForWrite(3)) << "a read ordered behind another read was said to be waiting for a write";
+
+    session.noteRequestBatched(/*batch_idx=*/ 4, /*is_write_request=*/ true);
+    EXPECT_TRUE(session.readWaitsForWrite(4)) << "a read ordered behind this session's write was not counted";
+
+    /// A later read moves the session on; the write's own batch may still be in flight, and a read
+    /// attaching to it is still waiting for that write.
+    session.noteRequestBatched(/*batch_idx=*/ 5, /*is_write_request=*/ false);
+    EXPECT_FALSE(session.readWaitsForWrite(5)) << "a read pushed through raft was treated as a write";
+    EXPECT_TRUE(session.readWaitsForWrite(4)) << "the batch holding the session's write stopped counting as a wait";
 }
 
 TEST(KeeperDispatcher, FourLetterCommandsDrainBeforeShutdown)
