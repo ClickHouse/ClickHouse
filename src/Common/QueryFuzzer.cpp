@@ -61,7 +61,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTHypotheticalIndexQuery.h>
+#include <Parsers/ASTHypotheticalObjectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -148,6 +148,9 @@ extern const int TOO_DEEP_RECURSION;
 
 namespace
 {
+
+/// How many entries each of the fuzzer's collected-parts maps may hold before a random one is evicted.
+constexpr size_t AST_FUZZER_PART_TYPE_CAP = 1000;
 
 /// Named clusters defined in the standard stateless-test server config. Used to fuzz the
 /// connection argument of cluster()/clusterAllReplicas(), the Distributed engine, and
@@ -867,7 +870,19 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
     }
 
     ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()].second->clone();
-    return setIdentifierAliasOrNot(new_ast);
+    new_ast = setIdentifierAliasOrNot(new_ast);
+
+    /// Sometimes reach the column through a `{fuzz_param_N:Identifier}` placeholder instead. The
+    /// exact cast leaves ASTQueryParameter entries of the pool, already placeholders, alone.
+    if (fuzz_rand() % 100 == 0)
+    {
+        if (const auto * ident = typeid_cast<const ASTIdentifier *>(new_ast.get()))
+        {
+            if (auto param_ident = makeParameterizedIdentifier(*ident))
+                return param_ident;
+        }
+    }
+    return new_ast;
 }
 
 ASTPtr QueryFuzzer::makeFuzzedColumnTransformers()
@@ -1675,12 +1690,6 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
             }
         }
     }
-
-    /// Fuzz REFRESH ... SETTINGS values
-    if (strategy.settings)
-        for (auto & change : strategy.settings->changes)
-            if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
 }
 
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
@@ -1724,18 +1733,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         if (view_targets.size() > 1 && fuzz_rand() % 10 == 0)
         {
             const auto kind = view_targets[fuzz_rand() % view_targets.size()].kind;
-            /// Detach the registered children first, or they outlive the erased target in `children`.
-            /// These two setters do it themselves; `resetTableASTWithQueryParams` only nulls the member.
-            create.targets->setInnerEngine(kind, nullptr);
-            create.targets->setInnerColumns(kind, nullptr);
-            if (auto table_ast = create.targets->getTableASTWithQueryParams(kind))
-            {
-                create.targets->resetTableASTWithQueryParams(kind);
-                auto & target_children = create.targets->children;
-                target_children.erase(
-                    std::remove(target_children.begin(), target_children.end(), table_ast), target_children.end());
-            }
-            std::erase_if(view_targets, [kind](const ViewTarget & target) { return target.kind == kind; });
+            create.targets->removeTarget(kind);
         }
 
         for (auto * inner_storage : create.targets->getInnerEngines())
@@ -1827,42 +1825,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             }
         }
 
-        /// Fuzz layout parameters (e.g. size_in_cells for cache, max_stored_keys for ssd_cache).
-        /// Parameters are stored as ASTExpressionList of ASTPair(key, ASTLiteral value).
-        if (create.dictionary->layout && create.dictionary->layout->parameters)
-        {
-            for (auto & param_child : create.dictionary->layout->parameters->children)
-            {
-                if (auto * pair = param_child->as<ASTPair>())
-                {
-                    if (pair->second)
-                    {
-                        if (auto * lit = pair->second->as<ASTLiteral>())
-                            if (fuzz_rand() % 5 == 0)
-                                lit->value = fuzzField(lit->value);
-                    }
-                }
-            }
-        }
-
-        /// Fuzz SOURCE(...) parameter values — same ASTPair shape as layout parameters.
-        /// Mostly produces broken sources, which exercises source validation error paths.
-        if (create.dictionary->source && create.dictionary->source->elements)
-        {
-            for (auto & param_child : create.dictionary->source->elements->children)
-            {
-                if (auto * pair = param_child->as<ASTPair>())
-                {
-                    if (pair->second)
-                    {
-                        if (auto * lit = pair->second->as<ASTLiteral>())
-                            if (fuzz_rand() % 10 == 0)
-                                lit->value = fuzzField(lit->value);
-                    }
-                }
-            }
-        }
-
         /// Shuffle composite PRIMARY KEY column order
         if (create.dictionary->primary_key && create.dictionary->primary_key->children.size() > 1 && fuzz_rand() % 10 == 0)
             std::shuffle(create.dictionary->primary_key->children.begin(), create.dictionary->primary_key->children.end(), fuzz_rand);
@@ -1880,13 +1842,6 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         if (create.dictionary->range && fuzz_rand() % 10 == 0)
             std::swap(create.dictionary->range->min_attr_name, create.dictionary->range->max_attr_name);
 
-        /// Fuzz dictionary-level SETTINGS values
-        if (create.dictionary->dict_settings)
-        {
-            for (auto & change : create.dictionary->dict_settings->changes)
-                if (fuzz_rand() % 5 == 0)
-                    change.value = fuzzField(change.value);
-        }
     }
 
     /// Fuzz dictionary attribute flags, default values, and expressions
@@ -1933,8 +1888,8 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     }
 
     /// Cycle the replace form (CREATE / REPLACE / CREATE OR REPLACE); enabling any clears
-    /// IF NOT EXISTS. Window views are excluded — they accept no replace form.
-    if (!create.attach && !create.isTemporary() && !create.is_window_view && fuzz_rand() % 30 == 0)
+    /// IF NOT EXISTS.
+    if (!create.attach && !create.isTemporary() && fuzz_rand() % 30 == 0)
     {
         if (create.is_ordinary_view || create.is_materialized_view)
         {
@@ -1996,10 +1951,10 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         create.attach_as_replicated.reset();
 
     /// Toggle EMPTY (skips the initial insert), mutually exclusive with CLONE. Only regular
-    /// tables, window views, inner-engine MVs and refreshable TO-target MVs accept it;
+    /// tables, inner-engine MVs and refreshable TO-target MVs accept it;
     /// ordinary views and plain TO-target MVs reject it, so restrict the toggle to the rest.
     const bool empty_form_ok = create.select
-        && (create.is_window_view || create.is_materialized_view_with_inner_table()
+        && (create.is_materialized_view_with_inner_table()
             || (create.is_materialized_view_with_external_target() && create.refresh_strategy)
             || (!create.isView() && !create.is_dictionary));
     if (empty_form_ok && fuzz_rand() % 20 == 0)
@@ -2591,12 +2546,17 @@ static const Strings text_index_tokenizers
        "sparseGrams",
        "sparse_grams",
        "splitByNonAlpha",
+       "splitByRegexp",
        "splitByString",
        "tokenbf_v1",
        "unicodeWord",
        "unicode_word"};
 /// Non-empty separators for the splitByString tokenizer (empty ones are rejected).
 static const Strings tokenizer_separators = {" ", ",", ";", ".", "\t", "\n", "ab", "叫", "😉"};
+/// Separator patterns for splitByRegexp, whose regexp is mandatory and must be non-empty. `|` and
+/// `a*` can match the empty string, which `nextRegexpMatch` reports as "no separator" instead of
+/// looping, and `(` does not compile - both are rejections worth reaching.
+static const Strings tokenizer_regexps = {"\\s+", "[,;]", "[^a-zA-Z0-9]+", "-+", "\\d", "|", "a*", "("};
 /// `icu` is the one tokenizer with a mandatory argument. ICU accepts any well-formed tag,
 /// including one naming no real locale, so `xx_YY` is a valid value rather than a bad one.
 static const Strings tokenizer_icu_locales = {"en", "de", "zh", "ja", "ru", "en_US", "ja_JP", "xx_YY"};
@@ -2634,6 +2594,10 @@ ASTPtr QueryFuzzer::makeTextIndexTokenizer()
             separators.push_back(pickRandomly(fuzz_rand, tokenizer_separators));
         args->children.push_back(make_intrusive<ASTLiteral>(std::move(separators)));
     }
+    else if (name == "splitByRegexp")
+    {
+        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_regexps)));
+    }
     else if (name == "icu")
     {
         args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_icu_locales)));
@@ -2644,8 +2608,8 @@ ASTPtr QueryFuzzer::makeTextIndexTokenizer()
     }
 
     /// Prefer the bare string form half the time, and always for the tokenizers taking no
-    /// arguments. `icu` is the exception: it throws unless given its locale.
-    if (args->children.empty() || (name != "icu" && fuzz_rand() % 2 == 0))
+    /// arguments. `icu` and `splitByRegexp` are the exceptions: both throw unless given theirs.
+    if (args->children.empty() || (name != "icu" && name != "splitByRegexp" && fuzz_rand() % 2 == 0))
         return make_intrusive<ASTLiteral>(name);
 
     auto tokenizer_fn = make_intrusive<ASTFunction>();
@@ -2736,6 +2700,13 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                         for (size_t i = 0; i < num_separators; ++i)
                             separators.push_back(pickRandomly(fuzz_rand, tokenizer_separators));
                         tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(std::move(separators));
+                    }
+                    else if (
+                        tok_fn->name == "splitByRegexp" && tok_fn->arguments && !tok_fn->arguments->children.empty()
+                        && fuzz_rand() % 5 == 0)
+                    {
+                        /// Re-roll the separator pattern
+                        tok_fn->arguments->children[0] = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_regexps));
                     }
                 }
             }
@@ -3236,34 +3207,42 @@ String QueryFuzzer::pickFuzzedTableName(const String & full_name)
     return *std::next(it->second.begin(), fuzz_rand() % it->second.size());
 }
 
+/// The identifier is registered as a child, so both slots have to move together.
+static void setTableIdentifier(ASTTableExpression & table, ASTPtr new_identifier)
+{
+    auto & ch = table.children;
+    std::replace(ch.begin(), ch.end(), table.database_and_table_name, new_identifier);
+    table.database_and_table_name = std::move(new_identifier);
+}
+
 void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
 {
-    if (!table.database_and_table_name || fuzz_rand() % 3 == 0)
+    if (!table.database_and_table_name)
         return;
 
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
     if (!identifier)
         return;
 
-    auto table_id = identifier->getTableId();
-    if (table_id.empty())
-        return;
-
-    const auto new_table_name = pickFuzzedTableName(table_id.getTableName());
-    if (new_table_name.empty())
-        return;
-
-    ASTPtr new_identifier = make_intrusive<ASTTableIdentifier>(StorageID(table_id.database_name, new_table_name));
-    /// The identifier is registered as a child, so both slots have to move together.
-    for (auto & child : table.children)
+    /// Point the read at one of the table's live `__fuzz_N` clones
+    if (fuzz_rand() % 3 != 0)
     {
-        if (child == table.database_and_table_name)
+        const auto table_id = identifier->getTableId();
+        const auto new_table_name = table_id.empty() ? String{} : pickFuzzedTableName(table_id.getTableName());
+        if (!new_table_name.empty())
         {
-            child = new_identifier;
-            break;
+            setTableIdentifier(table, make_intrusive<ASTTableIdentifier>(StorageID(table_id.database_name, new_table_name)));
+            identifier = table.database_and_table_name->as<ASTTableIdentifier>();
         }
     }
-    table.database_and_table_name = std::move(new_identifier);
+
+    /// Sometimes name the table with `{fuzz_param_N:Identifier}` placeholders instead, so it only
+    /// reaches storage resolution after parameter substitution
+    if (fuzz_rand() % 200 == 0)
+    {
+        if (auto param_ident = makeParameterizedIdentifier(*identifier))
+            setTableIdentifier(table, std::move(param_ident));
+    }
 }
 
 void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
@@ -3549,6 +3528,51 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
         default: table_arg = make_intrusive<ASTLiteral>("^" + table_name + "$"); break;
     }
     ASTPtr wrapped = makeASTFunction("merge", db_arg, table_arg);
+    replaceTableExpressionWithFunction(table, table.database_and_table_name, std::move(wrapped));
+}
+
+/// Read a plain table through the parameterized-view call syntax `db.view(param = value, ...)`, which
+/// parses as a table function named after the table. Only a view whose body carries `{param:Type}`
+/// placeholders accepts it, so most of the time the server has to reject the call cleanly instead.
+void QueryFuzzer::callTableAsParameterizedView(ASTTableExpression & table)
+{
+    if (!table.database_and_table_name || table.table_function || fuzz_rand() % 100 != 0)
+        return;
+
+    /// Only single-part names: a dotted name would need ASTFunction's is_compound_name to reach
+    /// database splitting in Context::executeTableFunction, and that flag does not survive the
+    /// formatter (it prints `db.tbl`(...) backquoted), so the compound form is not round-trippable.
+    const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
+    if (!identifier || identifier->isParam() || identifier->compound())
+        return;
+    const String table_name = identifier->name();
+    if (table_name.empty())
+        return;
+
+    /// The member aliases an entry of `children`, and the fuzzing pass that ran before this one can
+    /// swap that entry outright. Replacing a node that is no longer a child would leave both of them.
+    const auto & children = table.children;
+    if (std::find(children.begin(), children.end(), table.database_and_table_name) == children.end())
+        return;
+
+    /// The parameter names are guessed, so most calls are rejected before the view body runs.
+    /// `fuzz_param_N` are the names the literal-to-parameter rewrites use, so a view this fuzzer
+    /// parameterized itself is the case that can still bind.
+    static const Strings view_param_names = {"fuzz_param_0", "fuzz_param_1", "p", "param", "id", "n"};
+    auto arguments = make_intrusive<ASTExpressionList>();
+    const size_t nparams = (fuzz_rand() % 3) + 1;
+    for (size_t i = 0; i < nparams; i++)
+    {
+        arguments->children.emplace_back(makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, view_param_names)),
+            make_intrusive<ASTLiteral>(getRandomField(fuzz_rand() % 11))));
+    }
+
+    auto wrapped = make_intrusive<ASTFunction>();
+    wrapped->name = table_name;
+    wrapped->arguments = arguments;
+    wrapped->children.emplace_back(std::move(arguments));
     replaceTableExpressionWithFunction(table, table.database_and_table_name, std::move(wrapped));
 }
 
@@ -3919,16 +3943,15 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                 /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
                 if (fuzz_rand() % asterisk_prob == 0)
                     new_child = makeFuzzedAsteriskLikeMatcher();
-                else if (fuzz_rand() % 800 == 0 && param_counter < 10)
+                else if (fuzz_rand() % 800 == 0)
                 {
                     /// Inject a {fuzz_param_N:Type} in place of the literal, exercising
                     /// the query parameter substitution code path end-to-end.
                     const auto * lit = child->as<ASTLiteral>();
                     if (lit->value.getType() != Field::Types::Null)
                     {
-                        const String param_name = "fuzz_param_" + std::to_string(param_counter++);
-                        last_query_parameters[param_name] = generateParamValue();
-                        new_child = make_intrusive<ASTQueryParameter>(param_name, String(lit->value.getTypeName()));
+                        if (auto param = makeQueryParameter(String(lit->value.getTypeName()), generateParamValue()))
+                            new_child = std::move(param);
                     }
                 }
                 else if (fuzz_rand() % 13 == 0)
@@ -3939,6 +3962,14 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                 /// Return a fuzzed asterisk/matcher: `*`, `* LIKE/ILIKE 'pattern'`, or `table.*`,
                 /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
                 new_child = makeFuzzedAsteriskLikeMatcher();
+            }
+            else if (auto * pident = typeid_cast<ASTIdentifier *>(child.get());
+                     pident && !pident->isParam() && fuzz_rand() % 800 == 0)
+            {
+                /// Rewrite a column reference into `{fuzz_param_N:Identifier}`, the only parameter
+                /// type substituted as a name rather than as a literal
+                if (auto param_ident = makeParameterizedIdentifier(*pident))
+                    new_child = std::move(param_ident);
             }
             else if (auto * ident = typeid_cast<ASTIdentifier *>(child.get()); ident && !ident->isParam() && fuzz_rand() % 250 == 0)
             {
@@ -4291,19 +4322,24 @@ ASTPtr QueryFuzzer::generatePredicate()
                 }
                 else if (nprob == 2)
                 {
-                    /// col IN (expr1, expr2, ...) using any IN-family operator, with a literal tuple
-                    auto tuple_func = make_intrusive<ASTFunction>();
-                    tuple_func->name = "tuple";
-                    tuple_func->arguments = make_intrusive<ASTExpressionList>();
-                    tuple_func->children.push_back(tuple_func->arguments);
-                    const size_t n_items = (fuzz_rand() % 4) + 1;
+                    /// col IN (expr1, expr2, ...) or col IN [expr1, expr2, ...] using any IN-family
+                    /// operator. Both only bracket as operators, and `tuple` only from two elements
+                    /// up, so a zero-item set emits `col IN []` or `col IN tuple()` - no AST formats
+                    /// back as `col IN ()`. Either empty form evaluates to 0.
+                    const bool use_array = fuzz_rand() % 4 == 0;
+                    auto set_func = make_intrusive<ASTFunction>();
+                    set_func->name = use_array ? "array" : "tuple";
+                    set_func->setIsOperator(true);
+                    set_func->arguments = make_intrusive<ASTExpressionList>();
+                    set_func->children.push_back(set_func->arguments);
+                    const size_t n_items = fuzz_rand() % 20 == 0 ? 0 : (fuzz_rand() % 4) + 1;
                     for (size_t j = 0; j < n_items; j++)
                     {
                         auto rand_col = column_like.begin();
                         std::advance(rand_col, fuzz_rand() % column_like.size());
-                        tuple_func->arguments->children.push_back(rand_col->second->clone());
+                        set_func->arguments->children.push_back(rand_col->second->clone());
                     }
-                    next_condition = makeASTFunction(in_variants[fuzz_rand() % in_variants.size()], expression_1, tuple_func);
+                    next_condition = makeASTFunction(in_variants[fuzz_rand() % in_variants.size()], expression_1, set_func);
                 }
                 else if (nprob == 3 && !column_like.empty())
                 {
@@ -4344,9 +4380,7 @@ ASTPtr QueryFuzzer::generatePredicate()
                     if (fuzz_rand() % 3 == 0)
                     {
                         /// Swap sides
-                        auto expression_3 = expression_1;
-                        expression_1 = expression_2;
-                        expression_2 = expression_3;
+                        std::swap(expression_1, expression_2);
                     }
                     /// Run mostly equality conditions
                     next_condition = makeASTFunction(
@@ -4455,7 +4489,13 @@ void QueryFuzzer::fuzzMandatoryPredicate(ASTPtr & predicate, ASTs & children)
 
 void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr)
 {
-    if (fuzz_rand() % 50 == 0)
+    /// In oracle mode, never remove the topmost query's WHERE/HAVING — both are
+    /// needed for TLP partitioning and TLP HAVING tests. Sub-query WHERE/HAVING
+    /// are fine to drop: the oracle only checks the outermost query shape.
+    const bool topmost = current_select_nesting <= 1;
+    const bool block_remove_for_oracle = oracle_mode && topmost
+        && (expr == ASTSelectQuery::Expression::WHERE || expr == ASTSelectQuery::Expression::HAVING);
+    if (fuzz_rand() % 50 == 0 && !block_remove_for_oracle)
     {
         /// Remove the predicate
         sel->setExpression(expr, {});
@@ -4474,9 +4514,7 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
-                auto exp3 = old_pred;
-                old_pred = new_pred;
-                new_pred = exp3;
+                std::swap(old_pred, new_pred);
             }
             res = makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", new_pred, old_pred);
         }
@@ -4704,9 +4742,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                 if (fuzz_rand() % 3 == 0)
                 {
                     /// Swap sides
-                    auto expression_e = expression_1;
-                    expression_1 = expression_2;
-                    expression_2 = expression_e;
+                    std::swap(expression_1, expression_2);
                 }
                 /// Run mostly equi-joins
                 ASTPtr next_condition = makeASTFunction(
@@ -5359,7 +5395,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Series analysis over a numeric array (array[, extra params] → Array/number)
         {"seriesDecomposeSTL", "seriesOutliersDetectTukey", "seriesPeriodDetectFFT"},
         /// Tumbling time windows (time_attr, interval[, timezone] → Tuple/DateTime)
-        {"tumble", "tumbleStart", "tumbleEnd", "windowID"},
+        {"tumble", "tumbleStart", "tumbleEnd"},
         /// Hopping time windows (time_attr, hop_interval, window_interval[, timezone] → Tuple/DateTime)
         {"hop", "hopStart", "hopEnd"},
         /// Bitwise unary (integer → integer)
@@ -5666,6 +5702,7 @@ static ASTPtr lightweightToAlterMutation(
     ASTAlterCommand::Type type,
     const ASTPtr & predicate,
     const ASTPtr & partition,
+    const ASTPtr & partitions,
     const ASTPtr & assignments)
 {
     auto command = make_intrusive<ASTAlterCommand>();
@@ -5674,6 +5711,8 @@ static ASTPtr lightweightToAlterMutation(
         command->predicate = command->children.emplace_back(predicate->clone()).get();
     if (partition)
         command->partition = command->children.emplace_back(partition->clone()).get();
+    if (partitions)
+        command->partitions = command->children.emplace_back(partitions->clone()).get();
     if (assignments)
         command->update_assignments = command->children.emplace_back(assignments->clone()).get();
 
@@ -5731,6 +5770,7 @@ static ASTPtr alterMutationToLightweight(const ASTAlterQuery & alter)
     {
         auto query = make_intrusive<ASTDeleteQuery>();
         fill_member(query, command->partition, query->partition);
+        fill_member(query, command->partitions, query->partitions);
         fill_member(query, command->predicate, query->predicate);
         fill_table(query);
         fill_member(query, alter.settings_ast.get(), query->settings_ast);
@@ -5741,6 +5781,7 @@ static ASTPtr alterMutationToLightweight(const ASTAlterQuery & alter)
     {
         auto query = make_intrusive<ASTUpdateQuery>();
         fill_member(query, command->partition, query->partition);
+        fill_member(query, command->partitions, query->partitions);
         fill_member(query, command->predicate, query->predicate);
         fill_member(query, command->update_assignments, query->assignments);
         fill_table(query);
@@ -5852,8 +5893,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
 
         /// Fuzzing SELECT query to EXPLAIN query randomly.
-        /// And we only fuzzing the root query into an EXPLAIN query, not fuzzing subquery
-        if (fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
+        /// And we only fuzz the root query into an EXPLAIN query, not fuzzing subquery.
+        /// In oracle mode, never convert to EXPLAIN — it makes the query untestable.
+        if (!oracle_mode && fuzz_rand() % 20 == 0 && current_ast_depth <= 1)
         {
             auto explain = make_intrusive<ASTExplainQuery>(fuzzExplainKind());
 
@@ -6025,6 +6067,21 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             return cursor;
         };
+        /// WATERMARK FOR <col> AS <expr> [IDLE TIMEOUT INTERVAL n MILLISECOND]. `setWatermark`
+        /// registers `expression` as a child of the ASTStreamSettings node, so any caller that
+        /// clears or replaces an existing watermark must erase that child itself first.
+        auto make_random_watermark = [&]() -> WatermarkSettingsPtr
+        {
+            auto expr = getRandomColumnLike();
+            if (!expr)
+                return nullptr;
+            auto watermark = std::make_shared<WatermarkSettings>();
+            watermark->column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
+            watermark->expression = expr;
+            if (fuzz_rand() % 2 == 0)
+                watermark->idle_timeout = std::chrono::milliseconds((fuzz_rand() % 1000 + 1) * 1000);
+            return watermark;
+        };
         if (table_expr->stream_settings)
         {
             if (fuzz_rand() % 50 == 0)
@@ -6049,21 +6106,46 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 /// turns the read into a tail that only ends at `max_execution_time`, so it is rare.
                 if (fuzz_rand() % 4 == 0)
                     stream.setSubscribeForUpdates(fuzz_rand() % 16 == 0);
+                /// UNORDERED only relaxes intra-snapshot ordering, so toggling it is always safe
+                if (fuzz_rand() % 4 == 0)
+                    stream.setUnordered(!stream.unordered);
+                if (stream.watermark && fuzz_rand() % 10 == 0)
+                {
+                    auto & wch = stream.children;
+                    wch.erase(std::remove(wch.begin(), wch.end(), stream.watermark->expression), wch.end());
+                    stream.watermark.reset();
+                }
+                else if (!stream.watermark && fuzz_rand() % 20 == 0)
+                {
+                    if (auto watermark = make_random_watermark())
+                        stream.setWatermark(watermark);
+                }
             }
         }
         else if (table_expr->database_and_table_name && fuzz_rand() % 50 == 0)
         {
-            /// Add STREAM [BOUNDED] [CURSOR {...}], preferring BOUNDED: an unbounded stream tails
-            /// new data until `max_execution_time`, so that form stays as rare as it was before.
+            /// Add STREAM [BOUNDED] [UNORDERED] [CURSOR {...}], preferring BOUNDED: an unbounded
+            /// stream tails new data until `max_execution_time`, so that form stays as rare as before.
             auto stream_node = make_intrusive<ASTStreamSettings>();
             stream_node->setSubscribeForUpdates(fuzz_rand() % 5 == 0);
+            stream_node->setUnordered(fuzz_rand() % 4 == 0);
             if (fuzz_rand() % 2 == 0)
                 stream_node->setCursor(buildCursorTree(make_random_cursor()));
+            if (fuzz_rand() % 3 == 0)
+            {
+                if (auto watermark = make_random_watermark())
+                    stream_node->setWatermark(watermark);
+            }
             table_expr->stream_settings = stream_node;
             table_expr->children.push_back(stream_node);
         }
 
         fuzz(table_expr->children);
+
+        /// Built after the pass above, which would otherwise deform the `param = value` assignments:
+        /// `fuzzColumnLikeExpressionList` adds and removes arguments, and an assignment that no longer
+        /// reads as `equals(identifier, value)` binds nothing, leaving its placeholder unset.
+        callTableAsParameterizedView(*table_expr);
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
     {
@@ -6088,7 +6170,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        /// fuzzColumnLikeExpressionList may remove arguments
+        /// Swap the whole arguments/parameters lists, e.g. turning quantile(0.9)(x) into quantile(x)(0.9)
+        if (fn->arguments && fn->parameters && fuzz_rand() % 100 == 0)
+            std::swap(fn->arguments, fn->parameters);
+
+        /// fuzzColumnLikeExpressionList may add or remove arguments
         const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
 
         if (nargs == 2 && fuzz_rand() % 30 == 0 && cast_functions.contains(fn->name))
@@ -6133,7 +6219,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
                 if (fuzz_rand() % 20 == 0)
                 {
-                    /// Add or remove a single aggregate combinator suffix
+                    /// Add or remove a single aggregate combinator suffix.
+                    /// Deliberately a subset of `aggregate_combinator_suffixes`
+                    /// (QueryFuzzer.h): each entry here has matching
+                    /// argument-fixup logic below (`If` appends a condition,
+                    /// `ArgMin`/`ArgMax` a key, `Tuple` wraps arguments), and
+                    /// combinators without such logic would only produce
+                    /// unresolvable names.
                     static const Strings combinators
                         = {"If", "Array", "State", "SimpleState", "Merge", "ForEach", "ArgMin", "ArgMax", "Map", "Tuple"};
                     const String & combo = combinators[fuzz_rand() % combinators.size()];
@@ -6359,6 +6451,17 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
+        /// Track SELECT-query nesting (1 = the outermost SELECT). The raw
+        /// `current_ast_depth` cannot identify the outer query: a plain SELECT
+        /// parses as `ASTSelectWithUnionQuery` -> `ASTExpressionList` ->
+        /// `ASTSelectQuery`, so the real top-level SELECT already sits at AST
+        /// depth 3. The oracle-mode guards below must fire exactly for the
+        /// outermost SELECT (preserve its WHERE / HAVING / shape), so they key
+        /// off this counter instead of the AST depth. The increment spans the
+        /// recursive `fuzz(select->children)` at the end of this branch, so
+        /// subqueries see a nesting level greater than 1.
+        ScopedIncrement select_nesting_increment(current_select_nesting);
+
         fuzzColumnLikeExpressionList(select->select().get());
 
         if (fuzz_rand() % 50 == 0)
@@ -6445,7 +6548,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         if (select->groupBy().get())
         {
-            if (fuzz_rand() % 50 == 0)
+            /// In oracle mode, never remove GROUP BY — it destroys testability
+            /// for TLP GROUP BY, TLP HAVING, and TLP Aggregate oracles.
+            if (!oracle_mode && fuzz_rand() % 50 == 0)
             {
                 select->groupBy()->children.clear();
                 select->setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
@@ -6556,8 +6661,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::HAVING);
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if ((!oracle_mode || current_select_nesting > 1) && fuzz_rand() % 50 == 0)
         {
+            /// Adding a random GROUP BY to the topmost query changes the
+            /// SELECT-list shape under the oracle's feet, so the oracle's
+            /// rewrites (e.g. TLP's per-partition UNION) become structurally
+            /// invalid. In a subquery this is fine — the outer SELECT-list
+            /// shape is what the oracle checks, and subquery GROUP BY just
+            /// changes the row count of the inner result (which the outer
+            /// query has to deal with anyway).
             select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList(select->select()->children.size()));
         }
 
@@ -6584,21 +6696,31 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 addOrReplacePredicate(select, ASTSelectQuery::Expression::WHERE);
             }
-            else if (!select->prewhere().get())
+            else if (!select->prewhere().get() && (!oracle_mode || current_select_nesting > 1))
             {
+                /// In oracle mode, don't create PREWHERE on the topmost query at
+                /// all: `isSafeForOracle` rejects PREWHERE (its interaction with
+                /// WHERE produces legitimate result differences), so a topmost
+                /// PREWHERE locks the whole TLP family out for the rest of the
+                /// mutation chain. Subqueries keep full PREWHERE coverage.
                 if (fuzz_rand() % 50 == 0)
                 {
                     select->setExpression(ASTSelectQuery::Expression::PREWHERE, select->where()->clone());
 
-                    if (fuzz_rand() % 2 == 0)
+                    /// In oracle mode, never remove WHERE when converting to PREWHERE —
+                    /// keep both so the oracle can still partition on WHERE.
+                    if (!oracle_mode && fuzz_rand() % 2 == 0)
                     {
                         select->setExpression(ASTSelectQuery::Expression::WHERE, {});
                     }
                 }
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if (fuzz_rand() % ((oracle_mode && current_select_nesting <= 1) ? 10 : 50) == 0)
         {
+            /// In oracle mode, add a WHERE to the topmost query much more
+            /// eagerly: every TLP oracle and Identity WHERE require one, and
+            /// only about half of fuzzed candidates have it otherwise.
             addOrReplacePredicate(select, ASTSelectQuery::Expression::WHERE);
         }
 
@@ -6621,8 +6743,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 }
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if ((!oracle_mode || current_select_nesting > 1) && fuzz_rand() % 50 == 0)
         {
+            /// Same rationale as above: no topmost PREWHERE in oracle mode.
             addOrReplacePredicate(select, ASTSelectQuery::Expression::PREWHERE);
         }
 
@@ -6659,8 +6782,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             if (fuzz_rand() % 50 == 0)
                 select->limit_with_ties = !select->limit_with_ties;
-            /// Occasionally drop LIMIT (and OFFSET too)
-            if (fuzz_rand() % 50 == 0)
+            /// Occasionally drop LIMIT (and OFFSET too). In oracle mode drop it
+            /// much more eagerly at the topmost level: seed corpora (stateless
+            /// tests) carry LIMIT on most SELECTs and a topmost LIMIT excludes
+            /// every oracle except Subquery wrap, so shedding it re-opens the
+            /// query for the whole suite.
+            if (fuzz_rand() % ((oracle_mode && current_select_nesting <= 1) ? 10 : 50) == 0)
             {
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, {});
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
@@ -6678,16 +6805,17 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     /// Negative offsets exercise error-handling paths in the server.
                     auto val = fuzz_rand() % 2 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
                                                     : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                    select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, make_intrusive<ASTLiteral>(val));
+                    select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, makeLimitExpression(val));
                 }
             }
         }
-        else if (fuzz_rand() % 50 == 0)
+        else if (fuzz_rand() % (oracle_mode ? 200 : 50) == 0)
         {
-            /// Add a LIMIT clause (negative values half the time).
+            /// Add a LIMIT clause (negative values half the time, like LIMIT OFFSET above).
+            /// The outer `oracle_mode ? 200 : 50` keeps this rare in oracle mode (LIMIT blocks most oracles).
             auto val
                 = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001))) : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-            select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(val));
+            select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, makeLimitExpression(val));
         }
         /// Fuzz LIMIT BY offset/length
         if (select->limitBy())
@@ -6701,7 +6829,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
                                                  : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(val));
+                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, makeLimitExpression(val));
             }
             if (select->limitByOffset())
             {
@@ -6712,7 +6840,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 auto val = fuzz_rand() % 10 == 0 ? Field(static_cast<Int64>(-(fuzz_rand() % 1001)))
                                                  : Field(static_cast<UInt64>(fuzz_rand() % 1001));
-                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, make_intrusive<ASTLiteral>(val));
+                select->setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, makeLimitExpression(val));
             }
             /// Toggle LIMIT BY ALL. The flag and the LIMIT_BY list must stay in sync
             /// (ALL = flag + empty list, explicit = no flag + non-empty list): flipping only
@@ -6831,10 +6959,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
     {
-        /// Fuzz existing setting values
-        for (auto & c : set->changes)
-            if (fuzz_rand() % 50 == 0)
-                c.value = fuzzField(c.value);
         /// Permute the settings order (reparse-safe; stresses order-dependent settings application)
         if (set->changes.size() > 1 && fuzz_rand() % 20 == 0)
             std::shuffle(set->changes.begin(), set->changes.end(), fuzz_rand);
@@ -7041,12 +7165,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzzTableName(*delete_query);
         fuzzMandatoryPredicate(delete_query->predicate, delete_query->children);
-        /// Drop IN PARTITION, widening the mutation to the whole table
-        if (delete_query->partition && fuzz_rand() % 20 == 0)
+        /// Drop IN PARTITION (both the single- and multi-partition carriers), widening the mutation to the whole table
+        if ((delete_query->partition || delete_query->partitions) && fuzz_rand() % 20 == 0)
         {
             auto & ch = delete_query->children;
             ch.erase(std::remove(ch.begin(), ch.end(), delete_query->partition), ch.end());
+            ch.erase(std::remove(ch.begin(), ch.end(), delete_query->partitions), ch.end());
             delete_query->partition = {};
+            delete_query->partitions = {};
         }
         fuzz(delete_query->children);
         /// Occasionally rewrite into the equivalent `ALTER TABLE ... DELETE` mutation
@@ -7054,7 +7180,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             debug_visited_nodes.erase(ast.get());
             ast = lightweightToAlterMutation(
-                *delete_query, delete_query->cluster, ASTAlterCommand::DELETE, delete_query->predicate, delete_query->partition, nullptr);
+                *delete_query,
+                delete_query->cluster,
+                ASTAlterCommand::DELETE,
+                delete_query->predicate,
+                delete_query->partition,
+                delete_query->partitions,
+                nullptr);
         }
     }
     else if (auto * update_query = typeid_cast<ASTUpdateQuery *>(ast.get()))
@@ -7067,12 +7199,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             update_query->assignments->children.erase(
                 update_query->assignments->children.begin() + fuzz_rand() % update_query->assignments->children.size());
         }
-        /// Drop IN PARTITION, widening the mutation to the whole table
-        if (update_query->partition && fuzz_rand() % 20 == 0)
+        /// Drop IN PARTITION (both the single- and multi-partition carriers), widening the mutation to the whole table
+        if ((update_query->partition || update_query->partitions) && fuzz_rand() % 20 == 0)
         {
             auto & ch = update_query->children;
             ch.erase(std::remove(ch.begin(), ch.end(), update_query->partition), ch.end());
+            ch.erase(std::remove(ch.begin(), ch.end(), update_query->partitions), ch.end());
             update_query->partition = {};
+            update_query->partitions = {};
         }
         fuzz(update_query->children);
         /// Occasionally rewrite into the equivalent `ALTER TABLE ... UPDATE` mutation
@@ -7085,13 +7219,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 ASTAlterCommand::UPDATE,
                 update_query->predicate,
                 update_query->partition,
+                update_query->partitions,
                 update_query->assignments);
         }
     }
     else if (auto * alter_query = typeid_cast<ASTAlterQuery *>(ast.get()))
     {
-        if (alter_query->alter_object == ASTAlterQuery::AlterObjectType::TABLE)
-            fuzzTableName(*alter_query);
+        fuzzTableName(*alter_query);
         if (alter_query->command_list)
         {
             auto & cmds = alter_query->command_list->children;
@@ -7221,15 +7355,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     alter_cmd->clear_statistics = !alter_cmd->clear_statistics;
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->if_exists = !alter_cmd->if_exists;
-                break;
-            case ASTAlterCommand::MODIFY_SETTING:
-            case ASTAlterCommand::MODIFY_DATABASE_SETTING:
-                /// Fuzz individual setting values (same strategy as ASTSetQuery handler)
-                if (alter_cmd->settings_changes)
-                    if (auto * aset = alter_cmd->settings_changes->as<ASTSetQuery>())
-                        for (auto & c : aset->changes)
-                            if (fuzz_rand() % 50 == 0)
-                                c.value = fuzzField(c.value);
                 break;
             case ASTAlterCommand::RESET_SETTING:
                 /// Occasionally drop a setting name from the reset list
@@ -7711,8 +7836,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 {Type::LOAD_PRIMARY_KEY, Type::UNLOAD_PRIMARY_KEY},
                 /* These are too slow
                 {Type::RELOAD_FUNCTION, Type::RELOAD_FUNCTIONS},
-                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},
-                {Type::RELOAD_MODEL, Type::RELOAD_MODELS},*/
+                {Type::RELOAD_DICTIONARY, Type::RELOAD_DICTIONARIES},*/
                 {Type::JEMALLOC_ENABLE_PROFILE, Type::JEMALLOC_DISABLE_PROFILE},
                 {Type::JEMALLOC_PURGE, Type::JEMALLOC_FLUSH_PROFILE},
                 {Type::FLUSH_LOGS, Type::FLUSH_ASYNC_INSERT_QUEUE},
@@ -8059,7 +8183,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                                                                                            : ASTConstraintDeclaration::Type::CHECK;
         fuzz(constraint->children);
     }
-    else if (auto * hypo_index = typeid_cast<ASTHypotheticalIndexQuery *>(ast.get()))
+    else if (auto * hypo_index = typeid_cast<ASTHypotheticalObjectQuery *>(ast.get()))
     {
         fuzzTableName(*hypo_index);
         /// CREATE/DROP HYPOTHETICAL INDEX: mutate the embedded index declaration
@@ -8206,9 +8330,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             dict_attr->bidirectional = !dict_attr->bidirectional;
         if (fuzz_rand() % 50 == 0)
             dict_attr->is_object_id = !dict_attr->is_object_id;
-        if (dict_attr->default_value && fuzz_rand() % 5 == 0)
-            if (auto * lit = dict_attr->default_value->as<ASTLiteral>())
-                lit->value = fuzzField(lit->value);
         if (dict_attr->expression)
             fuzz(dict_attr->expression);
         if (dict_attr->type)
@@ -8218,17 +8339,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         if (fuzz_rand() % 10 == 0)
             create_nc->if_not_exists = !create_nc->if_not_exists;
-        for (auto & change : create_nc->changes)
-            if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
     }
     else if (auto * alter_nc = typeid_cast<ASTAlterNamedCollectionQuery *>(ast.get()))
     {
         if (fuzz_rand() % 10 == 0)
             alter_nc->if_exists = !alter_nc->if_exists;
-        for (auto & change : alter_nc->changes)
-            if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
     }
     else if (auto * drop_nc = typeid_cast<ASTDropNamedCollectionQuery *>(ast.get()))
     {
@@ -8246,9 +8361,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         if (!create_workload->or_replace && fuzz_rand() % 10 == 0)
             create_workload->if_not_exists = !create_workload->if_not_exists;
-        for (auto & change : create_workload->changes)
-            if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
         /// Drop a setting, or duplicate one (a repeated setting exercises the last-wins/validation path)
         if (create_workload->changes.size() > 1 && fuzz_rand() % 20 == 0)
             create_workload->changes.erase(create_workload->changes.begin() + fuzz_rand() % create_workload->changes.size());
@@ -8596,8 +8708,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
 }
 
-#define AST_FUZZER_PART_TYPE_CAP 1000
-
 /// Generate a fuzzed string-serialized value for a query parameter.
 /// We don't try to match the declared type — passing a mismatched value just causes a query
 /// failure, which is a valid fuzzing outcome.
@@ -8641,6 +8751,95 @@ String QueryFuzzer::generateParamValue()
         case 2: return map_literal(); /// Map(K, V)
         default: return fieldToNumericString(getRandomField(fuzz_rand() % 11));
     }
+}
+
+ASTPtr QueryFuzzer::makeQueryParameter(const String & type, const String & value)
+{
+    /// A successful query becomes the base of the next iteration, so the AST can already carry
+    /// `fuzz_param_N` placeholders while param_counter restarts at 0. Reusing a name would overwrite
+    /// the value the existing placeholder needs. Every parameter is also shipped along with the
+    /// query, so keep their number bounded.
+    String param_name;
+    do
+    {
+        if (param_counter >= max_query_parameters)
+            return nullptr;
+        param_name = "fuzz_param_" + std::to_string(param_counter++);
+    } while (last_query_parameters.contains(param_name));
+
+    last_query_parameters[param_name] = value;
+    return make_intrusive<ASTQueryParameter>(param_name, type);
+}
+
+/// A LIMIT/OFFSET value: usually the given literal, occasionally a query parameter. A limit accepts
+/// any numeric type, so the parameter is mostly declared as one of those, keeping the limit
+/// reachable, and rarely as a random type the server has to reject.
+ASTPtr QueryFuzzer::makeLimitExpression(const Field & value)
+{
+    if (fuzz_rand() % 10 == 0)
+    {
+        static const Strings numeric_param_types
+            = {"UInt8", "UInt16", "UInt32", "UInt64", "Int8", "Int16", "Int32", "Int64", "Float32", "Float64", "Nullable(UInt64)"};
+        auto param = fuzz_rand() % 10 == 0
+            ? makeQueryParameter(getRandomType()->getName(), generateParamValue())
+            : makeQueryParameter(pickRandomly(fuzz_rand, numeric_param_types), std::to_string(fuzz_rand() % 1001));
+        if (param)
+            return param;
+    }
+    return make_intrusive<ASTLiteral>(value);
+}
+
+ASTPtr QueryFuzzer::makeParameterizedIdentifier(const ASTIdentifier & ident)
+{
+    /// `{name:Identifier}` is an ASTIdentifier whose parameterized name parts are empty strings,
+    /// carrying one ASTQueryParameter child per empty part, in order. Substituting each part with
+    /// its current name keeps the identifier resolvable, so the query still runs.
+    /// Every part needs its own parameter, so bail out before spending any of the budget on a
+    /// rewrite that cannot be finished
+    if (ident.isParam() || ident.name_parts.empty() || param_counter + ident.name_parts.size() > max_query_parameters)
+        return nullptr;
+
+    /// A half-converted identifier is dropped whole, so on bail-out the params already made for
+    /// its parts must not stay behind in last_query_parameters or keep their share of the budget.
+    const uint32_t saved_param_counter = param_counter;
+    auto name_parts = ident.name_parts;
+    ASTs name_params;
+    auto rollback = [&]() -> ASTPtr
+    {
+        for (const auto & p : name_params)
+            last_query_parameters.erase(typeid_cast<const ASTQueryParameter &>(*p).name);
+        param_counter = saved_param_counter;
+        return nullptr;
+    };
+    for (auto & part : name_parts)
+    {
+        if (part.empty())
+            return rollback();
+        auto param = makeQueryParameter("Identifier", part);
+        if (!param)
+            return rollback();
+        name_params.emplace_back(std::move(param));
+        part.clear();
+    }
+
+    ASTPtr res;
+    /// A table name goes through ASTTableIdentifier, which the parser only builds with one or two
+    /// parts; anything longer is a column reference and stays a plain identifier.
+    const auto * table_ident = typeid_cast<const ASTTableIdentifier *>(&ident);
+    if (table_ident && name_parts.size() <= 2)
+    {
+        auto table_res = name_parts.size() == 1
+            ? make_intrusive<ASTTableIdentifier>(name_parts[0], std::move(name_params))
+            : make_intrusive<ASTTableIdentifier>(name_parts[0], name_parts[1], std::move(name_params));
+        table_res->uuid = table_ident->uuid;
+        table_res->has_uuid = table_ident->has_uuid;
+        res = std::move(table_res);
+    }
+    else
+        res = make_intrusive<ASTIdentifier>(std::move(name_parts), false, std::move(name_params));
+
+    res->setAlias(ident.tryGetAlias());
+    return res;
 }
 
 /*
@@ -8749,6 +8948,7 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
 void QueryFuzzer::fuzzMain(ASTPtr & ast)
 {
     current_ast_depth = 0;
+    current_select_nesting = 0;
     iteration_count = 0;
     debug_visited_nodes.clear();
     debug_top_ast = &ast;

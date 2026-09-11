@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Access/AccessRights.h>
 #include <Access/AuthenticationData.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/Base64.h>
@@ -161,7 +162,8 @@ bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs)
 #endif
         && (lhs.http_auth_scheme == rhs.http_auth_scheme)
         && (lhs.http_auth_server_name == rhs.http_auth_server_name)
-        && (lhs.valid_until == rhs.valid_until);
+        && (lhs.valid_until == rhs.valid_until)
+        && (lhs.grants == rhs.grants);
 }
 
 
@@ -508,11 +510,91 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
         }
     }
 
+    node->grants = grants;
+
     return node;
 }
 
 
 AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now)
+{
+    auto auth_data = fromASTImpl(query, context, validate, now);
+
+    if (!query.grants.structurallyEmpty())
+    {
+        /// The GRANTS clause is enforced with a fail-close ambiguity scan at authentication time: when several methods
+        /// accept the same credential, the session is limited to the intersection of their GRANTS (see
+        /// `IAccessStorage::authenticateImpl`). A method verified against an external system (`LDAP`/`KERBEROS`/`HTTP`/`JWT`)
+        /// cannot participate in that scan, because re-checking a credential there would require an extra probe of the
+        /// external system, which is unsafe (it could, for example, trip an account lockout on a different server).
+        /// Without the scan, another method accepting the same credential could shadow this method's GRANTS and the
+        /// session would silently regain the full rights of the user. Reject the combination explicitly (fail-close).
+        ///
+        /// Like the filter check below, this check runs regardless of `validate`: the GRANTS clause is a new feature,
+        /// so no older server could have stored such a method, and the `ATTACH USER` path must not become a bypass.
+        if (!authenticationTypeIsVerifiedLocally(auth_data.getType()))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The GRANTS clause is not supported for authentication method '{}', which is verified against an external "
+                "system: another authentication method accepting the same credential could bypass the limit",
+                toString(auth_data.getType()));
+
+        AccessRightsElements grants = query.grants;
+        grants.replaceDeprecated();
+
+        /// Elements like `SELECT ON table` (without a database) are bound to the current database once,
+        /// when the query is interpreted, so that the restriction does not depend on the session which
+        /// uses the credential later. There is no context when the user is loaded from a storage, but
+        /// in that case the elements were already bound at the time of CREATE/ALTER.
+        if (context)
+            grants.replaceEmptyDatabase(context->getCurrentDatabase());
+
+        /// Filtered source grants such as `READ ON S3('s3://bucket/.*')` are not supported here yet.
+        /// The session limit is applied as `AccessRights::makeIntersection`, which treats a source filter
+        /// as an opaque string, so it cannot represent the semantic intersection of two different filters.
+        /// A narrowing token like user `READ ON S3('s3://bucket/.*')` limited to `READ ON S3('s3://bucket/private/.*')`
+        /// would silently collapse to no access unless the two filter strings were byte-identical. Reject such
+        /// grants explicitly (fail-close) instead of granting nothing surprisingly.
+        ///
+        /// This check runs regardless of `validate` (i.e. also on the `ATTACH USER` path). Unlike the generic
+        /// `AccessRights` validation below, it is not compatibility-sensitive: the GRANTS clause is a new feature,
+        /// so no older server could have stored a filtered grant that we would now have to accept. Keeping the
+        /// check unconditional prevents `ATTACH USER ... GRANTS (READ ON S3('...'))` from becoming a bypass.
+        for (const auto & element : grants)
+        {
+            if (element.hasFilter())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Filtered source grants are not supported in the GRANTS clause of an authentication method yet: {}",
+                    element.toStringWithoutOptions());
+        }
+
+        /// Reject elements that the regular `GRANT` statement rejects as not grantable, such as a global-level
+        /// privilege listed on a table or a database (`GRANTS (CREATE TEMPORARY TABLE ON db.t)`,
+        /// `GRANTS (KILL QUERY ON db.*)`). `AccessRights` silently masks such flags out of the tree when the
+        /// limit is applied, so the clause would be displayed by `SHOW CREATE USER` as written while the actual
+        /// session limit silently diverges from it. Fail the DDL up front instead, exactly like the `GRANT`
+        /// parser does.
+        ///
+        /// Like the checks above, this runs regardless of `validate`: the GRANTS clause is a new feature, so no
+        /// older server could have stored a non-grantable element that we would now have to accept, and the
+        /// `ATTACH USER` path must not become a bypass.
+        grants.throwIfNotGrantable();
+
+        if (validate)
+        {
+            /// Check that the elements can form access rights (throws otherwise).
+            [[maybe_unused]] AccessRights access_rights_for_validation{grants};
+        }
+
+        auth_data.setGrants(std::move(grants));
+    }
+
+    return auth_data;
+}
+
+
+AuthenticationData AuthenticationData::fromASTImpl(const ASTAuthenticationData & query, ContextPtr context, bool validate, std::optional<time_t> now)
 {
     time_t valid_until = 0;
 

@@ -32,10 +32,10 @@ class RunnerLabels:
     ARM_SMALL = ["self-hosted", "arm-small"]
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
-    MACOS_ARM_SMALL = ["self-hosted", "macos_m2"]
-    MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
-    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
-    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    MACOS_ARM_SMALL = ["self-hosted", "macos-m2"]
+    AMD_TINY = ["self-hosted", "amd-tiny"]
+    ARM_TINY = ["self-hosted", "arm-tiny"]
+    RELEASE_RUNNER = ["self-hosted", "release-runner"]
 
 
 class CIFiles:
@@ -48,12 +48,25 @@ BASE_BRANCH = "master"
 azure_secret = Secret.Config(
     name="azure_connection_string",
     type=Secret.Type.AWS_SSM_PARAMETER,
+    region="us-east-1",
 )
 
 SECRETS = [
     Secret.Config(
+        name="clickhouse-dockerhub-registry",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="clickhouse-test-stat-connection",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    #TODO: remove
+    Secret.Config(
         name="dockerhub_robot_password",
         type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-url",
@@ -84,6 +97,23 @@ SECRETS = [
     Secret.Config(
         name="/github-app/clickhouse-gh.installation_id",
         type=Secret.Type.AWS_SSM_SECRET,
+        region="us-east-1",
+    ),
+]
+
+# Push-only secrets: consumed by the loom code.refresh pre_hook, which runs
+# only in MasterCI and ReleaseBranchCI. Kept out of the shared SECRETS list
+# so untrusted lanes (pull_request, backport) never register them and PR
+# code cannot resolve the loom writer token via Info.get_secret.
+LOOM_SECRETS = [
+    Secret.Config(
+        name="loom-url",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="loom-ci-token",
+        type=Secret.Type.AWS_SSM_PARAMETER,
         region="us-east-1",
     ),
 ]
@@ -368,7 +398,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     # browser. A CMake project of its own rather than a target of this tree, with its own
     # toolchain and its own job script - see `build_wasm_parser.py`.
     WASM_PARSER = "wasm_parser"
-    ARM_FUZZERS = "arm_fuzzers"
+    AMD_FUZZERS = "amd_fuzzers"
     AMD_CFI = "amd_cfi"
 
 
@@ -389,6 +419,7 @@ class JobNames:
     COMPATIBILITY = "Compatibility check"
     SIGN_MACOS = "Sign macOS binary"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
+    DOCS_EXAMPLES = "Docs examples"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
@@ -437,11 +468,11 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    LIBFUZZER_CORPUS_MINIMIZATION = "libFuzzer corpus minimization"
     PARSER_MEMORY_CHECK = "Parser memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
-    CI_TESTS = "CI Tests"
 
 
 class ToolSet:
@@ -511,7 +542,7 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
-    ARM_FUZZERS = "ARM_FUZZERS"
+    AMD_FUZZERS = "AMD_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
     CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
@@ -527,14 +558,14 @@ class ArtifactNames:
 
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 8
-# The old-analyzer + s3 + DBReplicated + WasmEdge parallel variant runs the
-# whole stateless suite un-batched and is the slowest job in CI (main run alone
-# ~1h40m-2h10m under coverage instrumentation). It is split into batches so each
-# shard finishes well inside the runner lease and is not torn down mid-job.
-LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES = 3
+# The old-analyzer + s3 + DBReplicated parallel variant runs the whole stateless
+# suite un-batched and is the slowest job in CI (main run alone ~1h40m-2h10m
+# under coverage instrumentation). It is split into batches so each shard
+# finishes well inside the runner lease and is not torn down mid-job.
+LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES = 3
 # The sequential counterpart is lighter than the parallel variant but still slow
 # enough to benefit from being split, so it gets its own (smaller) batch count.
-LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES = 2
+LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES = 2
 LLVM_FT_ARTIFACTS_LIST = [
     # default.profdata files for 3 batches from Stateless(Functional) tests
     ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_{batch}"
@@ -543,16 +574,16 @@ LLVM_FT_ARTIFACTS_LIST = [
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DBReplicated + WasmEdge, parallel execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_parallel_{batch}"
-    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_NUM_BATCHES,)
+    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DBReplicated, parallel execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_parallel_{batch}"
+    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
 
 LLVM_FT_ARTIFACTS_LIST += [
-    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DBReplicated + WasmEdge, sequential execution
-    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_wasm_sequential_{batch}"
-    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_WASM_SEQUENTIAL_NUM_BATCHES,)
+    # default.profdata files for batches from Functional tests with Old Analyzer + S3 + DBReplicated, sequential execution
+    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_old_s3_db_repl_sequential_{batch}"
+    for total_batches in (LLVM_FT_OLD_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
     for batch in range(1, total_batches + 1)
 ]
 
@@ -666,6 +697,14 @@ class ArtifactConfigs:
         name=ArtifactNames.LLVM_COVERAGE_INFO_FILE,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/llvm_coverage.info",
+        # The LLVM Coverage job deliberately publishes no .info when its
+        # measurement is incomplete (a shard profile is missing or corrupt), so
+        # that "an .info exists for a commit" means "that commit's measurement
+        # merged every shard". The diff gate walks master ancestors and uses the
+        # first commit with an .info as its baseline, so withholding the file is
+        # what keeps incomplete master runs out of the baseline series. A missing
+        # file must therefore not redden the job that skipped on purpose.
+        optional=True,
     )
     clickhouse_debians = Artifact.Config(
         name="*",
@@ -733,7 +772,7 @@ class ArtifactConfigs:
         ],
     )
     fuzzers = Artifact.Config(
-        name=ArtifactNames.ARM_FUZZERS,
+        name=ArtifactNames.AMD_FUZZERS,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",
