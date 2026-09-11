@@ -28,8 +28,8 @@ INSERT INTO t_ttl_skip_untouched_blocks
 SELECT now() - INTERVAL 1 HOUR, number + 1536, 'expired' FROM numbers(1536)
 SETTINGS max_threads = 1, max_insert_threads = 1;
 
-SYSTEM START MERGES t_ttl_skip_untouched_blocks;
 OPTIMIZE TABLE t_ttl_skip_untouched_blocks FINAL;
+SYSTEM START MERGES t_ttl_skip_untouched_blocks;
 
 SELECT count(), countIf(value = ''), countIf(value = 'live') FROM t_ttl_skip_untouched_blocks;
 
