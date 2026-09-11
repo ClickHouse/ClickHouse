@@ -273,25 +273,15 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
         return storage;
     }
 
-    std::string disk_name;
-    if constexpr (is_data_lake)
-    {
-        disk_name = settings && (*settings)[DataLakeStorageSetting::disk].changed
-            ? (*settings)[DataLakeStorageSetting::disk].value
-            : "";
-    }
-
-    ObjectStoragePtr current_object_storage;
-    if (configuration->isDataLakeConfiguration() && !disk_name.empty())
-        current_object_storage = context->getDisk(disk_name)->getObjectStorage();
-    else
-        current_object_storage = getObjectStorage(context, !is_insert_query);
-
+    /// For a data-lake function with `SETTINGS disk = '...'` this returns the table's private copy of the
+    /// disk's object storage (see `DataLakeConfiguration::fromDisk`), never the disk's own storage: the
+    /// settings update in `lazyInitializeIfNeeded` must not touch the disk.
+    ///
     /// Note: distributed_processing is always false for non-cluster table functions (s3, azure, etc.).
     /// Cluster table functions (s3Cluster, etc.) handle distributed processing in their own getStorage() method.
     storage = std::make_shared<StorageObjectStorage>(
         configuration,
-        current_object_storage,
+        getObjectStorage(context, !is_insert_query),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,

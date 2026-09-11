@@ -34,11 +34,53 @@ namespace Setting
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
 }
 
+std::optional<String> StorageObjectStorageConfiguration::tryGetDiskConfigurationPrefix(
+    const Poco::Util::AbstractConfiguration & config, const String & disk_name)
+{
+    static constexpr auto disks_section = "storage_configuration.disks.";
+    static constexpr size_t max_depth = 100;
+
+    String prefix = disks_section + disk_name;
+    if (!config.has(prefix))
+        return std::nullopt;
+
+    /// Layered disk configs (cache, encrypted) reference the next disk by name in their `disk`
+    /// key; the object storage settings live in the section of the innermost disk.
+    for (size_t depth = 0; config.has(prefix + ".disk"); ++depth)
+    {
+        if (depth >= max_depth)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too deep or cyclic `disk` references in configuration of disk {}", disk_name);
+
+        prefix = disks_section + config.getString(prefix + ".disk");
+        if (!config.has(prefix))
+            return std::nullopt;
+    }
+
+    return prefix;
+}
+
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
+
+    if (source_disk_name.has_value())
+    {
+        const auto & config = context->getConfigRef();
+        const auto disk_config_prefix = tryGetDiskConfigurationPrefix(config, *source_disk_name);
+        if (!disk_config_prefix)
+            return;
+
+        /// The table works through a private copy of the disk's object storage (see `DataLakeConfiguration::fromDisk`),
+        /// so rebuilding its client cannot affect the disk. The settings of a disk come from the server config, not from
+        /// the query, so `isStaticConfiguration` does not apply: the object storage itself decides whether the settings
+        /// its client is built from have changed.
+        options.allow_client_change = true;
+        object_storage_ptr->applyNewSettings(config, *disk_config_prefix + ".", context, options);
+        return;
+    }
+
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
