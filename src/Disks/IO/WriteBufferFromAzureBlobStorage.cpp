@@ -320,6 +320,8 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     LOG_TRACE(limited_log, "finalizeImpl WriteBufferFromAzureBlobStorage {}", blob_path);
 
+    WriteBufferFromFileBase::finalizeImpl();
+
     if (!is_prefinalized)
         preFinalize();
 
