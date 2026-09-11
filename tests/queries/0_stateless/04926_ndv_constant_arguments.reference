@@ -1,6 +1,6 @@
 toUInt64(dateTrunc(\'month\', d))
 Join: probe[10] ⋈ aggregated[10]
-plus(materialize(1), n)
+plus(plus(materialize(1), materialize(1)), n)
 Join: probe[10] ⋈ aggregated[10]
 toUInt64(dateTrunc((SELECT \'month\'), d))
 Join: probe[10] ⋈ aggregated[10]

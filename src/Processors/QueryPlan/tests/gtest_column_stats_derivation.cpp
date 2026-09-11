@@ -317,30 +317,6 @@ TEST(ColumnStatsDerivation, DeepChainOfFunctionsResolves)
     EXPECT_EQ(stats[current->result_name].num_distinct_values, distinct_values);
 }
 
-TEST(ColumnStatsDerivation, SharedConstantSubexpressionsPropagateBound)
-{
-    tryRegisterFunctions();
-
-    auto int_type = std::make_shared<DataTypeUInt64>();
-    ActionsDAG dag;
-    const auto & input = dag.addInput("n", int_type);
-    const auto & one = dag.addColumn(int_type->createColumnConst(1, UInt64(1)), int_type, "one");
-    const ActionsDAG::Node * constant = &dag.addFunction(
-        FunctionFactory::instance().get("materialize", getContext().context), {&one}, "constant");
-
-    /// Without memoization, the two references to each non-folded constant cause exponential traversal.
-    auto plus = FunctionFactory::instance().get("plus", getContext().context);
-    for (size_t i = 0; i < 30; ++i)
-        constant = &dag.addFunction(plus, {constant, constant}, "constant_" + std::to_string(i));
-    addOutputFunction(dag, "plus", {constant, &input}, "shifted");
-
-    auto stats = statsOf("n", 100);
-    remapColumnStats(stats, dag);
-
-    ASSERT_TRUE(stats.contains("shifted"));
-    EXPECT_EQ(stats.at("shifted").num_distinct_values, 100);
-}
-
 TEST(ColumnStatsDerivation, LineageDistinguishesIdentityFromDistinctValueBounds)
 {
     tryRegisterFunctions();

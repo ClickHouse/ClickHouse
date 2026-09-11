@@ -1,6 +1,6 @@
 -- Check NDV propagation through deterministic multi-argument functions with exactly one non-constant argument:
 --   `toUInt64(dateTrunc('month', d))`
---   `plus(materialize(1), n)`
+--   `plus(plus(materialize(1), materialize(1)), n)`
 --   `toUInt64(dateTrunc((SELECT 'month'), d))`
 
 CREATE TABLE source (n UInt64, d Date) ENGINE = MergeTree ORDER BY n SETTINGS auto_statistics_types = 'uniq';
@@ -37,9 +37,9 @@ SELECT extract(explain, 'Join:.*') FROM
 )
 WHERE explain LIKE '% Join:%';
 
--- Check NDV propagation with a constant wrapped in the `materialize` function: `plus(materialize(1), n)`.
+-- Check NDV propagation with shared `materialize(1)`: `plus(plus(materialize(1), materialize(1)), n)`.
 -- The function call `materialize(1)` produces a regular column `[1, 1, ...]`.
-SELECT 'plus(materialize(1), n)';
+SELECT 'plus(plus(materialize(1), materialize(1)), n)';
 SELECT extract(explain, 'Join:.*') FROM
 (
     EXPLAIN keep_logical_steps = 1, actions = 1
@@ -47,7 +47,7 @@ SELECT extract(explain, 'Join:.*') FROM
     FROM probe
     JOIN
     (
-        SELECT plus(materialize(1), n) AS key, count()
+        SELECT plus(plus(materialize(1), materialize(1)), n) AS key, count()
         FROM source
         GROUP BY key
     ) AS aggregated
