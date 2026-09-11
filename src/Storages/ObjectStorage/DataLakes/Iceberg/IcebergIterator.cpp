@@ -606,15 +606,36 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 object_info->info.data_object_file_path_key);
         }
 
-        if (!object_info->info.requires_external_storage)
+        /// Only a task that leaves this node can need the flag: it is read when serializing to a worker
+        /// and when picking the replica to schedule on. A local read never consults it, so it must not
+        /// pay for the resolutions below, which cost a `S3::URI` parse per delete file.
+        if (tasks_go_to_other_replicas && !object_info->info.requires_external_storage)
         {
             /// Delete file paths reach a worker that predates the absolute-path protocol stripped of their
             /// scheme and authority (see `path_for_protocol`), and such a worker resolves what is left
             /// against the table location. Flag the task when that reconstruction does not land back on the
             /// same object: the old worker would then apply deletes from the wrong file, or fail to open it,
             /// and silently return rows that the snapshot deletes.
+            ///
+            /// A path with no scheme is its own stripped form, so the two resolutions below would resolve
+            /// the same string and compare equal. The answer is then decided by the storage alone, and the
+            /// only scheme-less path that can leave the base storage is an absolute one on a local base
+            /// storage (see `tryResolveObjectStorageForPath`). Everything else is answered `false` by one
+            /// `SchemeAuthorityKey` parse instead of two path resolutions.
+            const bool base_storage_is_local = object_storage->getType() == ObjectStorageType::Local;
+            auto resolves_to_itself_on_base_storage = [&](const String & file_path)
+            {
+                SchemeAuthorityKey decomposed{file_path};
+                if (!decomposed.scheme.empty())
+                    return false;
+                return !decomposed.key.starts_with('/') || !base_storage_is_local;
+            };
+
             auto needs_absolute_path_protocol = [&](const String & file_path)
             {
+                if (resolves_to_itself_on_base_storage(file_path))
+                    return false;
+
                 auto [del_storage, del_key] = resolveObjectStorageForPath(
                     persistent_components.table_location, file_path, object_storage, *secondary_storages, local_context,
                     persistent_components.path_resolver);

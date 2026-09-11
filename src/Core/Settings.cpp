@@ -718,7 +718,11 @@ Use multiple threads for azure multipart upload.
 Throw an error, when ListObjects request cannot match any files
 )", 0) \
     DECLARE(Bool, object_storage_propagate_credentials_to_other_storages, false, R"(
-Reuse base-storage credentials for a secondary object storage. For `S3`, credentials are reused when the endpoint matches; when this setting is enabled, they are also reused across different endpoints, including less secure connections (for example, from `https` to plain `http`). For `Azure`, reads stay within the base account.
+Reuse the base storage's `S3` credentials when creating a secondary object storage for a file that Iceberg metadata places outside the table location.
+
+Without this setting the credentials are reused only when the target resolves to the same endpoint as the base storage. Enabling it reuses them for any endpoint the table metadata names, including an endpoint of a different provider and a plain `http` one: whoever can write the table's manifests can then direct the base storage's credentials, including a temporary session token, at a host of their choice.
+
+Has no effect on `Azure`, where a path naming a storage account other than the table's is rejected regardless of this setting.
 )", 0) \
     DECLARE(Bool, hdfs_throw_on_zero_files_match, false, R"(
 Throw an error if matched zero files according to glob expansion rules.

@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/SipHash.h>
+#include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/Macros.h>
 #include <Core/UUID.h>
@@ -294,6 +295,21 @@ bool isAbsolutePath(const std::string & path)
 
 #endif // USE_AVRO
 
+/// RFC 3986: `scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`. A metadata path is not required
+/// to be a URI, and an object key may legitimately contain a colon - an unescaped partition value,
+/// say - so the text before a colon names a scheme only while it is shaped like one.
+bool isUriScheme(std::string_view candidate)
+{
+    if (candidate.empty() || !isAlphaASCII(candidate.front()))
+        return false;
+
+    for (char c : candidate.substr(1))
+        if (!isAlphaNumericASCII(c) && c != '+' && c != '-' && c != '.')
+            return false;
+
+    return true;
+}
+
 }
 
 SchemeAuthorityKey::SchemeAuthorityKey(const std::string & uri)
@@ -301,7 +317,8 @@ SchemeAuthorityKey::SchemeAuthorityKey(const std::string & uri)
     if (uri.empty())
         return;
 
-    if (auto scheme_sep = uri.find("://"); scheme_sep != std::string_view::npos)
+    if (auto scheme_sep = uri.find("://");
+        scheme_sep != std::string_view::npos && isUriScheme(std::string_view(uri).substr(0, scheme_sep)))
     {
         scheme = Poco::toLower(uri.substr(0, scheme_sep));
         auto rest = uri.substr(scheme_sep + 3); // skip ://
@@ -327,7 +344,8 @@ SchemeAuthorityKey::SchemeAuthorityKey(const std::string & uri)
     }
 
     /// Check for scheme:/path (common for file: https://datatracker.ietf.org/doc/html/rfc8089#appendix-B)
-    if (auto colon = uri.find(':'); colon != std::string_view::npos && colon > 0)
+    if (auto colon = uri.find(':');
+        colon != std::string_view::npos && colon > 0 && isUriScheme(std::string_view(uri).substr(0, colon)))
     {
         auto after_colon = uri.substr(colon + 1);
 
@@ -843,20 +861,13 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
             s3BaseProviderFamily(table_location_decomposed.scheme, base_storage_endpoint),
             s3ProviderFamily(target_decomposed.scheme));
 
-        bool use_base_storage = false;
-        if (base_storage->getType() == ObjectStorageType::S3)
-        {
-            if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
-            {
-                const std::string base_bucket = s3_storage->getObjectsNamespace();
-                const std::string base_endpoint = s3_storage->getDescription();
-
-                if (s3URIMatches(s3_uri, base_bucket, base_endpoint, target_scheme_normalized, provider_families_compatible))
-                    use_base_storage = true;
-            }
-        }
-
-        if (!use_base_storage && (base_scheme_normalized == "s3" || base_scheme_normalized == "https" || base_scheme_normalized == "http"))
+        /// A path under the table's declared `location` is spelled relative to that location, which
+        /// need not name the directory the table is actually read from: the two differ whenever the
+        /// table was copied without rewriting its metadata. `IcebergPathResolver` is what re-roots
+        /// such a path onto the real directory, so hand it back rather than addressing the key as
+        /// the metadata spells it. Only a path outside the declared location names its object
+        /// literally, and that is the case this function exists for.
+        if (base_scheme_normalized == "s3" || base_scheme_normalized == "https" || base_scheme_normalized == "http")
         {
             std::string normalized_table_location = table_location;
             if (table_location_decomposed.scheme == "s3a" || table_location_decomposed.scheme == "s3n")
@@ -867,14 +878,22 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                                 /*keep_presigned_query_parameters*/ true, /*uri_style*/ S3UriStyle::AUTO,
                                 /*enable_url_encoding*/ false);
 
-            /// The path matches the table's `location` but not the base storage, so its raw key
-            /// is not valid there: return nullopt to remap it through `IcebergPathResolver`.
-            if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized, provider_families_compatible))
+            if (s3URIMatches(s3_uri, base_s3_uri.bucket, base_s3_uri.endpoint, target_scheme_normalized, provider_families_compatible)
+                && keyIsInsidePrefix(base_s3_uri.key, key_to_use))
                 return std::nullopt;
         }
 
-        if (use_base_storage)
-            return std::make_pair(base_storage, key_to_use);
+        if (base_storage->getType() == ObjectStorageType::S3)
+        {
+            if (auto s3_storage = std::dynamic_pointer_cast<S3ObjectStorage>(base_storage))
+            {
+                const std::string base_bucket = s3_storage->getObjectsNamespace();
+                const std::string base_endpoint = s3_storage->getDescription();
+
+                if (s3URIMatches(s3_uri, base_bucket, base_endpoint, target_scheme_normalized, provider_families_compatible))
+                    return std::make_pair(base_storage, key_to_use);
+            }
+        }
 
         /// Construct the endpoint for this storage, then build the cache key from it.
         /// A generic `s3://bucket/...` inherits one from the base storage.
@@ -1133,10 +1152,25 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
     /// path only while it stays inside the table directory; otherwise the target gets its own storage
     /// rooted at its own location below, because the base one would resolve the key against the table
     /// root (`hdfs`) or refuse it outright (`file`).
-    if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority
-        && (!isPrefixScopedScheme(target_scheme_normalized)
-            || keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key)))
-        return std::make_pair(base_storage, target_decomposed.key);
+    if (base_scheme_normalized == target_scheme_normalized && table_location_decomposed.authority == target_decomposed.authority)
+    {
+        const bool inside_table_location = keyIsInsidePrefix(table_location_decomposed.key, target_decomposed.key);
+
+        /// A prefix-scoped backend resolves every key against the table directory, so inside the table
+        /// location the path as the metadata spells it already is the key. For the others the declared
+        /// location need not name the directory the table is read from, so a path under it goes back to
+        /// `IcebergPathResolver` to be re-rooted; only a path outside that location names its object
+        /// literally, and the same container serves it.
+        if (isPrefixScopedScheme(target_scheme_normalized))
+        {
+            if (inside_table_location)
+                return std::make_pair(base_storage, target_decomposed.key);
+        }
+        else if (inside_table_location)
+            return std::nullopt;
+        else
+            return std::make_pair(base_storage, target_decomposed.key);
+    }
 
     const std::string type_for_factory = factoryTypeForScheme(target_scheme_normalized);
     if (type_for_factory.empty())

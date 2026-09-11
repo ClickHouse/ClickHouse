@@ -85,6 +85,15 @@ struct IObjectIterator
 
     /// Set `emit_profile_events` flag, propagating to nested iterators if any.
     virtual void setEmitProfileEvents(bool value) { emit_profile_events = value; }
+
+    /// When true, the objects this iterator produces are handed to other replicas instead of being
+    /// read here, so an implementation must also fill in whatever only the cluster protocol needs.
+    /// A local read never asks for that and does not pay for computing it.
+    bool tasks_go_to_other_replicas = false;
+
+    /// Set `tasks_go_to_other_replicas` flag, propagating to nested iterators if any. Must be called
+    /// before the first `next`.
+    virtual void setTasksGoToOtherReplicas(bool value) { tasks_go_to_other_replicas = value; }
 };
 
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
@@ -111,6 +120,12 @@ public:
         iterator->setEmitProfileEvents(value);
     }
 
+    void setTasksGoToOtherReplicas(bool value) override
+    {
+        tasks_go_to_other_replicas = value;
+        iterator->setTasksGoToOtherReplicas(value);
+    }
+
 private:
     const ObjectIterator iterator;
     const StorageObjectStorageConfigurationPtr configuration;
@@ -135,6 +150,12 @@ public:
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setTasksGoToOtherReplicas(bool value) override
+    {
+        tasks_go_to_other_replicas = value;
+        iterator->setTasksGoToOtherReplicas(value);
+    }
 
 private:
     const ObjectIterator iterator;

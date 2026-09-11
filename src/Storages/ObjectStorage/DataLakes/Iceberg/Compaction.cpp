@@ -110,9 +110,10 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
-    /// Raw paths of every file referenced by the snapshots being compacted, used at cleanup
-    /// time to also remove files that live outside the base object_storage.
-    std::unordered_set<Iceberg::IcebergPathFromMetadata> referenced_file_paths;
+    /// Files the snapshots being compacted reference from outside the table's base directory:
+    /// another storage, or the base storage outside `table_path`. Compaction deletes the files it
+    /// replaces, so it refuses to run while this is non-empty (see `compactIcebergTable`).
+    std::vector<String> external_files;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
 
@@ -242,16 +243,19 @@ static Plan getPlan(
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<ManifestFilePlan>> manifest_files;
+    /// Every file the compacted snapshots reference, to be sorted below into the ones the cleanup
+    /// can reach by listing the table directory and the ones it cannot.
+    std::unordered_set<Iceberg::IcebergPathFromMetadata> referenced_file_paths;
     for (const auto & snapshot : snapshots_info)
     {
-        plan.referenced_file_paths.insert(snapshot.manifest_list_path);
+        referenced_file_paths.insert(snapshot.manifest_list_path);
         auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log, secondary_storages);
         for (const auto & manifest_file : manifest_list)
         {
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
-            plan.referenced_file_paths.insert(manifest_file.manifest_file_path);
+            referenced_file_paths.insert(manifest_file.manifest_file_path);
             if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
@@ -266,12 +270,12 @@ static Plan getPlan(
             for (const auto & pos_delete_file : files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
             {
                 all_positional_delete_files.push_back(pos_delete_file);
-                plan.referenced_file_paths.insert(pos_delete_file->parsed_entry->file_path_key);
+                referenced_file_paths.insert(pos_delete_file->parsed_entry->file_path_key);
             }
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
-                plan.referenced_file_paths.insert(data_file->parsed_entry->file_path_key);
+                referenced_file_paths.insert(data_file->parsed_entry->file_path_key);
                 auto partition_index = plan.partition_encoder.encodePartition(data_file->parsed_entry->partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
@@ -328,6 +332,28 @@ static Plan getPlan(
                     delete_file, delete_file->parsed_entry->file_path_key.serialize());
         }
     }
+
+    /// The cleanup reaches a file either by listing the table directory on the base storage or not at
+    /// all, so sort the referenced files by that boundary. `compactIcebergTable` refuses to run on
+    /// anything outside it rather than deleting a file the table may not own.
+    String base_subtree_prefix = persistent_table_components.table_path;
+    if (!base_subtree_prefix.empty() && base_subtree_prefix.back() != '/')
+        base_subtree_prefix += '/';
+
+    for (const auto & raw_path : referenced_file_paths)
+    {
+        auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
+            persistent_table_components.table_location,
+            raw_path.serialize(),
+            object_storage,
+            secondary_storages,
+            context,
+            persistent_table_components.path_resolver);
+
+        if (storage_to_use.get() != object_storage.get() || !key_in_storage.starts_with(base_subtree_prefix))
+            plan.external_files.push_back(raw_path.serialize());
+    }
+
     plan.history = std::move(snapshots_info);
     plan.need_optimize = !all_positional_delete_files.empty();
     return plan;
@@ -1363,46 +1389,15 @@ static void writeMetadataFiles(
     }
 }
 
-static std::vector<std::pair<ObjectStoragePtr, String>> getOldFiles(
-    ObjectStoragePtr object_storage,
-    SecondaryStorages & secondary_storages,
-    ContextPtr context,
-    const PersistentTableComponents & persistent_table_components,
-    const Plan & plan)
+/// Only the base storage is listed: `compactIcebergTable` rejects a table that references anything
+/// outside `table_path` there, so every file the rewrite replaces is under one of these two prefixes.
+static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
-    std::vector<std::pair<ObjectStoragePtr, String>> result;
-
-    /// Base-storage keys already scheduled for removal, to dedupe referenced files against the listings.
-    std::unordered_set<String> base_storage_keys;
-
     /// The `metadata` prefix comes first on purpose, see `clearOldFiles`.
-    for (auto && file : listFiles(*object_storage, persistent_table_components.table_path, "metadata", ""))
-    {
-        base_storage_keys.insert(file);
-        result.emplace_back(object_storage, std::move(file));
-    }
-    for (auto && file : listFiles(*object_storage, persistent_table_components.table_path, "data", ""))
-    {
-        base_storage_keys.insert(file);
-        result.emplace_back(object_storage, std::move(file));
-    }
+    auto result = listFiles(*object_storage, table_path, "metadata", "");
 
-    for (const auto & raw_path : plan.referenced_file_paths)
-    {
-        auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
-            persistent_table_components.table_location,
-            raw_path.serialize(),
-            object_storage,
-            secondary_storages,
-            context,
-            persistent_table_components.path_resolver);
-
-        /// Secondary-storage files are never in the listings above; base-storage files can also be
-        /// referenced outside the table `metadata`/`data` prefixes (e.g. a same-bucket external path)
-        /// and must be removed too.
-        if (storage_to_use.get() != object_storage.get() || base_storage_keys.insert(key_in_storage).second)
-            result.emplace_back(std::move(storage_to_use), std::move(key_in_storage));
-    }
+    for (auto && data_file : listFiles(*object_storage, table_path, "data", ""))
+        result.push_back(std::move(data_file));
 
     return result;
 }
@@ -1410,25 +1405,23 @@ static std::vector<std::pair<ObjectStoragePtr, String>> getOldFiles(
 /// Keep the order of `old_files`: the compacted metadata is written as `v0.metadata.json`, a lower
 /// version than the files it replaces, so the rewritten table becomes current only once the old
 /// `metadata` prefix is gone. Nothing here can be undone, so every removal is attempted and the
-/// leftovers are named in the exception -- an external file is unreachable from the metadata afterwards,
-/// and `remove_orphan_files` does not scan for it.
-static void clearOldFiles(const std::vector<std::pair<ObjectStoragePtr, String>> & old_files)
+/// leftovers are named in the exception rather than left to a log line nobody reads.
+static void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
 {
     auto log = getLogger("IcebergCompaction");
 
     std::vector<String> not_removed;
-    for (const auto & [storage, key] : old_files)
+    for (const auto & key : old_files)
     {
-        LOG_DEBUG(log, "Removing old file during compaction: storage={}, key={}", storage->getDescription(), key);
+        LOG_DEBUG(log, "Removing old file during compaction: {}", key);
         try
         {
-            storage->removeObjectIfExists(StoredObject(key));
+            object_storage->removeObjectIfExists(StoredObject(key));
         }
         catch (...)
         {
-            auto description = fmt::format("{} of {}", key, storage->getDescription());
-            tryLogCurrentException(log, "Failed to remove the old file " + description);
-            not_removed.push_back(std::move(description));
+            tryLogCurrentException(log, "Failed to remove the old file " + key);
+            not_removed.push_back(key);
         }
     }
 
@@ -1562,10 +1555,32 @@ void compactIcebergTable(
         write_format,
         context_,
         persistent_table_components.metadata_compression_method);
+
+    /// Fail closed: the rewrite deletes the files it replaces, and it reaches them by listing the
+    /// table directory on the base storage. A file outside it is not merely unreachable by that
+    /// listing -- it is also the one file the table may not own, since nothing but the metadata says
+    /// it belongs here (`add_files` registers such files without copying them). Deleting it on the
+    /// table's behalf could destroy data another table or writer still uses, so refuse instead.
+    if (!plan.external_files.empty())
+    {
+        constexpr size_t max_files_to_name = 10;
+        auto named = plan.external_files;
+        if (named.size() > max_files_to_name)
+            named.resize(max_files_to_name);
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "OPTIMIZE is not supported for Iceberg tables that reference files outside the table's base "
+            "directory (found {} such file(s), including: {}): compaction deletes the files it replaces, "
+            "and a file outside the table location may be owned or shared by something else. "
+            "Aborting to avoid deleting it",
+            plan.external_files.size(),
+            fmt::join(named, ", "));
+    }
+
     if (plan.need_optimize)
     {
-        auto old_files = getOldFiles(
-            object_storage_, *secondary_storages_, context_, persistent_table_components, plan);
+        auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,
             sample_block_,
@@ -1577,7 +1592,7 @@ void compactIcebergTable(
             persistent_table_components.metadata_compression_method,
             secondary_storages_);
         writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, *secondary_storages_, context_, sample_block_, write_format, persistent_table_components.table_path);
-        clearOldFiles(old_files);
+        clearOldFiles(object_storage_, old_files);
     }
 }
 

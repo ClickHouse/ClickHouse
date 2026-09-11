@@ -758,6 +758,55 @@ def test_optimize_manifest_with_external_manifest_list(started_cluster):
     instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
+# `OPTIMIZE` rewrites the table and then deletes the files it replaced, reaching them by listing the
+# table directory on the base storage. A file outside that directory is both invisible to that listing
+# and the one file the table may not own -- `add_files` registers such files without copying them -- so
+# compaction refuses to run instead of deleting it, as `remove_orphan_files` does for the same shape.
+def test_optimize_rejects_external_paths(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_optimize_rejects_external_{get_uuid_str()}"
+    base_bucket = started_cluster.minio_bucket
+    data_bucket = f"{base_bucket}-storage1"
+
+    # The positional delete file is what makes the table worth compacting, so the run gets as far as
+    # the cleanup that would delete the external data files.
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg "
+        f"TBLPROPERTIES ('format-version'='2', 'write.delete.mode'='merge-on-read')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id = 2")
+
+    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    base_path = relocate_data_files_to_bucket(started_cluster, TABLE_NAME, data_bucket)
+
+    minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
+    args = f"s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{base_bucket}/'"
+    instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    instance.query(f"CREATE TABLE {TABLE_NAME} ENGINE=IcebergS3({args})")
+
+    def external_objects():
+        return sorted(
+            obj.object_name for obj in
+            started_cluster.minio_client.list_objects(data_bucket, prefix=f"{base_path}/", recursive=True))
+
+    # Sanity check: the data really is external, and readable.
+    objects_before = external_objects()
+    assert objects_before, "The data files should have been relocated to the other bucket"
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n3\tgamma\n"
+
+    error = instance.query_and_get_error(
+        f"OPTIMIZE TABLE {TABLE_NAME}", settings={"allow_experimental_iceberg_compaction": 1})
+    assert "outside the table's base directory" in error
+
+    # The refusal is what protects those files, so none of them may be gone.
+    assert external_objects() == objects_before
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == "1\talpha\n3\tgamma\n"
+
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC")
+
+
 # Regression test: `generateManifestList` used to reread the parent snapshot's manifest list from
 # the base storage only, so INSERT failed when the current manifest list lived in another bucket.
 # https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3613986717
@@ -1377,3 +1426,56 @@ def test_gs_path_is_not_served_by_same_named_s3_bucket(started_cluster):
     assert "alpha" not in error
 
     instance.query(f"DETACH TABLE {TABLE_NAME}")
+
+
+def _relocate_data_files_to_bucket_by_ip(started_cluster, table_name, data_bucket):
+    """Move the table's data files to `data_bucket` and reference them by an explicit
+    `http://<minio ip>:<port>/<bucket>/...` URL, i.e. a different authority spelling than the base
+    storage's `http://minio1:<port>`. Returns `base_path`."""
+    temp_dir, host_path, base_path = _download_table_for_relocation(started_cluster, table_name)
+    data_dir = os.path.join(host_path, "data")
+
+    endpoint_by_ip = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
+    _rewrite_manifests_and_reupload(
+        started_cluster, host_path, base_path,
+        lambda p: f"{endpoint_by_ip}/{data_bucket}/{base_path}/data/{os.path.basename(p)}")
+
+    _move_files_to_bucket(started_cluster, find_files(data_dir, ".parquet"), data_bucket, host_path, base_path)
+
+    shutil.rmtree(temp_dir)
+    return base_path
+
+
+# `object_storage_propagate_credentials_to_other_storages` decides whether the base storage's S3
+# credentials are handed to a secondary storage built for a file the metadata places elsewhere.
+# Without it they are reused only when the target resolves to the same endpoint, which is compared
+# by scheme and authority -- so addressing the very same MinIO through its IP instead of its host
+# name makes the target a different endpoint while the object stays exactly where it is. The data
+# bucket is private (only `minio_bucket` is made anonymously readable by `prepare_s3_bucket`), so an
+# uncredentialed secondary storage is genuinely refused rather than quietly succeeding.
+def test_propagate_credentials_to_other_endpoint(started_cluster):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+
+    TABLE_NAME = f"test_propagate_creds_{get_uuid_str()}"
+    data_bucket = f"{started_cluster.minio_bucket}-storage1"
+
+    spark.sql(f"CREATE TABLE {TABLE_NAME} (id INT, value STRING) USING iceberg OPTIONS('format-version'='2')")
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')")
+
+    default_upload_directory(started_cluster, "s3", f"/iceberg_data/default/{TABLE_NAME}/", f"/iceberg_data/default/{TABLE_NAME}/")
+    base_path = _relocate_data_files_to_bucket_by_ip(started_cluster, TABLE_NAME, data_bucket)
+
+    minio_url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}"
+    table_function = f"icebergS3(s3, filename='{base_path}/', format=Parquet, url='{minio_url}/{started_cluster.minio_bucket}/')"
+
+    # Default: the data files name another endpoint, so the base credentials do not apply to them and
+    # the secondary storage is built without any -- the private bucket refuses the anonymous read.
+    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id")
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
+    # Opted in: the base credentials are propagated to that endpoint and the same read succeeds.
+    result = instance.query(
+        f"SELECT * FROM {table_function} ORDER BY id "
+        f"SETTINGS object_storage_propagate_credentials_to_other_storages = 1")
+    assert result == "1\talpha\n2\tbeta\n3\tgamma\n"
