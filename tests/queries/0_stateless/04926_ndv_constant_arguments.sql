@@ -1,3 +1,5 @@
+-- Check that deterministic functions with one non-constant argument inherit its NDV as an upper bound.
+
 CREATE TABLE source (n UInt64, d Date) ENGINE = MergeTree ORDER BY n SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE probe (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS auto_statistics_types = 'uniq';
 
@@ -14,6 +16,7 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 
+-- Expect `EXPLAIN` to show `aggregated[10]`, estimating the group count from the source NDV of 10.
 SELECT 'constant argument before the non-const argument';
 SELECT extract(explain, 'Join:.*') FROM
 (
