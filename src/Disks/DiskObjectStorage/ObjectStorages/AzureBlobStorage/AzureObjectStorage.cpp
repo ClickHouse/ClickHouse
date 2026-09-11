@@ -109,6 +109,7 @@ private:
                     .tags = {},
                     .attributes = {},
                     .resolved_path = std::nullopt,
+                    .resolved_url = std::nullopt,
                 }));
         }
 
@@ -221,6 +222,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                     .tags = {},
                     .attributes = {},
                     .resolved_path = std::nullopt,
+                    .resolved_url = std::nullopt,
                 }));
         }
 

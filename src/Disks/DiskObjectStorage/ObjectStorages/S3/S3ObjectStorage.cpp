@@ -206,6 +206,7 @@ private:
                     .tags = {},
                     .attributes = {},
                     .resolved_path = std::nullopt,
+                    .resolved_url = std::nullopt,
                 };
                 if (with_tags)
                     metadata.tags = S3::getObjectTags(*client, request->GetBucket(), object.GetKey());
@@ -421,6 +422,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                     .tags = {},
                     .attributes = {},
                     .resolved_path = std::nullopt,
+                    .resolved_url = std::nullopt,
                 }));
 
         if (objects.empty() && outcome.GetResult().GetIsTruncated())

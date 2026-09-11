@@ -736,6 +736,21 @@ def test_url_archive_path_failover():
             f"SELECT count() FROM {table_function} WHERE _path = '{missing_path}'", settings=settings
         ).strip() == "0"
 
+    pinned_source = "http://resolver:8087/data/archive_pin/archive{primary|mirror}.zip :: value.tsv"
+    pinned_table_functions = [
+        f"url('{pinned_source}', 'TSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{pinned_source}', 'TSV', 'x UInt64')",
+    ]
+    for table_function in pinned_table_functions:
+        reset_index_page_server_stats()
+        result = node1.query(
+            f"SELECT _path, sum(x) FROM {table_function} GROUP BY _path", settings=settings
+        ).strip()
+        visible_path, total = result.split("\t")
+        assert "archivemirror.zip::value.tsv" in visible_path
+        assert "archiveprimary.zip" not in visible_path
+        assert total == "7"
+
     limited_settings = dict(settings)
     limited_settings["glob_expansion_max_elements"] = 3
     combined_queries = [

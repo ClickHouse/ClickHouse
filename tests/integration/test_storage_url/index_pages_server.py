@@ -90,6 +90,8 @@ SIMPLE_ARCHIVES = {
     "/data/archive_failover/archivegood.zip": make_zip_file([("value.tsv", "17\n")]),
     "/data/archive_failover/archive0good.zip": make_zip_file([("value.tsv", "10\n")]),
     "/data/archive_failover/archive1good.zip": make_zip_file([("value.tsv", "20\n")]),
+    "/data/archive_pin/archiveprimary.zip": make_zip_file([("value.tsv", "100\n")]),
+    "/data/archive_pin/archivemirror.zip": make_zip_file([("value.tsv", "7\n")]),
 }
 SEVEN_ZIP_ARCHIVE = base64.b64decode(
     "N3q8ryccAAR6+uLAhgAAAAAAAAAhAAAAAAAAALNtaxHgABsAGF0AGIsG6KncZB+qxtE07L6V51NQRUvIscAAAAAAgTMHrg/QD"
@@ -104,6 +106,7 @@ WRITTEN_DATA = {}
 
 class RequestHandler(BaseHTTPRequestHandler):
     request_counts = {}
+    pin_primary_failures_remaining = 2
 
     def log_message(self, format, *args):
         pass
@@ -125,6 +128,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         if self.path == "/__reset__":
             self.request_counts.clear()
+            type(self).pin_primary_failures_remaining = 2
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", "2")
@@ -147,6 +151,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             return ""
         next_level = len(levels)
         return f"<a href=\"{next_level}/\">{next_level}/</a>\n"
+
+    def _temporarily_reject_pin_primary(self, parsed_url):
+        if parsed_url.path != "/data/archive_pin/archiveprimary.zip":
+            return False
+
+        cls = type(self)
+        if cls.pin_primary_failures_remaining == 0:
+            return False
+
+        cls.pin_primary_failures_remaining -= 1
+        self.send_response(404)
+        self.end_headers()
+        return True
 
     def _archive_data_for_request(self, parsed_url):
         if parsed_url.path in SIMPLE_ARCHIVES:
@@ -219,6 +236,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("HEAD", path)
+        if self._temporarily_reject_pin_primary(parsed):
+            return
         if self._reject_archive_request_without_header(parsed):
             return
         if path in WRITTEN_DATA:
@@ -352,6 +371,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("GET", path)
+        if self._temporarily_reject_pin_primary(parsed):
+            return
         if self._reject_archive_request_without_header(parsed):
             return
         if path in WRITTEN_DATA:

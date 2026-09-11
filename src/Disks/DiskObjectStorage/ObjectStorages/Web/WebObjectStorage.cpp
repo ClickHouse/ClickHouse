@@ -230,7 +230,9 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     bool use_external_buffer,
     bool /* restrict_seek */) const
 {
-    auto urls = object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path);
+    auto urls = object.resolved_url
+        ? std::vector<String>{*object.resolved_url}
+        : (object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path));
     /// The async reader (`AsynchronousBoundedReadBuffer` -> `ThreadPoolRemoteFSReader`) reads into an
     /// external buffer regardless of the number of failover URLs, and asserts that the wrapped reader
     /// honors it. The caller (`ReadPipeline`) passes `use_external_buffer` accordingly even when
@@ -425,6 +427,16 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
 
     std::exception_ptr last_exception;
     bool has_not_found = false;
+
+    if (path.resolved_url)
+    {
+        auto metadata = get_metadata_from_uri(Poco::URI(*path.resolved_url, enable_url_encoding));
+        if (!metadata)
+            return std::nullopt;
+        metadata->resolved_url = *path.resolved_url;
+        return metadata;
+    }
+
     std::vector<const URL *> url_options;
     if (path.read_source_index)
     {
@@ -444,11 +456,13 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
     {
         try
         {
-            auto metadata = get_metadata_from_uri(Poco::URI(buildURL(*url_option, path.getPath()), enable_url_encoding));
+            const auto resolved_url = buildURL(*url_option, path.getPath());
+            auto metadata = get_metadata_from_uri(Poco::URI(resolved_url, enable_url_encoding));
             if (metadata)
             {
                 if (url_option->path_override)
                     metadata->resolved_path = *url_option->path_override;
+                metadata->resolved_url = resolved_url;
                 return metadata;
             }
             has_not_found = true;

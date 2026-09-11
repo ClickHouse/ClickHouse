@@ -308,6 +308,7 @@ TEST(ObjectInfo, IdentifierWithoutFileBucketInfoKeepsReadSourceIndex)
 TEST(ClusterFunctionReadTaskResponse, RejectsOldProtocolForWebURLTask)
 {
     auto object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{"/path/part.tsv", 0});
+    object->relative_path_with_metadata.resolved_url = "http://host/path/part.tsv";
     auto context = DB::Context::createCopy(::getContext().context);
     ClusterFunctionReadTaskResponse response(object, context);
     ASSERT_TRUE(response.is_web_url_task);
@@ -335,6 +336,7 @@ TEST(ClusterFunctionReadTaskResponse, RejectsOldProtocolForWebURLTask)
     deserialized.deserialize(supported_in);
     ASSERT_EQ(deserialized.path, response.path);
     ASSERT_EQ(deserialized.read_source_index, response.read_source_index);
+    ASSERT_EQ(deserialized.resolved_url, response.resolved_url);
 }
 
 TEST(ClusterFunctionReadTaskResponse, PreservesReadSourceIndex)
