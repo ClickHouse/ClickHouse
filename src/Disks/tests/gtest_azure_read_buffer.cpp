@@ -2480,9 +2480,10 @@ PostProcessingOutcome postProcess(const std::string & action, const DB::StoredOb
         getContext().context, DB::ObjectStorageType::Azure, object_storage, "AzureQueue", table_metadata, settings);
 
     std::optional<int> error_code;
+    DB::UnorderedSetWithMemoryTracking<String> failed_object_paths;
     try
     {
-        post_processor.process(objects);
+        post_processor.process(objects, failed_object_paths);
     }
     catch (const DB::Exception & e)
     {
@@ -2793,6 +2794,82 @@ TEST(AzurePlainRewritableMove, ASourceWithoutAnETagIsRefused)
     ASSERT_EQ(*outcome.error_code, DB::ErrorCodes::AZURE_BLOB_STORAGE_ERROR);
     ASSERT_TRUE(outcome.copied.empty());
     ASSERT_TRUE(outcome.deleted_generations.empty());
+}
+
+/// Rolling back a `plain_rewritable` operation after its remote delete succeeded. The key is free
+/// by then, so another writer can recreate it, and the blob it puts there is a generation this
+/// transaction has never seen. The rollback asks before it writes: a key that something is at may
+/// not be restored over.
+TEST(AzurePlainRewritableRollback, ARecreatedKeyIsNotRestoredOver)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport);
+
+    ASSERT_FALSE(DB::aRollbackMayWriteOver(*object_storage, "blob"));
+}
+
+/// The same rollback when the key really is free: nobody recreated the blob this transaction
+/// deleted, so the copy it saved aside is put back. This keeps the test above from passing for the
+/// wrong reason - by refusing every restore.
+TEST(AzurePlainRewritableRollback, AFreeKeyIsRestored)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
+        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false, /* blob_missing */ true);
+    auto object_storage = objectStorageOver(transport);
+
+    ASSERT_TRUE(DB::aRollbackMayWriteOver(*object_storage, "blob"));
+}
+
+/// A move whose copy to the destination succeeded is rolled back: the blob the copy wrote has to be
+/// taken back out, because the directory of a `plain_rewritable` metadata storage is rebuilt from
+/// the blobs that are in the bucket and the move was never committed. The delete is pinned to the
+/// generation the copy wrote, so a generation that another writer has put at the same key since is
+/// refused and stays where it is.
+TEST(AzurePlainRewritableRollback, TheDestinationDeleteIsPinnedToWhatTheCopyWrote)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport);
+
+    const DB::StoredObject destination = DB::nameTheGenerationThatWasJustWritten(*object_storage, "blob");
+    ASSERT_EQ(destination.etag, ETagBehaviour::first_generation);
+
+    transport->overwriteObject(ETagBehaviour::second_generation);
+
+    std::optional<int> error_code;
+    try
+    {
+        object_storage->removeObjectIfExists(destination);
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    ASSERT_TRUE(error_code.has_value());
+    ASSERT_EQ(*error_code, DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    ASSERT_TRUE(transport->deletedGenerations().empty());
+}
+
+/// The same rollback of a delete that addresses the destination by path alone, as it did before it
+/// was pinned: it takes away the generation another writer has just put there. That is the loss the
+/// pinning prevents, and it keeps the test above honest.
+TEST(AzurePlainRewritableRollback, AnUnpinnedDestinationDeleteTakesAwayTheNewGeneration)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport);
+
+    transport->overwriteObject(ETagBehaviour::second_generation);
+
+    ASSERT_NO_THROW(object_storage->removeObjectIfExists(DB::StoredObject("blob")));
+    ASSERT_EQ(transport->deletedGenerations(), std::vector<std::string>{ETagBehaviour::second_generation});
 }
 
 /// The blob of a file the metadata says exists is not there when the generation is named. Returning

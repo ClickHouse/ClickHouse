@@ -33,6 +33,28 @@ namespace DB
 /// `HEAD` is a generation this operation has never named.
 StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
 
+/// A rollback of one of the operations below may only put a blob back where the blob it saved aside
+/// came from, so it may only write over a key that nobody has taken over in the meantime. Once the
+/// execute side has deleted the source, the key is free, and another writer that recreates it holds
+/// a generation that this transaction has never seen: copying the saved blob over it would be
+/// exactly the loss that the generation pinning of the execute side exists to prevent. So the
+/// rollback asks what is at the key now and refuses to run when something is, and it then leaves
+/// the blob it saved aside in the bucket, so that the generation this transaction took away is
+/// still there to be recovered by hand.
+///
+/// Only Azure is asked, because only Azure carries the generation of an object through these
+/// operations; the other object storages delete and restore by path on the execute side too, and
+/// this is not the place to change that.
+bool aRollbackMayWriteOver(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
+
+/// Names the generation of a blob that was just written, so that a rollback that takes it back out
+/// is pinned to it (`removeObjectIfExists` sends it as `If-Match`) and cannot take away a
+/// generation that somebody else has written since. The `HEAD` runs right after the write, so the
+/// generation it reports is the one that was written unless another writer got in between the two
+/// requests; a copy that reported the generation it created would close that window, and the
+/// `IObjectStorage` copy does not report one.
+StoredObject nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
+
 class MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation final : public IMetadataOperation
 {
 private:
@@ -237,11 +259,19 @@ private:
     StoredObject source;
     bool moved_existing_source_file{false};
     bool moved_existing_target_file{false};
-    bool moved_file{false};
     /// A delete found a generation of the blob that this move had not copied aside and left it in
     /// place, so `undo` must not restore the copy of the generation before it.
     bool source_was_left_in_place{false};
     bool target_was_left_in_place{false};
+    /// The copy to the destination succeeded. It is set before the delete of the source, which can
+    /// fail on its own, so that `undo` takes the blob it wrote back out even then: the object of a
+    /// move that was never committed is not harmless garbage, because
+    /// `MetadataStorageFromPlainRewritableObjectStorage::load` rebuilds the files of a directory
+    /// from the blobs that are in the bucket, so leaving it there resurrects `path_to` on restart.
+    bool copied_to_destination{false};
+    /// The generation of the destination blob as it was right after the copy wrote it, so that the
+    /// delete in `undo` is pinned to it and cannot take away a generation written by somebody else.
+    StoredObject destination;
 
 public:
     MetadataStorageFromPlainObjectStorageMoveFileOperation(
@@ -264,10 +294,16 @@ public:
     void execute() override;
     /**
      * @brief Undo the `execute` logic:
-     *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to
-     *  2. Restore remote_path_from from tmp_remote_path_from if it is copied.
-     *  3. Restore remote_path_to from tmp_remote_path_to if it is copied.
+     *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to. The delete is
+     *     pinned to the generation that the copy wrote, and a generation that somebody else has
+     *     written since is left in place.
+     *  2. Restore remote_path_from from tmp_remote_path_from if it is copied, unless a blob that
+     *     this move never carried is at remote_path_from by then.
+     *  3. Restore remote_path_to from tmp_remote_path_to if it is copied, under the same condition.
      *  5. Update fs_tree
+     *
+     * A restore that is refused leaves the blob it would have restored in the bucket, at the
+     * temporary key named in the log, rather than destroying either generation.
      */
     void undo() override;
     /**

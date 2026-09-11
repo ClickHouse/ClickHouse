@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_BEING_RESTARTED;
     extern const int INCORRECT_DATA;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
+    extern const int FILE_CHANGED_DURING_READ;
 }
 
 bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing)
@@ -1754,10 +1755,20 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     {storage_id.getDatabaseName(), storage_id.getTableName(), "read", String(ErrorCodes::getName(exception_during_read_code))});
 
                 chassert(!exception_during_read.empty());
+                /// A read pinned to the generation that the listing reported fails with
+                /// `FILE_CHANGED_DURING_READ` when that generation is not in the bucket any more:
+                /// the object was rewritten between the listing and the read. That is a race over
+                /// which generation this table is looking at, not a file that cannot be read, and
+                /// the newer generation at the same key has never been ingested. Charging it to the
+                /// per-path retry budget would eventually create the terminal `failed` node for the
+                /// path, and both queue modes then skip every later generation at that key - the
+                /// rewritten object would be dropped for good. So the processing is reset without a
+                /// failure instead, and the newer generation is picked up on a later pass.
+                const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ;
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_during_read,
-                    /* reduce_retry_count */true);
+                    /* reduce_retry_count */!the_generation_was_rewritten);
                 break;
             }
         }
@@ -1877,7 +1888,13 @@ void ObjectStorageQueueSource::finalizeCommit(
                 case FileState::ErrorOnRead:
                 {
                     chassert(!exception_during_read.empty());
-                    file_metadata->finalizeFailed(exception_during_read);
+                    /// A read of a generation that was rewritten before it could be read only
+                    /// released the processing node (see `prepareCommitRequests`), so that the
+                    /// newer generation is read on a later pass rather than being failed by path.
+                    if (file_metadata->wasProcessingResetWithoutFailure())
+                        file_metadata->finalizeResetProcessing();
+                    else
+                        file_metadata->finalizeFailed(exception_during_read);
 
                     if (file_metadata->wasPermanentlyFailed())
                         DimensionalMetrics::add(
@@ -1893,7 +1910,10 @@ void ObjectStorageQueueSource::finalizeCommit(
             /// the next iteration. Skip the log entry so they do not show up as Failed
             /// in `system.s3queue_log`. They will be logged on their next attempt with
             /// the actual outcome (Processed, or genuinely Failed).
-            if (!insert_succeeded && file_metadata->wasProcessingResetWithoutFailure())
+            /// A read whose pinned generation was rewritten is reset for retry as well, and that
+            /// one can happen while the insert of the rest of the batch succeeds, so the state of
+            /// the insert does not decide it.
+            if (file_metadata->wasProcessingResetWithoutFailure())
                 continue;
 
             appendLogElement(
