@@ -316,6 +316,7 @@ namespace Setting
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_primary_key;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
@@ -6041,10 +6042,23 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 {
     /// Just attempting to read statistics files on disk can increase query latencies
     /// First check the in-memory metadata if statistics are present at all
-    if (!getStorageMetadata()->hasStatistics())
+    if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
         return nullptr;
 
     const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();
+
+    /// `PREWHERE` can request statistics before range analysis. Reuse the partition
+    /// condition built by `applyFilters`, without performing or memoizing a full read
+    /// analysis while the plan is still being optimized.
+    if (!analyzed_result && indexes && indexes->partition_pruner && !indexes->partition_pruner->isUseless())
+    {
+        RangesInDataParts pruned_parts;
+        for (const auto & part : parts)
+            if (!indexes->partition_pruner->canBePruned(*part.data_part))
+                pruned_parts.push_back(part);
+        return data.getConditionSelectivityEstimator(pruned_parts, required_columns, getContext());
+    }
+
     return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
 }
 
