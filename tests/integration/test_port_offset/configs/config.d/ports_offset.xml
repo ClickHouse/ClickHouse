@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- Base ports for the node that also enables <port_offset>100</port_offset>.
+         The integration-test harness always talks to an instance on the native
+         port 9000, so tcp_port is deliberately configured 100 below 9000: after
+         the offset is applied the server binds 9000 and stays reachable, which by
+         itself proves the offset was applied to the native port. The remaining
+         base ports are left at their standard values so the offset visibly shifts
+         them (http 8123 -> 8223, mysql 9004 -> 9104, postgresql 9005 -> 9105). -->
+    <tcp_port>8900</tcp_port>
+    <http_port>8123</http_port>
+    <mysql_port>9004</mysql_port>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>

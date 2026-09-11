@@ -389,8 +389,8 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
     bool host_in_hostlist = false;
     std::exception_ptr first_exception = nullptr;
 
-    const auto maybe_secure_port = global_context->getTCPPortSecure();
-    const auto port = global_context->getTCPPort();
+    const auto maybe_secure_port = global_context->getBoundTCPPortSecure();
+    const auto port = global_context->getBoundTCPPort();
 
     if (config_host_name)
     {
@@ -602,8 +602,8 @@ bool DDLTask::tryFindHostInClusterViaResolving(ContextPtr context)
             const Cluster::Address & address = shards[shard_num][replica_num];
 
             if (auto resolved = address.getResolvedAddress(); resolved
-                && (isLocalAddress(*resolved, context->getTCPPort())
-                    || (context->getTCPPortSecure() && isLocalAddress(*resolved, *context->getTCPPortSecure()))))
+                && (isLocalAddress(*resolved, context->getBoundTCPPort())
+                    || (context->getBoundTCPPortSecure() && isLocalAddress(*resolved, *context->getBoundTCPPortSecure()))))
             {
                 if (found_via_resolving)
                 {
