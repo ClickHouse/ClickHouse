@@ -246,8 +246,15 @@ private:
     Time offset_at_start_of_epoch;
     /// UTC offset at the beginning of the first supported year.
     Time offset_at_start_of_lut;
+    /// Whether the local day always starts at a whole number of hours / minutes past the UTC hour. The
+    /// `_during_epoch` flags are sampled only from the local days that can contain a non-negative time point;
+    /// the `_in_lut` ones hold over the whole table, which a fast path serving a pre-epoch time point needs
+    /// (`Europe/Moscow` was +2:30:17 until 1919, `Europe/Amsterdam` +0:19:32 until 1937). Each `_in_lut` flag
+    /// implies its `_during_epoch` counterpart.
     bool offset_is_whole_number_of_hours_during_epoch;
     bool offset_is_whole_number_of_minutes_during_epoch;
+    bool offset_is_whole_number_of_hours_in_lut;
+    bool offset_is_whole_number_of_minutes_in_lut;
     bool offset_is_fixed;
 
     /// Epoch-scoped: `offset_is_fixed` above covers the whole lookup table and so excludes zones that merely
@@ -329,6 +336,17 @@ private:
     /// The Values of the day an out-of-range value belongs to.
     Values outOfRangeValues(Time t) const { return valuesForOutOfRangeDayIndex(findDayIndexOutOfRange(t)); }
     Values outOfRangeValues(ExtendedDayNum d) const { return valuesForOutOfRangeDayIndex(outOfRangeDayIndex(d)); }
+
+    /// Pick the flag that covers `t`, for the fast paths that are reached on both sides of the epoch.
+    bool offsetIsWholeNumberOfHours(Time t) const
+    {
+        return t >= 0 ? offset_is_whole_number_of_hours_during_epoch : offset_is_whole_number_of_hours_in_lut;
+    }
+
+    bool offsetIsWholeNumberOfMinutes(Time t) const
+    {
+        return t >= 0 ? offset_is_whole_number_of_minutes_during_epoch : offset_is_whole_number_of_minutes_in_lut;
+    }
 
     /// Day number (ExtendedDayNum, counted from the Unix epoch) corresponding to a day index (counted from DATE_LUT_MIN_YEAR).
     static ExtendedDayNum dayNumOfDayIndex(Int64 day_index)
@@ -467,9 +485,9 @@ private:
         static_assert(std::is_integral_v<DateOrTime> && std::is_integral_v<Divisor>);
         chassert(divisor > 0);
 
-        /// Checked before the fast path below: the "whole number of hours" property holds during the epoch,
-        /// but historical (pre-1900) offsets can have a sub-hour component (e.g. Moscow's +2:30:17 LMT), so the
-        /// fast path would round to a UTC boundary instead of the local one for out-of-range values.
+        /// Checked before the fast path below: outside the lookup table the offset is extrapolated and can have
+        /// a sub-hour component (e.g. Moscow's +2:30:17 LMT), so the fast path would round to a UTC boundary
+        /// instead of the local one there.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(x)))
             {
@@ -477,7 +495,7 @@ private:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(x) - date) / divisor * divisor);
             }
 
-        if (offset_is_whole_number_of_hours_during_epoch) [[likely]]
+        if (offsetIsWholeNumberOfHours(static_cast<Time>(x))) [[likely]]
             return roundDownToMultiple(x, divisor);
 
         const Time date = find(x).date;
@@ -917,17 +935,15 @@ public:
 
     unsigned toSecond(Time t) const
     {
-        /// Checked before the fast path: the "whole number of minutes" property holds during the epoch,
-        /// but historical (pre-1900) offsets can have a sub-minute component (e.g. Moscow's +2:30:17 LMT).
+        /// Checked before the fast path: outside the lookup table the offset is extrapolated and can have a
+        /// sub-minute component (e.g. Moscow's +2:30:17 LMT).
         if (unlikely(isOutOfLUTRange(t)))
             return static_cast<unsigned>(toDateTimeComponentsOutOfRange(t).time.second);
 
-        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
+        if (offsetIsWholeNumberOfMinutes(t)) [[likely]]
         {
-            Time res = t % 60;
-            if (res >= 0) [[likely]]
-                return static_cast<unsigned>(res);
-            return static_cast<unsigned>(res) + 60;
+            const Time res = t % 60;
+            return static_cast<unsigned>(res >= 0 ? res : res + 60);
         }
 
         LUTIndex index = findIndexInRange(t);
@@ -1686,34 +1702,42 @@ public:
         return static_cast<Int64>(product);
     }
 
-    /// The divisor in seconds if the corresponding `toStartOf*Interval` method equals
-    /// `roundDownToMultiple(t, divisor)` for every `t` within the LUT range in this time zone, nothing if it
-    /// needs the LUT. Must mirror the dispatch of the corresponding methods. The `offset_is_whole_number_of_*`
-    /// properties only hold during the epoch, so callers must keep out-of-range `t` on the generic path.
-    std::optional<Int64> minuteIntervalModularDivisor(UInt64 minutes) const
+    /// A divisor in seconds for which the corresponding `toStartOf*Interval` method equals
+    /// `roundDownToMultiple(t, divisor)`. `valid_before_epoch` says whether that also holds for a negative `t`;
+    /// where it does not, the caller must keep such a `t` on the generic path, as it must for any `t` outside
+    /// the lookup table.
+    struct ModularDivisor
+    {
+        Int64 divisor;
+        bool valid_before_epoch;
+    };
+
+    /// The divisor for the corresponding `toStartOf*Interval` method in this time zone, nothing if that method
+    /// needs the lookup table. Must mirror the dispatch of the corresponding methods.
+    std::optional<ModularDivisor> minuteIntervalModularDivisor(UInt64 minutes) const
     {
         if (!offset_is_whole_number_of_minutes_during_epoch)
             return std::nullopt;
-        return minuteIntervalDivisor(minutes);
+        return ModularDivisor{minuteIntervalDivisor(minutes), offset_is_whole_number_of_minutes_in_lut};
     }
 
-    std::optional<Int64> secondIntervalModularDivisor(UInt64 seconds) const
+    std::optional<ModularDivisor> secondIntervalModularDivisor(UInt64 seconds) const
     {
         if (seconds == 1)
-            return Int64(1);
+            return ModularDivisor{1, true};
         if (seconds % 60 == 0)
             return minuteIntervalModularDivisor(seconds / 60);
         if (offset_is_whole_number_of_hours_during_epoch)
-            return static_cast<Int64>(seconds);
+            return ModularDivisor{static_cast<Int64>(seconds), offset_is_whole_number_of_hours_in_lut};
         return std::nullopt;
     }
 
-    std::optional<Int64> hourIntervalModularDivisor(UInt64 hours) const
+    std::optional<ModularDivisor> hourIntervalModularDivisor(UInt64 hours) const
     {
         /// Multi-hour intervals are aligned to the start of the day, not to the epoch, so in general they
         /// cannot be computed by modular arithmetic (the alignment differs on days with an offset change).
         if (hours == 1 && offset_is_whole_number_of_hours_during_epoch)
-            return Int64(3600);
+            return ModularDivisor{3600, offset_is_whole_number_of_hours_in_lut};
         return std::nullopt;
     }
 
@@ -1722,8 +1746,8 @@ public:
     {
         Int64 divisor = minuteIntervalDivisor(minutes);
 
-        /// Checked before the fast path below: historical (pre-1900) offsets can have a sub-minute component,
-        /// so for out-of-range values the fast path would round to a UTC boundary instead of the local one.
+        /// Checked before the fast path below: outside the lookup table the offset is extrapolated and can have
+        /// a sub-minute component, so the fast path would round to a UTC boundary instead of the local one.
         if constexpr (may_be_out_of_lut_range<DateOrTime>)
             if (unlikely(isOutOfLUTRange(t)))
             {
@@ -1731,7 +1755,7 @@ public:
                 return static_cast<DateOrTime>(date + (static_cast<Time>(t) - date) / divisor * divisor);
             }
 
-        if (offset_is_whole_number_of_minutes_during_epoch) [[likely]]
+        if (offsetIsWholeNumberOfMinutes(static_cast<Time>(t))) [[likely]]
             return roundDownToMultiple(t, divisor);
 
         const Time date = find(t).date;
