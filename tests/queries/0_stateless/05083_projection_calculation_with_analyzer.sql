@@ -36,6 +36,10 @@ SELECT name, arraySort(groupArray(DISTINCT column)) FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_projection_analyzer' AND active
 GROUP BY name ORDER BY name;
 
+-- The projection optimization does not match an aggregate projection when the aggregation is done
+-- in order, and it is not supported with parallel replicas, so pin the settings which the test
+-- randomization may flip - the test forces the projections it describes.
+SET optimize_aggregation_in_order = 0, parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1;
 SET force_optimize_projection = 1;
 
 SELECT 'p_agg';
