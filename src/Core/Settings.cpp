@@ -2356,7 +2356,7 @@ See also:
 
 - [`system.query_log`](/reference/system-tables/query_log)
 - [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
-)", 0) \
+)", BETA) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 

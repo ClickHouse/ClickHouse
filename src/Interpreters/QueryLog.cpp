@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <Interpreters/QueryLog.h>
 
 #include <Columns/ColumnArray.h>
@@ -388,6 +389,7 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
 
     {
         auto & query_plan_column = *columns[i++];
+        const size_t row_before_plan = query_plan_column.size();
         if (query_plan.empty())
         {
             query_plan_column.insertDefault();
@@ -404,8 +406,23 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
             /// flush and lose the whole batch, not just this column.
             const auto plan_type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
             const auto plan_serialization = plan_type->getDefaultSerialization();
-            ReadBufferFromString plan_buffer(query_plan);
-            plan_serialization->deserializeWholeText(query_plan_column, plan_buffer, FormatSettings{});
+
+            try
+            {
+                ReadBufferFromString plan_buffer(query_plan);
+                plan_serialization->deserializeWholeText(query_plan_column, plan_buffer, FormatSettings{});
+            }
+            catch (...)
+            {
+                tryLogCurrentException(
+                    "QueryLog",
+                    "Could not parse the query plan of query " + client_info.current_query_id + ", storing it empty");
+
+                if (query_plan_column.size() > row_before_plan)
+                    query_plan_column.popBack(query_plan_column.size() - row_before_plan);
+
+                query_plan_column.insertDefault();
+            }
         }
     }
 }
