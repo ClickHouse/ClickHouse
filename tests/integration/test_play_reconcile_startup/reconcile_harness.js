@@ -204,6 +204,7 @@ function makeElement(tag) {
         _changeTableLayout() {},
         finalizeFailedTable() {},
         start() {},
+        startProfileTraces() {},
         finish() {},
         updateProgress() {},
         updateText() {},
