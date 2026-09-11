@@ -349,150 +349,217 @@ function(clickhouse_config_crate_flags target_name)
     corrosion_set_env_vars(${target_name} "CARGO_NET_OFFLINE=true")
     corrosion_link_libraries(${target_name} cxx)
 
-    # Localize all C-namespace symbols from Rust static libraries so they
-    # don't shadow our own implementations (libllvmlibc, glibc-compat).
-    # Rust's compiler_builtins exports cbrt, fma, sin, etc. as global symbols;
-    # without this, they silently win at link time and bypass our -falign-functions=64
-    # and -march flags, causing performance regressions.
+    clickhouse_localize_rust_c_symbols(${target_name})
+endfunction()
+
+# Post-processing of Rust static libraries.
+#
+# After cargo produces a crate's archive, ClickHouse post-processes it: C-namespace
+# symbol localization (below) and, for some crates, symbol stripping (rust/workspace).
+# Each step is an ordinary add_custom_command that reads one archive and writes a new
+# one, so Ninja re-runs it only when an input changed, exactly like a compile step, and
+# nothing is ever modified in place.  (Patching corrosion's copy of the archive in place
+# made its `copy_if_different` see a difference on every build, so the copy, the patch
+# and the final link of `clickhouse` were all redone even with no changes.)
+#
+# The chain is tracked by the CH_RUST_ARCHIVE property on the crate's INTERFACE target:
+# the archive its consumers currently link.  A step reads it with
+# clickhouse_get_rust_archive, writes its output next to it, and publishes the output
+# with clickhouse_set_rust_archive, which also repoints the imported library at it.
+
+# Returns in ${out_archive} the archive consumers of ${target_name} currently link, and
+# in ${out_deps} what a further step must list in DEPENDS to consume it: the file and the
+# target(s) producing it.
+function(clickhouse_get_rust_archive target_name out_archive out_deps)
+    if (NOT TARGET ${target_name}-static)
+        message(FATAL_ERROR "${target_name} is not a staticlib crate imported by corrosion")
+    endif()
+
+    get_target_property(_archive ${target_name} CH_RUST_ARCHIVE)
+    if (_archive)
+        get_target_property(_step ${target_name} CH_RUST_ARCHIVE_STEP)
+        set(${out_archive} "${_archive}" PARENT_SCOPE)
+        set(${out_deps} "${_archive}" ${_step} PARENT_SCOPE)
+        return()
+    endif()
+
+    # No step yet: the archive is the copy of cargo's output that corrosion makes.
+    # Corrosion sets IMPORTED_LOCATION on ${target_name}-static only at the end of the
+    # directory that imported the crate (via cmake_language(DEFER)), so it cannot be read
+    # here; reconstruct the path it will use instead: the binary directory of the import
+    # plus the file name corrosion recorded.  ARCHIVE_OUTPUT_DIRECTORY would change the
+    # directory; nothing in ClickHouse sets it, so refuse rather than guess.
+    get_target_property(_out_dir ${target_name} ARCHIVE_OUTPUT_DIRECTORY)
+    if (_out_dir)
+        message(FATAL_ERROR
+            "ARCHIVE_OUTPUT_DIRECTORY is set on ${target_name}; "
+            "clickhouse_get_rust_archive does not support it")
+    endif()
+    get_target_property(_dir ${target_name}-static BINARY_DIR)
+    get_target_property(_name ${target_name}-static COR_FILE_NAME)
+    if (NOT _name)
+        message(FATAL_ERROR "corrosion did not record COR_FILE_NAME on ${target_name}-static")
+    endif()
+    set(${out_archive} "${_dir}/${_name}" PARENT_SCOPE)
+    set(${out_deps} "${_dir}/${_name}" cargo-build_${target_name} PARENT_SCOPE)
+endfunction()
+
+# Makes ${archive}, the OUTPUT of an add_custom_command, the archive consumers of
+# ${target_name} link.  ${step_name} becomes the custom target driving that command.
+function(clickhouse_set_rust_archive target_name step_name archive)
+    add_custom_target(${step_name} DEPENDS "${archive}")
+    # Dependencies of an INTERFACE library propagate to every target linking it, so the
+    # step runs before any consumer links.
+    add_dependencies(${target_name} ${step_name})
+    set_property(TARGET ${target_name} PROPERTY CH_RUST_ARCHIVE "${archive}")
+    set_property(TARGET ${target_name} PROPERTY CH_RUST_ARCHIVE_STEP ${step_name})
+
+    # Corrosion sets IMPORTED_LOCATION with a call deferred to the end of the directory
+    # that imported the crate.  Queue ours in that same directory (which may be a parent
+    # of the current one, e.g. rust/workspace when called from rust/workspace/wasmtime):
+    # deferred calls run in registration order, so ours runs after corrosion's and wins.
+    # CMake then makes ${archive} an input of every consumer's link edge.
     #
-    # For workspace crates the .a may land in a parent directory rather than
-    # CMAKE_CURRENT_BINARY_DIR.  Set IMPORTED_LOCATION on the target before
-    # calling this function if the default path is wrong (see wasmtime for an
-    # example).
-    get_target_property(_rust_lib_path ${target_name} IMPORTED_LOCATION)
-    if (NOT _rust_lib_path OR _rust_lib_path MATCHES "NOTFOUND")
-        set(_rust_lib_path "${CMAKE_CURRENT_BINARY_DIR}/lib${target_name}.a")
+    # The arguments of a deferred call are re-evaluated when it fires, in the scope of
+    # the directory, so bake the values in as bracket arguments (like corrosion does).
+    get_target_property(_import_dir ${target_name}-static SOURCE_DIR)
+    cmake_language(EVAL CODE "
+        cmake_language(DEFER DIRECTORY [[${_import_dir}]] CALL
+            set_property TARGET [[${target_name}-static]] PROPERTY IMPORTED_LOCATION [[${archive}]])
+    ")
+endfunction()
+
+# Localize the C-namespace symbols a Rust archive defines that ClickHouse also provides
+# (libllvmlibc, compiler-rt builtins, the platform libm), so that ours win at link time.
+# Rust's compiler_builtins exports cbrt, fma, sin, etc. as global symbols; without this,
+# they silently win and bypass our -falign-functions=64 and -march flags, causing
+# performance regressions.  See cmake/localize_rust_c_symbols.sh.
+function(clickhouse_localize_rust_c_symbols target_name)
+    # Skip on Darwin (Mach-O), ppc64le (broken .eh_frame), and dummy builds.  The
+    # consumers then link corrosion's copy of the archive directly.
+    if (NOT CMAKE_OBJCOPY OR OS_DARWIN
+        OR CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le"
+        OR CMAKE_AR MATCHES "dummy_compiler_linker")
+        return()
     endif()
 
-    # Skip on Darwin (Mach-O), ppc64le (broken .eh_frame), and dummy builds.
-    if (CMAKE_OBJCOPY AND NOT OS_DARWIN
-        AND NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ppc64le"
-        AND NOT CMAKE_AR MATCHES "dummy_compiler_linker")
-        # Verify the library path looks plausible at configure time.  The file
-        # won't exist yet (cargo hasn't run), but the parent directory must exist
-        # and the filename must end in .a — otherwise someone forgot to set
-        # IMPORTED_LOCATION for a workspace subcrate.
-        get_filename_component(_rust_lib_dir "${_rust_lib_path}" DIRECTORY)
-        if (NOT IS_DIRECTORY "${_rust_lib_dir}")
-            message(FATAL_ERROR
-                "localize_rust_c_symbols: output directory '${_rust_lib_dir}' for "
-                "target '${target_name}' does not exist.  If this is a workspace "
-                "subcrate, set IMPORTED_LOCATION on the target before calling "
-                "clickhouse_config_crate_flags().  Expected library: ${_rust_lib_path}")
+    # Reference libraries that define the C symbols Rust bundles.  The script
+    # localizes exactly the symbols defined by both these libraries and the
+    # Rust archive, so the binary's own copies win at link time.
+    #
+    # libllvmlibc (our optimized libm, AMD64/AARCH64 only) and clang_rt_builtins
+    # (compiler-rt, every ELF target) are contrib targets, defined before any
+    # caller of this function.
+    set(_localize_ref_libs "")
+    set(_localize_ref_deps "")
+    foreach (_ref_target libllvmlibc clang_rt_builtins)
+        if (TARGET ${_ref_target})
+            list(APPEND _localize_ref_libs "$<TARGET_FILE:${_ref_target}>")
+            list(APPEND _localize_ref_deps ${_ref_target})
         endif()
+    endforeach()
 
-        # Reference libraries that define the C symbols Rust bundles.  The script
-        # localizes exactly the symbols defined by both these libraries and the
-        # Rust archive, so the binary's own copies win at link time.
+    # Platform math provider: the library supplying the libm functions
+    # libllvmlibc lacks (round, copysign, the ceil/rint/trunc IFUNCs, ...) and
+    # the only such provider on arches without libllvmlibc.
+    if (USE_MUSL)
+        # musl has no separate libm: the math lives in libc, and libc is the
+        # in-tree `musl` target built from sources (contrib/musl-cmake) — the
+        # -static link uses it instead of a sysroot libc.a / -lc (see
+        # cmake/musl.cmake and cmake/linux/default_libs.cmake).  Probing the
+        # toolchain with -print-file-name would find a glibc library or
+        # nothing, so use the built archive itself as the reference and add a
+        # build dependency on it.
+        list(APPEND _localize_ref_libs "$<TARGET_FILE:musl>")
+        list(APPEND _localize_ref_deps musl)
+    else()
+        # Glibc keeps the math in libm (dynamic, -lm).  It is a prebuilt
+        # sysroot/toolchain file, so no build dependency is needed.
         #
-        # libllvmlibc (our optimized libm, AMD64/AARCH64 only) and clang_rt_builtins
-        # (compiler-rt, every ELF target) are contrib targets, defined before any
-        # caller of this function.
-        set(_localize_ref_libs "")
-        set(_localize_ref_deps "")
-        foreach (_ref_target libllvmlibc clang_rt_builtins)
-            if (TARGET ${_ref_target})
-                list(APPEND _localize_ref_libs "$<TARGET_FILE:${_ref_target}>")
-                list(APPEND _localize_ref_deps ${_ref_target})
+        # Resolve it once with the same constraints the toolchain compiles
+        # with (--target/--sysroot/--gcc-toolchain/--no-default-config);
+        # otherwise -print-file-name can return a host multiarch library.
+        # Reject any result outside the sysroot/toolchain tree, or one
+        # defining no symbols (an empty stub): a wrong or empty reference
+        # would leave Rust's libm exports global and shadow the platform's.
+        if (NOT DEFINED CACHE{CH_RUST_LOCALIZE_MATHLIB})
+            set(_math_probe_flags "")
+            set(_math_roots "")
+            if (CMAKE_C_COMPILER_TARGET)
+                list(APPEND _math_probe_flags "--target=${CMAKE_C_COMPILER_TARGET}")
             endif()
-        endforeach()
+            if (CMAKE_SYSROOT)
+                list(APPEND _math_probe_flags "--sysroot=${CMAKE_SYSROOT}")
+                list(APPEND _math_roots "${CMAKE_SYSROOT}")
+            endif()
+            if (TOOLCHAIN_PATH)
+                list(APPEND _math_probe_flags "--gcc-toolchain=${TOOLCHAIN_PATH}" "--no-default-config")
+                list(APPEND _math_roots "${TOOLCHAIN_PATH}")
+            endif()
 
-        # Platform math provider: the library supplying the libm functions
-        # libllvmlibc lacks (round, copysign, the ceil/rint/trunc IFUNCs, ...) and
-        # the only such provider on arches without libllvmlibc.
-        if (USE_MUSL)
-            # musl has no separate libm: the math lives in libc, and libc is the
-            # in-tree `musl` target built from sources (contrib/musl-cmake) — the
-            # -static link uses it instead of a sysroot libc.a / -lc (see
-            # cmake/musl.cmake and cmake/linux/default_libs.cmake).  Probing the
-            # toolchain with -print-file-name would find a glibc library or
-            # nothing, so use the built archive itself as the reference and add a
-            # build dependency on it.
-            list(APPEND _localize_ref_libs "$<TARGET_FILE:musl>")
-            list(APPEND _localize_ref_deps musl)
-        else()
-            # Glibc keeps the math in libm (dynamic, -lm).  It is a prebuilt
-            # sysroot/toolchain file, so no build dependency is needed.
-            #
-            # Resolve it once with the same constraints the toolchain compiles
-            # with (--target/--sysroot/--gcc-toolchain/--no-default-config);
-            # otherwise -print-file-name can return a host multiarch library.
-            # Reject any result outside the sysroot/toolchain tree, or one
-            # defining no symbols (an empty stub): a wrong or empty reference
-            # would leave Rust's libm exports global and shadow the platform's.
-            if (NOT DEFINED CACHE{CH_RUST_LOCALIZE_MATHLIB})
-                set(_math_probe_flags "")
-                set(_math_roots "")
-                if (CMAKE_C_COMPILER_TARGET)
-                    list(APPEND _math_probe_flags "--target=${CMAKE_C_COMPILER_TARGET}")
+            set(_found_math "")
+            foreach (_math_name libm.so.6 libm.a libm.so)
+                execute_process(
+                    COMMAND "${CMAKE_C_COMPILER}" ${_math_probe_flags} "-print-file-name=${_math_name}"
+                    OUTPUT_VARIABLE _math_out OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+                if (NOT _math_out OR NOT EXISTS "${_math_out}")
+                    continue()
                 endif()
-                if (CMAKE_SYSROOT)
-                    list(APPEND _math_probe_flags "--sysroot=${CMAKE_SYSROOT}")
-                    list(APPEND _math_roots "${CMAKE_SYSROOT}")
-                endif()
-                if (TOOLCHAIN_PATH)
-                    list(APPEND _math_probe_flags "--gcc-toolchain=${TOOLCHAIN_PATH}" "--no-default-config")
-                    list(APPEND _math_roots "${TOOLCHAIN_PATH}")
-                endif()
-
-                set(_found_math "")
-                foreach (_math_name libm.so.6 libm.a libm.so)
-                    execute_process(
-                        COMMAND "${CMAKE_C_COMPILER}" ${_math_probe_flags} "-print-file-name=${_math_name}"
-                        OUTPUT_VARIABLE _math_out OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
-                    if (NOT _math_out OR NOT EXISTS "${_math_out}")
-                        continue()
-                    endif()
-                    # Must live inside the sysroot/toolchain tree (skipped only for a
-                    # sysroot-less native build, where the host library is correct).
-                    if (_math_roots)
-                        set(_in_tree FALSE)
-                        get_filename_component(_math_real "${_math_out}" REALPATH)
-                        foreach (_root ${_math_roots})
-                            get_filename_component(_root_real "${_root}" REALPATH)
-                            string(FIND "${_math_real}" "${_root_real}/" _math_pos)
-                            if (_math_pos EQUAL 0)
-                                set(_in_tree TRUE)
-                                break()
-                            endif()
-                        endforeach()
-                        if (NOT _in_tree)
-                            continue()
+                # Must live inside the sysroot/toolchain tree (skipped only for a
+                # sysroot-less native build, where the host library is correct).
+                if (_math_roots)
+                    set(_in_tree FALSE)
+                    get_filename_component(_math_real "${_math_out}" REALPATH)
+                    foreach (_root ${_math_roots})
+                        get_filename_component(_root_real "${_root}" REALPATH)
+                        string(FIND "${_math_real}" "${_root_real}/" _math_pos)
+                        if (_math_pos EQUAL 0)
+                            set(_in_tree TRUE)
+                            break()
                         endif()
-                    endif()
-                    # Must define symbols (static archive: nm; shared object: nm -D);
-                    # an empty stub is unusable.
-                    execute_process(COMMAND "${NM_PATH}" "${_math_out}" OUTPUT_VARIABLE _nm_a ERROR_QUIET)
-                    execute_process(COMMAND "${NM_PATH}" -D "${_math_out}" OUTPUT_VARIABLE _nm_d ERROR_QUIET)
-                    if (NOT "${_nm_a}${_nm_d}" MATCHES "[0-9a-f] [TDBCWVi] ")
+                    endforeach()
+                    if (NOT _in_tree)
                         continue()
                     endif()
-                    set(_found_math "${_math_out}")
-                    break()
-                endforeach()
-                set(CH_RUST_LOCALIZE_MATHLIB "${_found_math}" CACHE INTERNAL
-                    "Platform libm used as a reference for localizing Rust C symbols")
-            endif()
-            if (CH_RUST_LOCALIZE_MATHLIB)
-                list(APPEND _localize_ref_libs "${CH_RUST_LOCALIZE_MATHLIB}")
-            endif()
+                endif()
+                # Must define symbols (static archive: nm; shared object: nm -D);
+                # an empty stub is unusable.
+                execute_process(COMMAND "${NM_PATH}" "${_math_out}" OUTPUT_VARIABLE _nm_a ERROR_QUIET)
+                execute_process(COMMAND "${NM_PATH}" -D "${_math_out}" OUTPUT_VARIABLE _nm_d ERROR_QUIET)
+                if (NOT "${_nm_a}${_nm_d}" MATCHES "[0-9a-f] [TDBCWVi] ")
+                    continue()
+                endif()
+                set(_found_math "${_math_out}")
+                break()
+            endforeach()
+            set(CH_RUST_LOCALIZE_MATHLIB "${_found_math}" CACHE INTERNAL
+                "Platform libm used as a reference for localizing Rust C symbols")
         endif()
-
-        if (_localize_ref_libs)
-            add_custom_target(localize_rust_c_${target_name}
-                COMMAND bash "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh"
-                    "${_rust_lib_path}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}"
-                    ${_localize_ref_libs}
-                COMMENT "Localizing C-namespace symbols in ${target_name}"
-                VERBATIM
-            )
-            add_dependencies(localize_rust_c_${target_name}
-                cargo-build_${target_name} ${_localize_ref_deps})
-            add_dependencies(${target_name} localize_rust_c_${target_name})
-        else()
-            message(STATUS
-                "localize_rust_c_symbols: no reference C libraries for this "
-                "platform; skipping symbol localization for ${target_name}")
+        if (CH_RUST_LOCALIZE_MATHLIB)
+            list(APPEND _localize_ref_libs "${CH_RUST_LOCALIZE_MATHLIB}")
         endif()
     endif()
+
+    if (NOT _localize_ref_libs)
+        message(STATUS
+            "localize_rust_c_symbols: no reference C libraries for this "
+            "platform; skipping symbol localization for ${target_name}")
+        return()
+    endif()
+
+    set(_script "${ClickHouse_SOURCE_DIR}/cmake/localize_rust_c_symbols.sh")
+    clickhouse_get_rust_archive(${target_name} _input _input_deps)
+    get_filename_component(_input_dir "${_input}" DIRECTORY)
+    get_filename_component(_input_stem "${_input}" NAME_WE)
+    set(_output "${_input_dir}/${_input_stem}-localized.a")
+    add_custom_command(
+        OUTPUT "${_output}"
+        COMMAND bash "${_script}"
+            "${_input}" "${_output}" "${CMAKE_AR}" "${CMAKE_OBJCOPY}" "${NM_PATH}"
+            ${_localize_ref_libs}
+        DEPENDS ${_input_deps} "${_script}" ${_localize_ref_libs} ${_localize_ref_deps}
+        COMMENT "Localizing C-namespace symbols in ${target_name}"
+        VERBATIM
+    )
+    clickhouse_set_rust_archive(${target_name} localize_rust_c_${target_name} "${_output}")
 endfunction()
