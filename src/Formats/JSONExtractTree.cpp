@@ -1773,6 +1773,8 @@ public:
 
     bool insertResultToColumn(IColumn & column, const typename JSONParser::Element & element, const JSONExtractInsertSettings & insert_settings, const FormatSettings & format_settings, String & error) const override
     {
+        SerializationObject::updateMaxDynamicPathsLimitIfNeeded(column, format_settings);
+
         if (element.isNull() && format_settings.null_as_default)
         {
             column.insertDefault();

@@ -3,6 +3,7 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <base/hex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
@@ -888,8 +889,8 @@ bool MaterializedPostgreSQLConsumer::consume()
 
         std::string query_str = fmt::format(
                 "select lsn, data FROM pg_logical_slot_peek_binary_changes("
-                "'{}', NULL, {}, 'publication_names', '{}', 'proto_version', '1')",
-                replication_slot_name, max_block_size, publication_name);
+                "'{}', NULL, {}, 'publication_names', {}, 'proto_version', '1')",
+                replication_slot_name, max_block_size, quoteStringPostgreSQL(doubleQuoteString(publication_name)));
 
         auto stream{pqxx::stream_from::query(*tx, query_str)};
 

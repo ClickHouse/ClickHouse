@@ -75,6 +75,7 @@ namespace FailPoints
     extern const char replicated_merge_tree_insert_retry_pause[];
     extern const char replicated_merge_tree_restore_attach_retry[];
     extern const char rmt_delay_commit_part[];
+    extern const char rmt_pause_before_commit_local_part[];
 }
 
 namespace ErrorCodes
@@ -858,6 +859,10 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
 
     auto sleep_before_commit_for_tests = [&] ()
     {
+        /// The parts have been renamed but not committed yet, and the caller still holds the
+        /// table lock it took for the whole pipeline.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_pause_before_commit_local_part);
+
         auto sleep_before_commit_local_part_in_replicated_table_ms = (*storage.getSettings())[MergeTreeSetting::sleep_before_commit_local_part_in_replicated_table_ms];
         if (sleep_before_commit_local_part_in_replicated_table_ms.totalMilliseconds())
         {
