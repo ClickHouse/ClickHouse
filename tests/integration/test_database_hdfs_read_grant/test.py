@@ -61,14 +61,15 @@ def test_hdfs_database_cache_is_checked(started_cluster):
 
     node.query("GRANT READ ON HDFS TO u")
 
-    # With the grant the cached name is served, while a name that was never resolved is not: only the
-    # latter calls the table function, which also requires `CREATE TEMPORARY TABLE`. That contrast is
-    # what shows the query above was answered from the cache and not by resolving the file again.
+    # With the grant the cached name is served. `TableFunctionExecute` counts calls of the table
+    # function, which serving from the cache does not make, so a counter that does not move is what
+    # shows the read was answered from the cache. The resolve below is the control that moves it.
+    calls = "SELECT sum(value) FROM system.events WHERE event = 'TableFunctionExecute'"
+    before = int(node.query(calls))
     assert node.query("SELECT * FROM hdfs_db.`warm.tsv`", user="u") == "7\n"
-    error = node.query_and_get_error("SELECT * FROM hdfs_db.`cold2.tsv`", user="u")
-    assert "Code: 60." in error, error
-    node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO u")
-    assert node.query("SELECT * FROM hdfs_db.`cold2.tsv`", user="u") == "7\n"
+    assert int(node.query(calls)) == before
+    assert node.query("SELECT * FROM hdfs_db.`cold2.tsv`") == "7\n"
+    assert int(node.query(calls)) > before
 
     # A grant restricted by URL must keep working: the filter is matched against the URI the table
     # function reports, which for HDFS is the host of the table and not its path.
