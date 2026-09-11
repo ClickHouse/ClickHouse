@@ -2155,6 +2155,14 @@ void ColumnObject::fixDynamicStructure()
     /// Set max_dynamic_paths to the number of dynamic paths.
     /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
     max_dynamic_paths = dynamic_paths.size();
+
+    /// The paths have their own dynamic structure (for example, the set of variants of a Dynamic column
+    /// of a dynamic path), and it must be fixed as well: otherwise an insert can extend it, for example by
+    /// extracting a type from the shared variant of the source column into a new variant of this column.
+    for (auto & [_, column] : typed_paths)
+        column->fixDynamicStructure();
+    for (auto & [_, column] : dynamic_paths)
+        column->fixDynamicStructure();
 }
 
 ColumnObject::StatisticsPtr ColumnObject::getOrCalculateStatistics() const
