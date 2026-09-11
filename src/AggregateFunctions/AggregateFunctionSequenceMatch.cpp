@@ -15,7 +15,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/assert_cast.h>
@@ -23,7 +22,6 @@
 #include <bitset>
 #include <cstddef>
 #include <iterator>
-#include <limits>
 #include <stack>
 #include <vector>
 
@@ -44,7 +42,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -230,12 +227,14 @@ private:
     struct PatternAction final
     {
         PatternActionType type;
-        /// Signed on purpose: a `DateTime64` timestamp can be negative, and `base_it->first + extra`
-        /// would be evaluated in unsigned arithmetic (wrapping around zero) if this were unsigned.
-        Int64 extra{};
+        /// The number of the event for `SpecificEvent`, the duration of the condition in seconds for
+        /// the temporal conditions. The durations are kept in seconds rather than in the ticks of the
+        /// timestamp type, because at a high `DateTime64` scale the same duration does not necessarily
+        /// fit into the type - see `timeConditionSatisfied`.
+        std::uint64_t extra{};
 
         PatternAction() = default;
-        explicit PatternAction(const PatternActionType type_, const Int64 extra_ = 0) : type{type_}, extra{extra_} {}
+        explicit PatternAction(const PatternActionType type_, const std::uint64_t extra_ = 0) : type{type_}, extra{extra_} {}
     };
 
     using PatternActions = PODArrayWithStackMemory<PatternAction, 64>;
@@ -308,15 +307,8 @@ private:
                         actions.back().type != PatternActionType::KleeneStar)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Temporal condition should be preceded by an event condition");
 
-                    Int64 duration_in_ticks = 0;
-                    if (duration > static_cast<UInt64>(std::numeric_limits<Int64>::max())
-                        || common::mulOverflow(static_cast<Int64>(duration), time_scale_multiplier, duration_in_ticks))
-                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                            "Duration {} in the temporal condition of the pattern is too large for the timestamp type",
-                            duration);
-
                     pattern_has_time = true;
-                    actions.emplace_back(type, duration_in_ticks);
+                    actions.emplace_back(type, duration);
                 }
                 else
                 {
@@ -329,7 +321,7 @@ private:
                     if (event_number == 0 || event_number > arg_count - 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Event number {} is out of range", event_number);
 
-                    actions.emplace_back(PatternActionType::SpecificEvent, static_cast<Int64>(event_number - 1));
+                    actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
                     dfa_states.back().transition = DFATransition::SpecificEvent;
                     dfa_states.back().event = static_cast<uint32_t>(event_number - 1);
                     dfa_states.emplace_back();
@@ -421,6 +413,33 @@ protected:
         return active_states.back();
     }
 
+    /// Checks a `(?t...)` condition between the base event and the current one.
+    ///
+    /// The comparison is done on the distance between the two timestamps, widened to `Int128`, rather than on
+    /// `base + duration`: a `DateTime64` timestamp is signed and can be arbitrarily large in either direction, so
+    /// both adding the duration to the base and converting the duration - which is given in seconds - to the ticks
+    /// of the timestamp type can overflow for values the type itself accepts.
+    template <PatternActionType type>
+    bool timeConditionSatisfied(const typename Data::Timestamp base, const typename Data::Timestamp current, const std::uint64_t duration_in_seconds) const
+    {
+        const Int128 delta = static_cast<Int128>(current) - static_cast<Int128>(base);
+        const Int128 bound = static_cast<Int128>(duration_in_seconds) * time_scale_multiplier;
+
+        if constexpr (type == PatternActionType::TimeLessOrEqual)
+            return delta <= bound;
+        else if constexpr (type == PatternActionType::TimeLess)
+            return delta < bound;
+        else if constexpr (type == PatternActionType::TimeGreaterOrEqual)
+            return delta >= bound;
+        else if constexpr (type == PatternActionType::TimeGreater)
+            return delta > bound;
+        else
+        {
+            static_assert(type == PatternActionType::TimeEqual);
+            return delta == bound;
+        }
+    }
+
     template <typename EventEntry, bool remember_matched_events = false>
     bool backtrackingMatch(EventEntry & events_it, const EventEntry events_end, VectorWithMemoryTracking<typename Data::Timestamp> * best_matched_events = nullptr) const
     {
@@ -486,7 +505,7 @@ protected:
         {
             if (action_it->type == PatternActionType::SpecificEvent)
             {
-                if (events_it->second.test(static_cast<size_t>(action_it->extra)))
+                if (events_it->second.test(action_it->extra))
                 {
                     if constexpr (remember_matched_events)
                         do_push_event();
@@ -512,7 +531,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeLessOrEqual)
             {
-                if (events_it->first <= base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeLessOrEqual>(base_it->first, events_it->first, action_it->extra))
                 {
                     /// condition satisfied, move onto next action
                     back_stack.emplace(action_it, events_it, base_it);
@@ -524,7 +543,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeLess)
             {
-                if (events_it->first < base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeLess>(base_it->first, events_it->first, action_it->extra))
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -535,7 +554,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeGreaterOrEqual)
             {
-                if (events_it->first >= base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeGreaterOrEqual>(base_it->first, events_it->first, action_it->extra))
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -546,7 +565,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeGreater)
             {
-                if (events_it->first > base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeGreater>(base_it->first, events_it->first, action_it->extra))
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -557,7 +576,7 @@ protected:
             }
             else if (action_it->type == PatternActionType::TimeEqual)
             {
-                if (events_it->first == base_it->first + action_it->extra)
+                if (timeConditionSatisfied<PatternActionType::TimeEqual>(base_it->first, events_it->first, action_it->extra))
                 {
                     back_stack.emplace(action_it, events_it, base_it);
                     base_it = events_it;
@@ -629,7 +648,7 @@ protected:
                 /// matching specific event
                 else
                 {
-                    if (events_it->second.test(static_cast<size_t>(det_part_it->extra)))
+                    if (events_it->second.test(det_part_it->extra))
                         ++events_it, ++det_part_it;
 
                     /// abandon current matching, try to match the deterministic fragment further in the list

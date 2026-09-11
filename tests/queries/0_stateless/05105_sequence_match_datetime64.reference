@@ -12,5 +12,8 @@ sequenceMatchEvents returns DateTime64 with the sub-second part
 Array(DateTime64(3))	['2020-01-01 00:00:00.125','2020-01-01 00:00:03.250']
 a duration spanning the epoch is compared as a signed value
 0	1	1
-a duration that does not fit the timestamp type is rejected
+a duration larger than the ticks of the timestamp type is still evaluated
+1	0
+timestamps at the boundary of the type do not overflow
+0	1
 other types are still rejected

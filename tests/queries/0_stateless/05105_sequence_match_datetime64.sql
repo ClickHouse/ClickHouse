@@ -65,8 +65,21 @@ SELECT
     sequenceMatch('(?1)(?t<=21)(?2)')(ts, e = 1, e = 2) AS within_21s
 FROM (SELECT arrayJoin([(toDateTime64('1969-12-31 23:59:40', 3, 'UTC'), 1), (toDateTime64('1970-01-01 00:00:01', 3, 'UTC'), 2)]) AS x, x.1 AS ts, x.2 AS e);
 
-SELECT 'a duration that does not fit the timestamp type is rejected';
-SELECT sequenceMatch('(?1)(?t<10000000000)(?2)')(toDateTime64('2020-01-01 00:00:00', 9), 1, 1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT 'a duration larger than the ticks of the timestamp type is still evaluated';
+-- 10000000000 seconds do not fit into the ticks of `DateTime64(9)`, but the condition is still meaningful:
+-- the two events are 7 seconds apart, so the `<` condition holds and the `>` one does not.
+SELECT
+    sequenceMatch('(?1)(?t<10000000000)(?2)')(ts, e = 1, e = 2) AS within,
+    sequenceMatch('(?1)(?t>10000000000)(?2)')(ts, e = 1, e = 2) AS after
+FROM (SELECT arrayJoin([(toDateTime64('2020-01-01 00:00:00', 9), 1), (toDateTime64('2020-01-01 00:00:07', 9), 2)]) AS x, x.1 AS ts, x.2 AS e);
+
+SELECT 'timestamps at the boundary of the type do not overflow';
+-- The distance between the two timestamps does not fit into `Int64`, so adding the duration to the base
+-- timestamp would overflow; the distance itself is compared instead.
+SELECT
+    sequenceMatch('(?1)(?t<=5)(?2)')(ts, e = 1, e = 2) AS within_5s,
+    sequenceMatch('(?1)(?t>5)(?2)')(ts, e = 1, e = 2) AS after_5s
+FROM (SELECT arrayJoin([(CAST(-9223372036854775807, 'DateTime64(0, \'UTC\')'), 1), (CAST(9223372036854775807, 'DateTime64(0, \'UTC\')'), 2)]) AS x, x.1 AS ts, x.2 AS e);
 
 SELECT 'other types are still rejected';
 SELECT sequenceMatch('(?1)(?2)')('a', 1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
