@@ -33,7 +33,8 @@ SELECT extract(explain, 'Join:.*') FROM
 )
 WHERE explain LIKE '% Join:%';
 
-SELECT 'non-folded constant argument';
+-- The `materialize` function turns a constant into a regular column with the same value in every row.
+SELECT 'constant argument wrapped in the materialize function';
 SELECT extract(explain, 'Join:.*') FROM
 (
     EXPLAIN keep_logical_steps = 1, actions = 1
