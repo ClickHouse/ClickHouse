@@ -1,0 +1,29 @@
+<!-- Dedicated baseline for the async insert queue route of INSERT ... SELECT (see
+     InterpreterInsertQuery::addInsertToSelectPipeline and AsyncInsertQueueTransform), so a
+     regression in that specific route is not masked by every other insert test, which does not
+     set async_insert explicitly and mostly exercises the bulk, pass-through shape instead.
+
+     The first query: baseline, measure defaults
+
+     The second query uses wait_for_async_insert = 0: with the wait on, each run blocks until its
+     own flush finishes, so consecutive runs can never overlap in the queue and every batch is a
+     batch of one, making the measurement dominated by async_insert_busy_timeout_min_ms rather
+     than by the route itself. Fire and forget lets consecutive runs share the batching window
+     and queue key, so batching is actually exercised.
+
+     This means the query measures only the read plus enqueue path; the write happens in the
+     flush and is not attributed here, so the measured time can come out below the synchronous
+     comparator, and a regression inside the flush is not visible in this query.
+
+     The third query is the same insert shape with async_insert = 0, so it takes the ordinary
+     synchronous route; a change specific to the queue route shows up as a change in the second
+     query relative to the second. -->
+<test>
+    <create_query>CREATE TABLE insert_select_async_insert_queue (n UInt64) ENGINE = MergeTree ORDER BY n</create_query>
+
+    <query>INSERT INTO insert_select_async_insert_queue SELECT number FROM numbers(100)</query>
+    <query>INSERT INTO insert_select_async_insert_queue SELECT number FROM numbers(100) SETTINGS async_insert = 1, wait_for_async_insert = 0</query>
+    <query>INSERT INTO insert_select_async_insert_queue SELECT number FROM numbers(100) SETTINGS async_insert = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS insert_select_async_insert_queue</drop_query>
+</test>
