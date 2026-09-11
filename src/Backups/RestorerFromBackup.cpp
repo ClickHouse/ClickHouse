@@ -93,6 +93,21 @@ namespace
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "functions");
     }
+
+    /// Engine name if the database is skipped by the restore, so neither it nor any table under it
+    /// is created; empty otherwise.
+    String getSkippedDatabaseEngine(const ASTPtr & create_database_query, const ContextPtr & context)
+    {
+        if (!context->getSettingsRef()[Setting::restore_replace_external_engines_to_null] || !create_database_query)
+            return {};
+
+        const auto & create = create_database_query->as<const ASTCreateQuery &>();
+        if (create.storage && create.storage->engine
+            && DatabaseFactory::instance().isDatabaseExternal(create.storage->engine->name))
+            return create.storage->engine->name;
+
+        return {};
+    }
  }
 
 
@@ -337,6 +352,25 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                 continue;
             }
 
+            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
+
+            /// A skipped database creates none of its tables, so their targets are never written to.
+            const auto database_it = database_infos.find(table_name.database);
+            const bool database_skipped = (database_it != database_infos.end())
+                && !getSkippedDatabaseEngine(database_it->second.create_database_query, context).empty();
+
+            /// The restored `CREATE` runs as internal, so `getRequiredAccess` imposes nothing; targets are authorized here.
+            if (restore_settings.create_table != RestoreTableCreationMode::kMustExist && create.targets && !database_skipped)
+            {
+                for (const auto & target : create.targets->targets)
+                {
+                    const auto & target_id = target.table_id;
+                    if (target_id)
+                        required_access.emplace_back(
+                            AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
+                }
+            }
+
             if (table_name.database == DatabaseCatalog::TEMPORARY_DATABASE)
             {
                 if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
@@ -345,7 +379,6 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             }
 
             AccessFlags flags;
-            const ASTCreateQuery & create = table_info.create_table_query->as<const ASTCreateQuery &>();
 
             if (restore_settings.create_table != RestoreTableCreationMode::kMustExist)
             {
@@ -462,21 +495,15 @@ void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name
     /// Skip external database engines (e.g. MySQL, PostgreSQL, S3, DataLakeCatalog) when
     /// restore_replace_external_engines_to_null is set - there is no meaningful way to
     /// replace a database engine with Null, so we skip both creation and verification.
-    if (context->getSettingsRef()[Setting::restore_replace_external_engines_to_null])
     {
         std::lock_guard lock{mutex};
-        const auto & database_info = database_infos.at(database_name);
-        if (database_info.create_database_query)
+        const String skipped_engine = getSkippedDatabaseEngine(database_infos.at(database_name).create_database_query, context);
+        if (!skipped_engine.empty())
         {
-            const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
-            if (create.storage && create.storage->engine
-                && DatabaseFactory::instance().isDatabaseExternal(create.storage->engine->name))
-            {
-                LOG_TRACE(log, "Skipping external database {} with engine {} because restore_replace_external_engines_to_null is set",
-                    backQuoteIfNeed(database_name), create.storage->engine->name);
-                skipped_databases.emplace(database_name);
-                return;
-            }
+            LOG_TRACE(log, "Skipping external database {} with engine {} because restore_replace_external_engines_to_null is set",
+                backQuoteIfNeed(database_name), skipped_engine);
+            skipped_databases.emplace(database_name);
+            return;
         }
     }
 
