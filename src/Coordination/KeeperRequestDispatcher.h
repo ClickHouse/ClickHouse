@@ -142,6 +142,11 @@ private:
         /// the comment at the call site.
         bool add(KeeperRequestForSession & request_for_session, bool waits_for_write)
         {
+            /// The wait starts when the read arrives, not when the lock is acquired, so read the
+            /// clock here - it also keeps it out of a critical section that dispatchThread and
+            /// onCommit contend for.
+            const UInt64 wait_start_us = waits_for_write ? ZooKeeperOpentelemetrySpans::now() : 0;
+
             if (!lock())
                 return false;
             /// The read is parked here until the batch commits; start measuring that wait. Done
@@ -150,7 +155,7 @@ private:
             /// the lock is the only thing that orders this against `markWritesCommitted`.
             if (waits_for_write && !writes_committed)
                 request_for_session.request->spans.maybeInitialize(
-                    KeeperSpan::ReadWaitForWrite, request_for_session.request->tracing_context.get());
+                    KeeperSpan::ReadWaitForWrite, request_for_session.request->tracing_context.get(), wait_start_us);
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;
