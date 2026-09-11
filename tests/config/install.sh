@@ -22,6 +22,7 @@ NO_AZURE=0
 KEEPER_INJECT_AUTH=1
 REMOTE_DATABASE_DISK=0
 LLVM_COVERAGE=0
+BUILD_TYPE_CONFIGS_ONLY=0
 
 while [[ "$#" -gt 0 ]]; do
     case $1 in
@@ -49,6 +50,7 @@ while [[ "$#" -gt 0 ]]; do
 
         --encrypted-storage) USE_ENCRYPTED_STORAGE=1 ;;
         --llvm-coverage) LLVM_COVERAGE=1 ;;
+        --build-type-configs-only) BUILD_TYPE_CONFIGS_ONLY=1 ;;
         *) echo "Unknown option: $1" ; exit 1 ;;
     esac
     shift
@@ -89,6 +91,59 @@ function is_fast_build()
     # sanitizers and debug builds are slow
     [ "$(clickhouse local --query "SELECT value NOT LIKE '%-fsanitize=%' AND value LIKE '%-DNDEBUG%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" == "1" ]
 }
+
+# Print 1 or 0 for a CXX_FLAGS pattern in the installed binary, or fail. An unanswered probe
+# must not read as false: the false arm below installs the config an msan server refuses to
+# start on. `countIf` keeps the query total, since restricting it to the row yields no output.
+function build_option_flag()
+{
+    local description=$1 pattern=$2 value rc=0
+    value=$(clickhouse local --query \
+        "SELECT countIf(name = 'CXX_FLAGS' AND value LIKE '$pattern') > 0 FROM system.build_options") || rc=$?
+    if [ "$rc" != "0" ] || { [ "$value" != "0" ] && [ "$value" != "1" ]; }; then
+        echo "install.sh: cannot determine whether this is a $description (exit $rc, output '$value')" >&2
+        return 1
+    fi
+    echo "$value"
+}
+
+# Install the configs whose presence depends on the build flavour of the binary installed right
+# now. Idempotent in both directions, so a tree installed for one build type can be re-decided
+# for another (see --build-type-configs-only).
+function install_build_type_configs()
+{
+    local is_memory_sanitizer is_sanitizer
+    # Resolve both probes before touching either file, so a failing probe cannot leave a
+    # half-adjusted tree.
+    is_memory_sanitizer=$(build_option_flag "MemorySanitizer build" '%-fsanitize=memory%')
+    # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test
+    # for -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on
+    # a bad vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
+    is_sanitizer=$(build_option_flag "sanitizer build" '%-DSANITIZER%')
+
+    # A non-zero global_profiler_* period is rejected by an msan server while it parses its own
+    # settings, so the config must be absent rather than merely unused there.
+    if [ "$is_memory_sanitizer" = "1" ]; then
+        rm -f $DEST_SERVER_PATH/config.d/serverwide_trace_collector.xml
+    else
+        ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
+    fi
+
+    if [ "$is_sanitizer" = "1" ]; then
+        ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
+    else
+        rm -f $DEST_SERVER_PATH/config.d/trace_log_no_symbolize.xml
+    fi
+}
+
+# Re-decide the build-flavour-dependent configs of an already installed tree, leaving the rest
+# of it as it is, for callers that replace the binary underneath it. Must return before the
+# `rm -rf config.d` below, which would otherwise wipe the tree this mode was asked to adjust.
+if [ "$BUILD_TYPE_CONFIGS_ONLY" = "1" ]; then
+    echo "Going to install build-type-dependent test configs into $DEST_SERVER_PATH"
+    install_build_type_configs
+    exit 0
+fi
 
 echo "Going to install test configs from $SRC_PATH into $DEST_SERVER_PATH"
 
@@ -238,23 +293,7 @@ esac
 ln -sf $SRC_PATH/config.d/zero_copy_destructive_operations.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/handlers.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/threadpool_writer_pool_size.yaml $DEST_SERVER_PATH/config.d/
-function is_sanitizer_build()
-{
-    # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test for
-    # -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on a bad
-    # vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
-    [ "$(clickhouse local --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
-}
-function is_memory_sanitizer_build()
-{
-    [ "$(clickhouse local --query "SELECT value LIKE '%-fsanitize=memory%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
-}
-if ! is_memory_sanitizer_build; then
-    ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
-fi
-if is_sanitizer_build; then
-    ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
-fi
+install_build_type_configs
 ln -sf $SRC_PATH/config.d/memory_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
