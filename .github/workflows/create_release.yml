@@ -92,13 +92,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.CHECKOUT_REF }}
-
       - name: Prepare env script
         run: |
           rm -rf ./ci/tmp
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
+          export PYTHONPATH=.:./ci
           export ROBOT_CLICKHOUSE_COMMIT_TOKEN=$(cat<<'EOF'
           ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
           EOF
