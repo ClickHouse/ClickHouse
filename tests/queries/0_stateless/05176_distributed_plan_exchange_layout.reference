@@ -6,6 +6,31 @@ Expression ((Project names + Projection))
           Expression ((Before GROUP BY + Change column names to column identifiers))
             ReadFromMergeTree (default.t_exchange_layout)
 31996000
-tasks with a scatter and tasks with sources were logged	1
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
+          Aggregating
+            ScatterExchange (by hash([modulo(__table2.k, 10_UInt8)]))
+              Expression ((Before GROUP BY + Change column names to column identifiers))
+                ReadFromMergeTree (default.t_exchange_layout)
+10
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_exchange_layout)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_exchange_layout_small)
+8000
+every run logged a task with a scatter and a task with sources	1
+the broadcast run logged a task with several sinks and no scatter	1
 scatter: serializers = scatters * sinks	1
 scatter: max rows into one serializer <= max rows into one scatter	1
+broadcast: serializers = read streams and serialized rows = read rows	1
