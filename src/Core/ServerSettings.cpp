@@ -3664,7 +3664,8 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
 
             /// The server-wide throttlers, not `getRemoteReadThrottler()` and friends: those compose the
-            /// reading request's own per-user and per-query limits on top of the server-wide one.
+            /// reading request's own per-query limit, and for the remote pair its per-user limit, on top of
+            /// the server-wide one.
             {"max_remote_read_network_bandwidth_for_server",
              {context->getServerWideRemoteReadThrottler() ? std::to_string(context->getServerWideRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
