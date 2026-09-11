@@ -37,12 +37,12 @@ def started_cluster():
         assert older.query("SELECT version()") == "26.5.1.882\n"
         for node in (coordinator, current, older):
             node.query("INSERT INTO FUNCTION file('profile_traces.csv', 'CSV', 'x UInt8') VALUES (42)")
+            node.query("CREATE TABLE source (x UInt8) ENGINE = Memory")
+            node.query("INSERT INTO source VALUES (0), (1), (2)")
             # Separate replication groups exercise the replicated-destination forwarding
             # path without depending on part transfers between server versions.
             node.query(f"CREATE TABLE replicated_target (x UInt8) ENGINE = ReplicatedMergeTree('/profile_traces_mixed_versions/{node.name}', 'one') ORDER BY x")
         for name, peer in PEERS.items():
-            peer.query("CREATE TABLE source (x UInt8) ENGINE = Memory")
-            peer.query("INSERT INTO source VALUES (0), (1), (2)")
             peer.query("CREATE TABLE target (x UInt8) ENGINE = Memory")
             for node in (coordinator, peer):
                 for table in ("source", "target"):

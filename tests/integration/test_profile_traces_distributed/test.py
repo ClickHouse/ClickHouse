@@ -3,7 +3,7 @@ import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 
 import pytest
 import requests
@@ -11,9 +11,9 @@ import requests
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-coordinator = cluster.add_instance("coordinator", stay_alive=True)
-middle = cluster.add_instance("middle", user_configs=["configs/delay.xml"])
-leaf = cluster.add_instance("leaf")
+coordinator = cluster.add_instance("coordinator", stay_alive=True, main_configs=["configs/profile_sampling.xml"])
+middle = cluster.add_instance("middle", user_configs=["configs/delay.xml"], main_configs=["configs/profile_sampling.xml"])
+leaf = cluster.add_instance("leaf", main_configs=["configs/profile_sampling.xml"])
 nodes = (coordinator, middle, leaf)
 
 SETTINGS = {
@@ -173,29 +173,45 @@ def failpoint(node, name):
 @pytest.mark.parametrize("transport", ["Native", "HTTP"])
 @pytest.mark.parametrize("coordinator_overflow", [False, True])
 def test_forwarded_losses(transport, coordinator_overflow):
-    with failpoint(leaf, "profile_traces_queue_overflow"):
-        with failpoint(coordinator, "profile_traces_queue_overflow") if coordinator_overflow else nullcontext():
-            initial_id = query_id()
-            data, samples, error = execute(transport, nested() + " FORMAT TSV", initial_id)
-            assert not error, error
-            assert data == f"leaf\t{EXPECTED_TOTAL}\n", data
-            validate_samples(samples)
-            dropped = [sample for sample in samples if sample["trace_type"] == "Dropped"]
-            assert dropped, samples
-            assert all(int(sample["size"]) > 0 for sample in dropped), dropped
-            assert all(sample["host_name"] == coordinator.name and sample["query_id"] == initial_id for sample in dropped), dropped
-            assert "leaf" not in sampled_hosts(samples), samples
-            if coordinator_overflow:
-                assert not any(sample["trace_type"] in SAMPLE_TYPES for sample in samples), samples
+    # Only the leaf samples allocations, so local losses cannot hide a missing forwarded delta.
+    settings = {"memory_profiler_sample_probability": 0}
+    with ExitStack() as users:
+        queries = {}
+        for probability in (0, 1):
+            user = query_id()
+            # Secondary settings are clamped before the request's memory tracker is configured.
+            leaf.query(f"CREATE USER {user} IDENTIFIED WITH no_password SETTINGS memory_profiler_sample_probability = {probability} MIN {probability} MAX {probability}")
+            users.callback(leaf.query, f"DROP USER {user}")
+            leaf.query(f"GRANT SELECT ON *.* TO {user}")
+            queries[probability] = remote("middle", f"SELECT * FROM remote('leaf', view({WORKLOAD}), '{user}')") + " FORMAT TSV"
 
-            data, samples, error = execute(
-                transport,
-                nested() + " FORMAT TSV",
-                query_id(),
-                {"send_profile_traces": 0},
-            )
-            assert not error and data == f"leaf\t{EXPECTED_TOTAL}\n", (data, error)
-            assert not samples, samples
+        with failpoint(leaf, "profile_traces_queue_overflow"):
+            with failpoint(coordinator, "profile_traces_queue_overflow") if coordinator_overflow else nullcontext():
+                initial_id = query_id()
+                data, samples, error = execute(transport, queries[1], initial_id, settings)
+                assert not error, error
+                assert data == f"leaf\t{EXPECTED_TOTAL}\n", data
+                validate_samples(samples)
+                dropped = [sample for sample in samples if sample["trace_type"] == "Dropped"]
+                assert dropped, samples
+                assert all(int(sample["size"]) > 0 for sample in dropped), dropped
+                assert all(sample["host_name"] == coordinator.name and sample["query_id"] == initial_id for sample in dropped), dropped
+                assert not any(sample["trace_type"] in SAMPLE_TYPES for sample in samples), sorted(
+                    {(sample["host_name"], sample["trace_type"]) for sample in samples if sample["trace_type"] in SAMPLE_TYPES}
+                )
+
+                data, samples, error = execute(transport, queries[0], query_id(), settings)
+                assert not error and data == f"leaf\t{EXPECTED_TOTAL}\n", (data, error)
+                assert not samples, "sampling-disabled path generated local loss metadata"
+
+                data, samples, error = execute(
+                    transport,
+                    queries[1],
+                    query_id(),
+                    dict(settings, send_profile_traces=0),
+                )
+                assert not error and data == f"leaf\t{EXPECTED_TOTAL}\n", (data, error)
+                assert not samples, samples
 
 
 def test_nested_flush_timeout():
@@ -205,7 +221,9 @@ def test_nested_flush_timeout():
         # each of those three queries has its own ten-second flush deadline.
         data, samples, error = execute("HTTP", nested() + " FORMAT TSV", query_id(), {"max_execution_time": 45})
         assert not error and data == f"leaf\t{EXPECTED_TOTAL}\n", (data, error)
-        assert time.monotonic() - start < 45, "nested profiling flush did not terminate"
+        # Five seconds of overhead still distinguishes three ten-second barriers from four.
+        elapsed = time.monotonic() - start
+        assert elapsed < 35, f"nested profiling flush exceeded three deadlines: {elapsed:.3f}s"
         validate_samples(samples)
         assert any(sample["trace_type"] == "Incomplete" for sample in samples), samples
 
@@ -246,7 +264,7 @@ def test_nested_exception(transport):
 def test_nested_cancellation(transport):
     initial_id = query_id()
     previous_ids = {initial_id}
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor, ExitStack() as failpoints:
         request = executor.submit(
             execute,
             transport,
@@ -263,13 +281,21 @@ def test_nested_cancellation(transport):
                 assert not request.done(), request.result() if request.done() else ""
                 time.sleep(0.1)
             assert running, "nested leaf query did not process rows"
+            # Schema discovery has finished. The peers receive Native Cancel, while the
+            # coordinator's KILL QUERY follows ordinary error finalization and must still drain.
+            for node in (middle, leaf):
+                failpoints.enter_context(failpoint(node, "profile_traces_flush_ack_timeout"))
         finally:
+            cancel_started = time.monotonic()
             coordinator.query(f"KILL QUERY WHERE query_id = '{initial_id}' SYNC", timeout=30)
         _, samples, error = request.result(timeout=30)
+        wait_for_no_queries(initial_id)
+        cancel_elapsed = time.monotonic() - cancel_started
+        assert cancel_elapsed < 5, f"nested cancellation waited for a collector deadline: {cancel_elapsed:.3f}s"
+        assert not any(sample["trace_type"] == "Incomplete" for sample in samples), samples
     assert "QUERY_WAS_CANCELLED" in error or "Query was cancelled" in error, error
     validate_samples(samples)
     previous_ids.update(sample["query_id"] for sample in samples)
-    wait_for_no_queries(initial_id)
     check_next_query(transport, previous_ids)
 
 
