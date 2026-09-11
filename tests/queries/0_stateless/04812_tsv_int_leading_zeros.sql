@@ -224,10 +224,13 @@ SELECT {lone:Int64}; -- { serverError CANNOT_PARSE_NUMBER }
 SELECT {lone:Float64}; -- { serverError CANNOT_PARSE_NUMBER }
 -- Two carriers wrap the reader's error in a code of their own, unchanged here: `Values` re-reads the
 -- value with the SQL parser, and a `Map` subcolumn fails name resolution when its key does not read as
--- a number.
+-- a number. The map lives in a table because `enable_analyzer = 0` resolves a subcolumn against a
+-- storage only, and this file runs in the `old analyzer` lane too.
 SELECT 'group 15: two carriers that wrap the reader code in their own';
 SELECT * FROM format(Values, 'a Int64', '(+)'); -- { serverError SYNTAX_ERROR }
-SELECT m.`key_+` FROM (SELECT map(7::Int64, 'x'::String) AS m); -- { serverError UNKNOWN_IDENTIFIER }
+CREATE TABLE map_04812 (m Map(Int64, String)) ENGINE = Memory;
+INSERT INTO map_04812 VALUES (map(7, 'x'));
+SELECT m.`key_+` FROM map_04812; -- { serverError UNKNOWN_IDENTIFIER }
 DROP TABLE cmp_04812;
 
 -- 16. The set of carriers is open, so these are keyed on the mechanism rather than on a format name:
@@ -245,4 +248,5 @@ SELECT * FROM format(Regexp, 'a Int64', 'v=+7') SETTINGS format_regexp = 'v=(.+)
 SELECT 'group 16: an element of a composite type cast from a string, read with the Quoted rule';
 SELECT CAST('[007]' AS Array(Int64)), CAST('[+7]' AS Array(Int64)), CAST('(007)' AS Tuple(Int64));
 SELECT 'group 16: a Map key spelled in a subcolumn name';
-SELECT m.key_007 FROM (SELECT map(7::Int64, 'x'::String) AS m);
+SELECT m.key_007, m.key_7 FROM map_04812;
+DROP TABLE map_04812;

@@ -163,4 +163,4 @@ group 16: a Form field, and a Regexp capture group
 group 16: an element of a composite type cast from a string, read with the Quoted rule
 [7]	[7]	(7)
 group 16: a Map key spelled in a subcolumn name
-x
+x	x
