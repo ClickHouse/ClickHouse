@@ -354,14 +354,19 @@ WhatIfResult estimateHypotheticalIndexes(
     if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(select_query_copy, local_context, query_options);
+        interpreter.applyDistributedPlanFallbackIfNeeded();
         plan_context = interpreter.getContext();
         plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
+        /// Verify if we need to fallback to loc
         InterpreterSelectWithUnionQuery interpreter(select_query_copy, local_context, query_options);
-        plan_context = interpreter.getContext();
         interpreter.buildQueryPlan(plan);
+        QueryPlanOptimizationSettings probe_settings(local_context);
+        if (plan.applyDistributedPlanFallbackToLocal(probe_settings))
+            local_context->setSetting("make_distributed_plan", false);
+        plan_context = interpreter.getContext();
     }
 
     plan.optimize(QueryPlanOptimizationSettings(plan_context));
