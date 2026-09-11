@@ -17,6 +17,9 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <IO/SharedThreadPools.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
@@ -120,6 +123,84 @@ void StorageSystemPartsColumns::processNextStorage(
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
     all_parts = info.getParts(all_parts_state, has_state_column);
+
+    /// `column_modification_time` is the mtime of a column's data file, so for Wide parts it costs one
+    /// `stat` per column. Read serially, a table with many parts and many columns spends nearly all of
+    /// the query issuing independent, latency-bound syscalls. Compute the times in parallel up front
+    /// (only when the column is selected) and let the loop below read them, as `StorageSystemDetachedParts`
+    /// does. Indexed by [part number][position in `part->getColumns`].
+    std::vector<std::vector<std::optional<time_t>>> column_modification_times;
+    /// The column list of this system table is fixed, so resolve the position only once: building the
+    /// sample block per storage would be a real cost on a server with many tables.
+    static const size_t modification_time_position = [this, &context]
+    {
+        const auto system_table_metadata = getInMemoryMetadataPtr(context, false);
+        return system_table_metadata->getSampleBlock().getPositionByName("column_modification_time");
+    }();
+
+    if (!all_parts.empty() && columns_mask[modification_time_position])
+    {
+        column_modification_times.resize(all_parts.size());
+
+        auto fill_part = [&all_parts, &column_modification_times](size_t p)
+        {
+            const auto & part = all_parts[p];
+            const auto & part_columns = part->getColumns();
+            auto & times = column_modification_times[p];
+            if (part_columns.empty())
+                return;
+
+            /// A Compact part keeps all of its columns in one file, so they necessarily share its
+            /// modification time and a single lookup answers for the whole part.
+            if (part->getType() == MergeTreeDataPartType::Compact)
+            {
+                times.assign(part_columns.size(), part->getColumnModificationTime(part_columns.front().name));
+                return;
+            }
+
+            times.reserve(part_columns.size());
+            for (const auto & part_column : part_columns)
+                times.push_back(part->getColumnModificationTime(part_column.name));
+        };
+
+        size_t files_to_stat = 0;
+        for (const auto & part : all_parts)
+            files_to_stat += part->getType() == MergeTreeDataPartType::Compact ? 1 : part->getColumns().size();
+
+        /// Scale workers with the amount of work, which is parts x columns rather than parts alone --
+        /// a table with few but very wide parts needs them just as much. Cap the count so that one
+        /// query cannot take over the shared IO pool; same cap as `StorageSystemDetachedParts`.
+        constexpr size_t files_per_worker = 200;
+        constexpr size_t support_threads = 35;
+        const size_t num_workers = std::min(support_threads, files_to_stat / files_per_worker);
+
+        if (num_workers <= 1)
+        {
+            /// Below that threshold the dispatch overhead outweighs the work itself.
+            for (size_t p = 0; p < all_parts.size(); ++p)
+                fill_part(p);
+        }
+        else
+        {
+            std::atomic<size_t> next_part = 0;
+            ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::PARTS_COLUMNS_MTIME);
+
+            for (size_t i = 0; i < num_workers; ++i)
+            {
+                /// `fill_part` is captured by value, and `runner` is declared after the objects the
+                /// copies reference, so it is destroyed first and its destructor joins every worker
+                /// before those objects go out of scope -- including when the loop below throws.
+                runner.enqueueAndKeepTrack([fill_part, &all_parts, &next_part]
+                {
+                    for (size_t p = next_part++; p < all_parts.size(); p = next_part++)
+                        fill_part(p);
+                });
+            }
+
+            runner.waitForAllToFinishAndRethrowFirstError();
+        }
+    }
+
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
         const auto & part = all_parts[part_number];
@@ -261,8 +342,11 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(column_size.marks);
             if (columns_mask[src_index++])
             {
-                if (auto column_modification_time = part->getColumnModificationTime(column.name))
-                    columns[res_index++]->insert(UInt64(column_modification_time.value()));
+                /// column_position is incremented at the top of this loop, so it is 1-based here.
+                /// Checked access: this index is derived independently of the one filled above.
+                const auto & modification_time = column_modification_times.at(part_number).at(column_position - 1);
+                if (modification_time)
+                    columns[res_index++]->insert(UInt64(*modification_time));
                 else
                     columns[res_index++]->insertDefault();
             }
