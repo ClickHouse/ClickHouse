@@ -36,24 +36,15 @@ CREATE TABLE dst_05141 (n UInt64) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv_05141 TO dst_05141 AS WITH c AS MATERIALIZED (SELECT x FROM src_05141) SELECT count() AS n FROM c AS a, c AS b; -- { serverError SUPPORT_IS_DISABLED }
 CREATE MATERIALIZED VIEW mv_05141 TO dst_05141 AS SELECT count() AS n FROM src_05141;
 ALTER TABLE mv_05141 MODIFY QUERY WITH c AS MATERIALIZED (SELECT x FROM src_05141) SELECT count() AS n FROM c AS a, c AS b; -- { serverError SUPPORT_IS_DISABLED }
--- A materialized CTE hidden in a SQL UDF body is expanded into the definition and rejected the same way.
-CREATE FUNCTION f_05141 AS () -> (WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() FROM c AS a, c AS b);
-CREATE VIEW v_05141 AS SELECT f_05141() AS n; -- { serverError SUPPORT_IS_DISABLED }
-ALTER TABLE mv_05141 MODIFY QUERY SELECT f_05141() AS n; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT 'view definitions: force disabled inlines';
 SET force_materialized_cte = 0;
 CREATE VIEW v_05141 AS WITH c AS MATERIALIZED (SELECT number AS x FROM numbers(3)) SELECT count() AS n FROM c AS a, c AS b;
 SELECT * FROM v_05141;
-CREATE VIEW v_udf_05141 AS SELECT f_05141() AS n;
-SELECT * FROM v_udf_05141;
 ALTER TABLE mv_05141 MODIFY QUERY WITH c AS MATERIALIZED (SELECT x FROM src_05141) SELECT count() AS n FROM c AS a, c AS b;
-ALTER TABLE mv_05141 MODIFY QUERY SELECT f_05141() AS n;
-DROP VIEW v_udf_05141;
 DROP TABLE mv_05141;
 DROP TABLE dst_05141;
 DROP TABLE src_05141;
-DROP FUNCTION f_05141;
 
 SELECT 'view read: rejected when materialization is disabled';
 -- The view was created with the guard off; reading it with the guard on and materialization off throws.

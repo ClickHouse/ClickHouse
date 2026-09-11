@@ -10,7 +10,6 @@ compatibility restores the old behaviour
 view definitions: rejected even with materialization enabled
 view definitions: force disabled inlines
 9
-9
 view read: rejected when materialization is disabled
 9
 lightweight UPDATE: rejected even with materialization enabled

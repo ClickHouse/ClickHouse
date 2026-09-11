@@ -72,7 +72,7 @@ def test_replay_of_materialized_cte_definitions_is_not_rejected(started_cluster)
         settings=DDL_SETTINGS,
     )
     node1.query(
-        f"ALTER TABLE rdb.mv MODIFY QUERY {MATERIALIZED_CTE.replace('numbers(3)', 'rdb.src')} "
+        "ALTER TABLE rdb.mv MODIFY QUERY WITH c AS MATERIALIZED (SELECT x FROM rdb.src) "
         "SELECT count() AS n FROM c AS a, c AS b",
         settings=DDL_SETTINGS,
     )

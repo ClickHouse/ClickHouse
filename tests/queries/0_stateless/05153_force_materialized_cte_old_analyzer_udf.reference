@@ -1,2 +1,4 @@
-materialized CTE from a SQL UDF body is rejected
-rejected before the CTE body is resolved
+-- materialized CTE from a SQL UDF body is rejected
+SUPPORT_IS_DISABLED
+-- rejected before the CTE body is resolved
+SUPPORT_IS_DISABLED
