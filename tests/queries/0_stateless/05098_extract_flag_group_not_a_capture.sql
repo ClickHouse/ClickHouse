@@ -29,3 +29,15 @@ SELECT h, extract(h, '(?i)b.*$') FROM t_extract_flag_group ORDER BY h;
 SELECT h, extract(h, '(?i)b.*$') FROM t_extract_flag_group ORDER BY h SETTINGS optimize_rewrite_regexp_functions = 0;
 
 DROP TABLE t_extract_flag_group;
+
+SELECT 'a capture nested in a flag group, or preceding a non-capturing group, keeps the rewrite';
+SELECT extract(materialize('aBcd'), '(?i:(b)).*$'), extract(materialize('aBcd'), '(?i:(b)).*$') SETTINGS optimize_rewrite_regexp_functions = 0;
+SELECT extract(materialize('abcd'), '(a)(?:b).*$'), extract(materialize('abcd'), '(a)(?:b).*$') SETTINGS optimize_rewrite_regexp_functions = 0;
+
+-- The results above are the same with and without the rewrite, so pin that the rewrite does fire.
+SET enable_analyzer = 1;
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('aBcd'), '(?i:(b)).*$');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('abcd'), '(a)(?:b).*$');
+-- ... and that it does not fire without a capture group.
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('aBcd'), '(?i)b.*$');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(materialize('aBcd'), '(?i:b).*$');

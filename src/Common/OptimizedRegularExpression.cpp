@@ -436,7 +436,9 @@ const char * analyzeImpl(
                     if (pos == end)
                         return pos;
 
-                    has_capture = !is_non_capturing_group;
+                    /// A capture anywhere counts: one seen before this group, one nested inside it,
+                    /// or this group itself when it captures.
+                    has_capture = has_capture || group_has_capture || !is_non_capturing_group;
 
                     /// For ()? or ()* or (){0,1}, we can just ignore the whole group.
                     if ((pos + 1 < end && (pos[1] == '?' || pos[1] == '*')) ||
