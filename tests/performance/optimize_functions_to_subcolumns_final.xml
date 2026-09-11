@@ -1,0 +1,31 @@
+<test>
+    <!--
+        optimize_functions_to_subcolumns under FINAL for row-selecting engines
+        (ReplacingMergeTree here). The rewrite lets FINAL read only the needed subcolumn
+        (e.g. m.size0, m.key_5, s.null) instead of the whole wide column, so these queries
+        are faster than on a build that disables the rewrite for any FINAL.
+    -->
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_subcolumns_final (k UInt64, ver UInt64, a Array(UInt64), s Nullable(String), m Map(String, UInt64))
+        ENGINE = ReplacingMergeTree(ver) ORDER BY k
+    </create_query>
+
+    <!-- Several parts with disjoint key ranges so FINAL runs but nothing collapses (row count and read volume stay high). -->
+    <fill_query>INSERT INTO t_subcolumns_final SELECT number,             1, range(number % 20), toString(number), mapFromArrays(range(number % 20), range(number % 20)) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_subcolumns_final SELECT number + 10000000, 1, range(number % 20), toString(number), mapFromArrays(range(number % 20), range(number % 20)) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_subcolumns_final SELECT number + 20000000, 1, range(number % 20), toString(number), mapFromArrays(range(number % 20), range(number % 20)) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_subcolumns_final SELECT number + 30000000, 1, range(number % 20), toString(number), mapFromArrays(range(number % 20), range(number % 20)) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO t_subcolumns_final SELECT number + 40000000, 1, range(number % 20), toString(number), mapFromArrays(range(number % 20), range(number % 20)) FROM numbers_mt(10000000)</fill_query>
+
+    <query>SELECT count() FROM t_subcolumns_final FINAL WHERE NOT ignore(length(a))</query>
+    <query>SELECT count() FROM t_subcolumns_final FINAL WHERE NOT ignore(length(m))</query>
+    <query>SELECT count() FROM t_subcolumns_final FINAL WHERE NOT ignore(m['5'])</query>
+    <query>SELECT count() FROM t_subcolumns_final FINAL WHERE isNotNull(s)</query>
+    <query>SELECT count(s) FROM t_subcolumns_final FINAL</query>
+
+    <drop_query>DROP TABLE t_subcolumns_final</drop_query>
+</test>
