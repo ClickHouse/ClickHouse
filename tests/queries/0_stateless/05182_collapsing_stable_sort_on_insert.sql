@@ -38,16 +38,16 @@ FROM collapsing_stable_sort FINAL;
 
 TRUNCATE TABLE collapsing_stable_sort;
 
--- 64 keys: small equal ranges exercise comparison sorting.
+-- 100 keys: unsorted input below the radix-sort threshold exercises comparison sorting.
 INSERT INTO collapsing_stable_sort
 SELECT 101000000000000001 + number, number % 64 + 1, 10, 1
-FROM numbers(64);
+FROM numbers(100);
 
 -- Keep cancellation before replacement, but do not order by the table sorting key.
 INSERT INTO collapsing_stable_sort
 SELECT 101000000000000001 + number AS id, number % 64 + 1,
        if(sign = -1, 10, 20), sign
-FROM numbers(64)
+FROM numbers(100)
 ARRAY JOIN [-1, 1] AS sign
 ORDER BY id, sign;
 
@@ -55,7 +55,7 @@ ORDER BY id, sign;
 -- missing keys, duplicate keys, stale rows and unexpected rows.
 SELECT count(), uniqExact(tuple(type, id)),
        countIf(status != 20 OR sign != 1),
-       countIf(id < 101000000000000001 OR id >= 101000000000000001 + 64
+       countIf(id < 101000000000000001 OR id >= 101000000000000001 + 100
                OR type != (id - 101000000000000001) % 64 + 1)
 FROM collapsing_stable_sort FINAL;
 
