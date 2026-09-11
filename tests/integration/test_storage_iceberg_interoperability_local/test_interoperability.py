@@ -489,3 +489,60 @@ def test_ch_write_pyiceberg_read_bound_width(started_cluster_iceberg):
         assert len(table.scan(row_filter=row_filter).to_arrow()) == 0, row_filter
 
     assert len(table.scan().to_arrow()) == 1
+
+
+def test_ch_write_pyiceberg_read_bucket_partition(started_cluster_iceberg):
+    """
+    ClickHouse writes a bucket-partitioned Iceberg table, pyiceberg scans it with a
+    row filter.
+
+    Regression for issue #118905: the manifest-list field summary of a
+    transform-bearing partition spec carried `contains_null = false` with no
+    lower/upper bound. A spec-compliant manifest evaluator reads a missing bound
+    next to "no nulls" as "this field holds no value", answers ROWS_CANNOT_MATCH,
+    and skips the whole manifest, so a filtered scan of a table full of data
+    returned nothing. ClickHouse's own reader substitutes infinities for a missing
+    bound, which is why only an external reader saw it.
+    """
+    node1 = started_cluster_iceberg.instances["node1"]
+
+    TABLE_NAME = "test_pyiceberg_bucket_partition_" + get_uuid_str()
+    table_dir = f"{ICEBERG_DIR_NODE1}/default/{TABLE_NAME}"
+    ch_settings = {"allow_insert_into_iceberg": 1}
+
+    node1.query(
+        f"""
+        CREATE TABLE {TABLE_NAME} (s String, id Int32)
+        ENGINE=IcebergLocal(local,
+            path = '{table_dir}', format=Parquet)
+        PARTITION BY (icebergBucket(16, s))
+        ORDER BY (id)
+        """,
+        settings=ch_settings,
+    )
+    node1.query(
+        f"INSERT INTO {TABLE_NAME} VALUES ('eu', 1), ('us', 2)",
+        settings=ch_settings,
+    )
+    assert int(node1.query(f"SELECT count() FROM {TABLE_NAME}")) == 2
+
+    # external_dirs mounts the container path at the same absolute path on the host,
+    # so pyiceberg opens the very table ClickHouse just wrote.
+    table = StaticTable.from_metadata(latest_metadata_file(table_dir))
+
+    # Control: an unfiltered scan never consults the summaries, so it passed before
+    # the fix too. It fails first if the table itself is unreadable, which keeps the
+    # filtered assertions from passing for the wrong reason.
+    assert len(table.scan().to_arrow()) == 2
+
+    # pyiceberg projects `s == 'eu'` through the bucket transform onto the partition
+    # field, so this reaches the manifest evaluator and reads the bounds. Before the
+    # fix it returned 0.
+    assert len(table.scan(row_filter="s == 'eu'").to_arrow()) == 1
+    assert len(table.scan(row_filter="s == 'us'").to_arrow()) == 1
+
+    # The bounds are usable and not merely present: 'nowhere' is in bucket 14 while the
+    # table holds buckets 6 ('eu') and 8 ('us'), so both manifests are pruned. This
+    # also returned 0 before the fix, for the opposite reason (everything was pruned),
+    # so it is a control on pruning being active, not a regression check.
+    assert len(table.scan(row_filter="s == 'nowhere'").to_arrow()) == 0

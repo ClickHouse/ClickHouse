@@ -6,7 +6,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -23,6 +26,23 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+
+/// The Iceberg type of a partition field, which the transform fixes independently of the ClickHouse
+/// function computing it: `bucket[N]` is an `int`, and every value `icebergBucket` produces fits one,
+/// because `N` is validated to be in `(0, INT32_MAX]` and the result is in `[0, N)`.
+DataTypePtr icebergPartitionFieldType(const String & transform_function_name, const DataTypePtr & transform_result_type)
+{
+    if (transform_function_name != "icebergBucket")
+        return transform_result_type;
+
+    DataTypePtr field_type = std::make_shared<DataTypeInt32>();
+    return transform_result_type->isNullable() ? makeNullable(field_type) : field_type;
+}
+
 }
 
 ChunkPartitioner::ChunkPartitioner(
@@ -63,7 +83,9 @@ ChunkPartitioner::ChunkPartitioner(
             columns_for_function.push_back(ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUInt64>(), ""));
         columns_for_function.push_back(sample_block_->getByName(column_name));
 
-        result_data_types.push_back(function->getReturnType(columns_for_function));
+        auto transform_result_type = function->getReturnType(columns_for_function);
+        transform_result_data_types.push_back(transform_result_type);
+        result_data_types.push_back(icebergPartitionFieldType(transform_and_argument->transform_name, transform_result_type));
         functions.push_back(function);
         function_params.push_back(transform_and_argument->argument);
         columns_to_apply.push_back(column_name);
@@ -109,8 +131,14 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             arguments.push_back(ColumnWithTypeAndName(const_column->clone(), type, "#"));
         }
         arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
+        const auto & transform_result_type = transform_result_data_types[transform_ind];
+        const auto & partition_field_type = result_data_types[transform_ind];
         auto result
-            = functions[transform_ind]->build(arguments)->execute(arguments, result_data_types[transform_ind], chunk.getNumRows(), false);
+            = functions[transform_ind]->build(arguments)->execute(arguments, transform_result_type, chunk.getNumRows(), false);
+        /// Convert before the partition keys and the scatter selector are taken from the column, so that
+        /// the stored value, the published type and the grouping all agree.
+        if (!transform_result_type->equals(*partition_field_type))
+            result = castColumn(ColumnWithTypeAndName(result, transform_result_type, ""), partition_field_type);
         functions_columns.push_back(result);
         raw_columns.push_back(result.get());
 
