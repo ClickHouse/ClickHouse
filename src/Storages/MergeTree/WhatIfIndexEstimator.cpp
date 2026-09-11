@@ -360,7 +360,7 @@ WhatIfResult estimateHypotheticalIndexes(
     }
     else
     {
-        /// Verify if we need to fallback to loc
+        /// Verify if we need to fallback to local executio
         InterpreterSelectWithUnionQuery interpreter(select_query_copy, local_context, query_options);
         interpreter.buildQueryPlan(plan);
         QueryPlanOptimizationSettings probe_settings(local_context);
