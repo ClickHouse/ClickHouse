@@ -656,6 +656,16 @@ public:
     /// Might be called multiple times; only the first call needs to be processed.
     /// Data in memory need to be persistent. Any background work that affects other tables
     /// (e.g. materialized view refreshes that create/drop tables) needs to be stopped.
+    /** Hand over rows that are still buffered in memory, before any database is shut down.
+      *
+      * A `Buffer` table writes into another table, which may live in another database or be another
+      * `Buffer`. Databases shut down one at a time in name order, so by the time a `Buffer` prepares
+      * for shutdown its destination can already be gone, and one pass moves rows at most one link
+      * down a chain. `DatabaseCatalog` therefore calls this for every table first, repeating while
+      * rows keep moving; the return value is the number of buffers this call actually flushed.
+      */
+    virtual size_t flushBufferedRowsBeforeShutdown() { return 0; }
+
     virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type

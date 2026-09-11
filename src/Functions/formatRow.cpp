@@ -173,10 +173,10 @@ REGISTER_FUNCTION(FormatRow)
     FunctionDocumentation::Description formatRow_description = R"(
 Converts arbitrary expressions into a string via given format.
 
-:::note
+<Note>
 If the format contains a suffix/prefix, it will be written in each row.
 Only row-based formats are supported in this function.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax formatRow_syntax = "formatRow(format, x, y, ...)";
     FunctionDocumentation::Arguments formatRow_arguments =
