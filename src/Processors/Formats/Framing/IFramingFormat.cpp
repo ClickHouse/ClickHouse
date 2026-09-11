@@ -7,6 +7,7 @@
 #include <Core/Defines.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferDecorator.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -41,27 +42,37 @@ namespace
 
 /// Counts the bytes a framed service packet (progress, log, profile_events) adds to the response, so
 /// that a client can subtract its own progress-reporting traffic from the `NetworkSendBytes` it also
-/// sees, instead of showing it as query IO. Mirrors `CountServiceBytes` in `TCPHandler`.
+/// sees, instead of showing it as query IO. Mirrors `CountServiceBytes` in `TCPHandler`. A null buffer
+/// disables the counting (see `IFramingFormat::service_bytes_out`).
 class CountServiceBytes
 {
 public:
-    explicit CountServiceBytes(const WriteBuffer & buffer_) : buffer(buffer_), bytes_before(buffer_.count()) {}
+    explicit CountServiceBytes(const WriteBuffer * buffer_)
+        : buffer(buffer_), bytes_before(buffer_ ? buffer_->count() : 0)
+    {
+    }
+
     ~CountServiceBytes()
     {
-        const size_t bytes_after = buffer.count();
+        if (!buffer)
+            return;
+        const size_t bytes_after = buffer->count();
         if (bytes_after > bytes_before)
             ProfileEvents::increment(ProfileEvents::FramingServiceBytes, bytes_after - bytes_before);
     }
 
 private:
-    const WriteBuffer & buffer;
+    const WriteBuffer * buffer;
     const size_t bytes_before;
 };
 
 }
 
+/// The service bytes are counted only when `out` is the socket buffer itself (see `service_bytes_out`).
 IFramingFormat::IFramingFormat(WriteBuffer & out_, const FormatSettings & format_settings_)
-    : out(out_), format_settings(format_settings_)
+    : out(out_)
+    , format_settings(format_settings_)
+    , service_bytes_out(dynamic_cast<const WriteBufferFromPocoSocket *>(&out_))
 {
 }
 
@@ -120,7 +131,7 @@ void IFramingFormat::onProgress(const Progress & progress)
         return;
 
     {
-        CountServiceBytes service_bytes(out);
+        CountServiceBytes service_bytes(service_bytes_out);
         emitToOut([&] { writeProgressPacket(progress); });
     }
     pumpLogs();
@@ -169,7 +180,7 @@ void IFramingFormat::finalize()
     /// them would make the failed stream carry a success-style tail before the `exception`.
     if (has_final_progress && exception_message.empty())
     {
-        CountServiceBytes service_bytes(out);
+        CountServiceBytes service_bytes(service_bytes_out);
         emitToOut([&] { writeProgressPacket(final_progress); });
     }
 
@@ -299,7 +310,7 @@ void IFramingFormat::pumpLogs()
 
     Block block = InternalTextLogsQueue::getSampleBlock();
     block.setColumns(std::move(logs_columns));
-    CountServiceBytes service_bytes(out);
+    CountServiceBytes service_bytes(service_bytes_out);
     emitToOut([&] { writeLogsPacket(block); });
 }
 
@@ -318,7 +329,7 @@ void IFramingFormat::pumpProfileEvents(bool force)
     Block block = ProfileEvents::getProfileEvents(host_name, profile_events_queue, profile_events_snapshots);
     if (block.rows() != 0)
     {
-        CountServiceBytes service_bytes(out);
+        CountServiceBytes service_bytes(service_bytes_out);
         emitToOut([&] { writeProfileEventsPacket(block); });
     }
 

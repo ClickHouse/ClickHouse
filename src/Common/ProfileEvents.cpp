@@ -191,7 +191,7 @@
     M(NetworkSendBytes, "Total number of bytes send to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.", ValueType::Bytes) \
     M(NativeProtocolSend, "Number of non-empty native protocol output buffer flushes.", ValueType::Number) \
     M(NativeProtocolServiceBytes, "Number of bytes written to the client connection for native protocol service packets (Progress, ProfileEvents, Logs) rather than for query data. A subset of NetworkSendBytes, so that a client can tell its own protocol overhead apart from query data.", ValueType::Bytes) \
-    M(FramingServiceBytes, "Number of bytes written to the response for framed service packets (progress, log, profile_events) rather than for query data. The framing counterpart of NativeProtocolServiceBytes, and likewise a subset of NetworkSendBytes.", ValueType::Bytes) \
+    M(FramingServiceBytes, "Number of bytes written to the response for framed service packets (progress, log, profile_events) rather than for query data. The framing counterpart of NativeProtocolServiceBytes, and likewise a subset of NetworkSendBytes: counted only when the framing writes straight into the socket, so it stays zero for a compressed response (enable_http_compression, compress=1), whose packets have no compressed size of their own.", ValueType::Bytes) \
     M(FilterPartsByVirtualColumnsMicroseconds, "Total time spent in filterPartsByVirtualColumns function.", ValueType::Microseconds) \
     \
     M(GlobalThreadPoolExpansions, "Counts the total number of times new threads have been added to the global thread pool. This metric indicates the frequency of expansions in the global thread pool to accommodate increased processing demands.", ValueType::Number) \

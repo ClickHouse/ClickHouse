@@ -1,1 +1,4 @@
+Content-Encoding: gzip
 framed idle query sends only service packets	1	1	1
+compressed framed idle query counts no service bytes	1	1	1
+compressed framed query streaming data keeps the meter positive	1	1
