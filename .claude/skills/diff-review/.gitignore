@@ -1,0 +1,6 @@
+/tmp
+# The @pierre/diffs bundle: hash-pinned in vendor/manifest.json and fetched into
+# ~/.cache/diff-review, or dropped into vendor/ by hand for an offline machine.
+# Never committed — see vendor/README.md.
+/vendor/pierre-diffs-*.mjs
+/vendor/pierre-diffs-*.mjs.gz
