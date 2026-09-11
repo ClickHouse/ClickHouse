@@ -5,7 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid=1"
+# `distributed_ddl_output_mode=none`: suppress the per-replica DDL status rows, so the output
+# does not depend on the CI flavor (the DBReplicated flavor sets the setting to `none`).
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --database_replicated_allow_explicit_uuid=1 --distributed_ddl_output_mode=none"
 db="${CLICKHOUSE_DATABASE}_05137"
 
 cleanup()
