@@ -1,0 +1,40 @@
+-- =~ selects the matching series
+[('__name__','up'),('instance','host2')]	10
+[('__name__','up'),('instance','host3')]	20
+-- !~ selects the complement
+[('__name__','up'),('instance','host1')]	30
+-- a matcher inside a function argument
+[]	30
+-- the equality matcher still works
+[('__name__','up'),('instance','host1')]	30
+-- a metric named 'set' is not a SET statement: matchers still parse as PromQL
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2
+-- bare 'set' is a metric too
+[('__name__','set'),('instance','host1')]	3
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2
+-- a metric named 'set' followed by PromQL bareword operators/modifiers
+[('__name__','set'),('instance','host1')]	3
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2
+[('__name__','set'),('instance','host1')]	3
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2
+-- a real SET statement still works under the dialect
+OK
+-- SET ROLE is dispatched as a role statement, not a ROLE = true setting shorthand
+OK
+-- a malformed SET still gets an SQL-side syntax error
+SYNTAX_ERROR
+-- a malformed SET without = still gets an SQL-side syntax error
+SYNTAX_ERROR
+-- a malformed SET without a setting name is reported by the dialect grammar
+CANNOT_PARSE_PROMQL_QUERY
+CANNOT_PARSE_PROMQL_QUERY
+-- an oversized query hits the max_query_size guard
+Max query size exceeded
+-- a '#' comment after a metric named 'set' still parses as PromQL
+[('__name__','set'),('instance','host1')]	3
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2

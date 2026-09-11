@@ -236,6 +236,13 @@ public:
         return Highlight::none;
     }
 
+    /// True for dialect parsers that read the raw query text themselves and use the SQL tokens
+    /// only to find the end of the statement, so a token the SQL lexer rejects is not an error.
+    virtual bool consumesRawText() const
+    {
+        return false;
+    }
+
     virtual ~IParser() = default;
 };
 

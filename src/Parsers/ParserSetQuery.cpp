@@ -1,4 +1,5 @@
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Common/StringUtils.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -412,6 +413,46 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+bool isCommittedToSetQuery(IParser::Pos pos)
+{
+    /// Committed to SET once the input starts with a genuine SET statement structure:
+    /// 1. `SET <setting> = ...` (assignment, even if the value is malformed)
+    /// 2. `SET <setting>` where <setting> is not a PromQL keyword/operator: no valid dialect
+    ///    query continues a metric named `set` with a bareword, while the shorthand syntax
+    ///    accepts `SET <setting>` as `<setting> = true` even when the following token is junk.
+    /// 3. `SET <PromQL keyword>` only when followed by `,`, `;` or end of stream, so that
+    ///    e.g. `set or up` and `set offset 0s` stay PromQL while a bare `SET or` is a SET.
+    auto is_promql_keyword = [](std::string_view name) -> bool
+    {
+        static constexpr std::string_view keywords[]
+            = {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"};
+        for (const auto & kw : keywords)
+        {
+            if (equalsCaseInsensitive(name, kw))
+                return true;
+        }
+        return false;
+    };
+
+    Expected probe_expected;
+    if (!ParserKeyword(Keyword::SET).ignore(pos, probe_expected))
+        return false;
+
+    ASTPtr identifier_node;
+    if (!ParserCompoundIdentifier().parse(pos, identifier_node, probe_expected))
+        return false;
+
+    String identifier_name;
+    tryGetIdentifierNameInto(identifier_node, identifier_name);
+
+    if (pos->type == TokenType::Equals)
+        return true;
+
+    if (!is_promql_keyword(identifier_name))
+        return true;
+
+    return pos->type == TokenType::Comma || pos->type == TokenType::Semicolon || pos->type == TokenType::EndOfStream;
+}
 
 }
 
