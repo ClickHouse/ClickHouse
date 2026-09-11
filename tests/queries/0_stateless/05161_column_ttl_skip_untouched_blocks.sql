@@ -15,7 +15,6 @@ SETTINGS
     min_rows_for_wide_part = 0,
     merge_max_block_size = 1024,
     vertical_merge_algorithm_min_rows_to_activate = 1000000000,
-    index_granularity = 1,
     merge_with_ttl_timeout = 0,
     max_number_of_merges_with_ttl_in_pool = 0;
 
