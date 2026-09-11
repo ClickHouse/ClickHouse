@@ -222,9 +222,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String format_str;
     Pos before_values = pos;
 
-    /// For INSERT VALUES and INSERT FORMAT, RETURNING must appear before the data clause.
-    if (!infile)
-        try_parse_returning_subquery();
+    /// For INSERT VALUES / INSERT FORMAT / INSERT FROM INFILE, RETURNING must appear
+    /// before the data clause token that binds the insert payload (VALUES / FORMAT).
+    try_parse_returning_subquery();
 
     /// VALUES or FORMAT or SELECT or WITH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
@@ -834,6 +834,28 @@ To insert a default value instead of `NULL` into a column with a non-nullable da
 INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
 WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
 ```
+
+## INSERT ... RETURNING {#insert-returning}
+
+**Syntax**
+
+For `INSERT VALUES`, `INSERT FORMAT`, and `INSERT FROM INFILE`, the `RETURNING` clause appears before the payload format:
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] RETURNING (SELECT ...) VALUES ...
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] RETURNING (SELECT ...) FORMAT format_name data_set
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] [SETTINGS ...] RETURNING (SELECT ...) [FORMAT format_name]
+```
+
+For `INSERT SELECT`, the `RETURNING` clause appears after the source query:
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ... RETURNING (SELECT ...) [SETTINGS ...]
+```
+
+The parenthesized subquery is required. The client receives a single result set: the result of the `RETURNING` subquery.
+
+The `INSERT` runs first using the normal insert pipeline. If the `INSERT` fails, the `RETURNING` subquery is not executed. If the `INSERT` succeeds, the subquery runs in the same session and can reference any table.
 
 ## Inserting Data from a File {#inserting-data-from-a-file}
 
