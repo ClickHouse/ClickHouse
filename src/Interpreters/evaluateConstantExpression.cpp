@@ -126,7 +126,7 @@ static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExp
         ast->setAlias("constant_expression");
     }
 
-    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context);
     param_visitor.visit(ast);
 
     String result_name;

@@ -53,6 +53,10 @@
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
     M(OtherQueryTimeMicroseconds, "Total time of queries that are not SELECT or INSERT.", ValueType::Microseconds) \
+    M(QueryParameterTextBytes, "Bytes received in text query parameter values.", ValueType::Bytes) \
+    M(QueryParameterBinaryBytes, "Bytes received in Native binary query parameter blocks.", ValueType::Bytes) \
+    M(QueryParameterTextParseMicroseconds, "Time spent parsing text query parameters.", ValueType::Microseconds) \
+    M(QueryParameterBinaryDecodeMicroseconds, "Time spent decoding Native binary query parameter blocks.", ValueType::Microseconds) \
     M(FileOpen, "Number of files opened.", ValueType::Number) \
     M(Seek, "Number of times the 'lseek' function was called.", ValueType::Number) \
     M(ReadBufferFromFileDescriptorRead, "Number of reads (read/pread) from a file descriptor. Does not include sockets.", ValueType::Number) \

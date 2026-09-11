@@ -5,6 +5,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Block.h>
 #include <Core/Protocol.h>
+#include <Core/TypedQueryParameters.h>
 
 #include <QueryPipeline/ProfileInfo.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -96,6 +97,18 @@ public:
         const ConnectionTimeouts & timeouts,
         const String & query,
         const NameToNameMap & query_parameters,
+        const String & query_id_,
+        UInt64 stage,
+        const Settings * settings,
+        const ClientInfo * client_info,
+        bool with_pending_data,
+        const std::vector<String> & external_roles,
+        std::function<void(const Progress &)> process_progress_callback) = 0;
+
+    virtual void sendQueryWithTypedParameters(
+        const ConnectionTimeouts & timeouts,
+        const String & query,
+        const QueryParameterBindings & query_parameters,
         const String & query_id_,
         UInt64 stage,
         const Settings * settings,

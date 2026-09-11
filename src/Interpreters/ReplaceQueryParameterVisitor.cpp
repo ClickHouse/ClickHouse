@@ -10,6 +10,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -21,10 +22,18 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Analyzer/Utils.h>
 #include <Common/SettingsChanges.h>
+#include <Interpreters/Context.h>
 #include <Common/checkStackSize.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event QueryParameterTextParseMicroseconds;
+}
 
 namespace DB
 {
@@ -39,6 +48,13 @@ namespace ErrorCodes
 /// and all shared_ptr's that pointed to the original object will now point to the new replaced value.
 /// However, with ASTQueryParameter, we are only assigning a new value to the passed shared_ptr, while
 /// all other shared_ptr's still point to the old ASTQueryParameter.
+
+ReplaceQueryParameterVisitor::ReplaceQueryParameterVisitor(ContextPtr context_)
+    : query_parameters(context_->getQueryParameters())
+    , typed_query_parameters(&context_->getTypedQueryParameters())
+    , context(std::move(context_))
+{
+}
 
 void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
 {
@@ -170,7 +186,30 @@ Field ReplaceQueryParameterVisitor::resolveParameterValueAsField(const String & 
 {
     const auto data_type = DataTypeFactory::instance().get(type_name);
 
+    const auto typed_it = typed_query_parameters ? typed_query_parameters->find(name) : TypedQueryParameters::const_iterator{};
+    const bool has_typed_parameter = typed_query_parameters && typed_it != typed_query_parameters->end();
     auto it = query_parameters.find(name);
+    if (has_typed_parameter && it != query_parameters.end())
+        throw Exception(
+            ErrorCodes::BAD_QUERY_PARAMETER,
+            "Query parameter {} is specified in both text and binary form",
+            backQuote(name));
+
+    if (has_typed_parameter)
+    {
+        const auto & parameter = typed_it->second;
+        if (!data_type->equals(*parameter.type))
+            throw Exception(
+                ErrorCodes::BAD_QUERY_PARAMETER,
+                "Type {} of binary query parameter {} does not match declared type {}",
+                parameter.type->getName(),
+                backQuote(name),
+                data_type->getName());
+
+        ++num_replaced_parameters;
+        ++num_replaced_typed_parameters;
+        return (*parameter.column)[0];
+    }
     if (it == query_parameters.end())
     {
         /// If a parameter has Nullable type and is not specified, assume its value is NULL.
@@ -189,6 +228,7 @@ Field ReplaceQueryParameterVisitor::resolveParameterValueAsField(const String & 
     FormatSettings format_settings;
 
     const SerializationPtr & serialization = data_type->getDefaultSerialization();
+    Stopwatch parse_watch;
     try
     {
         if (name == "_request_body")
@@ -198,9 +238,11 @@ Field ReplaceQueryParameterVisitor::resolveParameterValueAsField(const String & 
     }
     catch (Exception & e)
     {
+        ProfileEvents::increment(ProfileEvents::QueryParameterTextParseMicroseconds, parse_watch.elapsedMicroseconds());
         e.addMessage("value {} cannot be parsed as {} for query parameter '{}'", value, type_name, name);
         throw;
     }
+    ProfileEvents::increment(ProfileEvents::QueryParameterTextParseMicroseconds, parse_watch.elapsedMicroseconds());
 
     if (!read_buffer.eof())
         throw Exception(ErrorCodes::BAD_QUERY_PARAMETER,
@@ -234,6 +276,34 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     String alias = ast_param.alias;
 
     const auto data_type = DataTypeFactory::instance().get(type_name);
+
+    const auto typed_it = typed_query_parameters ? typed_query_parameters->find(ast_param.name) : TypedQueryParameters::const_iterator{};
+    const bool has_typed_parameter = typed_query_parameters && typed_it != typed_query_parameters->end();
+    const auto text_it = query_parameters.find(ast_param.name);
+    if (has_typed_parameter && text_it != query_parameters.end())
+        throw Exception(
+            ErrorCodes::BAD_QUERY_PARAMETER,
+            "Query parameter {} is specified in both text and binary form",
+            backQuote(ast_param.name));
+
+    if (has_typed_parameter)
+    {
+        const auto & parameter = typed_it->second;
+        if (!data_type->equals(*parameter.type))
+            throw Exception(
+                ErrorCodes::BAD_QUERY_PARAMETER,
+                "Type {} of binary query parameter {} does not match declared type {}",
+                parameter.type->getName(),
+                backQuote(ast_param.name),
+                data_type->getName());
+
+        ast = makeASTFunction("__getScalar", make_intrusive<ASTLiteral>(parameter.scalar_name));
+        ast->setAlias(alias);
+        ++num_replaced_parameters;
+        ++num_replaced_typed_parameters;
+        return;
+    }
+
     Field literal = resolveParameterValueAsField(ast_param.name, type_name);
 
     ast = makeASTForQueryParameter(literal, type_name, data_type);

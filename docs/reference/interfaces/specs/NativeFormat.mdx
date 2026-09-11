@@ -11,6 +11,7 @@ The Native format is the columnar wire format ClickHouse uses to move tabular da
 
 - the body of `Data`, `Totals`, `Extremes`, `Log`, and `ProfileEvents` packets in the [native TCP protocol](/reference/interfaces/specs/NativeProtocol) (the `TableColumns` packet is **not** a Native block — it carries two binary strings, so its layout belongs to the [native protocol spec](/reference/interfaces/specs/NativeProtocol));
 - the output of `SELECT ... FORMAT Native` over HTTP;
+- the typed query parameter block appended to a `Query` packet at protocol revision `54493` and above;
 - file exports written with `INTO OUTFILE ... FORMAT Native`;
 - inter-server replication payloads.
 
@@ -239,6 +240,9 @@ All Data-family packets share the same Block wire format. The variants differ on
 | Header block  | N > 0       | 0        | Announces the result schema (column names + types). |
 | Result block  | N > 0       | M > 0    | Actual result rows. |
 | Empty block   | 0           | 0        | Sentinel — end-of-input on the client side; boundary marker on the server side. |
+| Typed query parameter block | N > 0 | 1 | One query parameter per named column; carried directly in a `Query` packet at revision `54493` and above. |
+
+An empty typed query parameter set uses the ordinary empty-block representation. Unlike a `Data` packet, a typed parameter block has no `table_name` prefix and is not an end-of-input sentinel; its position in the `Query` packet determines its meaning. See [Typed query parameter block](/interfaces/specs/NativeProtocol#typed-query-parameter-block).
 
 ### Byte-level examples {#byte-level-examples}
 
@@ -316,6 +320,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | `out_of_order_buckets` in `BlockInfo` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION` | `54480` | `BlockInfo` field ID `3` is not written (see [BlockInfo](#blockinfo)). |
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
 | `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
+| Typed query parameter block | `DBMS_MIN_PROTOCOL_VERSION_WITH_TYPED_QUERY_PARAMETERS` | `54493` | No Native block follows the text parameter list in a `Query` packet; clients must use text parameters. |
 
 That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped. Aggregate-function *state* versions are the exception at revision `0`: there is no peer to derive a version for — the stream is written and read back by whoever produced it (a `StripeLog` data file, a `Set`/`Join` backup, a `Native` format file) — so the writer keeps a version pinned on the type (spelling it out in the type string as usual) instead of downgrading the state to version `0`, and only a type that pins no version is written at version `0`.
 
