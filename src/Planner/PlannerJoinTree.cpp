@@ -187,6 +187,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace

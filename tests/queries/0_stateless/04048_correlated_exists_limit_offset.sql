@@ -2,7 +2,7 @@
 -- PR #99005 correctly fixes non-correlated EXISTS with LIMIT/OFFSET.
 -- Correlated EXISTS with LIMIT/OFFSET is now supported via LimitStep decorrelation
 -- (LimitStep is converted to LimitByStep grouped by correlated columns).
--- Requires the new analyzer for correlated subquery decorrelation.
+-- Requires the analyzer for correlated subquery decorrelation.
 
 SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
