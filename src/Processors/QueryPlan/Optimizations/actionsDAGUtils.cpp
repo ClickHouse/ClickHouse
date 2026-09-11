@@ -557,18 +557,19 @@ static bool isConstantExpression(const ActionsDAG::Node * node, NodeMap & consta
     if (auto it = constant_expressions.find(node); it != constant_expressions.end())
         return it->second;
 
-    bool is_constant = static_cast<bool>(node->column);
-    if (!is_constant
-        && ((node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
-            || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-                && node->function_base->isDeterministicInScopeOfQuery())))
+    if (node->column)
+        return constant_expressions[node] = true;
+
+    if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+        return constant_expressions[node] = isConstantExpression(node->children[0], constant_expressions);
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->isDeterministicInScopeOfQuery())
     {
-        is_constant
+        return constant_expressions[node]
             = std::ranges::all_of(node->children, [&](const auto * child) { return isConstantExpression(child, constant_expressions); });
     }
 
-    constant_expressions[node] = is_constant;
-    return is_constant;
+    return constant_expressions[node] = false;
 }
 
 std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node, NodeMap & constant_expressions)
