@@ -659,8 +659,7 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
     /// limit disabled. The unit counted is one (input element, accumulator element) pair, and one
     /// iteration covers `BASE58_ENCODE_BYTES_PER_PASS * BASE58_ENCODE_WORD_DIGITS` of them, hence the scaling.
     /// The count carries over between calls when the caller owns it, so the work of values too small to
-    /// reach a check on their own still adds up to one. Writes go through the reference, which keeps the
-    /// caller's count correct on every exit path.
+    /// reach a check on their own still adds up to one.
     size_t own_work_since_check = 0;
     size_t & work_since_check = shared_work_since_check ? *shared_work_since_check : own_work_since_check;
     static constexpr size_t work_per_check = 1ULL << 20;

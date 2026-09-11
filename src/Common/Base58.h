@@ -14,10 +14,9 @@ namespace DB
 /// time, so they accept an optional `check_cancellation` callback that is invoked periodically;
 /// it is expected to throw if the query has been cancelled or exceeded its time limit.
 ///
-/// The work done since the last callback is counted in `shared_work_since_check` when the caller
-/// passes one, so that a caller converting many values checks on their combined work. A value that
-/// completes well within one interval never reaches a check of its own, so a counter that starts
-/// at zero for every value leaves a long run of small values unable to check at all.
+/// A caller converting many values can pass `shared_work_since_check` to have the work counted
+/// across them: a value that completes well within one interval reaches no check of its own, so a
+/// count that restarts at every value leaves a long run of small values uninterruptible.
 ///
 /// `dst` also holds the conversion's intermediate state: it must have room for
 /// `2 * src_length + 1` bytes to encode and `src_length` bytes to decode.
