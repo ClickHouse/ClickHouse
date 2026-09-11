@@ -22,7 +22,11 @@ CREATE TABLE t_countmin_lc_numeric_fixture
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS auto_statistics_types = '', refresh_statistics_interval = 0;
+SETTINGS
+    auto_statistics_types = '',
+    refresh_statistics_interval = 0,
+    min_bytes_for_wide_part = 1000000000000,
+    min_rows_for_wide_part = 1000000000000;
 
 INSERT INTO t_countmin_lc_numeric_fixture
 SELECT
@@ -93,7 +97,11 @@ CREATE TABLE t_countmin_lc_nullable_string_fixture
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS auto_statistics_types = '', refresh_statistics_interval = 0;
+SETTINGS
+    auto_statistics_types = '',
+    refresh_statistics_interval = 0,
+    min_bytes_for_wide_part = 1000000000000,
+    min_rows_for_wide_part = 1000000000000;
 
 INSERT INTO t_countmin_lc_nullable_string_fixture
 SELECT
@@ -177,7 +185,11 @@ CREATE TABLE t_countmin_lc_large_dictionary_subset
 )
 ENGINE = MergeTree
 ORDER BY tuple()
-SETTINGS auto_statistics_types = '', refresh_statistics_interval = 0;
+SETTINGS
+    auto_statistics_types = '',
+    refresh_statistics_interval = 0,
+    min_bytes_for_wide_part = 1000000000000,
+    min_rows_for_wide_part = 1000000000000;
 
 INSERT INTO t_countmin_lc_large_dictionary
 SELECT
