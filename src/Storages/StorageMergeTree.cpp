@@ -111,6 +111,7 @@ namespace Setting
     extern const SettingsBool optimize_skip_merged_partitions;
     extern const SettingsBool optimize_throw_if_noop;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 max_parts_to_move;
     extern const SettingsUpdateParallelMode update_parallel_mode;
@@ -352,8 +353,11 @@ void StorageMergeTree::read(
 {
     const auto & settings = local_context->getSettingsRef();
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
+    /// With `parallel_replicas_plan_based` do not build the query-based reading step either: the
+    /// plan-based implementation is meant to replace it, so a query the planner never saw reads
+    /// locally instead of falling back to the implementation being replaced.
     if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
-        && !settings[Setting::allow_experimental_analyzer])
+        && !settings[Setting::allow_experimental_analyzer] && !settings[Setting::parallel_replicas_plan_based])
     {
         ClusterProxy::executeQueryWithParallelReplicas(
             query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);

@@ -1,0 +1,26 @@
+analyzer: plan-based reads from replicas
+ReadFromParallelReplicas
+ReadFromParallelReplicas
+no analyzer: number of steps reading from replicas
+0
+0
+no analyzer, query-based: reads from replicas
+ReadFromRemoteParallelReplicas
+ReadFromRemoteParallelReplicas
+no analyzer, only_with_analyzer at its default: number of steps reading from replicas
+0
+0
+results
+499500
+499500
+499500
+499500
+499500
+499500
+view, Merge, Distributed
+499500
+499500
+499500
+499500
+999000
+999000

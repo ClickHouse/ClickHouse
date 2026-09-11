@@ -430,6 +430,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 #endif
 
-    enable_parallel_replicas = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_plan_based];
+    /// The plan-based implementation requires the analyzer: without it the planner never builds the
+    /// distributed plan this optimization works on.
+    enable_parallel_replicas = from->canUseParallelReplicasOnInitiator()
+        && from->getSettingsRef()[Setting::parallel_replicas_plan_based]
+        && from->getSettingsRef()[Setting::allow_experimental_analyzer];
 }
 }

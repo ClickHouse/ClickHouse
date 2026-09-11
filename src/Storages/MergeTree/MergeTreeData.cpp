@@ -266,6 +266,7 @@ namespace Setting
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsUInt64 dead_blobs_to_delay_insert;
     extern const SettingsUInt64 dead_blobs_to_throw_insert;
     extern const SettingsUInt64 parts_to_delay_insert;
@@ -11685,7 +11686,10 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
             return QueryProcessingStage::Enum::FetchColumns;
 
         /// Parallel replicas
-        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
+        /// This branch is reached only with the analyzer disabled, and `parallel_replicas_plan_based`
+        /// requires the analyzer, so such a query reads locally: keep the stage local as well.
+        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState
+            && !settings[Setting::parallel_replicas_plan_based])
         {
             /// ReplicatedMergeTree
             if (supportsReplication())
