@@ -151,11 +151,26 @@ ALTER TABLE replacing2 MODIFY SETTING min_partition_age_to_force_merge_seconds =
 ALTER TABLE replacing2 MODIFY SETTING min_age_to_force_merge_on_partition_only = false;
 ALTER TABLE replacing2 MODIFY SETTING min_partition_age_to_force_merge_seconds = 1;
 SELECT 'combination rejected, each setting accepted on its own';
+
+-- Only the Simple and StochasticSimple selectors read min_partition_age_to_force_merge_seconds, so the
+-- combination is harmless, and accepted, under any other selector.
+DROP TABLE IF EXISTS replacing_trivial;
+CREATE TABLE replacing_trivial (key int, value int, version int, deleted UInt8) ENGINE = ReplacingMergeTree(version, deleted) ORDER BY key
+SETTINGS merge_selector_algorithm = 'Trivial',
+    min_age_to_force_merge_on_partition_only = true,
+    min_age_to_force_merge_seconds = 1,
+    min_partition_age_to_force_merge_seconds = 1;
+
+-- Switching to a selector that does read it brings the rejection back.
+ALTER TABLE replacing_trivial MODIFY SETTING merge_selector_algorithm = 'Simple'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE replacing_trivial MODIFY SETTING merge_selector_algorithm = 'StochasticSimple'; -- { serverError BAD_ARGUMENTS }
+SELECT 'combination accepted under a selector that ignores the setting';
 "
 
 $CLICKHOUSE_CLIENT -mq "
 DROP TABLE replacing;
 DROP TABLE replacing2;
+DROP TABLE replacing_trivial;
 DROP TABLE t03357_replacing_replicated;
 DROP TABLE t03357_replacing_replicated2;
 "

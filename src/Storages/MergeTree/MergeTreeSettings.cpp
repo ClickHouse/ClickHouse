@@ -812,12 +812,14 @@ still trims a trailing small part from a selected range of three parts or more.
 Either of those that a workload needs off must be turned off explicitly through
 its own setting.
 
-Cannot be combined with `min_age_to_force_merge_seconds` together with
+Under the Simple and StochasticSimple merge selectors, cannot be combined with
+`min_age_to_force_merge_seconds` together with
 `min_age_to_force_merge_on_partition_only`. That pair merges a whole partition
 at once, and only such a merge is marked final, which is what lets a
 `ReplacingMergeTree` run `CLEANUP`; forcing regular merges by partition age
 would pre-empt it. Use the pair for partitions that fit into a single merge and
-this setting for the ones that do not.
+this setting for the ones that do not. Other selectors ignore this setting, so
+the combination is accepted with them.
 
 Possible values:
 - Positive integer.
@@ -2721,16 +2723,21 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
             background_pool_tasks);
     }
 
+    /// Only the Simple and StochasticSimple selectors read min_partition_age_to_force_merge_seconds,
+    /// so only they can pre-empt the whole-partition (final) merge with a regular one.
+    const auto merge_selector_algorithm = (*this)[MergeTreeSetting::merge_selector_algorithm].value;
     if ((*this)[MergeTreeSetting::min_partition_age_to_force_merge_seconds]
         && (*this)[MergeTreeSetting::min_age_to_force_merge_on_partition_only]
-        && (*this)[MergeTreeSetting::min_age_to_force_merge_seconds])
+        && (*this)[MergeTreeSetting::min_age_to_force_merge_seconds]
+        && (merge_selector_algorithm == MergeSelectorAlgorithm::SIMPLE
+            || merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Setting 'min_partition_age_to_force_merge_seconds' cannot be combined with "
-            "'min_age_to_force_merge_seconds' + 'min_age_to_force_merge_on_partition_only': the latter merges a "
-            "whole partition at once, and only that merge is marked final, which is what enables "
-            "ReplacingMergeTree cleanup. Use one of the two mechanisms: "
+            "'min_age_to_force_merge_seconds' + 'min_age_to_force_merge_on_partition_only' under the Simple or "
+            "StochasticSimple merge selector: the latter merges a whole partition at once, and only that merge is "
+            "marked final, which is what enables ReplacingMergeTree cleanup. Use one of the two mechanisms: "
             "'min_age_to_force_merge_on_partition_only' for partitions that fit into a single merge, "
             "'min_partition_age_to_force_merge_seconds' for partitions that do not.");
     }
