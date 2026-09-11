@@ -1,9 +1,10 @@
 -- The `Escaped` and `Raw` escaping rules read integers with `readIntTextUnsafe`, which used to treat the
--- first '0' as the whole value and reject a leading '+'. `CSV` and `JSON` have their own overrides in
--- `SerializationNumber` and route to the tolerant `readIntText`, so every `CSV` row below is the
--- expected-value oracle for the `TSV` row beside it; `Quoted` has no override and reaches the same unsafe
--- reader as `Escaped` and `Raw`, which group 13 witnesses. `TSKV` and `CustomSeparated` need a trailing
--- newline for any value at all, including a plain 42, so the fields here carry one.
+-- first '0' as the whole value and to leave a leading '+' unread for the format layer to reject. `CSV`
+-- and `JSON` have their own overrides in `SerializationNumber` and route to the tolerant `readIntText`,
+-- so every `CSV` row below is the expected-value oracle for the `TSV` row beside it; `Quoted` has no
+-- override and reaches the same unsafe reader as `Escaped` and `Raw`, which group 13 witnesses. `TSKV`
+-- and `CustomSeparated` need a trailing newline for any value at all, including a plain 42, so the
+-- fields here carry one.
 
 -- 1. Unsigned zero-padded integers with an explicit structure, in all four formats of the family.
 SELECT 'group 1: TSV';
@@ -20,7 +21,8 @@ SELECT * FROM format(CustomSeparated, 'a Int64', '007\n00\n03242\n0100\n09\n01\n
 SELECT 'group 2: signed padded';
 SELECT * FROM format(TSV, 'a Int64', '-007\n-00\n-03242\n-0100\n');
 
--- 3. A redundant leading plus, which `readIntTextUnsafe` used to reject for any integer, padded or not.
+-- 3. A redundant leading plus, which used to fail for any integer, padded or not, because the reader
+-- read no digits and left it where a delimiter belonged.
 SELECT 'group 3: plus sign';
 SELECT * FROM format(TSV, 'a Int64', '+7\n+007\n+0\n');
 
@@ -177,13 +179,19 @@ DROP TABLE src_04812;
 SELECT 'group 13: Values, unchanged at default settings';
 SELECT * FROM format(Values, 'a Int64', '(007),(+007),(-007)');
 -- The one spelling that does move. With template deduction off, a padded or `+`-signed value that
--- overflows the target used to reach that fallback, which defaulted it to 0 (or raised TYPE_MISMATCH
--- under `input_format_null_as_default = 0`); the reader now consumes it and wraps, which is what the
--- unpadded spelling in the third row has always done. This reader has never checked overflow (group 9).
+-- overflows the target used to reach that fallback, which defaulted it to 0; the reader now consumes it
+-- and wraps, which is what the unpadded spelling in the third row has always done. This reader has never
+-- checked overflow (group 9). Both arms of the fallback's defaulting are pinned, neither is randomized.
 SELECT 'group 13: Values, an overflowing padded value now wraps like the unpadded one';
-SELECT * FROM format(Values, 'a Int8', '(0128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;
-SELECT * FROM format(Values, 'a Int8', '(+128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;
-SELECT * FROM format(Values, 'a Int8', '(128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0;
+SELECT * FROM format(Values, 'a Int8', '(0128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0, input_format_null_as_default = 1;
+SELECT * FROM format(Values, 'a Int8', '(+128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0, input_format_null_as_default = 1;
+SELECT * FROM format(Values, 'a Int8', '(128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0, input_format_null_as_default = 1;
+-- With defaulting off the same overflow was reported instead of defaulted, so the first two rows move
+-- from TYPE_MISMATCH to the wrap; the third never reached the fallback and answers as it always did.
+SELECT 'group 13: Values, the same values with defaulting off, which reported TYPE_MISMATCH';
+SELECT * FROM format(Values, 'a Int8', '(0128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0, input_format_null_as_default = 0;
+SELECT * FROM format(Values, 'a Int8', '(+128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0, input_format_null_as_default = 0;
+SELECT * FROM format(Values, 'a Int8', '(128)') SETTINGS input_format_values_deduce_templates_of_expressions = 0, input_format_null_as_default = 0;
 
 -- 14. The reader also serves SQL, not only a format: comparing a numeric column with a string literal
 -- sends the literal through `convertFieldToType`, which re-reads it with `deserializeWholeText`. `toInt64`
@@ -206,7 +214,7 @@ SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE
 SELECT trimBoth(explain) FROM (EXPLAIN indexes = 1 SELECT v FROM cmp_04812 WHERE v = '007' SETTINGS enable_parallel_replicas = 0) WHERE explain ILIKE '%Name:%';
 
 -- 15. A '+' with no digit after it is refused by the reader itself, so these two carriers now report the
--- reader's code where an integer target used to reach their own. Neither carrier normalizes reader codes:
+-- reader's code where an integer target used to reach their own. Neither of them normalizes reader codes:
 -- the float rows are the control, and they answer identically without this change.
 SELECT 'group 15: a lone plus reports the reader code, as a float target already does';
 SELECT count() FROM cmp_04812 WHERE v = '+'; -- { serverError CANNOT_PARSE_NUMBER }
@@ -214,6 +222,12 @@ SELECT count() FROM (SELECT materialize(1.5) AS f) WHERE f = '+'; -- { serverErr
 SET param_lone = '+';
 SELECT {lone:Int64}; -- { serverError CANNOT_PARSE_NUMBER }
 SELECT {lone:Float64}; -- { serverError CANNOT_PARSE_NUMBER }
+-- Two carriers wrap the reader's error in a code of their own, unchanged here: `Values` re-reads the
+-- value with the SQL parser, and a `Map` subcolumn fails name resolution when its key does not read as
+-- a number.
+SELECT 'group 15: two carriers that wrap the reader code in their own';
+SELECT * FROM format(Values, 'a Int64', '(+)'); -- { serverError SYNTAX_ERROR }
+SELECT m.`key_+` FROM (SELECT map(7::Int64, 'x'::String) AS m); -- { serverError UNKNOWN_IDENTIFIER }
 DROP TABLE cmp_04812;
 
 -- 16. The set of carriers is open, so these are keyed on the mechanism rather than on a format name:

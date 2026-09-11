@@ -105,8 +105,8 @@ std::pair<bool, T> tryReadUnsafe(std::string_view text)
     return {ok, x};
 }
 
-/// A value split across two buffers is read whole: `eof` refills, so the run of zeros does not stop
-/// at a buffer boundary.
+/// A value split across two buffers is read whole: `eof` refills, so neither a run of zeros nor a sign
+/// stops at a buffer boundary.
 template <typename T>
 std::pair<T, bool> readUnsafeSplit(std::string_view head, std::string_view tail)
 {
@@ -150,6 +150,16 @@ TEST(ReadIntTextTest, readIntTextUnsafeLeadingZerosAndSigns)
     EXPECT_EQ((readUnsafeSplit<Int64>("00", "7")), std::make_pair(Int64(7), true));
     EXPECT_EQ((readUnsafeSplit<Int64>("000", "0")), std::make_pair(Int64(0), true));
     EXPECT_EQ((readUnsafeSplit<Int64>("0", "042")), std::make_pair(Int64(42), true));
+}
+
+TEST(ReadIntTextTest, readIntTextUnsafeRefillsAfterASign)
+{
+    /// The digit a '+' requires can be the first byte of the next buffer, so the requirement is checked
+    /// after a refill. These live apart from the cases above because a rejection here throws, which ends
+    /// the test body it is in.
+    EXPECT_EQ((readUnsafeSplit<Int64>("+", "7")), std::make_pair(Int64(7), true));
+    EXPECT_EQ((readUnsafeSplit<Int64>("+", "007")), std::make_pair(Int64(7), true));
+    EXPECT_EQ((readUnsafeSplit<Int64>("-", "007")), std::make_pair(Int64(-7), true));
 }
 
 TEST(ReadIntTextTest, readIntTextUnsafeRejectsPlusWithoutDigits)
