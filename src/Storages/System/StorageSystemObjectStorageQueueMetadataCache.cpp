@@ -27,7 +27,8 @@ ColumnsDescription StorageSystemObjectStorageQueueMetadataCache<type>::getColumn
         {"file_path", std::make_shared<DataTypeString>(), "File path of a file which is being processed"},
         {"file_name", std::make_shared<DataTypeString>(), "File name of a file which is being processed"},
         {"rows_processed", std::make_shared<DataTypeUInt64>(), "Currently processed number of rows"},
-        {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed. "
+        {"status", std::make_shared<DataTypeString>(), "Status of processing: Processed, Processing, Failed, "
+            "or None for a file which the cache knows but has no state for, e.g. a file whose processing was reset. "
             "A non-null `processing_observed_in_keeper_time` means that the `Processing` status was not set by the processor "
             "which holds the file, but read from keeper"},
         {"processing_start_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which processing of the file started"},
