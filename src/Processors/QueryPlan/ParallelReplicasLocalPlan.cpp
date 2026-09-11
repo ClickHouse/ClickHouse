@@ -233,6 +233,13 @@ ContextPtr getShippedFragmentContext(const QueryTreeNodePtr & query_tree, Contex
 /// Under the outer value the initiator-local fragment would announce a task size that disagrees with what the
 /// remote replicas derive from the shipped fragment's own settings.
 ///
+/// `read_in_order_use_buffering` and `prefer_external_sort_block_bytes` are on the list because
+/// `spreadMarkRangesAmongStreamsWithOrder` derives the per-part `PrefetchingConcat` read-ahead budget from
+/// them at pipeline-build time. A branch-scoped `read_in_order_use_buffering = 0` would switch the read-ahead
+/// off on the remote replicas while the initiator-local fragment kept the outer budget and went on
+/// prefetching. The row half of that budget is taken from the step's own `block_size.max_block_size_rows`,
+/// which the shipped fragment already carries, so `max_block_size` does not have to be on this list.
+///
 /// `fragment_context` is taken per reading step, not once for the whole fragment: with
 /// `parallel_replicas_allow_view_over_mergetree` a view can expand into a `UNION ALL` whose branches carry their
 /// own `SETTINGS`, and the analyzer gives each branch its own `QueryNode` context. Each branch is planned by its
@@ -255,6 +262,8 @@ static ContextPtr makeShippedFragmentReadingContext(const ContextPtr & context, 
         "merge_tree_min_read_task_size",
         "merge_tree_determine_task_size_by_prewhere_columns",
         "merge_tree_min_bytes_per_task_for_remote_reading",
+        "read_in_order_use_buffering",
+        "prefer_external_sort_block_bytes",
     };
 
     if (!fragment_context || fragment_context.get() == context.get())

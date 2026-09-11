@@ -2170,7 +2170,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// reintroducing read-past-boundary behavior. When per-block virtual rows are
         /// active we therefore fall back to the non-prefetching path.
         const bool can_use_per_part_prefetching =
-            !output_each_partition_through_separate_port
+            !per_part_prefetching_disabled
+            && !output_each_partition_through_separate_port
             && input_order_info->limit == 0
             && !has_outer_limit
             && !prefer_multiple_streams
@@ -2302,8 +2303,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                     if (input_order_info->direction != 1)
                         std::reverse(part_pipes.begin(), part_pipes.end());
 
-                    LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from part {}",
-                        part_pipes.size(), part.data_part->name);
+                    LOG_TRACE(log, "Using PrefetchingConcatProcessor for {} streams from part {}, read-ahead budget {} rows / {} bytes",
+                        part_pipes.size(), part.data_part->name, prefetch_max_rows, prefetch_max_bytes);
                     auto pipe = Pipe::unitePipes(std::move(part_pipes));
                     pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(
                         pipe.getSharedHeader(), pipe.numOutputPorts(), prefetch_max_rows, prefetch_max_bytes));
