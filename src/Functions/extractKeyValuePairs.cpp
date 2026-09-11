@@ -474,24 +474,38 @@ public:
         auto & offsets_data = offsets->getData();
         offsets_data.reserve(input_rows_count);
 
-        /// The output size is roughly proportional to the number of rows. After a sample of rows
-        /// it is extrapolated and reserved at once, so the columns do not regrow while they are filled.
-        const size_t sample_rows = std::max<size_t>(1, input_rows_count / 32);
-
         UInt64 offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
+        auto process_row = [&](size_t i)
         {
             offset += extractor.extract(data_column.getDataAt(i), *keys, *values);
             offsets_data.push_back(offset);
+        };
 
-            if (i + 1 == sample_rows)
-            {
-                keys->getChars().reserve(keys->getChars().size() * input_rows_count / sample_rows);
-                values->getChars().reserve(values->getChars().size() * input_rows_count / sample_rows);
-                keys->getOffsets().reserve(offset * input_rows_count / sample_rows);
-                values->getOffsets().reserve(offset * input_rows_count / sample_rows);
-            }
+        /// The output size is roughly proportional to the number of rows. It is extrapolated from a
+        /// sample of rows and reserved once, so the columns do not regrow while they are filled.
+        const size_t sample_rows = std::min<size_t>(input_rows_count, std::max<size_t>(1, input_rows_count / 32));
+        for (size_t i = 0; i < sample_rows; ++i)
+            process_row(i);
+
+        /// The sample may not be representative, so the estimate is capped by what the output can
+        /// reach at most: the keys and values together are never longer than the input, and a pair
+        /// takes at least two bytes of it.
+        const size_t input_bytes = data_column.byteSize();
+        auto estimate = [&](size_t sample_size, size_t max_size)
+        {
+            return std::min(sample_size * input_rows_count / sample_rows, max_size);
+        };
+
+        if (sample_rows < input_rows_count)
+        {
+            keys->getChars().reserve(estimate(keys->getChars().size(), input_bytes));
+            values->getChars().reserve(estimate(values->getChars().size(), input_bytes));
+            keys->getOffsets().reserve(estimate(offset, input_bytes / 2));
+            values->getOffsets().reserve(estimate(offset, input_bytes / 2));
         }
+
+        for (size_t i = sample_rows; i < input_rows_count; ++i)
+            process_row(i);
 
         return ColumnMap::create(ColumnPtr(std::move(keys)), ColumnPtr(std::move(values)), ColumnPtr(std::move(offsets)));
     }
