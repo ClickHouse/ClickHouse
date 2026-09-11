@@ -368,7 +368,11 @@ public:
     bool isQueryWithSampling() const;
 
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
-    void replaceVectorColumnWithDistanceColumn(const String & vector_column);
+    /// Swap the vector column for the `_distance` virtual column in the read list. An explicit
+    /// PREWHERE rewritten onto `_distance` must be installed in the same call: the output header is
+    /// recomputed from the read list *and* the PREWHERE actions, so applying either change alone
+    /// leaves the two disagreeing about whether the vector column exists.
+    void replaceVectorColumnWithDistanceColumn(const String & vector_column, const PrewhereInfoPtr & new_prewhere_info = nullptr);
     bool isVectorColumnReplaced() const;
 
     /// Add one more column (or subcolumn) to the read list, recomputing the output header. Used by the brute-force
