@@ -796,12 +796,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                 column.meta->meta_data.statistics.null_count == 0;
             column.need_null_map = is_nullable && !null_count_is_known_to_be_zero;
 
-            /// Same shortcut for the null maps of enclosing Nullable(Tuple(...)) groups, but it only
-            /// applies while a NULL group shows up as a null in this leaf's own values, i.e. while no
-            /// array level sits below the outermost tracked group. With an array below it, a NULL
-            /// group is an absent list element, which the writer need not count as a null, so the
-            /// statistics say nothing about the group and the levels must be walked.
-            const auto & group_defs = primitive_columns[column_idx].nullable_group_defs;
+            /// Same shortcut for the null maps of the enclosing Nullable(Tuple(...)) groups this leaf
+            /// derives, but it only applies while a NULL group shows up as a null in this leaf's own
+            /// values, i.e. while no array level sits below the outermost of them. With an array
+            /// below, a NULL group is an absent list element, which the writer need not count as a
+            /// null, so the statistics say nothing about the group and the levels must be walked.
+            const auto & group_defs = primitive_columns[column_idx].derive_group_defs;
             column.need_group_null_map = !group_defs.empty()
                 && (primitive_columns[column_idx].max_array_def > group_defs.front() || !null_count_is_known_to_be_zero);
         }
@@ -2423,6 +2423,14 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     if (column_info.levels.back().rep > 1)
         res += (column_info.levels.back().rep - 1) * 8. * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
 
+    /// One byte per instance of each Nullable(Tuple(...)) group this leaf derives a null map for.
+    /// A group under an array has one instance per element, bounded above by num_values.
+    if (!column_info.derive_group_defs.empty())
+        res += static_cast<double>(column_info.derive_group_defs.size())
+            * (column_info.levels.back().rep == 0
+                   ? 1.
+                   : static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows));
+
     return res;
 }
 
@@ -2455,7 +2463,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 
     if (column.need_group_null_map)
     {
-        subchunk.group_null_maps.resize(column_info.nullable_group_defs.size());
+        subchunk.group_null_maps.resize(column_info.derive_group_defs.size());
         for (auto & group_null_map : subchunk.group_null_maps)
         {
             group_null_map = ColumnUInt8::create();
@@ -2581,8 +2589,12 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         /// aligned with these values only while no array level sits below that group; with an array
         /// below, a NULL group produces no value here at all, so every null seen is an element null.
         const ColumnUInt8::Container * group_null_map = nullptr;
-        if (!subchunk.group_null_maps.empty() && column_info.max_array_def <= column_info.nullable_group_defs.back())
-            group_null_map = &assert_cast<const ColumnUInt8 &>(*subchunk.group_null_maps.back()).getData();
+        if (!column_info.nullable_group_defs.empty() && column_info.max_array_def <= column_info.nullable_group_defs.back())
+        {
+            const size_t idx = column_info.groupNullMapIdx(column_info.nullable_group_defs.back());
+            if (idx < subchunk.group_null_maps.size() && subchunk.group_null_maps[idx])
+                group_null_map = &assert_cast<const ColumnUInt8 &>(*subchunk.group_null_maps[idx]).getData();
+        }
 
         /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
         bool has_element_null;
@@ -3238,13 +3250,13 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
         }
 #undef X
 
-        /// Null map of each enclosing Nullable(Tuple(...)) group. `page.def` is empty only when
-        /// max_def is 0, and a tracked group always sits at a level above 0, so the maps are either
-        /// populated for the whole column chunk or (when the statistics ruled them out) never
-        /// allocated at all.
+        /// Null map of each enclosing Nullable(Tuple(...)) group this leaf derives. `page.def` is
+        /// empty only when max_def is 0, and a tracked group always sits at a level above 0, so the
+        /// maps are either populated for the whole column chunk or (when the statistics ruled them
+        /// out) never allocated at all.
         for (size_t i = 0; i < subchunk.group_null_maps.size(); ++i)
         {
-            const UInt8 group_def = column_info.nullable_group_defs[i];
+            const UInt8 group_def = column_info.derive_group_defs[i];
             UInt8 ancestor_array_def = 0;
             for (size_t level_idx = 0; level_idx < group_def; ++level_idx)
                 if (column_info.levels[level_idx].is_array)
@@ -3355,18 +3367,17 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
     /// Nullable group read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but we assemble
     /// the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using the group's
-    /// null map, which every leaf below the group derives from its own definition levels. Take it
-    /// from the first leaf, at the position of this group among the ones enclosing that leaf.
-    /// Dispatch on the unwrapped type.
+    /// null map, derived from the definition levels of the one leaf designated to supply it (see
+    /// OutputColumnInfo::nullable_group_source). Dispatch on the unwrapped type.
     MutableColumnPtr nullable_group_null_map;
     if (output_info.nullable_group_def != 0)
     {
-        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
-        const auto & group_defs = primitive_columns.at(output_info.primitive_start).nullable_group_defs;
-        size_t idx = std::find(group_defs.begin(), group_defs.end(), output_info.nullable_group_def) - group_defs.begin();
-        chassert(idx < group_defs.size());
-        if (idx < first_leaf.group_null_maps.size() && first_leaf.group_null_maps[idx])
-            nullable_group_null_map = std::move(first_leaf.group_null_maps[idx]);
+        ColumnSubchunk & source = row_subgroup.columns.at(output_info.nullable_group_source);
+        const size_t idx = primitive_columns.at(output_info.nullable_group_source)
+            .groupNullMapIdx(output_info.nullable_group_def);
+        chassert(idx != size_t(-1));
+        if (idx < source.group_null_maps.size() && source.group_null_maps[idx])
+            nullable_group_null_map = std::move(source.group_null_maps[idx]);
         else
             /// Statistics ruled out struct-level nulls (all instances defined): all-non-null map.
             nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));

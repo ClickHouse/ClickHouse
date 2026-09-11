@@ -145,6 +145,10 @@ private:
     bool processSubtreeArrayInner(TraversalNode & node);
     void processSubtreeTuple(TraversalNode & node);
 
+    /// Fills PrimitiveColumnInfo::derive_group_defs once the whole traversal is done and every
+    /// group's null-map source leaf is known.
+    void planGroupNullMapDerivation();
+
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,

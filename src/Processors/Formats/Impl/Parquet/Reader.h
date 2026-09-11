@@ -10,6 +10,7 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <algorithm>
 #include <deque>
 #include <optional>
 #include <unordered_set>
@@ -163,11 +164,25 @@ struct Reader
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
         /// Definition levels of the enclosing Tuple groups that are read as Nullable(Tuple(...)),
-        /// outermost first. Each gets its own null map, derived from this leaf's definition levels
-        /// at that level (`def[i] < group_def`). A group's nullness lives at the group's own
-        /// definition level, while this leaf's null map lives at max_def, so the two are different
-        /// questions about the same levels. See OutputColumnInfo::nullable_group_def.
+        /// outermost first. A group is NULL exactly where `def[i] < group_def`, a different threshold
+        /// from this leaf's own null map at max_def, so one leaf's levels answer both questions.
+        /// See OutputColumnInfo::nullable_group_def.
         std::vector<UInt8> nullable_group_defs;
+        /// The subset of `nullable_group_defs`, same order, whose null maps this leaf derives. Only
+        /// two are ever read: the map of the group this leaf supplies (see
+        /// OutputColumnInfo::nullable_group_source) and the map of this leaf's innermost enclosing
+        /// group, which the CANNOT_INSERT_NULL check consults. A map per (leaf, enclosing group) pair
+        /// would instead cost rows * leaves * depth. ColumnSubchunk::group_null_maps is parallel to
+        /// this.
+        std::vector<UInt8> derive_group_defs;
+
+        /// Index in `derive_group_defs`, hence in ColumnSubchunk::group_null_maps, of the null map of
+        /// the group at `group_def`; npos if this leaf does not derive that group's map.
+        size_t groupNullMapIdx(UInt8 group_def) const
+        {
+            auto it = std::find(derive_group_defs.begin(), derive_group_defs.end(), group_def);
+            return it == derive_group_defs.end() ? size_t(-1) : size_t(it - derive_group_defs.begin());
+        }
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
@@ -242,6 +257,13 @@ struct Reader
         /// nullable group's level: the root level is level 0 and is always defined.
         /// `needs_cast` (if any) is applied after wrapping.
         UInt8 nullable_group_def = 0;
+        /// Index in primitive_columns of the leaf that supplies the above null map. Preference goes
+        /// to a leaf whose path under the group adds no definition level, i.e. whose max_def equals
+        /// nullable_group_def: for such a leaf a level below the group can only mean the group
+        /// itself, whereas a leaf with a nullable or repeated path under the group needs the writer
+        /// to have encoded the group's own level correctly. Element order in the requested type is
+        /// the user's, so the first leaf is not a sound choice.
+        size_t nullable_group_source = 0;
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
@@ -403,11 +425,10 @@ struct Reader
 
         MutableColumnPtr null_map;
 
-        /// Null map of each enclosing Tuple group read as Nullable(Tuple(...)), parallel to
-        /// PrimitiveColumnInfo::nullable_group_defs. Derived from this leaf's definition levels,
-        /// one entry per instance of that group, so it is independent of `null_map` (which answers
-        /// the leaf's own nullness) and survives the leaf being materialized as Nullable(...).
-        /// formOutputColumn takes a group's map from the group's first leaf.
+        /// Null maps of the enclosing Tuple groups read as Nullable(Tuple(...)) that this leaf
+        /// derives, parallel to PrimitiveColumnInfo::derive_group_defs. Each holds one entry per
+        /// instance of its group, so it is independent of `null_map` (which answers the leaf's own
+        /// nullness) and survives the leaf being materialized as Nullable(...).
         MutableColumns group_null_maps;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at

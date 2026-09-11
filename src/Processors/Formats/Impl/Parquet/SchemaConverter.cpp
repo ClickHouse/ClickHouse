@@ -125,6 +125,7 @@ void SchemaConverter::prepareForReading()
         missing_output.is_missing_column = true;
     }
 
+    planGroupNullMapDerivation();
 }
 
 NamesAndTypesList SchemaConverter::inferSchema()
@@ -893,6 +894,51 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     output.output_type = output.input_type;
     output.nested_columns = elements;
     output.nullable_group_def = nullable_group ? group_def : 0;
+    if (nullable_group)
+    {
+        /// A leaf whose path under the group adds no definition level cannot represent an element
+        /// null, so a level below the group on it can only mean the group. Any other leaf is only as
+        /// trustworthy as the writer's encoding of the group's own level, so prefer a clean one; the
+        /// requested element order is the user's, so the first leaf is an arbitrary choice.
+        output.nullable_group_source = primitive_start;
+        for (size_t i = primitive_start; i < primitive_columns.size(); ++i)
+        {
+            if (primitive_columns[i].levels.back().def == group_def)
+            {
+                output.nullable_group_source = i;
+                break;
+            }
+        }
+    }
+}
+
+void SchemaConverter::planGroupNullMapDerivation()
+{
+    /// One map per group, on the leaf that supplies it.
+    for (const OutputColumnInfo & output : output_columns)
+        if (output.nullable_group_def != 0)
+            primitive_columns.at(output.nullable_group_source).derive_group_defs.push_back(output.nullable_group_def);
+
+    for (PrimitiveColumnInfo & primitive : primitive_columns)
+    {
+        /// Plus, per leaf, its innermost enclosing group, whose map tells a null this leaf sees
+        /// because the group is NULL from one the element itself is. Definition levels increase
+        /// inward, so a null any enclosing group explains is explained by the innermost one, and the
+        /// outer maps answer nothing extra. Only the CANNOT_INSERT_NULL check reads it.
+        if (!primitive.nullable_group_defs.empty() && !primitive.output_nullable && !options.format.null_as_default)
+            primitive.derive_group_defs.push_back(primitive.nullable_group_defs.back());
+
+        if (primitive.derive_group_defs.size() < 2)
+            continue;
+        /// Restore the outermost-first order of nullable_group_defs and drop the duplicate a leaf
+        /// that supplies its own innermost group has collected.
+        std::vector<UInt8> ordered;
+        for (UInt8 group_def : primitive.nullable_group_defs)
+            if (std::find(primitive.derive_group_defs.begin(), primitive.derive_group_defs.end(), group_def)
+                != primitive.derive_group_defs.end())
+                ordered.push_back(group_def);
+        primitive.derive_group_defs = std::move(ordered);
+    }
 }
 
 void SchemaConverter::processPrimitiveColumn(
