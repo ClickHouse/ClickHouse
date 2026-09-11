@@ -65,6 +65,24 @@ SELECT regr_slopeMerge(a), regr_interceptMerge(b) FROM (
     SELECT regr_slopeState(y, x), regr_interceptState(y, x) FROM VALUES('x Float64, y Float64', (3, 6), (4, 8))
 );
 
+SELECT 'the batched path agrees with the row-by-row one and with the existing statistics';
+WITH t AS (SELECT number % 997 * 1.5 AS x, number % 331 * 2.25 + number % 7 AS y FROM numbers(200000))
+SELECT
+    regr_count(y, x) = count(),
+    abs(regr_slope(y, x) - covarPop(x, y) / varPop(x)) < 1e-9,
+    abs(regr_intercept(y, x) - (avg(y) - covarPop(x, y) / varPop(x) * avg(x))) < 1e-9,
+    abs(regr_r2(y, x) - pow(corr(x, y), 2)) < 1e-9,
+    abs(regr_avgx(y, x) - avg(x)) < 1e-9,
+    abs(regr_avgy(y, x) - avg(y)) < 1e-9
+FROM t;
+
+SELECT 'the count is exact under a filter and under NULLs';
+WITH t AS (SELECT number * 1.0 AS x, number * 3.0 + 5 AS y FROM numbers(100000))
+SELECT regr_count(y, x) FILTER (WHERE x > 50000) = countIf(x > 50000), round(regr_slope(y, x) FILTER (WHERE x > 50000), 9) FROM t;
+
+WITH t AS (SELECT if(number % 13 = 0, NULL, number * 1.0) AS x, if(number % 17 = 0, NULL, number * 2.0 + 1) AS y FROM numbers(100000))
+SELECT regr_count(y, x) = countIf(x IS NOT NULL AND y IS NOT NULL), round(regr_slope(y, x), 9) FROM t;
+
 SELECT 'wrong argument types are rejected';
 SELECT regr_slope('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT regr_slope(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
