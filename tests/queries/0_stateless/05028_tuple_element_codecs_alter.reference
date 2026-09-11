@@ -1,0 +1,20 @@
+1	1	1	1	1	1
+all_1_1_0	payload%2Echanged	['LZ4']
+all_1_1_0	payload%2Echanged.size	['LZ4']
+all_1_1_0	payload%2Ekept	['ZSTD(1)']
+all_1_1_0	payload%2Enested%2Edefaulted	['LZ4']
+all_1_1_0	payload%2Enested%2Eremoved	['T64, LZ4']
+all_2_2_0	payload%2Echanged	['ZSTD(1)']
+all_2_2_0	payload%2Echanged.size	['ZSTD(1)']
+all_2_2_0	payload%2Ekept	['ZSTD(1)']
+all_2_2_0	payload%2Enested%2Edefaulted	['ZSTD(1)']
+all_2_2_0	payload%2Enested%2Eremoved	['LZ4']
+1	1	1
+1	1
+1	1	1
+payload%2Echanged	['ZSTD(1)']
+payload%2Echanged.size	['ZSTD(1)']
+payload%2Ekept	['ZSTD(1)']
+payload%2Enested%2Edefaulted	['ZSTD(1)']
+payload%2Enested%2Eremoved	['ZSTD(1)']
+Tuple(first UInt64, second String)	1

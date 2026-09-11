@@ -35,6 +35,7 @@
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTTupleDataType.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -53,6 +54,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/ColumnCodecDescription.h>
+#include <Storages/ColumnCodecAST.h>
+#include <Storages/ColumnCodecValidation.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
@@ -124,6 +128,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_tuple_element_codecs;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
@@ -560,10 +565,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->setComment(make_intrusive<ASTLiteral>(Field(column.comment)));
         }
 
-        if (column.codec)
-        {
-            column_declaration->setCodec(column.codec->clone());
-        }
+        applyCodecDescriptionToAST(*column_declaration, column.type, column.codec);
 
         if (column.statistics.hasExplicitStatistics())
         {
@@ -780,12 +782,22 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         if (auto comment = col_decl.getComment())
             column.comment = comment->as<ASTLiteral &>().value.safeGet<String>();
 
-        if (auto codec = col_decl.getCodec())
+        /// Extract Tuple codec paths against the declared type so the AST and type shapes match.
+        /// Validate against the final type so an outer Nullable added by NULL handling is included.
+        const auto declared_type = col_decl.getType()
+            ? DataTypeFactory::instance().get(col_decl.getType())
+            : column.type;
+        column.codec = codecDescriptionFromAST(col_decl, declared_type, column.type, codec_validation_settings);
+        /// The setting controls new metadata only. Existing metadata must load without the setting.
+        if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && column.codec.hasSubcolumns()
+            && !context_->getSettingsRef()[Setting::enable_tuple_element_codecs])
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
+        if (!column.codec.empty())
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            column.codec
-                = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, column.type, codec_validation_settings);
         }
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())
@@ -2353,6 +2365,18 @@ try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
+    if (!storage.supportsPerSubcolumnCodecs())
+    {
+        const auto metadata = storage.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+        for (const auto & column : metadata->getColumns())
+        {
+            if (column.codec.hasSubcolumns())
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Storage {} does not support Tuple-element CODEC declarations",
+                    storage.getName());
+        }
+    }
 }
 catch (...)
 {

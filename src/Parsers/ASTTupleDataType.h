@@ -6,6 +6,8 @@
 namespace DB
 {
 
+class ASTTupleElementCodecOperation;
+
 /// Specialized AST for Tuple data types with named elements.
 /// Stores element names directly as a vector of strings instead of creating
 /// ASTNameTypePair children, significantly reducing memory for named tuples.
@@ -15,11 +17,21 @@ namespace DB
 class ASTTupleDataType : public ASTDataType
 {
 public:
+    using CodecOperationsByElement = std::vector<const ASTTupleElementCodecOperation *>;
+
     /// Element names for named tuple.
     /// If empty, it's an unnamed tuple.
     /// If non-empty, must have same size as arguments->children, all names must be non-empty.
     /// Validation happens in DataTypeFactory::createTupleFromAST().
     Strings element_names;
+
+    ASTPtr getCodecOperations() const;
+    /// Validate once and index sparse operations by Tuple element. Returns an empty vector when there are no operations.
+    CodecOperationsByElement getCodecOperationsByElement() const;
+    /// Replace all sparse operations and validate the resulting list once.
+    void setCodecOperations(ASTs codec_operations);
+    void resetCodecOperations();
+    void validateCodecOperations() const;
 
     String getID(char delim) const override;
     ASTPtr clone() const override;

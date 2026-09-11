@@ -22,6 +22,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Storages/ColumnCodecResolver.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
@@ -305,8 +306,8 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
         res_columns[i++]->insert(column.comment);
 
-        if (column.codec)
-            res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
+        if (column.codec.hasRoot())
+            res_columns[i++]->insert(column.codec.getRoot()->as<ASTFunction>()->arguments->formatForLogging());
         else
             res_columns[i++]->insertDefault();
 
@@ -325,6 +326,11 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
 
 void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, bool is_virtual, MutableColumns & res_columns)
 {
+    ColumnCodecResolver codec_resolver(
+        column.codec,
+        column.type,
+        NameAndTypePair(column.name, column.type),
+        nullptr);
     IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
     {
         size_t i = 0;
@@ -343,8 +349,9 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insertDefault();
             res_columns[i++]->insert(column.comment);
 
-            if (column.codec && ISerialization::isSpecialCompressionAllowed(path))
-                res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
+            const auto resolved_codec = codec_resolver.resolve(path);
+            if (resolved_codec.codec)
+                res_columns[i++]->insert(resolved_codec.codec->template as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 
