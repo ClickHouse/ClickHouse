@@ -2622,7 +2622,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                                 query_plan_parallel_replicas,
-                                storage->getStorageID(),
+                                getStorageIDForParallelReplicas(
+                                    table_node ? static_cast<const ITableExpressionNode &>(*table_node) : *table_function_node),
                                 modified_query_info,
                                 metadata_snapshot->getColumns(),
                                 storage_snapshot,

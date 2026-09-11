@@ -328,7 +328,8 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     const StorageID & main_table,
     ASTPtr additional_filter_ast,
     LoggerPtr log,
-    const DistributedSettings * distributed_settings)
+    const DistributedSettings * distributed_settings,
+    bool forward_current_database = false)
 {
     ClientInfo new_client_info = context->getClientInfo();
     Settings new_settings {settings};
@@ -412,6 +413,20 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
     /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
     stripInitiatorOnlySettings(new_settings);
+
+    /// `database` is stripped above because a `Distributed` shard has to resolve an unqualified remote
+    /// table against its own default database. A parallel-replicas fan-out is not a remapping - every
+    /// replica holds the same tables and the query is written against the initiator's current database -
+    /// so it asks for the database back, the same way `updateContextForParallelReplicas` does.
+    if (forward_current_database)
+    {
+        const auto & current_database = context->getCurrentDatabase();
+        if (!current_database.empty())
+        {
+            new_settings[Setting::database] = current_database;
+            new_settings[Setting::database].changed = true;
+        }
+    }
 
     new_settings[Setting::run_query_in_background] = false;
 
@@ -545,7 +560,8 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function)
+    bool is_remote_function,
+    bool forward_current_database)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -559,7 +575,7 @@ void executeQuery(
 
     auto cluster = query_info.getCluster();
     auto new_context = updateSettingsAndClientInfoForCluster(*cluster, is_remote_function, context,
-        settings, main_table, query_info.additional_filter_ast, log, &distributed_settings);
+        settings, main_table, query_info.additional_filter_ast, log, &distributed_settings, forward_current_database);
     if (context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
         && context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value
            != new_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value)
@@ -1347,7 +1363,8 @@ void executeQueryWithParallelReplicasCustomKey(
         /*sharding_key_column_name=*/{},
         /*distributed_settings=*/{},
         shard_filter_generator,
-        /*is_remote_function=*/false);
+        /*is_remote_function=*/false,
+        /*forward_current_database=*/true);
 }
 
 void executeQueryWithParallelReplicasCustomKey(
