@@ -29,6 +29,7 @@
 #include <libnuraft/timer_task.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
@@ -62,6 +63,11 @@
 namespace ProfileEvents
 {
     extern const Event KeeperServerWriteLockWaitMicroseconds;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric KeeperRaftThreadsWaitingForLogsPreprocessing;
 }
 
 namespace DB
@@ -1019,6 +1025,32 @@ void KeeperServer::resetLeaderMetrics()
     last_leader_election_time_ms.reset();
 }
 
+void KeeperServer::waitForLocalLogsPreprocessing()
+{
+    /// The caller is a thread of the Raft event loop, which also carries the listener, the
+    /// election and heartbeat timers and every RPC completion. No callback invoked from there
+    /// may block for an unbounded time, or a slow local log replay stops the whole event loop
+    /// instead of merely costing throughput. So only one thread waits, and only for as long as
+    /// the leader still expects a response.
+    if (threads_waiting_for_local_logs_preprocessing.fetch_add(1) != 0)
+    {
+        threads_waiting_for_local_logs_preprocessing.fetch_sub(1);
+        LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: another thread is already waiting for preprocessing");
+        return;
+    }
+
+    SCOPE_EXIT(threads_waiting_for_local_logs_preprocessing.fetch_sub(1));
+    CurrentMetrics::Increment waiting_metric_increment{CurrentMetrics::KeeperRaftThreadsWaitingForLogsPreprocessing};
+
+    const auto & coordination_settings = keeper_context->getCoordinationSettings();
+    const uint64_t wait_timeout_ms = coordination_settings[CoordinationSetting::heart_beat_interval_ms].totalMilliseconds()
+        * coordination_settings[CoordinationSetting::raft_limits_response_limit];
+
+    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
+    bool preprocessed = keeper_context->waitLocalLogsPreprocessedOrShutdown(wait_timeout_ms);
+    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: stopped waiting for preprocessing, preprocessed={}", preprocessed);
+}
+
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
     /// We / nuraft currently don't have a good way to recover from exceptions here, the whole
@@ -1177,11 +1209,21 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// we don't want to append new logs if we are committing local logs
                 else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
                 {
-                    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
-                    keeper_context->waitLocalLogsPreprocessedOrShutdown();
+                    /// Everything on disk is already known to be committed, so the replay finishes
+                    /// on the commit thread from the commit index the heartbeats carry. Ask the
+                    /// leader to stop sending entries that are dropped anyway.
+                    state_machine->setPauseAppendingEntries(true);
+                    /// If the wait ends before the preprocessing does, the request is handled the
+                    /// same way as when the replay is far from done: the GotAppendEntryReqFromLeader
+                    /// callback below drops its entries and the leader sends them again later.
+                    waitForLocalLogsPreprocessing();
                 }
                 else
                 {
+                    /// Here the replay cannot finish without the leader: only a request carrying
+                    /// entries corrects `last_log_idx_on_disk` down to the index the two logs
+                    /// still match at, so the leader must keep sending them.
+                    state_machine->setPauseAppendingEntries(false);
                     LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: ignoring");
                 }
 
