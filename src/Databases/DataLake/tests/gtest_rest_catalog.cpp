@@ -840,7 +840,7 @@ TEST(RestCatalog, TableListingEndpointNotFoundStillThrows)
 
     EXPECT_THROW(catalog->getTables(), DB::HTTPException);
     EXPECT_GE(counters.doomed_table_listing.load(), 1u);
-    EXPECT_THROW(catalog->empty(), DB::HTTPException);
+    EXPECT_THROW((void)catalog->empty(), DB::HTTPException);
 }
 
 TEST(RestCatalog, TableListingUnauthorizedStillThrows)
