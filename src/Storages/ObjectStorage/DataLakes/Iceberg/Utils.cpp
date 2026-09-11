@@ -595,7 +595,12 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"date", true};
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
-            return {"timestamp", true};
+        {
+            /// Parquet writer sets isAdjustedToUTC=true, so use Iceberg `timestamptz` instead of `timestamp`.
+            if (type->getTypeId() == TypeIndex::DateTime64 && getDecimalScale(*type) == 9)
+                return {Iceberg::f_timestamptz_ns, true};
+            return {Iceberg::f_timestamptz, true};
+        }
         case TypeIndex::Time:
             return {"time", true};
         case TypeIndex::String:
