@@ -242,26 +242,31 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    /// Do not schedule any background jobs if the table is read-only.
-    if (isTableReadonly())
-        return;
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
-    clearEmptyParts();
+    const bool readonly = isTableReadonly();
+    if (!readonly)
+    {
+        clearEmptyParts();
 
-    /// Temporary directories contain incomplete results of merges (after forced restart)
-    ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
+        /// Temporary directories contain incomplete results of merges (after forced restart)
+        /// and don't allow to reinitialize them, so delete each of them immediately
+        clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
+    }
 
     /// NOTE background task will also clean runtime temporary directories periodically.
 
     try
     {
-        cleanup_thread.start();
-        background_operations_assignee.start();
-        background_streaming_assignee.start();
-        startBackgroundMovesIfNeeded();
-        startOutdatedAndUnexpectedDataPartsLoadingTask();
+        if (!readonly)
+        {
+            cleanup_thread.start();
+            background_operations_assignee.start();
+            background_streaming_assignee.start();
+            startBackgroundMovesIfNeeded();
+            startOutdatedAndUnexpectedDataPartsLoadingTask();
+        }
+        /// Statistics refresh only reads parts and must also run for read-only tables.
         startStatisticsCache();
     }
     catch (...)
