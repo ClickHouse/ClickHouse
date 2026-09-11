@@ -43,6 +43,9 @@ a UInt64 column past 2^53 keeps its spread
 1	1	1
 1	1
 5	1
+the mean is not the same as avg once the sum passes 2^53
+1000000000000004.5	1000000000000004.4	0
+1	1
 a span wider than Int64 keeps its sign
 1
 1

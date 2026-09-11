@@ -661,8 +661,14 @@ void registerAggregateFunctionsRegr(AggregateFunctionFactory & factory)
         {createAggregateFunctionRegr<RegrKind::regr_avgx>,
          make_documentation(
              "regr_avgx",
-             "Returns the average of the independent variable.",
-             "Returns `avg(x)`.",
+             R"(
+Returns the mean of the independent variable.
+
+It is taken around a value from the data rather than around zero, so for an integer column past
+2^53 it can be closer to the exact mean than [`avg`](/reference/functions/aggregate-functions/avg),
+which divides a `Float64` sum.
+             )",
+             "Returns the mean of `x`.",
              "Float64",
              R"(┌─regr_avgx(y, x)─┐
 │             2.5 │
@@ -674,8 +680,14 @@ void registerAggregateFunctionsRegr(AggregateFunctionFactory & factory)
         {createAggregateFunctionRegr<RegrKind::regr_avgy>,
          make_documentation(
              "regr_avgy",
-             "Returns the average of the dependent variable.",
-             "Returns `avg(y)`.",
+             R"(
+Returns the mean of the dependent variable.
+
+It is taken around a value from the data rather than around zero, so for an integer column past
+2^53 it can be closer to the exact mean than [`avg`](/reference/functions/aggregate-functions/avg),
+which divides a `Float64` sum.
+             )",
+             "Returns the mean of `y`.",
              "Float64",
              R"(┌─regr_avgy(y, x)─┐
 │               5 │

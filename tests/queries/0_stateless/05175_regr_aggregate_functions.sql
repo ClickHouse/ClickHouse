@@ -136,6 +136,17 @@ SELECT regr_slope(y, x), regr_r2(y, x) FROM t;
 
 -- A span wider than Int64 is legal. Taking the difference in a signed 64-bit type would wrap it
 -- and flip the sign of the slope, so the magnitude is taken unsigned and the sign separately.
+-- The mean is taken around a value from the data, so past 2^53 it can land on the exact answer
+-- where avg, which divides a Float64 sum, does not. For 1e15 .. 1e15 + 9 the exact mean is
+-- 1000000000000004.5 and avg returns 1000000000000004.4.
+SELECT 'the mean is not the same as avg once the sum passes 2^53';
+WITH t AS (SELECT toUInt64(1000000000000000) + number AS x FROM numbers(10))
+SELECT regr_avgx(x, x), avg(x), regr_avgx(x, x) = avg(x) FROM t;
+
+-- below that they agree
+WITH t AS (SELECT toUInt64(1000) + number AS x, toUInt64(number) AS y FROM numbers(10))
+SELECT regr_avgx(y, x) = avg(x), regr_avgy(y, x) = avg(y) FROM t;
+
 SELECT 'a span wider than Int64 keeps its sign';
 SELECT regr_slope(y, x) > 0 FROM VALUES('x UInt64, y UInt64', (0, 0), (9223372036854775809, 1));
 SELECT regr_slope(y, x) > 0 FROM VALUES('x Int64, y Int64', (-9223372036854775807, 0), (9223372036854775807, 2));
