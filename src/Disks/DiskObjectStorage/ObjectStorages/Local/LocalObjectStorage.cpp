@@ -103,8 +103,9 @@ std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLI
     const ReadSettings & read_settings,
     std::optional<size_t> read_hint) const
 {
-    LOG_TEST(log, "Read object: {}", object.remote_path);
-    return createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
+    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
+    LOG_TEST(log, "Read object: {}", resolved_path);
+    return createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
 }
 
 namespace
@@ -153,31 +154,6 @@ private:
     BlobStorageLogWriterPtr blob_log;
 };
 
-}
-
-std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
-    const StoredObject & object,
-    const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    bool /* use_external_buffer */,
-    bool /* restrict_seek */) const
-{
-    auto resolved_path = resolvePathRelativelyToKeyPrefix(object.remote_path);
-    LOG_TEST(log, "Read object: {}", resolved_path);
-    auto buf = createReadBufferFromFileBase(resolved_path, patchSettings(read_settings), read_hint);
-
-    if (read_settings.remote_fs_settings.enable_blob_storage_log)
-    {
-        auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
-        if (blob_storage_log)
-        {
-            blob_storage_log->local_path = object.local_path;
-            return std::make_unique<ReadBufferFromFileWithLogging>(
-                std::move(buf), resolved_path, settings.key_prefix, std::move(blob_storage_log));
-        }
-    }
-
-    return buf;
 }
 
 std::unique_ptr<WriteBufferFromFileBase> LocalObjectStorage::writeObject( /// NOLINT
