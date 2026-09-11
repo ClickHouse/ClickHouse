@@ -19,3 +19,8 @@ cityHash64(tags)
 -- an explicit `id_generator` wins over the DEFAULT expression
 sipHash64(tags)
 -- the setting must match the type of the `id` column of the external tags table
+-- a table pinned to version 1 is defined the way version 1 did it: nothing is recorded, and the setting is rejected
+0	0
+-- `CREATE TABLE ... AS` a table of version 2 pinned to version 1: the copied `id_type` is dropped, the `id` type is still inherited
+1	0
+`id` UInt64, `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3))), `extra` UInt8

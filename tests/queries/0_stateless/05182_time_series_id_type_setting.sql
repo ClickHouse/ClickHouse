@@ -5,6 +5,7 @@
 SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts;
+DROP TABLE IF EXISTS ts_src;
 DROP TABLE IF EXISTS ext_tags;
 DROP TABLE IF EXISTS ext_tags_with_default;
 
@@ -65,6 +66,21 @@ DROP TABLE ts;
 
 SELECT '-- the setting must match the type of the `id` column of the external tags table';
 CREATE TABLE ts ENGINE = TimeSeries SETTINGS id_type = 'UUID' TAGS ext_tags; -- { serverError BAD_TYPE_OF_FIELD }
+
+SELECT '-- a table pinned to version 1 is defined the way version 1 did it: nothing is recorded, and the setting is rejected';
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS version = 1 TAGS ext_tags;
+SELECT create_table_query LIKE '%id_type%', create_table_query LIKE '%id_generator%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
+DROP TABLE ts;
+CREATE TABLE ts ENGINE = TimeSeries SETTINGS version = 1, id_type = 'UInt64'; -- { serverError INVALID_SETTING_VALUE }
+
+SELECT '-- `CREATE TABLE ... AS` a table of version 2 pinned to version 1: the copied `id_type` is dropped, the `id` type is still inherited';
+CREATE TABLE ts_src ENGINE = TimeSeries TAGS ext_tags;
+CREATE TABLE ts AS ts_src ENGINE = TimeSeries SETTINGS version = 1 TAGS INNER COLUMNS (extra UInt8);
+SELECT extract(create_table_query, 'version = (\d+)'), create_table_query LIKE '%id_type%' FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
+SELECT extract(create_table_query, 'TAGS INNER COLUMNS \((.*?)\) TAGS INNER ENGINE')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
+DROP TABLE ts;
+DROP TABLE ts_src;
 
 DROP TABLE ext_tags_with_default;
 DROP TABLE ext_tags;

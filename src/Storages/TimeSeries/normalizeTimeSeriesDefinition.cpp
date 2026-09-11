@@ -39,6 +39,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <base/EnumReflection.h>
 #include <algorithm>
 #include <optional>
@@ -513,6 +514,10 @@ namespace
             }
             return old_settings.tryGet(name);
         };
+
+        /// The `id_type` setting exists from version 2 (see TimeSeriesVersion.h), so it isn't copied into a table pinned to an earlier version.
+        if (const auto * value = get_new_value("version"); value && (SettingFieldUInt64{*value}.value < TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING))
+            old_settings.removeSetting("id_type");
 
         /// The default value of `recent_samples_ttl_seconds` is 345600 (4 days), so an absent setting doesn't disable the recent samples table.
         if (const auto * value = get_new_value("recent_samples_ttl_seconds"); value && (SettingFieldUInt64{*value}.value == 0))
@@ -2055,7 +2060,8 @@ void normalizeTimeSeriesDefinitionImpl(
         checkInnerEnginesReplicationTypesMatch(create_query, table_id);
 
         /// Record `id_type` and `id_generator` in the SETTINGS clause if they aren't kept in the definition otherwise.
-        if (create_query.storage)
+        /// A table pinned to an earlier version is written the way that version did it, without the settings.
+        if (create_query.storage && (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_ID_TYPE_SETTING))
         {
             bool tags_are_external = hasTargetTableID(create_query, ViewTarget::Tags);
             recordIdTypeAndIdGenerator(

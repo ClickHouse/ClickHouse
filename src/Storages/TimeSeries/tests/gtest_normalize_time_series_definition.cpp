@@ -28,6 +28,7 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
     extern const int INCORRECT_QUERY;
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int THERE_IS_NO_COLUMN;
 }
@@ -185,7 +186,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
     EXPECT_TRUE(definition.contains("`time_series` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 1")) << definition;
+    EXPECT_TRUE(definition.contains("version = 2")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
 
     /// The `id` type is declared in the inner columns, so there is no need to record it in the settings.
@@ -361,7 +362,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithExternalTargetTables)
     NormalizeTimeSeriesDefinitionInputs inputs;
     inputs.as_create_query = parseCreateQuery(
         "CREATE TABLE db.src (`time_series` Array(Tuple(DateTime64(6), Float64))) ENGINE = TimeSeries "
-        "SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)', version = 1, recent_samples_ttl_seconds = 345600 "
+        "SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)', version = 2, recent_samples_ttl_seconds = 345600 "
         "SAMPLES db.ext_samples RECENT SAMPLES db.ext_recent_samples TAGS db.ext_tags METRICS db.ext_metrics");
 
     auto definition = normalizeNewTable(
@@ -391,7 +392,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithAnotherIdType)
 {
     NormalizeTimeSeriesDefinitionInputs inputs;
     inputs.as_create_query = parseCreateQuery(
-        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)', version = 1, recent_samples_ttl_seconds = 345600 "
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)', version = 2, recent_samples_ttl_seconds = 345600 "
         "SAMPLES INNER COLUMNS (`id` UInt64) TAGS INNER COLUMNS (`id` UInt64)");
 
     /// The settings written for the `id` type of the other table are copied only if the `id` type stays the same.
@@ -405,6 +406,46 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithAnotherIdType)
     EXPECT_FALSE(definition.contains("id_generator")) << definition;
     EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UUID DEFAULT reinterpretAsUUID(sipHash128(tags)), ")) << definition;
     EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").starts_with("`id` UUID, ")) << definition;
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, EarlierVersionDoesNotRecordIdType)
+{
+    NormalizeTimeSeriesDefinitionInputs inputs;
+    inputs.external_target_columns[ViewTarget::Tags] = externalTagsColumns("UInt64");
+
+    /// A table pinned to version 1 is defined the way version 1 did it: an older server must be able to read it.
+    auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1 TAGS db.ext_tags", inputs);
+    EXPECT_TRUE(definition.contains("version = 1")) << definition;
+    EXPECT_FALSE(definition.contains("id_type")) << definition;
+    EXPECT_FALSE(definition.contains("id_generator")) << definition;
+    EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"), "`id` UInt64, `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3))");
+
+    definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1, id_generator = 'sipHash64(tags)' TAGS INNER COLUMNS (id UInt64)");
+    EXPECT_FALSE(definition.contains("id_type")) << definition;
+
+    /// The setting itself is rejected for an earlier version.
+    EXPECT_EQ(getExceptionCode([]
+    {
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1, id_type = 'UInt64'");
+    }), ErrorCodes::INVALID_SETTING_VALUE);
+
+    /// The `id_type` copied from the other table is dropped if this table is pinned to an earlier version,
+    /// while the `id` type is still inherited from it.
+    inputs.as_create_query = parseCreateQuery(
+        "CREATE TABLE db.src (`time_series` Array(Tuple(DateTime64(3), Float64))) ENGINE = TimeSeries "
+        "SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)', version = 2, recent_samples_ttl_seconds = 0 "
+        "SAMPLES db.ext_samples TAGS db.ext_tags METRICS db.ext_metrics");
+    inputs.external_target_columns.clear();
+    definition = normalizeNewTable(
+        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 1 "
+        "SAMPLES INNER COLUMNS (extra UInt8) TAGS INNER COLUMNS (extra UInt8) METRICS INNER COLUMNS (extra UInt8)",
+        inputs);
+    EXPECT_TRUE(definition.contains("version = 1")) << definition;
+    EXPECT_FALSE(definition.contains("id_type")) << definition;
+    EXPECT_TRUE(definition.contains("id_generator = 'sipHash64(tags)'")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").starts_with("`id` UInt64, ")) << definition;
+    EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UInt64, `metric_name` ")) << definition;
 }
 
 
