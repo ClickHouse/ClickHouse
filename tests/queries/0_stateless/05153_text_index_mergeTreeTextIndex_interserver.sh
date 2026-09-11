@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# The interserver secret needs the SSL library, which the fast test build does not have.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# `remote` over a local shard validates the access of the current user while inferring the structure of a nested
-# table function, and may then route the query over loopback with other credentials. `mergeTreeTextIndex` has a
-# static structure, so it has to check the access of the user itself there.
+# Through an interserver connection the shard authenticates the initiating user, so the checks of
+# `mergeTreeTextIndex` apply to that user instead of refusing the query as over an ordinary connection.
 
 user_name="${CLICKHOUSE_DATABASE}_user_05153"
 
@@ -31,26 +32,13 @@ function run_as_user()
     fi
 }
 
-index="mergeTreeTextIndex('$CLICKHOUSE_DATABASE', 'tab', 'idx_s')"
-query="SELECT count() FROM remote('127.0.0.1:$CLICKHOUSE_PORT_TCP', $index)"
+query="SELECT arraySort(groupUniqArray(token)) FROM cluster('test_cluster_interserver_secret', mergeTreeTextIndex('$CLICKHOUSE_DATABASE', 'tab', 'idx_s')) SETTINGS prefer_localhost_replica = 0"
 
-function run_remote_as_user()
-{
-    for analyzer in 1 0; do
-        for localhost_replica in 0 1; do
-            run_as_user "$query SETTINGS enable_analyzer = $analyzer, prefer_localhost_replica = $localhost_replica"
-        done
-    done
-}
-
-run_as_user "DESCRIBE TABLE $index"
-run_remote_as_user
+run_as_user "$query"
 
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.tab TO $user_name"
 
-# Over an ordinary connection the shard runs the query as the user of the connection, which the function refuses;
-# with the local shortcut it runs as the user itself.
-run_remote_as_user
+run_as_user "$query"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE tab;
