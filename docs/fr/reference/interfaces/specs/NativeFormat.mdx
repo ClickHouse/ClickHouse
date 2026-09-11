@@ -535,17 +535,17 @@ Valeur `DateTime64(3, 'UTC')` : `2024-01-15 12:30:45.123 UTC` (1705321845123 ms
 
 #### Time et Time64(scale) {#time-and-time64}
 
-Une durée plutôt qu&#39;un point dans le temps. `Time` est un décompte signé de secondes, un Int32 little-endian sur 4 octets ; `Time64(scale)` est un décompte signé de ticks à l&#39;échelle décimale indiquée (0–9), un Int64 little-endian sur 8 octets — avec la même représentation sur le wire que `DateTime64`.
+Une durée d’horloge plutôt qu&#39;un point dans le temps. `Time` est un décompte signé de secondes, un Int32 little-endian sur 4 octets ; `Time64(scale)` est un décompte signé de ticks à l&#39;échelle décimale indiquée (0–9), un Int64 little-endian sur 8 octets — avec la même représentation sur le wire que `DateTime64`.
 
-La forme textuelle est `[-]HH:MM:SS[.fraction]`, mais contrairement à `DateTime`, le champ des heures n&#39;est **pas** ramené à une journée de 24 heures : il correspond au nombre total d&#39;heures et peut dépasser 23. La valeur absolue affichée est plafonnée à `999:59:59` (`3599999` secondes) ; au-delà, elle est affichée à cette limite avec une fraction mise à zéro (`999:59:59.000`). `CAST` borne également la valeur stockée à cette plage, même si les opérations arithmétiques peuvent produire des valeurs hors plage qui ne sont bornées qu&#39;à l&#39;affichage. Rien de tout cela n&#39;affecte les octets sur le wire, qui ne sont que l&#39;entier signé brut.
+La forme textuelle est `[-]HH:MM:SS[.fraction]`, mais contrairement à `DateTime`, le champ des heures n&#39;est **pas** ramené à une journée de 24 heures : il correspond au nombre total d&#39;heures et peut dépasser 23. La valeur absolue affichée est plafonnée à `999:59:59` (`3599999` secondes) ; au-delà, elle est affichée avec les secondes à cette limite et la fraction stockée conservée telle quelle, si bien qu&#39;un décompte de ticks de `3700000.25` s&#39;affiche `999:59:59.250000`. `CAST` sature la valeur stockée au plus grand tick représentable à l&#39;échelle cible (`999:59:59.999999` pour `Time64(6)`), et non à la seconde entière, tandis que les opérations arithmétiques peuvent encore laisser dans la colonne un décompte de ticks hors plage qui n&#39;est plafonné qu&#39;à l&#39;affichage. Rien de tout cela n&#39;affecte les octets sur le wire, qui ne sont que l&#39;entier signé brut.
 
-Valeur `Time` `45296` (`12:34:56`) :
+Valeur `Time` `45296` (`12:34:56`) :
 
 ```text
 F0 B0 00 00              Int32 LE = 45296
 ```
 
-Valeur `45296789` en ticks de `Time64(3)` (`12:34:56.789`) :
+Valeur `45296789` en ticks de `Time64(3)` (`12:34:56.789`) :
 
 ```text
 95 2C B3 02 00 00 00 00  Int64 LE = 45296789
