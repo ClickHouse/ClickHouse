@@ -168,7 +168,9 @@ void TablesLoader::buildDependencyGraph()
 {
     for (const auto & [table_name, table_metadata] : metadata.parsed_tables)
     {
-        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, global_context->getCurrentDatabase(), /*can_throw*/ false, /*validate_current_database*/ false);
+        /// Unqualified table names in the metadata must be resolved against the database that owns the table,
+        /// not against the current database of the loading context (which is the server's default database).
+        auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast, table_name.database, /*can_throw*/ false, /*validate_current_database*/ false);
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, table_metadata.ast);
 
         if (!new_ref_dependencies.dependencies.empty())
