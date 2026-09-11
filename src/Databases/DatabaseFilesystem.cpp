@@ -28,6 +28,7 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsString rename_files_after_processing;
 }
 
 namespace ErrorCodes
@@ -141,9 +142,18 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
+    /// A renaming rule belongs to the one query that set it, while a cached table is shared with the
+    /// later queries of every user. Such a table is therefore neither taken from the cache, where it
+    /// would arrive without the rule, nor put into it, where it would rename for an unrelated query.
+    const bool renames_after_processing
+        = !context_->getSettingsRef()[Setting::rename_files_after_processing].value.empty();
+
     /// Check if table exists in loaded tables map.
-    if (auto table = tryGetTableFromCache(name))
-        return table;
+    if (!renames_after_processing)
+    {
+        if (auto table = tryGetTableFromCache(name))
+            return table;
+    }
 
     auto table_path = getTablePath(name);
     if (!checkTableFilePath(table_path, context_, throw_on_error))
@@ -155,9 +165,26 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
     if (!table_function)
         return nullptr;
 
+    /// Every reader of a file in one query shares the counter that decides when the rename happens, so
+    /// such a table is memoised for that query, the way the `file` table function is.
+    if (renames_after_processing && context_->hasQueryContext())
+    {
+        auto query_context = context_->getQueryContext();
+        /// The memo builds the table with the context it is handed and keys on that context's changed
+        /// settings, so the query's context is what makes the references of one query share a table.
+        /// A rule a sub-query set locally is not among the query's settings, so resolving it there
+        /// would build a table that renames by another rule, or does not rename at all.
+        const bool rule_is_the_query_setting
+            = query_context->getSettingsRef()[Setting::rename_files_after_processing].value
+            == context_->getSettingsRef()[Setting::rename_files_after_processing].value;
+
+        return query_context->executeTableFunction(
+            ast_function_ptr, table_function, rule_is_the_query_setting ? ContextPtr(query_context) : context_);
+    }
+
     /// TableFunctionFile throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(ast_function_ptr, context_, name);
-    if (table_storage)
+    if (table_storage && !renames_after_processing)
         return addTable(name, table_storage);
 
     return table_storage;
@@ -266,7 +293,50 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
     }, Documentation{
-        .description = "A read-only database that exposes files in a directory on the local filesystem as tables, queryable by their path.",
+        .description = R"DOCS_MD(
+The `Filesystem` database engine exposes files in a local directory as read-only tables. A table name is resolved as a path relative to the database directory and is read using the [`file`](/reference/functions/table-functions/file) table function.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE files
+ENGINE = Filesystem([path]);
+```
+
+`path` is the directory that contains the files. If it is omitted, ClickHouse uses the current directory in `clickhouse-local` and the `user_files` directory in ClickHouse server.
+
+## Usage {#usage}
+
+For example, with `data.csv` in the selected directory:
+
+```sql
+CREATE DATABASE files ENGINE = Filesystem('imports');
+
+SELECT * FROM files.`data.csv`;
+```
+
+The table name can include a relative path beneath the database directory. The table schema and format are inferred in the same way as for the `file` table function.
+
+The database owns no table definitions: tables are created when their files are first resolved and are only cached for subsequent access. `CREATE TABLE`, `INSERT`, and other writes through this database are not supported.
+
+## Access control {#access-control}
+
+On ClickHouse server, the database directory and every resolved file must be inside [`user_files_path`](/reference/settings/server-settings/settings#user_files_path); this restriction also applies after following symlinks. `clickhouse-local` is not restricted to `user_files_path`.
+
+Creating this database requires `READ` and `WRITE` source grants on `FILE`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Grant them with, for example:
+
+```sql
+GRANT READ, WRITE ON FILE TO user_name;
+```
+
+See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`file` table function](/reference/functions/table-functions/file)
+- [S3 database engine](/reference/engines/database-engines/s3)
+- [HDFS database engine](/reference/engines/database-engines/hdfs)
+)DOCS_MD",
         .syntax = "ENGINE = Filesystem([path])",
         .related = {"S3", "HDFS"}});
 }
