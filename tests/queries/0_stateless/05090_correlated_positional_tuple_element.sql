@@ -4,6 +4,8 @@
 -- the list naming a column the subquery no longer reads, and decorrelation then looked for the
 -- subcolumn in a join carrying the whole column: `NOT_FOUND_COLUMN_IN_BLOCK`.
 
+-- Correlated subqueries are a feature of the new analyzer only.
+SET enable_analyzer = 1;
 SET allow_experimental_correlated_subqueries = 1;
 -- The bug needs the optimization that rewrites the function into a subcolumn read, and the last
 -- assertion below reads its plan, so pin it rather than take the randomized value.
@@ -38,3 +40,26 @@ SELECT 'the optimization still applies outside a correlated subquery';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT p.1 FROM t_correlated_tuple) WHERE explain LIKE '%column_name: p.a%';
 
 DROP TABLE t_correlated_tuple;
+
+-- The same invariant for the chained rewrite of a JSON array element: the outer column of a
+-- correlated subquery keeps its whole-column read, while the same access to a column of the
+-- subquery's own table is still rewritten into the subcolumn.
+SET enable_json_type = 1;
+
+DROP TABLE IF EXISTS t_correlated_json;
+CREATE TABLE t_correlated_json (json JSON) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_correlated_json VALUES ('{"a" : [{"b" : 1}]}'), ('{"a" : [{"b" : 2}]}');
+
+SELECT 'a JSON array element of the outer column is not rewritten';
+-- Only the subquery's own access is rewritten into the subcolumn, so the count is one.
+SELECT countIf(explain LIKE '%column_name: json.a.%')
+FROM (
+    EXPLAIN QUERY TREE
+    SELECT count() FROM t_correlated_json AS o
+    WHERE EXISTS (SELECT 1 FROM t_correlated_json AS i WHERE i.json.a[1].b = o.json.a[1].b)
+);
+
+SELECT 'the chained rewrite still applies outside a correlated subquery';
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT json.a[1].b FROM t_correlated_json) WHERE explain LIKE '%column_name: json.a.%';
+
+DROP TABLE t_correlated_json;

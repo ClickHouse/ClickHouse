@@ -1239,13 +1239,22 @@ private:
             return;
 
         const auto & column = first_argument_column_node.getColumn();
+        auto qualified_name = makeColumnInSource(column_source, column.name);
 
         if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
 
+        /// The same reasoning as for a direct match: a chained rewrite of a correlated column, such as
+        /// `json.a[1].b` into a subcolumn of `json.a`, would leave the subquery's list of correlated
+        /// columns naming a column the subquery no longer reads. Such a rewrite is currently also kept
+        /// away by the use counting - the list of correlated columns is itself a use of the whole
+        /// column - but that is an accident of the counting, so state the invariant here as well.
+        if (isCorrelatedColumn(qualified_name))
+            return;
+
         if (chained_node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
         {
-            ++optimized_identifiers_count[makeColumnInSource(column_source, column.name)];
+            ++optimized_identifiers_count[qualified_name];
 
             /// Mark intermediate nodes to prevent double-counting.
             for (auto * func : intermediates)

@@ -14,3 +14,7 @@ y
 x
 the optimization still applies outside a correlated subquery
 1
+a JSON array element of the outer column is not rewritten
+1
+the chained rewrite still applies outside a correlated subquery
+1
