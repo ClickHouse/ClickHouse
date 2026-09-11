@@ -67,7 +67,6 @@
 
     <fill_query>SYSTEM START MERGES ttl_column_skip_untouched_blocks_src</fill_query>
     <fill_query>OPTIMIZE TABLE ttl_column_skip_untouched_blocks_src FINAL</fill_query>
-    <fill_query>SYSTEM STOP MERGES ttl_column_skip_untouched_blocks</fill_query>
 
     <query type="shell"><![CDATA[
         ${CLICKHOUSE_CLIENT} --query "
@@ -77,7 +76,6 @@
         "
     ]]></query>
 
-    <drop_query>SYSTEM START MERGES ttl_column_skip_untouched_blocks</drop_query>
     <drop_query>DROP TABLE IF EXISTS ttl_column_skip_untouched_blocks</drop_query>
     <drop_query>SYSTEM START MERGES ttl_column_skip_untouched_blocks_src</drop_query>
     <drop_query>DROP TABLE IF EXISTS ttl_column_skip_untouched_blocks_src</drop_query>
