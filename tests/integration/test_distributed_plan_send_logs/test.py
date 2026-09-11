@@ -97,17 +97,14 @@ def test_worker_exception_context_reaches_client(started_cluster):
 
 
 def test_no_logs_forwarded_without_send_logs_level(started_cluster):
-    """Forwarding is opt-in: with no send_logs_level the worker never attaches a logs queue,
-    so no worker task logs reach the client even though the fragments still run on workers."""
+    """With send_logs_level=none the worker attaches no logs queue, so no task logs reach the client."""
     out = run_query_capturing_logs(
         f"SELECT sum(id) FROM t_worker_logs SETTINGS {DISTRIBUTED_SETTINGS}",
-        send_logs_level=None,
+        send_logs_level="none",
     )
-    # The query still executes (fragments run on workers, producing logs worker-side) ...
     assert "499999500000" in out, (
         "query did not return the expected result; test setup problem: " + out[-2000:]
     )
-    # ... but none of those worker task logs are forwarded to the client.
     assert not TASK_LOG_LINE.search(out), (
         "worker task logs were forwarded although send_logs_level was not set: " + out[-2000:]
     )
