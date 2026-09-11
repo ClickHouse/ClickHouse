@@ -295,7 +295,8 @@ void MemoryTracker::setMinAllocationSizeToLogStackTrace(UInt64 value)
     /// publish. A reload that leaves the value unchanged is not a transition and refills nothing.
     if (value && !min_allocation_size_to_log_stack_trace.load(std::memory_order_relaxed))
         large_allocations_traced.store(0, std::memory_order_relaxed);
-    min_allocation_size_to_log_stack_trace.store(value, std::memory_order_relaxed);
+    /// Release pairs with the acquire at the detect sites, so a thread that sees the threshold also sees the reset budget.
+    min_allocation_size_to_log_stack_trace.store(value, std::memory_order_release);
 }
 
 UInt64 MemoryTracker::getMinAllocationSizeToLogStackTrace()
@@ -351,7 +352,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
 
             /// This branch returns below without reaching commitAllocation, so it is the only place
             /// that can report an allocation charged here.
-            const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_relaxed);
+            const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_acquire);
             if (unlikely(trace_threshold && static_cast<UInt64>(size) >= trace_threshold))
                 traceLargeAllocation(size);
         }
@@ -598,7 +599,7 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
     /// never reported here.
     if (level == VariableContext::Global)
     {
-        const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_relaxed);
+        const UInt64 trace_threshold = min_allocation_size_to_log_stack_trace.load(std::memory_order_acquire);
         if (unlikely(trace_threshold && static_cast<UInt64>(size) >= trace_threshold))
             traceLargeAllocation(size);
     }
