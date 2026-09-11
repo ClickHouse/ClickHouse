@@ -18,7 +18,7 @@ SELECT 'filter', count() FROM mod_value WHERE _partition_value.1 = 37528;
 CREATE TABLE mod_negative (c0 Int128) ENGINE = MergeTree ORDER BY tuple()
 PARTITION BY (CAST(-1, 'UInt128') % c0);
 INSERT INTO mod_negative VALUES (1000);
-SELECT 'negative', _partition_value FROM mod_negative;
+SELECT 'negative', toTypeName(_partition_value), _partition_value FROM mod_negative;
 
 -- Reading through a normal projection resolves the column against the projection's own metadata.
 CREATE TABLE mod_projection (a Int128, b UInt32, PROJECTION p (SELECT a, b ORDER BY b))
@@ -44,3 +44,33 @@ CREATE TABLE mod_mixed (c0 Int128, c1 Int32) ENGINE = MergeTree ORDER BY tuple()
 PARTITION BY (CAST(37528, 'UInt64') % c0, c1 % 100);
 INSERT INTO mod_mixed VALUES (167682982, 12345);
 SELECT 'mixed', toTypeName(_partition_value), _partition_value FROM mod_mixed;
+
+-- The choice recurses through type wrappers: a widening element keeps its declared type inside the
+-- wrapper, a diverging one is re-typed inside it.
+CREATE TABLE mod_nullable_widening (c0 Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple()
+PARTITION BY (c0 % 100) SETTINGS allow_nullable_key = 1;
+INSERT INTO mod_nullable_widening VALUES (12345);
+SELECT 'nullable widening', toTypeName(_partition_value), _partition_value FROM mod_nullable_widening;
+
+CREATE TABLE mod_nullable (c0 Nullable(Int32)) ENGINE = MergeTree ORDER BY tuple()
+PARTITION BY (CAST(37528, 'UInt32') % c0) SETTINGS allow_nullable_key = 1;
+INSERT INTO mod_nullable VALUES (1000);
+SELECT 'nullable', toTypeName(_partition_value), _partition_value FROM mod_nullable;
+
+-- An inner `tuple()` stays one element whose own type is a tuple, so the divergent member is re-typed
+-- inside it while its sibling is left alone.
+CREATE TABLE mod_nested (c0 Int32, c1 Int32) ENGINE = MergeTree ORDER BY tuple()
+PARTITION BY tuple(tuple(CAST(37528, 'UInt32') % c0, c1));
+INSERT INTO mod_nested VALUES (1000, 7);
+SELECT 'nested tuple', toTypeName(_partition_value), _partition_value FROM mod_nested;
+
+CREATE TABLE mod_array (c0 Int32) ENGINE = MergeTree ORDER BY tuple()
+PARTITION BY (array(CAST(37528, 'UInt32') % c0));
+INSERT INTO mod_array VALUES (1000);
+SELECT 'array element', toTypeName(_partition_value), _partition_value FROM mod_array;
+
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE mod_lowcardinality (c0 LowCardinality(Int32)) ENGINE = MergeTree ORDER BY tuple()
+PARTITION BY (CAST(37528, 'UInt32') % c0);
+INSERT INTO mod_lowcardinality VALUES (1000);
+SELECT 'lowcardinality', toTypeName(_partition_value), _partition_value FROM mod_lowcardinality;
