@@ -9,9 +9,13 @@ doc_type: 'reference'
 Функции ИИ — это встроенные функции ClickHouse, которые можно использовать для вызова ИИ или генерации эмбеддингов при работе с данными, извлечении информации, классификации данных и т. д.
 
 <Note>
-  Функции ИИ являются экспериментальными. Чтобы включить их, установите [`allow_experimental_ai_functions`](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions).
+  Функции ИИ находятся в статусе бета.
 
   Функции ИИ могут возвращать непредсказуемые результаты. Результат во многом зависит от качества промпта и используемой модели.
+</Note>
+
+<Note>
+  Функции ИИ в настоящее время недоступны в сервисах ClickHouse Cloud. Следите за обновлениями.
 </Note>
 
 <Warning>
@@ -228,6 +232,7 @@ aiClassify(text, categories[, params])
 **Классификация тональности**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -235,9 +240,12 @@ SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 positive
 ```
 
-**Классификация столбца с явно заданными учетными данными**
+**Классификация столбца с явно указанными учётными данными**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
@@ -249,7 +257,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 Генерирует эмбеддинг-вектор для заданного текста с использованием настроенного AI-провайдера.
 
-Функция отправляет текст в настроенную конечную точку эмбеддингов и возвращает полученный вектор как `Array(Float32)`.
+Функция отправляет текст в настроенную конечную точку для эмбеддингов и возвращает полученный вектор как `Array(Float32)`.
 В пределах одного блока строк входные данные группируются в батчи до
 [`ai_function_embedding_max_batch_size`](/ru/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 записей на один HTTP-запрос, чтобы сократить накладные расходы на каждый вызов.
@@ -257,7 +265,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 Учетные данные (именованная коллекция, задающая провайдера, конечную точку и, при необходимости, ключ API)
 берутся из ключа `credentials` карты параметров или из настройки
 `ai_function_embedding_default_credentials`, если в карте этот ключ отсутствует. Обратите внимание, что `aiEmbed` использует
-отдельную настройку учетных данных по умолчанию, отличную от той, что используется текстовыми функциями, поскольку конечная точка эмбеддингов
+отдельную настройку учетных данных по умолчанию, отличную от той, что используется текстовыми функциями, поскольку конечная точка для эмбеддингов
 отличается от конечной точки чата.
 
 `model` — обязательный позиционный аргумент (константный `String`). В отличие от текстовых функций,
@@ -290,18 +298,23 @@ aiEmbed(text, model[, params])
 **Эмбеддинг одной строки (`credentials` можно опустить, если задана настройка `ai_function_embedding_default_credentials`)**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **С явно заданной размерностью**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **Вычислить эмбеддинги для столбца с текстами**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (title String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
@@ -335,7 +348,7 @@ aiExtract(text, instruction_or_schema[, params])
 
 * `text` — Текст, из которого нужно извлечь информацию. [`String`](/ru/reference/data-types/string)
 * `instruction_or_schema` — Инструкция для извлечения в свободной форме или константный объект JSON, описывающий извлекаемые поля. [`const String`](/ru/reference/data-types/string)
-* `params` — Необязательный константный `Map(String, String)` параметров. Ключи, специфичные для функции: `temperature` (температура сэмплирования, определяющая степень случайности; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов на вызов; по умолчанию `1024`). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `params` — Необязательный константный `Map(String, String)` параметров. Ключи, специфичные для функции: `temperature` (температура сэмплирования, определяющая степень случайности; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов за один вызов; по умолчанию `1024`). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
 
 **Возвращаемое значение**
 
@@ -346,6 +359,7 @@ aiExtract(text, instruction_or_schema[, params])
 **Инструкция в свободной форме**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -356,6 +370,9 @@ late and damaged package
 **Извлечение схемы**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (review String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
@@ -367,8 +384,11 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 
 Проверяет условие, заданное на естественном языке, по указанному тексту с помощью провайдера LLM и возвращает булево значение (`UInt8`), пригодное для использования в `WHERE`, `PREWHERE` и `JOIN ... ON`.
 
-Функция запрашивает у модели ответ только в виде `true` или `false` в нижнем регистре. Неудачные запросы (когда
-`ai_function_throw_on_error` отключён) и нераспознанные ответы преобразуются в `0`, поэтому строка отфильтровывается.
+Функция запрашивает у модели ответ только в виде `true` или `false` в нижнем регистре. Любой полный ответ, отличный
+от `true` (включая `false` и нераспознанный текст), преобразуется в `0`, поэтому строка отфильтровывается. Неполный
+ответ, о котором сообщает провайдер — усечённый, отфильтрованный по содержимому или требующий дальнейших действий, —
+вместо этого рассматривается как ошибка: при включённом `ai_function_throw_on_error` (по умолчанию) запрос прерывается;
+при отключённом параметре строка преобразуется в `0` и отфильтровывается.
 
 **Предупреждение:** Не доверяйте результатам `aiFilter` без тщательной проверки. Предикаты на основе LLM могут быть некорректными
 или непоследовательными; используйте их только там, где допустимы ложноположительные и ложноотрицательные срабатывания.
@@ -391,7 +411,7 @@ aiFilter(text, condition[, params])
 
 * `text` — Текст для оценки. [`String`](/ru/reference/data-types/string)
 * `condition` — Постоянное условие на естественном языке, которому должен удовлетворять текст. [`String`](/ru/reference/data-types/string)
-* `params` — Необязательный постоянный `Map(String, String)` параметров. Специфичные для функции ключи: `temperature` (температура сэмплирования, определяющая случайность; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов за вызов; по умолчанию `1024`). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `params` — Необязательный постоянный `Map(String, String)` параметров. Специфичные для функции ключи: `temperature` (температура сэмплирования, определяющая случайность; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов за один вызов; по умолчанию `1024`). Также применяются общие параметры `credentials` и `model` (см. [функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
 
 **Возвращаемое значение**
 
@@ -402,12 +422,18 @@ aiFilter(text, condition[, params])
 **Фильтрация гневных отзывов**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE reviews (body String) ENGINE = Memory;
+INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
 ```
 
-**Фильтрация столбца с явно заданными учётными данными**
+**Фильтрация столбца с явно указанными учётными данными**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE issues (body String) ENGINE = Memory;
+INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
@@ -451,6 +477,7 @@ aiGenerate(prompt[, params])
 **Простой вопрос**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -458,15 +485,19 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 4
 ```
 
-**С явными учетными данными и системным промптом**
+**С явно указанными учётными данными и системным промптом**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **Сводка значений столбца**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
@@ -499,7 +530,8 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 
 Поскольку `aiRedact` возвращает весь входной текст с заменёнными PII, вывод имеет примерно ту же длину, что и входные данные.
 Установите `max_tokens` (по умолчанию `1024`) выше длины входных данных в токенах; ответ, усечённый из-за слишком низкого ограничения,
-будет неполным.
+отклоняется с ошибкой `AI_PROVIDER_RESPONSE_TRUNCATED` (или возвращается значение по умолчанию для столбца, когда `ai_function_throw_on_error`
+отключён), а не возвращается частично замаскированный текст.
 
 **Синтаксис**
 
@@ -513,7 +545,7 @@ aiRedact(text, categories[, params])
 
 * `text` — Текст для маскирования. [`String`](/ru/reference/data-types/string)
 * `categories` — Постоянный список категорий PII, подлежащих маскированию (например, `['name', 'ssn', 'credit_card']`). При пустом массиве используется набор распространённых категорий по умолчанию (имя, электронная почта, номер телефона, адрес, кредитная карта, IP-адрес). [`Array(String)`](/ru/reference/data-types/array)
-* `params` — Необязательный постоянный `Map(String, String)` параметров. Специфичные для функции ключи: `temperature` (температура сэмплирования, управляющая случайностью; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов за вызов; по умолчанию `1024` — поскольку `aiRedact` возвращает полный текст, задайте значение больше длины входного текста в токенах, иначе ответ может быть усечённым и неполным), `replacement` (токен, заменяющий каждый обнаруженный фрагмент PII; по умолчанию `[REDACTED]`). Также применяются общие параметры `credentials` и `model` (см. [Функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
+* `params` — Необязательный постоянный `Map(String, String)` параметров. Специфичные для функции ключи: `temperature` (температура сэмплирования, управляющая случайностью; по умолчанию `0.0`), `max_tokens` (максимальное количество выходных токенов за один вызов; по умолчанию `1024` — поскольку `aiRedact` возвращает полный текст, задайте значение больше длины входного текста в токенах; ответ, усечённый из-за слишком низкого ограничения, отклоняется вместо возврата частично замаскированного текста), `replacement` (токен, заменяющий каждый обнаруженный фрагмент PII; по умолчанию `[REDACTED]`). Также применяются общие параметры `credentials` и `model` (см. [Функции ИИ](/ru/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/ru/reference/data-types/map)
 
 **Возвращаемое значение**
 
@@ -524,6 +556,7 @@ aiRedact(text, categories[, params])
 **Маскирование определённых категорий**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -534,6 +567,9 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **Маскировка категорий PII по умолчанию с помощью пользовательского токена**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE tickets (body String) ENGINE = Memory;
+INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
@@ -583,18 +619,25 @@ aiSimilarity(text1, text2, model[, params])
 **Сравнение двух строк (`credentials` можно не указывать, если задана настройка `ai_function_embedding_default_credentials`)**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Ранжируйте отзывы по схожести с запросом**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE product_reviews (review String) ENGINE = Memory;
+INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
 ```
 
 **Семантическая дедупликация с использованием self-join**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
+INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
@@ -635,6 +678,7 @@ aiTranslate(text, target_language[, params])
 **Перевод на французский**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -645,6 +689,9 @@ Bonjour le monde!
 **Перевести на японский с учетом инструкций по стилю**
 
 ```sql title=Query
+SET allow_experimental_ai_functions = 1;
+CREATE TABLE articles (body String) ENGINE = Memory;
+INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 

@@ -12,7 +12,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
 #include <base/IPv4andIPv6.h>
 #include <base/defines.h>
 #include <base/unaligned.h>
@@ -34,6 +33,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 
 namespace
 {
@@ -774,34 +774,37 @@ public:
 
 #ifndef SHA1_GTEST_UNIT_TEST
 
-/// Runtime dispatch via ImplementationSelector.
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 class FunctionSHA1 : public TargetSpecific::Default::FunctionSHA1Impl
 {
 public:
-    explicit FunctionSHA1(ContextPtr context)
-        : selector(context)
+    explicit FunctionSHA1([[maybe_unused]] ContextPtr context)
     {
 #    if USE_SSL
         if (OpenSSLInitializer::instance().isFIPSEnabled())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} is not available in FIPS mode", name);
 #    endif
 
-        selector.registerImplementation<TargetArch::Default, TargetSpecific::Default::FunctionSHA1Impl>();
-
 #    if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v4, TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionSHA1Impl>();
+            return;
+        }
 #    endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionSHA1Impl>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionSHA1>(context); }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 

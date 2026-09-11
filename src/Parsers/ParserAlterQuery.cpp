@@ -175,6 +175,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ASTPtr command_projection;
     ASTPtr command_statistics_decl;
     ASTPtr command_partition;
+    ASTPtr command_partitions;
     ASTPtr command_predicate;
     ASTPtr command_update_assignments;
     ASTPtr command_comment;
@@ -911,8 +912,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             {
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command_partition, expected))
+                    ParserList partition_list_parser(
+                        std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+                    ASTPtr partition_list_ast;
+                    if (!partition_list_parser.parse(pos, partition_list_ast, expected))
                         return false;
+
+                    auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
+                    if (partition_list.children.size() == 1)
+                        command_partition = std::move(partition_list.children[0]);
+                    else
+                        command_partitions = std::move(partition_list_ast);
                 }
 
                 if (!s_where.ignore(pos, expected))
@@ -942,8 +952,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 if (s_in_partition.ignore(pos, expected))
                 {
-                    if (!parser_partition.parse(pos, command_partition, expected))
+                    ParserList partition_list_parser(
+                        std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+                    ASTPtr partition_list_ast;
+                    if (!partition_list_parser.parse(pos, partition_list_ast, expected))
                         return false;
+
+                    auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
+                    if (partition_list.children.size() == 1)
+                        command_partition = std::move(partition_list.children[0]);
+                    else
+                        command_partitions = std::move(partition_list_ast);
                 }
 
                 if (!s_where.ignore(pos, expected))
@@ -1147,6 +1166,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->statistics_decl = command->children.emplace_back(std::move(command_statistics_decl)).get();
     if (command_partition)
         command->partition = command->children.emplace_back(std::move(command_partition)).get();
+    if (command_partitions)
+        command->partitions = command->children.emplace_back(std::move(command_partitions)).get();
     if (command_predicate)
         command->predicate = command->children.emplace_back(std::move(command_predicate)).get();
     if (command_update_assignments)
@@ -1346,7 +1367,7 @@ For other `ALTER` queries which only modify the metadata, you can use the [alter
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
 <Note>
-For all `ALTER` queries, if `alter_sync = 2` and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+For all `ALTER` queries, if `alter_sync = 2`, or `alter_sync = 3` on `ReplicatedMergeTree`, and some replicas are not active for more than the time, specified in the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
 </Note>
 
 ### Concurrent `ALTER` assignment on one table {#concurrent-alter-assignment-on-one-table}
@@ -1910,6 +1931,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
 - Both tables must have the same storage policy.
+- If the source part has non-adaptive index granularity, both tables must have the same `index_granularity`: such a part stores no per-mark row counts, so the destination table's value is used to interpret its marks.
 - The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
 ## REPLACE PARTITION {#replace-partition}
@@ -1930,6 +1952,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
 - Both tables must have the same storage policy.
+- If the source part has non-adaptive index granularity, both tables must have the same `index_granularity`: such a part stores no per-mark row counts, so the destination table's value is used to interpret its marks.
 - The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
 ## MOVE PARTITION TO TABLE {#move-partition-to-table}
@@ -1946,6 +1969,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same partition key, the same order by key and the same primary key.
 - Both tables must have the same storage policy.
 - Both tables must be the same engine family (replicated or non-replicated).
+- If the source part has non-adaptive index granularity, both tables must have the same `index_granularity`: such a part stores no per-mark row counts, so the destination table's value is used to interpret its marks.
 - The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
 ## CLEAR COLUMN IN PARTITION {#clear-column-in-partition}
@@ -2184,7 +2208,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr
     {
         .description = R"DOCS_MD(
 ```sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 ```
 
 Deletes data matching the specified filtering expression. Implemented as a [mutation](/reference/statements/alter/index#mutations).
@@ -2199,6 +2223,8 @@ The `filter_expr` must be of type `UInt8`. The query deletes rows in the table f
 
 One query can contain several commands separated by commas.
 
+The `IN PARTITION` clause limits the mutation to the listed partitions. Without it, on tables of the `ReplicatedMergeTree` family, when the [optimize_mutations_with_partition_pruning](/reference/settings/session-settings/optimize) setting is enabled (the default), ClickHouse automatically detects partition key conditions in `filter_expr` and only mutates the affected partitions. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit the mutation to specific partitions.
+
 The synchronicity of the query processing is defined by the [mutations_sync](/reference/settings/session-settings/mutations#mutations_sync) setting. By default, it is asynchronous.
 
 **See also**
@@ -2212,7 +2238,7 @@ The synchronicity of the query processing is defined by the [mutations_sync](/re
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 )DOCS_MD",
         .syntax = R"(
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 )",
         .parent = "ALTER",
         .related = {"ALTER", "DELETE", "TRUNCATE", "ALTER TABLE ... UPDATE"},
@@ -2222,7 +2248,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
     {
         .description = R"DOCS_MD(
 ```sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 ```
 
 Manipulates data matching the specified filtering expression. Implemented as a [mutation](/reference/statements/alter/index#mutations).
@@ -2234,6 +2260,8 @@ The `ALTER TABLE` prefix makes this syntax different from most other systems sup
 The `filter_expr` must be of type `UInt8`. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are cast to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
 
 One query can contain several commands separated by commas.
+
+The `IN PARTITION` clause limits the mutation to the listed partitions. Without it, on tables of the `ReplicatedMergeTree` family, when the [optimize_mutations_with_partition_pruning](/reference/settings/session-settings/optimize) setting is enabled (the default), ClickHouse automatically detects partition key conditions in `filter_expr` and only mutates the affected partitions. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit the mutation to specific partitions.
 
 The synchronicity of the query processing is defined by the [mutations_sync](/reference/settings/session-settings/mutations#mutations_sync) setting. By default, it is asynchronous.
 
@@ -2289,7 +2317,7 @@ column for this reason. To bring such a column up to date, re-`INSERT` the affec
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 )DOCS_MD",
         .syntax = R"(
-ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 )",
         .parent = "ALTER",
         .related = {"ALTER", "UPDATE", "ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY PATCHES"},
@@ -2305,6 +2333,8 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 The command changes the [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) of the table to `new_expression` (an expression or a tuple of expressions). Primary key remains the same.
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part rows are ordered by the sorting key expression you cannot add expressions containing existing columns to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query, without default column value).
+
+For the same reason you cannot change the sort direction (`ASC` or `DESC`) of a sorting key column that `new_expression` keeps: the existing parts stay physically sorted in the direction the column had when they were written, and no regular data part records that direction. To use a different direction, create a new table with the desired `ORDER BY` and copy the data into it with `INSERT ... SELECT`.
 
 <Note>
 It only works for tables in the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family (including [replicated](/reference/engines/table-engines/mergetree-family/replication) tables).
