@@ -27,7 +27,7 @@ namespace
 {
 constexpr bool guardPagesEnabled()
 {
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#if defined(DEBUG_OR_SANITIZER_BUILD) && !defined(__FILC__)
     return true;
 #else
     return false;
