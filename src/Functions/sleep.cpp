@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
@@ -60,22 +61,19 @@ private:
     const char * function_name;
     FunctionSleepVariant variant;
     UInt64 max_microseconds;
-    QueryStatusPtr query_status;
 
 public:
-    FunctionSleep(const char * name_, FunctionSleepVariant variant_, UInt64 max_microseconds_, QueryStatusPtr query_status_)
+    FunctionSleep(const char * name_, FunctionSleepVariant variant_, UInt64 max_microseconds_)
         : function_name(name_)
         , variant(variant_)
         , max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
-        , query_status(query_status_)
     {
     }
 
     static FunctionPtr create(const char * name, FunctionSleepVariant variant, ContextPtr context)
     {
         return std::make_shared<FunctionSleep>(
-            name, variant,
-            context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block], context->getProcessListElementSafe());
+            name, variant, context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block]);
     }
 
     String getName() const override { return function_name; }
@@ -112,6 +110,12 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool dry_run) const
     {
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+
         const IColumn * col = arguments[0].column.get();
 
         if (!isColumnConst(*col))
@@ -191,9 +195,9 @@ However, it can be useful in the following scenarios:
 2. **Debugging**: If you need to examine the state of the system or the execution of a query at a specific point in time, you can use `sleep()` to introduce a pause, allowing you to inspect or collect relevant information.
 3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur, such as network latency or external system dependencies.
 
-:::warning
+<Warning>
 It's important to use the `sleep()` function judiciously and only when necessary, as it can potentially impact the overall performance and responsiveness of your ClickHouse system.
-:::
+</Warning>
 
 For security reasons, the function can only be executed in the default user profile (with `allow_sleep` enabled).
 )";
@@ -214,7 +218,6 @@ SELECT sleep(2);
 ┌─sleep(2)─┐
 │        0 │
 └──────────┘
-1 row in set. Elapsed: 2.012 sec.
             )"
         },
     };
@@ -236,9 +239,9 @@ It allows you to simulate delays or introduce pauses in the processing of each r
 2. **Debugging**: If you need to examine the state of the system or the execution of a query for each row processed, you can use `sleepEachRow()` to introduce pauses, allowing you to inspect or collect relevant information.
 3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur for each row processed, such as when dealing with external systems or network latencies.
 
-:::warning
+<Warning>
 Like the `sleep()` function, it's important to use `sleepEachRow()` judiciously and only when necessary, as it can significantly impact the overall performance and responsiveness of your ClickHouse system, especially when dealing with large result sets.
-:::
+</Warning>
 )";
     FunctionDocumentation::Syntax syntax_sleepEachRow = "sleepEachRow(seconds)";
     FunctionDocumentation::Arguments arguments_sleepEachRow = {

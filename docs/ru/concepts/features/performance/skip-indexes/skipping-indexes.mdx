@@ -232,7 +232,7 @@ SELECT timestamp, url FROM table WHERE visitor_id = 1001`
 
 Традиционный вторичный индекс был бы очень полезен при таком распределении данных.  Вместо чтения всех 32768 строк, чтобы найти
 5 строк с нужным visitor&#95;id, вторичный индекс содержал бы лишь пять указателей на строки, и с диска были бы
-прочитаны только эти пять строк.  В случае индекса пропуска данных ClickHouse верно ровно обратное.  Все 32768 значений в столбце `visitor_id` будут проверены
+прочитаны только эти пять строки.  В случае индекса пропуска данных ClickHouse верно ровно обратное.  Все 32768 значений в столбце `visitor_id` будут проверены
 независимо от типа индекса пропуска данных.
 
 Соответственно, естественное стремление ускорить запросы ClickHouse, просто добавив индекс к ключевым
@@ -261,10 +261,10 @@ SELECT timestamp, url FROM table WHERE visitor_id = 1001`
 одних лишь мысленных экспериментах.
 
 <div id="related-docs">
-  ## Связанные документы
+  ## Связанная документация
 </div>
 
 * [Руководство по лучшим практикам](/ru/concepts/best-practices/using-data-skipping-indices)
 * [Примеры индексов пропуска данных](/ru/concepts/features/performance/skip-indexes/skipping-indexes-examples)
 * [Управление индексами пропуска данных](/ru/reference/statements/alter/skipping-index)
-* [Сведения о системной таблице](/ru/reference/system-tables/data_skipping_indices)
+* [Информация о системной таблице](/ru/reference/system-tables/data_skipping_indices)

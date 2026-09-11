@@ -15,6 +15,8 @@
 #include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <base/scope_guard.h>
 
+#include <IO/SocketPeerClosed.h>
+
 #include <Poco/Net/HTTPChunkedStream.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPFixedLengthStream.h>
@@ -229,10 +231,32 @@ public:
         return total_connections_in_group >= limits.soft_limit;
     }
 
-    bool isStoreLimitReached() const
+    /// Reserve a slot for an idle connection that an endpoint pool is about to store for reuse.
+    /// Returns false when the store limit is reached; the caller then resets the connection.
+    ///
+    /// The limit bounds only the stored (idle) connections, not the connections in use. Comparing it
+    /// against the total in the group would switch the cache off entirely as soon as the concurrency
+    /// exceeds the limit: every request would then open and close its own TCP connection, and the
+    /// churn would exhaust the ephemeral port range of the host with sockets in `CLOSE-WAIT`.
+    bool tryReserveStoredConnection()
     {
         std::lock_guard lock(mutex);
-        return total_connections_in_group >= limits.store_limit;
+        if (stored_connections_in_group >= limits.store_limit)
+            return false;
+        ++stored_connections_in_group;
+        CurrentMetrics::add(metrics.stored_count);
+        return true;
+    }
+
+    /// Release the slots of stored connections that were reused, expired, or dropped with their pool.
+    void releaseStoredConnections(size_t count) noexcept
+    {
+        if (count == 0)
+            return;
+        std::lock_guard lock(mutex);
+        chassert(stored_connections_in_group >= count);
+        stored_connections_in_group -= count;
+        CurrentMetrics::sub(metrics.stored_count, count);
     }
 
     void atConnectionCreate(Poco::Net::HTTPClientSession * session, std::string host, UInt16 port)
@@ -312,6 +336,7 @@ private:
     mutable std::mutex mutex;
     HTTPConnectionPools::Limits limits TSA_GUARDED_BY(mutex) = HTTPConnectionPools::Limits();
     size_t total_connections_in_group TSA_GUARDED_BY(mutex) = 0;
+    size_t stored_connections_in_group TSA_GUARDED_BY(mutex) = 0;
     size_t mute_warning_until TSA_GUARDED_BY(mutex) = 0;
     HTTPConnectionPools::SocketBufferSizes socket_buffer_sizes TSA_GUARDED_BY(mutex);
     std::unordered_map<Poco::Net::HTTPClientSession *, uint64_t> live_connections TSA_GUARDED_BY(mutex);
@@ -707,7 +732,7 @@ public:
 
     ~EndpointConnectionPool() override
     {
-        CurrentMetrics::sub(group->getMetrics().stored_count, stored_connections.size());
+        group->releaseStoredConnections(stored_connections.size());
     }
 
     String getTarget() const
@@ -745,7 +770,7 @@ public:
         if (reused_connection)
         {
             ProfileEvents::increment(getMetrics().reused, 1);
-            CurrentMetrics::sub(getMetrics().stored_count, 1);
+            group->releaseStoredConnections(1);
 
             setTimeouts(*reused_connection, timeouts);
 
@@ -786,7 +811,7 @@ public:
     size_t wipeExpiredImpl(std::vector<ConnectionPtr> & expired_connections) TSA_REQUIRES(mutex)
     {
         SCOPE_EXIT({
-            CurrentMetrics::sub(getMetrics().stored_count, expired_connections.size());
+            group->releaseStoredConnections(expired_connections.size());
             ProfileEvents::increment(getMetrics().expired, expired_connections.size());
         });
 
@@ -838,18 +863,30 @@ private:
             connection.socket().setSendBufferSize(static_cast<int>(buf_sizes.sndbuf));
     }
 
-    /// Detect connections that have been silently closed by the remote end.
-    /// An idle keep-alive connection should have no data pending in the socket.
-    /// If poll(SELECT_READ, 0) returns true on such a connection, it means the
-    /// server has sent a FIN (or RST), so the next request on this connection
-    /// would fail with "No message received" (NoMessageException).
+    /// Detect connections that are not safe to hand out again: ones the remote end has silently
+    /// closed (the next request would fail with "No message received", NoMessageException), and
+    /// ones with unread data pending. An idle keep-alive connection must have nothing to read;
+    /// pending bytes are an unsolicited response (e.g. a queued `408 Request Timeout` a server
+    /// sends before closing an idle connection) that the next borrower would misparse as the
+    /// response to its own request.
+    ///
+    /// The previous check reported the connection stale whenever `poll(SELECT_READ, 0)` found it
+    /// readable, on the assumption that an idle keep-alive connection has no data pending. On a
+    /// plain socket that assumption holds, but on an HTTPS connection it produces a false positive:
+    /// `poll` reflects the raw TCP socket, so an unread TLS post-handshake record (a session ticket
+    /// or `KeyUpdate`) makes an entirely live secure connection look readable, i.e. stale, and the
+    /// pool discards it and reconnects - at the cost of a fresh TLS handshake - on nearly every
+    /// borrow. `getSocketState` is TLS-aware: it uses `SSL_peek` on a secure socket to tell real
+    /// application data (`DataPending`) and a real close (a FIN or a `close_notify`, `Closed`)
+    /// apart from a harmless post-handshake record (`Idle`). Anything but `Idle` is stale - the
+    /// same behavior as `poll` on a plain socket, without the TLS false positive.
     static bool isStale(Session & connection)
     {
         try
         {
-            return connection.socket().poll(Poco::Timespan(0), Poco::Net::Socket::SELECT_READ);
+            return DB::getSocketState(connection.socket()) != DB::SocketState::Idle;
         }
-        catch (Poco::IOException &)
+        catch (const Poco::Exception &)
         {
             return true;
         }
@@ -1085,8 +1122,15 @@ private:
             return;
         }
 
-        if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered()
-            || group->isStoreLimitReached())
+        if (!connection.connected() || connection.mustReconnect() || !connection.isCompleted() || connection.buffered())
+        {
+            ProfileEvents::increment(getMetrics().reset, 1);
+            return;
+        }
+
+        /// The slot is reserved before the connection is stored, so endpoint pools of the same group
+        /// that store connections concurrently cannot overshoot the limit together.
+        if (!group->tryReserveStoredConnection())
         {
             ProfileEvents::increment(getMetrics().reset, 1);
             return;
@@ -1104,11 +1148,11 @@ private:
                 stored_connections.push(connection_to_store);
             }
 
-            CurrentMetrics::add(getMetrics().stored_count, 1);
             ProfileEvents::increment(getMetrics().preserved, 1);
         }
         catch (...)
         {
+            group->releaseStoredConnections(1);
             ProfileEvents::increment(getMetrics().reset, 1);
             tryLogCurrentException("HTTPConnectionPool", "Failed to preserve connection for reuse");
         }

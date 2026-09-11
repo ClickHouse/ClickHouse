@@ -25,26 +25,16 @@ ClickHouse Cloud prend en charge le contrôle d’accès sécurisé basé sur le
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Connectez-vous à votre compte ClickHouse Cloud.
-  </Step>
+  <Step title="1. Connectez-vous à votre compte ClickHouse Cloud." id="login" />
 
-  <Step>
-    ### 2. Sélectionnez le service ClickHouse sur lequel vous souhaitez interroger les données Iceberg.
-  </Step>
+  <Step title="2. Sélectionnez le service ClickHouse sur lequel vous souhaitez interroger les données Iceberg." id="select-service" />
 
-  <Step>
-    ### 3. Accédez à l’onglet **Settings**.
-  </Step>
+  <Step title={<>3. Accédez à l’onglet <strong>Settings</strong>.</>} id="settings-tab" />
 
-  <Step>
-    ### 4. Faites défiler la page jusqu’à **Network security information**.
-  </Step>
+  <Step title={<>4. Faites défiler la page jusqu’à <strong>Network security information</strong>.</>} id="network-security-information" />
 
-  <Step>
-    ### 5. Copiez la valeur **Service role ID (IAM)**.
-
-    Cet ARN est requis dans la politique d’approbation du rôle AWS IAM qui accédera à vos données Iceberg.
+  <Step title={<>5. Copiez la valeur <strong>Service role ID (IAM)</strong>.</>} id="service-role-iam-value">
+    Cet ARN est requis dans la stratégie d’approbation du rôle AWS IAM qui accédera à vos données Iceberg.
 
     <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtention de l’ARN du rôle IAM du service ClickHouse" border />
   </Step>
@@ -55,19 +45,13 @@ ClickHouse Cloud prend en charge le contrôle d’accès sécurisé basé sur le
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Connectez-vous à AWS et accédez au service IAM.
-  </Step>
+  <Step title="1. Connectez-vous à AWS et accédez au service IAM." id="aws-iam-service" />
 
-  <Step>
-    ### 2. Sélectionnez Roles, puis Create role.
-
+  <Step title="2. Sélectionnez Roles, puis Create role." id="create-role">
     Sélectionnez `Trusted entity type` comme `Custom trust policy`, puis saisissez les valeurs en vous basant sur l’étape 3.
   </Step>
 
-  <Step>
-    ### 3. Ajoutez les politiques d’approbation et IAM.
-
+  <Step title="3. Ajoutez les politiques d’approbation et IAM." id="add-trust-iam-policies">
     Remplacez `{service-role-id}` par le Service Role ID (IAM) de votre instance ClickHouse.
 
     ```json
@@ -122,9 +106,7 @@ ClickHouse Cloud prend en charge le contrôle d’accès sécurisé basé sur le
     </Note>
   </Step>
 
-  <Step>
-    ### 4. Finalisez la création du rôle.
-
+  <Step title="4. Finalisez la création du rôle." id="finish-role-creation">
     a. Cliquez sur Next, puis encore sur Next dans l’écran d’attribution des permissions.
 
     b. Ajoutez un nom (par ex. `iceberg-role-for-clickhouse`) et une description.
@@ -136,9 +118,7 @@ ClickHouse Cloud prend en charge le contrôle d’accès sécurisé basé sur le
     e. Sélectionnez `Create role`.
   </Step>
 
-  <Step>
-    ### 5. Copiez le nouvel **IAM Role Arn** une fois le rôle créé.
-  </Step>
+  <Step title={<>5. Copiez le nouvel <strong>IAM Role Arn</strong> une fois le rôle créé.</>} id="copy-role-arn" />
 </Steps>
 
 <div id="configure-iceberg-access">

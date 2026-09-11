@@ -7,12 +7,12 @@ keywords: ['Postgres', 'PostgreSQL', 'النسخ المتماثل المنطقي
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-يوفّر ClickHouse Cloud الآن ClickPipes لترحيل قاعدة بيانات PostgreSQL الخارجية لديك إلى خدمة Managed Postgres. يوفّر هذا التكامل المضمّن تجربة سلسة للاتصال بقاعدة بياناتك المصدرية، وتصدير المخطط، واستيراده إلى Managed Postgres، وإعداد النسخ المتماثل المستمر.
+يوفّر ClickHouse Cloud الآن ClickPipes لترحيل قاعدة بيانات PostgreSQL الخارجية لديك إلى خدمة Managed Postgres. يوفّر هذا التكامل المضمّن تجربة سلسة للاتصال بقاعدة البيانات المصدر، وتصدير المخطط، واستيراده إلى Managed Postgres، وإعداد النسخ المتماثل المستمر.
 
 <div id="prerequisites">
   ## المتطلبات المسبقة
@@ -45,13 +45,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## الخطوة 1: الاتصال بقاعدة البيانات المصدر
 </div>
 
-افتح [ClickHouse Cloud console](https://clickhouse.cloud) وحدد Managed Postgres service الخاص بك.
+افتح [ClickHouse Cloud console](https://clickhouse.cloud) وحدد خدمة Managed Postgres الخاص بك.
 
-<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="بطاقة Managed Postgres service في قائمة خدمات ClickHouse Cloud" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="بطاقة خدمة Managed Postgres في قائمة خدمات ClickHouse Cloud" size="lg" border />
 
 في الشريط الجانبي الأيسر، انقر على **مصادر البيانات**.
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="إدخال مصادر البيانات في الشريط الجانبي لـ Managed Postgres service" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="إدخال مصادر البيانات في الشريط الجانبي لـ خدمة Managed Postgres" size="lg" border />
 
 انقر على **بدء الاستيراد**.
 
@@ -71,11 +71,43 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 انقر على **التالي**.
 
-<div id="step-2-export-schema">
-  ## الخطوة 2: صدِّر مخطط قاعدة البيانات
+<div id="automated-schema-migration">
+  ## الترحيل الآلي للمخطط
 </div>
 
-يعرض المعالج أمر `pg_dump` معبأً مسبقًا بتفاصيل الاتصال بالمصدر. شغِّله في الطرفية:
+<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="الخطوة 2: الترحيل الآلي للمخطط مع محدد قاعدة البيانات الهدف" size="lg" border />
+
+عند اختيار هذا الخيار، يسحب ClickPipe تلقائيًا مخطط قاعدة البيانات المصدر ويطبّقه على خدمة Managed Postgres لديك خلال [مرحلة الإعداد](/ar/integrations/clickpipes/postgres/lifecycle#setup) من ClickPipe بعد إنشائه.
+
+تفترض هذه الميزة أن **قاعدة البيانات الهدف فارغة**، لأنها تسحب جميع كائنات قاعدة البيانات من قاعدة البيانات المصدر، بغض النظر عن الجداول التي تحددها لاحقًا في المعالج. إذا كانت قاعدة البيانات الهدف تحتوي على بيانات مسبقًا، أو كنت تريد إعدادًا أكثر تخصيصًا، فيجب اختيار الوضع [**اليدوي**](#manual-schema-migration) بدلًا من ذلك.
+
+حدد قاعدة البيانات الهدف من القائمة المنسدلة، أو انقر على **إنشاء قاعدة بيانات جديدة** لتوفير قاعدة بيانات جديدة.
+
+<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="مربع حوار إنشاء قاعدة بيانات Postgres جديدة" size="lg" border />
+
+<div id="monitoring">
+  ### المراقبة
+</div>
+
+يمكنك متابعة تقدّم ترحيل المخطط في عرض تفاصيل ClickPipes. تعرض **السجلات** حالة ترحيل المخطط، وتظهر فيها أيضًا أي أخطاء تواجهها العملية.
+
+توجد القيود التالية على هذا الوضع:
+
+* لا يمكن للأنابيب التي تستخدم SSH tunneling استخدام الترحيل الآلي للمخطط. يجب [تصدير المخطط واستيراده يدويًا](#manual-schema-migration).
+
+<div id="manual-schema-migration">
+  ## ترحيل المخطط يدويًا
+</div>
+
+إذا كانت لديك بيانات موجودة مسبقًا في قاعدة البيانات الهدف، أو كنت ترغب في إعداد أكثر تخصيصًا بدلًا من الحالة النظيفة التي يفترضها الوضع الآلي، يمكنك اختيار الوضع **اليدوي** هنا.
+
+<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="الخطوة 2: ترحيل المخطط يدويًا باستخدام أمر تصدير pg_dump" size="lg" border />
+
+<div id="step-2-export-schema">
+  ### تصدير مخطط قاعدة البيانات
+</div>
+
+يعرض المعالج أمر `pg_dump` مُعبّأ مسبقًا بتفاصيل الاتصال بالمصدر. شغّله في الطرفية:
 
 <Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="الخطوة 2: أمر pg_dump لتصدير المخطط" size="lg" border />
 
@@ -88,19 +120,19 @@ pg_dump \
   -f pg.sql
 ```
 
-سيؤدي ذلك إلى إنشاء `pg.sql` في الدليل الحالي.
+يؤدي ذلك إلى إنشاء الملف `pg.sql` في الدليل الحالي.
 
 <Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="مخرجات الطرفية بعد تشغيل pg_dump" size="lg" border />
 
 انقر على **التالي**.
 
 <div id="step-3-import-schema">
-  ## الخطوة 3: استيراد المخطط إلى خدمة Managed Postgres الخاصة بك
+  ### استيراد المخطط إلى خدمة Managed Postgres الخاصة بك
 </div>
 
-حدِّد قاعدة البيانات الوجهة من القائمة المنسدلة، أو انقر على **إنشاء قاعدة بيانات جديدة** لإنشاء واحدة.
+حدد قاعدة البيانات الهدف من القائمة المنسدلة، أو انقر على **إنشاء قاعدة بيانات جديدة** لإنشاء واحدة جديدة.
 
-يعرض المعالج أمر `psql` لتطبيق ملف schema dump على خدمة Managed Postgres الخاصة بك. شغِّله في الطرفية:
+يعرض المعالج أمر `psql` لتطبيق ملف تفريغ المخطط على خدمة Managed Postgres الخاصة بك. شغّله في الطرفية:
 
 <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="الخطوة 3: أمر psql لاستيراد المخطط" size="lg" border />
 
@@ -113,7 +145,7 @@ psql \
   -f pg.sql
 ```
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="مخرجات الطرفية بعد تشغيل أمر استيراد مخطط psql" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="مخرجات الطرفية بعد تشغيل استيراد المخطط عبر psql" size="lg" border />
 
 انقر على **التالي**.
 
@@ -226,6 +258,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## الخطوات التالية
 </div>
 
-* [دليل البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)
-* [بيانات الاتصال بـ Managed Postgres](/ar/products/managed-postgres/connection)
-* [FAQ الخاصة بـ ClickPipes Postgres](/ar/integrations/clickpipes/postgres/faq)
+* [البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)
+* [تفاصيل الاتصال بـ Managed Postgres](/ar/products/managed-postgres/connection)
+* [الأسئلة الشائعة حول Postgres في ClickPipes](/ar/integrations/clickpipes/postgres/faq)

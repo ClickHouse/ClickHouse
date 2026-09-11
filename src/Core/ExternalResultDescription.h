@@ -41,6 +41,7 @@ struct ExternalResultDescription
         vtArray,
         vtFixedString,
         vtPoint,
+        vtGeometry,
     };
 
     Block sample_block;

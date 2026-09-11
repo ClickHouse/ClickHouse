@@ -32,6 +32,18 @@ void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_r
     }
 }
 
+void MetadataOperationsHolder::prependOperation(MetadataOperationPtr && operation)
+{
+    if (state != MetadataStorageTransactionState::PREPARING)
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "Cannot add operations to transaction in {} state, it should be in {} state",
+            toString(state),
+            toString(MetadataStorageTransactionState::PREPARING));
+
+    operations.emplace_front(std::move(operation));
+}
+
 void MetadataOperationsHolder::addOperation(MetadataOperationPtr && operation)
 {
     if (state != MetadataStorageTransactionState::PREPARING)

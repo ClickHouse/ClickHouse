@@ -1,39 +1,39 @@
 #include <string_view>
-#include <DataTypes/DataTypesBinaryEncoding.h>
-#include <IO/Operators.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/CurrentThread.h>
-#include <Common/Exception.h>
 #include <Common/ThreadStatus.h>
+#include <Common/Exception.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
 
 namespace QueryPlanSerializationSetting
 {
-extern const QueryPlanSerializationSettingsUInt64 join_runtime_filter_exact_values_limit;
-extern const QueryPlanSerializationSettingsUInt64 join_runtime_bloom_filter_bytes;
-extern const QueryPlanSerializationSettingsUInt64 join_runtime_bloom_filter_hash_functions;
-extern const QueryPlanSerializationSettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
-extern const QueryPlanSerializationSettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
-extern const QueryPlanSerializationSettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
-extern const QueryPlanSerializationSettingsBool join_runtime_filter_use_minmax;
+    extern const QueryPlanSerializationSettingsUInt64 join_runtime_filter_exact_values_limit;
+    extern const QueryPlanSerializationSettingsUInt64 join_runtime_bloom_filter_bytes;
+    extern const QueryPlanSerializationSettingsUInt64 join_runtime_bloom_filter_hash_functions;
+    extern const QueryPlanSerializationSettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
+    extern const QueryPlanSerializationSettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
+    extern const QueryPlanSerializationSettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
+    extern const QueryPlanSerializationSettingsBool join_runtime_filter_use_minmax;
 }
 
 
 namespace ErrorCodes
 {
-extern const int INCORRECT_DATA;
-extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int INCORRECT_DATA;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 /// Runtime bloom filter should be small and fast otherwise it is pointless
@@ -45,7 +45,8 @@ static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
 
 static ITransformingStep::Traits getTraits()
 {
-    return ITransformingStep::Traits{
+    return ITransformingStep::Traits
+    {
         {
             .returns_single_stream = false,
             .preserves_number_of_streams = true,
@@ -53,7 +54,8 @@ static ITransformingStep::Traits getTraits()
         },
         {
             .preserves_number_of_rows = true,
-        }};
+        }
+    };
 }
 
 BuildRuntimeFilterStep::BuildRuntimeFilterStep(
@@ -70,8 +72,14 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
     bool allow_to_use_not_exact_filter_,
     bool can_use_minmax_filter_,
-    std::optional<UInt64> distinct_keys_hint_)
-    : ITransformingStep(input_header_, input_header_, getTraits())
+    bool use_only_minmax_filter_,
+    bool track_key_range_,
+    std::optional<UInt64> distinct_keys_hint_,
+    bool distinct_keys_hint_matches_filter_key_)
+    : ITransformingStep(
+        input_header_,
+        input_header_,
+        getTraits())
     , filter_column_name(std::move(filter_column_name_))
     , filter_column_type(filter_column_type_)
     , filter_name(filter_name_)
@@ -84,7 +92,10 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
     , can_use_minmax_filter(can_use_minmax_filter_)
+    , use_only_minmax_filter(use_only_minmax_filter_)
+    , track_key_range(track_key_range_)
     , distinct_keys_hint(distinct_keys_hint_)
+    , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
 {
     if (!bloom_filter_bytes)
         bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
@@ -92,8 +103,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
         throw Exception(
             ErrorCodes::PARAMETER_OUT_OF_BOUND,
             "Specified runtime bloom filter size {} is too big, maximum: {}",
-            bloom_filter_bytes,
-            MAX_RUNTIME_BLOOM_FILTER_BYTES);
+            bloom_filter_bytes, MAX_RUNTIME_BLOOM_FILTER_BYTES);
 
     if (!bloom_filter_hash_functions)
         bloom_filter_hash_functions = DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS;
@@ -101,8 +111,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
         throw Exception(
             ErrorCodes::PARAMETER_OUT_OF_BOUND,
             "Specified runtime bloom filter hash function count {} is too big, maximum: {}",
-            bloom_filter_hash_functions,
-            MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS);
+            bloom_filter_hash_functions, MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS);
 }
 
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -116,31 +125,33 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
 
     auto streams = pipeline.getNumStreams();
     auto query_context = CurrentThread::get().tryGetQueryContext();
-    pipeline.addSimpleTransform(
-        [&, query_context](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
-        {
-            /// Build the filter only from the main stream
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
-                return nullptr;
+    pipeline.addSimpleTransform([&, query_context](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
+    {
+        /// Build the filter only from the main stream
+        if (stream_type != QueryPipelineBuilder::StreamType::Main)
+            return nullptr;
 
-            return std::make_shared<BuildRuntimeFilterTransform>(
-                header,
-                filter_column_name,
-                filter_column_type,
-                filter_name,
-                filter_key,
-                /*filters_to_merge_=*/streams - 1,
-                exact_values_limit,
-                bloom_filter_bytes,
-                bloom_filter_hash_functions,
-                pass_ratio_threshold_for_disabling,
-                blocks_to_skip_before_reenabling,
-                max_ratio_of_set_bits_in_bloom_filter,
-                allow_to_use_not_exact_filter,
-                can_use_minmax_filter,
-                distinct_keys_hint,
-                query_context);
-        });
+        return std::make_shared<BuildRuntimeFilterTransform>(
+            header,
+            filter_column_name,
+            filter_column_type,
+            filter_name,
+            filter_key,
+            /*filters_to_merge_=*/streams - 1,
+            exact_values_limit,
+            bloom_filter_bytes,
+            bloom_filter_hash_functions,
+            pass_ratio_threshold_for_disabling,
+            blocks_to_skip_before_reenabling,
+            max_ratio_of_set_bits_in_bloom_filter,
+            allow_to_use_not_exact_filter,
+            can_use_minmax_filter,
+            use_only_minmax_filter,
+            track_key_range,
+            distinct_keys_hint,
+            distinct_keys_hint_matches_filter_key,
+            query_context);
+    });
 }
 
 void BuildRuntimeFilterStep::updateOutputHeader()
@@ -148,7 +159,7 @@ void BuildRuntimeFilterStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit] = exact_values_limit;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = bloom_filter_bytes;
@@ -186,13 +197,10 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     const UInt64 exact_values_limit = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit];
     const UInt64 bloom_filter_bytes = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes];
     const UInt64 bloom_filter_hash_functions = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions];
-    const Float64 pass_ratio_threshold_for_disabling
-        = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling];
-    const UInt64 blocks_to_skip_before_reenabling
-        = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling];
-    const Float64 max_ratio_of_set_bits_in_bloom_filter
-        = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits];
-    const bool join_runtime_filter_use_minmax = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_use_minmax];
+    const Float64 pass_ratio_threshold_for_disabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling];
+    const UInt64 blocks_to_skip_before_reenabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling];
+    const Float64 max_ratio_of_set_bits_in_bloom_filter = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits];
+    const bool can_use_minmax_filter = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_use_minmax];
 
     /// A deserialized step carries no random lookup key (it is never serialized); runtime filters are
     /// re-derived per plan build. If such a step is ever executed, `finish()` no-ops on the empty key.
@@ -209,7 +217,9 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         blocks_to_skip_before_reenabling,
         max_ratio_of_set_bits_in_bloom_filter,
         allow_to_use_not_exact_filter,
-        join_runtime_filter_use_minmax);
+        can_use_minmax_filter,
+        /*use_only_minmax_filter_=*/false,
+        /*track_key_range_=*/false); /// deserialized step is inert (no rendezvous key), so it never builds
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
@@ -242,6 +252,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     {
         format_settings.out << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
         format_settings.out << prefix << "Can use minmax filter: " << can_use_minmax_filter << '\n';
+        format_settings.out << prefix << "Use only minmax filter: " << use_only_minmax_filter << '\n';
     }
 }
 

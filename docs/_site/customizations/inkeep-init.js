@@ -18,13 +18,17 @@
 
   // Inkeep integration API keys. These are client-side/public keys (they ship
   // in the browser bundle), so committing them is expected. Staging covers any
-  // *.mintlify.app host (preview/staging deploys); every other host (localhost,
-  // mint dev, a future prod domain) uses the local-dev key.
+  // *.mintlify.app and *.mintlify.site hosts (preview/staging deploys); every
+  // other host (localhost, mint dev, a future prod domain) uses the local-dev
+  // key.
   var INKEEP_API_KEY_STAGING = 'd3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54';
   var INKEEP_API_KEY_LOCAL = 'b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b';
-  var INKEEP_API_KEY = /\.mintlify\.app$/.test(window.location.hostname)
+  var INKEEP_API_KEY = /\.mintlify\.(?:app|site)$/.test(window.location.hostname)
     ? INKEEP_API_KEY_STAGING
     : INKEEP_API_KEY_LOCAL;
+  // The legacy *.mintlify.app source exposed pages at the host root, while
+  // the *.mintlify.site source includes a /docs prefix.
+  var INKEEP_PREVIEW_URL_RE = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/;
 
   // cxkit-mintlify CDN bundle. @0.5 resolves to the latest 0.5.x; pin a full
   // version (e.g. @0.5.119) when deploying for reproducible builds.
@@ -64,7 +68,7 @@
     ['products/clickhouse-private', 'ClickHouse Private'],
     ['products/managed-postgres', 'Managed Postgres'],
     ['products/agentic-data-stack', 'Agentic Data Stack'],
-    ['products/chdb', 'chDB'],
+    ['chdb', 'chDB'],
     ['products/kubernetes-operator', 'Kubernetes Operator'],
     ['clickstack', 'ClickStack'],
     ['integrations/clickpipes', 'ClickPipes'],
@@ -102,17 +106,24 @@
     return [
       // Let the row wrap and stop the single-line horizontal scroll.
       LIST + ' { flex-wrap: wrap !important; overflow-x: visible !important; row-gap: 0.375rem; }',
+      // Categories share a compact tag size; a mild radius keeps their edges
+      // distinct from the fully rounded search controls.
+      TAB + ' { font-size: 0.8125rem !important; min-height: 1.75rem !important; padding-inline: 0.625rem !important; border-radius: 12px !important; }',
       // Force ordering: row-1 tabs, then a break, then the sub-area tabs.
       row1 + ' { order: 0; }',
-      SUB + ' { order: 2; display: none !important; }',
+      // Sub-areas use an outline and muted inactive state to distinguish them
+      // from their parent categories.
+      SUB + ' { order: 2; display: none !important; box-shadow: inset 0 0 0 1px currentColor !important; }',
+      SUB + ':not([data-state="active"]) { background: transparent !important; opacity: 0.7; }',
       // Reveal the sub-area tabs only when Docs (or a sub-area) is active.
       docsActive + ' ' + SUB + ', ' + subActive + ' ' + SUB + ' { display: inline-flex !important; }',
       // A full-width pseudo-element (a flex item of the tab-list) ordered
       // between row-1 and the sub-areas forces the sub-areas onto their own
-      // second line — only while that row is showing. No DOM injection, so it
-      // survives Inkeep's re-renders.
+      // second line — only while that row is showing. It also supplies a
+      // subtle visual divider. No DOM injection, so it survives Inkeep's
+      // re-renders.
       docsActive + '::before, ' + subActive + '::before' +
-        ' { content: ""; order: 1; flex: 0 0 100%; height: 0; }',
+        ' { content: ""; order: 1; flex: 0 0 100%; height: 1px; margin-block: 0.125rem; background: currentColor; opacity: 0.18; }',
     ].join('');
   }
 
@@ -151,11 +162,17 @@
       return;
     }
 
+    var initialQuery = new URLSearchParams(window.location.search).get('q') || '';
     var settings = {
       // Open straight to the search view. (canToggleView is honored by
       // SearchBar/ChatButton but NOT by ModalSearchAndChat, so we hide the
       // chat affordances via CSS below instead.)
       defaultView: 'search',
+      // A URL such as /docs/?q=MergeTree opens the modal and runs the search
+      // immediately, matching the old Docusaurus search-page behavior.
+      modalSettings: {
+        isOpen: Boolean(initialQuery),
+      },
       baseSettings: {
         apiKey: INKEEP_API_KEY,
         primaryBrandColor: '#fdff75',
@@ -173,10 +190,10 @@
         // overwrite tabs with the result.
         transformSource: function (source) {
           var url = source.url || '';
-          var isPreview = url.indexOf('private-7c7dfe99.mintlify.app') !== -1;
+          var isPreview = INKEEP_PREVIEW_URL_RE.test(url);
           if (isPreview) {
             // Rewrite preview links to the canonical clickhouse.com/docs domain.
-            url = url.replace(/^https?:\/\/private-7c7dfe99\.mintlify\.app\//, 'https://clickhouse.com/docs/');
+            url = url.replace(INKEEP_PREVIEW_URL_RE, 'https://clickhouse.com/docs/');
           }
           // Do NOT tag sources with 'All' — 'All' is Inkeep's reserved built-in
           // tab (shows every result automatically); tagging sources with it
@@ -239,6 +256,7 @@
       },
       searchSettings: {
         placeholder: 'Search ClickHouse docs...',
+        defaultQuery: initialQuery,
         // Wait 300ms after the last keystroke before firing a search request,
         // so fast typing issues one query instead of one per character.
         debounceTimeMs: 300,

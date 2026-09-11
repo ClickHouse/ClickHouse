@@ -10,10 +10,16 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <exception>
 
+
+namespace ProfileEvents
+{
+    extern const Event SetsBuiltFromSubquery;
+}
 
 namespace DB
 {
@@ -34,15 +40,15 @@ CreatingSetsTransform::~CreatingSetsTransform()
 {
     if (promise_to_build)
     {
-        /// set_exception can also throw
+        /// An unfulfilled promise means the build was abandoned, not that it failed: publish the
+        /// retryable "no set" outcome. `work` resets the promise after storing a real error.
         try
         {
-            promise_to_build->set_exception(std::make_exception_ptr(
-                Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to build set, most likely pipeline executor was stopped")));
+            promise_to_build->set_value(nullptr);
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed to set_exception for promise");
+            tryLogCurrentException(log, "Failed to set_value for promise");
         }
     }
 
@@ -186,14 +192,14 @@ void CreatingSetsTransform::finishSubquery()
 
     if (set_from_cache)
     {
-        LOG_DEBUG(log, "Got set from cache in {} sec.", seconds);
+        LOG_DEBUG(log, "Got set from cache in {:.3f} sec.", seconds);
     }
     else if (read_rows != 0)
     {
         if (set_and_key->set)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {:.3f} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
         if (set_and_key->external_table)
-            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
+            LOG_DEBUG(log, "Created Table with {} rows in {:.3f} sec.", read_rows, seconds);
     }
     else
     {
@@ -251,6 +257,7 @@ Chunk CreatingSetsTransform::generate()
         });
 
         set_and_key->set->finishInsert();
+        ProfileEvents::increment(ProfileEvents::SetsBuiltFromSubquery);
         if (promise_to_build)
         {
             promise_to_build->set_value(set_and_key->set);

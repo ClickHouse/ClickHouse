@@ -126,7 +126,7 @@ Cliquez sur « Confirm » : votre broker MQTT entièrement géré est maintena
 
 Avant de pouvoir commencer à configurer l’intégration ClickHouse, nous devons d’abord activer la passerelle NAT. Par défaut, le MQTT broker est déployé dans un VPC privé, qui ne peut pas envoyer de données vers des systèmes tiers via le réseau public.
 
-Retournez sur la page Overview et faites défiler jusqu’en bas, où vous verrez le widget NAT gateway. Cliquez sur le bouton Subscribe et suivez les instructions. Notez que NAT Gateway est un service payant, mais qu’il offre également un essai gratuit de 14 jours.
+Retournez sur la page Overview et faites défiler jusqu’en bas, où vous verrez le widget passerelle NAT. Cliquez sur le bouton Subscribe et suivez les instructions. Notez que NAT Gateway est un service payant, mais qu’il offre également un essai gratuit de 14 jours.
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_nat_gateway.webp" size="lg" border alt="Panneau de configuration de la passerelle NAT d’EMQX Cloud" />
 
@@ -136,7 +136,7 @@ Une fois la passerelle créée, vous trouverez son adresse IP publique dans le w
   ## Intégration d’EMQX Cloud avec ClickHouse Cloud
 </div>
 
-Les [Data Integrations d’EMQX Cloud](https://docs.emqx.com/en/cloud/latest/rule_engine/introduction.html#general-flow) servent à configurer les règles de traitement et de réponse aux flux de messages EMQX et aux événements des appareils. Les Data Integrations offrent non seulement une architecture configurable claire et flexible, mais elles simplifient également le processus de développement, améliorent la convivialité et réduisent le niveau de couplage entre le système métier et EMQX Cloud. Elles fournissent aussi une excellente infrastructure pour personnaliser les fonctionnalités propriétaires d’EMQX Cloud.
+Les [Data Integrations d’EMQX Cloud](https://docs.emqx.com/en/cloud/latest/data_integration/introduction.html) servent à configurer les règles de traitement et de réponse aux flux de messages EMQX et aux événements des appareils. Les Data Integrations offrent non seulement une architecture configurable claire et flexible, mais elles simplifient également le processus de développement, améliorent la convivialité et réduisent le niveau de couplage entre le système métier et EMQX Cloud. Elles fournissent aussi une excellente infrastructure pour personnaliser les fonctionnalités propriétaires d’EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png" size="lg" border alt="Options de Data Integration d’EMQX Cloud montrant les connecteurs disponibles" />
 
@@ -166,7 +166,7 @@ Cliquez sur la carte ClickHouse pour créer une nouvelle ressource.
 
 Lors de la création de la ressource, une fenêtre contextuelle s’affiche, et en cliquant sur &#39;New&#39;, vous accédez à la page de création de règle.
 
-EMQX fournit un puissant [moteur de règles](https://docs.emqx.com/en/cloud/latest/rule_engine/rules.html) capable de transformer et d’enrichir le message MQTT brut avant de l’envoyer à des systèmes tiers.
+EMQX fournit un puissant [moteur de règles](https://docs.emqx.com/en/cloud/latest/data_integration/rules.html) capable de transformer et d’enrichir le message MQTT brut avant de l’envoyer à des systèmes tiers.
 
 Voici la règle utilisée dans ce tutoriel :
 

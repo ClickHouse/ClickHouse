@@ -124,6 +124,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         //     * set flag / flush
 
         cleanUnprocessed();
+        cleanBlockStartOffsets();
 
         stalled_status = REBALANCE_HAPPENED;
         last_rebalance_timestamp = timeInSeconds(std::chrono::system_clock::now());
@@ -396,6 +397,46 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
     LOG_TRACE(log, "{} Returned to committed position: {}", msg, committed_offset);
 }
 
+void KafkaConsumer::rewindToLastCommitted()
+{
+    cleanUnprocessed();
+
+    if (block_start_offsets.empty() || !assignment.has_value() || assignment->empty())
+    {
+        /// No mid-block commits to undo (e.g. `kafka_commit_every_batch` is off)
+        cleanBlockStartOffsets();
+        resetToLastCommitted("Aborted in-flight block.");
+        return;
+    }
+
+    /// Rewind to where the in-flight block started. Re-commit the block partitions
+    size_t max_retries = 5;
+    while (max_retries > 0)
+    {
+        try
+        {
+            auto positions = consumer->get_offsets_committed(consumer->get_assignment());
+            for (auto & tp : positions)
+                for (const auto & start : block_start_offsets)
+                    if (tp.get_partition() == start.get_partition() && tp.get_topic() == start.get_topic())
+                        tp.set_offset(start.get_offset());
+
+            consumer->assign(positions);
+            consumer->commit(block_start_offsets);
+            LOG_TRACE(log, "Aborted in-flight block, rewound to block start: {}", block_start_offsets);
+            cleanBlockStartOffsets();
+            return;
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            --max_retries;
+            LOG_WARNING(log, "Exception while rewinding to block start (attempts left: {}): {}", max_retries, e.what());
+            if (max_retries == 0)
+                throw;
+        }
+    }
+}
+
 
 void KafkaConsumer::doPoll()
 {
@@ -547,9 +588,18 @@ void KafkaConsumer::storeLastReadMessageOffset()
 {
     if (!isStalled())
     {
+        trackCurrentBlockStart(*(current - 1));
         consumer->store_offset(*(current - 1));
         ++offsets_stored;
     }
+}
+
+void KafkaConsumer::trackCurrentBlockStart(const cppkafka::Message & message)
+{
+    for (const auto & tp : block_start_offsets)
+        if (tp.get_partition() == message.get_partition() && tp.get_topic() == message.get_topic())
+            return;
+    block_start_offsets.emplace_back(message.get_topic(), message.get_partition(), message.get_offset());
 }
 
 void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktrace)

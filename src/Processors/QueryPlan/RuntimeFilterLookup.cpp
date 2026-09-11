@@ -2,22 +2,31 @@
 #include <bit>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <optional>
-#include <type_traits>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
+#include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Interpreters/HashTablesStatistics.h>
+#include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <fmt/format.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/MergeLock.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SharedLockGuard.h>
-#include <Common/SharedMutex.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -29,6 +38,7 @@ extern const Event RuntimeFilterBlocksSkipped;
 extern const Event RuntimeFilterRowsChecked;
 extern const Event RuntimeFilterRowsPassed;
 extern const Event RuntimeFilterRowsSkipped;
+extern const Event RuntimeFilterBloomFilterBuildsSkipped;
 }
 
 namespace DB
@@ -40,35 +50,77 @@ extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
 }
 
-namespace
+namespace detail
 {
 
-bool typeContainsFloatImpl(const DataTypePtr & type)
+void RuntimeFilterBuildState::assertCanInsert() const
 {
-    const auto nested_type = removeNullable(removeLowCardinality(type));
-    if (WhichDataType(nested_type).isNativeFloat())
-        return true;
+    if (inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
+}
 
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get()))
+void RuntimeFilterBuildState::assertCanFind() const
+{
+    if (!inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before building it was finished");
+}
+
+void RuntimeFilterBuildState::assertCanMerge() const
+{
+    assertCanInsert();
+    if (filters_to_merge == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge more runtime filters than expected");
+}
+
+void RuntimeFilterBuildState::finishMerge()
+{
+    assertCanMerge();
+    --filters_to_merge;
+}
+
+void RuntimeFilterSkipBudget::replenish(UInt64 rows, UInt64 multiplier)
+{
+    if (rows == 0 || multiplier == 0)
+        return;
+
+    const Int64 max_rows_to_skip = std::numeric_limits<Int64>::max();
+    const UInt64 max_rows_to_skip_unsigned = static_cast<UInt64>(max_rows_to_skip);
+    const UInt64 rows_to_add = rows > max_rows_to_skip_unsigned / multiplier ? max_rows_to_skip_unsigned : rows * multiplier;
+    const Int64 increment = static_cast<Int64>(rows_to_add);
+
+    Int64 current_rows_to_skip = rows_to_skip.load(std::memory_order_relaxed);
+    while (current_rows_to_skip < max_rows_to_skip)
     {
-        for (const auto & element_type : tuple_type->getElements())
-        {
-            if (typeContainsFloatImpl(element_type))
-                return true;
-        }
+        const Int64 available = max_rows_to_skip - current_rows_to_skip;
+        const Int64 updated_rows_to_skip = increment >= available ? max_rows_to_skip : current_rows_to_skip + increment;
+        if (rows_to_skip.compare_exchange_weak(
+                current_rows_to_skip, updated_rows_to_skip, std::memory_order_relaxed, std::memory_order_relaxed))
+            return;
+    }
+}
+
+bool RuntimeFilterSkipBudget::consume(size_t rows)
+{
+    Int64 current_rows_to_skip = rows_to_skip.load(std::memory_order_relaxed);
+    while (current_rows_to_skip > 0)
+    {
+        const bool should_skip = rows < static_cast<UInt64>(current_rows_to_skip);
+        const Int64 remaining_rows_to_skip = should_skip ? current_rows_to_skip - static_cast<Int64>(rows) : 0;
+        if (rows_to_skip.compare_exchange_weak(
+                current_rows_to_skip, remaining_rows_to_skip, std::memory_order_relaxed, std::memory_order_relaxed))
+            return should_skip;
     }
 
     return false;
 }
-
 }
 
-bool runtimeFilterTypeContainsFloat(const DataTypePtr & type)
+RuntimeFilterEvaluationState::RuntimeFilterEvaluationState(RuntimeFilterConfig config_)
+    : config(std::move(config_))
 {
-    return typeContainsFloatImpl(type);
 }
 
-void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
+void RuntimeFilterEvaluationState::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
 {
     stats.blocks_processed++;
     stats.rows_checked += rows_checked;
@@ -78,56 +130,27 @@ void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsChecked, rows_checked);
     ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsPassed, rows_passed);
 
-    /// Skip next 30 blocks if too few rows got filtered out
-    if (static_cast<double>(rows_passed) > pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked))
-        rows_to_skip += rows_checked * blocks_to_skip_before_reenabling;
+    /// Skip the configured number of blocks if too few rows got filtered out.
+    const double rows_passed_threshold = config.pass_ratio_threshold_for_disabling * static_cast<double>(rows_checked);
+    if (static_cast<double>(rows_passed) > rows_passed_threshold)
+        skip_budget.replenish(rows_checked, config.blocks_to_skip_before_reenabling);
 }
 
-bool IRuntimeFilter::shouldSkip(size_t next_block_rows) const
+void RuntimeFilterEvaluationState::recordSkippedBlock(size_t rows_skipped) const
 {
-    if (is_fully_disabled)
-    {
-        stats.rows_skipped += next_block_rows;
-        stats.blocks_skipped++;
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsSkipped, next_block_rows);
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksSkipped);
-        return true;
-    }
-
-    rows_to_skip -= next_block_rows;
-    if (rows_to_skip > 0)
-    {
-        stats.rows_skipped += next_block_rows;
-        stats.blocks_skipped++;
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsSkipped, next_block_rows);
-        ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksSkipped);
-        return true;
-    }
-
-    rows_to_skip = 0;
-    return false;
+    stats.rows_skipped += rows_skipped;
+    stats.blocks_skipped++;
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterRowsSkipped, rows_skipped);
+    ProfileEvents::increment(ProfileEvents::RuntimeFilterBlocksSkipped);
 }
 
-void IRuntimeFilter::finishInsert()
+bool RuntimeFilterEvaluationState::shouldSkip(size_t next_block_rows) const
 {
-    if (filters_to_merge != 0)
-        return;
+    if (!key_set_dropped.load() && !skip_budget.consume(next_block_rows))
+        return false;
 
-    inserts_are_finished = true;
-
-    finishInsertImpl();
-}
-
-ColumnPtr IRuntimeFilter::find(const ColumnWithTypeAndName & values) const
-{
-    if (!inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before building it was finished");
-
-    const size_t rows_in_block = values.column->size();
-    if (shouldSkip(rows_in_block))
-        return DataTypeUInt8().createColumnConst(rows_in_block, true);
-
-    return findImpl(values);
+    recordSkippedBlock(next_block_rows);
+    return true;
 }
 
 static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
@@ -155,6 +178,50 @@ static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
 
 namespace
 {
+bool typeContainsFloat(const DataTypePtr & type)
+{
+    const auto nested_type = removeNullable(recursiveRemoveLowCardinality(type));
+    if (WhichDataType(nested_type).isNativeFloat())
+        return true;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get()))
+    {
+        for (const auto & element_type : tuple_type->getElements())
+        {
+            if (typeContainsFloat(element_type))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+bool typeSupportsMinMaxRange(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    DataTypePtr inner = removeNullable(recursiveRemoveLowCardinality(type));
+    WhichDataType which(inner);
+    return which.isInteger() || which.isDateOrDate32OrDateTimeOrDateTime64();
+}
+
+void extendRange(bool & has_range, Field & range_min, Field & range_max, const Field & new_min, const Field & new_max)
+{
+    if (!has_range)
+    {
+        range_min = new_min;
+        range_max = new_max;
+        has_range = true;
+        return;
+    }
+
+    if (accurateLess(new_min, range_min))
+        range_min = new_min;
+    if (accurateLess(range_max, new_max))
+        range_max = new_max;
+}
+
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
 {
     const char * position = raw_data;
@@ -207,6 +274,15 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
     }
 }
 
+template <typename... Ts>
+struct Overloaded : Ts...
+{
+    using Ts::operator()...;
+};
+
+template <typename... Ts>
+Overloaded(Ts...) -> Overloaded<Ts...>;
+
 /// Grow the bloom filter bytes to hold `distinct_keys` keys at the target fill rate using
 /// `hash_functions` hash functions: filter_bits = -hash_functions * distinct_keys / ln(1 - fill_rate)
 /// The formula is built on the following logic:
@@ -216,7 +292,7 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
 /// - (1 - 1/filter_bits)^(distinct_keys * hash_functions): probability that a given bit is not set after all inserts
 /// - e^(-distinct_keys * hash_functions / filter_bits) is used to approximate the above probability
 /// - 1 - e^(-distinct_keys * hash_functions / filter_bits): expected fraction of bits that end up set (= fill_rate)
-/// For more information check: https://www.eecs.harvard.edu/~michaelm/postscripts/im2005b.pdf
+/// For more infomation check: https://www.eecs.harvard.edu/~michaelm/postscripts/im2005b.pdf
 UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
 {
     const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
@@ -228,11 +304,248 @@ UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 
 }
 }
 
+static size_t countPassedStats(ColumnPtr values);
+
+template <bool negate>
+ExactSetRuntimeFilter<negate>::ExactSetRuntimeFilter(
+    const DataTypePtr & filter_column_target_type_, UInt64 bytes_limit_, UInt64 exact_values_limit_)
+    : filter_column_target_type(filter_column_target_type_)
+    , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type_))
+    , bytes_limit(bytes_limit_)
+    , exact_values_limit(exact_values_limit_)
+    , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls)})
+{
+    ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(filter_column_target_type_, String())};
+    getExactValues().setHeader(set_header);
+    getExactValues().fillSetElements(); /// Save the values, not just hashes.
+}
+
+template <bool negate>
+Set & ExactSetRuntimeFilter<negate>::getExactValues()
+{
+    auto * many = std::get_if<Many>(&lookup_state);
+    if (!many || !many->exact_values)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter exact values are not available");
+    return *many->exact_values;
+}
+
+template <bool negate>
+const Set & ExactSetRuntimeFilter<negate>::getExactValues() const
+{
+    const auto * many = std::get_if<Many>(&lookup_state);
+    if (!many || !many->exact_values)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter exact values are not available");
+    return *many->exact_values;
+}
+
+template <bool negate>
+void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
+{
+    if (is_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter exact set after it was marked as finished");
+
+    if (is_full)
+        return;
+
+    auto & set = getExactValues();
+    set.insertFromColumns({values});
+    is_full = set.getTotalRowCount() > exact_values_limit || set.getTotalByteCount() > bytes_limit;
+}
+
+template <bool negate>
+void ExactSetRuntimeFilter<negate>::finishInsert()
+{
+    if (is_finished)
+        return;
+
+    auto & set = getExactValues();
+    set.finishInsert();
+    is_finished = true;
+
+    /// If the set is empty just return a constant false column.
+    if (set.getTotalRowCount() == 0)
+    {
+        lookup_state = Empty{set.getSetElements().front()};
+        return;
+    }
+
+    /// If only one element is in the set then use `equals` instead of set lookup.
+    /// If the argument is `Nullable` or contains a float, use `Set` because it handles `NULL`
+    /// values and uses the same NaN membership semantics as JOIN keys.
+    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls && !typeContainsFloat(filter_column_target_type))
+    {
+        lookup_state = Single{set.getSetElements().front()};
+        return;
+    }
+
+    /// Keep the set-backed state for normal set lookups.
+}
+
+template <bool negate>
+void ExactSetRuntimeFilter<negate>::finishInsert(RuntimeFilterEvaluationState & evaluation_state)
+{
+    finishInsert();
+
+    if constexpr (!negate)
+    {
+        if (isFull())
+        {
+            /// Some keys were dropped so we cannot filter by a partial set of keys.
+            evaluation_state.markKeySetDropped();
+            releaseExactValues();
+        }
+    }
+}
+
+template <bool negate>
+ColumnPtr ExactSetRuntimeFilter<negate>::find(const ColumnWithTypeAndName & values, std::optional<size_t> & /*rows_passed*/) const
+{
+    if (!is_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter set is not ready for lookups");
+
+    return std::visit(
+        Overloaded{
+            [&](const Empty &) -> ColumnPtr { return DataTypeUInt8().createColumnConst(values.column->size(), negate); },
+            [&](const Single & single) -> ColumnPtr
+            {
+                /// If only one element is in the set then use `equals` instead of set lookup.
+                /// Use the column directly from `Set` to avoid lossy `Field` roundtrip.
+                ColumnPtr const_column = ColumnConst::create(single.column, values.column->size());
+                ColumnsWithTypeAndName arguments = {values, ColumnWithTypeAndName(const_column, values.type, String())};
+                auto single_element_equals_function
+                    = FunctionFactory::instance().get(negate ? "notEquals" : "equals", nullptr)->build(arguments);
+                return single_element_equals_function->execute(
+                    arguments, single_element_equals_function->getResultType(), values.column->size(), /* dry_run = */ false);
+            },
+            [&](const Many & many) -> ColumnPtr
+            {
+                if (!many.exact_values)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter exact values are not available");
+
+                return many.exact_values->execute({values}, negate);
+            },
+        },
+        lookup_state);
+}
+
+template <bool negate>
+ColumnPtr ExactSetRuntimeFilter<negate>::getValuesColumn() const
+{
+    return std::visit(
+        Overloaded{
+            [](const Empty & empty) -> ColumnPtr { return empty.column; },
+            [](const Single & single) -> ColumnPtr { return single.column; },
+            [](const Many & many) -> ColumnPtr
+            {
+                if (!many.exact_values)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter exact values are not available");
+
+                many.exact_values->finishInsert();
+                return many.exact_values->getSetElements().front();
+            },
+        },
+        lookup_state);
+}
+
+template <bool negate>
+void ExactSetRuntimeFilter<negate>::releaseExactValues()
+{
+    if (auto * many = std::get_if<Many>(&lookup_state))
+        many->exact_values.reset();
+}
+
+template <bool negate>
+ColumnPtr ExactSetRuntimeFilter<negate>::getRecordedKeyValues() const
+{
+    if constexpr (negate)
+        return nullptr;
+    if (is_full || !is_finished)
+        return nullptr;
+    return getValuesColumn();
+}
+
+template <bool negate>
+void ExactSetRuntimeFilter<negate>::mergeFrom(const ExactSetRuntimeFilter & source)
+{
+    insert(source.getValuesColumn());
+}
+
+bool ApproximateSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
+{
+    /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
+    /// LowCardinality reports a contiguous representation unconditionally, but its getDataAt() delegates to the
+    /// dictionary column; for LowCardinality(Nullable(...)) that is ColumnNullable::getDataAt(), which throws on a NULL.
+    /// Strip LowCardinality and test the inner type so LC(Nullable(...)) falls back to the exact (NULL-safe) Set path,
+    /// exactly like a plain Nullable(...) key already does.
+    return removeLowCardinality(data_type)->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+}
+
+ApproximateSetRuntimeFilter::ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UInt64 bloom_filter_hash_functions_)
+    : bloom_filter(bytes_limit_, bloom_filter_hash_functions_, BLOOM_FILTER_SEED)
+{
+}
+
+void ApproximateSetRuntimeFilter::insert(ColumnPtr values)
+{
+    insertIntoBloomFilter(values);
+}
+
+void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values)
+{
+    forEachColumnHashBatch(
+        *values,
+        bloom_filter.getSeed(),
+        [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
+        { bloom_filter.addHashPairs(hash_pairs, count); });
+}
+
+ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
+{
+    auto dst = ColumnVector<UInt8>::create();
+    auto & dst_data = dst->getData();
+    dst_data.resize(values.column->size());
+
+    /// `findHashPairs` counts the matches while filling the mask; report that count through
+    /// `rows_passed` so the caller does not rescan the mask to collect stats.
+    size_t found_count = 0;
+    forEachColumnHashBatch(
+        *values.column,
+        bloom_filter.getSeed(),
+        [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
+        { found_count += bloom_filter.findHashPairs(hash_pairs, count, dst_data.data() + start_row); });
+
+    rows_passed = found_count;
+    return dst;
+}
+
+bool ApproximateSetRuntimeFilter::contains(const IColumn & values, size_t row) const
+{
+    const auto value = values.getDataAt(row);
+    return bloom_filter.find(value.data(), value.size());
+}
+
+void ApproximateSetRuntimeFilter::mergeFrom(const ApproximateSetRuntimeFilter & source)
+{
+    mergeBloomFilters(bloom_filter, source.bloom_filter);
+}
+
+bool ApproximateSetRuntimeFilter::isWorthUsing(Float64 max_ratio_of_set_bits_in_bloom_filter) const
+{
+    const auto & raw_filter_words = bloom_filter.getFilter();
+    const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
+    size_t set_bits = 0;
+    for (auto word : raw_filter_words)
+        set_bits += std::popcount(word);
+
+    /// If too many bits are set then it is likely that the filter will not filter out much.
+    return static_cast<double>(set_bits) <= max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits);
+}
+
 namespace
 {
 
 template <typename T>
-T getColumnValue(const IColumn & column, size_t row)
+T getNumericColumnValue(const IColumn & column, size_t row)
 {
     if constexpr (std::is_same_v<T, UInt64>)
         return column.getUInt(row);
@@ -244,324 +557,231 @@ T getColumnValue(const IColumn & column, size_t row)
         return column.getFloat64(row);
 }
 
-}
-
 template <typename T>
-ApproximateNumericRuntimeFilter<T>::ApproximateNumericRuntimeFilter(
-    size_t filters_to_merge_,
-    const DataTypePtr & filter_column_target_type_,
-    Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
-    UInt64 bytes_limit_,
-    UInt64 exact_values_limit_,
-    UInt64 bloom_filter_hash_functions_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_,
-    std::optional<UInt64> distinct_keys_hint_)
-    : ApproximateGenericRuntimeFilter(
-          filters_to_merge_,
-          filter_column_target_type_,
-          pass_ratio_threshold_for_disabling_,
-          blocks_to_skip_before_reenabling_,
-          bytes_limit_,
-          exact_values_limit_,
-          bloom_filter_hash_functions_,
-          max_ratio_of_set_bits_in_bloom_filter_,
-          distinct_keys_hint_)
-    , min_value(std::numeric_limits<T>::max())
-    , max_value(std::numeric_limits<T>::lowest())
+struct NumericMinMaxState
 {
-}
-
-template <typename T>
-void ApproximateNumericRuntimeFilter<T>::finishInsertImpl()
-{
-    if (isApproximate())
+    void insert(const IColumn & values)
     {
-        /// If the Bloom filter is saturated, keep the min/max range as a safe over-approximation
-        /// instead of disabling the whole numeric runtime filter. This is still useful for highly
-        /// selective ranges and cannot introduce false negatives.
-        use_range_only = !isBloomFilterWorthwhile();
-        return;
-    }
-
-    Base::finishInsertImpl();
-}
-
-template <typename T>
-ColumnPtr ApproximateNumericRuntimeFilter<T>::findImpl(const ColumnWithTypeAndName & values) const
-{
-    chassert(inserts_are_finished);
-
-    if (isApproximate())
-    {
-        auto dst = ColumnVector<UInt8>::create();
-        auto & dst_data = dst->getData();
-        dst_data.resize(values.column->size());
-
-        size_t found_count = 0;
-        for (size_t row = 0; row < values.column->size(); ++row)
+        for (size_t row = 0; row < values.size(); ++row)
         {
-            T value = getColumnValue<T>(*values.column, row);
-            /// The range check is a safe over-approximation of the build-side keys. For floating
-            /// point values, `mayContain` handles NaN separately because ordinary comparisons with
-            /// NaN are always false while JOIN key membership can still match NaN keys.
-            bool found = mayContain(value);
-            if (found && !use_range_only)
+            const T value = getNumericColumnValue<T>(values, row);
+            if constexpr (std::is_floating_point_v<T>)
             {
-                if constexpr (!std::is_floating_point_v<T>)
-                    found = lookupInBloomFilter(values.column, row);
-                else if (!std::isnan(value))
-                    found = lookupInBloomFilter(values.column, row);
+                if (std::isnan(value))
+                {
+                    has_nan = true;
+                    continue;
+                }
             }
-            found_count += found ? 1 : 0;
-            dst_data[row] = found;
-        }
-        updateStats(values.column->size(), found_count);
 
-        return dst;
+            if (!has_value || value < min_value)
+                min_value = value;
+            if (!has_value || value > max_value)
+                max_value = value;
+            has_value = true;
+        }
     }
-    else
+
+    void mergeFrom(const NumericMinMaxState & source)
     {
-        return lookupInExactSet(values);
+        if (source.has_value)
+        {
+            if (!has_value || source.min_value < min_value)
+                min_value = source.min_value;
+            if (!has_value || source.max_value > max_value)
+                max_value = source.max_value;
+            has_value = true;
+        }
+        has_nan = has_nan || source.has_nan;
     }
+
+    bool mayContain(T value) const
+    {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (std::isnan(value))
+                return has_nan;
+        }
+        return has_value && min_value <= value && value <= max_value;
+    }
+
+    bool bypassBloom(T value) const
+    {
+        if constexpr (std::is_floating_point_v<T>)
+            return std::isnan(value);
+        return false;
+    }
+
+    String describe() const
+    {
+        if constexpr (std::is_floating_point_v<T>)
+            return fmt::format("min={} max={} has_value={} has_nan={}", min_value, max_value, has_value, has_nan);
+        return fmt::format("min={} max={} has_value={}", min_value, max_value, has_value);
+    }
+
+    T min_value = std::numeric_limits<T>::max();
+    T max_value = std::numeric_limits<T>::lowest();
+    bool has_value = false;
+    bool has_nan = false;
+};
+
 }
 
-template <typename T>
-void ApproximateNumericRuntimeFilter<T>::merge(const IRuntimeFilter * source)
+struct NumericMinMaxRuntimeFilter::Impl
 {
-    if (inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
+    using State
+        = std::variant<NumericMinMaxState<UInt64>, NumericMinMaxState<Int64>, NumericMinMaxState<Float32>, NumericMinMaxState<Float64>>;
 
-    const auto * source_typed = typeid_cast<const ApproximateNumericRuntimeFilter<T> *>(source);
-    if (!source_typed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-
-    auto merge_approximate_filters = [this](const ApproximateNumericRuntimeFilter<T> * other)
+    explicit Impl(const DataTypePtr & data_type)
     {
-        /// Merge ranges.
-        if (other->has_comparable_value)
-        {
-            if (!has_comparable_value || other->min_value < min_value)
-                min_value = other->min_value;
-            if (!has_comparable_value || other->max_value > max_value)
-                max_value = other->max_value;
-            has_comparable_value = true;
-        }
-        has_nan = has_nan || other->has_nan;
-        use_range_only = use_range_only || other->use_range_only;
-
-        /// Merge bloom filters.
-        Base::mergeImpl(other);
-    };
-
-    if (isApproximate())
-    {
-        /// This filter is in minmax mode
-        if (source_typed->isApproximate())
-        {
-            merge_approximate_filters(source_typed);
-        }
+        WhichDataType which(data_type);
+        if (which.isNativeUInt())
+            state.emplace<NumericMinMaxState<UInt64>>();
+        else if (which.isNativeInt())
+            state.emplace<NumericMinMaxState<Int64>>();
+        else if (which.isFloat32())
+            state.emplace<NumericMinMaxState<Float32>>();
+        else if (which.isFloat64())
+            state.emplace<NumericMinMaxState<Float64>>();
         else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type for NumericMinMaxRuntimeFilter: {}", data_type->getName());
+    }
+
+    State state;
+};
+
+bool NumericMinMaxRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isNativeUInt() || which.isNativeInt() || which.isFloat32() || which.isFloat64();
+}
+
+NumericMinMaxRuntimeFilter::NumericMinMaxRuntimeFilter(const DataTypePtr & data_type)
+    : impl(std::make_unique<Impl>(data_type))
+{
+}
+
+NumericMinMaxRuntimeFilter::~NumericMinMaxRuntimeFilter() = default;
+NumericMinMaxRuntimeFilter::NumericMinMaxRuntimeFilter(NumericMinMaxRuntimeFilter &&) noexcept = default;
+NumericMinMaxRuntimeFilter & NumericMinMaxRuntimeFilter::operator=(NumericMinMaxRuntimeFilter &&) noexcept = default;
+
+void NumericMinMaxRuntimeFilter::insert(const IColumn & values)
+{
+    std::visit([&](auto & state) { state.insert(values); }, impl->state);
+}
+
+void NumericMinMaxRuntimeFilter::mergeFrom(const NumericMinMaxRuntimeFilter & source)
+{
+    std::visit(
+        [](auto & destination_state, const auto & source_state)
         {
-            /// Source is in exact mode, insert its values to update min/max
-            insert(source_typed->getValuesColumn());
-        }
-    }
-    else
-    {
-        /// This filter is in exact mode, insert source values
-        if (source_typed->isApproximate())
+            using DestinationState = std::decay_t<decltype(destination_state)>;
+            using SourceState = std::decay_t<decltype(source_state)>;
+            if constexpr (std::is_same_v<DestinationState, SourceState>)
+                destination_state.mergeFrom(source_state);
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge numeric minmax runtime filters with different types");
+        },
+        impl->state,
+        source.impl->state);
+}
+
+ColumnPtr NumericMinMaxRuntimeFilter::find(
+    const ColumnWithTypeAndName & values, const ApproximateSetRuntimeFilter * approximate_filter, std::optional<size_t> & rows_passed) const
+{
+    auto result = ColumnUInt8::create();
+    auto & result_data = result->getData();
+    result_data.resize(values.column->size());
+
+    size_t found_count = 0;
+    std::visit(
+        [&](const auto & state)
         {
-            /// Source is in minmax mode, switch to minmax and merge
-            switchToApproximateSet();
-            merge_approximate_filters(source_typed);
-        }
-        else
-        {
-            /// Both are in exact mode, insert source values
-            insert(source_typed->getValuesColumn());
-        }
-    }
+            using Value = std::decay_t<decltype(state.min_value)>;
+            for (size_t row = 0; row < values.column->size(); ++row)
+            {
+                const Value value = getNumericColumnValue<Value>(*values.column, row);
+                bool found = state.mayContain(value);
+                if (found && approximate_filter && !state.bypassBloom(value))
+                    found = approximate_filter->contains(*values.column, row);
+                result_data[row] = found;
+                found_count += found;
+            }
+        },
+        impl->state);
 
-    --filters_to_merge;
+    rows_passed = found_count;
+    return result;
 }
 
-template <typename T>
-void ApproximateNumericRuntimeFilter<T>::insertIntoApproximateSet(ColumnPtr values, size_t row)
+String NumericMinMaxRuntimeFilter::describe() const
 {
-    T value = getColumnValue<T>(*values, row);
-    if constexpr (std::is_floating_point_v<T>)
-    {
-        if (std::isnan(value))
-        {
-            has_nan = true;
-            Base::insertIntoApproximateSet(values, row);
-            return;
-        }
-    }
-
-    if (!has_comparable_value || value < min_value)
-        min_value = value;
-    if (!has_comparable_value || value > max_value)
-        max_value = value;
-    has_comparable_value = true;
-
-    Base::insertIntoApproximateSet(values, row);
+    return std::visit([](const auto & state) { return state.describe(); }, impl->state);
 }
 
-template <typename T>
-bool ApproximateNumericRuntimeFilter<T>::mayContain(T value) const
+bool AdaptiveSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
-    if constexpr (std::is_floating_point_v<T>)
-    {
-        if (std::isnan(value))
-            return has_nan;
-    }
-
-    return has_comparable_value && min_value <= value && value <= max_value;
+    return ApproximateSetRuntimeFilter::isDataTypeSupported(data_type);
 }
 
-template <typename T>
-String ApproximateNumericRuntimeFilter<T>::getModeForLogs() const
-{
-    if (!isApproximate())
-        return "exact";
-    return use_range_only ? "minmax" : "bloom_minmax";
-}
-
-template <typename T>
-String ApproximateNumericRuntimeFilter<T>::getExtraInfoForLogs() const
-{
-    if (!isApproximate())
-        return {};
-
-    if constexpr (std::is_floating_point_v<T>)
-    {
-        return fmt::format("min={} max={} has_comparable_value={} has_nan={}", min_value, max_value, has_comparable_value, has_nan);
-    }
-    else
-    {
-        return fmt::format("min={} max={} has_comparable_value={}", min_value, max_value, has_comparable_value);
-    }
-}
-
-void ExactContainsRuntimeFilter::merge(const IRuntimeFilter * source)
-{
-    if (inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
-
-    const auto * source_typed = typeid_cast<const ExactContainsRuntimeFilter *>(source);
-    if (!source_typed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-
-    insert(source_typed->getValuesColumn());
-    --filters_to_merge;
-}
-
-void ExactContainsRuntimeFilter::finishInsertImpl()
-{
-    Base::finishInsertImpl();
-
-    if (isFull())
-    {
-        /// Some keys were dropped so we cannot filter by partial set of keys
-        setFullyDisabled();
-        releaseExactValues();
-    }
-}
-
-void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
-{
-    if (inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
-
-    const auto * source_typed = typeid_cast<const ExactNotContainsRuntimeFilter *>(source);
-    if (!source_typed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-
-    insert(source_typed->getValuesColumn());
-    --filters_to_merge;
-}
-
-bool ApproximateGenericRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
-{
-    /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
-    /// LowCardinality reports a contiguous representation unconditionally, but its getDataAt() delegates to the
-    /// dictionary column; for LowCardinality(Nullable(...)) that is ColumnNullable::getDataAt(), which throws on a NULL.
-    /// Strip LowCardinality and test the inner type so LC(Nullable(...)) falls back to the exact (NULL-safe) Set path,
-    /// exactly like a plain Nullable(...) key already does.
-    return removeLowCardinality(data_type)->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
-}
-
-ApproximateGenericRuntimeFilter::ApproximateGenericRuntimeFilter(
-    size_t filters_to_merge_,
+AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     const DataTypePtr & filter_column_target_type_,
-    Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
     UInt64 bytes_limit_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_hash_functions_,
     Float64 max_ratio_of_set_bits_in_bloom_filter_,
-    std::optional<UInt64> distinct_keys_hint_)
-    : RuntimeFilterBase(
-          filters_to_merge_,
-          filter_column_target_type_,
-          pass_ratio_threshold_for_disabling_,
-          blocks_to_skip_before_reenabling_,
-          bytes_limit_,
-          exact_values_limit_)
+    std::optional<UInt64> distinct_keys_hint_,
+    bool distinct_keys_hint_matches_filter_key_,
+    bool start_with_dropped_key_set_)
+    : filter_column_target_type(filter_column_target_type_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
     , distinct_keys_hint(distinct_keys_hint_)
-    , bloom_filter(nullptr)
+    , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
+    , filter(
+          start_with_dropped_key_set_
+              ? Filter(std::in_place_type<KeySetDropped>)
+              : Filter(std::in_place_type<ExactFilter>, filter_column_target_type_, bytes_limit_, exact_values_limit_))
 {
 }
 
-void ApproximateGenericRuntimeFilter::insert(ColumnPtr values)
+void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 {
-    if (inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
-
-    if (bloom_filter)
-    {
-        build_rows += values->size();
-        insertIntoBloomFilter(values);
-    }
-    else
-    {
-        if (isFull())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected 'full' state of ApproximateRuntimeFilter");
-
-        Base::insert(std::move(values));
-
-        if (isFull())
-            switchToApproximateSet();
-    }
+    insert(std::move(values), filter);
 }
 
-void ApproximateGenericRuntimeFilter::finishInsertImpl()
+void AdaptiveSetRuntimeFilter::insert(ColumnPtr values, Filter & filter_)
 {
-    if (bloom_filter)
+    if (std::holds_alternative<KeySetDropped>(filter_))
+        return;
+
+    if (auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter_))
     {
-        checkBloomFilterWorthiness();
+        approximate_filter->insert(std::move(values));
         return;
     }
 
-    Base::finishInsertImpl();
+    auto * exact_filter = std::get_if<ExactFilter>(&filter_);
+    if (!exact_filter || exact_filter->isFull())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
+
+    exact_filter->insert(std::move(values));
+
+    if (exact_filter->isFull())
+        switchToApproximateFilter(filter_);
 }
 
-/// Add all keys from one filter to the other so that destination filter contains the union of both filters.
-void ApproximateGenericRuntimeFilter::merge(const IRuntimeFilter * source)
+void AdaptiveSetRuntimeFilter::finishInsert(RuntimeFilterEvaluationState & evaluation_state, bool keep_numeric_minmax_filter)
 {
-    if (inserts_are_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
+    if (auto * exact_filter = std::get_if<ExactFilter>(&filter))
+        exact_filter->finishInsert();
+    else if (
+        const auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter);
+        approximate_filter && !approximate_filter->isWorthUsing(max_ratio_of_set_bits_in_bloom_filter))
+        dropKeySet(filter);
 
-    const auto * source_typed = typeid_cast<const ApproximateGenericRuntimeFilter *>(source);
-    if (!source_typed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-
-    mergeImpl(source_typed);
-    --filters_to_merge;
+    if (std::holds_alternative<KeySetDropped>(filter) && !keep_numeric_minmax_filter)
+        evaluation_state.markKeySetDropped();
 }
 
 static size_t countPassedStats(ColumnPtr values)
@@ -579,195 +799,349 @@ static size_t countPassedStats(ColumnPtr values)
     return values->size();
 }
 
-template <bool negate>
-ColumnPtr RuntimeFilterBase<negate>::findImpl(const ColumnWithTypeAndName & values) const
+ColumnPtr AdaptiveSetRuntimeFilter::find(
+    const ColumnWithTypeAndName & values,
+    const NumericMinMaxRuntimeFilter * numeric_minmax_filter,
+    std::optional<size_t> & rows_passed) const
 {
-    chassert(inserts_are_finished);
-
-    switch (values_count)
-    {
-        case ValuesCount::UNKNOWN: throw Exception(ErrorCodes::LOGICAL_ERROR, "Run time filter set is not ready for lookups");
-        case ValuesCount::ZERO:
-            updateStats(values.column->size(), negate ? values.column->size() : 0);
-            return DataTypeUInt8().createColumnConst(values.column->size(), negate);
-        case ValuesCount::ONE: {
-            /// If only 1 element in the set then use "value == const" instead of set lookup.
-            /// Use the column directly from Set to avoid lossy Field roundtrip.
-            ColumnPtr const_column = ColumnConst::create(single_element_column, values.column->size());
-            ColumnsWithTypeAndName arguments = {values, ColumnWithTypeAndName(const_column, filter_column_target_type, String())};
-            auto single_element_equals_function
-                = FunctionFactory::instance().get(negate ? "notEquals" : "equals", nullptr)->build(arguments);
-            auto result = single_element_equals_function->execute(
-                arguments, single_element_equals_function->getResultType(), values.column->size(), /* dry_run = */ false);
-            updateStats(values.column->size(), countPassedStats(result));
-            return result;
-        }
-        case ValuesCount::MANY: {
-            auto result = exact_values->execute({values}, negate);
-            updateStats(values.column->size(), countPassedStats(result));
-            return result;
-        }
-    }
-    UNREACHABLE();
+    return std::visit(
+        Overloaded{
+            [&](const ExactFilter & exact_filter) -> ColumnPtr { return exact_filter.find(values, rows_passed); },
+            [&](const ApproximateSetRuntimeFilter & approximate_filter) -> ColumnPtr
+            {
+                if (numeric_minmax_filter)
+                    return numeric_minmax_filter->find(values, &approximate_filter, rows_passed);
+                return approximate_filter.find(values, rows_passed);
+            },
+            [&](const KeySetDropped &) -> ColumnPtr
+            {
+                if (numeric_minmax_filter)
+                    return numeric_minmax_filter->find(values, nullptr, rows_passed);
+                rows_passed = values.column->size();
+                return DataTypeUInt8().createColumnConst(values.column->size(), true);
+            },
+        },
+        filter);
 }
 
-ColumnPtr ApproximateGenericRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+AdaptiveSetRuntimeFilter::Mode AdaptiveSetRuntimeFilter::getMode() const
 {
-    chassert(inserts_are_finished);
-
-    if (bloom_filter)
-    {
-        auto dst = ColumnVector<UInt8>::create();
-        auto & dst_data = dst->getData();
-        dst_data.resize(values.column->size());
-
-        size_t found_count = 0;
-        forEachColumnHashBatch(
-            *values.column,
-            bloom_filter->getSeed(),
-            [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
-            { found_count += bloom_filter->findHashPairs(hash_pairs, count, dst_data.data() + start_row); });
-        updateStats(values.column->size(), found_count);
-
-        return dst;
-    }
-    else
-    {
-        return Base::findImpl(values);
-    }
+    if (std::holds_alternative<ExactFilter>(filter))
+        return Mode::Exact;
+    if (std::holds_alternative<ApproximateSetRuntimeFilter>(filter))
+        return Mode::Approximate;
+    return Mode::Dropped;
 }
 
-void ApproximateGenericRuntimeFilter::insertIntoApproximateSet(ColumnPtr values, size_t row)
+ColumnPtr AdaptiveSetRuntimeFilter::getRecordedKeyValues() const
 {
-    const auto value = values->getDataAt(row);
-    bloom_filter->add(value.data(), value.size());
+    if (const auto * exact_filter = std::get_if<ExactFilter>(&filter))
+        return exact_filter->getRecordedKeyValues();
+    return nullptr;
 }
 
-void ApproximateGenericRuntimeFilter::mergeImpl(const ApproximateGenericRuntimeFilter * source)
+void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source)
 {
-    if (source->bloom_filter)
-    {
-        switchToApproximateSet();
-        mergeBloomFilters(*bloom_filter, *source->bloom_filter);
-    }
-    else
-    {
-        insert(source->getValuesColumn());
-    }
+    std::visit(
+        Overloaded{
+            [&](const ExactFilter & source_exact_filter) { insert(source_exact_filter.getValuesColumn(), filter); },
+            [&](const ApproximateSetRuntimeFilter & source_approximate_filter)
+            {
+                if (auto * destination_approximate_filter = switchToApproximateFilter(filter))
+                    destination_approximate_filter->mergeFrom(source_approximate_filter);
+            },
+            [&](const KeySetDropped &) { dropKeySet(filter); },
+        },
+        source.filter);
 }
 
-bool ApproximateGenericRuntimeFilter::lookupInBloomFilter(ColumnPtr values, size_t row) const
+void AdaptiveSetRuntimeFilter::dropKeySet(Filter & filter_)
 {
-    /// TODO: optimize: consider replacing hash calculation with vectorized version
-    auto value = values->getDataAt(row);
-    return bloom_filter->find(value.data(), value.size());
+    filter_.emplace<KeySetDropped>();
 }
 
-void ApproximateGenericRuntimeFilter::switchToApproximateSet()
+ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilter(Filter & filter_)
 {
-    if (bloom_filter)
-        return;
+    if (auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter_))
+        return approximate_filter;
+    if (std::holds_alternative<KeySetDropped>(filter_))
+        return nullptr;
 
-    UInt64 bloom_filter_bytes = getBytesLimit();
+    auto * exact_filter = std::get_if<ExactFilter>(&filter_);
+    if (!exact_filter)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
+    auto values = exact_filter->getValuesColumn();
+    UInt64 bytes_limit = exact_filter->getBytesLimit();
+
     if (distinct_keys_hint)
-        bloom_filter_bytes = growBloomFilterBytes(
-            *distinct_keys_hint, bloom_filter_hash_functions, getBytesLimit(), max_ratio_of_set_bits_in_bloom_filter);
-
-    bloom_filter = std::make_unique<BloomFilter>(bloom_filter_bytes, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
-    insertIntoBloomFilter(getValuesColumn());
-
-    releaseExactValues();
-}
-
-void ApproximateGenericRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
-{
-    const size_t num_rows = values->size();
-    for (size_t row = 0; row < num_rows; ++row)
     {
-        insertIntoApproximateSet(values, row);
+        bytes_limit
+            = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, bytes_limit, max_ratio_of_set_bits_in_bloom_filter);
+
+        /// The filter size is capped, so a build side with more distinct keys would produce a Bloom filter
+        /// that `finishInsert` discards. Predict that fill rate before constructing it.
+        if (distinct_keys_hint_matches_filter_key)
+        {
+            const double least_distinct_keys = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
+            const double predicted_fill_rate = -std::expm1(
+                -static_cast<double>(bloom_filter_hash_functions) * least_distinct_keys / (static_cast<double>(bytes_limit) * 8.0));
+            if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
+            {
+                ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
+                dropKeySet(filter_);
+                return nullptr;
+            }
+        }
     }
-}
 
-bool ApproximateGenericRuntimeFilter::isBloomFilterWorthwhile() const
-{
-    const auto & raw_filter_words = bloom_filter->getFilter();
-    const size_t total_bits = raw_filter_words.size() * sizeof(raw_filter_words[0]) * 8;
-    size_t set_bits = 0;
-    for (auto word : raw_filter_words)
-        set_bits += std::popcount(word);
-
-    /// If too many bits are set then it is likely that the filter will not filter out much.
-    return static_cast<double>(set_bits) <= max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits);
-}
-
-void ApproximateGenericRuntimeFilter::checkBloomFilterWorthiness()
-{
-    if (!isBloomFilterWorthwhile())
-        setFullyDisabled();
-}
-
-String ApproximateGenericRuntimeFilter::getModeForLogs() const
-{
-    return bloom_filter ? "bloom" : "exact";
-}
-
-String ApproximateGenericRuntimeFilter::getExtraInfoForLogs() const
-{
-    if (!bloom_filter)
-        return {};
-
-    const auto & raw_filter_words = bloom_filter->getFilter();
-    return fmt::format(
-        "bloom_filter_bytes={} bloom_filter_hash_functions={}",
-        raw_filter_words.size() * sizeof(raw_filter_words.front()),
-        bloom_filter_hash_functions);
+    auto & approximate_filter = filter_.emplace<ApproximateSetRuntimeFilter>(bytes_limit, bloom_filter_hash_functions);
+    approximate_filter.insert(values);
+    return &approximate_filter;
 }
 
 SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
-    const DataTypePtr & filter_column_target_type_,
-    Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
-    ProbeFn probe_fn_)
-    : IRuntimeFilter(
-          /*filters_to_merge_=*/0, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_)
+    const DataTypePtr & filter_column_target_type_, ProbeFn probe_fn_, std::optional<Range> key_range_, ColumnPtr recorded_key_values_)
+    : filter_column_target_type(filter_column_target_type_)
     , probe_fn(std::move(probe_fn_))
+    , key_range(std::move(key_range_))
+    , recorded_key_values(std::move(recorded_key_values_))
 {
-    /// Build was already done elsewhere; nothing left to insert.
-    inserts_are_finished = true;
 }
 
-ColumnPtr SharedFixedHashTableRuntimeFilter::findImpl(const ColumnWithTypeAndName & values) const
+ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & /*rows_passed*/) const
 {
-    chassert(inserts_are_finished);
-    auto result = probe_fn(values);
-    updateStats(values.column->size(), countPassedStats(result));
+    return probe_fn(values);
+}
+
+RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
+    : filter_column_target_type(std::visit([](const auto & filter) { return filter.getTargetType(); }, data_.filter))
+    , range_supported(typeSupportsMinMaxRange(filter_column_target_type))
+    , range_positive(!std::holds_alternative<ExactNotContains>(data_.filter))
+    , evaluation_state(std::move(config_))
+    , data(std::move(data_))
+{
+    if (!range_supported)
+    {
+        std::lock_guard lock(mutex);
+        data.has_range = false;
+    }
+}
+
+void RuntimeFilter::insert(ColumnPtr values)
+{
+    std::lock_guard lock(mutex);
+    std::visit(
+        [&](auto & filter) TSA_REQUIRES(mutex)
+        {
+            using FilterType = std::decay_t<decltype(filter)>;
+            if constexpr (!FilterType::is_prebuilt)
+            {
+                data.build_state.assertCanInsert();
+                data.build_rows += values->size();
+                if (data.numeric_minmax_filter)
+                    data.numeric_minmax_filter->insert(*values);
+                if (data.index_analysis_enabled && range_supported && range_positive && !values->empty())
+                {
+                    Field column_min;
+                    Field column_max;
+                    values->getExtremes(column_min, column_max, 0, values->size());
+                    if (!column_min.isNull() && !column_max.isNull())
+                        extendRange(data.has_range, data.range_min, data.range_max, column_min, column_max);
+                }
+                filter.insert(std::move(values));
+            }
+        },
+        data.filter);
+}
+
+void RuntimeFilter::finishInsert()
+{
+    std::lock_guard lock(mutex);
+    if (data.build_state.hasPendingMerges())
+        return;
+
+    std::visit(
+        [&](auto & filter) TSA_REQUIRES(mutex)
+        {
+            using FilterType = std::decay_t<decltype(filter)>;
+            if constexpr (std::is_same_v<FilterType, Adaptive>)
+                filter.finishInsert(evaluation_state, data.numeric_minmax_filter.has_value());
+            else
+                filter.finishInsert(evaluation_state);
+        },
+        data.filter);
+    data.build_state.finishInserts();
+}
+
+ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
+{
+    SharedLockGuard lock(mutex);
+    data.build_state.assertCanFind();
+
+    const size_t rows_in_block = values.column->size();
+    if (evaluation_state.shouldSkip(rows_in_block))
+        return DataTypeUInt8().createColumnConst(rows_in_block, true);
+
+    std::optional<size_t> rows_passed;
+    auto result = std::visit(
+        [&](const auto & filter) TSA_REQUIRES_SHARED(mutex) -> ColumnPtr
+        {
+            using FilterType = std::decay_t<decltype(filter)>;
+            if constexpr (std::is_same_v<FilterType, Adaptive>)
+                return filter.find(values, data.numeric_minmax_filter ? &*data.numeric_minmax_filter : nullptr, rows_passed);
+            else
+                return filter.find(values, rows_passed);
+        },
+        data.filter);
+    evaluation_state.updateStats(rows_in_block, rows_passed ? *rows_passed : countPassedStats(result));
     return result;
 }
+
+void RuntimeFilter::merge(const RuntimeFilter & source)
+{
+    if (&source == this)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge a runtime filter with itself");
+
+    MergeLock lock(source.mutex, mutex);
+
+    /// `HashJoin::publishSharedRuntimeFilters` may have already replaced this lookup entry with a
+    /// prebuilt shared fixed-hash-table filter: the publication step can run as soon as the last
+    /// build-side port is closed, while `BuildRuntimeFilterTransform::finish()` (which reaches this
+    /// merge via `IRuntimeFilterLookup::add`) only runs afterwards in `prepare()`. The shared filter
+    /// probes the complete build-side hash table, i.e. a superset of anything a late set/bloom
+    /// filter could contribute, so ignore the merge (the pre-refactor no-op behavior of
+    /// `SharedFixedHashTableRuntimeFilter::merge`) instead of failing the query.
+    if (std::holds_alternative<SharedFixedHashTable>(data.filter))
+        return;
+
+    if (data.filter.index() != source.data.filter.index())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
+    if (data.numeric_minmax_filter.has_value() != source.data.numeric_minmax_filter.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different numeric minmax modes");
+
+    data.build_state.assertCanMerge();
+    std::visit(
+        [](auto & destination_filter, const auto & source_filter)
+        {
+            using DestinationFilter = std::decay_t<decltype(destination_filter)>;
+            using SourceFilter = std::decay_t<decltype(source_filter)>;
+            if constexpr (std::is_same_v<DestinationFilter, SourceFilter>)
+            {
+                destination_filter.mergeFrom(source_filter);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
+            }
+        },
+        data.filter,
+        source.data.filter);
+    if (data.numeric_minmax_filter)
+        data.numeric_minmax_filter->mergeFrom(*source.data.numeric_minmax_filter);
+    data.build_rows += source.data.build_rows;
+    if (data.index_analysis_enabled && range_supported && range_positive && source.data.has_range)
+        extendRange(data.has_range, data.range_min, data.range_max, source.data.range_min, source.data.range_max);
+    data.build_state.finishMerge();
+}
+
+void RuntimeFilter::enableIndexAnalysis()
+{
+    std::lock_guard lock(mutex);
+    data.build_state.assertCanInsert();
+    data.index_analysis_enabled = true;
+}
+
+ColumnPtr RuntimeFilter::getRecordedKeyValues() const
+{
+    if (!range_positive)
+        return nullptr;
+
+    SharedLockGuard lock(mutex);
+    if (!data.index_analysis_enabled || !data.build_state.isFinished())
+        return nullptr;
+    return std::visit([](const auto & filter) { return filter.getRecordedKeyValues(); }, data.filter);
+}
+
+std::optional<Range> RuntimeFilter::getRecordedKeyRanges() const
+{
+    if (!range_supported || !range_positive)
+        return {};
+
+    SharedLockGuard lock(mutex);
+    if (!data.has_range || !data.build_state.isFinished() || data.range_min.isNull() || data.range_max.isNull())
+        return {};
+    return Range(data.range_min, true, data.range_max, true);
+}
+
+UInt64 RuntimeFilter::getBuildRows() const
+{
+    SharedLockGuard lock(mutex);
+    return data.build_rows;
+}
+
+String RuntimeFilter::getModeForLogs() const
+{
+    SharedLockGuard lock(mutex);
+    return std::visit(
+        [&](const auto & filter) TSA_REQUIRES_SHARED(mutex) -> String
+        {
+            using FilterType = std::decay_t<decltype(filter)>;
+            if constexpr (std::is_same_v<FilterType, ExactContains>)
+                return "exact";
+            else if constexpr (std::is_same_v<FilterType, ExactNotContains>)
+                return "exact_not_contains";
+            else if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
+                return "shared_fixed_hash";
+            else
+            {
+                switch (filter.getMode())
+                {
+                    case Adaptive::Mode::Exact: return "exact";
+                    case Adaptive::Mode::Approximate: return data.numeric_minmax_filter ? "bloom_minmax" : "bloom";
+                    case Adaptive::Mode::Dropped: return data.numeric_minmax_filter ? "minmax" : "disabled";
+                }
+            }
+            UNREACHABLE();
+        },
+        data.filter);
+}
+
+String RuntimeFilter::getExtraInfoForLogs() const
+{
+    SharedLockGuard lock(mutex);
+    const auto * adaptive_filter = std::get_if<Adaptive>(&data.filter);
+    if (!data.numeric_minmax_filter || !adaptive_filter || adaptive_filter->getMode() == Adaptive::Mode::Exact)
+        return {};
+    return data.numeric_minmax_filter->describe();
+}
+
+template class ExactSetRuntimeFilter<false>;
+template class ExactSetRuntimeFilter<true>;
 
 class RuntimeFilterLookup : public IRuntimeFilterLookup
 {
 public:
     void add(const String & key, const String & display_name, UniqueRuntimeFilterPtr runtime_filter) override
     {
-        std::lock_guard g(rw_lock);
+        std::lock_guard lock(mutex);
         auto & filter = filters_by_name[key];
         if (!filter)
         {
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
-            filter.reset(runtime_filter.release()); /// Save new filter
-            /// Record the readable structural name once (the map is keyed by the opaque rendezvous key).
+            filter.reset(runtime_filter.release()); /// Save new filter.
+            /// Record the readable structural name once because the map is keyed by the opaque rendezvous key.
             display_names.emplace(key, display_name);
         }
         else
         {
-            filter->merge(runtime_filter.get()); /// Add all new keys to a existing filter
+            filter->merge(*runtime_filter); /// Add all new keys to an existing filter.
         }
         filter->finishInsert();
     }
 
     void replace(const String & name, UniqueRuntimeFilterPtr runtime_filter) override
     {
-        std::lock_guard g(rw_lock);
+        std::lock_guard lock(mutex);
         auto & filter = filters_by_name[name];
         if (!filter)
             ProfileEvents::increment(ProfileEvents::RuntimeFiltersCreated);
@@ -776,17 +1150,16 @@ public:
 
     RuntimeFilterConstPtr find(const String & name) const override
     {
-        SharedLockGuard g(rw_lock);
+        SharedLockGuard lock(mutex);
         auto it = filters_by_name.find(name);
         if (it == filters_by_name.end())
             return nullptr;
-        else
-            return it->second;
+        return it->second;
     }
 
     void logStats() const override
     {
-        SharedLockGuard g(rw_lock);
+        SharedLockGuard lock(mutex);
         for (const auto & [filter_key, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
@@ -813,11 +1186,11 @@ public:
     }
 
 private:
-    mutable SharedMutex rw_lock;
-    std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(rw_lock);
+    mutable SharedMutex mutex;
+    std::unordered_map<String, SharedRuntimeFilterPtr> filters_by_name TSA_GUARDED_BY(mutex);
     /// Readable structural name per rendezvous key, for logging. Kept under the same lock and
-    /// preserved across `replace` (the replacement keeps the original registration's name).
-    std::unordered_map<String, String> display_names TSA_GUARDED_BY(rw_lock);
+    /// preserved across `replace` because the replacement keeps the original registration's name.
+    std::unordered_map<String, String> display_names TSA_GUARDED_BY(mutex);
 };
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup()
@@ -825,98 +1198,79 @@ RuntimeFilterLookupPtr createRuntimeFilterLookup()
     return std::make_shared<RuntimeFilterLookup>();
 }
 
-template class ApproximateNumericRuntimeFilter<UInt64>;
-template class ApproximateNumericRuntimeFilter<Int64>;
-template class ApproximateNumericRuntimeFilter<Float32>;
-template class ApproximateNumericRuntimeFilter<Float64>;
-
-namespace
+/// Build a pruning predicate on the column: exact IN values when available, otherwise a range.
+static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
+    const RuntimeFilter & filter, const String & column_name, const DataTypePtr & column_type, ActionsDAG & dag, const ContextPtr & context)
 {
+    auto exact_values = filter.getRecordedKeyValues();
+    auto range = exact_values ? std::optional<Range>{} : filter.getRecordedKeyRanges();
+    if (!exact_values && !range)
+        return nullptr;
 
-template <typename T>
-UniqueRuntimeFilterPtr createApproximateNumericRuntimeFilterImpl(
-    size_t filters_to_merge,
-    const DataTypePtr & filter_column_target_type,
-    Float64 pass_ratio_threshold_for_disabling,
-    UInt64 blocks_to_skip_before_reenabling,
-    UInt64 bytes_limit,
-    UInt64 exact_values_limit,
-    UInt64 bloom_filter_hash_functions,
-    Float64 max_ratio_of_set_bits_in_bloom_filter,
-    std::optional<UInt64> distinct_keys_hint)
-{
-    return std::make_unique<ApproximateNumericRuntimeFilter<T>>(
-        filters_to_merge,
-        filter_column_target_type,
-        pass_ratio_threshold_for_disabling,
-        blocks_to_skip_before_reenabling,
-        bytes_limit,
-        exact_values_limit,
-        bloom_filter_hash_functions,
-        max_ratio_of_set_bits_in_bloom_filter,
-        distinct_keys_hint);
+    const auto target_type = filter.getFilterColumnTargetType();
+    const auto & key_node = dag.addInput(column_name, column_type);
+    const auto & key_casted = column_type->equals(*target_type) ? key_node : dag.addCast(key_node, target_type, {}, context);
+
+    if (exact_values)
+    {
+        ColumnWithTypeAndName set_values(exact_values, target_type, "__runtime_filter_in_values_" + column_name);
+        auto future_set = std::make_shared<FutureSetFromTuple>(
+            CityHash_v1_0_2::uint128{}, ASTPtr{}, ColumnsWithTypeAndName{set_values}, false, SizeLimits{});
+        auto set_column = ColumnConst::create(ColumnSet::create(1, std::move(future_set)), 0);
+        const auto & set_node
+            = dag.addColumn(std::move(set_column), std::make_shared<DataTypeSet>(), "__runtime_filter_in_set_" + column_name);
+        LOG_DEBUG(
+            getLogger("JoinRuntimeFilterIndexAnalysis"),
+            "Index analysis engaged on join key '{}': pruning by exact IN-set of {} value(s)",
+            column_name,
+            exact_values->size());
+        return &dag.addFunction(FunctionFactory::instance().get("in", context), {&key_casted, &set_node}, {});
+    }
+
+    if (range)
+    {
+        const auto & min_node
+            = dag.addColumn(target_type->createColumnConst(1, range->left), target_type, "__runtime_filter_min_" + column_name);
+        const auto & max_node
+            = dag.addColumn(target_type->createColumnConst(1, range->right), target_type, "__runtime_filter_max_" + column_name);
+        const auto & ge_node = dag.addFunction(FunctionFactory::instance().get("greaterOrEquals", context), {&key_casted, &min_node}, {});
+        const auto & le_node = dag.addFunction(FunctionFactory::instance().get("lessOrEquals", context), {&key_casted, &max_node}, {});
+        LOG_DEBUG(
+            getLogger("JoinRuntimeFilterIndexAnalysis"),
+            "Index analysis engaged on join key '{}': pruning by range {}",
+            column_name,
+            range->toString());
+        FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+        return &dag.addFunction(and_func, {&ge_node, &le_node}, {});
+    }
+
+    return nullptr;
 }
 
-}
-
-UniqueRuntimeFilterPtr createApproximateNumericRuntimeFilter(
-    size_t filters_to_merge,
-    const DataTypePtr & filter_column_target_type,
-    Float64 pass_ratio_threshold_for_disabling,
-    UInt64 blocks_to_skip_before_reenabling,
-    UInt64 bytes_limit,
-    UInt64 exact_values_limit,
-    UInt64 bloom_filter_hash_functions,
-    Float64 max_ratio_of_set_bits_in_bloom_filter,
-    std::optional<UInt64> distinct_keys_hint)
+const ActionsDAG::Node * buildRuntimeRangePredicate(
+    const IRuntimeFilterLookup & lookup,
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
+    ActionsDAG & dag,
+    const ContextPtr & context)
 {
-    WhichDataType which(filter_column_target_type);
-    if (which.isNativeUInt())
-        return createApproximateNumericRuntimeFilterImpl<UInt64>(
-            filters_to_merge,
-            filter_column_target_type,
-            pass_ratio_threshold_for_disabling,
-            blocks_to_skip_before_reenabling,
-            bytes_limit,
-            exact_values_limit,
-            bloom_filter_hash_functions,
-            max_ratio_of_set_bits_in_bloom_filter,
-            distinct_keys_hint);
-    if (which.isNativeInt())
-        return createApproximateNumericRuntimeFilterImpl<Int64>(
-            filters_to_merge,
-            filter_column_target_type,
-            pass_ratio_threshold_for_disabling,
-            blocks_to_skip_before_reenabling,
-            bytes_limit,
-            exact_values_limit,
-            bloom_filter_hash_functions,
-            max_ratio_of_set_bits_in_bloom_filter,
-            distinct_keys_hint);
-    if (which.isFloat32())
-        return createApproximateNumericRuntimeFilterImpl<Float32>(
-            filters_to_merge,
-            filter_column_target_type,
-            pass_ratio_threshold_for_disabling,
-            blocks_to_skip_before_reenabling,
-            bytes_limit,
-            exact_values_limit,
-            bloom_filter_hash_functions,
-            max_ratio_of_set_bits_in_bloom_filter,
-            distinct_keys_hint);
-    if (which.isFloat64())
-        return createApproximateNumericRuntimeFilterImpl<Float64>(
-            filters_to_merge,
-            filter_column_target_type,
-            pass_ratio_threshold_for_disabling,
-            blocks_to_skip_before_reenabling,
-            bytes_limit,
-            exact_values_limit,
-            bloom_filter_hash_functions,
-            max_ratio_of_set_bits_in_bloom_filter,
-            distinct_keys_hint);
+    ActionsDAG::NodeRawConstPtrs and_args;
+    for (const auto & descriptor : descriptors)
+    {
+        auto filter = lookup.find(descriptor.filter_id);
+        if (!filter)
+            continue;
+        if (const auto * predicate
+            = convertRuntimeFilterToKeyConditionDAG(*filter, descriptor.key_column_name, descriptor.key_column_type, dag, context))
+            and_args.push_back(predicate);
+    }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type for ApproximateNumericRuntimeFilter");
+    if (and_args.empty())
+        return nullptr;
+    if (and_args.size() == 1)
+        return and_args.front();
+
+    FunctionOverloadResolverPtr and_func = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+    return &dag.addFunction(and_func, std::move(and_args), {});
 }
 
 }

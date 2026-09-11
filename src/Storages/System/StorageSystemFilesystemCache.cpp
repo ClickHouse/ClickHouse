@@ -110,13 +110,10 @@ protected:
                 col_cache_name->insert(cache_name);
                 col_cache_base_path->insert(cache->getBasePath());
 
-                /// Do not use `file_segment->getPath` here because it will lead to nullptr dereference
-                /// (because file_segments in getSnapshot do not have `cache` field set)
-                const auto path = cache->getFileSegmentPath(
-                    file_segment.key, file_segment.offset, file_segment.kind,
-                    file_segment.origin);
-
-                col_path->insert(path);
+                /// `file_segment.path` is captured when the snapshot is taken and reflects the real
+                /// on-disk name (including the `_<size>` suffix for downloaded segments). Do not
+                /// recompute it from the offset here, as that cannot know the size suffix.
+                col_path->insert(file_segment.path);
                 col_key->insert(file_segment.key.toString());
                 col_range_begin->insert(file_segment.range_left);
                 col_range_end->insert(file_segment.range_right);
@@ -132,7 +129,7 @@ protected:
                 col_file_origin->insert(toString(file_segment.origin.segment_type));
 
                 std::error_code ec;
-                auto size = fs::file_size(path, ec);
+                auto size = fs::file_size(file_segment.path, ec);
                 if (!ec)
                     col_file_size->insert(size);
                 else

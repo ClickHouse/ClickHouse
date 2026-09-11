@@ -31,6 +31,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 
 /// Must not acquire Context lock in constructor to avoid possibility of deadlocks.
@@ -153,6 +154,17 @@ void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary
     loadOrReload(resolved_dictionary_name);
 }
 
+bool ExternalDictionariesLoader::unloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
+{
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    return unload(resolved_dictionary_name);
+}
+
+void ExternalDictionariesLoader::unloadAllDictionaries() const
+{
+    unloadAll();
+}
+
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
 {
     std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
@@ -169,6 +181,26 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
 
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+}
+
+std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr query_context) const
+{
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
+
+    auto load_result = getLoadResult(resolved_name);
+    if (!load_result.config)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
+
+    Poco::Util::AbstractConfiguration::Keys layout_keys;
+    load_result.config->config->keys(load_result.config->key_in_config + ".layout", layout_keys);
+
+    if (layout_keys.size() != 1)
+        throw Exception(
+            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+            "Dictionary {}: element dictionary.layout should have exactly one child element",
+            backQuote(dictionary_name));
+
+    return layout_keys.front();
 }
 
 void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::string & dictionary_name, ContextPtr query_context) const

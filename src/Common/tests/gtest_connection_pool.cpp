@@ -743,8 +743,8 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
         /// address, so the proxy address text is not a reliable marker - match on the error kind,
         /// and accept the address too for the synchronous-failure path.
         const std::string text = e.displayText();
-        reached_proxy_connect = text.find("Connection refused") != std::string::npos
-            || text.find("127.0.0.1:1") != std::string::npos;
+        reached_proxy_connect = text.contains("Connection refused")
+            || text.contains("127.0.0.1:1");
         ASSERT_EQ(std::string::npos, text.find("proxy-only-target.invalid"))
             << "Target host was resolved locally: " << text;
     }
@@ -862,6 +862,62 @@ TEST_F(ConnectionPoolTest, StoreLimit)
 
     ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+}
+
+/// The store limit bounds only the idle connections kept for reuse, not the connections in use:
+/// a group whose concurrency exceeds the limit still stores up to `store_limit` connections.
+TEST_F(ConnectionPoolTest, StoreLimitCountsOnlyStoredConnections)
+{
+    DB::HTTPConnectionPools::Limits limits {100, 1000, 2, 0};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+
+    auto pool = getPool();
+    auto metrics = pool->getMetrics();
+
+    std::vector<DB::HTTPSessionPtr> connections;
+    for (int i = 0; i < 5; ++i)
+    {
+        connections.push_back(pool->getConnection(timeouts, nullptr));
+        echoRequest("Hello", *connections.back());
+    }
+
+    ASSERT_EQ(5, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(5, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
+
+    /// Release two connections while three are still in use. The group holds five connections,
+    /// above the store limit of two, but none of them is stored yet, so both are preserved.
+    connections.resize(3);
+
+    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(5, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.stored_count));
+
+    /// The store is full now, so the remaining connections are reset after use.
+    connections.clear();
+
+    ASSERT_EQ(2, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.stored_count));
+
+    /// Reusing a stored connection frees its slot, so the connection is preserved again after use.
+    {
+        auto connection = pool->getConnection(timeouts, nullptr);
+        echoRequest("Hello", *connection);
+
+        ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
+        ASSERT_EQ(2, CurrentMetrics::get(metrics.active_count));
+        ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
+    }
+
+    ASSERT_EQ(5, DB::CurrentThread::getProfileEvents()[metrics.created]);
+    ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.preserved]);
+    ASSERT_EQ(3, DB::CurrentThread::getProfileEvents()[metrics.reset]);
+    ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.expired]);
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.active_count));
+    ASSERT_EQ(2, CurrentMetrics::get(metrics.stored_count));
 }
 
 TEST_F(ConnectionPoolTest, HardLimit)

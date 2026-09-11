@@ -167,7 +167,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   ## Contrôle avancé des actions
 </div>
 
-Pour un contrôle d’accès plus strict, il est possible de restreindre la politique du bucket afin de n’accepter que les requêtes issues des endpoints VPC de ClickHouse Cloud à l’aide de la condition [`aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Pour obtenir les endpoints VPC de votre région ClickHouse Cloud, ouvrez un terminal et exécutez :
+Pour un contrôle d’accès plus strict, il est possible de restreindre la politique du bucket afin qu’elle n’accepte que les requêtes provenant des points de terminaison VPC de ClickHouse Cloud à l’aide de la [condition `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Pour obtenir les points de terminaison VPC de votre région ClickHouse Cloud, ouvrez un terminal et exécutez :
 
 ```bash
 # Replace <your-region> with your ClickHouse Cloud region
@@ -213,4 +213,4 @@ Ensuite, ajoutez une règle de refus à la stratégie IAM avec les endpoints ren
 }
 ```
 
-Pour en savoir plus sur l’accès aux endpoints des services ClickHouse Cloud, consultez [Adresses IP Cloud](/fr/products/cloud/guides/data-sources/cloud-endpoints-api).
+Pour plus de détails sur l’accès aux points de terminaison des services ClickHouse Cloud, consultez [Adresses IP Cloud](/fr/products/cloud/guides/data-sources/cloud-endpoints-api).

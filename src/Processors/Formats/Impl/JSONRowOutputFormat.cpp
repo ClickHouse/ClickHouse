@@ -162,6 +162,16 @@ void registerOutputFormatJSON(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("JSON");
     factory.setContentType("JSON", "application/json; charset=UTF-8");
 
+    /// The `meta.type` strings are written from the header type names and are only UTF-8 validated
+    /// when the output adaptor installs the validating buffer, so a non-UTF-8 type name can leak.
+    /// It is knowable from the header, so text framings reject or base64-encode the output.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "JSON",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings);
+        });
+
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -175,6 +185,18 @@ void registerOutputFormatJSON(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("JSONStrings");
     factory.setContentType("JSONStrings", "application/json; charset=UTF-8");
 
+    /// Additionally to the `meta.type` strings, `JSONStrings` serializes the values through the plain
+    /// `serializeText` kind, which writes the `Bool` representations verbatim (see
+    /// `boolRepresentationsMayProduceRawBytesInJSONStrings`). The format always requests UTF-8
+    /// validation, so pass `validate_utf8 = true`.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "JSONStrings",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings)
+                || JSONUtils::boolRepresentationsMayProduceRawBytesInJSONStrings(header, settings, /*validate_utf8=*/true);
+        });
+
     factory.setDocumentation("JSONStrings", Documentation{
         .description = R"DOCS_MD(
 | Input | Output | Alias |
@@ -183,7 +205,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from the [JSON](./JSON.md) format only in that data fields are output as strings, not as typed JSON values. This is an output-only format.
+Differs from the [JSON](/reference/formats/JSON/JSON) format only in that data fields are output as strings, not as typed JSON values. This is an output-only format.
 
 ## Example usage {#example-usage}
 

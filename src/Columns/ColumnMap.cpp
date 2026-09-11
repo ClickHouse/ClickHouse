@@ -119,6 +119,11 @@ UInt64 ColumnMap::getNumberOfDefaultRows() const
     return nested->getNumberOfDefaultRows();
 }
 
+bool ColumnMap::hasOnlyTypeDefaults() const
+{
+    return nested->hasOnlyTypeDefaults();
+}
+
 std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -171,11 +176,6 @@ std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n, const IColumn:
 void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     nested->deserializeAndInsertFromArena(in, settings);
-}
-
-void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
-{
-    nested->skipSerializedInArena(in);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
@@ -472,18 +472,18 @@ void ColumnMap::takeExactDynamicStructureFrom(const IColumn & source)
     nested->takeExactDynamicStructureFrom(*source_map.getNestedColumnPtr());
 }
 
-ColumnMap::StatisticsPtr ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const
+ColumnMap::Statistics ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t total_maps_size = offsets[ssize_t(end) - 1] - offsets[ssize_t(start) - 1];
-    return std::make_shared<Statistics>(start == end ? 0 : static_cast<Float64>(total_maps_size) / static_cast<Float64>(end - start), end - start);
+    return Statistics(start == end ? 0 : static_cast<Float64>(total_maps_size) / static_cast<Float64>(end - start), end - start);
 }
 
 ColumnMap::StatisticsPtr ColumnMap::getOrCalculateStatistics() const
 {
     if (statistics)
         return statistics;
-    return calculateStatisticsForRange(0, size());
+    return std::make_shared<Statistics>(calculateStatisticsForRange(0, size()));
 }
 
 void ColumnMap::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)

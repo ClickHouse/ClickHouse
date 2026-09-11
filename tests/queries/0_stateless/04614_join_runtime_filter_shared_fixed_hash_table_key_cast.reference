@@ -1,0 +1,8 @@
+-- nullable probe, plain build
+7840
+7840
+-- wider probe, narrow build
+4000
+4000
+-- published
+2

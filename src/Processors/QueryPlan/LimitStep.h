@@ -37,6 +37,8 @@ public:
     bool withTies() const { return with_ties; }
     bool alwaysReadTillEnd() const { return always_read_till_end; }
 
+    void markAsShardLimit() { is_shard_limit = true; }
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -46,6 +48,8 @@ public:
 
     bool hasCorrelatedExpressions() const override { return false; }
 
+    /// A `Limit` at the replica-output boundary is a shard limit, so its output is replicated, not
+    /// partitioned: every replica emits up to `limit` rows and ships all of them.
     bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
@@ -60,6 +64,7 @@ private:
 
     bool with_ties;
     const SortDescription description;
+    bool is_shard_limit = false;
 };
 
 }

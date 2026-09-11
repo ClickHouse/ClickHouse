@@ -117,6 +117,14 @@ Enum validatedEnum(Enum value, Enum min_value, Enum max_value, const char * what
 
 ArrowType parseType(const flatbuf::Field & field)
 {
+    /// FlatBuffers verification only proves that a union value, *if present*, is a well-formed table; the
+    /// `Field.type` union is not `(required)`, so a schema whose `type_type` discriminant is set while the
+    /// type value offset is absent passes verification, and the typed `type_as_X()` accessors below return
+    /// null. Reject it here so a single guard covers all those call sites instead of each one dereferencing
+    /// null. A `Type_NONE` discriminant (no value) falls through to the `Unsupported` placeholder as before.
+    if (field.type_type() != flatbuf::Type_NONE && field.type() == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC schema field type is set but its value is missing");
+
     ArrowType type;
     switch (field.type_type())
     {
@@ -301,7 +309,7 @@ ArrowType parseType(const flatbuf::Field & field)
         /// View-list and run-end-encoded types the reader cannot decode, but whose physical buffer layout
         /// is known. Keep them as `Unsupported` placeholders (so schema inference can drop them and a
         /// `SELECT` of such a column errors clearly), but parse their children and record the layout so
-        /// `skipField` can advance the node/buffer cursors past an *unrequested* column of this type and
+        /// `advanceField` can advance the node/buffer cursors past an *unrequested* column of this type and
         /// keep subset-of-columns reads working.
         case flatbuf::Type_ListView:
             type.kind = TypeKind::Unsupported;
@@ -1120,7 +1128,7 @@ DataTypePtr fieldToCHType(
             {
                 if (child.type.kind == TypeKind::Null)
                     continue;
-                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false)));
+                variants.push_back(removeNullable(fieldToCHType(child, settings, /*make_nullable=*/false, allow_null_type)));
             }
             result = std::make_shared<DataTypeVariant>(variants);
             break;

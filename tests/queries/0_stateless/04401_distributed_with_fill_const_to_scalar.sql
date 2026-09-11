@@ -23,5 +23,10 @@ SELECT c0 FROM t1 ORDER BY c0 WITH FILL TO 6 SETTINGS optimize_const_name_size =
 SELECT c0 FROM t1 ORDER BY c0 WITH FILL FROM 0 TO 6 SETTINGS optimize_const_name_size = 0, serialize_query_plan = 0;
 SELECT c0 FROM t1 ORDER BY c0 WITH FILL FROM 0 TO 6 STEP 2 SETTINGS optimize_const_name_size = 0, serialize_query_plan = 0;
 
+-- STALENESS bound goes through extractWithFillValueWithIntervalKind (a separate cast site),
+-- and a negative bound like -2 is negate(2), so cover DESC WITH FILL STALENESS and a negative STEP/TO too.
+SELECT c0 FROM t1 ORDER BY c0 DESC WITH FILL STALENESS -2 SETTINGS optimize_const_name_size = 0, serialize_query_plan = 0;
+SELECT c0 FROM t1 ORDER BY c0 DESC WITH FILL TO -6 STEP -2 SETTINGS optimize_const_name_size = 0, serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;

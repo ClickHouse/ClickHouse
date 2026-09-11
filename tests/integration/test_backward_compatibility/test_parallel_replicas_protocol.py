@@ -89,7 +89,9 @@ def test_backward_compatability(start_cluster):
     # the same data from every replica would rely on cross-version insert deduplication, which the
     # new build (unified hash only) no longer shares with the old replicas.
     nodes[0].query("insert into t select number % 100000 from numbers_mt(1000000) ORDER BY ALL")
-    nodes[0].query("optimize table t final")
+    # No OPTIMIZE FINAL: a single insert is one part, so FINAL is a no-op merge whose MERGE_PARTS entry
+    # the old replicas cannot reproduce byte-identically across versions and can hang for minutes. The
+    # assertions below do not depend on part layout.
     for node in nodes:
         node.query("system sync replica t")
 
@@ -194,9 +196,13 @@ def test_split_topology_rolling_upgrade(start_cluster):
     split_topology_nodes[0].query(
         "insert into ts select number % 100000 from numbers_mt(1000000) ORDER BY ALL"
     )
+    # No OPTIMIZE FINAL: a single insert is one part, so FINAL is a no-op merge whose MERGE_PARTS
+    # entry the 26.5 replicas cannot reproduce byte-identically across versions and can hang for
+    # minutes, occasionally raising code 341 (log entry not processed, replica shut down). The
+    # assertions below do not depend on part layout. system sync replica already guarantees
+    # every replica sees the same 1M rows.
     for node in split_topology_nodes:
         node.query("system sync replica ts")
-        node.query("optimize table ts final")
 
     split_settings = {
         "cluster_for_parallel_replicas": "parallel_replicas",

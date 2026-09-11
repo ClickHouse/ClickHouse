@@ -5,6 +5,7 @@ SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 1;
 SET join_runtime_filter_from_fixed_hash_table = 0;
 SET join_runtime_filter_size_from_hash_table_stats = 0;
+SET join_runtime_filter_min_probe_rows = 0;
 SET join_runtime_filter_use_minmax = 1;
 
 SELECT 'numeric_minmax_selective', count()
