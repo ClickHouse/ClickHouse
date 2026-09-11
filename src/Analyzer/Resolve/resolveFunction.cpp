@@ -1447,35 +1447,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
           *
           * Example: SELECT count(*) FROM test_table
           * Example: SELECT countState(*) FROM test_table;
-          *
-          * To determine if it's safe to remove the asterisk, we check the transformsArgumentTypes() method
-          * of each combinator. If any combinator transforms argument types (returns true), it's not safe to remove the asterisk.
           */
-        String base_function_name = function_name;
-        bool safe_to_remove_asterisk = true;
-
-        while (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_function_name))
-        {
-            if (combinator->transformsArgumentTypes())
-            {
-                safe_to_remove_asterisk = false;
-                break;
-            }
-
-            base_function_name = base_function_name.substr(0, base_function_name.size() - combinator->getName().size());
-        }
-
-        auto base_function_name_lowercase = Poco::toLower(base_function_name);
-        auto function_name_lowercase = Poco::toLower(function_name);
-
-        /// Only remove asterisks for exactly "count" or "countstate" (possibly with combinators),
-        /// not for other functions like "countDistinct" which is a separate function
-        /// countDistinct gets transformed to uniqExact and requires arguments
-        bool is_count_function = (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate");
-        bool is_count_variant = is_count_function && function_name_lowercase.starts_with(base_function_name_lowercase);
-        bool is_not_count_distinct = function_name_lowercase != "countdistinct";
-
-        if (safe_to_remove_asterisk && is_count_variant && is_not_count_distinct)
+        if (functionDropsUnqualifiedMatcherArgument(function_name))
         {
             auto & arguments = function_node_ptr->getArguments().getNodes();
 

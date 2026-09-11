@@ -2928,6 +2928,44 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     return result_projection_names;
 }
 
+/** Expand the matchers nested inside a projection expression, in place.
+  *
+  * A matcher does not have to be the root of a projection item: its output can be consumed by a
+  * function producing a list of columns, as in `SELECT untuple((* REPLACE (-c AS c),))`.
+  * Resolving a matcher registers the `REPLACE` mappings in the sibling clauses of the query, so with
+  * `group_by_use_nulls`, where the projection is resolved after them, the nested matchers have to be
+  * expanded in advance, exactly as the ones at the root of a projection item.
+  *
+  * Only the arguments of ordinary functions are visited: matchers of lambdas and of subqueries belong
+  * to a different scope, and `count` drops an unqualified matcher instead of expanding it.
+  */
+void QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    auto * function_node = node->as<FunctionNode>();
+    if (!function_node || functionDropsUnqualifiedMatcherArgument(function_node->getFunctionName()))
+        return;
+
+    auto & argument_nodes = function_node->getArguments().getNodes();
+    QueryTreeNodes expanded_argument_nodes;
+    expanded_argument_nodes.reserve(argument_nodes.size());
+
+    for (auto & argument_node : argument_nodes)
+    {
+        if (argument_node->getNodeType() == QueryTreeNodeType::MATCHER)
+        {
+            resolveExpressionNode(argument_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            const auto & matched_nodes = argument_node->as<ListNode &>().getNodes();
+            expanded_argument_nodes.insert(expanded_argument_nodes.end(), matched_nodes.begin(), matched_nodes.end());
+            continue;
+        }
+
+        expandMatchersInsideProjectionExpression(argument_node, scope);
+        expanded_argument_nodes.push_back(argument_node);
+    }
+
+    argument_nodes = std::move(expanded_argument_nodes);
+}
+
 /** Resolve window function window node.
   *
   * Node can be identifier or window node.
@@ -6660,7 +6698,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           * the expressions equal to a GROUP BY key become Nullable. Matchers are nevertheless expanded
           * right away, as without the setting: `SELECT * REPLACE (expr AS c)` rewrites `c` in the other
           * clauses while they are still unresolved identifiers, and positional arguments refer to the
-          * expanded columns. The expanded expressions are resolved again after GROUP BY.
+          * expanded columns. The same holds for the matchers nested inside a projection expression,
+          * as in `SELECT untuple((* REPLACE (-c AS c),))`. The expanded expressions are resolved again
+          * after GROUP BY.
           */
         auto & projection_nodes = query_node_typed.getProjection().getNodes();
         QueryTreeNodes expanded_projection_nodes;
@@ -6670,6 +6710,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             auto node_to_resolve = projection_node;
             if (node_to_resolve->getNodeType() != QueryTreeNodeType::MATCHER)
             {
+                expandMatchersInsideProjectionExpression(node_to_resolve, scope);
                 expanded_projection_nodes.push_back(std::move(node_to_resolve));
                 continue;
             }
