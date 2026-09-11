@@ -1018,6 +1018,7 @@
         "reference/system-tables/blob_storage_log",
         "reference/system-tables/build_options",
         "reference/system-tables/certificates",
+        "reference/system-tables/changelog",
         "reference/system-tables/clusters",
         "reference/system-tables/codecs",
         "reference/system-tables/collations",

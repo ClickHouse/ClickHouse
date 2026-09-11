@@ -301,6 +301,7 @@ git ls-files -z "$ROOT_PATH" | xargs -0 stat "$STAT_FMT_FLAG" "$STAT_FMT" 2>/dev
 # the landing/status/security pages that sit inside `changelogs/` directories (`index.mdx`,
 # `release-notes-index.mdx`, `release-status.mdx`, `security-changelog.mdx`) and docs whose path
 # merely contains the substring "changelog" (`keeper_changelogs.md`, `changelog_entry_guidelines.md`).
+# `StorageSystemChangelog.generated.cpp` is the same record generated verbatim from `CHANGELOG.md`.
 # The pattern requires a space or hyphen between the words, so code identifiers that use
 # underscores (e.g. `use_new_analyzer`) are intentionally not matched. Besides the adjacent
 # forms ("new analyzer", "new query analyzer"), it also catches the split phrasing
@@ -311,7 +312,7 @@ git ls-files -z "$ROOT_PATH" | xargs -0 stat "$STAT_FMT_FLAG" "$STAT_FMT" 2>/dev
 analyzer_wording_files=$(
     git ls-files $ROOT_PATH/src $ROOT_PATH/base $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/docs $ROOT_PATH/tests |
         grep -E '\.(md|mdx|cpp|h|sql|sh|py|j2)$' |
-        grep -vE '(^|/)changelogs/(.+/)?v?[0-9][^/]*$|(^|/)private-changelogs/|(^|/)changelog\.mdx?$'
+        grep -vE '(^|/)changelogs/(.+/)?v?[0-9][^/]*$|(^|/)private-changelogs/|(^|/)changelog\.mdx?$|/StorageSystemChangelog\.generated\.cpp$'
 )
 {
     # Adjacent forms on a single line, reported with the file name and line number.
