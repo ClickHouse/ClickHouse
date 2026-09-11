@@ -385,6 +385,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     cancel(ExecutionStatus::Exception);
                 }
 
+                const size_t burst = queue.size() + async_queue.size();
+
                 /// Push other tasks to global queue.
                 if (updated)
                     spawn_count = tasks.pushTasks(queue, async_queue, context);
@@ -395,6 +397,15 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     queue.pop();
                 while (!async_queue.empty())
                     async_queue.pop();
+
+                /// Popping keeps the capacity. A typical update readies a handful of processors, and
+                /// keeping that much saves an allocation per step; a wide fan-out is not kept, so a
+                /// single burst never pins its peak allocation on this thread for the rest of the query.
+                if (burst > ExecutionThreadContext::max_retained_update_node_queue_size)
+                {
+                    queue = Queue{};
+                    async_queue = Queue{};
+                }
             }
 
 #ifndef NDEBUG
