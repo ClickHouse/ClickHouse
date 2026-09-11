@@ -147,12 +147,19 @@ ProcessList::EntryPtr ProcessList::insert(
         // pre-execution admission wait is bounded by one `workload_admission_timeout_ms` budget (the two
         // resources are acquired sequentially below). 0 means no timeout.
         const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
-        // `saturatedMilliseconds` clamps the timeout so adding it to `steady_clock::now()` cannot
-        // overflow the nanosecond time_point (the `Milliseconds` setting accepts values far larger
-        // than the nanosecond range).
-        const auto admission_deadline = admission_timeout_ms
-            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
-            : std::chrono::steady_clock::time_point{};
+        // One shared deadline for both admission waits. Saturate rather than overflow the nanosecond
+        // steady_clock time_point: the `Milliseconds` setting can hold values whose millisecond-to-
+        // nanosecond widening would overflow. Everything representable (~292 years from now) keeps its
+        // exact deadline; a larger, absurd timeout simply behaves as "no deadline". 0 means no timeout.
+        std::chrono::steady_clock::time_point admission_deadline{};
+        if (admission_timeout_ms)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            const auto timeout = std::chrono::milliseconds(admission_timeout_ms);
+            const auto headroom = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::time_point::max() - now);
+            admission_deadline = timeout < headroom ? now + timeout : std::chrono::steady_clock::time_point::max();
+        }
 
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
