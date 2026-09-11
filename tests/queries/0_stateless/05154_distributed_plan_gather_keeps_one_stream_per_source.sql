@@ -10,6 +10,8 @@ DROP TABLE IF EXISTS t_gather_merge;
 -- The statistics of `g` make the planner aggregate partially on the readers and merge after a gather.
 CREATE TABLE t_gather_merge (g UInt32, v UInt64) ENGINE = MergeTree ORDER BY tuple()
   SETTINGS auto_statistics_types = 'basic, uniq_v2';
+-- The plan below needs the group count estimate, so the statistics must exist right after the insert.
+SET materialize_statistics_on_insert = 1;
 INSERT INTO t_gather_merge SELECT number % 1000, number FROM numbers(1000000);
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0, use_statistics = 1;
