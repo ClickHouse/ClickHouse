@@ -1058,27 +1058,70 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
     if (!expired_columns.empty())
     {
-        global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
+        /// Columns read out of the merged block by the consumers rebuilt during this merge:
+        /// projections and skip indexes. `merge_required_columns` does not cover them - it is
+        /// snapshotted before their inputs are added to the merged column set.
+        NameSet columns_required_by_rebuilt_consumers;
+        {
+            const auto all_storage_columns = global_ctx->storage_columns.getNameSet();
+            const auto all_virtual_columns = global_ctx->virtual_columns.getNameSet();
+
+            auto add_required_columns = [&](const Names & names)
+            {
+                for (const auto & name : names)
+                    columns_required_by_rebuilt_consumers.emplace(getColumnNameInStorage(name, all_storage_columns, all_virtual_columns));
+            };
+
+            for (const auto * projection : global_ctx->projections_to_rebuild)
+                add_required_columns(projection->getRequiredColumns());
+
+            for (const auto & index : global_ctx->merging_skip_indexes)
+                add_required_columns(index.expression->getRequiredColumns());
+
+            for (const auto & index : global_ctx->text_indexes_to_merge)
+                add_required_columns(index.expression->getRequiredColumns());
+
+            /// Single-column skip indexes are built in the vertical stage from the gathered column.
+            for (const auto & [column_name, _] : global_ctx->skip_indexes_by_column)
+                columns_required_by_rebuilt_consumers.emplace(column_name);
+        }
+
+        /// A column expired because its `DEFAULT` cannot be materialized here is not dropped from
+        /// the merge when one of those consumers needs it: nothing else would produce it, and the
+        /// TTL step must not (see below). Reading it instead goes through
+        /// `reconcileEvaluatedDefaultWithSharedOffsets`, which makes the values consistent with the
+        /// offsets the source parts store, so the rebuild sees a well-formed value. The column stays
+        /// in `new_data_part->expired_columns`, so `removeEmptyColumnsFromPart` still drops its
+        /// files from the written `Wide` part and the value is recomputed on read.
+        NameSet columns_to_drop_from_merge;
+        for (const auto & name : expired_columns)
+        {
+            if (!global_ctx->columns_expired_by_unmaterializable_default.contains(name)
+                || !columns_required_by_rebuilt_consumers.contains(name))
+                columns_to_drop_from_merge.emplace(name);
+        }
+
+        global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(columns_to_drop_from_merge);
 
         auto filter_columns = [&](const NamesAndTypesList & input, NamesAndTypesList & expired_out)
         {
             NamesAndTypesList result;
             for (const auto & column : input)
             {
-                bool is_expired = expired_columns.contains(column.name);
+                bool is_dropped = columns_to_drop_from_merge.contains(column.name);
                 bool is_required_for_merge = global_ctx->merge_required_columns.contains(column.name);
 
                 /// The TTL step fills expired columns with the value of their `DEFAULT`, so that
                 /// skip indexes and projections rebuilt during the merge see the value the table
                 /// logically reads. A column expired because its `DEFAULT` cannot be materialized
                 /// here must be left out of that: evaluating it is what writes array sizes that
-                /// disagree with the shared `Nested` offsets, and for a column also required for the
-                /// merge it would overwrite the value the reader already reconciled with those
-                /// offsets. Such a column is recomputed on read, where the full context is available.
-                if (is_expired && !global_ctx->columns_expired_by_unmaterializable_default.contains(column.name))
+                /// disagree with the shared `Nested` offsets, and the expression is not even
+                /// resolvable there when it reads an `ALIAS` column. Such a column is either kept on
+                /// the merge path above, or recomputed on read, where the full context is available.
+                if (is_dropped && !global_ctx->columns_expired_by_unmaterializable_default.contains(column.name))
                     expired_out.push_back(column);
 
-                if (!is_expired || is_required_for_merge)
+                if (!is_dropped || is_required_for_merge)
                     result.push_back(column);
             }
 
