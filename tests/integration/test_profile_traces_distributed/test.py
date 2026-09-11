@@ -202,7 +202,10 @@ def test_forwarded_losses(transport, coordinator_overflow):
 
                 data, samples, error = execute(transport, queries[0], query_id(), settings)
                 assert not error and data == f"leaf\t{EXPECTED_TOTAL}\n", (data, error)
-                assert not samples, "sampling-disabled path generated local loss metadata"
+                assert not samples, (
+                    "sampling-disabled path generated local loss metadata",
+                    sorted({(sample["host_name"], sample["trace_type"]) for sample in samples})[:8],
+                )
 
                 data, samples, error = execute(
                     transport,
