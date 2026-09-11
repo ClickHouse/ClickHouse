@@ -1,8 +1,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
 #include <Common/setThreadName.h>
+#include <Common/SipHash.h>
 #include <Common/ThreadPoolTaskTracker.h>
-#include <Core/UUID.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
@@ -41,6 +41,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_delete[];
     extern const char object_storage_queue_fail_after_move_copy[];
     extern const char object_storage_queue_pause_after_move_copy[];
+    extern const char object_storage_queue_pause_before_post_process[];
 }
 
 #if USE_AWS_S3
@@ -80,17 +81,34 @@ constexpr auto move_source_path_attribute = "clickhouse_move_source_path";
 constexpr auto move_source_etag_attribute = "clickhouse_move_source_etag";
 constexpr auto move_source_last_modified_attribute = "clickhouse_move_source_last_modified";
 constexpr auto move_source_version_id_attribute = "clickhouse_move_source_version_id";
-/// The source generation alone does not identify one upload: on an unversioned bucket two attempts,
-/// or two tables moving the same key, stamp byte-identical provenance, and anything a `HeadObject`
-/// shows can be restamped onto other bytes. This token is unguessable and new for every attempt.
+/// The source generation alone does not prove who copied it: anything a `HeadObject` of the source shows
+/// can be restamped onto other bytes. The token is a digest of that generation keyed by the queue's Keeper
+/// path, so every attempt of the same queue (after a restart, on another replica) stamps the same token,
+/// while another queue moving the same key, or a restamp from public data, does not.
 constexpr auto move_token_attribute = "clickhouse_move_token";
 
-std::optional<ObjectAttributes> makeMoveProvenance(
-    ObjectAttributes source_attributes,
+String makeMoveToken(
+    const String & keeper_path,
     const String & source_path,
     const String & source_etag,
     time_t source_last_modified,
-    const String & move_token,
+    const String & source_version_id)
+{
+    SipHash hash;
+    hash.update(keeper_path);
+    hash.update(source_path);
+    hash.update(source_etag);
+    hash.update(source_last_modified);
+    hash.update(source_version_id);
+    return getSipHash128AsHexString(hash);
+}
+
+std::optional<ObjectAttributes> makeMoveProvenance(
+    ObjectAttributes source_attributes,
+    const String & keeper_path,
+    const String & source_path,
+    const String & source_etag,
+    time_t source_last_modified,
     const String & source_version_id = {})
 {
     if (source_etag.empty())
@@ -98,7 +116,8 @@ std::optional<ObjectAttributes> makeMoveProvenance(
     source_attributes[move_source_path_attribute] = source_path;
     source_attributes[move_source_etag_attribute] = source_etag;
     source_attributes[move_source_last_modified_attribute] = toString(size_t(source_last_modified));
-    source_attributes[move_token_attribute] = move_token;
+    source_attributes[move_token_attribute]
+        = makeMoveToken(keeper_path, source_path, source_etag, source_last_modified, source_version_id);
     if (!source_version_id.empty())
         source_attributes[move_source_version_id_attribute] = source_version_id;
     return source_attributes;
@@ -133,12 +152,14 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
     const ObjectStorageQueueTableMetadata & table_metadata_,
-    AfterProcessingSettings settings_)
+    AfterProcessingSettings settings_,
+    String keeper_path_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
     , table_metadata(table_metadata_)
     , settings(std::move(settings_))
+    , keeper_path(std::move(keeper_path_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
 
@@ -158,6 +179,9 @@ void ObjectStorageQueuePostProcessor::process(
             if (!successful_paths.contains(object.remote_path))
                 failed_object_paths.insert(object.remote_path);
     });
+
+    /// Park between the read and the after-processing action. No-op unless explicitly enabled.
+    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_post_process);
 
     const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
@@ -290,7 +314,7 @@ ObjectStorageQueuePostProcessor::MoveResult ObjectStorageQueuePostProcessor::cop
             if (!copy_finished)
             {
                 copy_result = copy_object();
-                if (!copy_result.destination_is_ours)
+                if (!copy_result.destination_is_ours || copy_result.source_rewritten)
                     return;
 
                 fiu_do_on(FailPoints::object_storage_queue_fail_after_move_copy, {
@@ -306,7 +330,9 @@ ObjectStorageQueuePostProcessor::MoveResult ObjectStorageQueuePostProcessor::cop
         });
     if (!copy_result.destination_is_ours)
         return MoveResult::DestinationCollision;
-    return source_removed ? MoveResult::Moved : MoveResult::SourceRewritten;
+    if (copy_result.source_rewritten || !source_removed)
+        return MoveResult::SourceRewritten;
+    return MoveResult::Moved;
 }
 
 bool ObjectStorageQueuePostProcessor::removeCopiedSource(const StoredObject & object, const SourceGeneration & consumed) const
@@ -350,8 +376,8 @@ void ObjectStorageQueuePostProcessor::reportSourceRewritten(const StoredObject &
 {
     LOG_ERROR(
         log,
-        "Not removing object {} after copying it to {}: the source was rewritten since the copy, "
-        "so removing it would drop contents nothing has copied",
+        "Not moving object {} to {}: the source was rewritten after its rows were read, "
+        "so removing it would drop contents nothing has processed",
         source.remote_path,
         destination.remote_path);
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMoveSourceRewritten);
@@ -436,9 +462,6 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                 {
                     try
                     {
-                        /// New for every attempt: the destination this token is stamped on can only be
-                        /// the copy this attempt uploaded.
-                        const String move_token = toString(UUIDHelpers::generateV4());
                         auto copy_object = [&]() -> CopyResult
                         {
                             LOG_TRACE(log, "Copying object {} to {}", source_object.remote_path, object_to.remote_path);
@@ -448,16 +471,20 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
                             if (auto source_metadata
                                 = object_storage->tryGetObjectMetadata(source_object.remote_path, /*with_tags=*/false))
                             {
+                                /// Only the generation the rows were read from may be moved; the fresh lookup
+                                /// alone decides for objects committed before that ETag was recorded (empty).
+                                if (!source_object.etag.empty() && source_metadata->etag != source_object.etag)
+                                    return CopyResult{.source_rewritten = true};
                                 consumed.etag = source_metadata->etag;
                                 if (!preserve_path)
                                 {
                                     consumed.version_id = source_metadata->version_id;
                                     provenance = makeMoveProvenance(
                                         source_metadata->attributes,
+                                        keeper_path,
                                         source_object.remote_path,
                                         source_metadata->etag,
                                         source_metadata->last_modified.epochTime(),
-                                        move_token,
                                         source_metadata->version_id);
                                     /// The backend looks the source up again, so pin it to the generation this
                                     /// provenance describes: a rewrite in between fails the copy instead of
@@ -604,9 +631,6 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 }
                 try
                 {
-                    /// New for every attempt: the destination this token is stamped on can only be
-                    /// the copy this attempt uploaded.
-                    const String move_token = toString(UUIDHelpers::generateV4());
                     auto copy_object = [&]() -> CopyResult
                     {
                         auto source_info = S3::getObjectInfo(
@@ -616,8 +640,13 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             /*version_id=*/{},
                             /*with_metadata=*/true,
                             /*with_tags=*/false);
-                        /// Everything below must describe the generation this HEAD saw: the provenance a later
-                        /// attempt matches against, the tags, and the copied bytes. Empty on unversioned buckets.
+                        /// Only the generation the rows were read from may be moved; the fresh lookup alone
+                        /// decides for objects committed before that ETag was recorded (empty).
+                        if (!object_from.etag.empty() && source_info.etag != object_from.etag)
+                            return CopyResult{.source_rewritten = true};
+                        /// Everything below must describe the generation this HEAD saw, which the check above ties
+                        /// to the one that was read: the provenance a later attempt matches against, the tags, and
+                        /// the copied bytes. Empty on unversioned buckets.
                         const String source_version_id = move_if_none_match.empty() ? String{} : source_info.version_id;
                         /// Same generation as the provenance below, so an unversioned bucket is pinned too.
                         const String source_if_match = move_if_none_match.empty() ? String{} : source_info.etag;
@@ -630,10 +659,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                         const auto provenance = move_if_none_match.empty() ? std::optional<ObjectAttributes>{}
                                                                            : makeMoveProvenance(
                                                                                  source_info.metadata,
+                                                                                 keeper_path,
                                                                                  object_from.remote_path,
                                                                                  source_info.etag,
                                                                                  source_info.last_modification_time,
-                                                                                 move_token,
                                                                                  source_version_id);
                         /// What the copy below consumes, and therefore the only generation the delete
                         /// that follows it may remove.
@@ -780,13 +809,14 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 }
                 try
                 {
-                    /// New for every attempt: the destination this token is stamped on can only be
-                    /// the copy this attempt uploaded.
-                    const String move_token = toString(UUIDHelpers::generateV4());
                     auto copy_object = [&]() -> CopyResult
                     {
                         auto blob_client = src_client->GetBlobClient(object_from.remote_path);
                         auto properties = blob_client.GetProperties().Value;
+                        /// Only the generation the rows were read from may be moved; the fresh lookup alone
+                        /// decides for objects committed before that ETag was recorded (empty).
+                        if (!object_from.etag.empty() && properties.ETag.ToString() != object_from.etag)
+                            return CopyResult{.source_rewritten = true};
                         auto blob_size = properties.BlobSize;
                         /// The copy resolves the source key again, so pin it to the generation these
                         /// properties describe; the copy fails if the blob was rewritten in between.
@@ -799,11 +829,11 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             ? std::optional<ObjectAttributes>{}
                             : makeMoveProvenance(
                                   ObjectAttributes{properties.Metadata.begin(), properties.Metadata.end()},
+                                  keeper_path,
                                   object_from.remote_path,
                                   properties.ETag.ToString(),
                                   std::chrono::system_clock::to_time_t(
-                                      static_cast<std::chrono::system_clock::time_point>(properties.LastModified)),
-                                  move_token);
+                                      static_cast<std::chrono::system_clock::time_point>(properties.LastModified)));
                         LOG_INFO(log, "Copying {} ({} Bytes) to container {}", object_from.remote_path, blob_size, move_container);
                         try
                         {

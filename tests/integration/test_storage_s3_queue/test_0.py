@@ -901,14 +901,150 @@ def test_move_retry_recognizes_committed_copy(
         assert metadata["owner"] == "queue"
 
 
+PAUSE_BEFORE_POST_PROCESS_FAILPOINT = "object_storage_queue_pause_before_post_process"
+
+
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+def test_move_fresh_attempt_recognizes_committed_copy(started_cluster, engine_name):
+    """A fresh attempt after a crash must finish the move whose guarded copy already committed:
+    only a restart-stable proof of ownership can let it recognize that copy."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_fresh_attempt_{engine_name}_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    destination_key = f"{processed_prefix}/part.csv"
+    data = b"1,2,3\n"
+    is_s3 = engine_name == "S3Queue"
+
+    if is_s3:
+        put_s3_file_content(started_cluster, source_key, data)
+    else:
+        put_azure_file_content(started_cluster, source_key, data)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            # The crashed attempt leaves its processing node behind; it must expire quickly
+            # for the file to be picked up again.
+            "use_persistent_processing_nodes": 1,
+            "persistent_processing_node_ttl_seconds": 10,
+            "cleanup_interval_min_ms": 100,
+            "cleanup_interval_max_ms": 500,
+        },
+        engine_name=engine_name,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_AFTER_MOVE_COPY_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_AFTER_MOVE_COPY_FAILPOINT)
+        # The copy is committed, the delete has not run and nothing reached Keeper yet. Crash
+        # here: the next attempt starts from scratch and finds the destination taken by this copy.
+        assert move_counts(
+            started_cluster, engine_name, None, files_path, processed_prefix
+        ) == (1, 1)
+        node.restart_clickhouse(kill=True)
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_AFTER_MOVE_COPY_FAILPOINT}")
+
+    wait_until(
+        lambda: move_counts(
+            started_cluster, engine_name, None, files_path, processed_prefix
+        )
+        == (1, 0),
+        timeout=120,
+    )
+    # The counters restarted with the server: the fresh attempt must not have reported the
+    # destination as foreign, nor refused to remove the source.
+    assert move_collisions(node) == 0
+    assert move_source_rewrites(node) == 0
+    if is_s3:
+        moved = read_s3_object(
+            started_cluster, started_cluster.minio_bucket, destination_key
+        )
+    else:
+        moved = (
+            started_cluster.blob_service_client.get_blob_client(
+                started_cluster.azurite_container, destination_key
+            )
+            .download_blob()
+            .readall()
+        )
+    assert moved == data
+
+
+@pytest.mark.parametrize("versioned", [False, True], ids=["unversioned", "versioned"])
+def test_move_fails_closed_when_source_rewritten_before_post_processing(
+    started_cluster, versioned
+):
+    """A source rewritten after its rows were read, before the move inspects it, must be left
+    alone: neither copied nor deleted, and not hidden behind a delete marker."""
+    node = started_cluster.instances["instance"]
+    token = generate_random_string().lower()
+    table_name = f"move_rewritten_before_{token}"
+    files_path = f"{table_name}_data"
+    processed_prefix = f"{token}_moved"
+    source_key = f"{files_path}/part.csv"
+    processed = b"1,2,3\n"
+    rewritten = b"7,8,9\n"
+    client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    if versioned:
+        bucket = f"versioned-{token}"
+        client.make_bucket(bucket)
+        client.set_bucket_versioning(bucket, VersioningConfig(ENABLED))
+    put_s3_file_content(started_cluster, source_key, processed, bucket=bucket)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        after_processing="move",
+        move_to_prefix=processed_prefix,
+        bucket=bucket,
+    )
+    rewrites_before = move_source_rewrites(node)
+    collisions_before = move_collisions(node)
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+    try:
+        create_mv(node, table_name, f"{table_name}_dst")
+        wait_failpoint_paused(node, PAUSE_BEFORE_POST_PROCESS_FAILPOINT)
+        # The rows are read and inserted; the move has not looked at the source yet.
+        put_s3_file_content(started_cluster, source_key, rewritten, bucket=bucket)
+        rewritten_version = (
+            client.stat_object(bucket, source_key).version_id if versioned else None
+        )
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_POST_PROCESS_FAILPOINT}")
+
+    wait_until(lambda: move_source_rewrites(node) > rewrites_before)
+    assert move_collisions(node) == collisions_before
+    assert count_minio_objects(started_cluster, bucket, processed_prefix) == 0
+    assert read_s3_object(started_cluster, bucket, source_key) == rewritten
+    if versioned:
+        assert client.stat_object(bucket, source_key).version_id == rewritten_version
+    assert node.query(f"SELECT * FROM {table_name}_dst") == "1\t2\t3\n"
+
+
 @pytest.mark.parametrize(
     "destination_token",
     [None, "foreign-token"],
     ids=["no_move_token", "foreign_move_token"],
 )
 def test_move_forged_destination_provenance(started_cluster, destination_token):
-    """The source generation proves nothing on its own: it is public and identical for every
-    attempt, so only this attempt's move token may make a destination adoptable."""
+    """The source generation proves nothing on its own: it is public, so only a move token this
+    queue stamped may make a destination adoptable."""
     node = started_cluster.instances["instance"]
     token = generate_random_string().lower()
     bucket = f"versioned-{token}"

@@ -301,6 +301,8 @@ private:
         /// The object's own last-modified time, if object storage reported one.
         /// Used to update the "newest object committed" pipeline-lag watermark.
         time_t last_modified = 0;
+        /// ETag of the generation the rows were read from; post-processing must not touch any other.
+        String etag;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;

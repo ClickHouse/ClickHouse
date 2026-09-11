@@ -28,15 +28,18 @@ public:
         String after_processing_tag_value;
     };
 
+    /// `keeper_path_` identifies the queue (shared by its replicas) that stamps and recognizes its own moves.
     ObjectStorageQueuePostProcessor(
         ContextPtr context_,
         ObjectStorageType type_,
         ObjectStoragePtr object_storage_,
         const ObjectStorageQueueTableMetadata & table_metadata_,
-        AfterProcessingSettings settings_);
+        AfterProcessingSettings settings_,
+        String keeper_path_);
 
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
     /// The method intercepts exceptions caused by remote storage interaction and reports them to the log.
+    /// An object's `etag` is the generation its rows were read from: a move never touches any other.
     void process(
         const StoredObjects & objects,
         UnorderedSetWithMemoryTracking<String> & failed_object_paths) const;
@@ -52,8 +55,10 @@ private:
 
     struct CopyResult
     {
-        /// False when the destination is occupied by an object this attempt did not put there.
+        /// False when the destination is occupied by an object this queue did not put there.
         bool destination_is_ours = true;
+        /// True when the source no longer holds the generation the rows were read from: nothing was copied.
+        bool source_rewritten = false;
         SourceGeneration consumed;
     };
 
@@ -82,6 +87,7 @@ private:
     const ObjectStoragePtr object_storage;
     const ObjectStorageQueueTableMetadata & table_metadata;
     const AfterProcessingSettings settings;
+    const String keeper_path;
 
     LoggerPtr log;
 };

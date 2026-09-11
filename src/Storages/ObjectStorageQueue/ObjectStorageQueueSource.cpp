@@ -1284,10 +1284,12 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             processed_files.emplace_back(file_metadata);
 
-            if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
-                object_metadata && object_metadata->is_last_modified_known)
+            if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata())
             {
-                processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+                if (object_metadata->is_last_modified_known)
+                    processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+                /// The generation the rows come from: the read is pinned to this ETag, and so is post-processing.
+                processed_files.back().etag = object_metadata->etag;
             }
 
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
@@ -1584,14 +1586,14 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     size_t processed_count = 0;
     if (!insert_succeeded && reduce_retry_count)
     {
-        for (const auto & [file_state, file_metadata_, exception_during_read_, exception_during_read_code_, last_modified_] : processed_files)
+        for (const auto & [file_state, file_metadata_, exception_during_read_, exception_during_read_code_, last_modified_, etag_] : processed_files)
             if (file_state == FileState::Processed)
                 ++processed_count;
     }
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
-        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_] = processed_files[i];
+        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_, etag] = processed_files[i];
         switch (file_state)
         {
             case FileState::Processed:
@@ -1620,7 +1622,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     {
                         file_metadata->prepareProcessedRequests(requests);
                     }
-                    successful_files.push_back(StoredObject(file_metadata->getPath()));
+                    successful_files.emplace_back(file_metadata->getPath()).etag = etag;
                 }
                 else
                 {
@@ -1721,7 +1723,7 @@ void ObjectStorageQueueSource::finalizeCommit(
     bool respect_post_processing_failed_paths = mode == ObjectStorageQueueMode::EXCLUSIVE;
 
     std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified, etag_] : processed_files)
     {
         try
         {
@@ -1868,7 +1870,8 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
                 configuration->getType(),
                 object_storage,
                 files_metadata->getTableMetadata(),
-                after_processing_settings);
+                after_processing_settings,
+                files_metadata->getPath());
             postProcessor.process(successful_objects, post_processing_failed_paths);
 
             if (mode == ObjectStorageQueueMode::EXCLUSIVE && !post_processing_failed_paths.empty())
