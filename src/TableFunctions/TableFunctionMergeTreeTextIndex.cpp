@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Access/Common/AccessFlags.h>
 
@@ -46,7 +47,7 @@ private:
         bool is_insert_query) const override;
 
     /// Resolves the index of the source table and checks that the user may read it.
-    std::pair<StoragePtr, MergeTreeIndexPtr> resolveIndex(const ContextPtr & context) const;
+    std::pair<StoragePtr, MergeTreeIndexPtr> resolveIndex(ContextPtr context) const;
     static ColumnsDescription getColumns();
 
     const char * getStorageEngineName() const override
@@ -102,8 +103,16 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns()
     }};
 }
 
-std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolveIndex(const ContextPtr & context) const
+std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolveIndex(ContextPtr context) const
 {
+    /// A table persisted before that was forbidden resolves the function under the load context, which has no user.
+    if (!context->getUserID())
+    {
+        context = CurrentThread::tryGetQueryContext();
+        if (!context)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function 'mergeTreeTextIndex' is resolved outside of a query");
+    }
+
     /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
