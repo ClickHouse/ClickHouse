@@ -22,18 +22,18 @@ INSERT INTO json_serialization_reuse FORMAT JSONEachRow
 
 SELECT a.x, b.s, c.x, d.j.x FROM json_serialization_reuse ORDER BY a.x;
 
-SELECT sum(j.x), sum(length(j.nested)) FROM
+SELECT sum(getSubcolumn(j, 'x')), sum(length(getSubcolumn(j, 'nested'))) FROM
 (
     SELECT concat('{"x":', toString(number), ',"nested":[{"value":1}]}')::JSON(x UInt64, nested Array(JSON)) AS j
     FROM numbers(1000)
 ) SETTINGS allow_simdjson = 0;
-SELECT sum(j.x), sum(length(j.nested)) FROM
+SELECT sum(getSubcolumn(j, 'x')), sum(length(getSubcolumn(j, 'nested'))) FROM
 (
     SELECT concat('{"x":', toString(number), ',"nested":[{"value":1}]}')::JSON(x UInt64, nested Array(JSON)) AS j
     FROM numbers(1000)
 ) SETTINGS allow_simdjson = 1;
 
-SELECT dynamicType(e), e.JSON.x FROM (SELECT '{"x":42}'::JSON::Dynamic AS e);
+SELECT dynamicType(e), getSubcolumn(e, 'JSON.x') FROM (SELECT '{"x":42}'::JSON::Dynamic AS e);
 
 SELECT '{bad json}'::JSON; -- { serverError INCORRECT_DATA }
 DROP TABLE json_serialization_reuse;
