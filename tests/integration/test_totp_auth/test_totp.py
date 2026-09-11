@@ -2,22 +2,28 @@ import base64
 import hashlib
 import hmac
 import os
-import random
 import re
 import struct
 import time
 
+import pymysql
 import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.uclient import client, prompt
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-TOTP_SECRET = base64.b32encode(random.randbytes(random.randint(3, 64))).decode()
+# The secret must be deterministic: the flaky check runs this file on several pytest-xdist
+# workers in parallel, and `create_config` writes the shared `config/users.xml`, so all
+# workers must produce identical content. A random secret makes the last writer win and
+# the other workers' clusters reject codes generated for their own secrets.
+# The length is not a multiple of 5 bytes, so the base32 form exercises `=` padding.
+TOTP_SECRET = base64.b32encode(hashlib.sha256(b"test_totp_auth").digest()[:19]).decode()
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
+    main_configs=["config/mysql.xml"],
     user_configs=["config/users.xml"],
 )
 
@@ -36,7 +42,7 @@ def get_one_time_password(
     secret, interval=30, digits=6, sha_version=hashlib.sha1, timepoint=None
 ):
     key = base64.b32decode(secret, casefold=True)
-    time_step = int(timepoint or time.time() / interval)
+    time_step = int((timepoint or time.time()) / interval)
     msg = struct.pack(">Q", time_step)
     hmac_hash = hmac.new(key, msg, sha_version).digest()
     offset = hmac_hash[-1] & 0x0F
@@ -69,6 +75,23 @@ def create_config(totp_secret):
             <profile>default</profile>
             <quota>default</quota>
         </totuser>
+
+        <totuser_double_sha1>
+            <!-- Double SHA1 of 'abacaba' -->
+            <password_double_sha1_hex>e395796d6546b1b65db9d665cd43f0e858dd4303</password_double_sha1_hex>
+            <time_based_one_time_password>
+                <secret>{totp_secret}</secret>
+                <period>60</period>
+                <digits>9</digits>
+                <algorithm>SHA256</algorithm>
+            </time_based_one_time_password>
+
+            <networks replace="replace">
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </totuser_double_sha1>
 
         <totuser_no_password>
             <no_password></no_password>
@@ -228,6 +251,40 @@ def test_interactive_totp_authentication(started_cluster):
         command=f"{client_command} --password wrongpwd+{get_totp_for_config()}"
     ) as c:
         c.expect(expected_error)
+
+
+def test_mysql_protocol_requires_totp(started_cluster):
+    """The MySQL protocol must enforce TOTP: the `mysql_native_password` auth response is a hash
+    of the password alone and cannot carry a one-time password, so the server switches such
+    users to the `sha256_password` plugin and the client appends the TOTP to the password."""
+
+    def connect(user, password):
+        return pymysql.connections.Connection(
+            host=node.ip_address,
+            user=user,
+            password=password,
+            database="default",
+            port=9004,
+        )
+
+    for user, password in (("totuser", "aa+bb"), ("totuser_double_sha1", "abacaba")):
+        # The correct password alone must not authenticate: the second factor is required.
+        # The message is intentionally generic; only the error code tells the reason.
+        with pytest.raises(pymysql.err.MySQLError) as exc_info:
+            connect(user, password)
+        assert exc_info.value.args[0] == 767  # REQUIRED_SECOND_FACTOR
+
+        # A wrong one-time password must not authenticate.
+        with pytest.raises(pymysql.err.MySQLError, match="Authentication failed"):
+            connect(user, password + "+000000000")
+
+        conn = connect(user, f"{password}+{get_totp_for_config()}")
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT currentUser()")
+            assert cursor.fetchall() == ((user,),)
+        finally:
+            conn.close()
 
 
 def test_one_time_only_no_password(started_cluster):
