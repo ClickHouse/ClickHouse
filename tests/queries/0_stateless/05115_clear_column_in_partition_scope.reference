@@ -10,3 +10,6 @@ a CLEAR COLUMN of the whole table still applies to every partition while pending
 and a pending DELETE IN PARTITION applied on the fly keeps its partition
 2	2
 2	2
+the multi-partition form of DELETE IN PARTITION keeps its partitions too
+3	3
+3	3

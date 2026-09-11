@@ -43,6 +43,22 @@ SYSTEM START MERGES t_delete_in_partition;
 ALTER TABLE t_delete_in_partition DELETE WHERE 0 SETTINGS mutations_sync = 2;
 SELECT p, id FROM t_delete_in_partition ORDER BY id;
 
+SELECT 'the multi-partition form of DELETE IN PARTITION keeps its partitions too';
+-- `DELETE`/`UPDATE` accept several partitions in one command, which the AST carries separately from the
+-- single-partition form (`ASTAlterCommand::partitions` instead of `ASTAlterCommand::partition`), so the
+-- scope has to be respected there as well. The third partition is untouched by the command and proves
+-- the filter in both directions.
+DROP TABLE IF EXISTS t_delete_in_partitions;
+CREATE TABLE t_delete_in_partitions (p UInt8, id UInt64) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+INSERT INTO t_delete_in_partitions VALUES (1, 1), (2, 2), (3, 3);
+SYSTEM STOP MERGES t_delete_in_partitions;
+ALTER TABLE t_delete_in_partitions DELETE IN PARTITION '1', '2' WHERE 1 SETTINGS alter_sync = 0;
+SELECT p, id FROM t_delete_in_partitions ORDER BY id SETTINGS apply_mutations_on_fly = 1;
+SYSTEM START MERGES t_delete_in_partitions;
+ALTER TABLE t_delete_in_partitions DELETE WHERE 0 SETTINGS mutations_sync = 2;
+SELECT p, id FROM t_delete_in_partitions ORDER BY id;
+
+DROP TABLE t_delete_in_partitions;
 DROP TABLE t_delete_in_partition;
 DROP TABLE t_clear_column_all;
 DROP TABLE t_clear_column_partition;

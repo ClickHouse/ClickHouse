@@ -118,11 +118,19 @@ struct MutationCommand
     /// Required to distinguish read command used for MODIFY COLUMN.
     bool read_for_patch = false;
 
-    /// Whether the command names a partition (`... IN PARTITION p`), which scopes it to that partition
-    /// alone. Recorded at parse time so that a caller which has to respect the scope can find the few
-    /// commands that have one without re-parsing `ast_text` for every command; the partition expression
-    /// itself is read from the parsed AST.
+    /// Whether the command names specific partitions (`... IN PARTITION p`), which scopes it to those
+    /// partitions alone. Recorded at parse time so that a caller which has to respect the scope can
+    /// find the few commands that have one without re-parsing `ast_text` for every command.
     bool has_partition = false;
+
+    /// The ids of the partitions the command is scoped to, resolved from the partition expression once,
+    /// when the mutation entry is created or loaded (see `MergeTreeData::resolvePartitionIdsOfScopedCommands`).
+    /// A partition expression is arbitrary user SQL, so it must not be evaluated on the read path; it is
+    /// not persisted with the entry either and is resolved again when the entry is read back.
+    /// Stays `std::nullopt` for a command with no partition, and for a scoped command whose expression
+    /// could not be resolved - a consumer that has to respect the scope then applies the command to no
+    /// partition at all rather than to the ones it does not name.
+    std::optional<NameSet> partition_ids = {};
 
     /// If `parse_alter_commands` is true, more alter commands are accepted as
     /// mutation commands. `max_parser_depth` / `max_parser_backtracks` are
@@ -142,6 +150,11 @@ struct MutationCommand
     bool isDropOrRename() const;
     bool affectsAllColumns() const;
 };
+
+/// Whether the command is scoped to specific partitions (`... IN PARTITION p`, or the multi-partition
+/// `... IN PARTITION p1, p2` of `DELETE`/`UPDATE`), so that it applies to the parts of those partitions
+/// alone. `IN PARTITION ALL` names no specific partition and is not a scope.
+bool isCommandScopedToPartitions(const ASTAlterCommand & command);
 
 /// Collect the `UPDATE column = expr, ...` assignments from a parsed alter
 /// command into a `column -> expression` map. The returned `ASTPtr`s point
