@@ -1,0 +1,11 @@
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        ScatterExchange (any)
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t_exchange_layout)
+31996000
+tasks with a scatter and tasks with sources were logged	1
+scatter: serializers = scatters * sinks	1
+scatter: max rows into one serializer <= max rows into one scatter	1
