@@ -716,8 +716,17 @@ std::optional<String> optimizeUseNormalProjections(
     /// discriminates projection entries equally well. (The analysis-side consult is gated separately,
     /// by passing the stamp into `analyzeProjectionCandidate` above.)
     if (projection_reading)
+    {
         if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+        {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
+            /// The read keeps reading for the parallel replicas (`isParallelReadingEnabled` above), so
+            /// it keeps whatever the fragment was held to as well. This rewrite runs before
+            /// read-in-order, and without the restriction the projection read could order itself off a
+            /// condition only this replica has.
+            projection_reading_step->copyFixedColumnRestriction(*reading);
+        }
+    }
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);

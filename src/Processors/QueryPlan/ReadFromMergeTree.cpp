@@ -609,7 +609,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     parallel_replicas_step->index_read_tasks = index_read_tasks;
     /// Same for the read-in-order restriction: the step being replaced may already be held to the
     /// columns the replicas also fix, and the replacement reads the same data for the same fragment.
-    parallel_replicas_step->fixed_columns_the_replicas_also_have = fixed_columns_the_replicas_also_have;
+    parallel_replicas_step->copyFixedColumnRestriction(*this);
     return parallel_replicas_step;
 }
 
@@ -4471,7 +4471,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// prevents. No query reaches that combination today - the only subplan references come from
     /// correlated subqueries, which disable parallel replicas - so this carries the invariant rather
     /// than fixing an observable failure.
-    cloned_step->fixed_columns_the_replicas_also_have = fixed_columns_the_replicas_also_have;
+    cloned_step->copyFixedColumnRestriction(*this);
     cloned_step->setStepDescription(*this);
     return cloned_step;
 }

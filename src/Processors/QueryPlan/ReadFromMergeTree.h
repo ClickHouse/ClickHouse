@@ -538,6 +538,15 @@ public:
     void restrictFixedColumns(NameSet columns) { fixed_columns_the_replicas_also_have = std::move(columns); }
     const std::optional<NameSet> & getFixedColumnRestriction() const { return fixed_columns_the_replicas_also_have; }
 
+    /// Carries the restriction over from a read step this one replaces. Every rewrite that rebuilds a
+    /// read of a parallel-replicas local fragment has to do this, or the rebuilt read derives ordering
+    /// the replicas do not - `clone`, `createLocalParallelReplicasReadingStep`, and the projection
+    /// rewrites, which run before read-in-order looks for a read to order.
+    void copyFixedColumnRestriction(const ReadFromMergeTree & replaced_step)
+    {
+        fixed_columns_the_replicas_also_have = replaced_step.fixed_columns_the_replicas_also_have;
+    }
+
 private:
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
