@@ -46,6 +46,11 @@ SELECT tokensForLikePattern(materialize(toNullable('hello\_world')));
 ['hello','world']
 SELECT tokensForLikePattern(nullIf(materialize('hello\_world'), materialize('hello\_world')));
 []
+SELECT tokensForLikePattern(CAST(NULL AS Nullable(FixedString(4))), 'ngrams', 4);
+['\0\0\0\0']
+SELECT tokensForLikePattern(value, 'ngrams', 2) FROM values('value Nullable(FixedString(4))', (NULL), ('abcd'));
+['\0\0','\0\0','\0\0']
+['ab','bc','cd']
 -- Unsupported tokenizers should throw error
 SELECT 'unsupported tokenizers:';
 unsupported tokenizers:

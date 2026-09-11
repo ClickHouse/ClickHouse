@@ -28,6 +28,8 @@ SELECT 'nullable:';
 SELECT tokensForLikePattern(CAST(NULL AS Nullable(String)));
 SELECT tokensForLikePattern(materialize(toNullable('hello\_world')));
 SELECT tokensForLikePattern(nullIf(materialize('hello\_world'), materialize('hello\_world')));
+SELECT tokensForLikePattern(CAST(NULL AS Nullable(FixedString(4))), 'ngrams', 4);
+SELECT tokensForLikePattern(value, 'ngrams', 2) FROM values('value Nullable(FixedString(4))', (NULL), ('abcd'));
 
 -- Unsupported tokenizers should throw error
 SELECT 'unsupported tokenizers:';

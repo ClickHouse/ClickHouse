@@ -408,18 +408,17 @@ tokens(value, 'array')
         {"granularity", "Only relevant if argument `tokenizer` is `chinese`: An optional parameter, either `coarse_grained` (default) or `fine_grained`, controlling the segmentation granularity.", {"const String"}},
     };
 
-    /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (`splitByRegexp`, `japanese`,
-    /// `chinese`, `icu` - see `supportsStringLike()`), so its tokenizer list, and the argument entries
-    /// only relevant to those tokenizers, are dropped too.
+    /// tokensForLikePattern rejects tokenizers without LIKE-pattern support (see `supportsStringLike()`),
+    /// so its tokenizer list, and the argument entries only relevant to those tokenizers, are dropped too.
     FunctionDocumentation::Arguments arguments_like = arguments;
     arguments_like[arg_tokenizer]
         = {"tokenizer",
-           "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams`, and "
-           "`array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.",
+           "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `asciiCJK`, `ngrams`, and `sparseGrams`. Optional, if not "
+           "set explicitly, defaults to `splitByNonAlpha`.",
            {"const String"}};
     std::erase_if(arguments_like, [](const auto & argument)
     {
-        return argument.name == "regexp" || argument.name == "match_tokens"
+        return argument.name == "separators" || argument.name == "regexp" || argument.name == "match_tokens"
             || argument.name == "locale" || argument.name == "granularity";
     });
 
@@ -454,17 +453,13 @@ Unlike the `tokens` function, this function is aware of LIKE pattern semantics
 (such as leading and trailing wildcard characters) and applies tokenizer-specific
 rules to extract meaningful tokens for pattern matching.
 
-It supports the same argument sets as the `tokens` function, with some
-exceptions: the `chinese` and `icu` tokenizers are not supported here.
-Tokenization of LIKE patterns is only meaningful for tokenizers that
-explicitly opt into LIKE semantics (`supportsStringLike()`). Calling
-`tokensForLikePattern` with an unsupported tokenizer throws `BAD_ARGUMENTS`;
-use plain `tokens` instead.
+Only the `splitByNonAlpha`, `asciiCJK`, `ngrams`, and `sparseGrams`
+tokenizers support LIKE-pattern tokenization. Calling `tokensForLikePattern`
+with any other tokenizer throws `BAD_ARGUMENTS`; use plain `tokens` instead.
 
 Additional arguments after `tokenizer` are interpreted according to the
-selected tokenizer (for example, `n` for `ngrams`, `separators` for
-`splitByString`, and `min_length` / `max_length` [/ `min_cutoff_length`]
-for `sparseGrams`).
+selected tokenizer (for example, `n` for `ngrams`, and `min_length` /
+`max_length` [/ `min_cutoff_length`] for `sparseGrams`).
 
 This function is primarily intended for debugging and testing purposes,
 and is used internally to analyze tokenization behavior for LIKE patterns.
