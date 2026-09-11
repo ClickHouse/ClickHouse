@@ -4,5 +4,7 @@ x	3	y	2000-01-01
 x	4	z	2000-01-01
 x	3	y	2000-01-01
 x	4	z	2000-01-01
+GROUP BY (a, b) SET
+1	2	3	30
 CREATE TABLE t (`a` String, `b` UInt64, `d` Date) ENGINE = MergeTree ORDER BY (a, d) TTL d + toIntervalDay(8) GROUP BY (a, d) SET b = sum(b)
 CREATE TABLE t (`a` String, `b` UInt64, `d` Date) ENGINE = MergeTree ORDER BY (a, d) TTL d + toIntervalDay(8) GROUP BY a, d SET b = sum(b)

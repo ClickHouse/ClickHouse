@@ -59,9 +59,29 @@ ENGINE = MergeTree
 ORDER BY (a, d)
 TTL d + INTERVAL 8 DAY GROUP BY tuple(tuple('x')) SET b = sum(b); -- { serverError BAD_TTL_EXPRESSION }
 
+-- When the first primary key element is itself a tuple, the intact interpretation of a single
+-- parenthesized key wins: such tables were accepted before and must keep working (including on
+-- `ATTACH` and when replicated metadata is reparsed).
+CREATE TABLE ttl_group_by_tuple_key (a UInt32, b UInt32, c UInt32, v UInt64, d Date)
+ENGINE = MergeTree
+ORDER BY ((a, b), c)
+TTL d + INTERVAL 1 DAY GROUP BY (a, b) SET v = sum(v);
+
+SELECT extract(create_table_query, 'GROUP BY .*? SET')
+FROM system.tables
+WHERE database = currentDatabase() AND name = 'ttl_group_by_tuple_key';
+
+DETACH TABLE ttl_group_by_tuple_key;
+ATTACH TABLE ttl_group_by_tuple_key;
+
+INSERT INTO ttl_group_by_tuple_key VALUES (1, 2, 3, 10, '2000-01-01'), (1, 2, 3, 20, '2000-01-02');
+OPTIMIZE TABLE ttl_group_by_tuple_key FINAL;
+SELECT a, b, c, v FROM ttl_group_by_tuple_key ORDER BY a, b, c;
+
 SELECT formatQuerySingleLine($$CREATE TABLE t (a String, b UInt64, d Date) ENGINE = MergeTree ORDER BY (a, d) TTL d + INTERVAL 8 DAY GROUP BY (a, d) SET b = sum(b)$$);
 SELECT formatQuerySingleLine($$CREATE TABLE t (a String, b UInt64, d Date) ENGINE = MergeTree ORDER BY (a, d) TTL d + INTERVAL 8 DAY GROUP BY a, d SET b = sum(b)$$);
 
 DROP TABLE ttl_group_by_parens;
 DROP TABLE ttl_group_by_no_parens;
 DROP TABLE ttl_group_by_single_parens;
+DROP TABLE ttl_group_by_tuple_key;

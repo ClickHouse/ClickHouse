@@ -1446,16 +1446,32 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             const auto & pk_columns = primary_key.column_names;
 
+            auto is_primary_key_prefix = [&pk_columns](const ASTs & keys)
+            {
+                if (keys.size() > pk_columns.size())
+                    return false;
+                for (size_t i = 0; i < keys.size(); ++i)
+                    if (keys[i]->getColumnName() != pk_columns[i])
+                        return false;
+                return true;
+            };
+
             /// `GROUP BY (a, b, c)` parses as a single `tuple(a, b, c)` expression, but it means the same list
             /// of keys as `GROUP BY a, b, c`, exactly as `ORDER BY (a, b, c)` means the same key as
             /// `ORDER BY a, b, c`. Unwrap it here rather than in the parser: the parsed AST is what gets
             /// formatted back, and rewriting it there would make formatting non-idempotent, because the
             /// formatted `GROUP BY a, b, c` would be unwrapped again on the next parse.
+            ///
+            /// The spelling is ambiguous when the first primary key element is itself a tuple: with
+            /// `ORDER BY ((a, b), c)`, the single key `GROUP BY (a, b)` already matches the primary key
+            /// prefix as an intact tuple, and such tables exist and must keep attaching. So the intact
+            /// interpretation wins whenever it is a prefix of the primary key, and only otherwise do we
+            /// fall back to reading the parentheses as a key list. An empty `GROUP BY ()` unwraps to
+            /// nothing, which would pass the prefix check vacuously, so it keeps the `tuple()` in place
+            /// and is rejected as before.
             ASTs group_by_key = ttl_element->group_by_key;
-            if (group_by_key.size() == 1)
+            if (group_by_key.size() == 1 && !is_primary_key_prefix(group_by_key))
             {
-                /// An empty `GROUP BY ()` unwraps to nothing, which would pass the prefix check below
-                /// vacuously; keep rejecting it as before by leaving the `tuple()` in place.
                 if (auto unwrapped = extractKeyExpressionList(group_by_key.front())->children; !unwrapped.empty())
                     group_by_key = std::move(unwrapped);
             }
