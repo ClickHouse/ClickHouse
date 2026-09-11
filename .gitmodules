@@ -130,7 +130,7 @@
 	url = https://github.com/ClickHouse/cyrus-sasl
 [submodule "contrib/croaring"]
 	path = contrib/croaring
-	url = https://github.com/RoaringBitmap/CRoaring
+	url = https://github.com/ClickHouse/CRoaring
 [submodule "contrib/miniselect"]
 	path = contrib/miniselect
 	url = https://github.com/danlark1/miniselect
