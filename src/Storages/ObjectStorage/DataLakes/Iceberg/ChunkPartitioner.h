@@ -37,9 +37,9 @@ public:
 
     const std::vector<String> & getColumns() const { return columns_to_apply; }
 
-    /// The Iceberg partition field types. A transform fixes that type independently of the ClickHouse
-    /// function computing it: `bucket[N]` is an Iceberg `int`. The partition keys `partitionChunk`
-    /// returns hold values of these types.
+    /// The types of the partition key values `partitionChunk` returns: the Iceberg `int` for a
+    /// `bucket[N]` field, and otherwise the type of the ClickHouse function computing the transform,
+    /// which for the temporal transforms is an unsigned type the Iceberg specification does not have.
     const DataTypes & getResultTypes() const { return result_data_types; }
 
 private:

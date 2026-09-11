@@ -31,9 +31,9 @@ namespace ErrorCodes
 namespace
 {
 
-/// The Iceberg type of a partition field, which the transform fixes independently of the ClickHouse
-/// function computing it: `bucket[N]` is an `int`, and every value `icebergBucket` produces fits one,
-/// because `N` is validated to be in `(0, INT32_MAX]` and the result is in `[0, N)`.
+/// The Iceberg type of a `bucket[N]` partition field, `int`; any other transform keeps the type of the
+/// ClickHouse function computing it. Every value `icebergBucket` produces fits an `int`, because `N` is
+/// validated to be in `(0, INT32_MAX]` and the result is in `[0, N)`.
 DataTypePtr icebergPartitionFieldType(const String & transform_function_name, const DataTypePtr & transform_result_type)
 {
     if (transform_function_name != "icebergBucket")
