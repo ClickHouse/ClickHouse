@@ -56,6 +56,9 @@ static struct InitFiu
     ONCE(smt_commit_write_zk_fail_after_op) \
     ONCE(smt_commit_write_zk_fail_before_op) \
     ONCE(smt_restore_attach_retry) \
+    ONCE(part_loading_tree_read_txn_status_fault) \
+    REGULAR(part_loading_tree_read_txn_status_persistent_fault) \
+    ONCE(part_loading_tree_read_txn_status_permanent_fault) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
     PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     PAUSEABLE_ONCE(smt_get_status_pause_before_keeper_read) \
