@@ -132,3 +132,7 @@ SELECT 'UInt32 duplicate SIMD',
     indexOf(
         materialize(arrayMap(x -> if(x = 16 OR x = 24, toUInt32(888), toUInt32(x)), range(64))),
         toUInt32(888));
+
+SELECT 'UInt8 long missing',
+    has(materialize(arrayMap(x -> toUInt8(x % 255), range(4096))), toUInt8(255)),
+    indexOf(materialize(arrayMap(x -> toUInt8(x % 255), range(4096))), toUInt8(255));

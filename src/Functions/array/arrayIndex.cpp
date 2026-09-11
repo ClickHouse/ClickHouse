@@ -18,6 +18,13 @@ size_t findUIntSIMD(const T * data, size_t size, T value)
         || std::is_same_v<T, UInt64>);
 
     constexpr size_t lanes = sizeof(__m256i) / sizeof(T);
+
+    /// Check one vector scalarly so a hit at the beginning does not pay SIMD setup costs.
+    size_t i = 0;
+    for (; i < lanes && i < size; ++i)
+        if (data[i] == value)
+            return i;
+
     __m256i needle;
     if constexpr (std::is_same_v<T, UInt8>)
         needle = _mm256_set1_epi8(static_cast<char>(value));
@@ -28,7 +35,6 @@ size_t findUIntSIMD(const T * data, size_t size, T value)
     else
         needle = _mm256_set1_epi64x(static_cast<long long>(value));
 
-    size_t i = 0;
     for (; i + lanes <= size; i += lanes)
     {
         const auto values = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));

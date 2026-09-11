@@ -2,10 +2,10 @@
     <!--
         Focused ceiling test for the exact-type unsigned-integer-array search path.
 
-        The arrays are stored in a Memory table so the timed queries measure the search, not array
-        construction. The UInt32 needle keeps the comparison in the same type. The missing-needle
-        query is the deliberately adversarial case: every one of 4096 values has to be inspected.
-        The three hit positions show how the same path behaves when it can stop early.
+        The arrays are stored in Memory tables so the timed queries measure the search, not array
+        construction. The needles keep the comparisons in the same type. The missing-needle
+        queries are the deliberately adversarial cases: every one of 4096 values has to be inspected.
+        The three UInt32 hit positions show how the same path behaves when it can stop early.
 
         Keep this alongside the broad array tests: it measures the long-row scan where SIMD can
         have a clear signal, not a representative distribution of array lengths.
@@ -22,6 +22,10 @@
     <create_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</create_query>
     <create_query>
         CREATE TABLE perf_array_index_simd_numeric (arr Array(UInt32)) ENGINE = Memory
+    </create_query>
+    <create_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</create_query>
+    <create_query>
+        CREATE TABLE perf_array_index_simd_uint8 (arr Array(UInt8)) ENGINE = Memory
     </create_query>
     <create_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</create_query>
     <create_query>
@@ -49,6 +53,11 @@
         INSERT INTO perf_array_index_simd_numeric
         SELECT materialize(range(4096)::Array(UInt32))
         FROM numbers(50000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO perf_array_index_simd_uint8
+        SELECT materialize(arrayMap(x -> toUInt8(x % 255), range(4096)))
+        FROM numbers(20000)
     </fill_query>
     <fill_query>
         INSERT INTO perf_array_index_simd_thresholds
@@ -92,6 +101,18 @@
     <query>
         SELECT sum(indexOf(arr, toUInt32({needle})))
         FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+
+    <!-- Long UInt8 missing-needle case. The value 255 is absent from every 4096-element array. -->
+    <query>
+        SELECT sum(has(arr, toUInt8(255)))
+        FROM perf_array_index_simd_uint8
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(arr, toUInt8(255)))
+        FROM perf_array_index_simd_uint8
         FORMAT Null
     </query>
 
@@ -186,5 +207,6 @@
     </query>
 
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</drop_query>
 </test>
