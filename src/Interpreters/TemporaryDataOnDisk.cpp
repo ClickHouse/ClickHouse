@@ -77,6 +77,16 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
     return CompressionCodecFactory::instance().get(settings.compression_codec);
 }
 
+/// NONE-coded blocks are written directly into the file buffer (see declareOutBufferExclusive),
+/// so it must also fit the block prefix, or blocks would be split short of settings.buffer_size.
+inline size_t getFileBufferSize(const TemporaryDataOnDiskSettings & settings)
+{
+    size_t buffer_size = settings.buffer_size;
+    if (getCodec(settings)->isNone())
+        buffer_size += COMPRESSED_BLOCK_PREFIX_SIZE;
+    return buffer_size;
+}
+
 }
 
 TemporaryFileHolder::TemporaryFileHolder(const TemporaryDataMetrics & metrics)
@@ -95,7 +105,7 @@ public:
                                        size_t reserve_size,
                                        const TemporaryDataOnDiskSettings & settings)
         : TemporaryFileHolder(settings.metrics)
-        , buffer_size(settings.buffer_size)
+        , buffer_size(getFileBufferSize(settings))
     {
         const auto key = FileSegment::Key::random();
         LOG_TRACE(getLogger("TemporaryFileInLocalCache"), "Creating temporary file in cache with key {}", key);
@@ -135,7 +145,7 @@ public:
     explicit TemporaryFileInDistributedCache(const TemporaryDataOnDiskSettings & settings)
         : TemporaryFileHolder(settings.metrics)
         , file_key(fmt::format("__tmp_{}", toString(UUIDHelpers::generateV4())))
-        , buffer_size(settings.buffer_size)
+        , buffer_size(getFileBufferSize(settings))
         , log(getLogger("TemporaryFileInDistributedCache"))
     {
         LOG_TRACE(log, "Creating temporary file in distributed cache: {}", file_key);
@@ -247,7 +257,7 @@ public:
     explicit TemporaryFileOnLocalDisk(VolumePtr volume, size_t reserve_size = 0, const TemporaryDataOnDiskSettings & settings = {})
         : TemporaryFileHolder(settings.metrics)
         , path_to_file("tmp" + toString(UUIDHelpers::generateV4()))
-        , buffer_size(settings.buffer_size)
+        , buffer_size(getFileBufferSize(settings))
     {
         LOG_TRACE(getLogger("TemporaryFileOnLocalDisk"), "Creating temporary file '{}'", path_to_file);
         if (reserve_size > 0)
@@ -399,6 +409,7 @@ TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScop
     , out_compressed_buf(file_holder->write(), getCodec(parent->getSettings()), parent->getSettings().buffer_size)
     , metrics(parent->getSettings().metrics)
 {
+    out_compressed_buf->declareOutBufferExclusive();
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
 }
 

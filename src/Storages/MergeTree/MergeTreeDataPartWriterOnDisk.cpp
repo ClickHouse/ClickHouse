@@ -120,13 +120,29 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
     if (metadata_snapshot->hasPrimaryKey())
     {
         String index_name = "primary" + getIndexExtension(compress_primary_key);
-        index_file_stream = getDataPartStorage().writeFile(index_name, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
+
+        CompressionCodecPtr primary_key_compression_codec;
+        if (compress_primary_key)
+            primary_key_compression_codec = CompressionCodecFactory::instance().get(settings.primary_key_compression_codec);
+
+        /// NONE-coded blocks are written directly into this file buffer (see declareOutBufferExclusive),
+        /// so it must fit `primary_key_compress_block_size` plus the block prefix, or the index would
+        /// be re-chunked into smaller frames. Keep the default floor so small block sizes do not
+        /// multiply syscalls; for other codecs the extra room would be wasted.
+        const bool index_uses_none_zero_copy = primary_key_compression_codec && primary_key_compression_codec->isNone();
+        const size_t index_file_buffer_size = index_uses_none_zero_copy
+            ? std::max<size_t>(
+                  DBMS_DEFAULT_BUFFER_SIZE,
+                  settings.primary_key_compress_block_size + COMPRESSED_BLOCK_PREFIX_SIZE)
+            : DBMS_DEFAULT_BUFFER_SIZE;
+        index_file_stream = getDataPartStorage().writeFile(index_name, index_file_buffer_size, settings.query_write_settings);
         index_file_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
 
         if (compress_primary_key)
         {
-            CompressionCodecPtr primary_key_compression_codec = CompressionCodecFactory::instance().get(settings.primary_key_compression_codec);
-            index_compressor_stream = std::make_unique<CompressedWriteBuffer>(*index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size);
+            index_compressor_stream = std::make_unique<CompressedWriteBuffer>(
+                *index_file_hashing_stream, primary_key_compression_codec, settings.primary_key_compress_block_size);
+            index_compressor_stream->declareOutBufferExclusive();
             index_source_hashing_stream = std::make_unique<HashingWriteBuffer>(*index_compressor_stream);
         }
 
