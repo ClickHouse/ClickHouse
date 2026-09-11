@@ -67,10 +67,11 @@ DatabaseReplicatedDDLWorker::DatabaseReplicatedDDLWorker(DatabaseReplicated * db
           fmt::format("DDLWorker({})", db->getDatabaseName()))
     , database(db)
 {
+    const auto db_settings = database->db_settings.get();
     LOG_INFO(
         log,
         "allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views {}",
-        database->db_settings[DatabaseReplicatedSetting::allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views].value);
+        (*db_settings)[DatabaseReplicatedSetting::allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views].value);
     /// Pool size must be 1 to avoid reordering of log entries.
     /// TODO Make a dependency graph of DDL queries. It will allow to execute independent entries in parallel.
     /// We also need similar graph to load tables on server startup in order of topsort.
@@ -100,8 +101,10 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 break;
             }
 
-            if (database->db_settings[DatabaseReplicatedSetting::max_retries_before_automatic_recovery]
-                && database->db_settings[DatabaseReplicatedSetting::max_retries_before_automatic_recovery] <= subsequent_errors_count)
+            const auto db_settings = database->db_settings.get();
+
+            if ((*db_settings)[DatabaseReplicatedSetting::max_retries_before_automatic_recovery]
+                && (*db_settings)[DatabaseReplicatedSetting::max_retries_before_automatic_recovery] <= subsequent_errors_count)
             {
                 String current_task_name;
                 {
@@ -202,7 +205,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// substitute metadata from the recreated database during recovery.
     Coordination::Stat max_log_ptr_stat;
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr", &max_log_ptr_stat));
-    logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+    UInt32 logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
 
     UInt64 digest = 0;
     String digest_str;
@@ -226,9 +229,10 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     LOG_TRACE(log, "Trying to initialize replication: our_log_ptr={}, max_log_ptr={}, local_digest={}, zk_digest={}",
               our_log_ptr, max_log_ptr, local_digest, digest);
 
+    const auto db_settings = database->db_settings.get();
     bool is_new_replica = our_log_ptr == 0;
     bool lost_according_to_log_ptr = our_log_ptr + logs_to_keep < max_log_ptr;
-    bool lost_according_to_digest = database->db_settings[DatabaseReplicatedSetting::check_consistency] && local_digest != digest;
+    bool lost_according_to_digest = (*db_settings)[DatabaseReplicatedSetting::check_consistency] && local_digest != digest;
 
     if (is_new_replica || lost_according_to_log_ptr || lost_according_to_digest)
     {
@@ -268,7 +272,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
         /// distributed_ddl_output_mode = '*_only_active', although it may be still busy with previous queries.
         /// Provide a way to identify such replicas to avoid waiting for them until they catch up.
         UInt32 new_max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-        unsynced_after_recovery = max_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] <= new_max_log_ptr;
+        unsynced_after_recovery = max_log_ptr + (*db_settings)[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] <= new_max_log_ptr;
         LOG_INFO(log, "Finishing replica initialization, our_log_ptr={}, max_log_ptr={}, unsynced_after_recovery={}", max_log_ptr, new_max_log_ptr, unsynced_after_recovery.load());
         if (unsynced_after_recovery)
             active_id += DatabaseReplicated::REPLICA_UNSYNCED_MARKER;
@@ -458,7 +462,9 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
 
-    if (our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
+    const auto db_settings = database->db_settings.get();
+
+    if (our_log_ptr + (*db_settings)[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] < max_log_ptr)
         throw Exception(ErrorCodes::NOT_A_LEADER, "Cannot enqueue query on this replica, "
                         "because it has replication lag of {} queries. Try other replica.", max_log_ptr - our_log_ptr);
 
@@ -628,12 +634,14 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
     });
     FailPointInjection::pauseFailPoint(FailPoints::database_replicated_stop_entry_execution);
 
+    const auto db_settings = database->db_settings.get();
+
     if (unsynced_after_recovery)
     {
         UInt32 max_log_ptr = parse<UInt32>(getAndSetZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
         LOG_TRACE(log, "Replica was not fully synced after recovery: our_log_ptr={}, max_log_ptr={}", our_log_ptr, max_log_ptr);
         chassert(our_log_ptr < max_log_ptr);
-        bool became_synced = our_log_ptr + database->db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
+        bool became_synced = our_log_ptr + (*db_settings)[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
         {
             /// Remove the REPLICA_UNSYNCED_MARKER
@@ -658,7 +666,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         /// Query is not committed yet. We cannot just skip it and execute next one, because reordering may break replication.
         LOG_TRACE(log, "Waiting for initiator {} to commit or rollback entry {}", initiator_name, entry_path);
         constexpr size_t wait_time_ms = 1000;
-        size_t max_iterations = database->db_settings[DatabaseReplicatedSetting::wait_entry_commited_timeout_sec];
+        size_t max_iterations = (*db_settings)[DatabaseReplicatedSetting::wait_entry_commited_timeout_sec];
         size_t iteration = 0;
 
         while (!wait_committed_or_failed->tryWait(wait_time_ms))
@@ -730,7 +738,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         out_reason = fmt::format("Parent table {} doesn't exist", task->entry.parent_table_uuid.value());
         return {};
     }
-    if (database->db_settings[DatabaseReplicatedSetting::allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views]
+    if ((*db_settings)[DatabaseReplicatedSetting::allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views]
         && task->entry.parent_table_uuid)
     {
         // Refreshing in non-append Refreshable Materialized Views:
@@ -793,8 +801,18 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
 bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name, const Coordination::Stat &)
 {
+    const std::vector<std::string> paths{
+        database->zookeeper_path + "/max_log_ptr",
+        database->zookeeper_path + "/logs_to_keep"
+    };
+    auto zookeeper = getZooKeeper();
+    auto get_result = zookeeper->get(paths);
+    chassert(get_result.size() == paths.size());
+
     UInt32 entry_number = DDLTaskBase::getLogEntryNumber(entry_name);
-    UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(database->zookeeper_path) / "max_log_ptr"));
+    UInt32 max_log_ptr = parse<UInt32>(get_result[0].data);
+    UInt32 logs_to_keep = parse<UInt32>(get_result[1].data);
+
     return entry_number + logs_to_keep < max_log_ptr;
 }
 

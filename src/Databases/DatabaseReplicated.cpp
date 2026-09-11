@@ -124,7 +124,8 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int SYNTAX_ERROR;
     extern const int FAULT_INJECTED;
-    }
+    extern const int QUERY_NOT_ALLOWED;
+}
 namespace FailPoints
 {
     extern const char database_replicated_startup_pause[];
@@ -134,6 +135,7 @@ namespace FailPoints
     extern const char database_replicated_pause_after_reading_log_pointer[];
     extern const char database_replicated_pause_after_snapshot_identity_check[];
     extern const char database_replicated_throw_on_stop_replication[];
+    extern const char database_replicated_alter_settings_fail_after_keeper_write[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -215,10 +217,11 @@ DatabaseReplicated::DatabaseReplicated(
     , shard_name(shard_name_)
     , replica_name(replica_name_)
     , replica_path(fs::path(zookeeper_path) / "replicas" / getFullReplicaName(shard_name, replica_name))
-    , db_settings(std::move(db_settings_))
+    , db_settings(std::make_unique<const DatabaseReplicatedSettings>(std::move(db_settings_)))
     , tables_metadata_digest(0)
 {
-    LOG_INFO(log, "DatabaseReplicatedSettings {}", db_settings.toString());
+    const auto db_settings_version = db_settings.get();
+    LOG_INFO(log, "DatabaseReplicatedSettings {}", db_settings_version->toString());
 
     if (zookeeper_path.empty() || shard_name.empty() || replica_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path, shard and replica names must be non-empty");
@@ -227,8 +230,8 @@ DatabaseReplicated::DatabaseReplicated(
     if (shard_name.contains('|') || replica_name.contains('|'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard and replica names should not contain '|'");
 
-    if (!db_settings[DatabaseReplicatedSetting::collection_name].value.empty())
-        fillClusterAuthInfo(db_settings[DatabaseReplicatedSetting::collection_name].value);
+    if (!(*db_settings_version)[DatabaseReplicatedSetting::collection_name].value.empty())
+        cluster_auth_info = getClusterAuthInfo((*db_settings_version)[DatabaseReplicatedSetting::collection_name].value);
 
     replica_group_name = context_->getConfigRef().getString("replica_group_name", "");
 
@@ -272,6 +275,7 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
 
         paths.push_back(zookeeper_path + "/max_log_ptr");
         paths.push_back(fs::path(replica_path) / "log_ptr");
+        paths.push_back(zookeeper_path + "/logs_to_keep");
 
         auto get_result = zookeeper->tryGet(paths);
         chassert(get_result.size() == paths.size());
@@ -287,6 +291,12 @@ void DatabaseReplicated::getStatus(ReplicatedStatus & response, const bool with_
             throw zkutil::KeeperException(get_result[1].error);
 
         response.log_ptr = log_ptr_str.empty() ? 0 : parse<UInt32>(log_ptr_str);
+
+        const auto & logs_to_keep_str = get_result[2].data;
+        if (get_result[2].error == Coordination::Error::ZNONODE)
+            throw zkutil::KeeperException(get_result[2].error);
+
+        response.logs_to_keep = logs_to_keep_str.empty() ? 0 : parse<UInt32>(logs_to_keep_str);
 
         paths.clear();
 
@@ -405,6 +415,11 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
 void DatabaseReplicated::setCluster(ClusterPtr && new_cluster, bool all_groups)
 {
     std::lock_guard lock{mutex};
+    setClusterLocked(std::move(new_cluster), all_groups);
+}
+
+void DatabaseReplicated::setClusterLocked(ClusterPtr && new_cluster, bool all_groups)
+{
     if (all_groups)
         cluster_all_groups = std::move(new_cluster);
     else
@@ -534,7 +549,11 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
         cluster_name,
         cluster_auth_info.cluster_secret};
 
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params, db_settings[DatabaseReplicatedSetting::internal_replication]);
+    const auto db_settings_version = db_settings.get();
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(),
+        shards,
+        params,
+        (*db_settings_version)[DatabaseReplicatedSetting::internal_replication]);
 }
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
@@ -624,14 +643,17 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
 }
 
-void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
+DatabaseReplicated::ClusterAuthInfo DatabaseReplicated::getClusterAuthInfo(const String & collection_name)
 {
     auto collection = NamedCollectionFactory::instance().get(collection_name);
 
-    cluster_auth_info.cluster_username = collection->getOrDefault<String>("cluster_username", "");
-    cluster_auth_info.cluster_password = collection->getOrDefault<String>("cluster_password", "");
-    cluster_auth_info.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
-    cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
+    ClusterAuthInfo result;
+    result.cluster_username = collection->getOrDefault<String>("cluster_username", "");
+    result.cluster_password = collection->getOrDefault<String>("cluster_password", "");
+    result.cluster_secret = collection->getOrDefault<String>("cluster_secret", "");
+    result.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
+
+    return result;
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
@@ -791,7 +813,8 @@ Coordination::Requests DatabaseReplicated::buildDatabaseNodesInZooKeeper()
     ops.emplace_back(zkutil::makeRemoveRequest(zookeeper_path + "/counter/cnt-", -1));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/max_log_ptr", "1", zkutil::CreateMode::Persistent));
-    auto logs_to_keep = db_settings[DatabaseReplicatedSetting::logs_to_keep];
+    const auto db_settings_version = db_settings.get();
+    auto logs_to_keep = (*db_settings_version)[DatabaseReplicatedSetting::logs_to_keep];
     ops.emplace_back(
         zkutil::makeCreateRequest(zookeeper_path + "/logs_to_keep", std::to_string(logs_to_keep), zkutil::CreateMode::Persistent));
 
@@ -876,11 +899,12 @@ bool DatabaseReplicated::waitForReplicaToProcessAllEntries(UInt64 timeout_ms, Sy
     /// successful sync arrive at the same boundary as the client's own read timeout.
     static constexpr UInt64 wait_step_ms = 100;
     Stopwatch elapsed;
+    const auto db_settings_version = db_settings.get();
     while (true)
     {
         UInt32 our_log_ptr = ddl_worker->getLogPointer();
         UInt32 max_log_ptr = parse<UInt32>(getZooKeeper()->get(fs::path(zookeeper_path) / "max_log_ptr"));
-        bool became_synced = our_log_ptr + db_settings[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
+        bool became_synced = our_log_ptr + (*db_settings_version)[DatabaseReplicatedSetting::max_replication_lag_to_enqueue] >= max_log_ptr;
         if (became_synced)
             return true;
 
@@ -1080,6 +1104,8 @@ void DatabaseReplicated::restoreDatabaseNodesInKeeper(const ZooKeeperPtr & zooke
     auto add_ops = [&ops](Coordination::Requests && others)
     { ops.insert(ops.end(), std::make_move_iterator(others.begin()), std::make_move_iterator(others.end())); };
 
+    /// The `logs_to_keep` value is picked up from the database metadata, which may not be consistent with the actual value in the Keeper,
+    /// e.g. if `logs_to_keep` was updated via `ALTER DATABASE ... MODIFY SETTING`.
     add_ops(buildDatabaseNodesInZooKeeper());
 
     /// Hold metadata_mutex so that the digest and keeper path nodes are consistent:
@@ -1659,7 +1685,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     String db_name = getDatabaseName();
     String to_db_name = getDatabaseName() + BROKEN_TABLES_SUFFIX;
     String to_db_name_replicated = getDatabaseName() + BROKEN_REPLICATED_TABLES_SUFFIX;
-    if (static_cast<double>(total_tables) * static_cast<double>(db_settings[DatabaseReplicatedSetting::max_broken_tables_ratio])
+    const auto db_settings_version = db_settings.get();
+    if (static_cast<double>(total_tables) * static_cast<double>((*db_settings_version)[DatabaseReplicatedSetting::max_broken_tables_ratio])
         < static_cast<double>(tables_to_detach.size()))
         throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "Too many tables to recreate: {} of {}", tables_to_detach.size(), total_tables);
 
@@ -2685,6 +2712,114 @@ bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
     return ddl_worker_initialized && ddl_worker->isCurrentlyActive();
 }
 
+void DatabaseReplicated::applySettingsChanges(const SettingsChanges & changes, ContextPtr query_context)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::applySettingsChanges");
+
+    static const std::unordered_map<String, String> immutable_settings =
+    {
+        {"default_replica_path", "Applied only at `CREATE`. Recreate the database to change it."},
+        {"default_replica_shard_name", "Applied only at `CREATE`. Recreate the database to change it."},
+        {"default_replica_name", "Applied only at `CREATE`. Recreate the database to change it."},
+        /// If we allow changing `internal_replication`, there will be a window when part of the replicas have already updated
+        /// their setting and part - have not yet. It may result either in duplicate rows(switched to `false` but some replica still uses
+        /// ReplicatedMergeTree and deduplication window has rolled over) or in different result set depending on what
+        /// replica the query lands on(switched to `true`, but some replica still uses MergeTree, so insert ends up only on this replica).
+        {"internal_replication", "Cannot be changed safely while the database is in use."}
+    };
+
+    waitDatabaseStarted();
+
+    if (query_context->getCurrentTransaction() && query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Changing settings inside transactions is not supported");
+
+    std::lock_guard metadata_lock(metadata_mutex);
+
+    DatabaseReplicatedSettings new_settings = *db_settings.get();
+    bool logs_to_keep_changed = false;
+    std::optional<ClusterAuthInfo> new_cluster_auth_info;
+    /// Validate settings changes
+    for (const auto & change : changes)
+    {
+        if (!new_settings.has(change.name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} does not support setting `{}`", getEngineName(), change.name);
+
+        if (const auto immutable_setting_it = immutable_settings.find(change.name);
+            immutable_setting_it != std::end(immutable_settings))
+        {
+            throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Can't change setting `{}`: {}", change.name, immutable_setting_it->second);
+        }
+
+        logs_to_keep_changed |= change.name == "logs_to_keep";
+
+        new_settings.applyChange(change);
+        /// `getClusterAuthInfo` may throw e.g. if the new collection does not exist. Verify it before we publish any changes.
+        if (change.name == "collection_name")
+        {
+            const String & collection_name = new_settings[DatabaseReplicatedSetting::collection_name];
+            new_cluster_auth_info = collection_name.empty() ? ClusterAuthInfo{} : getClusterAuthInfo(collection_name);
+        }
+    }
+
+    UInt64 new_logs_to_keep = 0;
+    if (logs_to_keep_changed)
+    {
+        if (is_readonly)
+            throw Exception(ErrorCodes::NO_ZOOKEEPER, "Database is in readonly mode, because it cannot connect to ZooKeeper");
+
+        new_logs_to_keep = new_settings[DatabaseReplicatedSetting::logs_to_keep];
+        if (new_logs_to_keep > std::numeric_limits<UInt32>::max())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Setting `logs_to_keep` cannot exceed {}: DDL log entry numbers are 32-bit, "
+                "so a larger value cannot have the intended meaning", std::numeric_limits<UInt32>::max());
+
+        auto zookeeper = getZooKeeper();
+        zookeeper->set(zookeeper_path + "/logs_to_keep", std::to_string(new_logs_to_keep));
+    }
+
+    try
+    {
+        /// Reproduces the only partial state this function can leave behind: the Keeper node is
+        /// already updated, so the change is in effect cluster-wide, but the local metadata file
+        /// is not.
+        if (logs_to_keep_changed)
+        {
+            fiu_do_on(FailPoints::database_replicated_alter_settings_fail_after_keeper_write,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after writing `logs_to_keep` to Keeper");
+            });
+        }
+
+        DatabaseOnDisk::modifySettingsMetadata(changes, query_context);
+    }
+    catch (Exception & e)
+    {
+        if (logs_to_keep_changed)
+        {
+            e.addMessage(
+                "`logs_to_keep` was already set to {} and is in effect on all replicas of the database, no other settings were applied; "
+                "this replica's metadata file still records the previous value, so `SHOW CREATE DATABASE` will disagree "
+                "with `system.database_replicas` until the query is re-run",
+                new_logs_to_keep);
+        }
+
+        throw;
+    }
+
+    /// Nothing throws after this point.
+    db_settings.set(std::make_unique<const DatabaseReplicatedSettings>(std::move(new_settings)));
+
+    if (new_cluster_auth_info.has_value())
+    {
+        std::lock_guard lock(mutex);
+
+        cluster_auth_info = std::move(*new_cluster_auth_info);
+
+        setClusterLocked(nullptr, false);
+        setClusterLocked(nullptr, true);
+    }
+}
+
 void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const String & table_name)
 {
     waitDatabaseStarted();
@@ -3194,20 +3329,20 @@ node2 :) SELECT materialize(hostName()) AS host, groupArray(n) FROM r.d GROUP BY
 ## Settings {#settings}
 The following settings are supported:
 
-| Setting                                                                      | Default                        | Description                                                                                                                                                                                                                                                                                                                           |
-|------------------------------------------------------------------------------|--------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `max_broken_tables_ratio`                                                    | 1                              | Do not recover replica automatically if the ratio of staled tables to all tables is greater                                                                                                                                                                                                                                           |
-| `max_replication_lag_to_enqueue`                                             | 50                             | Replica will throw exception on attempt to execute query if its replication lag greater. Must be greater than `0`; `0` is rejected with `BAD_ARGUMENTS` (minimum is `1`)                                                                                                                                                              |
-| `wait_entry_commited_timeout_sec`                                            | 3600                           | Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet                                                                                                                                                                                                                                       |
-| `collection_name`                                                            |                                | A name of a collection defined in server's config where all info for cluster authentication is defined                                                                                                                                                                                                                                |
-| `check_consistency`                                                          | true                           | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
-| `max_retries_before_automatic_recovery`                                      | 10                             | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                         |
-| `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                 |
-| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database.                                                                                                                                                                                                                                                                  |
-| `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
-| `default_replica_shard_name`                                                 | `{shard}`                      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
-| `default_replica_name`                                                       | `{replica}`                    | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |
-| `internal_replication`                                                       | false                          | Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas) |
+| Setting | Default | Scope | Mutable | Description |
+|---|---|---|---|---|
+| `max_broken_tables_ratio` | 1 | Replica-local | Yes | Do not recover replica automatically if the ratio of staled tables to all tables is greater |
+| `max_replication_lag_to_enqueue` | 50 | Replica-local | Yes | Replica will throw exception on attempt to execute query if its replication lag greater. Must be greater than `0`; `0` is rejected with `BAD_ARGUMENTS` (minimum is `1`) |
+| `wait_entry_commited_timeout_sec` | 3600 | Replica-local | Yes | Replicas will try to cancel query if timeout exceed, but initiator host has not executed it yet |
+| `collection_name` |  | Replica-local | Yes | A name of a collection defined in server's config where all info for cluster authentication is defined |
+| `check_consistency` | true | Replica-local | Yes | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency |
+| `max_retries_before_automatic_recovery` | 10 | Replica-local | Yes | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite) |
+| `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false | Replica-local | Yes | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible |
+| `logs_to_keep` | 1000 | Cluster-wide | Yes | Default number of logs to keep in ZooKeeper for Replicated database. |
+| `default_replica_path` | `/clickhouse/databases/{uuid}` | Replica-local | No | The path to the database in ZooKeeper. Used during database creation if arguments are omitted. |
+| `default_replica_shard_name` | `{shard}` | Replica-local | No | The shard name of the replica in the database. Used during database creation if arguments are omitted. |
+| `default_replica_name` | `{replica}` | Replica-local | No | The name of the replica in the database. Used during database creation if arguments are omitted. |
+| `internal_replication` | false | Replica-local | No | Whether a Distributed table created with the cluster of this Replicated database will send data to one of replicas (internal replication means that cluster's replicas do replication by themselves) or to all replicas (no internal replication means that the Distributed table will send the inserted data to all of the replicas) |
 
 Default values may be overwritten in the configuration file
 ```xml
@@ -3226,6 +3361,35 @@ Default values may be overwritten in the configuration file
     </database_replicated>
 </clickhouse>
 ```
+
+### Changing settings of an existing database {#changing-settings}
+
+Settings marked as mutable in the table above can be changed with `ALTER DATABASE ... MODIFY SETTING`:
+
+```sql
+ALTER DATABASE testdb MODIFY SETTING max_replication_lag_to_enqueue = 100;
+```
+
+The query is not replicated through the DDL log: it is executed on the replica it was sent to. An unknown setting is rejected with `BAD_ARGUMENTS` and an immutable one with `QUERY_NOT_ALLOWED`; in both cases nothing is changed.
+
+Immutable settings cannot be changed because the value would no longer describe anything: the `default_replica_*` settings are used only when the corresponding engine arguments are omitted at `CREATE DATABASE`, and `internal_replication` determines how a `Distributed` table over this database's cluster routes inserts, so it must match the engines of the tables in the database and be identical on every replica. Recreate the database to change them.
+
+A replica-local setting affects only the replica it was changed on, so run the query on every replica if the whole database should behave uniformly.
+
+A cluster-wide setting is stored in ZooKeeper and shared by all replicas, so changing it on one replica changes the behaviour of the whole database. `logs_to_keep` is the only such setting; the other replicas use the new value from their next DDL log cleanup onwards. The value in the `CREATE DATABASE` query seeds the ZooKeeper node only when the first replica creates the database and is ignored for replicas created afterwards, so `SHOW CREATE DATABASE` on a given replica may not show the value that is actually in effect. Query [`system.database_replicas`](/reference/system-tables/database_replicas) for the effective value:
+
+```sql
+SELECT database, logs_to_keep FROM system.database_replicas;
+```
+
+Because a cluster-wide setting lives in ZooKeeper, it can also be inspected and repaired with `clickhouse-keeper-client` while the server is stopped, which is useful if the database cannot start or is in read-only mode:
+
+```bash
+clickhouse-keeper-client --host <keeper-host> --port 9181 \
+  -q "set /clickhouse/databases/<uuid>/logs_to_keep 1000"
+```
+
+Note that `SYSTEM RESTORE DATABASE REPLICA` recreates the ZooKeeper nodes from the local metadata of the replica it runs on, which resets `logs_to_keep` to the value in that replica's `CREATE DATABASE` query.
 )DOCS_MD",
         .syntax = "ENGINE = Replicated('zoo_path', 'shard_name', 'replica_name')",
         .related = {"Atomic"}});

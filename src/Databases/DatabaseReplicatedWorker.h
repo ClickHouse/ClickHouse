@@ -68,7 +68,6 @@ private:
     std::condition_variable wait_current_task_change;
 
     String current_task;
-    std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
     std::atomic_bool unsynced_after_recovery = false;
 
     /// EphemeralNodeHolder has reference to ZooKeeper, it may become dangling
