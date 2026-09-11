@@ -313,11 +313,11 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         Node * node = stack.top();
         stack.pop();
 
-        updateNode(node->processor(), queue, async_queue);
+        updateNode(*node->processor(), queue, async_queue);
     }
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor * initial, Queue & queue, Queue & async_queue)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue)
 {
     Processors delayed_destruction;
     boost::container::devector<Edge *> updated_edges;
@@ -327,7 +327,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor * initial
     std::shared_lock read_lock(nodes_mutex);
 
     /// Traversal starts from the node related to updated processor
-    updated_processors.push_back(processors_map.at(initial));
+    updated_processors.push_back(processors_map.at(&initial));
 
     while (!updated_processors.empty() || !updated_edges.empty())
     {

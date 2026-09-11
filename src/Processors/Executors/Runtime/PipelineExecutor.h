@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <Processors/Executors/Runtime/PipelineExecutionStatus.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
-#include <Common/EventCounter.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>

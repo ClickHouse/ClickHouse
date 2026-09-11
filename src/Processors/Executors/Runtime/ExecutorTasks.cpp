@@ -2,7 +2,6 @@
 #include <Processors/IProcessor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Processors/StepWallClockRegistry.h>
 #include <Common/Exception.h>
 
 namespace DB

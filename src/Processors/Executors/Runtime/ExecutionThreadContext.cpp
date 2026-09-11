@@ -1,8 +1,8 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
 #include <Processors/IProcessor.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <base/defines.h>
 #include <Common/MemorySpillScheduler.h>
@@ -49,21 +49,21 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(IProcessor * processor, ReadProgressCallback * read_progress_callback)
+static void executeJob(IProcessor & processor, ReadProgressCallback * read_progress_callback)
 {
     try
     {
-        if (processor->isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(processor);
+        if (processor.isSpillable() && CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(&processor);
 
-        processor->work();
+        processor.work();
 
         /// Update read progress only for source nodes.
-        bool is_source = processor->getInputs().empty();
+        bool is_source = processor.getInputs().empty();
 
         if (is_source && read_progress_callback)
         {
-            if (auto read_progress = processor->getReadProgress())
+            if (auto read_progress = processor.getReadProgress())
             {
                 if (read_progress->counters.total_rows_approx)
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
@@ -72,7 +72,7 @@ static void executeJob(IProcessor * processor, ReadProgressCallback * read_progr
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
-                    processor->cancel();
+                    processor.cancel();
             }
         }
     }
@@ -80,7 +80,7 @@ static void executeJob(IProcessor * processor, ReadProgressCallback * read_progr
     {
         /// Copy exception before modifying it because multiple threads can rethrow the same exception
         if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("While executing " + processor->getName());
+            exception.addMessage("While executing " + processor.getName());
         throw exception;
     }
 }
@@ -127,7 +127,7 @@ bool ExecutionThreadContext::executeTask()
     bool success = true;
     try
     {
-        executeJob(processor, read_progress_callback);
+        executeJob(*processor, read_progress_callback);
         ++processor->num_executed_jobs;
     }
     catch (...)

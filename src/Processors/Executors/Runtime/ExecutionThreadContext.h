@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Processors/StepWallClockRegistry.h>
-
 #include <base/types.h>
 
 #include <atomic>
@@ -14,6 +12,7 @@ namespace DB
 
 class IProcessor;
 class ReadProgressCallback;
+class StepWallClockRegistry;
 
 /// Context for each executing thread of PipelineExecutor.
 class ExecutionThreadContext
