@@ -68,6 +68,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_summing_columns_in_partition_or_order_key", trueOrFalseSetting},
     {"allow_suspicious_indices", trueOrFalseSetting},
     {"allow_tuple_element_aggregation", trueOrFalseSetting},
+    {"allow_experimental_vertical_merge_tuple_subcolumns", trueOrFalseSetting},
     {"allow_vertical_merges_from_compact_to_wide_parts", trueOrFalseSetting},
     {"alter_column_secondary_index_mode",
      CHSetting(
@@ -705,6 +706,12 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"vertical_merge_optimize_lightweight_delete", trueOrFalseSetting},
     {"vertical_merge_optimize_ttl_delete", trueOrFalseSetting},
     {"vertical_merge_remote_filesystem_prefetch", trueOrFalseSetting},
+    {"vertical_merge_tuple_subcolumns_fat_threshold_bytes", bytesRangeSetting},
+    {"vertical_merge_tuple_subcolumns_prefetch_units",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 16)); },
+         {"0", "1"},
+         false)},
     {"wait_for_unique_parts_send_before_shutdown_ms", highRangeSetting},
     {"write_marks_for_substreams_in_compact_parts", trueOrFalseSetting},
     {"zero_copy_concurrent_part_removal_max_postpone_ratio", probRangeSetting},

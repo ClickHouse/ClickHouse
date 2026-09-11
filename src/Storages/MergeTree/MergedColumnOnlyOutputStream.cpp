@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -18,7 +20,8 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     size_t part_uncompressed_bytes,
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
-    PackedFilesWriter * external_packed_skip_indices_writer)
+    PackedFilesWriter * external_packed_skip_indices_writer,
+    std::optional<size_t> adaptive_buffer_stream_count)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -46,6 +49,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         try_adaptive_codec);
 
     writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
+    writer_settings.adaptive_buffer_stream_count = adaptive_buffer_stream_count;
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
@@ -106,6 +110,18 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     }
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+    return checksums;
+}
+
+MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::collectChecksums(MergeTreeDataPartChecksums & all_checksums)
+{
+    MergeTreeData::DataPart::Checksums checksums;
+    NameSet checksums_to_remove;
+    writer->fillChecksums(checksums, checksums_to_remove);
+
+    for (const auto & filename : checksums_to_remove)
+        all_checksums.files.erase(filename);
+
     return checksums;
 }
 

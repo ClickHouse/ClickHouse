@@ -1,0 +1,71 @@
+=== Fat String + tiny siblings, default 10 MiB ===
+rows
+2000
+select_match
+1
+leaf_sums
+249432	0	4000	12000	12000	ab	cd
+check
+1
+vertical_files
+t%2Elc.bin
+t%2Elc.cmrk2
+t%2Elc.dict.bin
+t%2Elc.dict.cmrk2
+t%2En.bin
+t%2En.cmrk2
+t%2Ennull.bin
+t%2Ennull.cmrk2
+t%2Ennull.null.bin
+t%2Ennull.null.cmrk2
+t%2Es.bin
+t%2Es.cmrk2
+t%2Es.size.bin
+t%2Es.size.cmrk2
+t%2Etiny.bin
+t%2Etiny.cmrk2
+t%2Etiny.size.bin
+t%2Etiny.size.cmrk2
+horizontal_files
+t%2Elc.bin
+t%2Elc.cmrk2
+t%2Elc.dict.bin
+t%2Elc.dict.cmrk2
+t%2En.bin
+t%2En.cmrk2
+t%2Ennull.bin
+t%2Ennull.cmrk2
+t%2Ennull.null.bin
+t%2Ennull.null.cmrk2
+t%2Es.bin
+t%2Es.cmrk2
+t%2Es.size.bin
+t%2Es.size.cmrk2
+t%2Etiny.bin
+t%2Etiny.cmrk2
+t%2Etiny.size.bin
+t%2Etiny.size.cmrk2
+substreams_equal
+1
+serialization_keys
+k t
+t_exact False
+merge_algorithm
+Vertical
+
+=== skewed fat String is FatLeaf, not Tiny ===
+skew_rows
+20000	2546160	12000000	1
+skew_check
+1
+skew_files
+t%2En.bin
+t%2En.cmrk2
+t%2Es.bin
+t%2Es.cmrk2
+t%2Es.size.bin
+t%2Es.size.cmrk2
+
+=== skip index on tiny leaf t.n ===
+10
+1

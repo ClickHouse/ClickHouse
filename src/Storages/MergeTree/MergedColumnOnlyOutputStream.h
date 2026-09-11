@@ -4,6 +4,8 @@
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -26,11 +28,15 @@ public:
         size_t part_uncompressed_bytes,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr);
+        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr,
+        std::optional<size_t> adaptive_buffer_stream_count = {});
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();
     MergeTreeData::DataPart::Checksums fillChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeDataPartChecksums & all_checksums);
+
+    /// Column + standalone skip-index checksums only. Does not `setColumns` or fold parent metadata.
+    MergeTreeData::DataPart::Checksums collectChecksums(MergeTreeDataPartChecksums & all_checksums);
 
     /// Forwarded to the underlying writer; see IMergeTreeDataPartWriter::preloadPackedSkipIndicesArchive.
     void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & source, const NameSet & files)

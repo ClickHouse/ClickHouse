@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <optional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -157,6 +158,10 @@ struct MergeTreeWriterSettings
     bool use_adaptive_write_buffer_for_dynamic_subcolumns{};
     size_t min_columns_to_activate_adaptive_write_buffer{};
     size_t adaptive_write_buffer_initial_size{};
+    /// When set, the adaptive write-buffer threshold is compared against this
+    /// stream count instead of the streams this writer itself opens. Flattened
+    /// Tuple leaf writers pass the parent / group stream count here.
+    std::optional<size_t> adaptive_buffer_stream_count;
     bool compress_per_column_in_compact_parts{};
     bool apply_adaptive_codec = false;
 };
