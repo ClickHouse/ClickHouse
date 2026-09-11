@@ -109,9 +109,14 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
 /// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
-/// Version 16 writes a per-step serialization version next to every step, so a step can change its
+/// Version 16 tells a receiver of a `JoinStepLogical` which of the decisions taken from a row
+/// estimate were already taken: the join order, and whether the runtime filter pass declined the
+/// join for a small probe side. Estimates themselves are not part of the plan format, so a receiver
+/// that took either decision again would take it from an empty estimate and could decide
+/// differently from the sender.
+/// Version 17 writes a per-step serialization version next to every step, so a step can change its
 /// own bytes without moving this global version (see the constant below).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 17;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -140,11 +145,14 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_
 /// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
 /// `LimitRangeStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
+/// First query-plan serialization version that carries the estimate-derived decisions of
+/// `JoinStepLogical`: the join order, and the runtime filter pass's small-probe decision.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS = 16;
 /// First query-plan serialization version that writes a per-step serialization version next to each
 /// step. Each step owns its version and bumps it on any change to its bytes; the version travels on
 /// the wire so a reader refuses a step version it does not know rather than misparsing it. The global
 /// version then only needs to move once per release, not on every step change.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS = 16;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS = 17;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
