@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -26,6 +27,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool apply_deleted_mask;
     extern const SettingsNonZeroUInt64 apply_patch_parts_join_cache_buckets;
+    extern const SettingsUInt64 apply_patch_parts_ranges_cache_max_bytes;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
 }
 
@@ -34,6 +36,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Blocks in the cache are accounted in the memory tracker of the query, and the cache is only
+/// an optimization. Therefore it may use only this fraction of the memory limit of the query.
+static constexpr UInt64 PATCH_RANGES_CACHE_MEMORY_LIMIT_DIVISOR = 4;
+
+static PatchRangesCachePtr createPatchRangesCache(const ContextPtr & context)
+{
+    UInt64 max_bytes = context->getSettingsRef()[Setting::apply_patch_parts_ranges_cache_max_bytes];
+
+    if (auto memory_limit = getCurrentQueryHardLimit())
+        max_bytes = std::min(max_bytes, *memory_limit / PATCH_RANGES_CACHE_MEMORY_LIMIT_DIVISOR);
+
+    if (max_bytes == 0)
+        return nullptr;
+
+    return std::make_shared<PatchRangesCache>(max_bytes);
+}
 
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
@@ -65,6 +83,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
+    , patch_ranges_cache(createPatchRangesCache(context_))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
@@ -94,6 +113,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
+    , patch_ranges_cache(createPatchRangesCache(context_))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
@@ -473,6 +493,7 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
         .uncompressed_cache = owned_uncompressed_cache.get(),
         .mark_cache = owned_mark_cache.get(),
         .patch_join_cache = patch_join_cache.get(),
+        .patch_ranges_cache = patch_ranges_cache.get(),
         .reader_settings = reader_settings,
         .storage_snapshot = storage_snapshot,
         .profile_callback = profile_callback,

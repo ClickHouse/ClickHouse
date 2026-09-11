@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
+#include <Storages/MergeTree/PatchParts/PatchRangesCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
@@ -88,6 +89,7 @@ protected:
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
     const PatchJoinCachePtr patch_join_cache;
+    const PatchRangesCachePtr patch_ranges_cache;
     const Block header;
 
     MergeTreeReadTaskInfo buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const;

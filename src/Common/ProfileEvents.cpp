@@ -308,6 +308,10 @@
     M(PatchesReadRows, "Total number of rows read from patch parts", ValueType::Number) \
     M(PatchesReadUncompressedBytes, "Total number of uncompressed bytes read from patch parts", ValueType::Number) \
     M(PatchesJoinRowsAddedToHashTable, "Total number of rows added to hash tables when applying patch parts with Join mode", ValueType::Number) \
+    M(PatchRangesCacheHits, "Number of range read requests to patch parts (MergeOnKey mode) fully served from the patch ranges cache", ValueType::Number) \
+    M(PatchRangesCachePartialHits, "Number of range read requests to patch parts (MergeOnKey mode) partially served from the patch ranges cache", ValueType::Number) \
+    M(PatchRangesCacheMisses, "Number of range read requests to patch parts (MergeOnKey mode) not served from the patch ranges cache", ValueType::Number) \
+    M(PatchRangesCacheEvictedBytes, "Bytes evicted from the patch ranges cache", ValueType::Bytes) \
     M(ApplyPatchesMicroseconds, "Total time spent applying patch parts to blocks", ValueType::Number) \
     M(ReadPatchesMicroseconds, "Total time spent reading patch parts", ValueType::Number) \
     M(BuildPatchesMergeMicroseconds, "Total time spent building indexes for applying patch parts with Merge mode", ValueType::Number) \
