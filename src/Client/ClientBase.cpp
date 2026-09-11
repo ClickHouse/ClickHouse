@@ -4375,6 +4375,35 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
                 "The read-only tool cannot enforce its execution-time and memory limits because `readonly = 1` "
                 "does not allow changing settings. Use the run_query tool for this query");
 
+        /// The isolation of an unconfirmed query is made of settings, and a setting only isolates
+        /// anything on a server that knows it: `show_remote_databases_in_system_tables` and
+        /// `show_data_lake_catalogs_in_system_tables` are not `IMPORTANT`, so a server that
+        /// predates them ignores them silently and `system.tables` / `system.columns` go back to
+        /// contacting the remote database or the data-lake catalog they enumerate.
+        /// `format_display_secrets_in_show_and_select` is `IMPORTANT`, so it cannot even be sent to
+        /// such a server, and a server without it renders the secrets of a table definition.
+        ///
+        /// So the tool refuses rather than running an unconfirmed query whose isolation the server
+        /// would ignore - this is checked before the table resolution below, whose own query reads
+        /// `system.tables` and would be the first one to leave this server. The confirmed
+        /// `run_query` tool stays available, which is what the refusal points the model at.
+        for (const auto * isolation_setting :
+             {"show_remote_databases_in_system_tables", "show_data_lake_catalogs_in_system_tables"})
+            if (!serverSupportsSetting(isolation_setting))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The read-only tool cannot keep an unconfirmed query inside this server, because the server does "
+                    "not support the `{}` setting, so reading `system.tables` or `system.columns` may contact a remote "
+                    "database or a data-lake catalog. Use the run_query tool for this query",
+                    isolation_setting);
+
+        if (!serverSupportsSetting("format_display_secrets_in_show_and_select") && sessionMayDisplaySecrets())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The read-only tool cannot prevent the secrets of an external-engine table from being rendered into "
+                "the result the assistant is shown, because the server does not support the "
+                "`format_display_secrets_in_show_and_select` setting. Use the run_query tool for this query");
+
         /// The static validation judges what is written in the query; the tables it only collects,
         /// because a name says nothing about what reading it does. Resolve them and check their
         /// engines - this is a round trip, so it is skipped when the query names no tables.
@@ -4410,8 +4439,12 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     /// For run_query the pin is undone afterwards unless the confirmed query changed the
     /// dialect itself. This is tracked from its successfully applied `SET`, rather than by
     /// comparing the final value: setting the dialect to `clickhouse` is a real change too.
+    ///
+    /// Whether the pin is needed is decided by `internalQueriesRequireDialectPin`, which asks the
+    /// server when the client cannot see its effective settings (`apply_settings_from_server = 0`)
+    /// instead of trusting the local value, and fails closed when it gets no answer.
     std::optional<Field> dialect_to_restore;
-    if (dialect_may_be_changed_by_profile || client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    if (internalQueriesRequireDialectPin())
     {
         /// Without the pin the server would parse ClickHouse SQL as another dialect, so the
         /// query is not sent at all: the model is told what stands in the way instead.
@@ -4450,11 +4483,13 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         /// including credentials, when the user enabled `format_display_secrets_in_show_and_select`
         /// (and the server allows it). The unconfirmed read-only tool feeds its result straight to
         /// the AI provider, so the secrets are masked for it regardless of the session setting.
-        /// Only an enabled setting is turned off: the setting is `IMPORTANT`, so sending it to a
-        /// server that predates it fails the query with `UNKNOWN_SETTING`, and sending a value the
-        /// session already has would break the agent against such a server for nothing. A session
-        /// that does display secrets is talking to a server that knows the setting anyway.
-        if (client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+        /// The masking is forced without looking at the value the session has: that value is what
+        /// the client may be wrong about (`apply_settings_from_server = 0` hides the settings
+        /// profile of the user from it). The setting is `IMPORTANT`, so it cannot be sent to a
+        /// server that predates it (`UNKNOWN_SETTING`) - such a server made the tool refuse the
+        /// query above instead, so here it is only skipped for a session that cannot display
+        /// secrets at all - it has nothing to mask.
+        if (serverSupportsSetting("format_display_secrets_in_show_and_select"))
             client_context->setSetting("format_display_secrets_in_show_and_select", false);
 
         /// `system.tables` and `system.columns` enumerate a remote (`MySQL`, `PostgreSQL`)
@@ -4505,6 +4540,33 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
         if (aiSessionReadonly() == 0)
             client_context->setSetting("readonly", static_cast<UInt64>(1));
     }
+
+    /// The result of a confirmed query reaches the model as well: it is recorded into the
+    /// recent-query context (`QueryContextBuffer`) and shown to the model as the outcome of the
+    /// tool call. So a confirmed `SHOW CREATE TABLE` of an external-engine table would forward the
+    /// credentials of its connection configuration to the AI provider in a session that displays
+    /// them - the very thing the masking of the unconfirmed paths is there to prevent. The query of
+    /// the agent is therefore masked whether it is confirmed or not, and the user sees the masked
+    /// definition too: the confirmation is about running the query, not about publishing its
+    /// secrets. Rendering the real definition stays an ordinary query the user types themselves.
+    ///
+    /// Only a session that really does display secrets pays for this, and the effective value says
+    /// so - not the value of the client, which `apply_settings_from_server = 0` makes unreliable.
+    /// That is also why the value restored afterwards is the enabled one: the branch is only taken
+    /// when the session has it enabled, whether the client knew that or not. (A confirmed query
+    /// that changes this setting itself has its change undone here, like the dialect below; that is
+    /// a setting the user can set again, and not a leak.)
+    bool restore_display_secrets = false;
+    if (!readonly && can_change_settings && serverSupportsSetting("format_display_secrets_in_show_and_select")
+        && sessionMayDisplaySecrets())
+    {
+        restore_display_secrets = true;
+        client_context->setSetting("format_display_secrets_in_show_and_select", false);
+    }
+    SCOPE_EXIT_SAFE({
+        if (restore_display_secrets)
+            client_context->setSetting("format_display_secrets_in_show_and_select", true);
+    });
 
     /// Put the query into the history of the line editor, like a query the user typed: it was
     /// displayed as one, and the user may want to recall it with the history navigation to rerun
@@ -4738,6 +4800,90 @@ bool ClientBase::aiQueryLogMarkerAllowed()
     return true;
 }
 
+std::optional<String> ClientBase::serverEffectiveSettingValue(const String & name)
+{
+    if (const auto it = server_effective_setting_values.find(name); it != server_effective_setting_values.end())
+        return it->second;
+
+    /// Without a server there is nothing to ask, and the question must not be answered wrongly, so
+    /// it is left unanswered and asked again once connected. A question already in flight is not
+    /// asked again: the internal query that asks it is an internal query like any other, and those
+    /// ask this question before they are sent.
+    if (!connection || server_setting_probe_in_progress)
+        return {};
+
+    server_setting_probe_in_progress = true;
+    SCOPE_EXIT(server_setting_probe_in_progress = false);
+
+    try
+    {
+        /// `system.settings` reports the value that applies to this session, whatever produced it -
+        /// a settings profile of the user, a `SET profile`, or the client. A setting the server does
+        /// not know is simply not there.
+        const Block probe = materializeBlock(fetchInternalQueryResult(
+            "SELECT value FROM system.settings WHERE name = {name:String}", {{"name", name}}, /*from_ai_agent=*/ true));
+
+        std::optional<String> value;
+        if (probe.rows() == 1 && probe.columns() == 1)
+            value = String(probe.getByPosition(0).column->getDataAt(0));
+        server_effective_setting_values[name] = value;
+        return value;
+    }
+    catch (...)
+    {
+        /// Asking can fail for reasons that say nothing about the answer - a broken connection, an
+        /// execution-time limit of the session, a cancelled query - so the failure is not cached as
+        /// an answer. The callers treat the missing answer as the unsafe one.
+        return {};
+    }
+}
+
+bool ClientBase::serverSupportsSetting(const String & name)
+{
+    return serverEffectiveSettingValue(name).has_value();
+}
+
+bool ClientBase::sessionMayDisplaySecrets()
+{
+    applySettingsFromServerIfNeeded();
+
+    /// What the client set itself is effective regardless of what the server reports.
+    if (client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+        return true;
+
+    /// A server that does not know the setting has no masking to speak of, and one that could not
+    /// be asked has not answered that it does - both count as "it may".
+    const std::optional<String> value = serverEffectiveSettingValue("format_display_secrets_in_show_and_select");
+    if (!value.has_value())
+        return true;
+
+    /// Otherwise the value of the client is the effective one when the settings of the server reach
+    /// the client at all; when they do not, the one the server reported is.
+    if (client_context->getSettingsRef()[Setting::apply_settings_from_server])
+        return false;
+
+    return *value != "0";
+}
+
+bool ClientBase::internalQueriesRequireDialectPin()
+{
+    applySettingsFromServerIfNeeded();
+
+    const Settings & settings = client_context->getSettingsRef();
+    if (dialect_may_be_changed_by_profile || settings[Setting::dialect] != Dialect::clickhouse)
+        return true;
+
+    /// The local value is the effective one only when the settings of the server reach the client.
+    /// With `apply_settings_from_server = 0` the client keeps its own default while the server
+    /// parses under the dialect of the settings profile of the user, so it has to be asked - and an
+    /// unanswered question means the pin is applied (or, where it cannot be, the query is refused).
+    if (settings[Setting::apply_settings_from_server])
+        return false;
+
+    const std::optional<String> value = serverEffectiveSettingValue("dialect");
+    return !value.has_value() || *value != "clickhouse";
+}
+
 String ClientBase::aiSessionRestrictions()
 {
     const UInt64 readonly = aiSessionReadonly();
@@ -4951,10 +5097,16 @@ Block ClientBase::fetchInternalQueryResult(
     /// `readonly = 1` rejects every setting change, that pin among them. Nothing is sent in such a
     /// session, and one whose dialect is not ClickHouse cannot run these queries at all, so it is
     /// told what to do about it instead of being handed a server error about the `dialect` setting.
+    ///
+    /// Whether the pin is needed is not read from the client context: with
+    /// `apply_settings_from_server = 0` the client keeps its own default while the server parses
+    /// under the dialect of the settings profile of the user, so the server is asked - see
+    /// `internalQueriesRequireDialectPin`. The question is itself an internal query, and it is the
+    /// one query that must not ask it: there is no answer yet, and under `readonly = 1` it would be
+    /// refused here instead of being sent. It is ClickHouse SQL, so a session that really parses
+    /// another dialect fails it, and the unanswered question then refuses everything else.
     const bool session_is_readonly = client_context->getSettingsRef()[Setting::readonly] == 1;
-    const bool needs_clickhouse_dialect
-        = dialect_may_be_changed_by_profile || client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
-    if (needs_clickhouse_dialect && session_is_readonly)
+    if (session_is_readonly && !server_setting_probe_in_progress && internalQueriesRequireDialectPin())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The internal query requires the ClickHouse SQL dialect, but `readonly = 1` does not allow changing the "
@@ -5002,16 +5154,36 @@ Block ClientBase::fetchInternalQueryResult(
     /// query pays for it: the setting change is one more thing the session can reject, and a
     /// profile that does reject it must not take `list_databases`, `list_tables`,
     /// `consult_documentation` and `read_query_log` down with it - none of them can render a
-    /// secret in the first place. Only an enabled setting is turned off: it is `IMPORTANT`, so a
-    /// server that predates it answers `UNKNOWN_SETTING` rather than ignoring it, and the agent
-    /// must not break against such a server just to re-send the value the session already has. A
-    /// session that does display secrets is talking to a server that knows the setting, and under
-    /// `readonly = 1` the query then fails instead of leaking.
-    if (needs_secret_masking && client_context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    /// secret in the first place.
+    ///
+    /// The masking is forced whenever the server knows the setting, without looking at the value
+    /// the session has: that value is exactly what the client may be wrong about
+    /// (`apply_settings_from_server = 0` hides the settings profile of the user from it), and
+    /// sending a value the session already has is a no-op. The setting is `IMPORTANT`, so it cannot
+    /// be sent blindly - a server that predates it answers `UNKNOWN_SETTING` - hence the question
+    /// to the server about whether it knows it at all.
+    ///
+    /// When the masking cannot be installed, the query is not sent: under `readonly = 1` no setting
+    /// travels with it, and a server that does not know the setting renders the secrets no matter
+    /// what. Both cases fail closed, unless the session cannot display secrets in the first place -
+    /// which is the default, and what every ordinary session does.
+    if (needs_secret_masking)
     {
-        if (!settings_to_send)
-            settings_to_send.emplace();
-        settings_to_send->set("format_display_secrets_in_show_and_select", false);
+        if (settings_to_send && serverSupportsSetting("format_display_secrets_in_show_and_select"))
+        {
+            settings_to_send->set("format_display_secrets_in_show_and_select", false);
+        }
+        else if (sessionMayDisplaySecrets())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "This session renders table definitions with their secrets visible and the assistant must not be shown "
+                "them, which it cannot be prevented from here: {}. Use the run_query tool, so the user sees the "
+                "definition and decides themselves",
+                session_is_readonly
+                    ? "`readonly = 1` does not allow changing `format_display_secrets_in_show_and_select` for the query"
+                    : "the server does not support the `format_display_secrets_in_show_and_select` setting");
+        }
     }
 
     /// None of the internal queries of the agent has any business enumerating a remote database
@@ -5021,9 +5193,13 @@ Block ClientBase::fetchInternalQueryResult(
     /// both are sent unconditionally rather than only when the session has them on: an unchanged
     /// value costs nothing, and the value the session has is not the one to trust here.
     ///
-    /// A session with `readonly = 1` sends no settings at all, so there the tools keep the
-    /// visibility of the session. The read-only tool does not reach this: it refuses to run at
-    /// all when it cannot install its sandbox.
+    /// Where this isolation cannot be installed - a session with `readonly = 1`, which sends no
+    /// settings at all, or a server that predates the settings and ignores them - the schema tools
+    /// keep the visibility of the session. That is the documented exception (`client.mdx` and the
+    /// descriptions the model reads say so): reading the schema of a database this server does not
+    /// own is allowed without confirmation, and the definition it renders is masked either way.
+    /// The unconfirmed read-only tool does not get that exception - it refuses to run at all unless
+    /// it can install the whole isolation, see `runQueryForAI`.
     if (from_ai_agent && settings_to_send)
     {
         settings_to_send->set("show_remote_databases_in_system_tables", false);

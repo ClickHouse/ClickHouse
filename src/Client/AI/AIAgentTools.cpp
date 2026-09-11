@@ -66,7 +66,11 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         tools["list_tables"] = makeTool(
             "List the tables of a database with their engines. Runs internally, nothing is displayed to the user. "
             "Reads `system.tables` with the remote-database and data-lake-catalog visibility turned off, so a "
-            "database backed by an external system is listed as empty rather than enumerated from that system.",
+            "database backed by an external system is listed as empty rather than enumerated from that system. "
+            "Those two settings travel with the query, so where they cannot - a session with `readonly = 1`, which "
+            "accepts no setting change, or a server that does not support them - the visibility of the session "
+            "applies and such a database is enumerated from that system instead. Reading the schema of a database "
+            "this server does not own is allowed without confirmation either way; it reads metadata only.",
             ai::JsonValue{{"database", stringParameter("Name of the database")}},
             {"database"},
             [hooks](const ai::JsonValue & args, const ai::ToolExecutionContext &)
@@ -84,8 +88,11 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
             "Get the CREATE TABLE statement (columns, engine, sorting key) of a table. "
             "Runs internally, nothing is displayed to the user. The table is resolved the way any query resolves "
             "it, so for a database backed by an external system (MySQL, PostgreSQL, a data-lake catalog) the "
-            "definition is fetched from that system - this is the one unconfirmed step that leaves this server, "
-            "and it reads metadata only. Credentials are masked in the result.",
+            "definition is fetched from that system - this is the one unconfirmed step that always leaves this "
+            "server, and it reads metadata only. Credentials are masked in the result: where that masking cannot "
+            "be installed for the query - a session with `readonly = 1` that displays secrets, or a server without "
+            "the `format_display_secrets_in_show_and_select` setting - the tool refuses instead, and the definition "
+            "has to be read through run_query so the user sees it.",
             ai::JsonValue{
                 {"database", stringParameter("Name of the database")},
                 {"table", stringParameter("Name of the table")}},
