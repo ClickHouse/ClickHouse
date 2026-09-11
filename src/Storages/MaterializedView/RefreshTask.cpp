@@ -497,6 +497,11 @@ void RefreshTask::wait()
     });
     throw_if_error();
 
+    /// Coordination is permanently unavailable (see the constructor): root_znode was never read from
+    /// Keeper, so the target-table handshake below could never complete. The view is Disabled.
+    if (coordination.unavailable)
+        return;
+
     if (coordination.coordinated && !refresh_append)
     {
         /// Wait until we see the table produced by the latest refresh.
