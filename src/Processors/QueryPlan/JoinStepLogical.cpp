@@ -852,6 +852,45 @@ static void predicateOperandsToCommonType(
     }
 }
 
+/// Under `join_use_nulls`, a right column selected from a LEFT or FULL JOIN is output through `toNullable(x)`
+/// (see `addToNullableIfNeeded`). When that column is also a join key, joining on the `Nullable` node makes
+/// it the single right column that is both the key and the output, which the join restores from the left
+/// key. Joining on the plain input instead leaves the `Nullable` wrapper as a payload column next to the
+/// key: a whole extra column where the join keeps keys only in its arena, and a second count of the same
+/// bytes toward the spill threshold where it saves the key columns too.
+static void preferNullableRightKey(
+    JoinActionRef & right_node,
+    const JoinPlanningContext & planning_context,
+    std::vector<std::pair<String, String>> & shared_runtime_filter_descriptors)
+{
+    /// The `Join` engine and a dictionary are looked up by the key they declare.
+    if (planning_context.is_storage_join || planning_context.is_prebuilt_hash_join)
+        return;
+
+    const auto * input = right_node.getNode();
+    if (input->type != ActionsDAG::ActionType::INPUT)
+        return;
+
+    auto it = planning_context.actions_after_join_map.find(input->result_name);
+    if (it == planning_context.actions_after_join_map.end())
+        return;
+
+    const auto * to_nullable = it->second;
+    if (to_nullable->type != ActionsDAG::ActionType::FUNCTION || to_nullable->children.size() != 1
+        || to_nullable->children.front() != input || to_nullable->function_base->getName() != "toNullable")
+        return;
+
+    /// The build-side key name is the rendezvous with the shared runtime filter descriptors, as in
+    /// `predicateOperandsToCommonType`.
+    String name_before = right_node.getColumnName();
+    right_node = JoinActionRef::transform({right_node}, [to_nullable](auto &, auto &&) { return to_nullable; });
+    for (auto & descriptor : shared_runtime_filter_descriptors)
+    {
+        if (descriptor.second == name_before)
+            descriptor.second = right_node.getColumnName();
+    }
+}
+
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
     std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
@@ -875,6 +914,8 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
         predicateOperandsToCommonType(
             lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors,
             /* allow_conversion_to_subtype= */ !null_safe_comparison);
+        if (!null_safe_comparison)
+            preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
             /**
@@ -1727,6 +1768,34 @@ static QueryPlanNode buildPhysicalJoinImpl(
     for (const auto * node : dag_inputs)
         name_to_nodes[node->result_name].push_back(node);
 
+    /// An input that only feeds a used expression, such as the `toNullable(x)` key under `join_use_nulls`
+    /// or a key cast to a common type, is not passed to the join as a column of its own: the join would
+    /// keep it as payload for nothing. `ActionsDAG::updateHeader` drops such consumed inputs anyway.
+    std::unordered_set<const ActionsDAG::Node *> consumed_inputs;
+    {
+        std::unordered_set<const ActionsDAG::Node *> used_nodes;
+        for (const auto & expression : used_expressions)
+            used_nodes.insert(expression.getNode());
+
+        std::stack<const ActionsDAG::Node *> stack;
+        for (const auto * node : used_nodes)
+            for (const auto * child : node->children)
+                stack.push(child);
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                if (!used_nodes.contains(node))
+                    consumed_inputs.insert(node);
+                continue;
+            }
+            for (const auto * child : node->children)
+                stack.push(child);
+        }
+    }
+
     for (const auto * child : children)
     {
         for (const auto & column : *child->step->getOutputHeader())
@@ -1740,8 +1809,10 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
                     expression_actions.getActionsDAG()->dumpDAG());
 
-            used_expressions.emplace_back(input_it->second.front(), expression_actions);
+            const auto * input = input_it->second.front();
             input_it->second.pop_front();
+            if (!consumed_inputs.contains(input))
+                used_expressions.emplace_back(input, expression_actions);
         }
     }
 
