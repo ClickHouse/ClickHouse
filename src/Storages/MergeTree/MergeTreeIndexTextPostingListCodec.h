@@ -156,11 +156,13 @@ public:
     ///
     /// Decompression restores delta values and then performs an inclusive scan
     /// to reconstruct absolute row ids.
-    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer);
+    ///
+    /// `max_cardinality` bounds the sizes claimed by the segment header (see `readSegmentData`).
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer);
 
     /// The same, but appends the decoded row ids to the plain array,
     /// decoding blocks directly into the array without a roaring bitmap.
-    void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer);
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer);
 
 private:
     /// Encodes one block of up to BLOCK_SIZE row ids as deltas and appends it to `compressed_data`.
@@ -182,7 +184,8 @@ private:
     void decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out);
 
     /// Reads a segment header and returns it together with the segment payload.
-    SegmentData readSegmentData(ReadBuffer & in, PaddedPODArray<char> & buffer);
+    /// Throws CORRUPTED_DATA if the header claims more than `max_cardinality` row ids or more payload bytes than they can take.
+    SegmentData readSegmentData(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<char> & buffer);
 
     /// All segments. Filled on encode only: decode reads the payload from the buffer passed to it.
     std::string compressed_data;
@@ -243,8 +246,8 @@ public:
     size_t getSegmentSize(size_t posting_list_block_size) const override;
     std::unique_ptr<IPostingListEncoder> createEncoder() const override;
 
-    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
-    void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
 };
 
 /// Accumulator for the None codec.
@@ -278,8 +281,8 @@ public:
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
     std::unique_ptr<IPostingListEncoder> createEncoder() const override;
-    void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
-    void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
 };
 
 }

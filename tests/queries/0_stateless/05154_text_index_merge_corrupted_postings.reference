@@ -1,0 +1,9 @@
+-- payload bytes beyond the bound for the cardinality
+CORRUPTED_DATA
+2
+-- segment cardinality beyond the token cardinality
+CORRUPTED_DATA
+2
+-- the intact postings merge
+1
+2000

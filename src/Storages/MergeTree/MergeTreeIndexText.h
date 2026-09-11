@@ -222,8 +222,8 @@ struct PostingsSerialization
         HasPositions = 1ULL << 5,
     };
 
-    PostingListPtr deserializeToBitmap(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
-    void deserializeToArray(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids);
+    PostingListPtr deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx);
+    void deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:

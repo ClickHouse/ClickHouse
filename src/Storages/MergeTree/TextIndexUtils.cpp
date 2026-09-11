@@ -556,7 +556,7 @@ void MergeTextIndexesTask::readPostingsSegment(const TokenSource & source, size_
     const auto & info = source.info;
     auto * stream = input_streams[source.source_num].at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     stream->seekToMark({info.offsets[segment_idx], 0});
-    source_postings_serializations[source.source_num].deserializeToArray(*stream->getDataBuffer(), info.header, info.cardinality, row_ids);
+    source_postings_serializations[source.source_num].deserializeToArray(*stream->getDataBuffer(), info, segment_idx, row_ids);
 }
 
 bool MergeTextIndexesTask::advancePostingsCursor(PostingsMergeCursor & cursor)

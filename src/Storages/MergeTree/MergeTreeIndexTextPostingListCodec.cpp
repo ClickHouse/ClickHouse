@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
+
 static_assert(IPostingListEncoder::append_granularity % BLOCK_SIZE == 0,
     "append_granularity must be a multiple of the physical block size of the segmented posting list codec");
 
@@ -73,23 +78,42 @@ void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids, size_t s
     }
 }
 
-SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentData(ReadBuffer & in, PaddedPODArray<char> & buffer)
+SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentData(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<char> & buffer)
 {
     SegmentData segment_data;
-    segment_data.header.read(in);
+    auto & header = segment_data.header;
+    header.read(in);
 
     /// The segment header is self-describing: create the block codec it was written with.
-    block_codec = createPostingListBlockCodec(segment_data.header.codec_type);
-    prev_row_id = segment_data.header.first_row_id;
+    block_codec = createPostingListBlockCodec(header.codec_type);
+    prev_row_id = header.first_row_id;
 
-    const char * payload_data = readContiguousBytes(in, segment_data.header.payload_bytes, buffer);
-    segment_data.payload = std::span(reinterpret_cast<const std::byte *>(payload_data), segment_data.header.payload_bytes);
+    /// The header comes from disk: bound the sizes it claims before growing any buffer to them.
+    if (header.cardinality == 0 || header.cardinality > max_cardinality)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted posting list segment: cardinality {} is not in the range [1, {}] allowed by the token metadata",
+            header.cardinality, max_cardinality);
+    }
+
+    const UInt64 max_blocks = (header.cardinality + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const UInt64 max_payload_bytes = max_blocks * block_codec->maxBlockBytes();
+
+    if (header.payload_bytes > max_payload_bytes)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted posting list segment: payload of {} bytes exceeds the upper bound of {} bytes for {} row ids",
+            header.payload_bytes, max_payload_bytes, header.cardinality);
+    }
+
+    const char * payload_data = readContiguousBytes(in, header.payload_bytes, buffer);
+    segment_data.payload = std::span(reinterpret_cast<const std::byte *>(payload_data), header.payload_bytes);
     return segment_data;
 }
 
-void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer)
 {
-    auto segment_data = readSegmentData(in, buffer);
+    auto segment_data = readSegmentData(in, max_cardinality, buffer);
 
     const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
     const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
@@ -108,9 +132,9 @@ void SegmentedPostingListCodec::decode(ReadBuffer & in, PostingList & postings, 
     }
 }
 
-void SegmentedPostingListCodec::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer)
+void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer)
 {
-    auto segment_data = readSegmentData(in, buffer);
+    auto segment_data = readSegmentData(in, max_cardinality, buffer);
 
     const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
     const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
@@ -211,16 +235,16 @@ void SegmentedPostingListEncoder::finalize(WriteBuffer & out, TokenPostingsInfo 
         info.header |= SingleBlock;
 }
 
-void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const
+void PostingListCodecBitpacking::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const
 {
     SegmentedPostingListCodec impl;
-    impl.decode(in, postings, buffer);
+    impl.decode(in, max_cardinality, postings, buffer);
 }
 
-void PostingListCodecBitpacking::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
+void PostingListCodecBitpacking::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
 {
     SegmentedPostingListCodec impl;
-    impl.decode(in, row_ids, buffer);
+    impl.decode(in, max_cardinality, row_ids, buffer);
 }
 
 size_t PostingListCodecBitpacking::getSegmentSize(size_t posting_list_block_size) const
@@ -301,17 +325,25 @@ std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder() const
     return std::make_unique<PostingListEncoderNone>();
 }
 
-void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const
+void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const
 {
     size_t num_bytes = 0;
     readVarUInt(num_bytes, in);
     postings = PostingList::readSafe(readContiguousBytes(in, num_bytes, buffer), num_bytes);
+
+    /// The bitmap is bounded by its size prefix; its row ids are bounded by the token metadata.
+    if (postings.cardinality() > max_cardinality)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted posting list segment: cardinality {} exceeds the upper bound {} allowed by the token metadata",
+            postings.cardinality(), max_cardinality);
+    }
 }
 
-void PostingListCodecNone::decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
+void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
 {
     PostingList postings;
-    decode(in, postings, buffer);
+    decode(in, max_cardinality, postings, buffer);
 
     size_t old_size = row_ids.size();
     row_ids.resize(old_size + postings.cardinality());

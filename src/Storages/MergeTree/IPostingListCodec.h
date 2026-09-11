@@ -74,11 +74,12 @@ public:
     virtual std::unique_ptr<IPostingListEncoder> createEncoder() const = 0;
 
     /// Reads a single encoded segment of a posting list and decodes it into `postings`, which must be empty.
+    /// `max_cardinality` is the max number of row ids the segment may hold according to the token metadata: the sizes
     /// `buffer` is a caller-owned scratch buffer, reused across calls.
-    virtual void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const = 0;
+    virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const = 0;
 
     /// The same, but appends the decoded row ids to a plain array.
-    virtual void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const = 0;
+    virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const = 0;
 private:
     Type type{};
 };

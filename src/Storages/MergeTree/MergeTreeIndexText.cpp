@@ -258,43 +258,53 @@ static void checkPostingListFlags(UInt64 header)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Posting list header marks the data as both raw and compressed");
 }
 
-PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
+/// A segment holds distinct row ids of its closed row range and no more row ids than the token has.
+static UInt64 getMaxSegmentCardinality(const TokenPostingsInfo & info, size_t segment_idx)
 {
-    checkPostingListFlags(header);
+    const auto & range = info.ranges[segment_idx];
+    chassert(range.begin <= range.end);
+    return std::min<UInt64>(info.cardinality, range.end - range.begin + 1);
+}
+
+PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx)
+{
+    checkPostingListFlags(info.header);
 
     /// Small posting lists are stored as raw VarUInt-encoded row ids.
-    if (header & RawPostings)
+    if (info.header & RawPostings)
     {
-        if (cardinality > raw_postings_buffer.size())
-            raw_postings_buffer.resize(cardinality);
+        if (info.cardinality > raw_postings_buffer.size())
+            raw_postings_buffer.resize(info.cardinality);
 
-        for (size_t i = 0; i < cardinality; ++i)
+        for (size_t i = 0; i < info.cardinality; ++i)
             readVarUInt(raw_postings_buffer[i], istr);
 
         auto postings = std::make_shared<PostingList>();
-        postings->addMany(cardinality, raw_postings_buffer.data());
+        postings->addMany(info.cardinality, raw_postings_buffer.data());
         return postings;
     }
 
     auto postings = std::make_shared<PostingList>();
-    resolveCodec(header).decode(istr, *postings, raw_data_buffer);
+    resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), *postings, raw_data_buffer);
     return postings;
 }
 
-void PostingsSerialization::deserializeToArray(ReadBuffer & istr, UInt64 header, UInt64 cardinality, PaddedPODArray<UInt32> & row_ids)
+void PostingsSerialization::deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids)
 {
-    checkPostingListFlags(header);
+    checkPostingListFlags(info.header);
 
     /// Small posting lists are stored as raw VarUInt-encoded row ids.
-    if (header & RawPostings)
+    if (info.header & RawPostings)
     {
-        row_ids.resize(cardinality);
-        for (size_t i = 0; i < cardinality; ++i)
+        size_t old_size = row_ids.size();
+        row_ids.resize(old_size + info.cardinality);
+
+        for (size_t i = old_size; i < row_ids.size(); ++i)
             readVarUInt(row_ids[i], istr);
         return;
     }
 
-    resolveCodec(header).decode(istr, row_ids, raw_data_buffer);
+    resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), row_ids, raw_data_buffer);
 }
 
 
@@ -777,7 +787,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     {
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         stream.seekToMark({token_info.offsets[block_idx], 0});
-        auto postings = postings_serialization.deserializeToBitmap(*data_buffer, token_info.header, token_info.cardinality);
+        auto postings = postings_serialization.deserializeToBitmap(*data_buffer, token_info, block_idx);
         return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 
@@ -1233,6 +1243,14 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupted data in text index: posting list row range [{}, {}] exceeds UInt32 max",
                     rows_range.begin, rows_range.end);
+            }
+
+            /// The span of the range bounds the cardinality of the block on read.
+            if (rows_range.begin > rows_range.end)
+            {
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Corrupted data in text index: posting list row range [{}, {}] of block {} is inverted",
+                    rows_range.begin, rows_range.end, j);
             }
 
             info.offsets.emplace_back(offset_in_file);
