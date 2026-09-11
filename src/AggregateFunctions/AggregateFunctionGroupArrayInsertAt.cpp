@@ -148,6 +148,7 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
+        const FormatSettings format_settings;
         const Array & arr = data(place).value;
         size_t size = arr.size();
         writeVarUInt(size, buf);
@@ -161,7 +162,7 @@ public:
             else
             {
                 writeBinary(UInt8(0), buf);
-                serialization->serializeBinary(elem, buf, {});
+                serialization->serializeBinary(elem, buf, format_settings);
             }
         }
     }

@@ -309,6 +309,7 @@ struct AggregateFunctionMergedJSONPatchData
 
         size_t current_size = result_column.size();
         auto [shared_data_paths, shared_data_values] = result_column.getSharedDataPathsAndValues();
+        const FormatSettings format_settings;
         for (const auto & entry : entries)
         {
             std::string_view path = entry.pathView();
@@ -318,7 +319,7 @@ struct AggregateFunctionMergedJSONPatchData
                 ReadBufferFromString val_buf(entry.value_blob);
                 auto ser_it = typed_path_serializations.find(String(path));
                 if (ser_it != typed_path_serializations.end())
-                    ser_it->second->deserializeBinary(*typed_it->second, val_buf, {});
+                    ser_it->second->deserializeBinary(*typed_it->second, val_buf, format_settings);
             }
             else
             {
@@ -326,11 +327,11 @@ struct AggregateFunctionMergedJSONPatchData
                 if (auto dynamic_it = result_column.getDynamicPathsPtrs().find(path);
                     dynamic_it != result_column.getDynamicPathsPtrs().end())
                 {
-                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_it->second, val_buf, {});
+                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_it->second, val_buf, format_settings);
                 }
                 else if (auto * dynamic_path_column = result_column.tryToAddNewDynamicPath(path))
                 {
-                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_path_column, val_buf, {});
+                    DataTypeDynamic().getDefaultSerialization()->deserializeBinary(*dynamic_path_column, val_buf, format_settings);
                 }
                 else
                 {

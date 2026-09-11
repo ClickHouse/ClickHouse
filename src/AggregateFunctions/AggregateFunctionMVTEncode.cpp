@@ -211,7 +211,8 @@ private:
             {
                 /// Opt-in fallback: render the value's text form (e.g. big integers, UUID, Decimal) as a string_value.
                 WriteBufferFromOwnString buf;
-                property.serialization->serializeText(column, row, buf, FormatSettings{});
+                static const FormatSettings format_settings;
+                property.serialization->serializeText(column, row, buf, format_settings);
                 MVT::writeLengthDelimitedField(out, 1, buf.str());
                 return;
             }

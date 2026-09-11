@@ -68,7 +68,10 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
 
 FormatSettings buildHiveFormatSettings(const std::optional<FormatSettings> & format_settings, const ContextPtr & context)
 {
-    FormatSettings hive_format_settings = format_settings.value_or(getFormatSettings(context));
+    FormatSettings hive_format_settings = format_settings ? *format_settings : getFormatSettings(context);
+    /// Parsing partition values must not retain resources in table settings.
+    if (format_settings)
+        hive_format_settings.json_parsing_state = std::make_shared<JSONParsingState>();
     hive_format_settings.allow_number_leading_zeros = true;
     hive_format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
     return hive_format_settings;

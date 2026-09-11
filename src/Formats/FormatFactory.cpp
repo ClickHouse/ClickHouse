@@ -493,7 +493,10 @@ InputFormatPtr FormatFactory::getInputImpl(
     /// This doesn't affect server and clickhouse-local, they initialize threads pools on startup.
     getFormatParsingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
 
-    const FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    FormatSettings format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    /// Table settings can outlive many inputs. Keep parsing resources with this input and its workers.
+    if (_format_settings)
+        format_settings.json_parsing_state = std::make_shared<JSONParsingState>();
     const Settings & settings = context->getSettingsRef();
 
     if (format_filter_info
@@ -845,6 +848,9 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Format {} doesn't support schema inference.", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    /// Some schema readers decode values. Keep their parsing resources out of table settings.
+    if (_format_settings)
+        format_settings.json_parsing_state = std::make_shared<JSONParsingState>();
     auto schema_reader = schema_reader_creator(buf, format_settings);
     if (schema_reader->needContext())
         schema_reader->setContext(context);

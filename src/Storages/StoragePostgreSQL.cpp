@@ -320,6 +320,7 @@ public:
         const size_t num_rows = block.rows();
         const size_t num_cols = block.columns();
         const auto data_types = block.getDataTypes();
+        const FormatSettings format_settings;
 
         /// std::optional lets libpqxx to know if value is NULL
         std::vector<std::optional<std::string>> row(num_cols);
@@ -342,7 +343,7 @@ public:
                     }
                     else
                     {
-                        data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
+                        data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, format_settings);
                     }
 
                     row[j] = ostr.str();

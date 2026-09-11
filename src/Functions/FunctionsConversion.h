@@ -2941,6 +2941,9 @@ struct ConvertImplGenericFromString
         const FunctionConvertSettings & settings)
     {
         column_to.reserve(input_rows_count);
+        /// Stored expressions can outlive queries. Keep parsing resources with this block.
+        auto format_settings = settings.format_settings;
+        format_settings.json_parsing_state = std::make_shared<JSONParsingState>();
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -2954,7 +2957,7 @@ struct ConvertImplGenericFromString
             ReadBufferFromMemory read_buffer(val);
             try
             {
-                serialization_from.deserializeWholeText(column_to, read_buffer, settings.format_settings);
+                serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
             }
             catch (const Exception &)
             {

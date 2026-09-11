@@ -1210,7 +1210,10 @@ private:
             return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
-        Field converted = convertFieldToType(string_value, *type_to_compare, type_string, params.format_settings);
+        /// Stored comparisons can outlive queries. Keep parsing resources with this conversion.
+        auto format_settings = params.format_settings;
+        format_settings.json_parsing_state = std::make_shared<JSONParsingState>();
+        Field converted = convertFieldToType(string_value, *type_to_compare, type_string, format_settings);
 
         /// If not possible to convert, comparison with =, <, >, <=, >= yields to false and comparison with != yields to true.
         if (converted.isNull())

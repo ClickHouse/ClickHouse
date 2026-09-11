@@ -444,7 +444,7 @@ void SerializationJSON::deserializeObject(IColumn & column, std::string_view obj
     if (session_timezone_name.empty())
         session_timezone_name = DateLUT::serverTimezoneInstance().getTimeZone();
 
-    auto & shard = JSONParsingPools::getShard(settings.json_parsing_state.get());
+    auto & shard = JSONParsingPools::getShard(settings.json_parsing_state);
     JSONParsingPools::Lookup key{this, session_timezone_name};
     auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingPools::Key, JSONParsingPools::Compare, Poco::NullMutex> & pool)
     {

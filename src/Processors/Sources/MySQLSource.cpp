@@ -304,7 +304,7 @@ namespace
         }
     }
 
-    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type, UInt32 max_wkb_geometry_elements)
+    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type, UInt32 max_wkb_geometry_elements, const FormatSettings & format_settings)
     {
         switch (type)
         {
@@ -433,7 +433,7 @@ namespace
             case ValueType::vtDecimal256:
             {
                 ReadBuffer buffer(const_cast<char *>(value.data()), value.size(), 0);
-                data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, FormatSettings{});
+                data_type.getDefaultSerialization()->deserializeWholeText(column, buffer, format_settings);
                 read_bytes_size += column.sizeOfValueIfFixed();
                 break;
             }
@@ -510,6 +510,7 @@ Chunk MySQLSource::generate()
 
     size_t num_rows = 0;
     size_t read_bytes_size = 0;
+    const FormatSettings format_settings;
 
     while (row && !isCancelled())
     {
@@ -526,12 +527,12 @@ Chunk MySQLSource::generate()
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]), settings->max_wkb_geometry_elements);
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]), settings->max_wkb_geometry_elements, format_settings);
                     column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                 {
-                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]), settings->max_wkb_geometry_elements);
+                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]), settings->max_wkb_geometry_elements, format_settings);
                 }
             }
             else
