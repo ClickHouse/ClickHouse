@@ -1825,6 +1825,119 @@ def test_copy_command(started_cluster):
     cur.execute("DROP DATABASE copy_x")
 
 
+def test_copy_options(started_cluster):
+    # `COPY` options written the way PostgreSQL clients write them: the parenthesized list every
+    # modern client and `psql` emit, and the legacy `WITH CSV` spelling. Both used to be swallowed
+    # silently, so the data was transferred as TSV: `COPY FROM` stored wrongly parsed rows and
+    # `COPY TO` handed TSV bytes to a client that asked for CSV, with no error either way.
+    node = cluster.instances["node"]
+
+    def connect():
+        # `with connection` manages transactions but does not close the connection.
+        c = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        c.autocommit = True
+        return closing(c)
+
+    setup = py_psql.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        database="",
+    )
+    setup.autocommit = True
+    cur = setup.cursor()
+    cur.execute("DROP TABLE IF EXISTS copy_options;")
+    cur.execute("CREATE TABLE copy_options (s String) ENGINE = Memory;")
+
+    # The standard syntax on the way in: the value is parsed as CSV, so the quotes are not stored.
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv)", StringIO('"hello, world"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("hello, world",)]
+
+    # And on the way out: the value is quoted, as CSV.
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options TO STDOUT WITH (FORMAT csv)", out)
+    assert out.getvalue() == '"hello, world"\n'
+
+    # HEADER writes the column names, and reads them back as a header rather than as a row.
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options TO STDOUT WITH (FORMAT csv, HEADER)", out)
+    assert out.getvalue() == '"s"\n"hello, world"\n'
+
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv, HEADER true)", StringIO("s\nvalue\n")
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("value",)]
+
+    # The legacy PostgreSQL spelling.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options (s) FROM STDIN WITH CSV", StringIO('"x, y"\n'))
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("x, y",)]
+
+    # An explicitly requested TSV is transferred as TSV, not through CSV.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT tsv)", StringIO('"a,b"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [('"a,b"',)]
+
+    # The format name is a name, not a keyword: any spelling of it works.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT CSV)", StringIO('"u, v"\n')
+        )
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("u, v",)]
+
+    # An option that would change the shape of the data is reported rather than ignored.
+    with connect() as c, pytest.raises(Exception, match="DELIMITER"):
+        c.cursor().copy_expert(
+            "COPY copy_options (s) FROM STDIN WITH (FORMAT csv, DELIMITER ';')", StringIO("a;b\n")
+        )
+
+    # Asking for what the format writes anyway is accepted: this is what the psycopg2 helpers send.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_from(StringIO("hello\n"), "copy_options", columns=("s",))
+    cur.execute("SELECT s FROM copy_options;")
+    assert cur.fetchall() == [("hello",)]
+
+    out = StringIO()
+    with connect() as c:
+        c.cursor().copy_to(file=out, table="copy_options")
+    assert out.getvalue() == "hello\n"
+
+    # Without HEADER the first line is data, even when it looks like the column names.
+    cur.execute("TRUNCATE TABLE copy_options;")
+    with connect() as c:
+        c.cursor().copy_expert("COPY copy_options (s) FROM STDIN", StringIO("s\nvalue\n"))
+    cur.execute("SELECT count() FROM copy_options;")
+    assert int(cur.fetchone()[0]) == 2
+
+    cur.execute("DROP TABLE copy_options;")
+    setup.close()
+
+
 def test_boolean_type(started_cluster):
     node = cluster.instances["node"]
 
