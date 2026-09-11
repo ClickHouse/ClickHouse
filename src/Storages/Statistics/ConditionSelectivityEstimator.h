@@ -112,6 +112,16 @@ public:
 
         bool hasAbsorbed() const { return absorbed_and_selectivity.true_sel != 1.0 || absorbed_and_selectivity.null_sel != 0.0; }
 
+        /// Carries no ranges and no null checks, so it contributes a bare number and nothing a merge
+        /// could represent: an unknown atom, a `LIKE` estimated by a default, or a clause already
+        /// reduced to a selectivity. Under `AND` such a factor is absorbed rather than forcing both
+        /// sides to be finalized, which is what keeps the ranges around it mergeable.
+        bool isConstantFactor() const
+        {
+            return column_ranges.empty() && column_not_ranges.empty()
+                && null_check_columns.empty() && not_null_check_columns.empty();
+        }
+
         bool tryToMergeClauses(RPNElement & lhs, RPNElement & rhs);
         void finalize(const ColumnEstimators & column_estimators_, const StorageMetadataPtr & metadata);
     };

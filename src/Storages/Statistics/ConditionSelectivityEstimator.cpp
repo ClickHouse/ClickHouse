@@ -168,10 +168,14 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
             case RPNElement::FUNCTION_NOT:
             {
                 auto* last_element = rpn_stack.top();
-                /// A clause holding an absorbed factor is a conjunction times that factor, and
-                /// `NOT (a AND u)` is `NOT a OR NOT u` - not the flipped ranges times the same factor.
-                /// Finalize it first so the negation applies to a plain selectivity.
-                if (!last_element->finalized && last_element->hasAbsorbed())
+                /// Negating by flipping ranges only works for an element whose ranges say what it
+                /// matches. Two do not qualify: a clause holding an absorbed factor is a conjunction
+                /// times that factor, and `NOT (a AND u)` is `NOT a OR NOT u`, not the flipped ranges
+                /// times the same factor; and an element with no ranges at all - an unknown atom, say -
+                /// has nothing to flip, so the switch below would leave it unchanged and it would go on
+                /// to report the selectivity of the un-negated predicate. Finalize both first, so the
+                /// negation applies to a plain selectivity.
+                if (!last_element->finalized && (last_element->hasAbsorbed() || last_element->isConstantFactor()))
                     last_element->finalize(column_estimators, metadata);
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
@@ -806,12 +810,14 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
 {
     auto can_merge_with = [](const RPNElement & e, Function function_to_merge)
     {
-        /// An unknown atom carries no range, so a merge cannot represent it as one. Under `AND` it is
-        /// still absorbable: its selectivity is kept aside in `absorbed_and_selectivity` and applied by
-        /// `finalize`, which lets the ranges around it keep merging with each other. Under `OR` there is
-        /// no such factorisation, so it stays unmergeable and is finalized as its own operand.
-        if (e.function == FUNCTION_UNKNOWN)
-            return function_to_merge == FUNCTION_AND && !e.finalized;
+        /// An operand carrying no ranges contributes a bare factor that a merge cannot represent as a
+        /// range. Under `AND` it is still absorbable: its selectivity is kept aside in
+        /// `absorbed_and_selectivity` and applied by `finalize`, which lets the ranges around it keep
+        /// merging with each other. This covers an unknown atom, a negated one that `FUNCTION_NOT`
+        /// already finalized, and atoms estimated by a default such as `LIKE`. Under `OR` there is no
+        /// such factorisation, so it stays unmergeable and is finalized as its own operand.
+        if (e.isConstantFactor())
+            return function_to_merge == FUNCTION_AND;
 
         /// A clause that already absorbed an unknown atom is a conjunction times a constant factor.
         /// That composes with another conjunction, but not with a disjunction: `P((a AND u) OR b)` is
@@ -855,13 +861,21 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
     };
     if (can_merge_with(lhs, function) && can_merge_with(rhs, function))
     {
-        /// Carry over what either side absorbed, and absorb an unknown operand itself. Both are
-        /// conjunctive factors, so they multiply into this clause's own factor.
+        /// Carry over what either side absorbed, and absorb a side that is itself only a factor. Both
+        /// are conjunctive factors, so they multiply into this clause's own factor. A finalized side
+        /// already knows its selectivity; an unknown atom does not, and `finalize` would give it
+        /// `default_unknown_cond_factor`.
         for (const RPNElement * side : {&lhs, &rhs})
         {
             if (side->hasAbsorbed())
                 absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(side->absorbed_and_selectivity);
-            if (side->function == FUNCTION_UNKNOWN)
+
+            if (!side->isConstantFactor())
+                continue;
+
+            if (side->finalized)
+                absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(side->selectivity);
+            else if (side->function == FUNCTION_UNKNOWN)
                 absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(Selectivity{default_unknown_cond_factor, 0});
         }
 
