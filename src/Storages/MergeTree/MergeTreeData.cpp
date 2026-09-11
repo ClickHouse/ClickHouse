@@ -7070,8 +7070,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         if (active_parts_to_delay_insert > 0)
             min_enabled_threshold = std::min(min_enabled_threshold, static_cast<UInt64>(active_parts_to_delay_insert));
 
-        /// parts_count_in_total is an O(1) upper bound on any single partition's part count,
-        /// so if it is below the threshold we can skip the O(N) per-partition scan.
+        /// If total number of parts is less than minimal threshold, avoid iterating over parts under lock
         if (parts_count_in_total >= min_enabled_threshold)
             std::tie(parts_count_in_partition, size_of_partition) = getMaxPartsCountAndSizeForPartition();
     }
