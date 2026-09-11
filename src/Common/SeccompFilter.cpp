@@ -624,7 +624,7 @@ size_t installSeccompFilter(SeccompMode mode)
     /// Without it the threads that already exist - the signal listener, the logging and the
     /// jemalloc background threads - would keep running unfiltered.
     const struct sock_fprog prog{.len = static_cast<UInt16>(program.size()), .filter = program.data()};
-    const long result = syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, flags, &prog);
+    const Int64 result = syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER, flags, &prog);
     if (result == -1)
         throw ErrnoException(
             ErrorCodes::SYSTEM_ERROR,
