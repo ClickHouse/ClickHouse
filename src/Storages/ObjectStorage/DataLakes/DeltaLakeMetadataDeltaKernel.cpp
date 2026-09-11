@@ -439,6 +439,21 @@ static DataTypePtr replaceTypeNamesToPhysicalRecursively(
     return std::make_shared<DataTypeTuple>(result_elements, result_element_names);
 }
 
+/// Splits a dotted name into the table column it starts with and the remaining ClickHouse subcolumn path.
+static std::pair<String, String> splitOnColumnInStorage(const String & name, const ColumnsDescription & table_columns)
+{
+    const GetColumnsOptions options(GetColumnsOptions::All);
+
+    /// Longest prefix first, so that a column whose own name contains a dot wins.
+    for (size_t pos = name.rfind('.'); pos != String::npos && pos > 0; pos = name.rfind('.', pos - 1))
+    {
+        if (table_columns.tryGetColumn(options, name.substr(0, pos)))
+            return {name.substr(0, pos), name.substr(pos + 1)};
+    }
+
+    return {name, ""};
+}
+
 /// Returns physical column and whether it is readable from data file.
 /// We do not change given column actual type,
 /// but can only change names inside the type (in case of Tuple).
@@ -446,9 +461,22 @@ static std::pair<NameAndTypePair, bool> getPhysicalNameAndType(
     const NameAndTypePair & column,
     const NamesAndTypesList & read_schema,
     const NameToNameMap & physical_names_map,
+    const ColumnsDescription & table_columns,
     LoggerPtr log)
 {
-    auto physical_name_in_storage = DeltaLake::getPhysicalName(column.getNameInStorage(), physical_names_map);
+    String physical_name_in_storage;
+    if (auto mapped_name = DeltaLake::tryGetPhysicalName(column.getNameInStorage(), physical_names_map))
+    {
+        physical_name_in_storage = *mapped_name;
+    }
+    else
+    {
+        const auto [name_in_storage, subcolumn_path] = splitOnColumnInStorage(column.getNameInStorage(), table_columns);
+        physical_name_in_storage = DeltaLake::getPhysicalName(name_in_storage, physical_names_map);
+        if (!subcolumn_path.empty())
+            physical_name_in_storage += "." + subcolumn_path;
+    }
+
     auto physical_type_in_storage = replaceTypeNamesToPhysicalRecursively(column.getTypeInStorage(), column.getNameInStorage(), physical_name_in_storage, physical_names_map);
 
     /// Take column from read_schema, but only use it to check if column is readable,
@@ -549,6 +577,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
     auto readable_columns_with_subcolumns = read_columns_desc.get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
     auto readable_columns = read_columns_desc.get(GetColumnsOptions(GetColumnsOptions::All));
+    const auto & columns_in_table = storage_snapshot->metadata->getColumns();
 
     /// We include partition columns in requested_columns (and not in format_header),
     /// because we will insert partition columns into chunk right after it is read from data file,
@@ -559,6 +588,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             name_and_type,
             readable_columns_with_subcolumns,
             physical_names_map,
+            columns_in_table,
             log);
         name_and_type = result_name_and_type;
     }
@@ -595,16 +625,31 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
             name_and_type,
             readable_columns_with_subcolumns,
             physical_names_map,
+            columns_in_table,
             log);
 
         if (readable)
             info.format_header.insert(ColumnWithTypeAndName{result_name_and_type.type, result_name_and_type.name});
     }
 
-    for (const auto & name_and_type : info.columns_description)
-        info.columns_description.rename(
-            name_and_type.name,
-            DeltaLake::getPhysicalName(name_and_type.name, physical_names_map));
+    /// Collect first, because renaming invalidates the iterated container.
+    std::vector<std::pair<String, String>> renames;
+    renames.reserve(info.columns_description.size());
+    for (const auto & column : info.columns_description)
+    {
+        auto [result_name_and_type, _] = getPhysicalNameAndType(
+            NameAndTypePair(column.name, column.type),
+            readable_columns_with_subcolumns,
+            physical_names_map,
+            columns_in_table,
+            log);
+
+        if (result_name_and_type.name != column.name)
+            renames.emplace_back(column.name, result_name_and_type.name);
+    }
+
+    for (const auto & [logical_name, physical_name] : renames)
+        info.columns_description.rename(logical_name, physical_name);
 
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
