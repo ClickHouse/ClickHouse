@@ -236,7 +236,14 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
         writeUUIDText(uuid, lock_writer);
         lock_writer.finalize();
 
-        // We read back the written UUID, if it's the same we can upload the file
+        // We read back the written UUID, if it's the same we can upload the file.
+        // This is a full-object read (`readStringUntilEOF`), so the reader has to know where the object
+        // ends: without an expected end, a connection closed mid-stream looks like a clean EOF and the
+        // leader aborts the upload with a misleading `Failed to create a lock file` even though the lock
+        // object is intact. Pin the `ETag` as well, so a concurrent leader overwriting the lock file
+        // between the two requests is reported as such instead of being read across two generations.
+        const auto lock_file_info = S3::getObjectInfo(*s3_client->client, s3_client->uri.bucket, lock_file);
+
         S3::S3RequestSettings request_settings_2;
         request_settings_2[S3RequestSetting::max_single_read_retries] = 1;
         ReadBufferFromS3 lock_reader
@@ -246,7 +253,15 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
             lock_file,
             "",
             request_settings_2,
-            {}
+            {},
+            /* use_external_buffer= */ false,
+            /* offset= */ 0,
+            /* read_until_position= */ 0,
+            /* restricted_seek= */ false,
+            lock_file_info.size,
+            ReadBufferFromS3::S3CredentialsRefreshCallback{[] { return nullptr; }},
+            /* blob_storage_log_= */ BlobStorageLogWriterPtr{},
+            /* expected_etag_= */ lock_file_info.etag
         };
 
         std::string read_uuid;

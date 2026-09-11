@@ -3,6 +3,7 @@
 #if USE_MECAB
 
 #include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
@@ -16,8 +17,10 @@
 #include <IO/Archives/IArchiveReader.h>
 
 #if USE_AWS_S3
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/getObjectInfo.h>
 #include <IO/S3/URI.h>
 #include <IO/S3AuthSettings.h>
 #include <IO/S3RequestSettings.h>
@@ -47,6 +50,11 @@ namespace ErrorCodes
     extern const int CANNOT_LOAD_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 #if USE_AWS_S3
@@ -180,8 +188,25 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
         },
         auth_settings[S3AuthSetting::session_token]);
 
+    /// `copyToFileAndHashSHA256` reads to EOF, so pass the HEAD size to make a prematurely
+    /// closed full-object stream reconnect and resume rather than look like a checksum mismatch.
+    /// Pin the ETag under the same setting as other S3 full-object readers, avoiding a torn
+    /// download if the dictionary is overwritten in place while it is being read.
+    const auto object_info = S3::getObjectInfo(*client, uri.bucket, uri.key, uri.version_id);
+    /// The dictionary is loaded from the global context, but the load is triggered by a user query.
+    /// Take `s3_validate_etag_on_read` from that query when it is available, so `SELECT tokens(...)
+    /// SETTINGS s3_validate_etag_on_read = 0` really turns the ETag pinning off on backends with
+    /// unstable ETags; fall back to the global settings for loads outside of a query.
+    const auto query_context = CurrentThread::tryGetQueryContext();
+    const auto & settings = query_context ? query_context->getSettingsRef() : context->getSettingsRef();
+    const bool validate_etag_on_read = settings[Setting::s3_validate_etag_on_read];
+
     return std::make_unique<ReadBufferFromS3>(
-        std::move(client), uri.bucket, uri.key, uri.version_id, S3::S3RequestSettings{}, context->getReadSettings());
+        std::move(client), uri.bucket, uri.key, uri.version_id, S3::S3RequestSettings{}, context->getReadSettings(),
+        /* use_external_buffer= */ false, /* offset= */ 0, /* read_until_position= */ 0, /* restricted_seek= */ false,
+        object_info.size, ReadBufferFromS3::S3CredentialsRefreshCallback{[] { return nullptr; }},
+        /* blob_storage_log_= */ BlobStorageLogWriterPtr{},
+        /* expected_etag_= */ validate_etag_on_read ? object_info.etag : String{});
 }
 #endif
 
