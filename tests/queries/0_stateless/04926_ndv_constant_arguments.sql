@@ -1,4 +1,5 @@
 -- Check that deterministic functions with one non-constant argument inherit its NDV as an upper bound.
+-- Constants are passed directly, wrapped in the `materialize` function, or returned by scalar subqueries.
 
 CREATE TABLE source (n UInt64, d Date) ENGINE = MergeTree ORDER BY n SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE probe (n UInt64) ENGINE = MergeTree ORDER BY n SETTINGS auto_statistics_types = 'uniq';
