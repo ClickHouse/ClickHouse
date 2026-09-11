@@ -282,6 +282,11 @@ public:
             ObjectSharedDataCopyValues,
             ObjectStructure,
 
+            MapKeyValue,
+            ObjectDistinctPaths,
+            ObjectSubObject,
+            ObjectCombinedPath,
+
             Bucket,
             MapBucketsInfo,
             MapBucketIndexes,

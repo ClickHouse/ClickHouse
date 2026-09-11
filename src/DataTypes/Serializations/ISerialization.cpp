@@ -192,6 +192,10 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedVariantDiscriminators,
     QuantizedCodes,
     ProductQuantizationCodebook,
+    MapKeyValue,
+    ObjectDistinctPaths,
+    ObjectSubObject,
+    ObjectCombinedPath,
 };
 
 String ISerialization::Substream::toString() const
