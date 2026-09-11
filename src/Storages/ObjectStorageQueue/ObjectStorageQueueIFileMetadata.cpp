@@ -61,7 +61,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::resetAttempt()
     processing_start_time = {};
     processing_end_time = {};
     processed_rows = 0;
-    foreign_processing_time = 0;
+    processing_observed_in_keeper_time = 0;
     std::lock_guard lock(last_exception_mutex);
     last_exception = {};
 }
@@ -78,9 +78,9 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onStateObservedInKeeper(State 
     if (observed_state == FileStatus::State::Processing)
     {
         /// Keep the data of the last attempt of this server (processed rows, timings, exception):
-        /// the file is being processed elsewhere, so there is nothing to show instead of it,
-        /// and `foreign_processing_time` tells the two apart.
-        foreign_processing_time = now();
+        /// the file is held by a processor which does not share this file status, so there is
+        /// nothing to show instead of it, and the marker tells the two apart.
+        processing_observed_in_keeper_time = now();
         state = observed_state;
         return;
     }
@@ -95,14 +95,14 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onStateObservedInKeeper(State 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
     /// This server committed the file, so it is not held by anyone anymore.
-    foreign_processing_time = 0;
+    processing_observed_in_keeper_time = 0;
     state = FileStatus::State::Processed;
     chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
-    foreign_processing_time = 0;
+    processing_observed_in_keeper_time = 0;
     state = FileStatus::State::Failed;
     if (!processing_end_time)
         setProcessingEndTime();
@@ -114,7 +114,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 {
     state = FileStatus::State::None;
     processing_start_time = {};
-    foreign_processing_time = {};
+    processing_observed_in_keeper_time = {};
     processing_end_time = {};
     processed_rows = 0;
     retries = 0;
@@ -345,7 +345,7 @@ bool ObjectStorageQueueIFileMetadata::hasNonProcessableState() const
 
     if (state == FileStatus::State::Processing)
     {
-        const auto observed_at = file_status->foreign_processing_time.load();
+        const auto observed_at = file_status->processing_observed_in_keeper_time.load();
         /// A processor of this table holds the file and will update the state itself.
         if (!observed_at)
             return true;

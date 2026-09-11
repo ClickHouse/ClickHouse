@@ -15,7 +15,7 @@ using State = FileStatus::State;
 /// `system.s3queue_metadata_cache` shows the state of a file together with the data of the
 /// attempt which led to it, so a state observed in keeper must not be shown next to the data
 /// of an attempt of this server which did not produce it.
-TEST(ObjectStorageQueueFileStatus, StateCommittedElsewhereDropsForeignMarkerAndLocalAttempt)
+TEST(ObjectStorageQueueFileStatus, StateCommittedElsewhereDropsObservationMarkerAndLocalAttempt)
 {
     FileStatus status("file.csv");
 
@@ -25,15 +25,15 @@ TEST(ObjectStorageQueueFileStatus, StateCommittedElsewhereDropsForeignMarkerAndL
     status.onFailed("Cannot parse input");
 
     EXPECT_EQ(status.state.load(), State::Failed);
-    EXPECT_EQ(status.foreign_processing_time.load(), 0);
+    EXPECT_EQ(status.processing_observed_in_keeper_time.load(), 0);
 
     /// Keeper says that the file is held by another processor. The data of the failed attempt
-    /// is kept: it is all we know about the file, and `foreign_processing_time` tells that the
+    /// is kept: it is all we know about the file, and `processing_observed_in_keeper_time` tells that the
     /// `Processing` state itself is not ours.
     status.onStateObservedInKeeper(State::Processing);
 
     EXPECT_EQ(status.state.load(), State::Processing);
-    EXPECT_NE(status.foreign_processing_time.load(), 0);
+    EXPECT_NE(status.processing_observed_in_keeper_time.load(), 0);
     EXPECT_EQ(status.processed_rows.load(), 10);
     EXPECT_EQ(status.getException(), "Cannot parse input");
 
@@ -42,7 +42,7 @@ TEST(ObjectStorageQueueFileStatus, StateCommittedElsewhereDropsForeignMarkerAndL
     status.onStateObservedInKeeper(State::Processed);
 
     EXPECT_EQ(status.state.load(), State::Processed);
-    EXPECT_EQ(status.foreign_processing_time.load(), 0);
+    EXPECT_EQ(status.processing_observed_in_keeper_time.load(), 0);
     EXPECT_EQ(status.processed_rows.load(), 0);
     EXPECT_EQ(status.processing_start_time.load(), 0);
     EXPECT_EQ(status.processing_end_time.load(), 0);
@@ -63,7 +63,7 @@ TEST(ObjectStorageQueueFileStatus, StateObservedAgainKeepsLocalAttempt)
     status.onStateObservedInKeeper(State::Failed);
 
     EXPECT_EQ(status.state.load(), State::Failed);
-    EXPECT_EQ(status.foreign_processing_time.load(), 0);
+    EXPECT_EQ(status.processing_observed_in_keeper_time.load(), 0);
     EXPECT_EQ(status.processed_rows.load(), 10);
     EXPECT_NE(status.processing_start_time.load(), 0);
     EXPECT_NE(status.processing_end_time.load(), 0);
@@ -73,7 +73,7 @@ TEST(ObjectStorageQueueFileStatus, StateObservedAgainKeepsLocalAttempt)
 /// A file status is shared by all processors of one keeper path on this server, so a processor
 /// can observe in keeper the processing node of a processor of the same server, and mark the
 /// state it does not own. Committing the file must not leave that marker behind.
-TEST(ObjectStorageQueueFileStatus, CommitDropsForeignMarkerOfALocallyOwnedState)
+TEST(ObjectStorageQueueFileStatus, CommitDropsObservationMarkerOfALocallyOwnedState)
 {
     FileStatus processed_status("file.csv");
 
@@ -83,7 +83,7 @@ TEST(ObjectStorageQueueFileStatus, CommitDropsForeignMarkerOfALocallyOwnedState)
     processed_status.onProcessed();
 
     EXPECT_EQ(processed_status.state.load(), State::Processed);
-    EXPECT_EQ(processed_status.foreign_processing_time.load(), 0);
+    EXPECT_EQ(processed_status.processing_observed_in_keeper_time.load(), 0);
 
     FileStatus failed_status("file.csv");
 
@@ -92,5 +92,5 @@ TEST(ObjectStorageQueueFileStatus, CommitDropsForeignMarkerOfALocallyOwnedState)
     failed_status.onFailed("Cannot parse input");
 
     EXPECT_EQ(failed_status.state.load(), State::Failed);
-    EXPECT_EQ(failed_status.foreign_processing_time.load(), 0);
+    EXPECT_EQ(failed_status.processing_observed_in_keeper_time.load(), 0);
 }

@@ -53,13 +53,13 @@ public:
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
         std::atomic<UInt64> get_object_time_ms = 0;
-        /// Non-zero only while `state` is a `Processing` state which was observed in keeper
-        /// instead of being set by a processor of this server: the time of that observation.
-        std::atomic<time_t> foreign_processing_time = 0;
+        /// Non-zero only while `state` is a `Processing` state which was read from keeper instead
+        /// of being set by the processor which holds the file: the time of that observation.
+        std::atomic<time_t> processing_observed_in_keeper_time = 0;
 
     private:
         /// Forget everything the previous state left behind: the data of the processing
-        /// attempt of this server (rows, timings, exception) and `foreign_processing_time`.
+        /// attempt of this server (rows, timings, exception) and `processing_observed_in_keeper_time`.
         void resetAttempt();
 
         mutable std::mutex last_exception_mutex;

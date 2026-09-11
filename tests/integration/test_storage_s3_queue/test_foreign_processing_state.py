@@ -107,7 +107,7 @@ def test_retry_file_released_by_another_processor(
         # so that the per-attempt columns of this table are not read as its own progress.
         assert (
             node.query(
-                f"SELECT status, processing_by_another_server_time IS NOT NULL"
+                f"SELECT status, processing_observed_in_keeper_time IS NOT NULL"
                 f" FROM system.s3queue_metadata_cache"
                 f" WHERE zookeeper_path = '{keeper_path}' AND file_path = '{held_file}'"
             ).strip()
@@ -118,7 +118,7 @@ def test_retry_file_released_by_another_processor(
             node.query(
                 f"SELECT count() FROM system.s3queue_metadata_cache"
                 f" WHERE zookeeper_path = '{keeper_path}' AND file_path != '{held_file}'"
-                f" AND processing_by_another_server_time IS NOT NULL"
+                f" AND processing_observed_in_keeper_time IS NOT NULL"
             ).strip()
             == "0"
         )
