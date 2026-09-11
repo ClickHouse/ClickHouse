@@ -697,13 +697,13 @@ Returns the approximate cosine distance (one minus the cosine similarity). Alway
 ```sql title=Query
 CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
+SELECT round(cosineDistanceTransposed(vec, array(1, 2), 16), 6) FROM qbit;
 ```
 
 ```response title=Response
-┌─cosineDistanceTransposed(vec, [1, 2], 16)─┐
-│                       0.10557280905788935 │
-└───────────────────────────────────────────┘
+┌─round(cosineDistanceTransposed(vec, [1, 2], 16), 6)─┐
+│                                            0.105573 │
+└─────────────────────────────────────────────────────┘
 ```
 
 ## cosineDistanceTransposedQuantized {#cosineDistanceTransposedQuantized}
@@ -736,13 +736,13 @@ Returns the approximate cosine distance (one minus the cosine similarity). Alway
 ```sql title=Query
 CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
 INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
-SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+SELECT round(cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8), 6) FROM qbit;
 ```
 
 ```response title=Response
-┌─cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8)─┐
-│                                                          0.000027192636379513857 │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌─round(cosineDistanceTransposedQuantized(vec, CAST('[0.1, -0.5]', 'Array(Float32)'), 8), 6)─┐
+│                                                                                   0.000027 │
+└────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## dotProductTransposed {#dotProductTransposed}

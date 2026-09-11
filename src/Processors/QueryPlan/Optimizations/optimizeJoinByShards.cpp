@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -141,6 +142,16 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     bool first = true;
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
+        /// The layer split compares key values as `greater(tuple(pk), tuple(border))`, and an IEEE
+        /// comparison answers false for `NaN` against anything, so a row with a `NaN` key fails the
+        /// filter of every layer - including the last one, which only has a lower bound - and is
+        /// dropped at read time. `Null` and a `NaN` nested in a container compare inconsistently there
+        /// for the same reason, which is why every other consumer of
+        /// `splitIntersectingPartsRangesIntoLayers` gates on this predicate. Only the prefix the split
+        /// actually reads has to be safe, so an unsafe column just ends the prefix here.
+        if (!isSafePrimaryDataKeyType(*lhs_pk.data_types[pos]) || !isSafePrimaryDataKeyType(*rhs_pk.data_types[pos]))
+            break;
+
         bool ldesc = (pos < lhs_pk.reverse_flags.size()) ? lhs_pk.reverse_flags[pos] : false;
         bool rdesc = (pos < rhs_pk.reverse_flags.size()) ? rhs_pk.reverse_flags[pos] : false;
         if (ldesc != rdesc)
