@@ -138,8 +138,9 @@ def test_parallel_inserts_generated_parts(started_cluster, parallel_inserts):
     )
 
 
+@pytest.mark.parametrize("mode", ["unordered", "exclusive"])
 @pytest.mark.parametrize("parallel_inserts", [0, 1])
-def test_parallel_inserts_with_failures(started_cluster, parallel_inserts):
+def test_parallel_inserts_with_failures(started_cluster, mode, parallel_inserts):
     """Ensure that in case of errors, files won't be inserted multiple times w/ and w/o parallel_inserts"""
     node = started_cluster.instances["instance"]
 
@@ -156,7 +157,7 @@ def test_parallel_inserts_with_failures(started_cluster, parallel_inserts):
         started_cluster,
         node,
         table_name,
-        "unordered",
+        mode,
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
