@@ -331,6 +331,133 @@ def test_tracked_files_limit_still_caps_the_failed_set(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def _plant_retriable_markers(zk, failed_path, count):
+    """Create `count` synthetic `.retriable` markers under `failed_path` and return their names.
+
+    Provoking real ones would need a retry backlog kept alive across a sweep, which makes the test
+    depend on retry timing for nothing: the sweep decides purely on the `.retriable` suffix, so
+    planted nodes take exactly the same branch. The value matches the real `NodeMetadata` shape, so
+    anything that does parse one sees a well-formed node rather than garbage.
+    """
+    names = []
+    for i in range(count):
+        name = f"zz_synthetic_{i}.csv.retriable"
+        zk.create(
+            f"{failed_path}/{name}",
+            json.dumps(
+                {
+                    "file_path": f"zz_synthetic_{i}.csv",
+                    "last_processed_timestamp": int(time.time()),
+                    "last_exception": "planted by the test",
+                    "retries": 1,
+                    "processor_id": "",
+                }
+            ).encode(),
+        )
+        names.append(name)
+    return names
+
+
+def test_tracked_files_limit_ignores_a_retriable_backlog(started_cluster):
+    """A backlog of `.retriable` markers must not evict a terminal failure the cap should keep.
+
+    The count cap sized its removal budget from the raw child count of `/failed`, which holds both
+    terminal nodes and `.retriable` markers, while the deletion loop only ever walks terminal nodes -
+    markers are excluded on purpose, because deleting one resets the retry counter it carries and a
+    file that should have been given up on would be retried forever.
+
+    So the budget was spent on nodes that were never candidates. With the limit at 3, five markers
+    and one terminal node, the raw count asked for three removals, the only eligible node was that
+    single real failure, and it was deleted while all five markers stayed. The cap was enforced
+    against nothing and cost a real failure its record.
+
+    Nothing here is removable - one terminal node is under the limit of three - so a correct sweep
+    deletes nothing at all, however many markers sit beside it.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_limit_retriable_backlog_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+
+    tracked_files_limit = 3
+    retriable_backlog = 5
+    cleanup_interval_ms = 3000
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_files_limit": tracked_files_limit,
+            "tracked_file_ttl_sec": 0,
+            "failed_files_ttl_sec": 0,
+            "cleanup_interval_min_ms": cleanup_interval_ms,
+            "cleanup_interval_max_ms": cleanup_interval_ms,
+            "s3queue_loading_retries": 0,
+        },
+    )
+
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_one.csv", b"invalid,data,here\n"
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def failed_znode_names():
+        result = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return set(result.split("\n")) if result else set()
+
+    def terminal_znodes():
+        return {n for n in failed_znode_names() if not n.endswith(".retriable")}
+
+    def retriable_znodes():
+        return {n for n in failed_znode_names() if n.endswith(".retriable")}
+
+    terminal_ready = False
+    for _ in range(60):
+        if len(terminal_znodes()) == 1:
+            terminal_ready = True
+            break
+        time.sleep(1)
+
+    assert terminal_ready, f"expected one terminal failed node, got {terminal_znodes()}"
+    the_terminal_node = next(iter(terminal_znodes()))
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    planted = _plant_retriable_markers(zk, failed_path, retriable_backlog)
+
+    # The raw child count is now 6 against a limit of 3, so a sweep that counts markers believes it
+    # must remove three and finds exactly one node it is allowed to touch.
+    assert len(failed_znode_names()) > tracked_files_limit, (
+        "the raw child count must exceed the limit, or this test cannot tell the two behaviours "
+        f"apart: {failed_znode_names()}"
+    )
+
+    # Several sweep intervals, so this is not just "the sweep has not run yet".
+    deadline = time.monotonic() + 6 * cleanup_interval_ms / 1000
+    while time.monotonic() < deadline:
+        assert the_terminal_node in terminal_znodes(), (
+            "the terminal failed node was evicted by a backlog of .retriable markers that were "
+            "never candidates for removal - the cap counted nodes it cannot delete"
+        )
+        time.sleep(0.5)
+
+    assert retriable_znodes() == set(planted), (
+        f"the sweep must never touch .retriable markers, got {retriable_znodes()}"
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
 def test_system_drop_s3queue_failed_files_single(started_cluster):
     """Test SYSTEM DROP S3QUEUE FAILED FILES command with a single failed file"""
     node = started_cluster.instances["instance"]

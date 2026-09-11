@@ -1443,14 +1443,26 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     const bool check_nodes_ttl = ttl_seconds > 0;
     chassert(check_nodes_limit || check_nodes_ttl);
 
-    const bool nodes_limit_exceeded = nodes.size() > nodes_limit;
+    /// Only the nodes this sweep is allowed to delete count towards the limit. `/failed` also holds
+    /// `.retriable` markers, which the loop below deliberately never removes, so counting them would
+    /// measure the cap against a population it cannot trim. `/processed` has no such children, so
+    /// this is the plain child count there and nothing changes for it.
+    size_t removable_nodes_count = 0;
+    for (const auto & node : nodes)
+    {
+        if (!node.ends_with(".retriable"))
+            ++removable_nodes_count;
+    }
+
+    const bool nodes_limit_exceeded = removable_nodes_count > nodes_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
-        LOG_TEST(log, "No limit exceeded (nodes: {}/{})", nodes.size(), nodes_limit);
+        LOG_TEST(log, "No limit exceeded (removable nodes: {}/{}, children: {})",
+                 removable_nodes_count, nodes_limit, nodes.size());
         return;
     }
 
-    LOG_TRACE(log, "Will check limits for {} {} nodes", nodes.size(), description);
+    LOG_TRACE(log, "Will check limits for {} {} nodes ({} removable)", nodes.size(), description, removable_nodes_count);
 
     struct Node
     {
@@ -1551,8 +1563,21 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         }
     }
 
-    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded
-        ? nodes.size() - nodes_limit
+    /// Sized from what the loop below can actually delete, which is `sorted_nodes` - the terminal
+    /// nodes - and not from the raw child count. Counting `.retriable` markers here spent the budget
+    /// on nodes that were never candidates: with a limit of 1000, 1050 markers and one terminal node,
+    /// the raw count asked for 51 removals, the only eligible node was that single real failure, and
+    /// it was evicted while all 1050 markers stayed. The same arithmetic over-deletes whenever both
+    /// kinds are present - 1200 terminal and 500 retriable against a limit of 1000 asked for 700
+    /// removals and left 500 terminal nodes, half of what the cap promises to keep.
+    ///
+    /// `sorted_nodes` rather than a count of non-`.retriable` children, because a node that vanished
+    /// between the listing and its metadata read (logged above) is already gone and must not count
+    /// towards what still has to be deleted. Comparing before subtracting also keeps the guarded
+    /// quantity and the subtracted one the same value, which is what stops this unsigned subtraction
+    /// from ever wrapping.
+    size_t nodes_to_remove = check_nodes_limit && sorted_nodes.size() > nodes_limit
+        ? sorted_nodes.size() - nodes_limit
         : 0;
 
     const auto remove_nodes = [&](bool node_limit)
