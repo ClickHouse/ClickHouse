@@ -122,7 +122,7 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         {
             stats.min_value.reset();
             stats.max_value.reset();
-            stats.null_fraction = 0;
+            stats.null_fraction.reset();
         }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
@@ -306,7 +306,7 @@ static void clearColumnValueRanges(std::unordered_map<String, ColumnStats> & col
     {
         stats.min_value.reset();
         stats.max_value.reset();
-        stats.null_fraction = 0;
+        stats.null_fraction.reset();
     }
 }
 

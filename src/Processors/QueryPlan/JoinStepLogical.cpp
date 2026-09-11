@@ -1015,7 +1015,7 @@ struct IEJoinOperandRange
 {
     Float64 min;
     Float64 max;
-    Float64 null_fraction;
+    std::optional<Float64> null_fraction;
 };
 
 /// The numeric value of a statistics min/max Field. Basic statistics keep min/max only for
@@ -1077,8 +1077,8 @@ static std::optional<Float64> estimateIEJoinConditionSelectivity(
     if (predicate_op == JoinConditionOperator::Greater || predicate_op == JoinConditionOperator::GreaterOrEquals)
         result = 1.0 - result;
 
-    /// A NULL operand fails any inequality.
-    result *= (1.0 - left_range->null_fraction) * (1.0 - right_range->null_fraction);
+    /// A NULL operand fails any inequality; an unknown NULL fraction leaves the estimate uncorrected.
+    result *= (1.0 - left_range->null_fraction.value_or(0.0)) * (1.0 - right_range->null_fraction.value_or(0.0));
     return std::clamp(result, 0.0, 1.0);
 }
 

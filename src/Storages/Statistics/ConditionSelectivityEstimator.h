@@ -19,8 +19,8 @@ struct ColumnStats
     /// Value range from `basic`/`minmax` statistics; unset when unknown.
     std::optional<Field> min_value = {};
     std::optional<Field> max_value = {};
-    /// Fraction of NULL values; 0 means no NULLs or unknown.
-    Float64 null_fraction = 0;
+    /// Fraction of NULL values; unset when unknown.
+    std::optional<Float64> null_fraction = {};
 };
 
 struct RelationProfile
