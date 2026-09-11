@@ -614,7 +614,6 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
     /// non-Nullable result can map NULL to one additional counted value.
     const bool collapses_null
         = isNullableOrLowCardinalityNullable(node.children[source_child_index]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
-    /// Equal types do not imply equal widths for variable-size values.
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
                                      ->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type))
         && (kind == ActionsDAGLineageKind::ValuePreserving || function_name == "_CAST" || function_name == "CAST"
