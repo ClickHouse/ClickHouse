@@ -494,12 +494,13 @@ TEST(ColumnStatsDerivation, StringFunctionsDropWidthAndKeepDistinctValueBound)
     const auto & offset = dag.addColumn(int_type->createColumnConst(1, UInt64(2)), int_type, "offset");
     addOutputFunction(dag, "substring", {&input, &offset}, "suffix");
     addOutputFunction(dag, "materialize", {&input}, "materialized");
+    addOutputFunction(dag, "identity", {&input}, "identity");
 
     auto stats = statsOf("s", 100);
     stats.at("s").avg_bytes = 10;
     remapColumnStats(stats, dag);
 
-    for (const auto * name : {"prefixed", "suffix", "materialized"})
+    for (const auto * name : {"prefixed", "suffix", "materialized", "identity"})
     {
         ASSERT_TRUE(stats.contains(name));
         EXPECT_EQ(stats.at(name).num_distinct_values, 100);
@@ -507,6 +508,7 @@ TEST(ColumnStatsDerivation, StringFunctionsDropWidthAndKeepDistinctValueBound)
     EXPECT_DOUBLE_EQ(stats.at("prefixed").avg_bytes, 0);
     EXPECT_DOUBLE_EQ(stats.at("suffix").avg_bytes, 0);
     EXPECT_DOUBLE_EQ(stats.at("materialized").avg_bytes, 10);
+    EXPECT_DOUBLE_EQ(stats.at("identity").avg_bytes, 10);
 }
 
 /// The bound propagates through a chain of deterministic single-argument functions: no link can
