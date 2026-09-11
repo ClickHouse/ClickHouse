@@ -15,11 +15,13 @@ namespace ErrorCodes
 {
     extern const int CANNOT_CONVERT_TYPE;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 namespace detail
@@ -656,6 +658,158 @@ FunctionCast::WrapperType FunctionCast::createIntervalWrapper(const DataTypePtr 
 
 #undef GENERATE_INTERVAL_CASE
 
+namespace
+{
+
+/** Conversion of a number to Nullable(DateTime64) or Nullable(Time64) with the accurate-cast contract:
+  * a value outside the representable range of the result type produces NULL instead of saturation or
+  * an exception, regardless of the `date_time_overflow_behavior` setting. `ConvertImpl` cannot be reused
+  * here: its DateTime64/Time64 transforms saturate or throw according to the overflow behavior even with
+  * the accurate conversion additions (see `convertIntegerToDateTime64OrNull` in FunctionsConversion.h).
+  */
+template <typename FromDataType, typename ToDataType>
+ColumnPtr convertNumberToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale)
+{
+    using FromFieldType = typename FromDataType::FieldType;
+    using ToFieldType = typename ToDataType::FieldType;
+
+    const auto * col_from = checkAndGetColumn<typename FromDataType::ColumnType>(arguments[0].column.get());
+    if (!col_from)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of conversion to {}",
+            arguments[0].column->getName(), TypeName<typename ToDataType::FieldType>);
+
+    const auto & vec_from = col_from->getData();
+
+    auto col_to = ToDataType::ColumnType::create(input_rows_count, scale);
+    auto & vec_to = col_to->getData();
+
+    auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+    auto & vec_null_map_to = col_null_map_to->getData();
+
+    const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<typename ToFieldType::NativeType>(scale);
+
+    /// The exact tick range of the result type, including the fractional tail of the last second (see
+    /// maxTicksForDateTime64 / maxTicksForTime64); for `DateTime64` it is scale-dependent because the ticks are
+    /// stored in an Int64. Integer sources are whole seconds, so for them the check reduces to the whole-second window.
+    Int64 min_ticks = 0;
+    Int64 max_ticks = 0;
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+    {
+        min_ticks = minTicksForDateTime64(scale_multiplier);
+        max_ticks = maxTicksForDateTime64(scale_multiplier);
+    }
+    else
+    {
+        max_ticks = maxTicksForTime64(scale_multiplier);
+        min_ticks = -max_ticks;
+    }
+    const Int64 min_whole = min_ticks / scale_multiplier;
+    const Int64 max_whole = max_ticks / scale_multiplier;
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        const FromFieldType from = vec_from[i];
+
+        bool is_out_of_range = false;
+        Int64 ticks = 0;
+        if constexpr (is_floating_point<FromFieldType>)
+            /// A non-finite value is not representable in the result type either.
+            is_out_of_range = !isFinite(from) || !floatSecondsToTicks(from, scale_multiplier, min_ticks, max_ticks, ticks);
+        else if constexpr (is_signed_v<FromFieldType>)
+            is_out_of_range = from < min_whole || from > max_whole;
+        else
+            is_out_of_range = from > static_cast<UInt64>(max_whole);
+
+        if (is_out_of_range)
+        {
+            vec_to[i] = ToFieldType(0);
+            vec_null_map_to[i] = true;
+        }
+        else if constexpr (is_floating_point<FromFieldType>)
+            vec_to[i] = ToFieldType(ticks);
+        else
+            vec_to[i] = DecimalUtils::decimalFromComponentsWithMultiplier<ToFieldType>(static_cast<Int64>(from), 0, scale_multiplier);
+    }
+
+    return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+}
+
+/** Conversion of a decimal (including `DateTime64` and `Time64`, which are decimals too) to `DateTime64` or
+  * `Time64` with the accurate-cast contract: a value that is not representable in the result type yields NULL
+  * (`accurateCastOrNull`) or throws `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE` (`accurateCast`), regardless of the
+  * `date_time_overflow_behavior` setting. The plain decimal path of `ConvertImpl` cannot be reused here: it
+  * rescales with `convertDecimals`, which raises `DECIMAL_OVERFLOW` when the scaled-up ticks do not fit the
+  * result, and it does not range-check the value against the representable range of the date/time type at all.
+  */
+template <typename FromDataType, typename ToDataType, bool null_on_error>
+ColumnPtr convertDecimalToDateTime64OrTime64Accurate(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale)
+{
+    using ToFieldType = typename ToDataType::FieldType;
+    using ToNativeType = typename ToFieldType::NativeType;
+
+    const auto * col_from = checkAndGetColumn<typename FromDataType::ColumnType>(arguments[0].column.get());
+    if (!col_from)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of conversion to {}",
+            arguments[0].column->getName(), TypeName<typename ToDataType::FieldType>);
+
+    const UInt32 from_scale = col_from->getScale();
+    const auto & vec_from = col_from->getData();
+
+    auto col_to = ToDataType::ColumnType::create(input_rows_count, scale);
+    auto & vec_to = col_to->getData();
+
+    auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+    auto & vec_null_map_to = col_null_map_to->getData();
+
+    const auto scale_multiplier = DecimalUtils::scaleMultiplier<ToNativeType>(scale);
+
+    /// The exact tick range of the result type, including the fractional tail of the last second
+    /// (`9999-12-31 23:59:59.999` for `DateTime64(3)`, `±999:59:59.999` for `Time64(3)`): a whole-second
+    /// envelope would reject those valid values, even when the source already has the result type.
+    ToNativeType min_ticks = 0;
+    ToNativeType max_ticks = 0;
+    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+    {
+        /// Scale-dependent because the ticks are stored in an Int64 (see maxTicksForDateTime64).
+        min_ticks = minTicksForDateTime64(scale_multiplier);
+        max_ticks = maxTicksForDateTime64(scale_multiplier);
+    }
+    else
+    {
+        max_ticks = maxTicksForTime64(scale_multiplier);
+        min_ticks = -max_ticks;
+    }
+
+    for (size_t i = 0; i < input_rows_count; ++i)
+    {
+        ToFieldType converted;
+        const bool ok = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], from_scale, scale, converted)
+            && converted.value >= min_ticks && converted.value <= max_ticks;
+
+        if (ok)
+        {
+            vec_to[i] = converted;
+        }
+        else if constexpr (null_on_error)
+        {
+            vec_to[i] = ToFieldType(0);
+            vec_null_map_to[i] = true;
+        }
+        else
+        {
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of range of type {}",
+                DecimalUtils::convertTo<Float64>(vec_from[i], from_scale), TypeName<typename ToDataType::FieldType>);
+        }
+    }
+
+    if constexpr (null_on_error)
+        return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+    else
+        return col_to;
+}
+
+}
+
 template <typename ToDataType>
 requires IsDataTypeDecimal<ToDataType>
 FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr & from_type, const ToDataType * to_type, bool requested_result_is_nullable) const
@@ -741,7 +895,62 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 }
             }
 
-            result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+            if constexpr (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>)
+            {
+                if constexpr (IsDataTypeNumber<LeftDataType>)
+                {
+                    /// `accurateCast` and `accurateCastOrNull` must enforce the accurate-cast contract for
+                    /// numeric sources: a value that is not representable in the result type throws or yields
+                    /// NULL. The `date_time_overflow_behavior` setting governs only plain `CAST`.
+                    if (cast_type == CastType::accurate)
+                    {
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        return true;
+                    }
+                    if (cast_type == CastType::accurateOrNull)
+                    {
+                        result_column = convertNumberToDateTime64OrTime64OrNull<LeftDataType, RightDataType>(arguments, input_rows_count, scale);
+                        return true;
+                    }
+                }
+                else if constexpr (IsDataTypeDecimal<LeftDataType>)
+                {
+                    /// Same contract for decimal sources (`Decimal32`/`Decimal64`/`Decimal128`/`Decimal256` and the
+                    /// `DateTime64`/`Time64` decimals themselves): rescaling with `convertDecimals` would raise
+                    /// `DECIMAL_OVERFLOW` instead of throwing an out-of-range error or returning NULL.
+                    if (cast_type == CastType::accurate)
+                    {
+                        result_column = convertDecimalToDateTime64OrTime64Accurate<LeftDataType, RightDataType, false>(arguments, input_rows_count, scale);
+                        return true;
+                    }
+                    if (cast_type == CastType::accurateOrNull)
+                    {
+                        result_column = convertDecimalToDateTime64OrTime64Accurate<LeftDataType, RightDataType, true>(arguments, input_rows_count, scale);
+                        return true;
+                    }
+                }
+
+                switch (settings.date_time_overflow_behavior)
+                {
+                    case FormatSettings::DateTimeOverflowBehavior::Throw:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        break;
+                    case FormatSettings::DateTimeOverflowBehavior::Ignore:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Ignore>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        break;
+                    case FormatSettings::DateTimeOverflowBehavior::Saturate:
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::Saturate>::execute(
+                            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+                        break;
+                }
+            }
+            else
+            {
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
+            }
 
             return true;
         });

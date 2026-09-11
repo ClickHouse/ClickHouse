@@ -1,0 +1,20 @@
+--- throw: constant signed int -> DateTime64 ---
+--- throw: constant unsigned int -> DateTime64 ---
+--- throw: constant float -> DateTime64 ---
+--- throw: constant signed int -> Time64 ---
+--- throw: constant unsigned int -> Time64 ---
+--- throw: constant float -> Time64 ---
+--- throw: non-constant paths via table ---
+--- saturate: values should clamp, not throw ---
+9999-12-31 23:59:59.000
+0000-01-01 00:00:00.000
+9999-12-31 23:59:59.999
+--- ignore: values should clamp silently ---
+9999-12-31 23:59:59.000
+0000-01-01 00:00:00.000
+--- saturate: huge UInt64 (above INT64_MAX) ---
+9999-12-31 23:59:59.000
+9999-12-31 23:59:59.000
+--- ignore: huge UInt64 (above INT64_MAX) ---
+9999-12-31 23:59:59.000
+9999-12-31 23:59:59.000

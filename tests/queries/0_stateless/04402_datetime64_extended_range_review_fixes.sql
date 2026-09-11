@@ -41,21 +41,23 @@ SELECT toDateTime64(300000000000, 9, 'UTC') = toDateTime64(9223372036, 9, 'UTC')
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- the float numeric path saturates per-scale too (it previously surfaced DECIMAL_OVERFLOW)';
-SELECT toDateTime64(300000000000.0, 9, 'UTC') = toDateTime64(9223372036, 9, 'UTC'),
-       toDateTime64(300000000000.0, 8, 'UTC') = toDateTime64(92233720368, 8, 'UTC'),
-       toDateTime64(-300000000000.0, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
+-- A fractional source saturates to the exact tick boundary (the last representable tick, fractional tail included),
+-- not to the whole second: at scales 8 and 9 that is `Int64::max` / `Int64::min` ticks.
+SELECT toString(toDateTime64(300000000000.0, 9, 'UTC')) = '2262-04-11 23:47:16.854775807',
+       toString(toDateTime64(300000000000.0, 8, 'UTC')) = '4892-10-07 21:52:48.54775807',
+       toString(toDateTime64(-300000000000.0, 9, 'UTC')) = '1677-09-21 00:12:43.145224192'
 SETTINGS date_time_overflow_behavior = 'saturate';
 
 SELECT '-- scale 0 numeric conversion reaches the full [0000, 9999] range';
 SELECT toYear(toDateTime64(253402300799, 0, 'UTC')) = 9999,
        toYear(toDateTime64(-62167219200, 0, 'UTC')) = 0;
 
--- date_time_overflow_behavior governs conversions between date/time types, not conversions from a raw number,
--- so numeric toDateTime64 saturates per-scale in every mode (including 'throw') instead of raising an error.
-SELECT '-- numeric toDateTime64 saturates per-scale regardless of date_time_overflow_behavior';
-SELECT toDateTime64(300000000000, 9, 'UTC') = toDateTime64(9223372036, 9, 'UTC'),
-       toDateTime64(-300000000000, 9, 'UTC') = toDateTime64(-9223372036, 9, 'UTC')
-SETTINGS date_time_overflow_behavior = 'throw';
+-- `date_time_overflow_behavior = 'throw'` was silently ignored for numeric->DateTime64 conversions
+-- (https://github.com/ClickHouse/ClickHouse/issues/100471); now that it is fixed, 'throw' raises the
+-- proper out-of-range error (not DECIMAL_OVERFLOW) instead of always saturating.
+SELECT '-- throw overflow mode raises the proper out-of-range error (not DECIMAL_OVERFLOW) past the tick range';
+SELECT toDateTime64(300000000000, 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime64(-300000000000, 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '-- changeYear/changeMonth saturate at the partial boundary years instead of throwing DECIMAL_OVERFLOW';
 -- At scale 9 only [1677-09-21, 2262-04-11] is representable and at scale 8 only up to ~4892-10-07, so a year that
