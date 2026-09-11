@@ -34,6 +34,9 @@ public:
 
     static VirtualColumnsDescription createVirtuals();
 
+    /// Throws if the user may not read the tokens of the index of the table `source_storage_id`.
+    static void checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index);
+
 private:
     friend class ReadFromMergeTreeTextIndex;
 

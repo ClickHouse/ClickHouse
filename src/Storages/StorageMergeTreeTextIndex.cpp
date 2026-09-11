@@ -427,19 +427,10 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
     return desc;
 }
 
-void StorageMergeTreeTextIndex::readImpl(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum,
-    size_t max_block_size,
-    size_t num_streams)
+void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index)
 {
-    auto source_storage_id = source_table->getStorageID();
-    auto required_columns = text_index->getColumnsRequiredForIndexCalc();
-    context->checkAccess(AccessType::SELECT, source_storage_id, required_columns);
+    context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
+
     /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
     /// regardless of which columns the policy filters on. The policy cannot be applied to the dictionary.
     auto row_policy_filter = context->getRowPolicyFilter(
@@ -450,6 +441,19 @@ void StorageMergeTreeTextIndex::readImpl(
             "Cannot read from `mergeTreeTextIndex` because a row policy is applied on table {}. "
             "The text index covers all rows of the table, so reading its tokens would violate the row policy",
             source_storage_id.getNameForLogs());
+}
+
+void StorageMergeTreeTextIndex::readImpl(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    checkAccess(context, source_table->getStorageID(), *text_index);
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     auto this_ptr = std::static_pointer_cast<StorageMergeTreeTextIndex>(shared_from_this());

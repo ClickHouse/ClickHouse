@@ -45,6 +45,10 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
+    /// Resolves the index of the source table and checks that the user may read it.
+    std::pair<StoragePtr, MergeTreeIndexPtr> resolveIndex(const ContextPtr & context) const;
+    static ColumnsDescription getColumns();
+
     const char * getStorageEngineName() const override
     {
         return "";
@@ -84,7 +88,7 @@ static std::shared_ptr<DataTypeEnum8> getDictionaryCompressionType()
     return std::make_shared<DataTypeEnum8>(std::move(values));
 }
 
-ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionMergeTreeTextIndex::getColumns()
 {
     return ColumnsDescription{{
         {"part_name", std::make_shared<DataTypeString>()},
@@ -98,12 +102,7 @@ ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(Cont
     }};
 }
 
-StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
-    const ASTPtr & /*ast_function*/,
-    ContextPtr context,
-    const std::string & table_name,
-    ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolveIndex(const ContextPtr & context) const
 {
     /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
@@ -123,14 +122,32 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
     auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
-    auto columns = getActualTableStructure(context, is_insert_query);
+    StorageMergeTreeTextIndex::checkAccess(context, source_table_ptr->getStorageID(), *text_index);
+    return {std::move(source_table_ptr), std::move(text_index)};
+}
+
+ColumnsDescription TableFunctionMergeTreeTextIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+{
+    /// The structure is static, but this is where e.g. `remote` over a local shard checks the access of the user.
+    resolveIndex(context);
+    return getColumns();
+}
+
+StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
+    const ASTPtr & /*ast_function*/,
+    ContextPtr context,
+    const std::string & table_name,
+    ColumnsDescription /*cached_columns*/,
+    bool /*is_insert_query*/) const
+{
+    auto [source_table_ptr, text_index] = resolveIndex(context);
     StorageID storage_id(getDatabaseName(), table_name);
 
     auto res = std::make_shared<StorageMergeTreeTextIndex>(
         std::move(storage_id),
         std::move(source_table_ptr),
         std::move(text_index),
-        std::move(columns));
+        getColumns());
 
     res->startup();
     return res;
