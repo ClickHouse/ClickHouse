@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-replicated-database, no-shared-merge-tree
+# Tags: no-object-storage, no-replicated-database, no-shared-merge-tree, no-parallel
 # Tag no-object-storage: the test uses a disk of its own
 # Tag no-replicated-database: plain rewritable should not be shared between replicas
+# Tag no-parallel: the test drops the in-memory metadata cache of a disk that other tests may use as well
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

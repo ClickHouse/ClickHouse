@@ -13,8 +13,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Here MOVE PARTITION, which copies every file of the part, is paused in the middle of its commit,
 # and an unrelated table on the same disk must go through its whole lifecycle in the meantime.
 #
-# The disk is used by this test only: a concurrent full reload of the metadata (SYSTEM DROP DISK METADATA CACHE)
+# The disk is used by this test only: a concurrent full reload of the in-memory metadata cache
 # on the same disk would wait for the paused transaction, and every later transaction would wait behind the reload.
+# This test does not run such a reload itself, so it needs no `no-parallel` tag.
 
 DISK="local_plain_rewritable_05104"
 FAILPOINT="plain_object_storage_pause_on_file_copy"
