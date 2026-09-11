@@ -316,6 +316,9 @@ private:
     std::vector<String> separators;
     /// The first bytes of all separators. Only positions holding one of them can start a separator.
     ByteSet separator_first_bytes;
+    /// If every separator is a single byte, `separator_first_bytes` is exactly the set of separators
+    /// and both separator runs and tokens are delimited by `ByteSet::find` alone.
+    bool all_separators_single_byte = false;
 };
 
 /// Parser extracting tokens separated by a regular expression, or - in `match_tokens` mode - tokens

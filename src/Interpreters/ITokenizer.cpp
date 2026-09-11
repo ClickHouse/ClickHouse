@@ -9,6 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 
+#include <algorithm>
 #include <limits>
 
 #if defined(__SSE2__)
@@ -255,6 +256,8 @@ SplitByStringTokenizer::SplitByStringTokenizer(const std::vector<String> & separ
     for (const auto & separator : separators)
         if (!separator.empty())
             separator_first_bytes.add(separator.front());
+
+    all_separators_single_byte = std::ranges::all_of(separators, [](const auto & separator) { return separator.size() == 1; });
 }
 
 size_t SplitByStringTokenizer::matchSeparator(const char * data, size_t length, size_t pos) const
@@ -277,12 +280,19 @@ bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size
     size_t i = pos;
 
     /// Skip prefix of separators
-    while (i < length)
+    if (all_separators_single_byte)
     {
-        size_t separator_length = matchSeparator(data, length, i);
-        if (separator_length == 0)
-            break;
-        i += separator_length;
+        i = separator_first_bytes.find<false>(data + i, data + length) - data;
+    }
+    else
+    {
+        while (i < length)
+        {
+            size_t separator_length = matchSeparator(data, length, i);
+            if (separator_length == 0)
+                break;
+            i += separator_length;
+        }
     }
 
     if (i >= length)
@@ -293,12 +303,19 @@ bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size
 
     /// Read token until next separator, jumping over the bytes that cannot start one
     size_t start = i;
-    while (true)
+    if (all_separators_single_byte)
     {
         i = separator_first_bytes.find<true>(data + i, data + length) - data;
-        if (i >= length || matchSeparator(data, length, i) != 0)
-            break;
-        ++i;
+    }
+    else
+    {
+        while (true)
+        {
+            i = separator_first_bytes.find<true>(data + i, data + length) - data;
+            if (i >= length || matchSeparator(data, length, i) != 0)
+                break;
+            ++i;
+        }
     }
 
     token_start = start;
