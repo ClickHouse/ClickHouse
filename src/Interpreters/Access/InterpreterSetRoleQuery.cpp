@@ -60,19 +60,37 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 
 BlockIO InterpreterSetRoleQuery::setDefaultRole(const ASTPtr & updated_query_ptr, const ASTSetRoleQuery & query)
 {
-    /// `CURRENT_USER` must be resolved here, on the initiator: the AST text is what reaches every host, and a
-    /// DDL worker there runs as its own user, so an unresolved tag would set the default roles of the wrong user.
-    query.replaceCurrentUserTag(getContext()->getUserName());
-
     getContext()->getAccess()->checkCanAdministerDefaultRoles();
     getContext()->checkAccess(query.to_users->collectRequiredGrants(AccessType::ALTER_USER));
 
-    if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
-
     auto & access_control = getContext()->getAccessControl();
-    std::vector<UUID> to_users = RolesOrUsersSet{*query.to_users, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
+
+    /// Resolve the roles on the initiator, before a cluster query is queued into the DDL log. An unknown
+    /// role name is a user error and has to be reported to the client right away - the same contract as the
+    /// local path here and as `ALTER USER ... DEFAULT ROLE ... ON CLUSTER`, which also resolves the roles
+    /// before distributing the query. Otherwise the query would be accepted and then fail on every host.
     RolesOrUsersSet roles_from_query{*query.roles, access_control};
+
+    if (!query.cluster.empty())
+    {
+        /// `CURRENT_USER` must be resolved here, on the initiator: the AST text is what reaches every host, and
+        /// a DDL worker there runs as its own user, so an unresolved tag would set the default roles of the
+        /// wrong user. It has to happen after the access check above, because `collectRequiredGrants` demands
+        /// `ALTER USER` for a named user while the `CURRENT_USER` tag demands nothing - setting one's own
+        /// default roles is allowed without any grant, and resolving the tag first would break that.
+        query.replaceCurrentUserTag(getContext()->getUserName());
+        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+    }
+
+    /// A `CURRENT_USER` tag cannot be resolved in a context with no user - the one a DDL worker executes a
+    /// distributed query in, unless `distributed_ddl_use_initial_user_and_roles` is set. `RolesOrUsersSet`
+    /// asserts on the missing user, and in a DDL worker that turns into a crash loop, because the queued
+    /// entry is retried on every restart. The initiator resolves the tag before distributing the query, so
+    /// this guards an AST that reaches here by other means - a fuzzer, or an entry queued by an older server.
+    if (!getContext()->getUserID() && (query.to_users->current_user || query.to_users->except_current_user))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "SET DEFAULT ROLE TO CURRENT_USER requires a user in the current context");
+
+    std::vector<UUID> to_users = RolesOrUsersSet{*query.to_users, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
     auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
     {

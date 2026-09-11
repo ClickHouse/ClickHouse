@@ -36,6 +36,12 @@ SELECT 'formatting keeps the clause';
 SELECT formatQuerySingleLine($$SET DEFAULT ROLE r TO u ON CLUSTER c$$);
 SELECT formatQuerySingleLine($$SET DEFAULT ROLE ON CLUSTER c r TO u$$);
 
+SELECT 'an unknown role is rejected on the initiator';
+-- The role names are resolved before the query is distributed, so a typo is reported to the client right
+-- away instead of being queued into the DDL log and failing on every host.
+SET DEFAULT ROLE 05107_role_nonexistent TO 05107_user ON CLUSTER test_shard_localhost; -- { serverError UNKNOWN_ROLE }
+SELECT default_roles_all, default_roles_list FROM system.users WHERE name = '05107_user';
+
 SELECT 'SET ROLE is session-local and takes no ON CLUSTER';
 SELECT formatQuerySingleLine($$SET ROLE r ON CLUSTER c$$); -- { serverError SYNTAX_ERROR }
 SELECT formatQuerySingleLine($$SET ROLE DEFAULT ON CLUSTER c$$); -- { serverError SYNTAX_ERROR }

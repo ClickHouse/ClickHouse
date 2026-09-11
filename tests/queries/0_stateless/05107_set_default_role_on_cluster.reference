@@ -9,4 +9,6 @@ NONE
 formatting keeps the clause
 SET DEFAULT ROLE r TO u ON CLUSTER c
 SET DEFAULT ROLE r TO u ON CLUSTER c
+an unknown role is rejected on the initiator
+0	[]
 SET ROLE is session-local and takes no ON CLUSTER
