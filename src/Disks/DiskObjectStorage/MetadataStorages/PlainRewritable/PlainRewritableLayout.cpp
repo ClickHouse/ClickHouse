@@ -61,11 +61,48 @@ bool PlainRewritableLayout::isRemovedName(std::string_view name)
 
 bool PlainRewritableLayout::isRemovedLocalPath(const std::string & local_path)
 {
+    return getRemovedNameOfLocalPath(local_path).has_value();
+}
+
+std::optional<std::string> PlainRewritableLayout::getRemovedNameOfLocalPath(const std::string & local_path)
+{
     const auto normalized_path = normalizePath(local_path);
     if (normalized_path.empty())
-        return false;
+        return std::nullopt;
 
-    return isRemovedName(normalized_path.begin()->string());
+    auto name = normalized_path.begin()->string();
+    if (!isRemovedName(name))
+        return std::nullopt;
+
+    return name;
+}
+
+std::string PlainRewritableLayout::constructTombstoneDirectoryKey() const
+{
+    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / TOMBSTONE_DIRECTORY_TOKEN;
+}
+
+std::string PlainRewritableLayout::constructTombstoneMarkerKey(const std::string & removed_name) const
+{
+    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / TOMBSTONE_DIRECTORY_TOKEN / removed_name;
+}
+
+std::optional<std::string> PlainRewritableLayout::parseTombstoneMarkerKey(const std::string & key) const
+{
+    std::vector<std::string> key_parts;
+    splitInto<'/'>(key_parts, key);
+
+    if (key_parts.size() < 3)
+        return std::nullopt;
+
+    const size_t size = key_parts.size();
+    if (key_parts[size - 3] != METADATA_DIRECTORY_TOKEN || key_parts[size - 2] != TOMBSTONE_DIRECTORY_TOKEN)
+        return std::nullopt;
+
+    if (!isRemovedName(key_parts[size - 1]))
+        return std::nullopt;
+
+    return std::move(key_parts[size - 1]);
 }
 
 std::optional<std::pair<std::string, std::string>> PlainRewritableLayout::parseFileObjectKey(const std::string & key) const

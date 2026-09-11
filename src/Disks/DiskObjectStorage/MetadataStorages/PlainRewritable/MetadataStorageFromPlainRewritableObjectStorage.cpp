@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
@@ -62,8 +63,10 @@ fs::path normalizeDirectoryPath(const fs::path & path)
     return path / "";
 }
 
-/// The names of `PlainRewritableLayout::generateRemovedName` denote garbage that is deleted on the next load,
-/// so nobody may create them.
+/// The names of `PlainRewritableLayout::generateRemovedName` are used for the leftovers of a removal that has
+/// been committed but not finished, and are deleted on the next load if they are marked as such, so nobody may
+/// create them from now on. Names of this shape that already exist on a disk are not affected: without a marker
+/// they are ordinary data, see `PlainRewritableLayout::REMOVED_NAME_PREFIX`.
 void checkNotReservedPath(const std::string & path)
 {
     if (PlainRewritableLayout::isRemovedLocalPath(path))
@@ -137,12 +140,32 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
     const auto read_snapshot = fs.takeReadOnlySnapshot();
 
-    /// Objects under the reserved names (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`) belong to removals
-    /// that were committed but not finished, because the process died in between. They are never loaded.
-    /// They are deleted during the initial load only: a subsequent load may run concurrently with the `finalize`
-    /// of a transaction that has just committed such a removal, and that `finalize` deletes them itself.
+    /// A removal that has been committed but not finished leaves its objects under a reserved name
+    /// (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`) and a marker object for that name. Only a name that
+    /// has a marker is a leftover of a removal: a name of the same shape without one is ordinary data, possibly
+    /// created by a version that reserved nothing, so it is loaded and never touched.
+    ///
+    /// The marked objects are never loaded. They are deleted during the initial load only: a subsequent load may
+    /// run concurrently with the `finalize` of a transaction that has just committed such a removal, and that
+    /// `finalize` deletes them itself.
+    std::unordered_set<std::string> tombstones;
+    for (auto iterator = object_storage->iterate(layout->constructTombstoneDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
+    {
+        if (auto removed_name = layout->parseTombstoneMarkerKey(iterator->current()->getPath()))
+            tombstones.insert(std::move(removed_name.value()));
+    }
+
+    if (!tombstones.empty())
+        LOG_DEBUG(log, "Found {} removals that were committed but not finished", tombstones.size());
+
     const bool remove_orphaned_objects = is_initial_load && !object_storage->isReadOnly();
-    StoredObjects orphaned_objects;
+
+    /// The data objects of an orphaned subtree have to be deleted before its `prefix.path` objects, and the
+    /// markers only after both, for the same reason as in `RemoveRecursiveOperation::finalize`: whatever is
+    /// left after the process dies in the middle of this has to stay reachable and marked as garbage.
+    StoredObjects orphaned_data_objects;
+    StoredObjects orphaned_metadata_objects;
+    std::mutex orphaned_objects_mutex;
 
     ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
     try
@@ -151,10 +174,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         for (auto iterator = object_storage->iterate(layout->constructRootFilesDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
         {
             auto remote_file = iterator->current();
-            if (PlainRewritableLayout::isRemovedName(remote_file->getFileName()))
+            if (tombstones.contains(remote_file->getFileName()))
             {
                 if (remove_orphaned_objects)
-                    orphaned_objects.emplace_back(remote_file->getPath());
+                    orphaned_data_objects.emplace_back(remote_file->getPath());
                 continue;
             }
 
@@ -178,7 +201,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             /// remote_layout_mutex: Same
             /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
             /// Thus the order of destruction of the variables is not important
-            runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, read_snapshot, do_not_load_unchanged_directories, remove_orphaned_objects, &log, &settings, this, &remote_layout, &remote_layout_mutex, &orphaned_objects]
+            runner.enqueueAndKeepTrack([remote_path, object_path = file->getPath(), metadata = file->metadata, read_snapshot, do_not_load_unchanged_directories, remove_orphaned_objects, &tombstones, &log, &settings, this, &remote_layout, &remote_layout_mutex, &orphaned_data_objects, &orphaned_metadata_objects, &orphaned_objects_mutex]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
@@ -200,7 +223,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                         readStringUntilEOF(local_path, *read_buf);
                     }
 
-                    is_orphaned = PlainRewritableLayout::isRemovedLocalPath(local_path);
+                    const auto removed_name = PlainRewritableLayout::getRemovedNameOfLocalPath(local_path);
+                    is_orphaned = removed_name && tombstones.contains(removed_name.value());
                     if (is_orphaned && !remove_orphaned_objects)
                     {
                         LOG_TRACE(log, "The directory '{}' with the key '{}' is being removed, skipping", local_path, object_path);
@@ -275,15 +299,18 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                     throw;
                 }
 
-                std::lock_guard guard(remote_layout_mutex);
                 if (is_orphaned)
                 {
                     LOG_TRACE(log, "The directory '{}' with the key '{}' was not removed completely, its {} files will be removed", local_path, object_path, orphaned_files.size());
-                    orphaned_objects.emplace_back(object_path);
-                    orphaned_objects.append_range(std::move(orphaned_files));
+                    std::lock_guard guard(orphaned_objects_mutex);
+                    orphaned_metadata_objects.emplace_back(object_path);
+                    orphaned_data_objects.append_range(std::move(orphaned_files));
                 }
                 else
+                {
+                    std::lock_guard guard(remote_layout_mutex);
                     remote_layout[local_path] = DirectoryRemoteInfo{remote_path.value(), metadata->etag, last_modified.epochTime(), std::move(files)};
+                }
             });
         }
     }
@@ -299,11 +326,28 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     fs.applyLayout(std::move(remote_layout));
     previous_refresh.restart();
 
-    if (!orphaned_objects.empty())
+    if (remove_orphaned_objects && !tombstones.empty())
     {
-        LOG_INFO(log, "Removing {} orphaned objects left by removals that were committed but not finished, most likely because the process died in the middle of them", orphaned_objects.size());
-        object_storage->removeObjectsIfExist(orphaned_objects);
-        ProfileEvents::increment(ProfileEvents::DiskPlainRewritableOrphanedObjectsRemoved, orphaned_objects.size());
+        StoredObjects marker_objects;
+        marker_objects.reserve(tombstones.size());
+        for (const auto & removed_name : tombstones)
+            marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
+
+        LOG_INFO(
+            log,
+            "Removing {} orphaned objects left by {} removals that were committed but not finished, most likely because the process died in the middle of them",
+            orphaned_data_objects.size() + orphaned_metadata_objects.size(),
+            tombstones.size());
+
+        object_storage->removeObjectsIfExist(orphaned_data_objects);
+        object_storage->removeObjectsIfExist(orphaned_metadata_objects);
+        /// Only now, when nothing of these removals is left, the markers can go: a marker that outlives its
+        /// objects only costs another pass, while an object that outlives its marker would look like data.
+        object_storage->removeObjectsIfExist(marker_objects);
+
+        ProfileEvents::increment(
+            ProfileEvents::DiskPlainRewritableOrphanedObjectsRemoved,
+            orphaned_data_objects.size() + orphaned_metadata_objects.size());
     }
 }
 
