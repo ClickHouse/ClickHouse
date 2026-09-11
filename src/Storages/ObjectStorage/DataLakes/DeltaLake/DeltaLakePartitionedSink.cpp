@@ -2,6 +2,7 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ArenaUtils.h>
@@ -45,7 +46,7 @@ namespace Setting
 
 namespace FailPoints
 {
-    extern const char delta_lake_write_commit_pause[];
+    extern const char delta_lake_write_cancel_in_commit_window[];
 }
 
 namespace
@@ -438,10 +439,13 @@ void DeltaLakePartitionedSink::onFinish()
 
     LOG_TEST(log, "Written {} data files", total_data_files_count);
 
-    /// Test-only hook: pause inside the commit window (after the data files are
-    /// finalized, before commit) so a test can inject an external cancel and
-    /// check that a late cancel does not delete committed files.
-    FailPointInjection::pauseFailPoint(FailPoints::delta_lake_write_commit_pause);
+    /// Test-only hook for the commit window: the data files are finalized and the commit below has
+    /// not run yet. `onFinish` runs inside `IProcessor::work()`, which must only use CPU and never
+    /// wait, so the hook cancels the query the same way `KILL QUERY` does instead of blocking.
+    fiu_do_on(FailPoints::delta_lake_write_cancel_in_commit_window, {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_context->killCurrentQuery();
+    });
 
     try
     {

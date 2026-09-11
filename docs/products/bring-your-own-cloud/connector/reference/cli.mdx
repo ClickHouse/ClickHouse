@@ -6,6 +6,10 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 The connector ships as a single binary named `clicklink`; the commands you run live under `clicklink clctl`. This page covers the commands used during installation and day-to-day operation. Run any command with `--help` for its full help text. Flags in the `troubleshoot` and `preflight` subtrees can also be supplied through `CLCTL_*` environment variables (named in each flag's help output) or `~/.clicklink/clctl.yaml`.
 
 ## clicklink clctl init {#init}
