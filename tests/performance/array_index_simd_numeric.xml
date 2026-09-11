@@ -10,6 +10,9 @@
         Keep this alongside the broad array tests: it measures the long-row scan where SIMD can
         have a clear signal, not a representative distribution of array lengths.
 
+        The separate short UInt8 fixture covers the previously regressed ten-element exact-type
+        case with enough rows to make fixed per-row overhead measurable.
+
         The threshold table below covers threshold - 1, threshold, threshold + one vector, and
         twice the threshold with an early hit for every supported element width. The additional
         twice-threshold missing-needle queries force the SIMD loop to scan the full array.
@@ -26,6 +29,10 @@
     <create_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</create_query>
     <create_query>
         CREATE TABLE perf_array_index_simd_uint8 (arr Array(UInt8)) ENGINE = Memory
+    </create_query>
+    <create_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8_short</create_query>
+    <create_query>
+        CREATE TABLE perf_array_index_simd_uint8_short (arr Array(UInt8)) ENGINE = Memory
     </create_query>
     <create_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</create_query>
     <create_query>
@@ -58,6 +65,11 @@
         INSERT INTO perf_array_index_simd_uint8
         SELECT materialize(arrayMap(x -> toUInt8(x % 255), range(4096)))
         FROM numbers(20000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO perf_array_index_simd_uint8_short
+        SELECT materialize(range(10)::Array(UInt8))
+        FROM numbers(1000000)
     </fill_query>
     <fill_query>
         INSERT INTO perf_array_index_simd_thresholds
@@ -113,6 +125,18 @@
     <query>
         SELECT sum(indexOf(arr, toUInt8(255)))
         FROM perf_array_index_simd_uint8
+        FORMAT Null
+    </query>
+
+    <!-- Short UInt8 case from rewrite_array_exists.xml: one million ten-element arrays. -->
+    <query>
+        SELECT sum(has(arr, toUInt8(5)))
+        FROM perf_array_index_simd_uint8_short
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(arr, toUInt8(5)))
+        FROM perf_array_index_simd_uint8_short
         FORMAT Null
     </query>
 
@@ -231,6 +255,7 @@
     </query>
 
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_thresholds</drop_query>
+    <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8_short</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</drop_query>
 </test>
