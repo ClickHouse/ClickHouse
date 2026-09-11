@@ -1358,7 +1358,10 @@
          - "wide" - a separate column per metric;
          - "transposed" - metrics as rows, similar to system.asynchronous_metric_log.
          Note that "bucketed" gets the settings of the bucketed Map serialization from the
-         default table definition, so specifying "engine" below replaces them.
+         default table definition, so specifying "engine" below replaces them; for that reason,
+         and because every metric is an ALIAS column of that schema, the default stays "wide"
+         when "engine" is specified or when alias columns are disabled with
+         "default_system_log_flush_policy.skip_alias_columns".
     -->
     <metric_log>
         <database>system</database>
