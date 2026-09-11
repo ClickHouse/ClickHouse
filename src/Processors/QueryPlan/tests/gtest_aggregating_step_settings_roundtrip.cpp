@@ -242,7 +242,7 @@ TEST(AggregatingStepOnlyMergeVersionGates, Bit128InStreamBelowMinVersionThrows)
     QueryPlanSerializationSettings settings;
     IQueryPlanStep::Deserialization ctx{
         in, registry, {}, getContext().context, input_headers, header, settings, 0,
-        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION - 1, false};
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION - 1, 0, false};
     try
     {
         AggregatingStep::deserialize(ctx);
