@@ -4372,32 +4372,35 @@ void NO_INLINE Aggregator::mergeDataImpl(
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
             mergeDataNullKeySimpleCount(table_dst, table_src);
 
-        if (count_top_k && !parallel_worker)
+        if (count_top_k)
         {
             /// The tracked merge: the same emplace as `mergeToViaEmplace`, reporting every count.
-            /// The string hash map exposes no iteration over its cells; its tracker stays incomplete.
+            /// The string hash map exposes no iteration over its cells, and the parallel merge reports
+            /// nothing; either leaves the tracker incomplete, so the conversion falls back to the scan.
             if constexpr (requires(const typename Table::cell_type::value_type & v) { Table::cell_type::getKey(v); table_src.begin(); })
             {
-                for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
+                if (!parallel_worker)
                 {
-                    typename Table::LookupResult res_it;
-                    bool inserted = false;
-                    const auto & key = Table::cell_type::getKey(it->getValue());
-                    table_dst.emplace(key, res_it, inserted, it.getHash());
-                    if (inserted)
-                        getInlineCountState(res_it->getMapped()) = getInlineCountState(it->getMapped());
-                    else
-                        getInlineCountState(res_it->getMapped()) += getInlineCountState(it->getMapped());
+                    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
+                    {
+                        typename Table::LookupResult res_it;
+                        bool inserted = false;
+                        const auto & key = Table::cell_type::getKey(it->getValue());
+                        table_dst.emplace(key, res_it, inserted, it.getHash());
+                        if (inserted)
+                            getInlineCountState(res_it->getMapped()) = getInlineCountState(it->getMapped());
+                        else
+                            getInlineCountState(res_it->getMapped()) += getInlineCountState(it->getMapped());
 
-                    const UInt64 count = getInlineCountState(res_it->getMapped());
-                    if (count_top_k->above(count))
-                        count_top_k->consider(count, AdaptiveAggregationDetail::stagedKeyBytesOf<typename Method::Key>(key), it.getHash());
+                        const UInt64 count = getInlineCountState(res_it->getMapped());
+                        if (count_top_k->above(count))
+                            count_top_k->consider(count, AdaptiveAggregationDetail::stagedKeyBytesOf<typename Method::Key>(key), it.getHash());
+                    }
+                    table_src.clearAndShrink();
+                    return;
                 }
-                table_src.clearAndShrink();
-                return;
             }
-            else
-                count_top_k->complete = false;
+            count_top_k->complete = false;
         }
 
         auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
