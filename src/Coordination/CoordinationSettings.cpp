@@ -2,9 +2,11 @@
 #include <Coordination/KeeperConstants.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <base/sanitizer_defs.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -16,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** These settings represent fine tunes for internal details of Coordination storages
@@ -94,7 +97,7 @@ namespace ErrorCodes
     DECLARE(UInt64, write_throttling_max_delay_us, 1000000, "LSMT: the maximum delay added to a write by write throttling, in microseconds.", HOT_RELOAD) \
     DECLARE(Float, write_throttling_factor, 32.0f, "LSMT: write throttling delay is multiplied by this factor if soft limit is exceeded by 2x. Should be greater than 1. Delay = write_throttling_min_delay_us * pow(write_throttling_factor, value / soft_limit - 1).", HOT_RELOAD) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Deprecated, has no effect. The latest logs cache is bounded by latest_logs_cache_size_threshold alone.", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Deprecated. Used as the value of log_readahead_commit_window_bytes if that setting is not itself set.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, disk_move_retries_wait_ms, 1000, "How long to wait between retries after a failure which happened while a file was being moved between disks.", 0) \
@@ -174,6 +177,14 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
     if ((*this)[CoordinationSetting::commit_logs_cache_size_threshold].changed
         && !(*this)[CoordinationSetting::log_readahead_commit_window_bytes].changed)
         (*this)[CoordinationSetting::log_readahead_commit_window_bytes] = (*this)[CoordinationSetting::commit_logs_cache_size_threshold];
+
+#if defined(MEMORY_SANITIZER)
+    if ((*this)[CoordinationSetting::commit_profiler_real_time_period_ns].changed
+        && (*this)[CoordinationSetting::commit_profiler_real_time_period_ns].value != 0)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The Keeper setting `commit_profiler_real_time_period_ns` is not supported in a MemorySanitizer build");
+#endif
 }
 
 CoordinationSettings::CoordinationSettings() : impl(std::make_unique<CoordinationSettingsImpl>())
@@ -205,7 +216,7 @@ void CoordinationSettings::dump(WriteBufferFromOwnString & buf) const
         if (val.getType() == Field::Types::Bool)
             writeText(val.safeGet<UInt64>() ? "true" : "false", buf);
         else
-            writeText(field.getValueString(), buf);
+            writeText(field.getValueString(/* show_secrets */ true), buf);
         buf.write('\n');
     }
 }
