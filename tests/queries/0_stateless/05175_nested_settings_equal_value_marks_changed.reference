@@ -1,0 +1,18 @@
+-- control: the setting is not changed in the session
+0	1
+-- control: compatibility = '26.7' in a nested clause moves the setting to its old default
+1	0
+-- an equal nested assignment is applied and marked changed in the subquery's context, as at the top level
+1	1
+-- and stays on the query node
+1
+-- same clause: an equal assignment before compatibility keeps the current value
+1	1
+-- same clause: an equal assignment before a profile that carries compatibility keeps the current value
+1	1
+-- child scope: an equal assignment in the outer subquery protects the setting from compatibility in the inner one
+1
+-- child scope: the same with a profile that carries compatibility in the inner one
+1
+-- top level over HTTP: an equal assignment protects the setting from compatibility in a subquery
+1
