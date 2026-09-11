@@ -171,6 +171,25 @@ void SerializationInfo::remove(const SerializationInfo & other)
 }
 
 
+void SerializationInfo::resetLowCardinality()
+{
+    data.num_low_cardinality_parts = 0;
+
+    if (settings.choose_kind)
+    {
+        kind_stack = chooseKindStack(data, settings);
+        return;
+    }
+
+    ISerialization::KindStack new_kind_stack;
+    for (auto kind : kind_stack)
+    {
+        if (kind != ISerialization::Kind::LOW_CARDINALITY)
+            new_kind_stack.push_back(kind);
+    }
+    kind_stack = std::move(new_kind_stack);
+}
+
 void SerializationInfo::addDefaults(size_t length)
 {
     data.addDefaults(length);

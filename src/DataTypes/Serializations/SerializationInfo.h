@@ -89,6 +89,12 @@ public:
     virtual void fromJSON(const Poco::JSON::Object & object);
 
     void setKindStack(ISerialization::KindStack kind_stack_) { kind_stack = kind_stack_; }
+    /// Forgets that any aggregated info contributed a `LowCardinality` kind (see `add`) and re-derives
+    /// the kind stack from the accumulated data alone, so that the kind of an aggregated info can be
+    /// chosen anew instead of being inherited. Used when a merge or a mutation re-evaluates automatic
+    /// `LowCardinality` serialization for the part it is about to write: without the reset a single
+    /// encoded source part would keep the result encoded and would also outvote sparse serialization.
+    void resetLowCardinality();
     void appendToKindStack(ISerialization::Kind kind) { kind_stack.push_back(kind); }
     const SerializationInfoSettings & getSettings() const { return settings; }
     const Data & getData() const { return data; }

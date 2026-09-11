@@ -323,9 +323,11 @@ public:
     /// Same as getSerializationHints() but may return nullopt in some specific engines like Alias
     virtual std::optional<SerializationInfoByName> tryGetSerializationHints() const { return getSerializationHints(); }
 
-    /// Whether any column is stored with automatic (non-native) `LowCardinality` serialization.
-    /// Unlike getSerializationHints() this is cheap, so query analysis can use it to skip
-    /// fetching the hints altogether when there is no such column.
+    /// Whether a read from this table can hit a column stored with automatic (non-native)
+    /// `LowCardinality` serialization. This is a superset of the columns currently stored that way:
+    /// a table that can still write such a part answers `true` even before the first one exists, so
+    /// that the answer does not change under a concurrent write while a query is being analyzed.
+    /// Unlike getSerializationHints() this is cheap, so query analysis can use it.
     virtual bool hasAutomaticLowCardinalitySerialization() const { return false; }
 
     /// Add engine args that were inferred during storage creation to create query to avoid the same

@@ -29,10 +29,12 @@ void appendAutomaticLowCardinalityKind(
     const NameSet & column_names,
     const SerializationInfo::Settings & settings);
 
-/// Removes the automatic `LowCardinality` kind from the serialization infos of @columns.
-/// A merge or a rewrite calls it when `max_uniq_number_for_low_cardinality` is zero, so that setting the
-/// threshold back to zero and running `OPTIMIZE FINAL` or `ALTER TABLE ... REWRITE PARTS` rolls the
-/// encoding back to the plain representation instead of carrying it forward from the source parts.
+/// Removes the automatic `LowCardinality` kind inherited from the source parts of @columns and
+/// re-derives the kind of each info from its accumulated data, so that sparse serialization can win
+/// again. A merge or a rewrite calls it before `appendAutomaticLowCardinalityKind`, so that the kind of
+/// the part being written is chosen from the current threshold and the current statistics instead of
+/// being carried forward: lowering `max_uniq_number_for_low_cardinality` (including back to zero)
+/// demotes an already encoded column on the next `OPTIMIZE FINAL` or `ALTER TABLE ... REWRITE PARTS`.
 /// Only columns whose data is rewritten may be passed: a hardlinked column keeps its data files, hence
 /// also its serialization.
 void removeAutomaticLowCardinalityKind(

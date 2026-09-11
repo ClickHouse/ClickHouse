@@ -1004,33 +1004,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const UInt64 max_uniq_number_for_low_cardinality
         = (*merge_tree_settings)[MergeTreeSetting::max_uniq_number_for_low_cardinality];
 
+    /// The automatic `LowCardinality` kind of the source parts is deliberately not seeded into `infos`
+    /// here: the encoding of the result part is chosen below from the merged statistics of that part,
+    /// and seeding an entry for a column that is then not encoded would add a `serialization.json`
+    /// record to an otherwise plain `String` column.
     for (const auto & part : global_ctx->future_part->parts)
     {
         auto part_infos = part->getSerializationInfos();
 
-        /// `SerializationInfoByName` creates entries only for columns eligible for sparse
-        /// serialization. Add an entry only when a source part is already automatically encoded,
-        /// so a merge preserves the kind without adding metadata to unrelated String columns.
-        /// With the feature disabled the entry is not created either: the kind is dropped below.
-        if (max_uniq_number_for_low_cardinality != 0)
-        {
-            for (const auto & [name, info] : part_infos)
-            {
-                if (!infos.contains(name)
-                    && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
-                {
-                    if (const auto column = global_ctx->storage_columns.tryGetByName(name))
-                        infos.emplace(name, column->type->createSerializationInfo(info_settings));
-                }
-            }
-        }
-
-        /// Automatic `LowCardinality` serialization does not depend on sparse serialization, so the
-        /// source infos still have to be merged in when the feature is on: `SerializationInfo::add` is
-        /// what carries the kind of an already encoded source part into `infos`. With the feature off
-        /// this is only the sparse bookkeeping, which has nothing to do when sparse serialization is
-        /// disabled, because `infos` is then empty.
-        if (!info_settings.isAlwaysDefault() || max_uniq_number_for_low_cardinality != 0)
+        if (!info_settings.isAlwaysDefault())
         {
             addMissedColumnsToSerializationInfos(
                 part->rows_count,
@@ -1062,19 +1044,20 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         }
     }
 
-    /// Automatic `LowCardinality` serialization: besides preserving the kind of an already encoded source
-    /// part, a merge also chooses the encoding anew from the merged cardinality statistics of the result
-    /// part. This is what upgrades legacy `Default` parts after the setting is enabled.
+    /// Automatic `LowCardinality` serialization: the encoding of the result part is chosen anew from the
+    /// current threshold and the merged cardinality statistics, not inherited from the source parts.
+    /// The kind the source parts contributed through `SerializationInfo::add` is therefore dropped first:
+    /// otherwise a single encoded source part would keep the result encoded even after the threshold is
+    /// lowered below its cardinality, and would also outvote sparse serialization for a column whose
+    /// merged data now qualifies for it. Dropping the kind restores the data-derived choice, and
+    /// `appendAutomaticLowCardinalityKind` then leaves a sparse column alone, which is the documented
+    /// precedence of the two encodings.
     /// The statistics that have to be rebuilt during the merge are not accounted here (they are not
     /// calculated yet), so the estimate can be lower than the real cardinality of the result part; the
     /// choice is a heuristic and does not affect correctness.
-    /// When the threshold is zero the feature is disabled, and the merge also drops the kind inherited
-    /// from the source parts, so that the encoding is rolled back on the next `OPTIMIZE`.
-    if (max_uniq_number_for_low_cardinality == 0)
-    {
-        removeAutomaticLowCardinalityKind(infos, global_ctx->storage_columns);
-    }
-    else
+    removeAutomaticLowCardinalityKind(infos, global_ctx->storage_columns);
+
+    if (max_uniq_number_for_low_cardinality != 0)
     {
         auto low_cardinality_candidates = chooseColumnsForAutomaticLowCardinality(
             global_ctx->storage_columns,

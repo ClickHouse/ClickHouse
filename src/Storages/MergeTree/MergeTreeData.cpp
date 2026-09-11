@@ -13486,6 +13486,20 @@ SerializationInfoByName MergeTreeData::getSerializationHints() const
     return serialization_hints.clone();
 }
 
+bool MergeTreeData::hasAutomaticLowCardinalitySerialization() const
+{
+    /// Not just the columns encoded in the current active parts: a part that encodes a column can be
+    /// committed while a query is being analyzed and still belong to the parts that query reads.
+    /// While the threshold is nonzero every `String`/`FixedString` column is a potential candidate, so
+    /// the answer has to be `true` regardless of the current parts, or an optimization keyed on it would
+    /// depend on insert and merge timing. Once the threshold is back to zero no new encoded part can
+    /// appear, and only the parts that are already encoded matter.
+    if ((*getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality] != 0)
+        return true;
+
+    return has_automatic_low_cardinality.load(std::memory_order_relaxed);
+}
+
 bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
 {
     const auto & settings = query_context->getSettingsRef();

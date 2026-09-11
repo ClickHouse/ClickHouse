@@ -1020,11 +1020,13 @@ getColumnsForNewDataPart(
         }
     }
 
-    /// Automatic `LowCardinality` serialization: a mutation that rewrites a column also chooses the
-    /// encoding anew from the statistics the source part carries, so that enabling the setting and running
-    /// a rewrite (`ALTER TABLE ... REWRITE PARTS`) upgrades legacy parts. Columns that are only hardlinked
-    /// are not considered: their data files are carried over byte for byte, so the serialization of the
-    /// source part stays in place.
+    /// Automatic `LowCardinality` serialization: a mutation that rewrites a column chooses the encoding
+    /// anew from the current threshold and the statistics the source part carries, instead of inheriting
+    /// it from the source part, so that enabling the setting and running a rewrite
+    /// (`ALTER TABLE ... REWRITE PARTS`) upgrades legacy parts, lowering the threshold demotes an already
+    /// encoded column, and a column whose rewritten data qualifies for sparse serialization is written as
+    /// sparse. Columns that are only hardlinked are not considered: their data files are carried over byte
+    /// for byte, so the serialization of the source part stays in place.
     const UInt64 max_uniq_number_for_low_cardinality
         = (*source_part->storage.getSettings())[MergeTreeSetting::max_uniq_number_for_low_cardinality];
 
@@ -1036,13 +1038,11 @@ getColumnsForNewDataPart(
                 rewritten_columns.push_back(column);
         }
 
-        if (max_uniq_number_for_low_cardinality == 0)
-        {
-            /// The feature is disabled: drop the kind inherited from the source part, so that setting the
-            /// threshold back to zero and running `ALTER TABLE ... REWRITE PARTS` rolls the encoding back.
-            removeAutomaticLowCardinalityKind(new_serialization_infos, rewritten_columns);
-        }
-        else
+        /// Drop the kind inherited from the source part before choosing: a rewritten column must not keep
+        /// an encoding that the current threshold or the rewritten data no longer justify.
+        removeAutomaticLowCardinalityKind(new_serialization_infos, rewritten_columns);
+
+        if (max_uniq_number_for_low_cardinality != 0)
         {
             /// The statistics are those of the source part: a mutation that changes the values of the column
             /// makes them stale, which can only make the choice suboptimal, never incorrect.
