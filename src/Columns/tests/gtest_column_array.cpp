@@ -218,8 +218,8 @@ TEST(ColumnArray, InsertManyFromPartiallyAliasedNullableString)
     const String value(1 << 20, 'x');
     shared_string->insert(value);
 
-    MutableColumnPtr source_nested = shared_string;
-    MutableColumnPtr destination_nested = shared_string;
+    MutableColumnPtr source_nested = shared_string->getPtr();
+    MutableColumnPtr destination_nested = shared_string->getPtr();
 
     auto source_null_map = ColumnUInt8::create();
     source_null_map->insertValue(0);
