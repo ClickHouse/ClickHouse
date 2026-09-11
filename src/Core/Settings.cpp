@@ -8357,7 +8357,13 @@ Replace table function engines with their -Cluster alternatives
 Allow usage of materialized views with parallel replicas
 )", 0) \
     DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
-Allow pushing down filters to part of query which parallel replicas choose to execute
+Splice a filter standing above the part of the query parallel replicas execute into the query the
+replicas run, so that they prune by it as well.
+
+The initiator's own copy of that part is filtered either way: pruning decides which rows a replica
+reads, not how it reads them. This setting decides the rest. Only a filter the replicas have too may
+fix a sorting key column and send the read in order, because the initiator and the replicas have to
+agree on how the coordinated read is ordered.
 )", BETA) \
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.
