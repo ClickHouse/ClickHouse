@@ -3,7 +3,6 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
-#include <Core/Block.h>
 #include <Processors/Port.h>
 
 namespace DB
@@ -43,7 +42,6 @@ void JSONColumnsBlockOutputFormat::writeChunkEnd()
     writeChar('\n', *ostr);
 }
 
-void registerOutputFormatJSONColumns(FormatFactory & factory);
 void registerOutputFormatJSONColumns(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONColumns", [](
@@ -56,20 +54,6 @@ void registerOutputFormatJSONColumns(FormatFactory & factory)
     });
 
     factory.setContentType("JSONColumns", "application/json; charset=UTF-8");
-
-    /// The column names are emitted as JSON object keys via `makeNamesValidJSONStrings` with
-    /// `output_format_json_validate_utf8`. When validation is off, a name that is not valid UTF-8
-    /// (a quoted alias with arbitrary bytes) makes the keys, and hence the output, non-textual. The
-    /// column values can synthesize further object keys from named `Tuple` element names (see
-    /// `tupleElementNamesMayProduceRawBytesInJSON`). All of this is knowable from the header, so the
-    /// text framings reject or base64-encode the output accordingly.
-    factory.registerOutputFormatMayProduceRawBytesChecker(
-        "JSONColumns",
-        [](const FormatSettings & settings, const Block & header)
-        {
-            return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8)
-                || JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, settings, settings.json.validate_utf8);
-        });
 }
 
 }

@@ -1,9 +1,7 @@
 #include <Storages/IStorage.h>
 
 #include <Disks/IStoragePolicy.h>
-#include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
-#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
@@ -20,9 +18,6 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
-#include <Common/MemoryTrackerUtils.h>
-
-#include <algorithm>
 
 
 namespace DB
@@ -32,10 +27,6 @@ namespace Setting
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool async_socket_for_remote;
-    extern const SettingsUInt64 max_distributed_connections;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
 }
 
 namespace ErrorCodes
@@ -47,13 +38,31 @@ namespace ErrorCodes
     extern const int TABLE_IS_BEING_RESTARTED;
 }
 
+const VirtualColumnsDescription IStorage::common_virtuals = IStorage::createCommonVirtuals();
+
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
+    , virtuals(std::make_unique<VirtualColumnsDescription>())
 {
     if (metadata_)
         metadata.set(std::move(metadata_));
     else
         metadata.set(std::make_unique<StorageInMemoryMetadata>());
+}
+
+bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
+{
+    /// Virtual column maybe overridden by real column
+    return !metadata_snapshot->getColumns().has(column_name) && (virtuals.get()->has(column_name) || common_virtuals.has(column_name));
+}
+
+VirtualColumnsDescription IStorage::createCommonVirtuals()
+{
+    VirtualColumnsDescription desc;
+
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
+
+    return desc;
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -98,7 +107,7 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const Poco::T
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
-    if (!lock.try_lock_for(saturatedMilliseconds(acquire_timeout.totalMilliseconds())))
+    if (!lock.try_lock_for(std::chrono::milliseconds(acquire_timeout.totalMilliseconds())))
         return {};
 
     if (is_dropped || is_detached)
@@ -128,6 +137,17 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return result;
+}
+
+Pipe IStorage::watch(
+    const Names & /*column_names*/,
+    const SelectQueryInfo & /*query_info*/,
+    ContextPtr /*context*/,
+    QueryProcessingStage::Enum & /*processed_stage*/,
+    size_t /*max_block_size*/,
+    size_t /*num_streams*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", getName());
 }
 
 Pipe IStorage::read(
@@ -182,27 +202,9 @@ void IStorage::read(
     const bool should_not_resize = context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
         && processed_stage == QueryProcessingStage::Enum::WithMergeableState;
 
-    /// `num_streams` is a read-parallelism request, not a thread budget: the resize must not create more
-    /// output ports than there are threads to consume them. That budget is the one the plan runs with, which
-    /// `InterpreterSelectQuery` and `PlannerJoinTree` compute as `max_threads` - except for a synchronous
-    /// remote read, where a thread blocks on a socket instead of running and they raise it to
-    /// `max_distributed_connections` (and pass it to `QueryPlan::setMaxThreads`). Make the same choice here,
-    /// so that such a read keeps the fan-out it asked for.
-    ///
-    /// This resize is picked while the query plan is being built, where there is no
-    /// `BuildQueryPipelineSettings` to take the budget from, hence the direct call to
-    /// `getMaxThreadsForAvailableMemory`. The other three post-read resizes are picked in
-    /// `initializePipeline` and read `BuildQueryPipelineSettings::max_threads`, which is this same helper
-    /// applied to the same two settings.
-    const auto & settings = context->getSettingsRef();
-    const size_t max_threads_execute_query = isRemote() && !settings[Setting::async_socket_for_remote]
-        ? settings[Setting::max_distributed_connections]
-        : getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
-    const size_t resize_to = std::min(num_streams, max_threads_execute_query);
-
     if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0
-        && output_ports < resize_to)
-        pipe.resize(resize_to);
+        && output_ports < num_streams)
+        pipe.resize(num_streams);
 
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
 }
@@ -242,8 +244,7 @@ Pipe IStorage::alterPartition(
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    auto storage_metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
@@ -332,12 +333,6 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-bool IStorage::supportsSampling() const
-{
-    auto storage_metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return storage_metadata_snapshot->hasSamplingKey();
-}
-
 ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const
 {
     return nullptr;
@@ -349,12 +344,11 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
     storage_id = new_table_id;
 }
 
-VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const
+Names IStorage::getAllRegisteredNames() const
 {
-    VectorWithMemoryTracking<String> result;
+    Names result;
     auto getter = [](const auto & column) { return column.name; };
-    const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    const auto & available_columns = metadata_snapshot->getColumns().getAllPhysical();
+    const NamesAndTypesList & available_columns = getInMemoryMetadata().getColumns().getAllPhysical();
     std::transform(available_columns.begin(), available_columns.end(), std::back_inserter(result), getter);
     return result;
 }
@@ -367,10 +361,9 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().getTable(view_id, context);
-        auto view_metadata = view->getInMemoryMetadataPtr(context, false);
-        if (view_metadata->select.inner_query)
+        if (view->getInMemoryMetadataPtr()->select.inner_query)
         {
-            const auto & select_query = view_metadata->select.inner_query;
+            const auto & select_query = view->getInMemoryMetadataPtr()->select.inner_query;
             Names required_columns;
             if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {

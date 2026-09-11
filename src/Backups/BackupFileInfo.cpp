@@ -182,8 +182,8 @@ BackupFileInfo buildFileInfoForBackupEntry(
             if (info.checksum == base_backup_file_info->second)
             {
                 LOG_TRACE(log, "Found whole file {} in base backup", adjusted_path);
-                chassert(check_base == CheckBackupResult::HasFull);
-                chassert(info.size == base_backup_file_info->first);
+                assert(check_base == CheckBackupResult::HasFull);
+                assert(info.size == base_backup_file_info->first);
 
                 info.base_size = base_backup_file_info->first;
                 info.base_checksum = base_backup_file_info->second;
