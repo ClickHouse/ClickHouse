@@ -81,7 +81,8 @@ Internal coordination settings are located in the `<keeper_server>.<coordination
 | `shutdown_timeout`                 | Wait to finish internal connections and shutdown (ms).                                                                                                                                                                   | `5000`                                                                                                       |
 | `startup_timeout`                  | If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms).                                                                                                              | `30000`                                                                                                      |
 | `async_replication`                | Enable async replication. All write and read guarantees are preserved while better performance is achieved. Settings is disabled by default to not break backwards compatibility                                         | `false`                                                                                                      |
-| `latest_logs_cache_size_threshold` | Maximum total size of in-memory cache of latest log entries                                                                                                                                                              | `1GiB`                                                                                                       |
+| `latest_logs_cache_entry_count_threshold` | Maximum number of entries in the in-memory cache of latest log entries                                                                                                                                                          | `200000`                                                                                                     |
+| `latest_logs_cache_size_threshold` | Maximum memory held by the in-memory cache of latest log entries, counting the per-entry allocation overhead                                                                                                                                                            | `1GiB`                                                                                                       |
 | `commit_logs_cache_size_threshold` | Deprecated. Used for `log_readahead_commit_window_bytes` if that setting is not itself set.                                                                                                              | -                                                                                                            |
 | `commit_logs_cache_entry_count_threshold` | Deprecated, has no effect. Use `log_readahead_commit_window_bytes` instead.                                                                                                                       | -                                                                                                            |
 | `log_readahead_enabled`            | Enable per-peer decoded read-ahead for changelog catch-up reads (follower replication).                                                                                                                  | `false`                                                                                                      |
@@ -702,10 +703,19 @@ Also, all the snapshot files will be moved from `snapshot_local` and `snapshot_s
 
 To minimize the amount of data read from disk, Keeper caches log entries in memory.
 If requests are large, log entries will take too much memory so the amount of cached logs is capped.
-The limit for the latest logs cache is controlled by:
-- `latest_logs_cache_size_threshold` - total size of latest logs stored in cache
+The limits for the latest logs cache are controlled by:
+- `latest_logs_cache_size_threshold` - memory held by the cached latest logs
+- `latest_logs_cache_entry_count_threshold` - how many entries the cache may hold
 
-If the default value is too big, you can reduce the memory usage by reducing this config.
+Whichever limit is reached first caps the cache; setting one to `0` leaves only the other in force.
+
+The size threshold counts the memory a cached entry really occupies, not just the size of the log
+entry itself: every cached entry also carries the objects that keep it reachable, and its allocation
+is rounded up to an allocator size class. For small entries that overhead is several times the
+entry, so the number of entries the cache holds can be much lower than dividing the threshold by the
+entry size suggests. `KeeperLatestLogsCacheSize` reports the same quantity the threshold bounds.
+
+If the default values are too big, you can reduce the memory usage by reducing these configs.
 
 Log entries needed next for committing are served by a decoded read-ahead reader, sized by
 `log_readahead_commit_window_bytes` (`0` disables commit read-ahead). This setting replaces the
