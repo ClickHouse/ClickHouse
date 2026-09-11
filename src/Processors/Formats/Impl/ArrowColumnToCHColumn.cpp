@@ -40,7 +40,7 @@
 #include <Common/FloatUtils.h>
 #include <Columns/ColumnNothing.h>
 #include <Interpreters/castColumn.h>
-#include <Common/quoteString.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
 #include <algorithm>
 #include <bit>
@@ -2907,7 +2907,9 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
                     auto column_extractor = std::make_shared<NestedColumnExtractHelper>(*block_ptr, case_insensitive_matching);
                     nested_tables[search_nested_table_name] = {block_ptr, column_extractor};
                 }
-                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(search_column_name);
+                /// The requested spelling, not the lower-cased one: the helper matches names
+                /// case-insensitively itself, and an exact element name outranks a folded match.
+                auto nested_column = nested_tables[search_nested_table_name].second->extractColumn(header_column.name);
                 if (nested_column)
                 {
                     column = *nested_column;
@@ -2955,20 +2957,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         if (is_stream)
             dictionary_infos.clear();
 
-        try
-        {
-            column.column = castColumn(column, header_column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name),
-                column.type->getName(),
-                header_column.type->getName()));
-            throw;
-        }
-        column.type = header_column.type;
+        castColumnToRequestedType(column, header_column.type);
         columns.push_back(std::move(column.column));
     }
 
