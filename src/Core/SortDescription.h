@@ -174,6 +174,12 @@ std::string dumpSortDescription(const SortDescription & description);
 
 JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
 
+/// The `WITH FILL` rules that `FillingRow` and `FillingTransform` rely on: a step that does not advance
+/// the row (zero, or pointing away from the sort direction) would make them generate rows without end.
+/// Returns the violated rule, or an empty string when `fill` is usable for a column sorted in
+/// `direction`. Both planners check the same rules through this function.
+String checkFillDescription(const FillColumnDescription & fill, int direction);
+
 class WriteBuffer;
 class ReadBuffer;
 
