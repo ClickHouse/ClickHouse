@@ -75,7 +75,7 @@ INSERT INTO t_shadow_text_values VALUES ({'abc' : 'x'}, 'hello');
 SELECT 'text over mapValues', count() FROM t_shadow_text_values WHERE `m.key_nokey` = 'hello';
 
 -- Subcolumn names are flat, so the claimant of the name need not be a top-level column: a Tuple element
--- (or a typed JSON path) named `m.key_nokey` claims it too, and the predicate reads that element.
+-- named `m.key_nokey` claims it too, and the predicate reads that element.
 DROP TABLE IF EXISTS t_shadow_tuple_element;
 CREATE TABLE t_shadow_tuple_element
 (
@@ -85,6 +85,19 @@ CREATE TABLE t_shadow_tuple_element
 ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_shadow_tuple_element VALUES (({'abc' : 'x'}, 'hello'));
 SELECT 'ngrambf_v1 over mapKeys, tuple element', count() FROM t_shadow_tuple_element WHERE t.`m.key_nokey` = 'hello';
+
+-- A typed JSON path is enumerated as a subcolumn by a different serialization than a Tuple element, so it
+-- claims the name through its own code path. Dots separate JSON paths, so the claiming path is a sub-path
+-- of the map path: the map itself stays empty and every key probe misses.
+DROP TABLE IF EXISTS t_shadow_json_path;
+CREATE TABLE t_shadow_json_path
+(
+    j JSON(m Map(String, String), `m.key_nokey` String),
+    INDEX idx mapKeys(j.m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_shadow_json_path VALUES ('{"m.key_nokey":"hello"}');
+SELECT 'ngrambf_v1 over mapKeys, typed JSON path', count() FROM t_shadow_json_path WHERE j.`m.key_nokey` = 'hello';
 
 -- Only the shadowed name loses the index. A genuine key subcolumn of the same map, in the same table,
 -- must still prune: `m.key_zzz` is not a declared column, and the map has no key `zzz`.
@@ -113,6 +126,15 @@ SELECT 'nested genuine key subcolumn still prunes',
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_shadow_tuple_element WHERE t.m.key_zzz = 'x')
 SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 
+-- Same for the JSON carrier, whose count arm passes just as well if the guard over-refuses and no key
+-- subcolumn beneath a JSON column stays indexable: `j.m.key_zzz` is a genuine key subcolumn of the typed
+-- map path, claimed by nothing, and the map has no key `zzz`. Expecting `1 1`.
+SELECT 'json genuine key subcolumn still prunes',
+       countIf(trim(explain) ILIKE 'Name: idx'),
+       countIf(trim(explain) ILIKE 'Granules: 0/1')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_shadow_json_path WHERE j.m.key_zzz = 'x')
+SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
+
 DROP TABLE t_shadow_ngrambf;
 DROP TABLE t_shadow_ngrambf_values;
 DROP TABLE t_shadow_bloom_filter;
@@ -120,3 +142,4 @@ DROP TABLE t_shadow_bloom_filter_values;
 DROP TABLE t_shadow_text_keys;
 DROP TABLE t_shadow_text_values;
 DROP TABLE t_shadow_tuple_element;
+DROP TABLE t_shadow_json_path;

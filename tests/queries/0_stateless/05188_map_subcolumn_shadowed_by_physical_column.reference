@@ -6,6 +6,8 @@ bloom_filter over mapValues	1
 text over mapKeys	1
 text over mapValues	1
 ngrambf_v1 over mapKeys, tuple element	1
+ngrambf_v1 over mapKeys, typed JSON path	1
 genuine key subcolumn still prunes	Granules: 0/1
 index applied: shadowed, genuine	0	1
 nested genuine key subcolumn still prunes	1	1
+json genuine key subcolumn still prunes	1	1
