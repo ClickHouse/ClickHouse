@@ -43,6 +43,12 @@ SELECT match(materialize('ab'), '[[:^digit:]]b'), match(materialize('1b'), '[[:^
 SELECT match(materialize('zabcdefg'), 'z[[:alpha:]]bcdefg'), match(materialize('z]bcdefg'), 'z[[:alpha:]]bcdefg');
 -- Without a closing `:]` there is no named class, and the `[` is a literal member again.
 SELECT match(materialize('a]b'), '[[:alpha]]b'), match(materialize('ab'), '[[:alpha]]b');
+-- A named class next to other members, and one inside an alternative, where the analyzer also
+-- feeds the alternatives to the text-index pruning.
+SELECT match(materialize('7xyz'), '[a[:digit:]z]xyz'), match(materialize('qxyz'), '[a[:digit:]z]xyz');
+SELECT match(materialize('Qx'), 'foo|[[:alpha:]]x'), match(materialize('foo'), 'foo|[[:alpha:]]x'), match(materialize('bar'), 'foo|[[:alpha:]]x');
+-- `[[:]]` has no closing `:]` either, so RE2 reads the inner `[` as a literal here as well.
+SELECT match(materialize('abc:]xyz'), 'abc[[:]]xyz'), match(materialize('abc:xyz'), 'abc[[:]]xyz');
 SELECT count() FROM t_regexp_class WHERE match(s, '[[:alpha:]]b');
 SELECT countIf(match(s, '[[:alpha:]]b')) FROM t_regexp_class;
 
