@@ -68,6 +68,8 @@ public:
     /// For each `encoded_keys[i]`, set `out[i]` to the `_part_offset` of a
     /// matching row in this part, or `std::nullopt` if absent. `out` is resized
     /// to `encoded_keys.size()`. The driver then checks the live bitmap.
+    /// `encoded_keys` must be sorted by encoded key - the driver sorts the
+    /// batch once for all targets, so targets must not re-sort.
     virtual void findRowIndexBatch(
         const std::vector<std::string_view> & encoded_keys,
         std::vector<std::optional<UInt64>> & out) const = 0;
