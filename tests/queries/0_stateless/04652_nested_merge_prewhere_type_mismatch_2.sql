@@ -225,7 +225,11 @@ DROP TABLE IF EXISTS sub_merge_bad;
 
 SET enable_json_type = 1;
 CREATE TABLE sub_leaf (j JSON, t Tuple(a UInt64), x UInt64) ENGINE = MergeTree ORDER BY x;
-INSERT INTO sub_leaf SELECT '{"a":1}'::JSON, tuple(number), number FROM numbers(10);
+-- The element is cast explicitly instead of relying on `tuple(number)`, because with
+-- `enable_named_columns_in_function_tuple` the analyzer derives the element name from the bare
+-- identifier, and inserting such a named tuple into a differently named tuple column is rejected by
+-- `allow_named_tuple_conversion_with_extra_source_fields_on_insert`. The stored values are the same.
+INSERT INTO sub_leaf SELECT '{"a":1}'::JSON, tuple(number::UInt64), number FROM numbers(10);
 CREATE TABLE sub_buf (j JSON, t Tuple(a UInt64), x UInt64)
     ENGINE = Buffer(currentDatabase(), sub_leaf, 1, 100, 200, 1000000, 10000000, 100000000, 1000000000);
 CREATE TABLE sub_merge (j JSON, t Tuple(a UInt64), x UInt64) ENGINE = Merge(currentDatabase(), '^sub_leaf$');
