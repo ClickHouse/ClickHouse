@@ -7,16 +7,16 @@ from ci.defs.defs import (
     RunnerLabels,
 )
 
-# Daily preparation of CHANGELOG.md for the upcoming release. The job
-# generates raw changelog entries for the pull requests newly merged into
-# master (utils/changelog wrapper around tests/ci/changelog.py) and edits them
-# following .claude/skills/edit-changelog/SKILL.md, committing the two states
-# separately to a per-release bot branch (auto/changelog-X.Y) with a draft PR
-# that the release manager finalizes at release time.
-# See ci/jobs/changelog_nightly.py.
+# General nightly maintenance workflow. Hosts independent housekeeping jobs that
+# run once a day against master:
+#   - Prepare changelog: prepares CHANGELOG.md for the upcoming release
+#     (see ci/jobs/changelog_nightly.py).
+#   - Label external contributors: labels issues and pull requests from authors
+#     outside the organization (see ci/jobs/label_external_contributors.py).
+# Add further nightly jobs here rather than creating a new workflow each time.
 
 workflow = Workflow.Config(
-    name="NightlyChangelog",
+    name="Nightly",
     engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
