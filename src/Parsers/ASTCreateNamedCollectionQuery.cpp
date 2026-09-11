@@ -35,7 +35,7 @@ void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::F
         formatSettingName(change.name, ostr);
 
         if (settings.show_secrets)
-            ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            ostr << " = " << applyVisitor(FieldVisitorToSettingValueString(), change.value);
         else
             ostr << " = '[HIDDEN]'";
         auto override_value = overridability.find(change.name);

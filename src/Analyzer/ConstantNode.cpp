@@ -51,7 +51,10 @@ ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
 
 ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
     : ConstantNode(ConstantValue{convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_})
-{}
+{
+    if (value_.getType() == Field::Types::Number)
+        number_literal_text = value_.safeGet<NumberLiteral>().value;
+}
 
 ConstantNode::ConstantNode(Field value_)
     : ConstantNode(value_, applyVisitor(FieldToDataType(), value_))
@@ -186,6 +189,7 @@ QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
     auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
     result->mask_id = mask_id;
+    result->number_literal_text = number_literal_text;
     return result;
 }
 

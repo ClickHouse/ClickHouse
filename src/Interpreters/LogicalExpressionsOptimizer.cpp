@@ -291,7 +291,14 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
-    ::sort(tuple.begin(), tuple.end());
+    /// A deferred NumberLiteral has no ordering of its own, so order by the resolved value while
+    /// keeping the original literal in the tuple: the IN set resolves each element against the
+    /// column type, preserving Decimal/wide-integer precision. resolveNumberLiteral is a no-op for
+    /// already-concrete fields, so other literal types keep their previous ordering.
+    ::sort(tuple.begin(), tuple.end(), [](const Field & lhs, const Field & rhs)
+    {
+        return lhs.resolveNumberLiteral() < rhs.resolveNumberLiteral();
+    });
 
     /// Get the expression `expr` from the chain `expr = x1 OR ... OR expr = xN`
     ASTPtr equals_expr_lhs;

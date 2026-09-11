@@ -1,0 +1,1 @@
+CREATE WORKLOAD `all` SETTINGS max_io_requests = 18446744073709551616, max_concurrent_queries = 1e3

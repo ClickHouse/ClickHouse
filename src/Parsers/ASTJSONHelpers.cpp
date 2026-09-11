@@ -68,6 +68,12 @@ static void writeFieldJSON(WriteBuffer & out, const FormatSettings & fs, const F
                 writeFloatText(x, out);
             break;
         }
+        case Field::Types::Number:
+            /// Emit the original literal text, so the JSON carries the same literal as the query
+            /// text instead of a value already rounded to a concrete type.
+            out << ",\"value\":";
+            writeJSONString(field.safeGet<NumberLiteral>().value, out, fs);
+            break;
         case Field::Types::Bool:
             out << ",\"value\":" << (field.safeGet<UInt64>() != 0 ? "true" : "false");
             break;

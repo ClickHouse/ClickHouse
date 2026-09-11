@@ -1,0 +1,13 @@
+reference type
+Float32
+LowCardinality(Float32)
+Nullable(Float32)
+LowCardinality(Nullable(Float32))
+all coordinates share one type
+2209
+2209
+comparison
+1
+1
+1
+1
