@@ -65,80 +65,115 @@ public:
 
     /// Everything a filter, a join condition or the sort order needs is computed below the `LIMIT`,
     /// together with everything those values are computed from.
-    void markComputedBelow(const ActionsDAG::NodeRawConstPtrs & roots) { markComputedBelow(roots, frontier); }
+    void markComputedBelow(const ActionsDAG::NodeRawConstPtrs & roots)
+    {
+        /// Stopping at what is marked already is what keeps this linear over the whole run: a value is
+        /// marked once, and only a value being marked has its own children looked at.
+        const auto is_marked = [this](const ActionsDAG::Node * node) { return frontier.at(node).computed_below; };
+
+        for (const auto * node : findReachableNodes(roots, is_marked))
+            frontier.placement[node].computed_below = true;
+    }
 
     /// Values the main branch has to hand over anyway, the sort keys above all: they are part of the
     /// block the `LIMIT` produces whatever this decides, so taking them costs nothing.
     void markFreeToCross(const ActionsDAG::NodeRawConstPtrs & nodes) { free_to_cross.insert(nodes.begin(), nodes.end()); }
 
-    /// Places `node` and everything it reads. Every value can be placed: what cannot be recomputed above
-    /// the `LIMIT` is computed below it and crosses, which is what the plan did anyway.
-    void place(const ActionsDAG::Node * node) { placeNode(node, frontier); }
+    /// Places `node` and everything it reads. Every value can be placed: what cannot be had above the
+    /// `LIMIT` is computed below it and crosses, which is what the plan did anyway.
+    void place(const ActionsDAG::Node * root)
+    {
+        struct Frame
+        {
+            const ActionsDAG::Node * node = nullptr;
+            size_t next_child = 0;
+        };
+
+        /// Only a value to be recomputed needs its children placed first, so those are the only frames
+        /// that stay on the stack. An explicit one at that: expression DAGs get deep.
+        std::vector<Frame> stack{{root}};
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+            const auto * node = frame.node;
+
+            if (frame.next_child == 0)
+            {
+                /// Another value that reads it may have placed it already.
+                if (frontier.at(node).above != Placement::Above::No)
+                {
+                    stack.pop_back();
+                    continue;
+                }
+
+                if (const auto decision = decide(node); decision != Decision::Recompute)
+                {
+                    if (decision == Decision::LazyRead)
+                        frontier.placement[node].above = Placement::Above::LazyRead;
+                    else
+                        cross(node);
+
+                    stack.pop_back();
+                    continue;
+                }
+            }
+
+            if (frame.next_child < node->children.size())
+            {
+                const auto * child = node->children[frame.next_child];
+                ++frame.next_child;
+                stack.push_back({child});
+                continue;
+            }
+
+            frontier.placement[node].above = Placement::Above::Recomputed;
+            stack.pop_back();
+        }
+    }
 
     LazyFrontier takeFrontier() { return std::move(frontier); }
 
 private:
-    static void markComputedBelow(const ActionsDAG::NodeRawConstPtrs & roots, LazyFrontier & candidate)
+    enum class Decision : uint8_t
     {
-        for (const auto * node : findReachableNodes(roots))
-            candidate.placement[node].computed_below = true;
-    }
+        Cross,      /// the main branch computes it and hands it over
+        LazyRead,   /// a second read of its source returns it
+        Recompute,  /// computed again above the `LIMIT`, once what it reads is placed
+    };
 
-    void placeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
+    Decision decide(const ActionsDAG::Node * node) const
     {
-        const auto placed = candidate.at(node);
-        if (placed.above != Placement::Above::No)
-            return;
+        const auto source = findSourceOfInput(merged, node);
 
-        if (placed.computed_below)
-        {
-            /// The main branch hands this one over regardless, so there is nothing to weigh up.
-            if (free_to_cross.contains(node))
-            {
-                cross(node, candidate);
-                return;
-            }
-
-            /// This value was already used below the `LIMIT` and the result has to agree with it, so one
-            /// that does not answer the same twice crosses as a column instead. What is computed from it
-            /// may still be recomputed above, since that gives the same answer.
-            if (!canBeRecomputed(node))
-            {
-                cross(node, candidate);
-                return;
-            }
-
-            if (!preferRecomputing(node) || !canBePlacedAbove(node))
-            {
-                cross(node, candidate);
-                return;
-            }
-
-            recomputeNode(node, candidate);
-            return;
-        }
-
-        if (!canBePlacedAbove(node))
-        {
-            cross(node, candidate);
-            return;
-        }
-
-        recomputeNode(node, candidate);
-    }
-
-    /// Whether the value can be had above the `LIMIT` at all. A local question: what the value reads is
-    /// placed on its own terms, and the worst those terms come to is a column that crosses, which is
-    /// available above just the same. So this never depends on what is below it.
-    bool canBePlacedAbove(const ActionsDAG::Node * node) const
-    {
-        /// Without a second read of its source there is no way to get a column up there.
-        if (const auto source = findSourceOfInput(merged, node))
-            return lazy_sources[*source];
-
-        /// An input reading no source, or more than one, is not something this can place, and an
+        /// Without a second read of its source there is no way to get a column above the `LIMIT`. An
+        /// input reading no source, or more than one, is not something this can place either, and an
         /// `arrayJoin` changes the number of rows the `LIMIT` already counted.
-        return node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
+        const bool can_be_had_above = source
+            ? lazy_sources[*source]
+            : node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
+
+        if (!can_be_had_above)
+            return Decision::Cross;
+
+        /// How to have it above, once the rest of this settles whether to: a source column is read a
+        /// second time, anything else is computed a second time.
+        const auto have_it_above = source ? Decision::LazyRead : Decision::Recompute;
+
+        /// Nothing below the `LIMIT` computes it, so there is nothing to hand over or to agree with.
+        if (!frontier.at(node).computed_below)
+            return have_it_above;
+
+        /// The main branch hands this one over regardless, so there is nothing to weigh up.
+        if (free_to_cross.contains(node))
+            return Decision::Cross;
+
+        /// This value was already used below the `LIMIT` and the result has to agree with it, so one
+        /// that does not answer the same twice crosses as a column instead. What is computed from it may
+        /// still be recomputed above, since that gives the same answer.
+        if (!canBeRecomputed(node))
+            return Decision::Cross;
+
+        return preferRecomputing(node) ? have_it_above : Decision::Cross;
     }
 
     /// Whether to compute a value the main branch already computes a second time above the `LIMIT`,
@@ -159,27 +194,11 @@ private:
     /// estimate belongs once there is one to ask.
     bool preferRecomputing(const ActionsDAG::Node * node) const { return merged.hasJoinAbove(node); }
 
-    /// Puts the value above the `LIMIT`. Only for a value `canBePlacedAbove` accepts.
-    void recomputeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
-    {
-        if (findSourceOfInput(merged, node))
-        {
-            candidate.placement[node].above = Placement::Above::LazyRead;
-            return;
-        }
-
-        /// A child that has to cross is computed below the `LIMIT`, which `cross` takes care of.
-        for (const auto * child : node->children)
-            placeNode(child, candidate);
-
-        candidate.placement[node].above = Placement::Above::Recomputed;
-    }
-
     /// A crossing value is computed below the `LIMIT`, so everything it reads is computed there too.
-    static void cross(const ActionsDAG::Node * node, LazyFrontier & candidate)
+    void cross(const ActionsDAG::Node * node)
     {
-        markComputedBelow({node}, candidate);
-        candidate.placement[node].above = Placement::Above::Crossing;
+        markComputedBelow({node});
+        frontier.placement[node].above = Placement::Above::Crossing;
     }
 
     const MergedPlanDAG & merged;
