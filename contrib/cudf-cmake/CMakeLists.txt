@@ -161,9 +161,8 @@ function (cudf_add_fragment FRAGMENT INSTANCE UDF_TYPE FILE_INDEX)
         CUDA_VISIBILITY_PRESET hidden)
 
     # Header-only or island dependencies only: the IO libraries upstream also names here -
-    # zlib, zstd, nvcomp, kvikio, nanoarrow - are ordinary ClickHouse targets that would hand
-    # this island target global-group's compile options, and the JIT kernel does not include
-    # them.
+    # zlib, zstd, nvcomp, kvikio - are ordinary ClickHouse targets that would hand this island
+    # target global-group's compile options, and the JIT kernel does not include them.
     target_link_libraries (${_object} PRIVATE
         ch_contrib::cccl
         ch_contrib::rmm
@@ -207,6 +206,27 @@ cudf_embed_runner_island (cudf_fragments__jit_embed_run)
 
 # ##################################################################################################
 # The library
+# ##################################################################################################
+
+# ##################################################################################################
+# What is left out
+#
+# cuDF's format readers and writers - Parquet, ORC, JSON, CSV, Avro, the Arrow interop, and the
+# statistics they share - are not built. Nothing here reads a file through cuDF: a column reaches
+# the device from a `MergeTree` part that ClickHouse has already decoded itself. That is a third of
+# the library's translation units, and the slowest of them to compile, for no gain.
+#
+# They also do not compile here, which is what turned the choice from tidiness into necessity.
+# `io/parquet/arrow_schema_writer.cpp` static-asserts on the flatbuffers version, and ClickHouse's
+# contrib carries a different one than cuDF generated its Arrow IPC headers with. And
+# `io/orc/writer_impl.cu` hits an overload ambiguity inside cuDF's own
+# `io/statistics/typed_statistics_chunk.cuh` under CUDA 13.2. Settling either would mean pinning a
+# second flatbuffers, or patching cuDF, for a reader and a writer that nothing calls.
+#
+# What stays out of `src/io` is the plumbing the rest of the library links against: `io/comp`,
+# whose `load_nvcomp_library` `src/runtime/context.cpp` calls, and `io/utilities`, whose
+# `parsing_utils.cuh` `src/json/json_path.cu` includes. Leaving those out would mean patching cuDF
+# instead of configuring it.
 # ##################################################################################################
 
 add_library (_cudf
@@ -359,19 +379,6 @@ add_library (_cudf
     "${CUDF_DIR}/src/hash/sha512_hash.cu"
     "${CUDF_DIR}/src/hash/xxhash_32.cu"
     "${CUDF_DIR}/src/hash/xxhash_64.cu"
-    "${CUDF_DIR}/src/interop/dlpack.cpp"
-    "${CUDF_DIR}/src/interop/arrow_utilities.cpp"
-    "${CUDF_DIR}/src/interop/arrow_data_structures.cpp"
-    "${CUDF_DIR}/src/interop/to_arrow_device.cu"
-    "${CUDF_DIR}/src/interop/to_arrow_host.cu"
-    "${CUDF_DIR}/src/interop/from_arrow_device.cu"
-    "${CUDF_DIR}/src/interop/from_arrow_host.cu"
-    "${CUDF_DIR}/src/interop/from_arrow_host_strings.cu"
-    "${CUDF_DIR}/src/interop/from_arrow_stream.cu"
-    "${CUDF_DIR}/src/interop/to_arrow_schema.cpp"
-    "${CUDF_DIR}/src/io/avro/avro.cpp"
-    "${CUDF_DIR}/src/io/avro/avro_gpu.cu"
-    "${CUDF_DIR}/src/io/avro/reader_impl.cu"
     "${CUDF_DIR}/src/io/comp/brotli_dict.cpp"
     "${CUDF_DIR}/src/io/comp/compression.cpp"
     "${CUDF_DIR}/src/io/comp/compression.cu"
@@ -384,82 +391,7 @@ add_library (_cudf
     "${CUDF_DIR}/src/io/comp/snap.cu"
     "${CUDF_DIR}/src/io/comp/decompression.cpp"
     "${CUDF_DIR}/src/io/comp/unsnap.cu"
-    "${CUDF_DIR}/src/io/csv/csv_gpu.cu"
-    "${CUDF_DIR}/src/io/csv/durations.cu"
-    "${CUDF_DIR}/src/io/csv/reader_impl.cu"
-    "${CUDF_DIR}/src/io/csv/writer_impl.cu"
-    "${CUDF_DIR}/src/io/functions.cpp"
-    "${CUDF_DIR}/src/io/cudftable.cpp"
-    "${CUDF_DIR}/src/io/json/host_tree_algorithms.cu"
-    "${CUDF_DIR}/src/io/json/json_column.cu"
-    "${CUDF_DIR}/src/io/json/column_tree_construction.cu"
-    "${CUDF_DIR}/src/io/json/json_normalization.cu"
-    "${CUDF_DIR}/src/io/json/json_tree.cu"
-    "${CUDF_DIR}/src/io/json/nested_json_gpu.cu"
-    "${CUDF_DIR}/src/io/json/read_json.cu"
-    "${CUDF_DIR}/src/io/json/parser_features.cpp"
-    "${CUDF_DIR}/src/io/json/process_tokens.cu"
-    "${CUDF_DIR}/src/io/json/write_json.cpp"
-    "${CUDF_DIR}/src/io/json/write_json.cu"
-    "${CUDF_DIR}/src/io/orc/aggregate_orc_metadata.cpp"
-    "${CUDF_DIR}/src/io/orc/dict_enc.cu"
-    "${CUDF_DIR}/src/io/orc/orc.cpp"
-    "${CUDF_DIR}/src/io/orc/reader_impl.cu"
-    "${CUDF_DIR}/src/io/orc/reader_impl_chunking.cu"
-    "${CUDF_DIR}/src/io/orc/reader_impl_decode.cu"
-    "${CUDF_DIR}/src/io/orc/reader_impl_helpers.cpp"
-    "${CUDF_DIR}/src/io/orc/stats_enc.cu"
-    "${CUDF_DIR}/src/io/orc/stripe_data.cu"
-    "${CUDF_DIR}/src/io/orc/stripe_enc.cu"
-    "${CUDF_DIR}/src/io/orc/stripe_init.cu"
     "${CUDF_DIR}/src/datetime/timezone.cpp"
-    "${CUDF_DIR}/src/io/orc/writer_impl.cu"
-    "${CUDF_DIR}/src/io/parquet/arrow_schema_writer.cpp"
-    "${CUDF_DIR}/src/io/parquet/bloom_filter_reader.cu"
-    "${CUDF_DIR}/src/io/parquet/column_path_helpers.cpp"
-    "${CUDF_DIR}/src/io/parquet/compact_protocol_reader.cpp"
-    "${CUDF_DIR}/src/io/parquet/compact_protocol_writer.cpp"
-    "${CUDF_DIR}/src/io/parquet/decode_preprocess.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/dictionary_page_filter.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/deletion_vectors.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/deletion_vectors_helpers.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/hybrid_scan.cpp"
-    "${CUDF_DIR}/src/io/parquet/experimental/hybrid_scan_chunking.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/hybrid_scan_helpers.cpp"
-    "${CUDF_DIR}/src/io/parquet/experimental/hybrid_scan_impl.cpp"
-    "${CUDF_DIR}/src/io/parquet/experimental/hybrid_scan_multifile.cpp"
-    "${CUDF_DIR}/src/io/parquet/experimental/hybrid_scan_preprocess.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/page_index_filter.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/page_index_filter_utils.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/variant_extract.cu"
-    "${CUDF_DIR}/src/io/parquet/experimental/variant_path.cpp"
-    "${CUDF_DIR}/src/io/parquet/expression_transform_helpers.cpp"
-    "${CUDF_DIR}/src/io/parquet/io_utils/parquet_io_utils.cpp"
-    "${CUDF_DIR}/src/io/parquet/page_data.cu"
-    "${CUDF_DIR}/src/io/parquet/chunk_dict.cu"
-    "${CUDF_DIR}/src/io/parquet/page_enc.cu"
-    "${CUDF_DIR}/src/io/parquet/page_hdr.cu"
-    "${CUDF_DIR}/src/io/parquet/page_delta_decode.cu"
-    "${CUDF_DIR}/src/io/parquet/page_string_decode.cu"
-    "${CUDF_DIR}/src/io/parquet/predicate_pushdown.cpp"
-    "${CUDF_DIR}/src/io/parquet/reader.cpp"
-    "${CUDF_DIR}/src/io/parquet/reader_impl.cpp"
-    "${CUDF_DIR}/src/io/parquet/reader_impl_chunking.cu"
-    "${CUDF_DIR}/src/io/parquet/reader_impl_chunking_utils.cu"
-    "${CUDF_DIR}/src/io/parquet/reader_impl_helpers.cpp"
-    "${CUDF_DIR}/src/io/parquet/reader_impl_preprocess.cu"
-    "${CUDF_DIR}/src/io/parquet/reader_impl_preprocess_utils.cu"
-    "${CUDF_DIR}/src/io/parquet/stats_filter_helpers.cpp"
-    "${CUDF_DIR}/src/io/parquet/writer_impl.cu"
-    "${CUDF_DIR}/src/io/parquet/writer_impl_helpers.cpp"
-    "${CUDF_DIR}/src/io/parquet/decode_fixed.cu"
-    "${CUDF_DIR}/src/io/statistics/orc_column_statistics.cu"
-    "${CUDF_DIR}/src/io/statistics/parquet_column_statistics.cu"
-    "${CUDF_DIR}/src/io/text/byte_range_info.cpp"
-    "${CUDF_DIR}/src/io/text/data_chunk_source_factories.cpp"
-    "${CUDF_DIR}/src/io/text/bgzip_data_chunk_source.cu"
-    "${CUDF_DIR}/src/io/text/bgzip_utils.cpp"
-    "${CUDF_DIR}/src/io/text/multibyte_split.cu"
     "${CUDF_DIR}/src/io/utilities/base64_utilities.cpp"
     "${CUDF_DIR}/src/io/utilities/column_buffer.cpp"
     "${CUDF_DIR}/src/io/utilities/column_buffer_strings.cu"
@@ -781,7 +713,6 @@ target_include_directories (_cudf SYSTEM PUBLIC
 target_include_directories (_cudf SYSTEM PRIVATE
     "${CUDF_DIR}/src"
     "${CUDF_EMBED_DIR}"
-    "${ClickHouse_SOURCE_DIR}/contrib/flatbuffers/include"
     "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib"
     # cuDF 26.08 includes rtcx's umbrella header flat, as `<rtcx.hpp>`, which is where the commit
     # it pins through CPM keeps it. contrib/librtcx is newer than that commit and moved every
@@ -792,7 +723,27 @@ target_include_directories (_cudf SYSTEM PRIVATE
     "${GPU_CUDA_ROOT}/include"
 )
 
-target_compile_options (_cudf PRIVATE ${CUDF_CUDA_FLAGS})
+# Both of these are nvcc's own, and the target holds two assembly blobs as well - the embedded
+# header trees - which CMake hands to ClickHouse's clang as the ASM compiler. It rejects
+# `--expt-extended-lambda` outright, so the options are restricted to the sources nvcc compiles.
+#
+# The force-include is there because `cudf/detail/utilities/integer_utils.hpp` uses
+# `CUDF_UNREACHABLE` under `__CUDA_ARCH__` without including the header that defines it. Upstream
+# gets away with that: the translation units including it are compiled as C++ there, so the device
+# branch never reaches a compiler. Here every one of cuDF's .cpp files goes through nvcc - that is
+# what `gpu_island_target` does, and cmake/cuda.cmake explains why - so the device pass does reach
+# it and `src/strings/regex` fails to compile. Force-including the definition is the smallest fix
+# short of patching cuDF; the header is `#pragma once` and defines nothing but two macros.
+target_compile_options (_cudf PRIVATE
+    "$<$<COMPILE_LANGUAGE:CUDA>:${CUDF_CUDA_FLAGS}>"
+    "$<$<COMPILE_LANGUAGE:CUDA>:-include;cudf/detail/utilities/assert.cuh>")
+
+# The blobs themselves are two lines of assembly that pull the bytes in with `.incbin`, and clang's
+# integrated assembler - which is what CMake uses for ASM here - looks that file up on the include
+# path rather than next to the source it appears in. The include directories above do not help: it
+# ignores `-isystem`. Upstream never needs this, compiling these with gcc, whose assembler resolves
+# an `.incbin` relative to the file.
+target_compile_options (_cudf PRIVATE "$<$<COMPILE_LANGUAGE:ASM>:-I${CUDF_EMBED_DIR}>")
 
 target_compile_definitions (_cudf PRIVATE
     CUDF_LOG_ACTIVE_LEVEL=RAPIDS_LOGGER_LOG_LEVEL_INFO
@@ -805,10 +756,6 @@ target_compile_definitions (_cudf PRIVATE
     THRUST_FORCE_32_BIT_OFFSET_TYPE=1
     CCCL_AVOID_SORT_UNROLL=1
 )
-
-# The Parquet writer stamps the version it was built from into the file metadata.
-set_property (SOURCE "${CUDF_DIR}/src/io/parquet/writer_impl.cu" APPEND
-    PROPERTY COMPILE_DEFINITIONS "CUDF_VERSION=26.8.1")
 
 set_target_properties (_cudf PROPERTIES
     CUDA_STANDARD 20
@@ -825,24 +772,24 @@ target_link_libraries (_cudf PUBLIC
     ch_gpu::cudart
 )
 
-# The IO half. These are ordinary ClickHouse targets whose INTERFACE_COMPILE_OPTIONS carry
+# What `src/io/comp` and `src/io/utilities` still need - the readers and writers that needed
+# nanoarrow and flatbuffers are not built, see "What is left out" above.
+#
+# The last three are ordinary ClickHouse targets whose INTERFACE_COMPILE_OPTIONS carry
 # global-group's flags - -Werror among them, which nvcc reads as taking a value - so they are
-# linked with $<LINK_ONLY:> and their headers arrive through target_include_directories
-# instead, the way contrib/librtcx-cmake handles zstd.
+# linked with $<LINK_ONLY:> and their headers arrive through target_include_directories instead,
+# the way contrib/librtcx-cmake handles zstd.
 target_link_libraries (_cudf PRIVATE
     ch_contrib::nvtx3
     ch_contrib::cuco
     ch_contrib::kvikio
     ch_contrib::nvcomp
     ch_contrib::rtcx
-    $<LINK_ONLY:ch_contrib::nanoarrow>
     $<LINK_ONLY:ch_contrib::zlib>
     $<LINK_ONLY:ch_contrib::zstd>
     $<LINK_ONLY:ch_contrib::xxHash>
 )
 target_include_directories (_cudf SYSTEM PRIVATE
-    "${ClickHouse_SOURCE_DIR}/contrib/nanoarrow/src"
-    "${ClickHouse_SOURCE_DIR}/contrib/nanoarrow-cmake/include"
     "${ClickHouse_SOURCE_DIR}/contrib/zlib-ng"
     "${ClickHouse_SOURCE_DIR}/contrib/xxHash"
 )

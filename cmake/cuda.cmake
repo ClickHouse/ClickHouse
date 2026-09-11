@@ -195,14 +195,22 @@ if (ENABLE_GPU)
         target_link_libraries (${target} PRIVATE ch_gpu::cudart)
     endfunction ()
 
-    # The island's host code is compiled against gcc's libstdc++, and the archives have to be
-    # linked with the runtime they were compiled against, so a binary that carries them holds
-    # both: ClickHouse's static libc++ and this shared libstdc++. The two live in disjoint
-    # namespaces (std::__1 and std::__cxx11), and the Itanium ABI runtime they share - the
-    # __cxa_* entry points and the std::exception family - is defined once, by libc++abi in
-    # the executable, with libstdc++.so binding to those definitions. Shared rather than
-    # static for exactly that reason: a second static copy of the ABI runtime would be a
-    # duplicate-definition error, a shared one is interposed. It is a run-time dependency on
+    # The island's host code is compiled against gcc's libstdc++, and an archive has to be linked
+    # with the runtime it was compiled against - so a binary carrying the island holds two C++
+    # standard libraries: ClickHouse's static libc++ and this shared libstdc++. Their std:: types
+    # live in disjoint namespaces (std::__1 and std::__cxx11) and never meet, which is what the C
+    # boundary in src/GPU/GPUAggregationABI.h is for.
+    #
+    # What they do share is the Itanium ABI runtime underneath - `__cxa_throw`,
+    # `__gxx_personality_v0`, the `std::exception` family - and there the two are not
+    # interchangeable: each recognizes only its own exception class. Which definition the
+    # executable ends up with is decided by link order, and getting it wrong breaks exception
+    # handling for the whole server rather than for the island alone. See the end of
+    # cmake/linux/default_libs.cmake, which is where this library is appended and why.
+    #
+    # Shared rather than static, so that the frames inside libstdc++ keep their own personality
+    # routine while the executable binds libc++abi's. One static runtime would have to serve both
+    # worlds, and the other world's typed `catch` clauses would stop matching. It is a run-time dependency on
     # the host's libstdc++.so.6, like libcuda.so.1 is.
     #
     # The island also compiles against the host's glibc headers while the executable links
@@ -216,8 +224,6 @@ if (ENABLE_GPU)
     if (NOT IS_ABSOLUTE "${GPU_LIBSTDCXX_LIBRARY}" OR NOT EXISTS "${GPU_LIBSTDCXX_LIBRARY}")
         message (FATAL_ERROR "${CMAKE_CUDA_HOST_COMPILER} has no libstdc++.so (got '${GPU_LIBSTDCXX_LIBRARY}').")
     endif ()
-    add_library (ch_gpu::stdcxx INTERFACE IMPORTED GLOBAL)
-    set_target_properties (ch_gpu::stdcxx PROPERTIES INTERFACE_LINK_LIBRARIES "${GPU_LIBSTDCXX_LIBRARY}")
 
     message (STATUS "GPU engine: ENABLED")
     message (STATUS "  CUDA:          ${CMAKE_CUDA_COMPILER_VERSION} at ${GPU_CUDA_ROOT}")

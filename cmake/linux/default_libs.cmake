@@ -57,6 +57,22 @@ else ()
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
 
+# The GPU engine's island is compiled against the system libstdc++ - cmake/cuda.cmake explains why
+# it cannot be ClickHouse's own libc++ - so a binary carrying it needs that library as well. It has
+# to come last, after libc++abi, and this is the only place on the link line that is.
+#
+# The two define the same Itanium ABI entry points, `__gxx_personality_v0` among them, and the
+# linker takes the first definition in command-line order. With libstdc++ anywhere earlier, every
+# frame in the executable - all of ClickHouse, not only the island - ends up unwinding through
+# libstdc++'s personality routine, which does not recognize a libc++ exception. The binary then
+# dies on the first `throw` anywhere, and the only visible trace is a dynamic relocation against
+# `__gxx_personality_v0@CXXABI_1.3` where a build without the GPU engine has none. Last means
+# libc++abi's definition is the one bound into the executable, and the frames inside libstdc++
+# itself keep theirs.
+if (ENABLE_GPU)
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${GPU_LIBSTDCXX_LIBRARY}")
+endif ()
+
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
